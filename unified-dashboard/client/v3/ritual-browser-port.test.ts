@@ -14,12 +14,28 @@ describe("removeRitualTaskFromDaily", () => {
         ],
         state_vector: "AQID",
       })),
+      getBacklinks: vi.fn(async () => ({
+        items: [{
+          id: "link-task",
+          sourcePageId: "daily-yesterday",
+          sourcePageTitle: "2026년 7월 19일",
+          sourceBlockId: "task-mount",
+          sourceTextPreview: "[[업무]]",
+          linkKind: "mount",
+          targetPageId: "task-page",
+          targetBlockId: null,
+          sourceStart: 0,
+          sourceEnd: 6,
+        }],
+        nextCursor: null,
+      })),
       applyOperations,
     };
 
     await removeRitualTaskFromDaily(
       api as never,
       "daily-yesterday",
+      "task-page",
       "업무",
       () => "ritual-remove-1",
     );
@@ -41,10 +57,16 @@ describe("removeRitualTaskFromDaily", () => {
         blocks: [{ id: "memo", parent_id: null, block_type: "paragraph", text: "메모", properties: {} }],
         state_vector: "AQID",
       })),
+      getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
       applyOperations,
     };
 
-    await removeRitualTaskFromDaily(api as never, "daily-yesterday", "업무");
+    await removeRitualTaskFromDaily(
+      api as never,
+      "daily-yesterday",
+      "task-page",
+      "업무",
+    );
 
     expect(applyOperations).not.toHaveBeenCalled();
   });

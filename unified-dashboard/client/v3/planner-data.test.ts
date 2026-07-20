@@ -67,6 +67,34 @@ describe("planner BFF data", () => {
     expectNoPageCalls(api);
   });
 
+  it("deduplicates daily and project task payloads by page id", async () => {
+    const api = pageApiThatMustStayIdle();
+    const duplicate = taskPayload();
+    const fetchPlanner = vi.fn(async (path: string) => path.startsWith("/api/planner/today")
+      ? {
+          daily: { page: page("daily", "2026-07-14"), blocks: [], state_vector: "" },
+          projects: [],
+          memo_blocks: [],
+          tasks: [duplicate, duplicate, duplicate, duplicate],
+          review_session_ids: [],
+        }
+      : {
+          project: page("project", "프로젝트"),
+          tasks: { items: [duplicate, duplicate], next_cursor: null },
+          documents: { items: [], next_cursor: null },
+        });
+
+    const daily = await loadDailyPlanner(api, "2026-07-14", { fetchPlanner });
+    const project = await loadProjectPlanner(
+      api,
+      page("project", "프로젝트"),
+      { fetchPlanner },
+    );
+
+    expect(daily.tasks.map((task) => task.page.id)).toEqual(["task"]);
+    expect(project.tasks.map((task) => task.page.id)).toEqual(["task"]);
+  });
+
   it("loads bounded project, daily, task, document, and run pages through dedicated planner routes", async () => {
     const fetchPlanner = vi.fn(async (path: string) => {
       if (path.startsWith("/api/planner/starred-tasks")) {

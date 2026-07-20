@@ -1,63 +1,68 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
-import { BrowserPlannerMutationPort } from "./planner-browser-port";
-import { parseSingleMountTitle } from "./planner-model";
+import { setDailyTaskMembership } from "./daily-task-membership";
 import type { RitualActionPort } from "./ritual-model";
 
 export class BrowserRitualActionPort implements RitualActionPort {
-  private readonly plannerPort: BrowserPlannerMutationPort;
-
   constructor(
     private readonly dailyPageId: string,
     private readonly api: PageApiClient,
-  ) {
-    this.plannerPort = new BrowserPlannerMutationPort(api);
+  ) {}
+
+  async mountToday(input: { taskPageId: string; taskTitle: string }) {
+    await mountRitualTaskToday(
+      this.api,
+      this.dailyPageId,
+      input.taskPageId,
+      input.taskTitle,
+    );
   }
 
-  async mountToday(input: { taskTitle: string }) {
-    await mountRitualTaskToday(this.plannerPort, this.dailyPageId, input.taskTitle);
-  }
-
-  async removeFromDaily(input: { dailyPageId: string; taskTitle: string }) {
+  async removeFromDaily(input: {
+    dailyPageId: string;
+    taskPageId: string;
+    taskTitle: string;
+  }) {
     await removeRitualTaskFromDaily(
       this.api,
       input.dailyPageId,
+      input.taskPageId,
       input.taskTitle,
     );
   }
 }
 
 export async function mountRitualTaskToday(
-  plannerPort: Pick<BrowserPlannerMutationPort, "mountPage">,
+  api: PageApiClient,
   dailyPageId: string,
+  taskPageId: string,
   taskTitle: string,
 ): Promise<void> {
-  await plannerPort.mountPage({ sourcePageId: dailyPageId, title: taskTitle });
+  await setDailyTaskMembership({
+    api,
+    dailyPageId,
+    taskPage: { id: taskPageId, title: taskTitle },
+    present: true,
+    idempotencyKey: () => ritualOperationId("daily-mount"),
+    reason: "v3 morning ritual daily mount",
+  });
 }
 
 export async function removeRitualTaskFromDaily(
   api: PageApiClient,
   dailyPageId: string,
+  taskPageId: string,
   taskTitle: string,
   idFactory: () => string = () => ritualOperationId("daily-unmount"),
 ): Promise<void> {
-  const snapshot = await api.getPage(dailyPageId);
-  const mount = snapshot.blocks.find(
-    (block) => parseSingleMountTitle(block) === taskTitle,
-  );
-  if (!mount) return;
-  await api.applyOperations(dailyPageId, {
-    expectedVersion: snapshot.page.version,
-    expectedStateVector: decodeStateVector(snapshot.state_vector),
-    idempotencyKey: idFactory(),
+  await setDailyTaskMembership({
+    api,
+    dailyPageId,
+    taskPage: { id: taskPageId, title: taskTitle },
+    present: false,
+    idempotencyKey: idFactory,
     reason: "v3 morning ritual daily unmount",
-    operations: [{ op: "delete_block_subtree", block_id: mount.id }],
   });
-}
-
-function decodeStateVector(value: string): Uint8Array {
-  const binary = globalThis.atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function ritualOperationId(prefix: string): string {

@@ -14,6 +14,7 @@ describe("planner task card actions", () => {
     const api = {
       getDailyPage: vi.fn(async () => ({ page: daily, created: false })),
       getPage: vi.fn(async () => pageRead(daily, [])),
+      getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
       applyOperations: vi.fn(async () => ({
         page: { ...daily, version: 5 },
         blocks: [],
@@ -26,7 +27,7 @@ describe("planner task card actions", () => {
       .resolves.toBe("added");
 
     expect(api.applyOperations).toHaveBeenCalledWith("daily-today", expect.objectContaining({
-      reason: "v3 planner append block",
+      reason: "v3 planner daily task toggle",
       operations: [expect.objectContaining({ text: "[[업무 A]]" })],
     }));
   });
@@ -45,6 +46,21 @@ describe("planner task card actions", () => {
         properties: {},
         collapsed: false,
       }])),
+      getBacklinks: vi.fn(async () => ({
+        items: [{
+          id: "link-task-a",
+          sourcePageId: daily.id,
+          sourcePageTitle: daily.title,
+          sourceBlockId: "mount-task-a",
+          sourceTextPreview: "[[업무 A]]",
+          linkKind: "mount",
+          targetPageId: "task-a",
+          targetBlockId: null,
+          sourceStart: 0,
+          sourceEnd: 9,
+        }],
+        nextCursor: null,
+      })),
       applyOperations: vi.fn(async () => ({
         page: { ...daily, version: 5 },
         blocks: [],
@@ -60,7 +76,7 @@ describe("planner task card actions", () => {
       expectedVersion: 4,
       expectedStateVector: new Uint8Array([0]),
       idempotencyKey: "toggle-id",
-      reason: "v3 planner daily task unmount",
+      reason: "v3 planner daily task toggle",
       operations: [{ op: "delete_block_subtree", block_id: "mount-task-a" }],
     });
   });

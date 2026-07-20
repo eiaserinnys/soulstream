@@ -33,7 +33,12 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     const dailyTask = page.getByTestId("v3-task-task-alpha");
     const starredTask = page.getByTestId("v3-starred-tasks").locator(".v3-starred-task-link").filter({ hasText: fixtureTitles.primaryTask });
+    const todayCount = page.locator(".v3-section-head").filter({
+      has: page.getByRole("heading", { name: "오늘의 업무", level: 2 }),
+    }).locator("span").first();
     await dailyTask.waitFor({ state: "visible" });
+    assert(await dailyTask.count() === 1, "오늘 업무 카드가 최초부터 중복 표시됐습니다.");
+    assert(await todayCount.textContent() === "2개", "오늘 업무 최초 카운트가 일치하지 않습니다.");
     await starredTask.waitFor({ state: "visible" });
 
     await openContextMenu(starredTask);
@@ -46,10 +51,25 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     ]);
     await page.getByRole("menuitem", { name: "오늘 플래너에서 제거" }).click();
     await dailyTask.waitFor({ state: "detached" });
+    assert(await todayCount.textContent() === "1개", "제거 후 오늘 업무 카운트가 줄지 않았습니다.");
 
     await openContextMenu(starredTask);
     await page.getByRole("menuitem", { name: "오늘 플래너에 추가" }).click();
     await dailyTask.waitFor({ state: "visible" });
+    assert(await dailyTask.count() === 1, "재추가 후 오늘 업무 카드가 중복 표시됐습니다.");
+    assert(await todayCount.textContent() === "2개", "재추가 후 오늘 업무 카운트가 일치하지 않습니다.");
+
+    await openContextMenu(starredTask);
+    await page.getByRole("menuitem", { name: "오늘 플래너에서 제거" }).click();
+    await dailyTask.waitFor({ state: "detached" });
+    assert(await todayCount.textContent() === "1개", "두 번째 제거 후 오늘 업무 카운트가 줄지 않았습니다.");
+    await capture(page, theme, "01-daily-toggle-cycle-removed");
+
+    await openContextMenu(starredTask);
+    await page.getByRole("menuitem", { name: "오늘 플래너에 추가" }).click();
+    await dailyTask.waitFor({ state: "visible" });
+    assert(await dailyTask.count() === 1, "검증 후 복원 과정에서 오늘 업무 카드가 중복 표시됐습니다.");
+    assert(await todayCount.textContent() === "2개", "검증 후 복원 카운트가 일치하지 않습니다.");
 
     const reviewRow = page.getByTestId("v3-session-group-review").locator(".v3-session-row").first();
     await reviewRow.waitFor({ state: "visible" });
@@ -59,7 +79,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.keyboard.press("Escape");
 
     const projectRow = page.getByTestId("v3-all-projects").locator(".v3-project-nav-row").filter({ hasText: fixtureTitles.project });
-    await projectRow.getByRole("button").click();
+    await projectRow.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
     const projectDocument = page.locator(".v3-document-list button").filter({ hasText: fixtureTitles.document });
     await projectDocument.waitFor({ state: "visible" });
     await openContextMenu(projectDocument);
@@ -76,7 +96,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await openContextMenu(starredTask);
     const complete = page.getByRole("menuitem", { name: "완료 처리" });
     assert(await complete.isDisabled(), "완료된 업무의 완료 처리가 비활성화되지 않았습니다.");
-    await capture(page, theme, "01-context-menu-parity");
+    await capture(page, theme, "02-context-menu-parity");
 
     return {
       todayRoundtrip: true,

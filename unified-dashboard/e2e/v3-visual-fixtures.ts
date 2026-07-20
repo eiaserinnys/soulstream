@@ -920,19 +920,45 @@ export async function installV3VisualQaRoutes(
       const sourcePageId = [pages.taskAlpha.id, pages.taskBeta.id, pages.taskDone.id, pages.carryover.id].includes(taskId)
         ? pages.project.id
         : null;
+      const taskTitle = taskId === pages.taskAlpha.id
+        ? pages.taskAlpha.title
+        : taskId === pages.taskBeta.id
+          ? pages.taskBeta.title
+          : taskId === pages.taskDone.id
+            ? pages.taskDone.title
+            : taskId === pages.carryover.id ? pages.carryover.title : null;
+      const dailyMounts = options.contextMenuParity && taskTitle
+        ? pageReads[pages.today.id].blocks
+            .filter((candidate) => candidate.text === `[[${taskTitle}]]`)
+            .map((candidate) => ({
+              id: `backlink-daily-${candidate.id}`,
+              sourcePageId: pages.today.id,
+              sourcePageTitle: pages.today.title,
+              sourceBlockId: candidate.id,
+              sourceTextPreview: candidate.text,
+              linkKind: "mount",
+              targetPageId: taskId,
+              targetBlockId: null,
+              sourceStart: 0,
+              sourceEnd: candidate.text.length,
+            }))
+        : [];
       return fulfillJson(route, {
-        items: sourcePageId ? [{
-          id: `backlink-${taskId}`,
-          sourcePageId,
-          sourcePageTitle: pages.project.title,
-          sourceBlockId: `mount-${taskId}`,
-          sourceTextPreview: taskId,
-          linkKind: "mount",
-          targetPageId: taskId,
-          targetBlockId: null,
-          sourceStart: 0,
-          sourceEnd: 1,
-        }] : [],
+        items: [
+          ...(sourcePageId ? [{
+            id: `backlink-${taskId}`,
+            sourcePageId,
+            sourcePageTitle: pages.project.title,
+            sourceBlockId: `mount-${taskId}`,
+            sourceTextPreview: taskId,
+            linkKind: "mount",
+            targetPageId: taskId,
+            targetBlockId: null,
+            sourceStart: 0,
+            sourceEnd: 1,
+          }] : []),
+          ...dailyMounts,
+        ],
         nextCursor: null,
       });
     }

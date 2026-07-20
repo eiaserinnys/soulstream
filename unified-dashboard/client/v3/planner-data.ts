@@ -138,7 +138,7 @@ export async function loadDailyPlanner(
   return {
     daily: payload.daily,
     projects: payload.projects,
-    tasks: payload.tasks.map(plannerTask),
+    tasks: plannerTasks(payload.tasks),
     memoBlocks: payload.memo_blocks,
     reviewSessionIds: payload.review_session_ids,
   };
@@ -154,7 +154,7 @@ export async function loadProjectPlanner(
   ) as PlannerProjectPayload;
   return {
     project: payload.project,
-    tasks: payload.tasks.items.map(plannerTask),
+    tasks: plannerTasks(payload.tasks.items),
     documents: payload.documents.items,
     nextTaskCursor: payload.tasks.next_cursor,
     nextDocumentCursor: payload.documents.next_cursor,
@@ -171,7 +171,7 @@ export async function loadStarredTasks(
     `/api/planner/starred-tasks?${query.toString()}`,
   ) as PageSlicePayload<PlannerTaskPayload>;
   return {
-    items: payload.items.map(plannerTask),
+    items: plannerTasks(payload.items),
     nextCursor: payload.next_cursor,
   };
 }
@@ -198,7 +198,7 @@ export async function loadProjectTaskPage(
     `/api/planner/projects/${encodeURIComponent(projectPageId)}/tasks?${pageQuery(cursor, limit).toString()}`,
   ) as PageSlicePayload<PlannerTaskPayload>;
   return {
-    items: payload.items.map(plannerTask),
+    items: plannerTasks(payload.items),
     nextCursor: payload.next_cursor,
   };
 }
@@ -304,6 +304,15 @@ function plannerTask(payload: PlannerTaskPayload): PlannerTask {
       page: document.page,
     })),
   };
+}
+
+function plannerTasks(payloads: readonly PlannerTaskPayload[]): PlannerTask[] {
+  const seenPageIds = new Set<string>();
+  return payloads.flatMap((payload) => {
+    if (seenPageIds.has(payload.page.id)) return [];
+    seenPageIds.add(payload.page.id);
+    return [plannerTask(payload)];
+  });
 }
 
 function plannerSummaryStatus(summary: PlannerTaskSummaryPayload | null): PlannerTaskStatus {
