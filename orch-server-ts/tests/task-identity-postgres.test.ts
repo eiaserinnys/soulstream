@@ -374,6 +374,12 @@ describe("Task identity PostgreSQL transaction", () => {
       },
     ] as const;
     try {
+      // Keep this pagination fixture independent from starred pages created by earlier cases.
+      await harness.sql`
+        UPDATE pages
+        SET metadata = jsonb_set(metadata, '{starred}', 'false'::jsonb, TRUE)
+        WHERE COALESCE((metadata->>'starred')::boolean, FALSE)
+      `;
       for (const fixture of fixtures) {
         await pages.createPage({
           page: {
@@ -436,6 +442,7 @@ describe("Task identity PostgreSQL transaction", () => {
       const planner = new PlannerRepository(resolver);
       const first = await planner.getStarredTasks({ detail: "full", limit: 2 });
       const firstItems = first.items as PlannerTaskDto[];
+      expect(first.items).toHaveLength(2);
       expect(firstItems.map((item) => item.page.id)).toEqual([
         fixtures[0].pageId,
         fixtures[1].pageId,
@@ -477,6 +484,8 @@ describe("Task identity PostgreSQL transaction", () => {
         limit: 2,
       });
       const secondItems = second.items as PlannerTaskDto[];
+      expect(second.items).toHaveLength(1);
+      expect(second.next_cursor).toBeNull();
       expect(secondItems[0]).toEqual(expect.objectContaining({
         page: expect.objectContaining({ id: fixtures[2].pageId }),
         task_id: fixtures[2].taskId,
