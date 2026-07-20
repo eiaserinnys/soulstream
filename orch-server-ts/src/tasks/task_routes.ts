@@ -19,6 +19,7 @@ import {
   snapshotItem,
 } from "./task_snapshot.js";
 import {
+  TaskRouteError as TaskUserStatusRouteError,
   type TaskRouteOptions,
 } from "./task_route_types.js";
 
@@ -37,7 +38,15 @@ export {
   type TaskRouteOptions,
   type TaskRouteProvider,
   type TaskSnapshot,
+  type TaskStatus,
+  type TaskUserStatusMutation,
+  type TaskUserStatusMutationInput,
+  type TaskUserStatusMutationResult,
 } from "./task_route_types.js";
+export {
+  createTaskUserStatusMutation,
+  type CreateTaskUserStatusMutationOptions,
+} from "./task_user_status_mutation.js";
 
 type TaskParams = {
   task_id: string;
@@ -133,7 +142,25 @@ export function registerTaskRoutes(
 
       const actorSessionId = resolveTaskActorSessionId(snapshot);
       if (actorSessionId === null) {
-        return reply.code(422).send({ detail: "Task has no session provenance" });
+        if (options.provider.setTaskStatusAsUser === undefined) {
+          return reply.code(422).send({ detail: "Task has no session provenance" });
+        }
+        const userId = await resolveDashboardUserId(options, request);
+        if (userId === null || userId.trim().length === 0) {
+          return reply.code(401).send({ detail: "Authenticated user identity is required" });
+        }
+        try {
+          return reply.send(await options.provider.setTaskStatusAsUser({
+            taskId: params.task_id,
+            status: body.value.status,
+            expectedVersion: body.value.expectedVersion,
+            idempotencyKey: body.value.idempotencyKey,
+            ...(body.value.reason === undefined ? {} : { reason: body.value.reason }),
+            userId: userId.trim(),
+          }));
+        } catch (error) {
+          return sendTaskUserStatusError(reply, error);
+        }
       }
 
       return proxyTaskMutation(request, reply, options, actorSessionId, {
@@ -276,6 +303,24 @@ function validationError<T>(
   validation: Extract<Validation<T>, { ok: false }>,
 ): FastifyReply {
   return reply.code(validation.statusCode ?? 400).send({ detail: validation.message });
+}
+
+function sendTaskUserStatusError(
+  reply: FastifyReply,
+  error: unknown,
+): FastifyReply {
+  if (!(error instanceof TaskUserStatusRouteError)) {
+    return sendTaskRouteError(reply, error);
+  }
+  return reply.code(error.statusCode).send({
+    detail: {
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.details === undefined ? {} : { details: error.details }),
+      },
+    },
+  });
 }
 
 async function resolveDashboardUserId(

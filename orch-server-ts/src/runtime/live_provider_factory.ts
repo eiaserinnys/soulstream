@@ -216,6 +216,7 @@ export function createLiveOrchestratorProviderBundle(
   const taskProviders = createLiveTaskRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
     provider: options.dependencies.dbCatalogRepository.taskRouteProvider,
+    broadcaster: options.runtimeServices.sessionBroadcaster,
   });
   const configProviders = createLiveConfigRouteProviders(
     options.dependencies.configProvider,

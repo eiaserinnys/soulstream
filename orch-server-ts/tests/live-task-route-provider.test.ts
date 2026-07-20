@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  InMemorySseReplayBroadcaster,
   LiveNodeHttpClientError,
   createApp,
+  createLiveTaskRouteProviders,
   createLiveTaskMutationHttpClient,
   parseOrchServerConfig,
   type TaskAccessProvider,
   type TaskRouteProvider,
+  type SessionStreamEvent,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -129,6 +132,77 @@ describe("live task route provider", () => {
     });
 
     await app.close();
+  });
+
+  it("broadcasts one canonical task_updated event for a new user mutation", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+      instanceId: "task-user-status",
+    });
+    const setTaskStatusAsUser = vi.fn(async () => ({
+      ok: true as const,
+      taskId: "task-1",
+      boardItemId: "task:task-1",
+      eventId: 0 as const,
+      idempotent: false,
+      operation: { id: "operation-1" },
+      snapshot: { task: { id: "task-1" } },
+    }));
+    const provider: TaskRouteProvider = {
+      listFolders: () => [],
+      setTaskStatusAsUser,
+    };
+    const bundle = createLiveTaskRouteProviders({
+      provider,
+      broadcaster,
+      nodeHttpClient: { requestNode: vi.fn() },
+    });
+
+    await bundle.taskRoutes.provider.setTaskStatusAsUser?.({
+      taskId: "task-1",
+      status: "completed",
+      expectedVersion: 1,
+      idempotencyKey: "task-user-status",
+      userId: "user@example.com",
+    });
+
+    expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([{
+      type: "task_updated",
+      taskId: "task-1",
+      boardItemId: "task:task-1",
+    }]);
+  });
+
+  it("does not rebroadcast an idempotent user mutation", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+    const provider: TaskRouteProvider = {
+      listFolders: () => [],
+      async setTaskStatusAsUser() {
+        return {
+          ok: true,
+          taskId: "task-1",
+          boardItemId: "task:task-1",
+          eventId: 0,
+          idempotent: true,
+          operation: { id: "operation-1" },
+          snapshot: { task: { id: "task-1" } },
+        };
+      },
+    };
+    const bundle = createLiveTaskRouteProviders({
+      provider,
+      broadcaster,
+      nodeHttpClient: { requestNode: vi.fn() },
+    });
+
+    await bundle.taskRoutes.provider.setTaskStatusAsUser?.({
+      taskId: "task-1",
+      status: "completed",
+      expectedVersion: 1,
+      idempotencyKey: "task-user-status",
+      userId: "user@example.com",
+    });
+
+    expect(broadcaster.bufferedEvents).toEqual([]);
   });
 });
 

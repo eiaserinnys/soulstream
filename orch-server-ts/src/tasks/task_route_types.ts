@@ -23,6 +23,31 @@ export type TaskSnapshot = {
   [key: string]: unknown;
 };
 
+export type TaskStatus = "open" | "completed";
+
+export type TaskUserStatusMutationInput = {
+  taskId: string;
+  status: TaskStatus;
+  expectedVersion: number;
+  idempotencyKey: string;
+  reason?: string;
+  userId: string;
+};
+
+export type TaskUserStatusMutationResult = {
+  ok: true;
+  taskId: string;
+  boardItemId: string;
+  eventId: 0;
+  idempotent: boolean;
+  operation: Record<string, unknown>;
+  snapshot: TaskSnapshot;
+};
+
+export type TaskUserStatusMutation = (
+  input: TaskUserStatusMutationInput,
+) => Promise<TaskUserStatusMutationResult>;
+
 export type TaskMutationNode = {
   nodeId: string;
   host: string;
@@ -65,6 +90,7 @@ export type TaskRouteProvider = {
     | undefined
     | null;
   listConnectedNodes?: () => readonly TaskMutationNode[];
+  setTaskStatusAsUser?: TaskUserStatusMutation;
 };
 
 export type TaskAccess = BoardAccess;
@@ -90,12 +116,19 @@ export type TaskRouteOptions = {
 export class TaskRouteError extends Error {
   readonly code: string;
   readonly statusCode: number;
+  readonly details?: Record<string, unknown>;
 
-  constructor(code: string, message: string, statusCode: number) {
+  constructor(
+    code: string,
+    message: string,
+    statusCode: number,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "TaskRouteError";
     this.code = code;
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
