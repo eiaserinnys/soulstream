@@ -326,9 +326,11 @@
       "properties": {
         "type": { "const": "interrupt_session_ack" },
         "requestId": { "type": "string" },
-        "status": { "type": "string", "enum": ["ok"] },
+        "status": { "type": "string", "enum": ["ok", "error"] },
         "interrupted": { "type": "boolean" },
-        "agentSessionId": { "type": "string" }
+        "agentSessionId": { "type": "string" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
       }
     },
     "AcknowledgeSessionReviewAck": {

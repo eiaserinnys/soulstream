@@ -135,6 +135,53 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("interrupt로 종료된 turn은 runtime follow-up보다 finalizer를 먼저 완료한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      logger: silentLogger,
+    });
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "claude_runtime_task_notification",
+          task_id: "task-interrupted",
+          status: "completed",
+          summary: "completed before interrupt finalization",
+        } as SSEEventPayload;
+        task.status = "interrupted";
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      controller,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(task.status).toBe("interrupted");
+    expect(mocks.db.updateSession).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ status: "interrupted" }),
+    );
+  });
+
   it("notification과 terminal task_updated를 같은 follow-up prompt에 반영한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();

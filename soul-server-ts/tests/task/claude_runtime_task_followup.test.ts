@@ -81,6 +81,39 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("직전 응답을 그대로 반복하지 마세요");
   });
 
+  it("interrupt 중에는 follow-up을 보류하고 다음 running turn까지 pending을 보존한다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["task-interrupted"] = {
+      taskId: "task-interrupted",
+      status: "completed",
+      updatedAt: Date.now(),
+      isBackgrounded: true,
+      summary: "completed while interrupting",
+    };
+    const { controller, addIntervention } = makeController();
+
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "task-interrupted",
+      status: "completed",
+      summary: "completed while interrupting",
+    } as SSEEventPayload);
+    task.status = "interrupted";
+
+    await controller.flush(task);
+
+    expect(addIntervention).not.toHaveBeenCalled();
+
+    task.status = "running";
+    await controller.flush(task);
+
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(addIntervention.mock.calls[0]![0]).toMatchObject({
+      agentSessionId: "sess-1",
+      followupTaskIds: ["task-interrupted"],
+    });
+  });
+
   it("local_agent terminal notification은 is_backgrounded 표식 없이도 follow-up한다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["agent-task"] = {

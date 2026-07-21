@@ -999,6 +999,30 @@ describe("CommandDispatcher.interrupt_session", () => {
     });
   });
 
+  it("실제 중단 대상이 없으면 error ACK로 명시적으로 실패한다", async () => {
+    const cancelTask = vi.fn(async () => false);
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { cancelTask } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "interrupt_session",
+      agentSessionId: "sess-stale",
+      requestId: "stop-stale",
+    });
+
+    expect(cancelTask).toHaveBeenCalledWith("sess-stale");
+    expect(sent[0]).toMatchObject({
+      type: "interrupt_session_ack",
+      requestId: "stop-stale",
+      status: "error",
+      interrupted: false,
+      code: "SESSION_NOT_RUNNING",
+      agentSessionId: "sess-stale",
+    });
+    expect((sent[0] as { message: string }).message).toContain("not running");
+  });
+
   it("agentSessionId 누락 시 error wire", async () => {
     const cancelTask = vi.fn();
     const { dispatcher, sent } = createDispatcher({

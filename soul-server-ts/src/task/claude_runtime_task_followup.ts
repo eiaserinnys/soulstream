@@ -125,6 +125,11 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   }
 
   async flush(task: Task): Promise<void> {
+    // interrupt()가 먼저 terminal status를 박은 뒤 현재 execution이 이 메서드에 도달할 수 있다.
+    // 이때 addIntervention()은 auto-resume 경로에서 같은 executionPromise를 기다리므로
+    // 자기대기 교착이 된다. Pending은 지우지 않고 다음 정상 running turn까지 보존한다.
+    if (task.status !== "running") return;
+
     const pending = this.pendingBySession.get(task.agentSessionId);
     if (!pending || pending.size === 0) return;
 
