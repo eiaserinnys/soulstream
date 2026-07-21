@@ -93,7 +93,7 @@ describe("production live event fanout", () => {
     }
   });
 
-  it("connects every production live-event consumer to its canonical source", async () => {
+  it("connects every retained production live-event consumer to its canonical source", async () => {
     const observedConsumers = new Set<string>();
     const database = createFakeSql();
     const sqlResolver: LiveDbSqlResolver = {
@@ -246,17 +246,18 @@ describe("production live event fanout", () => {
         last_message: { preview: "completed" },
       }));
       await waitForCondition(() =>
-        database.queries.some((query) => query.includes("supervisor_event_append")) &&
         database.queries.some((query) => query.includes("FROM push_tokens"))
       );
-      observedConsumers.add("supervisor-ingest");
+      await application.closeResources();
+      expect(database.queries).not.toContainEqual(
+        expect.stringContaining("supervisor_event_append"),
+      );
       observedConsumers.add("push-notifier");
       expect([...observedConsumers].sort()).toEqual([
         "node-stream",
         "per-session-realtime",
         "push-notifier",
         "sessions-stream",
-        "supervisor-ingest",
       ]);
     } finally {
       realtimeController.abort();
@@ -279,16 +280,6 @@ function createFakeSql(): {
     queries.push(text.replace(/\s+/g, " ").trim());
     if (text.includes("session_count")) return [{ count: 0 }];
     if (text.includes("MAX(id)")) return [{ last_event_id: 40 }];
-    if (text.includes("supervisor_event_append")) {
-      return [{
-        offset: 1,
-        inserted: true,
-        contiguous_upto: 42,
-        highest_seen_event_id: 42,
-        gap_start: null,
-        gap_end: null,
-      }];
-    }
     return [];
   });
   const sql = Object.assign(query, {

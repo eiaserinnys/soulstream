@@ -41,10 +41,8 @@ import {
   type LiveOrchestratorProviderBundle,
 } from "./runtime/live_provider_factory.js";
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
-import { createLiveSupervisorIngestRepository } from "./runtime/live_supervisor_ingest_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
-import { SupervisorIngestService } from "./supervisor/supervisor_ingest.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 
 export type ProductionApplication = {
@@ -141,10 +139,6 @@ export async function createLiveProductionApplication(
     boardAssetStorage,
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
-  const supervisorIngest = new SupervisorIngestService({
-    repository: createLiveSupervisorIngestRepository({ sqlResolver }),
-    onWarning: (message, error) => context.warn(warningMessage(message, error)),
-  });
   const foregroundObservers = new SessionForegroundObserverTracker();
   const pushNotifier = new PushNotifier({
     provider: createExpoPushProvider(),
@@ -172,7 +166,6 @@ export async function createLiveProductionApplication(
     sessionForegroundObservers: foregroundObservers,
     additionalNodeEventSinks: [
       (events) => pushNotifier.accept(events),
-      (events) => supervisorIngest.accept(events),
     ],
     boardYjsRoutes: {
       createService: (logger) => boardYjsService ??= new BoardYjsService({
@@ -289,7 +282,6 @@ export async function createLiveProductionApplication(
       resourcesClosed = true;
       await usageSummaryService.stop();
       await pushNotifier.close();
-      await supervisorIngest.close();
       await dbCatalogRepository.close();
     },
   };
