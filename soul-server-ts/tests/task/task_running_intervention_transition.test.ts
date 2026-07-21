@@ -28,7 +28,7 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
-  it("queues first and interrupts a steer-interrupt engine without publishing intervention_sent", async () => {
+  it("publishes acceptance before queueing and interrupting a steer-interrupt engine", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const interruptForSteer = vi.fn().mockResolvedValue(true);
     const task = makeRunningTask({
@@ -58,7 +58,13 @@ describe("RunningInterventionTransition", () => {
 
     expect(interruptForSteer).toHaveBeenCalledTimes(1);
     expect(steerActiveTurn).not.toHaveBeenCalled();
-    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "redirect the active turn",
+      }),
+    );
     expect(task.interventionQueue).toEqual([
       {
         text: "redirect the active turn",
@@ -199,7 +205,13 @@ describe("RunningInterventionTransition", () => {
     ).resolves.toEqual({ queued: true, queuePosition: 1 });
 
     expect(steerActiveTurn).toHaveBeenCalledTimes(2);
-    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "queue after unsafe boundary",
+      }),
+    );
     expect(task.interventionQueue).toEqual([
       { text: "queue after unsafe boundary", user: "alice" },
     ]);
@@ -221,7 +233,13 @@ describe("RunningInterventionTransition", () => {
       }),
     ).resolves.toEqual({ queued: true, queuePosition: 1 });
 
-    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "next turn only",
+      }),
+    );
     expect(task.interventionQueue).toEqual([
       {
         text: "next turn only",
@@ -279,6 +297,37 @@ describe("RunningInterventionTransition", () => {
       ),
     ).resolves.toEqual({ deferred: true });
 
+    expect(task.interventionQueue).toEqual([]);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("does not deliver or queue an accepted intervention when persistence fails", async () => {
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const task = makeRunningTask({
+      engine: {
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as unknown as Task["engine"],
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+      persistence: {
+        persistEvent: vi.fn().mockRejectedValue(new Error("events DB unavailable")),
+        handleSideEffects: vi.fn(),
+      } as never,
+    });
+
+    await expect(
+      transition.deliver(task, { text: "must be durable", user: "alice" }),
+    ).rejects.toThrow("events DB unavailable");
+
+    expect(steerActiveTurn).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });

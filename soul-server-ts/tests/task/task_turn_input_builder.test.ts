@@ -168,10 +168,7 @@ describe("TaskTurnInputBuilder", () => {
         previousCallerInfo: { source: "browser", display_name: "Alice" },
       }),
     );
-    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(
-      task,
-      undefined,
-    );
+    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
     expect(input.systemPrompt).toBeUndefined();
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
     expect(input.prompt).toContain("<prior>");
@@ -188,7 +185,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(task.interventionQueue.map((item) => item.text)).toEqual(["later"]);
   });
 
-  it("persists and broadcasts auto-resume queued intervention as user_message without rebuilding full context", async () => {
+  it("does not duplicate the user_message already persisted when auto-resume was accepted", async () => {
     const callerInfo = {
       source: "agent",
       display_name: "서소영",
@@ -249,33 +246,10 @@ describe("TaskTurnInputBuilder", () => {
     );
     expect(input.systemPrompt).toBeUndefined();
     expect(input.prompt).toContain("후속 확인");
-    expect(persistEvent).toHaveBeenCalledTimes(1);
-    expect(persistEvent).toHaveBeenCalledWith(
-      "sess-turn-input",
-      expect.objectContaining({
-        type: "user_message",
-        user: "서소영",
-        text: "후속 확인",
-        caller_info: callerInfo,
-        attachments: ["/tmp/incoming/sess/screen.png"],
-        context,
-        _event_id: 88,
-      }),
-    );
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-turn-input",
-      expect.objectContaining({
-        type: "user_message",
-        text: "후속 확인",
-        _event_id: 88,
-      }),
-    );
-    expect(handleSideEffects).toHaveBeenCalledWith(
-      "sess-turn-input",
-      expect.objectContaining({ type: "user_message", _event_id: 88 }),
-      task,
-    );
-    expect(task.lastEventId).toBe(88);
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(handleSideEffects).not.toHaveBeenCalled();
+    expect(task.lastEventId).toBe(0);
     expect(task.interventionQueue).toEqual([]);
   });
 

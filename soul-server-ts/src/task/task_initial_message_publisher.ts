@@ -1,12 +1,16 @@
 import type { Logger } from "pino";
 
 import type { PreparedContext } from "../context/context_builder.js";
-import { withoutSessionContextSourceMarkers } from "../context/session_context_sources.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { Task } from "./task_models.js";
+import {
+  buildUserMessageEvent,
+  finishUserMessageEvent,
+  persistUserMessageEvent,
+} from "./task_user_message_events.js";
 
 export interface TaskInitialMessagePublisherDeps {
   broadcaster: SessionBroadcaster;
@@ -28,7 +32,14 @@ export class TaskInitialMessagePublisher {
     if (ctx?.effectiveSystemPrompt) {
       await this.publishSystemMessage(task, ctx.effectiveSystemPrompt);
     }
-    await this.publishUserMessage(task, ctx);
+    const event = buildUserMessageEvent({
+      text: task.prompt,
+      callerInfo: task.callerInfo,
+      attachmentPaths: task.attachmentPaths,
+      contextItems: ctx ? ctx.combinedContextItems : task.contextItems,
+    });
+    await persistUserMessageEvent(task, event, this.deps, { failOnError: false });
+    await finishUserMessageEvent(task, event, this.deps);
   }
 
   private async publishSystemMessage(
@@ -65,75 +76,5 @@ export class TaskInitialMessagePublisher {
         "system_message broadcast failed",
       );
     }
-  }
-
-  private async publishUserMessage(
-    task: Task,
-    ctx?: PreparedContext,
-  ): Promise<void> {
-    const event = this.buildUserMessageEvent(task, ctx);
-    try {
-      const eventId = await this.deps.persistence.persistEvent(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-      task.lastEventId = eventId;
-      event._event_id = eventId;
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message persistEvent failed",
-      );
-    }
-
-    try {
-      await this.deps.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message broadcast failed",
-      );
-    }
-
-    try {
-      await this.deps.persistence.handleSideEffects(
-        task.agentSessionId,
-        event as SSEEventPayload,
-        task,
-      );
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message handleSideEffects failed",
-      );
-    }
-  }
-
-  private buildUserMessageEvent(
-    task: Task,
-    ctx?: PreparedContext,
-  ): Record<string, unknown> {
-    const contextItems = ctx
-      ? ctx.combinedContextItems
-      : withoutSessionContextSourceMarkers(task.contextItems);
-    const event: Record<string, unknown> = {
-      type: "user_message",
-      user: task.callerInfo?.display_name ?? task.callerInfo?.user_id ?? "unknown",
-      text: task.prompt,
-      timestamp: Date.now() / 1000,
-    };
-    if (task.callerInfo) {
-      event.caller_info = task.callerInfo;
-    }
-    if (task.attachmentPaths && task.attachmentPaths.length > 0) {
-      event.attachments = task.attachmentPaths;
-    }
-    if (contextItems.length > 0) {
-      event.context = contextItems;
-    }
-    return event;
   }
 }

@@ -82,4 +82,39 @@ describe("publishInterventionSent", () => {
     );
     expect(logger.warn).not.toHaveBeenCalled();
   });
+
+  it("keeps a durably persisted intervention accepted when last-message side effects fail", async () => {
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const persistEvent = vi.fn().mockResolvedValue(43);
+    const handleSideEffects = vi.fn().mockRejectedValue(new Error("preview DB unavailable"));
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const broadcaster = { emitEventEnvelope } as unknown as SessionBroadcaster;
+    const task = makeTask();
+
+    await expect(
+      publishInterventionSent(
+        task,
+        { text: "accepted", user: "alice" },
+        {
+          broadcaster,
+          logger,
+          persistence: { persistEvent, handleSideEffects } as unknown as EventPersistence,
+        },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(task.lastEventId).toBe(43);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "accepted",
+        _event_id: 43,
+      }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-1" }),
+      "intervention_sent handleSideEffects failed",
+    );
+  });
 });

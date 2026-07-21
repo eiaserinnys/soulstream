@@ -7,6 +7,7 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
+import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -58,11 +59,12 @@ function makeMocks() {
 }
 
 describe("TaskExecutor query-per-turn intervention queue", () => {
-  it("publishes queued intervention_sent at dequeue time and resumes Claude on the next query", async () => {
+  it("does not duplicate an accepted intervention when it dequeues for the next query", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     const callerInfo = { source: "browser", display_name: "Alice" };
     const turnInputs: EngineExecuteParams[] = [];
+    let runningIntervention: RunningInterventionTransition;
 
     const engine: EnginePort = {
       backendId: "claude",
@@ -70,7 +72,7 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       async *execute(params): AsyncIterable<SSEEventPayload> {
         turnInputs.push(params);
         if (turnInputs.length === 1) {
-          task.interventionQueue.push({
+          await runningIntervention.deliver(task, {
             text: "same turn intervention",
             user: "alice",
             callerInfo,
@@ -97,6 +99,13 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       async interrupt() { return true; },
       async close() {},
     };
+
+    runningIntervention = new RunningInterventionTransition({
+      broadcaster: mocks.broadcaster,
+      logger: silentLogger,
+      persistence: mocks.persistence,
+      liveRetryDelayMs: 0,
+    });
 
     const executor = new TaskExecutor(
       () => engine,
@@ -133,6 +142,9 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       attachments: ["/tmp/a.png", "/tmp/readme.pdf"],
       context: [{ title: "Trace", body: "line 1" }],
     });
+    expect(
+      mocks.persistedEvents.filter((event) => event.type === "intervention_sent"),
+    ).toHaveLength(1);
     expect(mocks.broadcaster.emitEventEnvelope).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({

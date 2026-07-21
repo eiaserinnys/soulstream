@@ -174,20 +174,11 @@ export class TaskRuntimeCommands {
 
   private startResumedTask(task: Task): void {
     if (!task.profileId) {
-      this.deps.logger.error(
-        { sessionId: task.agentSessionId },
-        "intervene auto-resume aborted — task missing profileId",
+      throw new Error(
+        `Cannot auto-resume ${task.agentSessionId}: task is missing profileId`,
       );
-      return;
     }
-    const agent = this.deps.agentRegistry.get(task.profileId);
-    if (!agent) {
-      this.deps.logger.error(
-        { sessionId: task.agentSessionId, profileId: task.profileId },
-        "intervene auto-resume aborted — agent profile not found",
-      );
-      return;
-    }
+    const agent = this.requireAgent(task.profileId);
     this.deps.taskExecutor.startExecution(task, agent);
   }
 }

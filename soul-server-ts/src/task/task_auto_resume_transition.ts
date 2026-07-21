@@ -9,6 +9,11 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
+import {
+  buildUserMessageEvent,
+  finishUserMessageEvent,
+  persistUserMessageEvent,
+} from "./task_user_message_events.js";
 
 export type AutoResumeCallback = (task: Task) => void;
 
@@ -26,9 +31,9 @@ export interface AutoResumeTransitionDeps {
  *
  * Owns the ordered side effects that turn a completed/error/interrupted task
  * back into a running task for the next user turn:
- * caller metadata promotion -> task state transition -> DB status update ->
- * session_updated -> executor resume callback. The executor's initial-message
- * publisher owns the user_message/system_message event path.
+ * resume capability validation -> caller metadata promotion -> user_message
+ * persistence -> task state transition -> user_message broadcast -> DB status
+ * update -> session_updated -> executor resume callback.
  */
 export class AutoResumeTransition {
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
@@ -38,16 +43,40 @@ export class AutoResumeTransition {
     message: InterventionMessage,
     onResume: AutoResumeCallback,
   ): Promise<{ autoResumed: true }> {
+    this.requireResumableProfile(task);
     await this.awaitExecutionDrain(task);
     await this.closeStaleEngine(task);
     await this.promoteCallerInfo(task, message.callerInfo);
 
+    const userMessageEvent = buildUserMessageEvent({
+      text: message.text,
+      user: message.user,
+      callerInfo: message.callerInfo ?? task.callerInfo,
+      attachmentPaths: message.attachmentPaths,
+      contextItems: message.context,
+    });
+    await persistUserMessageEvent(task, userMessageEvent, this.deps, {
+      failOnError: true,
+    });
     transitionTaskToRunning(task, message);
+    await finishUserMessageEvent(task, userMessageEvent, this.deps);
     await this.updateSessionStatus(task);
     await this.broadcastSessionUpdated(task);
 
     onResume(task);
     return { autoResumed: true };
+  }
+
+  private requireResumableProfile(task: Task): void {
+    if (!this.deps.agentRegistry) return;
+    if (!task.profileId) {
+      throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
+    }
+    if (!this.deps.agentRegistry.get(task.profileId)) {
+      throw new Error(
+        `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,
+      );
+    }
   }
 
   private async awaitExecutionDrain(task: Task): Promise<void> {

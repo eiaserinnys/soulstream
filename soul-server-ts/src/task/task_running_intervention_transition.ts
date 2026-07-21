@@ -41,20 +41,32 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    const publishBeforeDelivery = options.queueIfUndelivered !== false;
+    if (publishBeforeDelivery) {
+      await publishInterventionSent(task, message, this.deps);
+    }
+
     const steerInterruptResult = await this.tryInterruptForSteer(task, message);
     if (steerInterruptResult) {
+      if (!publishBeforeDelivery) {
+        await publishInterventionSent(task, message, this.deps);
+      }
       return steerInterruptResult;
     }
 
     const liveResult = await this.tryDeliverLive(task, message);
     if (liveResult.status === "delivered") {
-      await publishInterventionSent(task, message, this.deps);
+      if (!publishBeforeDelivery) {
+        await publishInterventionSent(task, message, this.deps);
+      }
       return { delivered: true };
     }
 
     const retryResult = await this.retryTransientBoundary(task, message, liveResult);
     if (retryResult?.status === "delivered") {
-      await publishInterventionSent(task, message, this.deps);
+      if (!publishBeforeDelivery) {
+        await publishInterventionSent(task, message, this.deps);
+      }
       return { delivered: true };
     }
     const finalLiveResult = retryResult ?? liveResult;

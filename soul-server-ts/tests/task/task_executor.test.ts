@@ -2006,9 +2006,9 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     expect(task.status).toBe("completed");  // user_message 실패에도 task 정상 진행
   });
 
-  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → queued user_message를 발행한다", async () => {
-    // 후속 턴은 queued 사용자 개입을 처리하지만, 완료 세션에서 재시작된 첫 queued 메시지는
-    // 대시보드/앱 timeline에도 user_message로 남아야 한다.
+  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → 접수 시 기록된 user_message를 중복 발행하지 않는다", async () => {
+    // 완료 세션의 재개 메시지는 AutoResumeTransition이 접수 시점에 이미 기록한다.
+    // executor는 queue를 엔진에 전달하되 timeline 이벤트를 다시 만들지 않는다.
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -2023,12 +2023,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const userMessages = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(userMessages).toHaveLength(1);
-    expect(userMessages[0][1]).toMatchObject({
-      type: "user_message",
-      user: "unknown",
-      text: "second turn",
-    });
+    expect(userMessages).toHaveLength(0);
   });
 
   it("auto-resume task: 첫 turn prompt = queue dequeue.text (task.prompt 재실행 안 함)", async () => {
@@ -2447,12 +2442,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     const userCall = mocks.persistEvent.mock.calls.find(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(userCall).toBeDefined();
-    expect(userCall![1]).toMatchObject({
-      type: "user_message",
-      text: "queued",
-    });
-    expect((userCall![1] as Record<string, unknown>).context).toBeUndefined();
+    expect(userCall).toBeUndefined();
   });
 });
 

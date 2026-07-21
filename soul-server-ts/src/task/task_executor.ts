@@ -36,7 +36,6 @@ import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistenc
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
-import { publishInterventionSent } from "./task_intervention_events.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
@@ -68,11 +67,6 @@ export class TaskExecutor {
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
-  private readonly interventionEventDeps: {
-    broadcaster: SessionBroadcaster;
-    logger: Logger;
-    persistence: EventPersistence;
-  };
 
   constructor(
     private readonly engineFactory: EngineFactory,
@@ -134,11 +128,6 @@ export class TaskExecutor {
       logger: this.logger,
       persistence,
     });
-    this.interventionEventDeps = {
-      broadcaster,
-      logger: this.logger,
-      persistence,
-    };
     this.turnInputBuilder = new TaskTurnInputBuilder({
       contextBuilder,
       initialMessagePublisher: this.initialMessagePublisher,
@@ -262,7 +251,6 @@ export class TaskExecutor {
         if (transition.kind !== "continue") {
           break;
         }
-        await publishInterventionSent(task, transition.intervention, this.interventionEventDeps);
         const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,

@@ -47,7 +47,7 @@ describe("AutoResumeTransition", () => {
       expect(task.interventionQueue).toHaveLength(1);
       expect(fields).toEqual({
         status: "running",
-        last_event_id: 7,
+        last_event_id: 101,
         termination_reason: null,
         termination_detail: null,
         review_state: "not_required",
@@ -59,7 +59,7 @@ describe("AutoResumeTransition", () => {
       order.push("persistEvent");
       expect(event).toMatchObject({
         type: "user_message",
-        user: "alice",
+        user: "Alice",
         text: "resume text",
         caller_info: callerInfo,
         attachments: ["/tmp/a.png"],
@@ -116,6 +116,8 @@ describe("AutoResumeTransition", () => {
 
     expect(order).toEqual([
       "appendMetadata",
+      "persistEvent",
+      "handleSideEffects",
       "updateSession",
       "emitSessionUpdated",
       "onResume",
@@ -124,14 +126,77 @@ describe("AutoResumeTransition", () => {
     expect(task.clientId).toBe("alice");
     expect(task.callerInfo).toBe(callerInfo);
     expect(task.attachmentPaths).toEqual(["/tmp/a.png"]);
-    expect(persistEvent).not.toHaveBeenCalled();
-    expect(handleSideEffects).not.toHaveBeenCalled();
-    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(persistEvent).toHaveBeenCalledTimes(1);
+    expect(handleSideEffects).toHaveBeenCalledTimes(1);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "user_message",
+        text: "resume text",
+        _event_id: 101,
+      }),
+    );
     expect(task.metadata).toContainEqual({ type: "caller_info", value: callerInfo });
     expect(appendMetadata).toHaveBeenCalledWith("s1", {
       type: "caller_info",
       value: callerInfo,
     });
+  });
+
+  it("rejects auto-resume before changing task state when user_message persistence fails", async () => {
+    const task = makeTerminalTask({ status: "interrupted" });
+    const persistEvent = vi.fn().mockRejectedValue(new Error("events DB unavailable"));
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const updateSession = vi.fn().mockResolvedValue(undefined);
+    const onResume = vi.fn();
+    const transition = new AutoResumeTransition({
+      db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
+      broadcaster: {
+        emitEventEnvelope,
+        emitSessionUpdated: vi.fn(),
+      } as unknown as SessionBroadcaster,
+      logger: silentLogger,
+      persistence: {
+        persistEvent,
+        handleSideEffects: vi.fn(),
+      } as unknown as EventPersistence,
+    });
+
+    await expect(
+      transition.resume(task, { text: "resume", user: "u" }, onResume),
+    ).rejects.toThrow("events DB unavailable");
+
+    expect(task.status).toBe("interrupted");
+    expect(task.interventionQueue).toEqual([]);
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("rejects auto-resume before side effects when the persisted profile is unavailable", async () => {
+    const task = makeTerminalTask({ status: "interrupted", profileId: "missing-profile" });
+    const updateSession = vi.fn();
+    const emitEventEnvelope = vi.fn();
+    const onResume = vi.fn();
+    const transition = new AutoResumeTransition({
+      db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
+      broadcaster: {
+        emitEventEnvelope,
+        emitSessionUpdated: vi.fn(),
+      } as unknown as SessionBroadcaster,
+      logger: silentLogger,
+      agentRegistry: { get: vi.fn().mockReturnValue(undefined) } as unknown as AgentRegistry,
+    });
+
+    await expect(
+      transition.resume(task, { text: "resume", user: "u" }, onResume),
+    ).rejects.toThrow("unknown agent profile missing-profile");
+
+    expect(task.status).toBe("interrupted");
+    expect(task.interventionQueue).toEqual([]);
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
   });
 
   it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
@@ -328,7 +393,14 @@ describe("AutoResumeTransition", () => {
     );
 
     expect(buildResumeContextItems).not.toHaveBeenCalled();
-    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "user_message",
+        text: "resume",
+        context: [contextItem],
+      }),
+    );
     expect(task.contextItems).toEqual([contextItem]);
   });
 });
