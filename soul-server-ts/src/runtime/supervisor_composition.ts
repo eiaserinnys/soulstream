@@ -75,16 +75,13 @@ export function composeSupervisorRuntime(
   let taskExecutor: TaskExecutor;
   const onResume: StartExecutionCallback = (task) => {
     if (!task.profileId) {
-      logger.warn({ sessionId: task.agentSessionId }, "onResume: task.profileId 없음 — auto-resume skip");
-      return;
+      throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
     }
     const agent = agentRegistry.get(task.profileId);
     if (!agent) {
-      logger.warn(
-        { sessionId: task.agentSessionId, profileId: task.profileId },
-        "onResume: agentRegistry에서 profile 찾지 못함 — auto-resume skip",
+      throw new Error(
+        `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,
       );
-      return;
     }
     taskExecutor.startExecution(task, agent);
   };

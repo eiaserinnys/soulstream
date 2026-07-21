@@ -56,6 +56,15 @@ async function persistIntervention(
     );
     task.lastEventId = eventId;
     interventionEvent._event_id = eventId;
+  } catch (err) {
+    deps.logger.warn(
+      { err, sessionId: task.agentSessionId },
+      "intervention_sent persistence failed",
+    );
+    throw err;
+  }
+
+  try {
     await deps.persistence.handleSideEffects(
       task.agentSessionId,
       interventionEvent as SSEEventPayload,
@@ -64,7 +73,7 @@ async function persistIntervention(
   } catch (err) {
     deps.logger.warn(
       { err, sessionId: task.agentSessionId },
-      "intervention_sent persistence failed",
+      "intervention_sent handleSideEffects failed",
     );
   }
 }

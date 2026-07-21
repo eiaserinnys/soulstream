@@ -286,6 +286,27 @@ describe("TaskRuntimeCommands.intervene", () => {
     expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, claudeAgent);
     expect(result).toEqual({ autoResumed: true });
   });
+
+  it("does not report auto-resume success when the persisted profile is unavailable", async () => {
+    const resumedTask = makeTask({
+      agentSessionId: "sess-missing-profile",
+      profileId: "missing-profile",
+    });
+    const addIntervention = vi.fn(async (_params, onResume) => {
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const { runtime, taskExecutor } = createRuntime({ addIntervention });
+
+    await expect(
+      runtime.intervene({
+        agentSessionId: "sess-missing-profile",
+        text: "continue",
+      }),
+    ).rejects.toBeInstanceOf(UnknownAgentProfileError);
+
+    expect(taskExecutor.startExecution).not.toHaveBeenCalled();
+  });
 });
 
 describe("TaskRuntimeCommands ACK builders", () => {

@@ -687,6 +687,30 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     });
   });
 
+  it("intervention 접수 이벤트 영속화 실패는 ok ACK 대신 error ACK를 보낸다", async () => {
+    const addIntervention = vi.fn().mockRejectedValue(new Error("events DB unavailable"));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-1",
+      text: "must be durable",
+      user: "alice",
+      requestId: "i-persist-fail",
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "error",
+        requestId: "i-persist-fail",
+        command_type: "intervene",
+        message: "events DB unavailable",
+      }),
+    ]);
+  });
+
   it("completed task에 intervene → auto-resume → intervene_ack(auto_resumed) + startExecution 호출", async () => {
     // addIntervention이 onResume 콜백 호출을 흉내내어 dispatcher의 startExecution 분기 검증.
     const startExecution = vi.fn();
