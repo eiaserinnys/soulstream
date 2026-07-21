@@ -877,9 +877,11 @@ export interface InterveneAck {
 export interface InterruptSessionAck {
   type: "interrupt_session_ack";
   requestId: string;
-  status: "ok";
+  status: "ok" | "error";
   interrupted?: boolean;
   agentSessionId?: string;
+  code?: string;
+  message?: string;
   [k: string]: unknown;
 }
 /**

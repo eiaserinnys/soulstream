@@ -174,9 +174,11 @@ class InterruptSessionAck(TypedDict):
 
     type: Literal['interrupt_session_ack']
     requestId: str
-    status: Literal['ok']
+    status: Literal['ok', 'error']
     interrupted: NotRequired[bool]
     agentSessionId: NotRequired[str]
+    code: NotRequired[str]
+    message: NotRequired[str]
 
 
 class AcknowledgeSessionReviewAck(TypedDict):

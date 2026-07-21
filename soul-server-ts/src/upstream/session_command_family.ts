@@ -223,6 +223,18 @@ async function handleInterruptSession(
   const interrupted = await deps.taskManager.cancelTask(sessionId);
   const requestId = cmd.requestId ?? cmd.request_id ?? "";
   if (!requestId) return;
+  if (!interrupted) {
+    await deps.send({
+      type: "interrupt_session_ack",
+      requestId,
+      status: "error",
+      interrupted: false,
+      code: "SESSION_NOT_RUNNING",
+      message: "Session is not running or has no active turn to interrupt",
+      agentSessionId: sessionId,
+    });
+    return;
+  }
   await deps.send({
     type: "interrupt_session_ack",
     requestId,

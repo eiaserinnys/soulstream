@@ -241,6 +241,14 @@ def test_intervene_has_extra_context_items() -> None:
     assert prop["items"]["type"] == "object"
 
 
+def test_interrupt_session_ack_exposes_explicit_failure_contract() -> None:
+    schema = _load_schema()
+    ack = schema["$defs"]["InterruptSessionAck"]
+    assert ack["properties"]["status"]["enum"] == ["ok", "error"]
+    assert ack["properties"]["code"]["type"] == "string"
+    assert ack["properties"]["message"]["type"] == "string"
+
+
 def test_oneof_covers_all_wire_messages() -> None:
     schema = _load_schema()
     oneof_refs = {entry["$ref"].rsplit("/", 1)[-1] for entry in schema["oneOf"]}
