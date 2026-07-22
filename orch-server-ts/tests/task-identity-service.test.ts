@@ -38,6 +38,10 @@ describe("TaskIdentityService", () => {
           depth: 4,
           titlesOnly: true,
         }],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
       },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "create-ae",
@@ -69,6 +73,14 @@ describe("TaskIdentityService", () => {
           nodeTitle: "soulstream",
           depth: 4,
           titlesOnly: true,
+        },
+      }),
+      expect.objectContaining({
+        type: "session_defaults",
+        properties: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+          scope: "session",
         },
       }),
       expect.objectContaining({ type: "task_ref", properties: {
@@ -104,6 +116,10 @@ describe("TaskIdentityService", () => {
       initialContext: {
         guidance: "승격과 함께 저장",
         atomReferences: [],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
       },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "promote-create-ae",
@@ -115,6 +131,14 @@ describe("TaskIdentityService", () => {
         type: "guidance",
         text: "승격과 함께 저장",
         properties: { enabled: true, scope: "task" },
+      }),
+      expect.objectContaining({
+        type: "session_defaults",
+        properties: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+          scope: "session",
+        },
       }),
       expect.objectContaining({ type: "task_ref" }),
     ]));

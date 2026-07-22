@@ -73,6 +73,10 @@ describe("task HTTP write route", () => {
             depth: 3,
             titles_only: false,
           }],
+          session_defaults: {
+            agent_id: "roselin_codex",
+            node_id: "eiaserinnys",
+          },
         },
       },
     });
@@ -95,6 +99,10 @@ describe("task HTTP write route", () => {
           depth: 3,
           titlesOnly: false,
         }],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
       },
       idempotencyKey: expect.stringMatching(/^create_task:operator@example\.com:/),
     });

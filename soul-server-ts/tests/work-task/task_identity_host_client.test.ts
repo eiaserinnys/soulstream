@@ -36,6 +36,10 @@ describe("TaskIdentityHostClient", () => {
           depth: 5,
           titlesOnly: true,
         }],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
       },
       idempotencyKey: "create:user:context",
     });
@@ -55,6 +59,10 @@ describe("TaskIdentityHostClient", () => {
               depth: 5,
               titles_only: true,
             }],
+            session_defaults: {
+              agent_id: "roselin_codex",
+              node_id: "eiaserinnys",
+            },
           },
           actor_kind: "user",
           actor_session_id: null,

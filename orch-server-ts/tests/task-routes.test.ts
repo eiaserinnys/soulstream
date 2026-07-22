@@ -355,6 +355,10 @@ describe("task route harness", () => {
             depth: 4,
             titles_only: true,
           }],
+          session_defaults: {
+            agent_id: "roselin_codex",
+            node_id: "eiaserinnys",
+          },
         },
         idempotency_key: "create_task:user:browser",
       },
@@ -380,6 +384,10 @@ describe("task route harness", () => {
           depth: 4,
           titlesOnly: true,
         }],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
       },
       idempotencyKey: "create_task:user:browser",
       taskId: "00000000-0000-4000-8000-0000000000ae",
