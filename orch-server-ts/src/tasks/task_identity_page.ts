@@ -86,6 +86,15 @@ export function initialTaskContextOperations({
         titlesOnly: reference.titlesOnly,
       },
     })),
+    ...(context.sessionDefaults ? [{
+      blockType: "session_defaults" as const,
+      text: "",
+      properties: {
+        agentId: context.sessionDefaults.agentId,
+        nodeId: context.sessionDefaults.nodeId,
+        scope: "session" as const,
+      },
+    }] : []),
   ];
   let previousTempId = afterTempId;
   return specifications.map((specification, index) => {

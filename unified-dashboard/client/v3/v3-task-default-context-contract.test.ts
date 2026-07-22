@@ -12,6 +12,7 @@ describe("PR-CD task default and context contract", () => {
     const checklist = detail.indexOf('data-task-section="checklist"');
 
     expect(detail).toContain("TaskDefaultAssignment");
+    expect(detail).not.toContain("effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ?");
     expect(detail).toContain("<strong>컨텍스트</strong>");
     expect(detail).not.toContain("기본값:");
     expect(information).toBeGreaterThan(-1);

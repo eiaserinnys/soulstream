@@ -6,9 +6,15 @@ export interface InitialTaskAtomReference {
   titlesOnly: boolean;
 }
 
+export interface InitialTaskSessionDefaults {
+  agentId: string;
+  nodeId: string;
+}
+
 export interface InitialTaskContext {
   guidance: string;
   atomReferences: InitialTaskAtomReference[];
+  sessionDefaults?: InitialTaskSessionDefaults;
 }
 
 export interface InitialTaskContextWire {
@@ -20,6 +26,10 @@ export interface InitialTaskContextWire {
     depth: number;
     titles_only: boolean;
   }>;
+  session_defaults?: {
+    agent_id: string;
+    node_id: string;
+  };
 }
 
 export type InitialTaskContextParseResult =
@@ -34,6 +44,21 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
   }
   if (value.atom_references !== undefined && !Array.isArray(value.atom_references)) {
     return { ok: false, error: "initial_context.atom_references must be an array" };
+  }
+  let sessionDefaults: InitialTaskSessionDefaults | undefined;
+  if (value.session_defaults !== undefined) {
+    if (!isRecord(value.session_defaults)) {
+      return { ok: false, error: "initial_context.session_defaults must be an object" };
+    }
+    const agentId = trimmedString(value.session_defaults.agent_id);
+    const nodeId = trimmedString(value.session_defaults.node_id);
+    if (!agentId) {
+      return { ok: false, error: "initial_context.session_defaults.agent_id must be a non-empty string" };
+    }
+    if (!nodeId) {
+      return { ok: false, error: "initial_context.session_defaults.node_id must be a non-empty string" };
+    }
+    sessionDefaults = { agentId, nodeId };
   }
 
   const atomReferences: InitialTaskAtomReference[] = [];
@@ -68,8 +93,17 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
   }
 
   const guidance = typeof value.guidance === "string" ? value.guidance.trim() : "";
-  if (!guidance && atomReferences.length === 0) return { ok: true, value: undefined };
-  return { ok: true, value: { guidance, atomReferences } };
+  if (!guidance && atomReferences.length === 0 && !sessionDefaults) {
+    return { ok: true, value: undefined };
+  }
+  return {
+    ok: true,
+    value: {
+      guidance,
+      atomReferences,
+      ...(sessionDefaults ? { sessionDefaults } : {}),
+    },
+  };
 }
 
 export function serializeInitialTaskContext(
@@ -84,10 +118,17 @@ export function serializeInitialTaskContext(
     depth: reference.depth,
     titles_only: reference.titlesOnly,
   }));
-  if (!guidance && atomReferences.length === 0) return undefined;
+  const sessionDefaults = context.sessionDefaults
+    ? {
+        agent_id: requireTrimmedString(context.sessionDefaults.agentId, "sessionDefaults.agentId"),
+        node_id: requireTrimmedString(context.sessionDefaults.nodeId, "sessionDefaults.nodeId"),
+      }
+    : undefined;
+  if (!guidance && atomReferences.length === 0 && !sessionDefaults) return undefined;
   return {
     ...(guidance ? { guidance } : {}),
     atom_references: atomReferences,
+    ...(sessionDefaults ? { session_defaults: sessionDefaults } : {}),
   };
 }
 
@@ -97,4 +138,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function trimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function requireTrimmedString(value: string, key: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${key} must be a non-empty string`);
+  return trimmed;
 }

@@ -66,12 +66,36 @@ describe("TaskDefaultAssignment", () => {
     expect(input("에이전트 선택").value).toBe("failed-agent");
   });
 
-  function render(onSave: (value: { agentId: string; nodeId: string }) => Promise<void>) {
+  it("allows a task with no inherited defaults to set its first explicit assignment", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(onSave, { agentId: null, nodeId: null, sourceLabel: "미지정" });
+
+    expect(button("기본 담당 수정").textContent).toContain("agent 미지정@node 미지정");
+    expect(button("기본 담당 수정").textContent).toContain("미지정");
+    click("기본 담당 수정");
+    setInput(input("노드 선택"), "eiaserinnys");
+    setInput(input("에이전트 선택"), "roselin_codex");
+    click("직접 지정");
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      agentId: "roselin_codex",
+      nodeId: "eiaserinnys",
+    }));
+  });
+
+  function render(
+    onSave: (value: { agentId: string; nodeId: string }) => Promise<void>,
+    value: { agentId: string | null; nodeId: string | null; sourceLabel: string } = {
+      agentId: "seosoyoung",
+      nodeId: "eiaserinnys",
+      sourceLabel: "소울스트림에서 상속",
+    },
+  ) {
     flushSync(() => root.render(
       <TaskDefaultAssignment
-        agentId="seosoyoung"
-        nodeId="eiaserinnys"
-        sourceLabel="소울스트림에서 상속"
+        agentId={value.agentId}
+        nodeId={value.nodeId}
+        sourceLabel={value.sourceLabel}
         onSave={onSave}
       />,
     ));

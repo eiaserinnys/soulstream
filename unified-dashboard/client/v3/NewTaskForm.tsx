@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   buildFolderTreeOptions,
   Button,
@@ -18,6 +18,7 @@ import {
   ProjectSessionDefaultChip,
 } from "./ProjectContextChips";
 import { useProjectContextInheritance } from "./use-project-context-inheritance";
+import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
 import { InitialTaskContextPicker } from "./TaskContextPicker";
 import "./v3-content-boundary.css";
 import { writeFailureText } from "./v3-dashboard-utils";
@@ -52,6 +53,9 @@ export function NewTaskForm({
     guidance: "",
     atomReferences: [],
   });
+  const [defaultAgentId, setDefaultAgentId] = useState("");
+  const [defaultNodeId, setDefaultNodeId] = useState("");
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submissionInFlight = useRef(false);
@@ -67,14 +71,25 @@ export function NewTaskForm({
     : null;
 
   const busy = pending || submitting;
+  const partialDefaultAssignment = Boolean(defaultAgentId.trim()) !== Boolean(defaultNodeId.trim());
+  const updateDefaultNodeId = useCallback((value: string) => {
+    setDefaultNodeId(value);
+    setDefaultAgentId("");
+  }, []);
   const submit = async () => {
     const normalized = title.trim();
-    if (!normalized || !folderId || busy || submissionInFlight.current) return;
+    if (!normalized || !folderId || partialDefaultAssignment || busy || submissionInFlight.current) return;
     submissionInFlight.current = true;
     setSubmitting(true);
     setError(null);
     try {
-      setError(await onCreate(normalized, folderId, description, initialContext));
+      const sessionDefaults = defaultAgentId.trim() && defaultNodeId.trim()
+        ? { agentId: defaultAgentId.trim(), nodeId: defaultNodeId.trim() }
+        : undefined;
+      setError(await onCreate(normalized, folderId, description, {
+        ...initialContext,
+        ...(sessionDefaults ? { sessionDefaults } : {}),
+      }));
     } catch (cause) {
       setError(writeFailureText("새 업무 생성", cause));
     } finally {
@@ -136,6 +151,25 @@ export function NewTaskForm({
               projectName={selected?.name ?? retainedProjectName ?? "프로젝트"}
               state={inheritance}
             />
+            <section className="v3-new-task-context" data-testid="new-task-default-assignment">
+              <div className="v3-new-task-context-head">
+                <span>
+                  <strong>이 업무의 기본 담당</strong>
+                  <small>새 세션을 만들 때 사용할 노드와 에이전트 · 선택 사항</small>
+                </span>
+              </div>
+              <AgentNodeAssignmentFields
+                agentId={defaultAgentId}
+                nodeId={defaultNodeId}
+                presentation="session"
+                disabled={busy}
+                onAgentIdChange={setDefaultAgentId}
+                onNodeIdChange={updateDefaultNodeId}
+                onError={setAssignmentError}
+              />
+              {assignmentError ? <small role="alert">{assignmentError}</small> : null}
+              {partialDefaultAssignment ? <small>기본 담당은 노드와 에이전트를 모두 선택해야 합니다.</small> : null}
+            </section>
             <InitialTaskContextPicker
               value={initialContext}
               disabled={busy}
@@ -146,7 +180,7 @@ export function NewTaskForm({
         </DialogPanel>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={busy}>취소</Button>
-          <Button onClick={() => { void submit(); }} disabled={busy || !title.trim() || !folderId}>
+          <Button onClick={() => { void submit(); }} disabled={busy || !title.trim() || !folderId || partialDefaultAssignment}>
             {busy ? "만드는 중…" : "업무 만들기"}
           </Button>
         </DialogFooter>

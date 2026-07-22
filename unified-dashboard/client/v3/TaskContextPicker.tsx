@@ -134,6 +134,16 @@ export function TaskContextPicker({
     setSelected((current) => new Map(current).set(selection.key, selection));
   };
 
+  const updateAtomOptions = (key: string, depth: number, titlesOnly: boolean) => {
+    setSelected((current) => {
+      const selection = current.get(key);
+      if (!selection || selection.kind !== "atom") return current;
+      const next = new Map(current);
+      next.set(key, { ...selection, depth, titlesOnly });
+      return next;
+    });
+  };
+
   return (
     <div className={`v3-context-picker${documentMode ? " v3-context-picker--document" : ""}`}>
       {!documentMode ? <div className="v3-context-tabs" role="tablist" aria-label="컨텍스트 종류">
@@ -175,7 +185,14 @@ export function TaskContextPicker({
                   key={selection.key}
                   title={selection.nodeTitle}
                   meta={selection.nodeId}
+                  depth={selection.depth}
+                  titlesOnly={selection.titlesOnly}
                   disabled={pending}
+                  onOptionsChange={(depth, titlesOnly) => updateAtomOptions(
+                    selection.key,
+                    depth,
+                    titlesOnly,
+                  )}
                   onRemove={() => toggle(selection)}
                 />
               ))}
@@ -229,6 +246,22 @@ export function InitialTaskContextPicker({
     });
   };
 
+  const updateAtomOptions = (
+    instance: "atom" | "atom-nl",
+    nodeId: string,
+    depth: number,
+    titlesOnly: boolean,
+  ) => {
+    onChange({
+      ...value,
+      atomReferences: value.atomReferences.map((reference) => (
+        reference.instance === instance && reference.nodeId === nodeId
+          ? { ...reference, depth, titlesOnly }
+          : reference
+      )),
+    });
+  };
+
   return (
     <section className="v3-new-task-context" data-testid="new-task-direct-context">
       <div className="v3-new-task-context-head">
@@ -279,7 +312,15 @@ export function InitialTaskContextPicker({
                       key={`${reference.instance}:${reference.nodeId}`}
                       title={reference.nodeTitle}
                       meta={reference.nodeId}
+                      depth={reference.depth}
+                      titlesOnly={reference.titlesOnly}
                       disabled={disabled}
+                      onOptionsChange={(depth, titlesOnly) => updateAtomOptions(
+                        reference.instance,
+                        reference.nodeId,
+                        depth,
+                        titlesOnly,
+                      )}
                       onRemove={() => onChange({
                         ...value,
                         atomReferences: value.atomReferences.filter((candidate) => (
@@ -299,16 +340,50 @@ export function InitialTaskContextPicker({
   );
 }
 
-function SelectedAtomOption({ title, meta, disabled, onRemove }: {
+function SelectedAtomOption({
+  title,
+  meta,
+  depth,
+  titlesOnly,
+  disabled,
+  onOptionsChange,
+  onRemove,
+}: {
   title: string;
   meta: string;
+  depth: number;
+  titlesOnly: boolean;
   disabled: boolean;
+  onOptionsChange(depth: number, titlesOnly: boolean): void;
   onRemove(): void;
 }) {
   return (
     <div className="v3-context-option v3-context-option--selected">
       <span className="v3-emoji" aria-hidden="true">🧠</span>
       <span><strong>{title}</strong><small>{meta}</small></span>
+      <span className="v3-context-option-settings">
+        <label>
+          depth
+          <select
+            aria-label={`${title} atom depth`}
+            value={depth}
+            disabled={disabled}
+            onChange={(event) => onOptionsChange(Number(event.target.value), titlesOnly)}
+          >
+            {[1, 2, 3, 4, 5].map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            aria-label={`${title} 제목만 포함`}
+            checked={titlesOnly}
+            disabled={disabled}
+            onChange={(event) => onOptionsChange(depth, event.target.checked)}
+          />
+          제목만
+        </label>
+      </span>
       <button
         type="button"
         className="v3-context-remove"

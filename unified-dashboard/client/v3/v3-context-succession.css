@@ -151,7 +151,42 @@
 }
 
 .v3-context-option--selected {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   cursor: default;
+}
+
+.v3-context-option-settings {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+}
+
+.v3-context-option-settings label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.v3-context-option-settings select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 5px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+}
+
+.v3-context-option-settings select:focus-visible {
+  border-color: var(--info);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+.v3-context-option-settings input {
+  accent-color: var(--info);
 }
 
 .v3-context-remove {
@@ -555,4 +590,7 @@
   .v3-context-tabs button:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
   .v3-succession-assignment { grid-template-columns: 1fr; }
   .v3-succession-document-options { grid-template-columns: 1fr; }
+  .v3-context-option--selected { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .v3-context-option-settings { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; }
+  .v3-context-option--selected > .v3-context-remove { grid-column: 3; grid-row: 1; }
 }

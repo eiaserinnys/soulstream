@@ -31,6 +31,10 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
           depth: 4,
           titlesOnly: true,
         }],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
       },
     })).resolves.toEqual({ id: "task-uuid" });
 
@@ -50,6 +54,10 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
             depth: 4,
             titles_only: true,
           }],
+          session_defaults: {
+            agent_id: "roselin_codex",
+            node_id: "eiaserinnys",
+          },
         },
       }),
     }));
