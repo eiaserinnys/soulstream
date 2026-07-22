@@ -11,10 +11,14 @@ describe("PR-CJ task context editing contract", () => {
     const picker = read("./TaskContextPicker.tsx");
 
     expect(form).toContain("InitialTaskContextPicker");
-    expect(form).toContain("onCreate(normalized, folderId, description, initialContext)");
+    expect(form).toContain("setError(await onCreate(normalized, folderId, description, {");
+    expect(form).toContain("sessionDefaults");
     expect(picker).toContain("AtomNodeSelector");
     expect(picker).toContain("업무 직접 guidance");
     expect(picker).toContain("nodeTitle: title.trim() || normalized");
+    expect(picker).toContain("onOptionsChange");
+    expect(picker).toContain("atom depth");
+    expect(picker).toContain("제목만 포함");
   });
 
   it("keeps inherited atom rows read-only and edits direct rows with one block mutation", () => {

@@ -358,14 +358,12 @@ export function TaskDetailPane({
                   onClose={() => setContextPickerOpen(false)}
                 />
               ) : null}
-              {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
-                <TaskDefaultAssignment
-                  agentId={effectiveSessionDefaults.agentId}
-                  nodeId={effectiveSessionDefaults.nodeId}
-                  sourceLabel={assignmentSourceLabel}
-                  onSave={saveDefaultAssignment}
-                />
-              ) : null}
+              <TaskDefaultAssignment
+                agentId={effectiveSessionDefaults?.agentId ?? null}
+                nodeId={effectiveSessionDefaults?.nodeId ?? null}
+                sourceLabel={assignmentSourceLabel}
+                onSave={saveDefaultAssignment}
+              />
             </section>
 
             <section ref={checklistSectionRef} className="v3-detail-section" data-task-section="checklist" data-testid="v3-task-checklist">
@@ -451,7 +449,8 @@ function fallbackAssignmentSource(
   taskPageId: string,
   folders: readonly CatalogFolder[],
 ): string {
-  if (!defaults || defaults.sourcePageId === taskPageId) return "직접 지정";
+  if (!defaults) return "미지정";
+  if (defaults.sourcePageId === taskPageId) return "직접 지정";
   const source = folders.find((folder) => folder.projectPageId === defaults.sourcePageId);
   return source ? `${source.name}에서 상속` : "상위 컨텍스트에서 상속";
 }

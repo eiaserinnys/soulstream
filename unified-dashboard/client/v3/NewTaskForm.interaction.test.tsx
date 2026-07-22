@@ -17,6 +17,20 @@ vi.mock("./use-project-context-inheritance", () => ({
   }),
 }));
 
+vi.mock("./AgentNodeAssignmentFields", () => ({
+  AgentNodeAssignmentFields: ({ agentId, nodeId, onAgentIdChange, onNodeIdChange }: {
+    agentId: string;
+    nodeId: string;
+    onAgentIdChange(value: string): void;
+    onNodeIdChange(value: string): void;
+  }) => (
+    <>
+      <input aria-label="노드 선택" value={nodeId} onChange={(event) => onNodeIdChange(event.target.value)} />
+      <input aria-label="에이전트 선택" value={agentId} onChange={(event) => onAgentIdChange(event.target.value)} />
+    </>
+  ),
+}));
+
 describe("NewTaskForm submission feedback", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -53,7 +67,32 @@ describe("NewTaskForm submission feedback", () => {
     expect(button("업무 만들기").disabled).toBe(false);
   });
 
-  function render(onCreate: () => Promise<string | null>) {
+  it("submits a complete direct session default with the initial task context", async () => {
+    const onCreate = vi.fn(async () => null);
+    render(onCreate);
+
+    setInputValue(input("새 업무 제목"), "기본 담당 업무");
+    setInputValue(input("노드 선택"), "eiaserinnys");
+    expect(button("업무 만들기").disabled).toBe(true);
+    setInputValue(input("에이전트 선택"), "roselin_codex");
+    button("업무 만들기").click();
+
+    await vi.waitFor(() => expect(onCreate).toHaveBeenCalledWith(
+      "기본 담당 업무",
+      "folder-a",
+      "",
+      {
+        guidance: "",
+        atomReferences: [],
+        sessionDefaults: {
+          agentId: "roselin_codex",
+          nodeId: "eiaserinnys",
+        },
+      },
+    ));
+  });
+
+  function render(onCreate: (...args: never[]) => Promise<string | null>) {
     flushSync(() => root.render(
       <NewTaskForm
         folders={[folder()]}
