@@ -28,6 +28,8 @@ interface BoardWorkspaceViewWrapperProps {
   taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
+  onOpenMarkdownDocument?: (documentId: string) => void;
+  onOpenCustomView?: (customViewId: string) => void;
   onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
 }
@@ -37,6 +39,8 @@ export function BoardWorkspaceView({
   taskMoveTargets,
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
+  onOpenMarkdownDocument,
+  onOpenCustomView,
   onLoadMore,
   hasMore,
 }: BoardWorkspaceViewWrapperProps = {}) {
@@ -69,6 +73,8 @@ export function BoardWorkspaceView({
       taskMoveTargets={taskMoveTargets}
       onBoardItemMoved={onBoardItemMoved}
       onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
+      onOpenMarkdownDocument={onOpenMarkdownDocument}
+      onOpenCustomView={onOpenCustomView}
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSession}
       onDeleteSessions={deleteSessions}

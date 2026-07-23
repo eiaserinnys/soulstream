@@ -33,6 +33,8 @@ export { FolderSettingsDialog } from "./FolderSettingsDialog";
 export type { FolderSettingsDialogProps } from "./FolderSettingsDialog";
 export { ChatInput } from "./ChatInput";
 export { RightPanel } from "./RightPanel";
+export { CustomViewPanel } from "./CustomViewPanel";
+export type { CustomViewPanelProps } from "./CustomViewPanel";
 export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 export { MarkdownDeleteDialog } from "./MarkdownDeleteDialog";
 export type { MarkdownDeleteDialogProps } from "./MarkdownDeleteDialog";

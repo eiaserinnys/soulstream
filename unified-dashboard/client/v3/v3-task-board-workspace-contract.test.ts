@@ -19,8 +19,25 @@ describe("task board r3 workspace contract", () => {
     expect(resources).toContain("<TaskCard");
     expect(resources).toContain("<RichSessionRow");
     expect(resources).toContain("<MarkdownContent");
+    expect(resources).toContain("<CustomViewPanel");
     expect(resources).toContain('role="tablist"');
     expect(resources).toContain('aria-selected={tab.id === activeTabId}');
+  });
+
+  it("routes central resources into controlled left tabs while chat stays independent", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+    const board = read("./TaskBoardPane.tsx");
+    const resources = read("./TaskBoardResourcePane.tsx");
+
+    expect(workspace).toContain("openTaskBoardResource");
+    expect(workspace).toContain("onOpenMarkdownDocument=");
+    expect(workspace).toContain("onOpenCustomView=");
+    expect(board).toContain("onOpenMarkdownDocument={onOpenMarkdownDocument}");
+    expect(board).toContain("onOpenCustomView={onOpenCustomView}");
+    expect(resources).toContain("onActiveTabChange(tab.id)");
+    expect(resources).toContain("onOpenDocument(activeTab.documentId)");
+    expect(workspace).toContain("<ChatView");
+    expect(workspace).not.toContain("<RightPanel");
   });
 
   it("keeps the paper overlay out of the chat column at wide and narrow desktop widths", () => {

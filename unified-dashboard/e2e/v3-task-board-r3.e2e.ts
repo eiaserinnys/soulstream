@@ -41,6 +41,8 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   await expect(canvas).toBeVisible();
   await expect(chat).toBeVisible();
   await expect(resources.getByTestId("task-card")).toBeVisible();
+  await expect(resources.getByRole("tab", { name: "PR-O 결정 로그" })).toHaveCount(0);
+  await expect(resources.getByRole("tab", { name: "검증 현황" })).toHaveCount(0);
   await expect(canvas.getByTestId("task-board-fixed-card")).toHaveCount(0);
   await expect(canvas.getByTestId("board-session-tile")).toHaveCount(0);
   await expect(canvas.locator('[data-board-tile="true"]')).toHaveCount(3);
@@ -64,7 +66,22 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   await resources.locator(".v3-run-open").first().click();
   await expect(chat).not.toContainText("선택된 세션 없음");
 
-  await resources.getByRole("tab", { name: "PR-O 결정 로그" }).click();
+  await canvas.getByTestId("board-declutter-button").click();
+  await canvas.getByTestId("board-custom-view-tile").click();
+  const fluxTab = resources.getByRole("tab", { name: "검증 현황" });
+  await expect(fluxTab).toHaveAttribute("aria-selected", "true");
+  await expect(resources.getByTestId("custom-view-panel")).toBeVisible();
+  await expect(resources.frameLocator("iframe").getByText("Sandbox custom view")).toBeVisible();
+  await expect(chat).toContainText("시각 QA 순회");
+  await expect(chat.getByTestId("custom-view-panel")).toHaveCount(0);
+
+  await canvas.getByTestId("board-markdown-tile").click();
+  const documentTab = resources.getByRole("tab", { name: "PR-O 결정 로그" });
+  await expect(documentTab).toHaveAttribute("aria-selected", "true");
+  await expect(fluxTab).toHaveCount(1);
+  await expect(page.getByTestId("v3-task-board-document-overlay")).toHaveCount(0);
+  await expect(chat).toContainText("시각 QA 순회");
+
   await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
   const overlay = page.getByTestId("v3-task-board-document-overlay");
   await expect(overlay).toBeVisible();

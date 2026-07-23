@@ -578,6 +578,93 @@ describe("BoardWorkspaceView", () => {
     expect(markdownTile?.style.top).toBe("50080px");
   });
 
+  it("routes task-board resource clicks without opening the generic right-panel state", () => {
+    const onOpenMarkdownDocument = vi.fn();
+    const onOpenCustomView = vi.fn();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      id: "view-a",
+      boardItemId: "custom_view:view-a",
+      folderId: "root",
+      title: "Flux A",
+      html: "<main>Flux A</main>",
+      revision: 1,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    ({ container, root } = renderBoard({
+      onOpenMarkdownDocument,
+      onOpenCustomView,
+    }, {
+      catalog: {
+        ...catalog,
+        boardItems: [
+          ...(catalog.boardItems ?? []),
+          {
+            id: "custom_view:view-a",
+            folderId: "root",
+            itemType: "custom_view",
+            itemId: "view-a",
+            x: 520,
+            y: 80,
+            metadata: { title: "Flux A", preview: "Flux preview", revision: 1 },
+          },
+        ],
+      },
+    }));
+
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    const customViewTile = container.querySelector<HTMLElement>('[data-testid="board-custom-view-tile"]');
+    expect(markdownTile).not.toBeNull();
+    expect(customViewTile).not.toBeNull();
+
+    flushSync(() => markdownTile!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    flushSync(() => customViewTile!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    expect(onOpenMarkdownDocument).toHaveBeenCalledWith("doc-a");
+    expect(onOpenCustomView).toHaveBeenCalledWith("view-a");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
+    expect(useDashboardStore.getState().activeCustomViewId).toBeNull();
+  });
+
+  it("keeps the existing generic document and custom-view panel behavior without overrides", () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      id: "view-a",
+      boardItemId: "custom_view:view-a",
+      folderId: "root",
+      title: "Flux A",
+      html: "<main>Flux A</main>",
+      revision: 1,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    ({ container, root } = renderBoard({}, {
+      catalog: {
+        ...catalog,
+        boardItems: [
+          ...(catalog.boardItems ?? []),
+          {
+            id: "custom_view:view-a",
+            folderId: "root",
+            itemType: "custom_view",
+            itemId: "view-a",
+            x: 520,
+            y: 80,
+            metadata: { title: "Flux A", preview: "Flux preview", revision: 1 },
+          },
+        ],
+      },
+    }));
+
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    const customViewTile = container.querySelector<HTMLElement>('[data-testid="board-custom-view-tile"]');
+    flushSync(() => markdownTile!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+    flushSync(() => customViewTile!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(useDashboardStore.getState().activeCustomViewId).toBe("view-a");
+  });
+
   it("keeps the board canvas inset from the surrounding center panel", () => {
     ({ container, root } = renderBoard());
 
