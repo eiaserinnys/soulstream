@@ -7,8 +7,15 @@ import {
 } from "../custom-view/use-custom-view-bindings";
 import { useDashboardStore } from "../stores/dashboard-store";
 
-export function CustomViewPanel() {
-  const activeCustomViewId = useDashboardStore((s) => s.activeCustomViewId);
+export interface CustomViewPanelProps {
+  customViewId?: string | null;
+}
+
+export function CustomViewPanel({ customViewId }: CustomViewPanelProps = {}) {
+  const storedCustomViewId = useDashboardStore((s) => s.activeCustomViewId);
+  const activeCustomViewId = customViewId === undefined
+    ? storedCustomViewId
+    : customViewId;
   const customViewProjection = useCustomViewDocument(activeCustomViewId ?? null);
   const bindings = useCustomViewBindings();
 

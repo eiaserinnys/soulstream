@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChatView,
   DashboardIconCap,
@@ -16,6 +16,12 @@ import type { MobilePlannerTab } from "./mobile-planner-state";
 import type { PlannerTask } from "./planner-data";
 import { sessionPanelTitle } from "./v3-session-panel-model";
 import type { RunSessionLoadState } from "./task-workspace-model";
+import {
+  initialTaskBoardResourceState,
+  openTaskBoardResource,
+  reconcileTaskBoardResourceState,
+  type TaskBoardResourceSelection,
+} from "./task-board-model";
 import { TaskBoardPane } from "./TaskBoardPane";
 import { TaskBoardResourcePane } from "./TaskBoardResourcePane";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
@@ -54,6 +60,7 @@ export function TaskBoardWorkspace({
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
   const [boardItems, setBoardItems] = useState<readonly CatalogBoardItem[]>([]);
+  const [resourceState, setResourceState] = useState(initialTaskBoardResourceState);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
 
@@ -69,6 +76,13 @@ export function TaskBoardWorkspace({
     useDashboardStore.getState().setActiveBoardDocument(null);
     onOpenSession(session);
   };
+  const handleBoardItemsChanged = useCallback((items: readonly CatalogBoardItem[]) => {
+    setBoardItems(items);
+    setResourceState((current) => reconcileTaskBoardResourceState(current, items));
+  }, []);
+  const openResource = useCallback((resource: TaskBoardResourceSelection) => {
+    setResourceState((current) => openTaskBoardResource(current, resource));
+  }, []);
 
   return (
     <div
@@ -93,8 +107,17 @@ export function TaskBoardWorkspace({
             runSessionLoadStates={runSessionLoadStates}
             activeSessionId={activeSessionKey}
             boardItems={boardItems}
+            openedResources={resourceState.openedResources}
+            activeTabId={resourceState.activeTabId}
             onOpenSession={openSession}
             onOpenDocument={(documentId) => useDashboardStore.getState().setActiveBoardDocument(documentId)}
+            onActiveTabChange={(activeTabId) => {
+              setResourceState((current) => (
+                current.activeTabId === activeTabId
+                  ? current
+                  : { ...current, activeTabId }
+              ));
+            }}
           />
         </section>
 
@@ -105,7 +128,13 @@ export function TaskBoardWorkspace({
             projectTitle={projectTitle}
             sessions={sessions}
             taskMoveTargets={taskMoveTargets}
-            onBoardItemsChanged={setBoardItems}
+            onBoardItemsChanged={handleBoardItemsChanged}
+            onOpenMarkdownDocument={(documentId) => {
+              openResource({ kind: "document", resourceId: documentId });
+            }}
+            onOpenCustomView={(customViewId) => {
+              openResource({ kind: "custom_view", resourceId: customViewId });
+            }}
             onClose={closeWorkspace}
           />
         </main>

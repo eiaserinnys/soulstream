@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CustomViewPanel,
   DashboardIconCap,
   DisclosureActionIcon,
   MarkdownContent,
@@ -15,6 +16,7 @@ import { RichSessionRow } from "./RichSessionRow";
 import { fetchInlineMarkdown } from "./task-inline-board-api";
 import {
   buildTaskBoardResourceTabs,
+  type TaskBoardResourceSelection,
   type TaskBoardResourceTab,
 } from "./task-board-model";
 import {
@@ -31,8 +33,11 @@ export function TaskBoardResourcePane({
   runSessionLoadStates,
   activeSessionId,
   boardItems,
+  openedResources,
+  activeTabId,
   onOpenSession,
   onOpenDocument,
+  onActiveTabChange,
 }: {
   taskId: string;
   taskTitle: string;
@@ -41,14 +46,16 @@ export function TaskBoardResourcePane({
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   activeSessionId: string | null;
   boardItems: readonly CatalogBoardItem[];
+  openedResources: readonly TaskBoardResourceSelection[];
+  activeTabId: string;
   onOpenSession(session: SessionSummary): void;
   onOpenDocument(documentId: string): void;
+  onActiveTabChange(tabId: string): void;
 }) {
-  const tabs = useMemo(() => buildTaskBoardResourceTabs(boardItems), [boardItems]);
-  const [activeTabId, setActiveTabId] = useState(tabs[0].id);
-  useEffect(() => {
-    if (!tabs.some((tab) => tab.id === activeTabId)) setActiveTabId(tabs[0].id);
-  }, [activeTabId, tabs]);
+  const tabs = useMemo(
+    () => buildTaskBoardResourceTabs(boardItems, openedResources),
+    [boardItems, openedResources],
+  );
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   return (
@@ -68,9 +75,9 @@ export function TaskBoardResourcePane({
             aria-selected={tab.id === activeTabId}
             aria-controls="v3-task-board-resource-panel"
             title={tab.title}
-            onClick={() => setActiveTabId(tab.id)}
+            onClick={() => onActiveTabChange(tab.id)}
           >
-            {tab.kind === "checklist" ? "✓" : tab.kind === "sessions" ? "↳" : "▤"}
+            {tab.kind === "checklist" ? "✓" : tab.kind === "sessions" ? "↳" : tab.kind === "custom_view" ? "◇" : "▤"}
             <span>{tab.title}</span>
           </button>
         ))}
@@ -91,8 +98,13 @@ export function TaskBoardResourcePane({
             activeSessionId={activeSessionId}
             onOpenSession={onOpenSession}
           />
+        ) : activeTab.kind === "custom_view" ? (
+          <CustomViewPanel customViewId={activeTab.customViewId} />
         ) : (
-          <TaskBoardDocumentReader tab={activeTab} onOpenDocument={onOpenDocument} />
+          <TaskBoardDocumentReader
+            tab={activeTab}
+            onOpenDocument={() => onOpenDocument(activeTab.documentId)}
+          />
         )}
       </div>
     </>
@@ -183,7 +195,7 @@ function TaskBoardDocumentReader({
   onOpenDocument,
 }: {
   tab: Extract<TaskBoardResourceTab, { kind: "document" }>;
-  onOpenDocument(documentId: string): void;
+  onOpenDocument(): void;
 }) {
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -208,7 +220,7 @@ function TaskBoardDocumentReader({
     <div className="v3-task-board-document-reader">
       <div className="v3-task-board-document-reader-head">
         <strong>{document?.title ?? tab.title}</strong>
-        <DashboardIconCap label={`${tab.title} 편집기 열기`} onClick={() => onOpenDocument(tab.documentId)}>
+        <DashboardIconCap label={`${tab.title} 편집기 열기`} onClick={onOpenDocument}>
           <SquarePen className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>

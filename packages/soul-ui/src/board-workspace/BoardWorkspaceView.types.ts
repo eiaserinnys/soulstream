@@ -39,6 +39,8 @@ export interface BoardWorkspaceViewProps {
   ) => Promise<MoveBoardItemToContainerResponse>;
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
+  onOpenMarkdownDocument?: (documentId: string) => void;
+  onOpenCustomView?: (customViewId: string) => void;
   onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
   onUploadBoardAsset?: (input: UploadBoardAssetInput) => Promise<BoardAssetCommitResponse>;
   onLoadMore?: LoadMoreCallback;

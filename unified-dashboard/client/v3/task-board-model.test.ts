@@ -11,14 +11,17 @@ import {
   buildTaskBoardCatalog,
   buildTaskBoardResourceTabs,
   extractTaskBoardSessionIds,
+  initialTaskBoardResourceState,
   mergeTaskBoardSessions,
+  openTaskBoardResource,
+  reconcileTaskBoardResourceState,
   scopeCatalogUpdateToTaskBoard,
   scopeCatalogUpdateToTaskBoardPreservingSessionList,
 } from "./task-board-model";
 
 describe("task board bounded catalog", () => {
-  it("builds stable checklist, delegation, and multi-document resource tabs", () => {
-    expect(buildTaskBoardResourceTabs([
+  it("builds stable built-in tabs and only the resources opened from the board", () => {
+    const items = [
       {
         ...boardItem("rb-a", "markdown", "doc-b"),
         metadata: { title: "운영 노트" },
@@ -33,12 +36,53 @@ describe("task board bounded catalog", () => {
         metadata: { title: "중복" },
       },
       boardItem("rb-a", "asset", "asset-a"),
+      {
+        ...boardItem("rb-a", "custom_view", "view-a"),
+        metadata: { title: "검증 현황" },
+      },
+    ];
+
+    expect(buildTaskBoardResourceTabs(items, [
+      { kind: "custom_view", resourceId: "view-a" },
+      { kind: "document", resourceId: "doc-b" },
     ])).toEqual([
       { id: "checklist", kind: "checklist", title: "체크리스트" },
       { id: "sessions", kind: "sessions", title: "위임 관계" },
+      { id: "custom-view:view-a", kind: "custom_view", title: "검증 현황", customViewId: "view-a" },
       { id: "document:doc-b", kind: "document", title: "운영 노트", documentId: "doc-b" },
-      { id: "document:doc-a", kind: "document", title: "기획서", documentId: "doc-a" },
     ]);
+  });
+
+  it("keeps multiple Flux tabs in open order without duplicating an existing resource", () => {
+    const first = openTaskBoardResource(initialTaskBoardResourceState(), {
+      kind: "custom_view",
+      resourceId: "view-a",
+    });
+    const second = openTaskBoardResource(first, {
+      kind: "custom_view",
+      resourceId: "view-b",
+    });
+    const reopened = openTaskBoardResource(second, {
+      kind: "custom_view",
+      resourceId: "view-a",
+    });
+
+    expect(reopened.openedResources).toEqual([
+      { kind: "custom_view", resourceId: "view-a" },
+      { kind: "custom_view", resourceId: "view-b" },
+    ]);
+    expect(reopened.activeTabId).toBe("custom-view:view-a");
+  });
+
+  it("removes deleted resources and returns an invalid active tab to the checklist", () => {
+    const openDocument = openTaskBoardResource(initialTaskBoardResourceState(), {
+      kind: "document",
+      resourceId: "doc-a",
+    });
+
+    expect(reconcileTaskBoardResourceState(openDocument, [
+      boardItem("rb-a", "asset", "asset-a"),
+    ])).toEqual(initialTaskBoardResourceState());
   });
 
   it("keeps only spatial resource objects on the central board", () => {

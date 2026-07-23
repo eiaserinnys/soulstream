@@ -37,6 +37,8 @@ export function TaskBoardPane({
   sessions,
   taskMoveTargets,
   onBoardItemsChanged,
+  onOpenMarkdownDocument,
+  onOpenCustomView,
   onClose,
 }: {
   taskId: string;
@@ -45,6 +47,8 @@ export function TaskBoardPane({
   sessions: readonly SessionSummary[];
   taskMoveTargets: readonly PlannerTask[];
   onBoardItemsChanged(items: readonly CatalogBoardItem[]): void;
+  onOpenMarkdownDocument(documentId: string): void;
+  onOpenCustomView(customViewId: string): void;
   onClose(): void;
 }) {
   const [boardItems, setBoardItems] = useState<CatalogBoardItem[] | null>(null);
@@ -210,6 +214,8 @@ export function TaskBoardPane({
               .map((target) => ({ id: target.taskId, title: target.page.title }))}
             onBoardItemMoved={(item) => removeSourceBoardItem(item.id, item)}
             onMarkdownDocumentDeleted={(_documentId, boardItemId) => removeSourceBoardItem(boardItemId)}
+            onOpenMarkdownDocument={onOpenMarkdownDocument}
+            onOpenCustomView={onOpenCustomView}
           />
         )}
       </div>

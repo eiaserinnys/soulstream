@@ -335,6 +335,8 @@ export function BoardWorkspaceView({
   onMoveBoardItemToContainer,
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
+  onOpenMarkdownDocument,
+  onOpenCustomView,
   onCreateMarkdownDocument: _onCreateMarkdownDocument,
   onUploadBoardAsset,
   onLoadMore,
@@ -1138,14 +1140,22 @@ export function BoardWorkspaceView({
                 onOpenMarkdown={(item, documentId) => {
                   selectSingleBoardItem(item.boardItemId);
                   raiseBoardItems([item.boardItemId]);
-                  setActiveBoardDocument(documentId);
-                  if (isMobile) setActiveTab("chat");
+                  if (onOpenMarkdownDocument) {
+                    onOpenMarkdownDocument(documentId);
+                  } else {
+                    setActiveBoardDocument(documentId);
+                    if (isMobile) setActiveTab("chat");
+                  }
                 }}
                 onOpenCustomView={(item, customViewId) => {
                   selectSingleBoardItem(item.boardItemId);
                   raiseBoardItems([item.boardItemId]);
-                  setActiveCustomView(customViewId);
-                  if (isMobile) setActiveTab("chat");
+                  if (onOpenCustomView) {
+                    onOpenCustomView(customViewId);
+                  } else {
+                    setActiveCustomView(customViewId);
+                    if (isMobile) setActiveTab("chat");
+                  }
                 }}
                 emptyMessage={
                   isTaskBoard
