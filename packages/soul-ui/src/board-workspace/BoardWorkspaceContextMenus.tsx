@@ -55,6 +55,7 @@ interface BoardWorkspaceContextMenusProps {
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
   canCreateBoardItems?: boolean;
+  canCreateSessions?: boolean;
   canCreateStructureItems?: boolean;
   onCloseCardContextMenu: () => void;
   onOpenCreateFolder: (position: { x: number; y: number }) => void;
@@ -90,6 +91,7 @@ export function BoardWorkspaceContextMenus({
   activeBoardDocumentId,
   boardYjsRuntime,
   canCreateBoardItems = true,
+  canCreateSessions = true,
   canCreateStructureItems = true,
   onCloseCardContextMenu,
   onOpenCreateFolder,
@@ -310,14 +312,16 @@ export function BoardWorkspaceContextMenus({
               폴더 추가
             </button>
           )}
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-            onClick={() => onOpenNewSession({ x: contextMenu.boardX, y: contextMenu.boardY })}
-          >
-            <MessageSquarePlus className="h-4 w-4" />
-            새 세션 시작
-          </button>
+          {canCreateSessions ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => onOpenNewSession({ x: contextMenu.boardX, y: contextMenu.boardY })}
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+              새 세션 시작
+            </button>
+          ) : null}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"

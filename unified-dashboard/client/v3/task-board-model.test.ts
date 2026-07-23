@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  CatalogBoardItem,
-  CatalogState,
-  SessionSummary,
+import {
+  filterTaskBoardSpatialItems,
+  type CatalogBoardItem,
+  type CatalogState,
+  type SessionSummary,
 } from "@seosoyoung/soul-ui";
 
 import {
   buildTaskBoardCatalog,
+  buildTaskBoardResourceTabs,
   extractTaskBoardSessionIds,
   mergeTaskBoardSessions,
   scopeCatalogUpdateToTaskBoard,
@@ -15,6 +17,47 @@ import {
 } from "./task-board-model";
 
 describe("task board bounded catalog", () => {
+  it("builds stable checklist, delegation, and multi-document resource tabs", () => {
+    expect(buildTaskBoardResourceTabs([
+      {
+        ...boardItem("rb-a", "markdown", "doc-b"),
+        metadata: { title: "운영 노트" },
+      },
+      {
+        ...boardItem("rb-a", "markdown", "doc-a"),
+        metadata: { title: "기획서" },
+      },
+      {
+        ...boardItem("rb-a", "markdown", "doc-b"),
+        id: "duplicate-doc-b",
+        metadata: { title: "중복" },
+      },
+      boardItem("rb-a", "asset", "asset-a"),
+    ])).toEqual([
+      { id: "checklist", kind: "checklist", title: "체크리스트" },
+      { id: "sessions", kind: "sessions", title: "위임 관계" },
+      { id: "document:doc-b", kind: "document", title: "운영 노트", documentId: "doc-b" },
+      { id: "document:doc-a", kind: "document", title: "기획서", documentId: "doc-a" },
+    ]);
+  });
+
+  it("keeps only spatial resource objects on the central board", () => {
+    expect(filterTaskBoardSpatialItems([
+      boardItem("rb-a", "session", "session-a"),
+      boardItem("rb-a", "task", "rb-a"),
+      boardItem("rb-a", "subfolder", "folder-b"),
+      boardItem("rb-a", "markdown", "doc-a"),
+      boardItem("rb-a", "asset", "asset-a"),
+      boardItem("rb-a", "custom_view", "view-a"),
+      boardItem("rb-a", "frame", "frame-a"),
+    ]).map((item) => item.itemType)).toEqual([
+      "markdown",
+      "asset",
+      "custom_view",
+      "frame",
+    ]);
+  });
+
   it("extracts only unique session ids from the selected task", () => {
     expect(extractTaskBoardSessionIds([
       boardItem("rb-a", "session", "session-b"),
@@ -24,7 +67,7 @@ describe("task board bounded catalog", () => {
     ])).toEqual(["session-a", "session-b"]);
   });
 
-  it("builds a catalog containing only the selected task and its sessions", () => {
+  it("builds a central catalog without task sessions or checklist cards", () => {
     const items = [
       boardItem("rb-a", "session", "session-a"),
       boardItem("rb-a", "markdown", "doc-a"),
@@ -40,10 +83,9 @@ describe("task board bounded catalog", () => {
     expect(catalog.folders).toEqual([
       expect.objectContaining({ id: "folder-a", name: "프로젝트 A" }),
     ]);
-    expect(catalog.boardItems).toEqual(items);
-    expect(Object.keys(catalog.sessions)).toEqual(["session-a"]);
-    expect(catalog.sessions["session-a"].displayName).toBe("첫 이름");
-    expect(catalog.sessionList?.map((item) => item.agentSessionId)).toEqual(["session-a"]);
+    expect(catalog.boardItems).toEqual([items[1]]);
+    expect(catalog.sessions).toEqual({});
+    expect(catalog.sessionList).toEqual([]);
   });
 
   it("filters a global catalog event before applying live names, status, and board moves", () => {
@@ -78,18 +120,12 @@ describe("task board bounded catalog", () => {
 
     const next = scopeCatalogUpdateToTaskBoard(current, globalUpdate, "rb-a");
 
-    expect(next.boardItems).toHaveLength(2);
-    expect(next.boardItems?.map((item) => item.itemId)).toEqual(["session-a", "session-new"]);
-    expect(next.boardItems?.[0].x).toBe(120);
-    expect(Object.keys(next.sessions)).toEqual(["session-a", "session-new"]);
-    expect(next.sessions["session-a"].displayName).toBe("바뀐 이름");
-    expect(next.sessionList).toEqual([
-      expect.objectContaining({ agentSessionId: "session-a", status: "completed" }),
-      expect.objectContaining({ agentSessionId: "session-new", status: "running" }),
-    ]);
+    expect(next.boardItems).toEqual([]);
+    expect(next.sessions).toEqual({});
+    expect(next.sessionList).toEqual([]);
   });
 
-  it("replaces stale catalog names and status after a targeted session refresh", () => {
+  it("does not reintroduce sessions after a targeted session refresh", () => {
     const items = [boardItem("rb-a", "session", "session-a")];
     const current = buildTaskBoardCatalog({
       currentCatalog: null,
@@ -107,14 +143,8 @@ describe("task board bounded catalog", () => {
       projectTitle: "프로젝트 A",
     });
 
-    expect(next.sessions["session-a"].displayName).toBe("바뀐 이름");
-    expect(next.sessionList).toEqual([
-      expect.objectContaining({
-        agentSessionId: "session-a",
-        displayName: "바뀐 이름",
-        status: "completed",
-      }),
-    ]);
+    expect(next.sessions).toEqual({});
+    expect(next.sessionList).toEqual([]);
   });
 
   it("keeps the global session projection while scoping a task-board catalog update", () => {

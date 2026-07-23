@@ -12,10 +12,6 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { useTaskStore } from "../stores/task-store";
 import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
-import {
-  BOARD_TASK_FIXED_CARD_HEIGHT,
-  BOARD_TASK_FIXED_CARD_WIDTH,
-} from "./board-workspace-items";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 const catalog: CatalogState = {
@@ -447,6 +443,16 @@ describe("BoardWorkspaceView", () => {
             x: 0,
             y: 0,
           },
+          {
+            id: "markdown:task-note",
+            folderId: "root",
+            containerKind: "task",
+            containerId: "rb-1",
+            itemType: "markdown",
+            itemId: "task-note",
+            x: 280,
+            y: 0,
+          },
         ],
       },
       selectedFolderId: "root",
@@ -457,7 +463,42 @@ describe("BoardWorkspaceView", () => {
       assetSignedUrls: {},
     });
 
-    expect(result?.boardItems?.map((item) => item.id)).toEqual(["session:task-parent"]);
+    expect(result?.boardItems?.map((item) => item.id)).toEqual(["markdown:task-note"]);
+  });
+
+  it("keeps the task-board spatial policy after Yjs has synced", () => {
+    const result = resolveEffectiveBoardCatalog({
+      catalog,
+      selectedFolderId: "root",
+      boardContainer: { kind: "task", id: "rb-1" },
+      yjsBoardItemsForSelectedFolder: [
+        {
+          id: "session:task-parent",
+          folderId: "root",
+          containerKind: "task",
+          containerId: "rb-1",
+          itemType: "session",
+          itemId: "task-parent",
+          x: 0,
+          y: 0,
+        },
+        {
+          id: "markdown:task-note",
+          folderId: "root",
+          containerKind: "task",
+          containerId: "rb-1",
+          itemType: "markdown",
+          itemId: "task-note",
+          x: 280,
+          y: 0,
+        },
+      ],
+      isYjsLoading: false,
+      hasYjsSynced: true,
+      assetSignedUrls: {},
+    });
+
+    expect(result?.boardItems?.map((item) => item.id)).toEqual(["markdown:task-note"]);
   });
 
   it("uses Yjs board items after the document has synced", () => {
@@ -630,7 +671,7 @@ describe("BoardWorkspaceView", () => {
     expect(status?.title).toContain("websocket is unavailable");
   });
 
-  it("renders task board header and fixed checklist card from activeBoardContainer", () => {
+  it("renders task board status without duplicating the checklist on the canvas", () => {
     useTaskStore.setState({
       byId: {
         "rb-1": {
@@ -742,16 +783,14 @@ describe("BoardWorkspaceView", () => {
     expect(container.textContent).toContain("Deploy Task");
     expect(container.textContent).toContain("업무 보드");
     expect(container.textContent).toContain("1/2");
-    expect(container.querySelector('[data-testid="task-board-fixed-card"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="task-card"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="task-card-title"]')?.textContent).toBe("Deploy Task");
-    expect(container.querySelector('[data-testid="task-card-progress"]')?.textContent).toBe("1/2");
-    expect(container.textContent).not.toContain("아직 이 업무 보드에 배치된 항목이 없음");
+    expect(container.querySelector('[data-testid="task-board-fixed-card"]')).toBeNull();
+    expect(container.querySelector('[data-testid="task-card"]')).toBeNull();
+    expect(container.textContent).toContain("아직 이 업무 보드에 배치된 항목이 없음");
     expect(findButtonByText(container, "Folder")).toBeUndefined();
     expect(findButtonByText(container, "New")).not.toBeUndefined();
   });
 
-  it("arranges task board cards below the fixed checklist through the Y.Doc path", async () => {
+  it("declutters task board cards without reserving checklist space", () => {
     seedTaskProjection();
     const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }, {
@@ -776,25 +815,19 @@ describe("BoardWorkspaceView", () => {
     flushSync(() => {
       useDashboardStore.getState().openTaskBoard("rb-1", "root");
     });
-    const fixedCard = container.querySelector<HTMLElement>('[data-testid="task-board-fixed-card"]');
-    expect(fixedCard?.style.width).toBe(`${BOARD_TASK_FIXED_CARD_WIDTH}px`);
-    expect(fixedCard?.style.height).toBe(`${BOARD_TASK_FIXED_CARD_HEIGHT}px`);
+    expect(container.querySelector('[data-testid="task-board-fixed-card"]')).toBeNull();
 
     const button = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-button"]');
-    expect(button?.disabled).toBe(false);
-    flushSync(() => {
-      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await Promise.resolve();
+    expect(button?.disabled).toBe(true);
 
     const byId = new Map(
       (useDashboardStore.getState().catalog?.boardItems ?? []).map((item) => [item.id, item]),
     );
-    expect(byId.get("markdown:task-doc")!.y).toBeGreaterThanOrEqual(BOARD_TASK_FIXED_CARD_HEIGHT + 20);
+    expect(byId.get("markdown:task-doc")!.y).toBe(0);
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
   });
 
-  it("opens new sessions from a task board with task container defaults", () => {
+  it("offers documents but not new sessions from a task board", () => {
     seedTaskProjection();
     ({ container, root } = renderBoard({}, {
       catalog: { ...catalog, boardItems: [] },
@@ -811,17 +844,21 @@ describe("BoardWorkspaceView", () => {
       newButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     const sessionButton = findButtonByText(container, "Session");
-    expect(sessionButton).not.toBeUndefined();
-    flushSync(() => {
-      sessionButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    expect(sessionButton).toBeUndefined();
+    expect(findButtonByText(container, "문서")).not.toBeUndefined();
+    expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(false);
 
-    expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(true);
-    expect(useDashboardStore.getState().newSessionDefaults).toMatchObject({
-      folderId: "root",
-      container: { kind: "task", id: "rb-1" },
-      boardPosition: { x: 300, y: 240 },
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    flushSync(() => {
+      scroller!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 50020,
+        clientY: 50040,
+      }));
     });
+    expect(container.textContent).not.toContain("새 세션 시작");
+    expect(container.textContent).toContain("새 문서");
   });
 
   it("uploads dropped files from a task board with the task container target", async () => {

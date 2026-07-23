@@ -15,10 +15,10 @@ import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
   boardToCanvasStyle,
   BOARD_ASSET_TILE_HEIGHT,
-  BOARD_TASK_FIXED_CARD_RECT,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
+  filterTaskBoardSpatialItems,
   getVisibleBoardWorkspaceItems,
   snapBoardPosition,
   type AssetBoardWorkspaceItem,
@@ -134,26 +134,36 @@ export function resolveEffectiveBoardCatalog(params: {
     if (!catalog?.boardItems || !boardContainer || boardContainer.kind === "folder") return catalog;
     return {
       ...catalog,
-      boardItems: catalog.boardItems.filter((item) => boardItemBelongsToContainer(item, boardContainer)),
+      boardItems: filterTaskBoardSpatialItems(
+        catalog.boardItems.filter((item) => boardItemBelongsToContainer(item, boardContainer)),
+      ),
     };
+  }
+  const resolvedYjsBoardItems = (
+    boardContainer?.kind === "task"
+      ? filterTaskBoardSpatialItems(yjsBoardItemsForSelectedFolder)
+      : yjsBoardItemsForSelectedFolder
+  ).map((item) => {
+    if (item.itemType !== "asset") return item;
+    const signedUrl = assetSignedUrls[item.id];
+    if (!signedUrl) return item;
+    return {
+      ...item,
+      metadata: {
+        ...(item.metadata ?? {}),
+        signedUrl,
+      },
+    };
+  });
+  if (boardContainer?.kind === "task") {
+    return { ...catalog, boardItems: resolvedYjsBoardItems };
   }
   const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) =>
     boardContainer ? !boardItemBelongsToContainer(item, boardContainer) : item.folderId !== selectedFolderId
   );
   return {
     ...catalog,
-    boardItems: [...otherFolderBoardItems, ...yjsBoardItemsForSelectedFolder.map((item) => {
-      if (item.itemType !== "asset") return item;
-      const signedUrl = assetSignedUrls[item.id];
-      if (!signedUrl) return item;
-      return {
-        ...item,
-        metadata: {
-          ...(item.metadata ?? {}),
-          signedUrl,
-        },
-      };
-    })],
+    boardItems: [...otherFolderBoardItems, ...resolvedYjsBoardItems],
   };
 }
 
@@ -442,7 +452,12 @@ export function BoardWorkspaceView({
       .then((data) => {
         if (Array.isArray(data?.boardItems)) {
           rememberAssetSignedUrls(data.boardItems);
-          setBoardItemsForContainer(boardContainer, data.boardItems);
+          setBoardItemsForContainer(
+            boardContainer,
+            boardContainer.kind === "task"
+              ? filterTaskBoardSpatialItems(data.boardItems)
+              : data.boardItems,
+          );
         }
       })
       .catch((err) => {
@@ -582,10 +597,7 @@ export function BoardWorkspaceView({
     }
   }, [addBoardItem, allBoardItems, boardSync.runtime, yjsUpdateBoardItemPosition]);
   const handleDeclutterBoard = useCallback(() => {
-    const declutterUpdates = declutterBoardItems(
-      boardItems,
-      isTaskBoard ? [BOARD_TASK_FIXED_CARD_RECT] : [],
-    );
+    const declutterUpdates = declutterBoardItems(boardItems);
     if (declutterUpdates.length === 0) return;
     const expandedUpdates = expandFramePositionUpdates(allBoardItems, declutterUpdates);
     const currentById = new Map(allBoardItems.map((item) => [item.boardItemId, item]));
@@ -595,7 +607,7 @@ export function BoardWorkspaceView({
       return [{ boardItemId: current.boardItemId, x: current.x, y: current.y }];
     }));
     yjsUpdateBoardItemPositions(declutterUpdates, true);
-  }, [allBoardItems, boardItems, isTaskBoard, yjsUpdateBoardItemPositions]);
+  }, [allBoardItems, boardItems, yjsUpdateBoardItemPositions]);
   const handleUndoDeclutter = useCallback(() => {
     if (declutterUndoUpdates.length === 0) return;
     yjsUpdateBoardItemPositions(declutterUndoUpdates, true);
@@ -824,14 +836,13 @@ export function BoardWorkspaceView({
   }, [boardSync.connectionStatus]);
 
   const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
-    if (!boardContainer || !resolvedBoardFolderId) return;
+    if (!boardContainer || boardContainer.kind !== "folder" || !resolvedBoardFolderId) return;
     const resolved = position ?? resolveSpawnPosition();
     const boardPosition = snapBoardPosition(resolved.x, resolved.y);
     openNewSessionModal(
       "folder",
       {
         folderId: resolvedBoardFolderId,
-        ...(boardContainer.kind === "task" ? { container: boardContainer } : {}),
         ...(boardPosition ? { boardPosition } : {}),
       },
     );
@@ -1030,6 +1041,7 @@ export function BoardWorkspaceView({
   }, []);
 
   const canCreateBoardItems = Boolean(boardContainer);
+  const canCreateSessions = boardContainer?.kind === "folder";
   const taskTitle = taskSnapshot?.task.title ?? null;
   const taskStatus = taskSnapshot?.task.status ?? null;
 
@@ -1051,10 +1063,11 @@ export function BoardWorkspaceView({
         onToggleNewMenu={() => setNewMenuOpen((open) => !open)}
         onSelectFolder={selectFolder}
         canCreateBoardItems={canCreateBoardItems}
+        canCreateSessions={canCreateSessions}
         onCreateFolder={() => openCreateFolderDialog()}
         onOpenNewSession={() => openNewSessionAt()}
         onCreateMarkdown={() => createMarkdownAt()}
-        declutterDisabled={boardItems.length === 0 || (boardItems.length === 1 && !isTaskBoard)}
+        declutterDisabled={boardItems.length <= 1}
         onDeclutterBoard={handleDeclutterBoard}
         undoDeclutterDisabled={declutterUndoUpdates.length === 0}
         onUndoDeclutter={handleUndoDeclutter}
@@ -1134,11 +1147,6 @@ export function BoardWorkspaceView({
                   setActiveCustomView(customViewId);
                   if (isMobile) setActiveTab("chat");
                 }}
-                fixedTaskCard={
-                  isTaskBoard && taskId
-                    ? { taskId, fallbackTitle: taskTitle ?? "업무 보드" }
-                    : null
-                }
                 emptyMessage={
                   isTaskBoard
                     ? "아직 이 업무 보드에 배치된 항목이 없음"
@@ -1159,6 +1167,7 @@ export function BoardWorkspaceView({
             activeBoardDocumentId={activeBoardDocumentId}
             boardYjsRuntime={boardSync.runtime}
             canCreateBoardItems={canCreateBoardItems}
+            canCreateSessions={canCreateSessions}
             canCreateStructureItems={boardContainer?.kind === "folder"}
             onCloseCardContextMenu={closeCardContextMenu}
             onOpenCreateFolder={openCreateFolderDialog}

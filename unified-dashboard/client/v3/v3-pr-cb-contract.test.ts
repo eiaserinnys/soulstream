@@ -22,12 +22,14 @@ describe("PR-CB visual contracts", () => {
 
   it("shares the panel title resolver in chat headers without session breadcrumbs", () => {
     const workspace = read("./TaskWorkspace.tsx");
+    const boardWorkspace = read("./TaskBoardWorkspace.tsx");
     const css = read("./v3-task-workspace.css");
 
     expect(workspace).toContain('import { sessionPanelTitle } from "./v3-session-panel-model";');
     expect(workspace).not.toContain("function runLabel(");
-    expect(workspace.match(/sessionPanelTitle\(activeSession\)/g)).toHaveLength(3);
-    expect(workspace.match(/\{projectTitle\} › \{visibleTitle\}/g)).toHaveLength(2);
+    expect(`${workspace}\n${boardWorkspace}`.match(/sessionPanelTitle\(activeSession\)/g)).toHaveLength(3);
+    expect(workspace.match(/\{projectTitle\} › \{visibleTitle\}/g)).toHaveLength(1);
+    expect(boardWorkspace).toContain("{projectTitle} › {task.page.title}");
     expect(css).toMatch(/\.v3-chat-session-title\s*\{[\s\S]*align-items:\s*center;[\s\S]*font-size:\s*var\(--font-size-base\);/);
   });
 });

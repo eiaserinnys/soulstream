@@ -19,6 +19,7 @@ export {
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
   computeBoardCanvasSize,
+  filterTaskBoardSpatialItems,
   findFirstOpenBoardPosition,
   formatBoardWorkspaceTime,
   getBoardItemHeight,
