@@ -24,7 +24,7 @@ import {
 } from "./task-workspace-model";
 import { TaskDetailPane } from "./TaskDetailPane";
 import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
-import { TaskBoardPane } from "./TaskBoardPane";
+import { TaskBoardWorkspace } from "./TaskBoardWorkspace";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 import type { MobilePlannerTab } from "./mobile-planner-state";
 
@@ -144,11 +144,6 @@ export function TaskWorkspace({
     }
   };
 
-  const closeBoardInspector = () => {
-    const state = useDashboardStore.getState();
-    state.clearActiveSession();
-    state.setActiveBoardDocument(null);
-  };
   const closeWorkspaceInspector = () => {
     if (inspectorKind === "document") useDashboardStore.getState().setActiveBoardDocument(null);
     onCloseChat();
@@ -227,117 +222,72 @@ export function TaskWorkspace({
     );
   }
 
-  const boardInspector = activeBoardDocumentId ? (
-    <section
-      ref={chatSurfaceRef}
-      className="v3-chat-pane v3-board-inspector border border-glass-border glass-strong glass-chrome lg-rim"
-      data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-      data-testid="v3-board-document-panel"
-      aria-label="업무 보드 문서"
-    >
-      <header className="v3-chat-header">
-        <div><small>{projectTitle} › {visibleTitle}</small><strong>마크다운 문서</strong></div>
-        <DashboardIconCap label="보드로 돌아가기" onClick={closeBoardInspector}>
-          <X className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
-      </header>
-      <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
-    </section>
-  ) : activeSessionKey && activeSession ? (
-    <section
-      ref={chatSurfaceRef}
-      className="v3-chat-pane v3-board-inspector border border-glass-border glass-strong glass-chrome lg-rim"
-      data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-      data-testid="v3-board-chat-panel"
-      aria-label="업무 보드 세션 채팅"
-    >
-      <header className="v3-chat-header">
-        <div className="v3-chat-session-title"><strong>{sessionPanelTitle(activeSession)}</strong></div>
-        <span className={`v3-chat-status v3-chat-status--${activeSession.status}`}>{activeSession.status === "running" ? "실행 중" : "완료"}</span>
-        <DashboardIconCap label="보드로 돌아가기" onClick={closeBoardInspector}>
-          <X className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
-      </header>
-      <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />
-      <div className="v3-chat-content">
-        <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
-      </div>
-    </section>
-  ) : (
-    <section
-      ref={chatSurfaceRef}
-      className="v3-chat-pane v3-board-inspector border border-glass-border glass-strong glass-chrome lg-rim"
-      data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-      data-testid="v3-board-inspector-empty"
-      aria-label="업무 보드 선택 항목"
-    >
-      <div className="v3-chat-empty">
-        <span className="v3-emoji" aria-hidden="true">🧭</span>
-        <strong>보드에서 항목을 선택하세요.</strong>
-        <p>세션은 채팅으로, 마크다운은 문서 패널로 열립니다.</p>
-      </div>
-    </section>
-  );
+  if (boardOpen) {
+    return (
+      <TaskBoardWorkspace
+        task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
+        projectFolderId={projectFolderId}
+        projectTitle={projectTitle}
+        sessions={sessions}
+        runSessionLoadStates={runSessionLoadStates}
+        activeSession={activeSession}
+        chatInputDisabled={chatInputDisabled}
+        fileUploadUrl={fileUploadUrl}
+        mobileMode={mobileMode}
+        mobileTab={mobileTab}
+        taskMoveTargets={taskMoveTargets}
+        onClose={() => setBoardOpen(false)}
+        onOpenSession={onOpenSession}
+        onAcknowledgedReview={onAcknowledgedReview}
+      />
+    );
+  }
 
   return (
-    <div className={`v3-workspace-scrim${chatOpen || boardOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
+    <div className={`v3-workspace-scrim${chatOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
       <div
         ref={workspaceRef}
-        className={`v3-workspace${boardOpen ? " is-board-open" : chatOpen ? " is-chat-open" : ""}${boardOpen && (activeBoardDocumentId || activeSessionKey) ? " has-board-selection" : ""}`}
+        className={`v3-workspace${chatOpen ? " is-chat-open" : ""}`}
         data-mobile-view={mobileMode ? mobileTab : undefined}
-        style={(chatOpen || boardOpen) && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
+        style={chatOpen && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
       >
-        {boardOpen ? (
-          <TaskBoardPane
-            taskId={task.taskId}
-            projectFolderId={projectFolderId}
-            projectTitle={projectTitle}
-            sessions={sessions}
-            taskMoveTargets={taskMoveTargets}
-            onClose={() => setBoardOpen(false)}
-          />
-        ) : (
-          <TaskDetailPane
-            task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
-            projectFolderId={projectFolderId}
-            folders={folders}
-            contextInvalidationKey={contextInvalidationKey}
-            sessions={sessions}
-            runSessionLoadStates={runSessionLoadStates}
-            runHistoryTotal={runHistoryTotal}
-            runHistoryHasMore={runHistoryHasMore}
-            runHistoryLoading={runHistoryLoading}
-            activeSessionId={activeSessionKey}
-            focusRequest={focusRequest}
-            onFocusRequestHandled={onFocusRequestHandled}
-            onLoadMoreRuns={onLoadMoreRuns}
-            sessionDefaults={sessionDefaults}
-            taskMoveTargets={taskMoveTargets}
-            taskInToday={taskInToday}
-            onReturnToToday={onReturnToToday}
-            onToggleTaskToday={onToggleTaskToday}
-            onOpenBoard={() => {
-              setSplitPercent(64);
-              setBoardOpen(true);
-            }}
-            onOpenSession={onOpenSession}
-            onRenameTaskTitle={async (title) => {
-              const renamedTitle = await onRenameTaskTitle(title);
-              setVisibleTitle(renamedTitle);
-            }}
-            onSaveDescription={onSaveDescription}
-            onRenameSession={onRenameSession}
-            onDeleteSessions={onDeleteSessions}
-            onMoveSession={onMoveSession}
-            onTaskBlocksChanged={onTaskBlocksChanged}
-          />
-        )}
-        {boardOpen ? (
-          <>
-            {divider("보드와 선택 항목 너비 조절")}
-            {boardInspector}
-          </>
-        ) : chatOpen ? (
+        <TaskDetailPane
+          task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
+          projectFolderId={projectFolderId}
+          folders={folders}
+          contextInvalidationKey={contextInvalidationKey}
+          sessions={sessions}
+          runSessionLoadStates={runSessionLoadStates}
+          runHistoryTotal={runHistoryTotal}
+          runHistoryHasMore={runHistoryHasMore}
+          runHistoryLoading={runHistoryLoading}
+          activeSessionId={activeSessionKey}
+          focusRequest={focusRequest}
+          onFocusRequestHandled={onFocusRequestHandled}
+          onLoadMoreRuns={onLoadMoreRuns}
+          sessionDefaults={sessionDefaults}
+          taskMoveTargets={taskMoveTargets}
+          taskInToday={taskInToday}
+          onReturnToToday={onReturnToToday}
+          onToggleTaskToday={onToggleTaskToday}
+          onOpenBoard={() => {
+            const state = useDashboardStore.getState();
+            state.setActiveBoardDocument(null);
+            state.setActiveCustomView(null);
+            setBoardOpen(true);
+          }}
+          onOpenSession={onOpenSession}
+          onRenameTaskTitle={async (title) => {
+            const renamedTitle = await onRenameTaskTitle(title);
+            setVisibleTitle(renamedTitle);
+          }}
+          onSaveDescription={onSaveDescription}
+          onRenameSession={onRenameSession}
+          onDeleteSessions={onDeleteSessions}
+          onMoveSession={onMoveSession}
+          onTaskBlocksChanged={onTaskBlocksChanged}
+        />
+        {chatOpen ? (
           <>
             {divider("상세와 채팅 너비 조절")}
             <section

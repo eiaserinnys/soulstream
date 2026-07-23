@@ -44,8 +44,20 @@ export const BOARD_CANVAS_ORIGIN_Y = BOARD_CANVAS_HEIGHT / 2;
 const BOARD_SPAWN_GAP = BOARD_GRID_SIZE * 2;
 const BOARD_SPAWN_X_STEP = BOARD_TILE_WIDTH + BOARD_SPAWN_GAP;
 const BOARD_SPAWN_Y_STEP = BOARD_TILE_HEIGHT + BOARD_GRID_SIZE;
+const TASK_BOARD_SPATIAL_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
+  "markdown",
+  "asset",
+  "custom_view",
+  "frame",
+]);
 
 export type GeneratedPlacementKind = "near-parent" | "inbox";
+
+export function filterTaskBoardSpatialItems(
+  boardItems: readonly CatalogBoardItem[],
+): CatalogBoardItem[] {
+  return boardItems.filter((item) => TASK_BOARD_SPATIAL_ITEM_TYPES.has(item.itemType));
+}
 
 interface BoardRect {
   x: number;

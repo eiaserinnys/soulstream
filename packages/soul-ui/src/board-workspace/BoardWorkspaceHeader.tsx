@@ -23,6 +23,7 @@ interface BoardWorkspaceHeaderProps {
   onToggleNewMenu: () => void;
   onSelectFolder: (folderId: string) => void;
   canCreateBoardItems?: boolean;
+  canCreateSessions?: boolean;
   onCreateFolder: () => void;
   onOpenNewSession: () => void;
   onCreateMarkdown: () => void;
@@ -48,6 +49,7 @@ export function BoardWorkspaceHeader({
   onToggleNewMenu,
   onSelectFolder,
   canCreateBoardItems = true,
+  canCreateSessions = true,
   onCreateFolder,
   onOpenNewSession,
   onCreateMarkdown,
@@ -186,14 +188,16 @@ export function BoardWorkspaceHeader({
               </Button>
               {newMenuOpen && (
                 <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-                    onClick={onOpenNewSession}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Session
-                  </button>
+                  {canCreateSessions ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                      onClick={onOpenNewSession}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Session
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"

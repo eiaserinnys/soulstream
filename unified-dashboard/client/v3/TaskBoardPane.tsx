@@ -36,6 +36,7 @@ export function TaskBoardPane({
   projectTitle,
   sessions,
   taskMoveTargets,
+  onBoardItemsChanged,
   onClose,
 }: {
   taskId: string;
@@ -43,6 +44,7 @@ export function TaskBoardPane({
   projectTitle: string;
   sessions: readonly SessionSummary[];
   taskMoveTargets: readonly PlannerTask[];
+  onBoardItemsChanged(items: readonly CatalogBoardItem[]): void;
   onClose(): void;
 }) {
   const [boardItems, setBoardItems] = useState<CatalogBoardItem[] | null>(null);
@@ -133,6 +135,10 @@ export function TaskBoardPane({
   }, [invalidationKey, taskId]);
 
   useEffect(() => {
+    onBoardItemsChanged(boardItems ?? []);
+  }, [boardItems, onBoardItemsChanged]);
+
+  useEffect(() => {
     const state = useDashboardStore.getState();
     previousStoreRef.current = {
       catalog: state.catalog,
@@ -143,24 +149,9 @@ export function TaskBoardPane({
       viewMode: state.viewMode,
       leftNavigationMode: state.leftNavigationMode,
       activeTab: state.activeTab,
-      activeSessionKey: state.activeSessionKey,
-      activeSession: state.activeSession,
-      activeSessionSummary: state.activeSessionSummary,
       activeBoardDocumentId: state.activeBoardDocumentId,
       activeCustomViewId: state.activeCustomViewId,
-      activeRightTab: state.activeRightTab,
-      selectedSessionIds: state.selectedSessionIds,
-      lastSelectedSessionId: state.lastSelectedSessionId,
     };
-    useDashboardStore.setState({
-      activeSessionKey: null,
-      activeSession: null,
-      activeSessionSummary: null,
-      activeBoardDocumentId: null,
-      activeCustomViewId: null,
-      selectedSessionIds: new Set<string>(),
-      lastSelectedSessionId: null,
-    });
     return () => {
       if (previousStoreRef.current) useDashboardStore.setState(previousStoreRef.current);
     };

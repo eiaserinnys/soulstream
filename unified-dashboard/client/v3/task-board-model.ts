@@ -1,6 +1,6 @@
 import {
   retainEqualValue,
-  type CatalogAssignment,
+  filterTaskBoardSpatialItems,
   type CatalogBoardItem,
   type CatalogState,
   type SessionSummary,
@@ -12,6 +12,36 @@ interface BuildTaskBoardCatalogOptions {
   sessions: readonly SessionSummary[];
   projectFolderId: string | null;
   projectTitle: string;
+}
+
+export type TaskBoardResourceTab =
+  | { id: "checklist"; kind: "checklist"; title: string }
+  | { id: "sessions"; kind: "sessions"; title: string }
+  | { id: string; kind: "document"; title: string; documentId: string };
+
+export function buildTaskBoardResourceTabs(
+  boardItems: readonly CatalogBoardItem[],
+): TaskBoardResourceTab[] {
+  const tabs: TaskBoardResourceTab[] = [
+    { id: "checklist", kind: "checklist", title: "체크리스트" },
+    { id: "sessions", kind: "sessions", title: "위임 관계" },
+  ];
+  const seenDocumentIds = new Set<string>();
+  for (const item of boardItems) {
+    if (item.itemType !== "markdown" || seenDocumentIds.has(item.itemId)) continue;
+    seenDocumentIds.add(item.itemId);
+    const metadataTitle = item.metadata?.title;
+    const title = typeof metadataTitle === "string" && metadataTitle.trim()
+      ? metadataTitle.trim()
+      : "문서";
+    tabs.push({
+      id: `document:${item.itemId}`,
+      kind: "document",
+      title,
+      documentId: item.itemId,
+    });
+  }
+  return tabs;
 }
 
 export function extractTaskBoardSessionIds(
@@ -35,37 +65,19 @@ export function mergeTaskBoardSessions(
 export function buildTaskBoardCatalog({
   currentCatalog,
   boardItems,
-  sessions,
   projectFolderId,
   projectTitle,
 }: BuildTaskBoardCatalogOptions): CatalogState {
-  const sessionIds = new Set(extractTaskBoardSessionIds(boardItems));
-  const scopedSessions = sessions.filter((session) => sessionIds.has(session.agentSessionId));
-  const summaryById = new Map(scopedSessions.map((session) => [session.agentSessionId, session]));
-  const assignmentFolderById = new Map(
-    boardItems
-      .filter((item) => item.itemType === "session")
-      .map((item) => [item.itemId, item.folderId || projectFolderId]),
-  );
-  const assignments: Record<string, CatalogAssignment> = {};
-  for (const sessionId of sessionIds) {
-    const current = currentCatalog?.sessions[sessionId];
-    const summary = summaryById.get(sessionId);
-    assignments[sessionId] = {
-      folderId: current?.folderId ?? assignmentFolderById.get(sessionId) ?? projectFolderId,
-      displayName: summary?.displayName !== undefined
-        ? summary.displayName ?? null
-        : current?.displayName ?? null,
-    };
-  }
-
   return {
     folders: projectFolderId
       ? [{ id: projectFolderId, name: projectTitle, sortOrder: 0 }]
       : [],
-    sessions: assignments,
-    boardItems: [...boardItems],
-    sessionList: scopedSessions,
+    sessions: {},
+    boardItems: retainEqualValue(
+      currentCatalog?.boardItems,
+      filterTaskBoardSpatialItems(boardItems),
+    ),
+    sessionList: [],
   };
 }
 
@@ -74,37 +86,17 @@ export function scopeCatalogUpdateToTaskBoard(
   incomingCatalog: CatalogState,
   taskId: string,
 ): CatalogState {
-  const nextBoardItems = incomingCatalog.boardItems === undefined
+  const taskBoardItems = incomingCatalog.boardItems === undefined
     ? currentCatalog.boardItems ?? []
     : incomingCatalog.boardItems.filter((item) => (
       item.containerKind === "task" && item.containerId === taskId
     ));
-  const sessionIds = new Set(extractTaskBoardSessionIds(nextBoardItems));
-  const sessions: Record<string, CatalogAssignment> = {};
-  for (const sessionId of sessionIds) {
-    const assignment = incomingCatalog.sessions[sessionId] ?? currentCatalog.sessions[sessionId];
-    if (assignment) sessions[sessionId] = assignment;
-  }
-
-  const incomingById = new Map(
-    (incomingCatalog.sessionList ?? [])
-      .filter((session) => sessionIds.has(session.agentSessionId))
-      .map((session) => [session.agentSessionId, session]),
-  );
-  const sessionList = [...sessionIds].flatMap((sessionId) => {
-    const incoming = incomingById.get(sessionId);
-    if (incoming) return [incoming];
-    const current = currentCatalog.sessionList?.find(
-      (session) => session.agentSessionId === sessionId,
-    );
-    return current ? [current] : [];
-  });
 
   return {
     ...currentCatalog,
-    sessions,
-    boardItems: nextBoardItems,
-    sessionList,
+    sessions: {},
+    boardItems: filterTaskBoardSpatialItems(taskBoardItems),
+    sessionList: [],
   };
 }
 
