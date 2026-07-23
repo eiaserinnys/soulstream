@@ -1556,6 +1556,115 @@ describe("BoardWorkspaceView", () => {
     });
   });
 
+  it("moves a task-board markdown tile to another task from the keyboard menu", async () => {
+    seedTaskProjection("rb-1");
+    const onMoveBoardItemToContainer = vi.fn(async () => ({
+      ok: true as const,
+      boardItem: {
+        id: "markdown:task-doc",
+        folderId: "root",
+        containerKind: "task" as const,
+        containerId: "rb-2",
+        itemType: "markdown" as const,
+        itemId: "task-doc",
+        x: 40,
+        y: 420,
+        metadata: { title: "Task note" },
+      },
+    }));
+    ({ container, root } = renderBoard({
+      onMoveBoardItemToContainer,
+      taskMoveTargets: [
+        { id: "rb-1", title: "Current task" },
+        { id: "rb-2", title: "Other task" },
+      ],
+    }, {
+      catalog: {
+        ...catalog,
+        boardItems: [{
+          id: "markdown:task-doc",
+          folderId: "root",
+          containerKind: "task",
+          containerId: "rb-1",
+          itemType: "markdown",
+          itemId: "task-doc",
+          x: 40,
+          y: 420,
+          metadata: { title: "Task note" },
+        }],
+      },
+      sessions: [],
+    }));
+    flushSync(() => useDashboardStore.getState().openTaskBoard("rb-1", "root"));
+
+    const tile = container.querySelector<HTMLButtonElement>('[data-testid="board-markdown-tile"]');
+    expect(tile).not.toBeNull();
+    flushSync(() => tile!.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ContextMenu",
+    })));
+    const moveAction = findButtonByText(document.body, "다른 업무로 이동...");
+    expect(moveAction).not.toBeUndefined();
+    flushSync(() => moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    const picker = document.body.querySelector<HTMLElement>("#board-task-move-target");
+    expect(picker?.textContent).toContain("Other task");
+    expect(picker?.textContent).not.toContain("Current task");
+    const target = findButtonByText(picker!, "Other task");
+    flushSync(() => target!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const submit = findButtonByText(document.body, "이동");
+    flushSync(() => submit!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onMoveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
+      boardItemId: "markdown:task-doc",
+      container: { kind: "task", id: "rb-2" },
+    }));
+    expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === "markdown:task-doc"))
+      .toMatchObject({ containerKind: "task", containerId: "rb-2", itemId: "task-doc" });
+  });
+
+  it("confirms markdown deletion by title and clears an open document", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+    ({ container, root } = renderBoard());
+    flushSync(() => useDashboardStore.getState().setActiveBoardDocument("doc-a"));
+    const tile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    flushSync(() => tile!.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 300,
+      clientY: 120,
+    })));
+    const deleteAction = findButtonByText(document.body, "삭제");
+    flushSync(() => deleteAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(document.body.textContent).toContain("‘Design note’ 문서를 삭제하시겠습니까?");
+
+    const cancel = findButtonByText(document.body, "취소");
+    flushSync(() => cancel!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) => item.id === "markdown:doc-a")).toBe(true);
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(0);
+
+    flushSync(() => tile!.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 300,
+      clientY: 120,
+    })));
+    flushSync(() => findButtonByText(document.body, "삭제")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const confirm = findButtonByText(document.body, "삭제");
+    flushSync(() => confirm!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flushSync(() => undefined);
+
+    expect(fetchSpy).toHaveBeenCalledWith("/api/markdown-documents/doc-a", expect.objectContaining({ method: "DELETE" }));
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) => item.id === "markdown:doc-a")).toBe(false);
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
+  });
+
   it("marks the selected board card with a visible ring", () => {
     ({ container, root } = renderBoard());
 

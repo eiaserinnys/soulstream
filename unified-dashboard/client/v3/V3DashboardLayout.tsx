@@ -455,6 +455,7 @@ function V3DashboardContent() {
       {workspaceOpen && (workspaceTask || activeSession) ? (
         <TaskWorkspace
           task={workspaceTask}
+          taskResolutionError={sessionPanel.workspaceTaskError}
           projectTitle={projectTitle}
           projectFolderId={projectFolderId}
           folders={catalog?.folders ?? []}

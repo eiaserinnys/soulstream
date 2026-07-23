@@ -21,5 +21,14 @@ describe("v3 task document board unification", () => {
     expect(inlineBoard).toContain("useBoardYjsRuntime");
     expect(inlineBoard).toContain("renameMarkdownDocument");
     expect(inlineBoard).toContain("patchBoardMarkdownTitle");
+    expect(inlineBoard).toContain("마크다운 이름 변경 취소");
+  });
+
+  it("uses the v3 spacing and action-size tokens around inline rename controls", () => {
+    const css = read("./v3-context-menus.css");
+
+    expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*gap:\s*var\(--v3-space-1\)/);
+    expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*padding-inline:\s*var\(--v3-space-1\)/);
+    expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*--v3-inline-rename-action-size:\s*var\(--v3-action-size\)/);
   });
 });

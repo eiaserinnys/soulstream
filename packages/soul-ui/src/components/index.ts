@@ -34,6 +34,8 @@ export type { FolderSettingsDialogProps } from "./FolderSettingsDialog";
 export { ChatInput } from "./ChatInput";
 export { RightPanel } from "./RightPanel";
 export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
+export { MarkdownDeleteDialog } from "./MarkdownDeleteDialog";
+export type { MarkdownDeleteDialogProps } from "./MarkdownDeleteDialog";
 export { MarkdownContent } from "./MarkdownContent";
 export { SessionContextMenu } from "./SessionContextMenu";
 export type {

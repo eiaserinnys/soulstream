@@ -96,6 +96,34 @@ describe("live DB board item route provider", () => {
     expect(harness.calls[0]?.values).toEqual(["task", "task-1"]);
   });
 
+  it("looks up a session's canonical primary membership without folder pagination", async () => {
+    const harness = createSqlHarness((text) => text.includes("board_item_get_all")
+      ? [boardItemRow({
+          id: "session:session-a",
+          container_kind: "task",
+          container_id: "task-outside-page",
+          item_type: "session",
+          item_id: "session-a",
+        })]
+      : []);
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(repository.boardItemRouteProvider.listBoardItems({
+      sessionId: "session-a",
+    })).resolves.toEqual([
+      expect.objectContaining({
+        itemId: "session-a",
+        membershipKind: "primary",
+        containerKind: "task",
+        containerId: "task-outside-page",
+      }),
+    ]);
+    expect(harness.normalizedCalls()).toEqual([
+      expect.stringContaining("WHERE item_type = 'session' AND item_id = ? AND membership_kind = 'primary'"),
+    ]);
+    expect(harness.calls[0]?.values).toEqual(["session-a"]);
+  });
+
   it("resolves cached tasks first and new empty tasks through canonical identity", async () => {
     let cacheCalls = 0;
     const harness = createSqlHarness((text, values) => {

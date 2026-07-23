@@ -1,0 +1,20 @@
+/* v3 interaction chrome is not document content. Keep this policy at the shell boundary. */
+.v3-shell {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.v3-shell :where(
+  input,
+  textarea,
+  [contenteditable="true"],
+  [data-v3-selectable-content="true"],
+  [data-v3-selectable-content="true"] *,
+  [data-slot="chat-body"],
+  [data-slot="chat-body"] *,
+  [data-slot="chat-tool-body"],
+  [data-slot="chat-tool-body"] *
+) {
+  -webkit-user-select: text;
+  user-select: text;
+}

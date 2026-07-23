@@ -69,10 +69,18 @@
   color: var(--foreground);
 }
 
-.v3-inline-board-rename button {
+.v3-inline-board-rename-actions {
+  --v3-inline-rename-action-size: var(--v3-action-size);
+  display: flex;
   flex: none;
+  gap: var(--v3-space-1);
+  padding-inline: var(--v3-space-1);
+}
+
+.v3-inline-board-rename-actions > .dashboard-icon-cap {
+  width: var(--v3-inline-rename-action-size);
+  height: var(--v3-inline-rename-action-size);
   color: var(--accent-blue);
-  font-size: var(--font-size-xs);
 }
 
 .v3-inline-board-item small {

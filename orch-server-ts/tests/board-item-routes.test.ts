@@ -10,6 +10,7 @@ import {
   type BoardItemAccessProvider,
   type BoardItemRouteProvider,
   type BoardYjsHostHttpClient,
+  type BoardYjsHostProxyRouteOptions,
   type NodeRegistrationPayload,
 } from "../src/index.js";
 
@@ -29,7 +30,14 @@ const boardItems = [
   {
     id: "item/one",
     folderId: "folder-a-child",
-    container: { kind: "folder", id: "folder-a-child" },
+    containerKind: "folder",
+    containerId: "folder-a-child",
+    membershipKind: "primary",
+    itemType: "markdown",
+    itemId: "doc-1",
+    x: 1,
+    y: 2,
+    metadata: { title: "Doc" },
   },
   {
     id: "task-card",
@@ -114,6 +122,7 @@ function createAppWithBoardItems(
     headers: { "content-type": "application/json" },
     body: { ok: true },
   })),
+  hostProxyOverrides: Partial<BoardYjsHostProxyRouteOptions> = {},
 ) {
   const registry = createRegistry();
   const connectionId = registerBoardHost(registry);
@@ -124,7 +133,7 @@ function createAppWithBoardItems(
     boardItemRoutes: {
       provider: harness.provider,
       accessProvider,
-      hostProxy: { registry, httpClient },
+      hostProxy: { registry, httpClient, ...hostProxyOverrides },
     },
   });
   return { app, calls: harness.calls, connectionId, httpClient };
@@ -192,11 +201,11 @@ describe("board item route harness", () => {
 
     expect(missing.statusCode).toBe(400);
     expect(missing.json()).toEqual({
-      detail: "folder_id or container_kind/container_id is required",
+      detail: "folder_id, session_id, or container_kind/container_id is required",
     });
     expect(mixed.statusCode).toBe(400);
     expect(mixed.json()).toEqual({
-      detail: "folder_id and container_kind/container_id are mutually exclusive",
+      detail: "folder_id, session_id, and container_kind/container_id are mutually exclusive",
     });
     expect(invalidKind.statusCode).toBe(400);
     expect(invalidKind.json()).toEqual({
@@ -250,6 +259,43 @@ describe("board item route harness", () => {
       ["listBoardItems", { container: { kind: "task", id: "task-1" } }],
     ]);
 
+    await app.close();
+  });
+
+  it("looks up a primary session membership without relying on a loaded folder page", async () => {
+    const membership = {
+      id: "session:session-a",
+      folderId: "folder-a",
+      containerKind: "task",
+      containerId: "task-outside-page",
+      membershipKind: "primary",
+      itemType: "session",
+      itemId: "session-a",
+      x: 0,
+      y: 0,
+    };
+    const { app, calls } = createAppWithBoardItems({
+      restricted: true,
+      allowedFolderIds: ["folder-a"],
+    }, {
+      async listBoardItems(query) {
+        calls.push(["listBoardItems", query]);
+        return [membership];
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/board-items?session_id=session-a",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ boardItems: [membership] });
+    expect(calls).toEqual([
+      ["listFolders"],
+      ["listBoardItems", { sessionId: "session-a" }],
+      ["access"],
+    ]);
     await app.close();
   });
 
@@ -369,6 +415,41 @@ describe("board item route harness", () => {
       }),
     );
 
+    await app.close();
+  });
+
+  it("moves board items through the local service in orchestrator host mode", async () => {
+    const moved = { ...boardItems[0], containerKind: "task", containerId: "task-1" };
+    const moveBoardItemToContainer = vi.fn(async () => moved);
+    const httpClient = vi.fn();
+    const { app } = createAppWithBoardItems(
+      { restricted: false },
+      {},
+      httpClient,
+      {
+        hostMode: "orch",
+        service: { moveBoardItemToContainer } as unknown as BoardYjsHostProxyRouteOptions["service"],
+      },
+    );
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/board-items/item%2Fone/container",
+      payload: {
+        container: { kind: "task", id: "task-1" },
+        idempotencyKey: "idem-local",
+        x: 3,
+        y: 4,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true, boardItem: moved });
+    expect(moveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
+      targetScope: { folderId: "folder-a", containerKind: "task", containerId: "task-1" },
+      position: { x: 3, y: 4 },
+    }));
+    expect(httpClient).not.toHaveBeenCalled();
     await app.close();
   });
 

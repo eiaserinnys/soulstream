@@ -11,42 +11,19 @@ import {
 } from "../board-workspace";
 import { Button } from "./ui/button";
 import { MarkdownContent } from "./MarkdownContent";
+import {
+  deleteMarkdownDocument,
+  fetchMarkdownDocument,
+  MarkdownDocumentConflictError,
+  updateMarkdownDocument,
+} from "../lib/markdown-document-operations";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "conflict";
-
-class MarkdownDocumentConflictError extends Error {
-  constructor() {
-    super("Markdown document changed elsewhere. Reload and retry.");
-    this.name = "MarkdownDocumentConflictError";
-  }
-}
 
 const MarkdownCodeMirrorEditor = lazy(async () => {
   const module = await import("./MarkdownCodeMirrorEditor");
   return { default: module.MarkdownCodeMirrorEditor };
 });
-
-async function fetchMarkdownDocument(documentId: string): Promise<MarkdownDocument> {
-  const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`);
-  if (!res.ok) throw new Error(`Load markdown document failed: ${res.status}`);
-  return await res.json() as MarkdownDocument;
-}
-
-async function saveMarkdownDocument(
-  documentId: string,
-  title: string,
-  body: string,
-  expectedVersion: number,
-): Promise<MarkdownDocument> {
-  const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, body, expectedVersion }),
-  });
-  if (res.status === 409) throw new MarkdownDocumentConflictError();
-  if (!res.ok) throw new Error(`Save markdown document failed: ${res.status}`);
-  return await res.json() as MarkdownDocument;
-}
 
 export function MarkdownDocumentPanel() {
   const documentId = useDashboardStore((s) => s.activeBoardDocumentId);
@@ -71,6 +48,7 @@ export function MarkdownDocumentPanel() {
   const [savedBody, setSavedBody] = useState("");
   const [savedVersion, setSavedVersion] = useState(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editBodySnapshotRef = useRef("");
   const skipNextBlurSaveRef = useRef(false);
@@ -94,6 +72,7 @@ export function MarkdownDocumentPanel() {
     setSavedTitle(nextTitle);
     setSavedBody(nextBody);
     setSavedVersion(nextVersion);
+    setSaveError(null);
     setSaveStatus("saved");
   }, [documentId, runtime]);
 
@@ -115,9 +94,15 @@ export function MarkdownDocumentPanel() {
       setSaveStatus("saved");
       return;
     }
+    setSaveError(null);
     setSaveStatus("saving");
     try {
-      const updated = await saveMarkdownDocument(documentId, currentTitle, body, savedVersion);
+      const updated = await updateMarkdownDocument({
+        documentId,
+        title: currentTitle,
+        body,
+        expectedVersion: savedVersion,
+      });
       setDocument(updated);
       setTitle(updated.title);
       setBody(updated.body);
@@ -127,8 +112,10 @@ export function MarkdownDocumentPanel() {
       setSaveStatus("saved");
     } catch (err) {
       if (err instanceof MarkdownDocumentConflictError) {
+        setSaveError(null);
         setSaveStatus("conflict");
       } else {
+        setSaveError(err instanceof Error ? err.message : "문서를 저장하지 못했습니다.");
         setSaveStatus("dirty");
         console.error("Markdown document save failed:", err);
       }
@@ -141,6 +128,7 @@ export function MarkdownDocumentPanel() {
     if (!documentId) return;
     setDocument(null);
     setIsEditingBody(false);
+    setSaveError(null);
     setSaveStatus("idle");
     if (runtime) {
       applyRuntimeSnapshot();
@@ -204,10 +192,7 @@ export function MarkdownDocumentPanel() {
       if (runtime) {
         runtime.deleteMarkdownDocument(documentId);
       } else {
-        const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
-          method: "DELETE",
-        });
-        if (!res.ok) throw new Error(`Delete markdown document failed: ${res.status}`);
+        await deleteMarkdownDocument(documentId);
       }
       removeBoardItem(`markdown:${documentId}`);
       setActiveBoardDocument(null);
@@ -224,6 +209,7 @@ export function MarkdownDocumentPanel() {
 
   const updateBody = (value: string) => {
     setBody(value);
+    setSaveError(null);
     setSaveStatus(runtime ? "saved" : "dirty");
     if (runtime && documentId) {
       setSavedBody(value);
@@ -233,6 +219,7 @@ export function MarkdownDocumentPanel() {
 
   const updateTitle = (value: string) => {
     setTitle(value);
+    setSaveError(null);
     setSaveStatus(runtime ? "saved" : "dirty");
     if (runtime && documentId) {
       const normalized = value.trim() || "Untitled document";
@@ -276,14 +263,21 @@ export function MarkdownDocumentPanel() {
           className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
           aria-label="Document title"
         />
-        <span data-testid="markdown-save-status" className="shrink-0 text-xs text-muted-foreground">
-          {saveStatus === "saving"
-            ? "저장 중..."
-            : saveStatus === "conflict"
-              ? "충돌: 새로고침 필요"
-              : saveStatus === "saved"
-                ? (runtime ? "동기화됨" : "저장됨")
-                : ""}
+        <span
+          data-testid="markdown-save-status"
+          className="shrink-0 text-xs text-muted-foreground"
+          role={saveError ? "alert" : undefined}
+          title={saveError ?? undefined}
+        >
+          {saveError
+            ? "저장 실패 · 다시 시도"
+            : saveStatus === "saving"
+              ? "저장 중..."
+              : saveStatus === "conflict"
+                ? "충돌: 새로고침 필요"
+                : saveStatus === "saved"
+                  ? (runtime ? "동기화됨" : "저장됨")
+                  : ""}
         </span>
         <Button variant="ghost" size="icon" onClick={remove} title="Delete document">
           <Trash2 className="h-4 w-4" />
@@ -308,6 +302,7 @@ export function MarkdownDocumentPanel() {
         ) : (
           <div
             className="prose prose-sm min-h-full max-w-none cursor-text dark:prose-invert"
+            data-v3-selectable-content="true"
             onClick={enterEditMode}
             data-testid="markdown-read-body"
           >

@@ -33,8 +33,17 @@ export type {
   MoveBoardItemToContainerResponse,
   UploadBoardAssetInput,
 } from "./board-workspace-operations";
-export { renameMarkdownDocument } from "./markdown-document-operations";
-export type { RenameMarkdownDocumentInput } from "./markdown-document-operations";
+export {
+  deleteMarkdownDocument,
+  fetchMarkdownDocument,
+  MarkdownDocumentConflictError,
+  renameMarkdownDocument,
+  updateMarkdownDocument,
+} from "./markdown-document-operations";
+export type {
+  RenameMarkdownDocumentInput,
+  UpdateMarkdownDocumentInput,
+} from "./markdown-document-operations";
 export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
 export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";

@@ -3,8 +3,11 @@ import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   resolveSessionForOpen,
+  resolveSessionTaskWorkspace,
   resolveSessionWorkspace,
+  SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
+import type { PlannerTask } from "./planner-data";
 
 describe("resolveSessionForOpen", () => {
   it("reuses a matching summary without fetching", async () => {
@@ -54,19 +57,22 @@ describe("resolveSessionWorkspace", () => {
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
-  it("opens an unassigned session standalone without a request", async () => {
-    const fetchImplementation = vi.fn();
+  it("opens a truly unassigned session standalone after a targeted canonical lookup", async () => {
+    const fetchImplementation = vi.fn(async () => json({ boardItems: [] }));
     const result = await resolveSessionWorkspace({
       session: session("session-a", null),
       boardItems: [],
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
 
-    expect(result).toEqual({ target: { kind: "standalone" } });
-    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(result).toEqual({ target: { kind: "standalone" }, loadedBoardItems: [] });
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "/api/board-items?session_id=session-a",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
   });
 
-  it("performs one bounded folder lookup when the cached catalog cannot resolve the session", async () => {
+  it("performs one targeted session lookup when daily and project collections do not contain its task", async () => {
     const items = [boardItem("session-a", "task", "task-a")];
     const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ boardItems: items }), {
       status: 200,
@@ -81,13 +87,12 @@ describe("resolveSessionWorkspace", () => {
 
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
     expect(fetchImplementation).toHaveBeenCalledWith(
-      "/api/board-items?folder_id=folder-a",
+      "/api/board-items?session_id=session-a",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(result).toEqual({
       target: { kind: "task", pageId: "task-a" },
       loadedBoardItems: items,
-      folderId: "folder-a",
     });
   });
 
@@ -110,7 +115,6 @@ describe("resolveSessionWorkspace", () => {
     expect(result).toEqual({
       target: { kind: "standalone" },
       loadedBoardItems: [],
-      folderId: "folder-a",
     });
   });
 
@@ -126,6 +130,65 @@ describe("resolveSessionWorkspace", () => {
   });
 });
 
+describe("resolveSessionTaskWorkspace", () => {
+  it("target-loads a task outside daily and loaded project pages without adding daily membership", async () => {
+    const target = plannerTask("task-outside-page", "in_progress");
+    const loadTask = vi.fn(async () => target);
+    const result = await resolveSessionTaskWorkspace({
+      session: session("session-a", "folder-a"),
+      boardItems: [],
+      currentTasks: [],
+      loadTask,
+      fetchImplementation: vi.fn(async () => json({
+        boardItems: [boardItem("session-a", "task", "task-outside-page")],
+      })) as typeof globalThis.fetch,
+    });
+
+    expect(result.task).toBe(target);
+    expect(loadTask).toHaveBeenCalledWith("task-outside-page");
+  });
+
+  it("reuses a completed owning task even when it is absent from daily membership", async () => {
+    const completed = plannerTask("task-complete", "completed");
+    const loadTask = vi.fn();
+    const result = await resolveSessionTaskWorkspace({
+      session: session("session-a", "folder-a"),
+      boardItems: [boardItem("session-a", "task", "task-complete")],
+      currentTasks: [completed],
+      loadTask,
+    });
+
+    expect(result.task).toBe(completed);
+    expect(loadTask).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an owning-task load failure from a truly unassigned session", async () => {
+    const lookup = vi.fn(async () => json({
+      boardItems: [boardItem("session-a", "task", "task-missing")],
+    })) as typeof globalThis.fetch;
+    const promise = resolveSessionTaskWorkspace({
+      session: session("session-a", null),
+      boardItems: [],
+      currentTasks: [],
+      loadTask: async () => { throw new Error("Not Found"); },
+      fetchImplementation: lookup,
+    });
+    await expect(promise).rejects.toBeInstanceOf(SessionWorkspaceResolutionError);
+    await expect(promise).rejects.toMatchObject({
+      phase: "task",
+      message: "소속 업무를 불러오지 못했습니다.",
+    });
+
+    await expect(resolveSessionTaskWorkspace({
+      session: session("session-unassigned", null),
+      boardItems: [],
+      currentTasks: [],
+      loadTask: vi.fn(),
+      fetchImplementation: vi.fn(async () => json({ boardItems: [] })) as typeof globalThis.fetch,
+    })).resolves.toMatchObject({ task: null, workspace: { target: { kind: "standalone" } } });
+  });
+});
+
 function session(agentSessionId: string, folderId: string | null): SessionSummary {
   return {
     agentSessionId,
@@ -133,6 +196,13 @@ function session(agentSessionId: string, folderId: string | null): SessionSummar
     status: "running",
     createdAt: "2026-07-16T00:00:00Z",
   } as SessionSummary;
+}
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 function boardItem(
@@ -151,4 +221,12 @@ function boardItem(
     x: 0,
     y: 0,
   };
+}
+
+function plannerTask(id: string, status: "in_progress" | "completed"): PlannerTask {
+  return {
+    page: { id, title: id },
+    taskId: id,
+    status,
+  } as PlannerTask;
 }

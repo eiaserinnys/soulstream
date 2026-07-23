@@ -6,6 +6,8 @@ import {
   markdownDocumentRouteAuthRequirements,
   type BoardYjsHostHttpClient,
 } from "../src/index.js";
+import type { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
+import { MarkdownDocumentVersionConflictError } from "../src/board-yjs/markdown_document_version.js";
 import {
   config,
   createAppWithMarkdownDocuments,
@@ -361,6 +363,70 @@ describe("markdown document and custom view route harness", () => {
       }),
     );
 
+    await app.close();
+  });
+
+  it("updates and deletes documents through the local service in orchestrator host mode", async () => {
+    const updateMarkdownDocument = vi.fn(async () => ({
+      id: "doc/one", title: "New", body: "After", version: 8,
+    }));
+    const deleteMarkdownDocument = vi.fn(async () => undefined);
+    const service = { updateMarkdownDocument, deleteMarkdownDocument } as unknown as BoardYjsService;
+    const createService = vi.fn(() => service);
+    const httpClient = vi.fn();
+    const { app } = createAppWithMarkdownDocuments(
+      { restricted: false },
+      {},
+      httpClient,
+      false,
+      { hostMode: "orch", createService },
+    );
+
+    const update = await app.inject({
+      method: "PUT",
+      url: "/api/markdown-documents/doc%2Fone",
+      payload: { expectedVersion: 7, title: "New", body: "After" },
+    });
+    const remove = await app.inject({
+      method: "DELETE",
+      url: "/api/markdown-documents/doc%2Fone",
+    });
+
+    expect(update.statusCode).toBe(200);
+    expect(update.json()).toMatchObject({ title: "New", body: "After", version: 8 });
+    expect(updateMarkdownDocument).toHaveBeenCalledWith(
+      { containerKind: "task", containerId: "task-1" },
+      "doc/one",
+      { expectedVersion: 7, title: "New", body: "After" },
+    );
+    expect(remove.statusCode).toBe(204);
+    expect(deleteMarkdownDocument).toHaveBeenCalledWith(
+      { containerKind: "task", containerId: "task-1" },
+      "doc/one",
+    );
+    expect(createService).toHaveBeenCalledTimes(1);
+    expect(httpClient).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("maps local markdown version conflicts to the public 409 contract", async () => {
+    const service = {
+      updateMarkdownDocument: vi.fn(async () => {
+        throw new MarkdownDocumentVersionConflictError("doc/one", 7, 8);
+      }),
+    } as unknown as BoardYjsService;
+    const { app } = createAppWithMarkdownDocuments(
+      { restricted: false }, {}, vi.fn(), false, { hostMode: "orch", service },
+    );
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/markdown-documents/doc%2Fone",
+      payload: { expectedVersion: 7, title: "New" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ expectedVersion: 7, actualVersion: 8 });
     await app.close();
   });
 

@@ -1,5 +1,7 @@
 import {
   fetchWithProjectionRetry,
+  fetchMarkdownDocument,
+  updateMarkdownDocument,
   type CatalogBoardItem,
   type CustomViewDocument,
   type MarkdownDocument,
@@ -46,11 +48,7 @@ export async function fetchInlineMarkdown(
   documentId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<MarkdownDocument> {
-  return await fetchDocument<MarkdownDocument>(
-    `/api/markdown-documents/${encodeURIComponent(documentId)}`,
-    "마크다운 문서를",
-    fetchImplementation,
-  );
+  return await fetchMarkdownDocument(documentId, fetchImplementation);
 }
 
 export async function saveInlineMarkdown(
@@ -62,27 +60,7 @@ export async function saveInlineMarkdown(
   },
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<MarkdownDocument> {
-  const response = await fetchImplementation(
-    `/api/markdown-documents/${encodeURIComponent(input.documentId)}`,
-    {
-      method: "PUT",
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        title: input.title,
-        body: input.body,
-        expectedVersion: input.expectedVersion,
-      }),
-    },
-  );
-  if (response.status === 409) {
-    throw new Error("문서가 다른 곳에서 변경되었습니다. 다시 불러온 뒤 재시도하세요.");
-  }
-  if (!response.ok) throw new Error(`마크다운 문서를 저장하지 못했습니다 (${response.status})`);
-  return await response.json() as MarkdownDocument;
+  return await updateMarkdownDocument(input, fetchImplementation);
 }
 
 export async function fetchInlineCustomView(

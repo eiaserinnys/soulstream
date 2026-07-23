@@ -133,6 +133,7 @@ export function TaskDescriptionPanel({
         <div
           ref={previewRef}
           className="v3-description-preview"
+          data-v3-selectable-content="true"
           data-editor-variant={variant}
           onClick={(event) => { if (event.target === event.currentTarget) changeEditing(true); }}
         >

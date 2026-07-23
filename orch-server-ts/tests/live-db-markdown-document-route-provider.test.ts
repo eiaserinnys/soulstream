@@ -23,6 +23,8 @@ describe("live DB markdown document route provider", () => {
             body: "Body",
             version: "3",
             folder_id: "folder-a",
+            container_kind: "task",
+            container_id: "task-1",
             created_at: new Date("2026-07-09T01:00:00.000Z"),
             updated_at: new Date("2026-07-09T01:05:00.000Z"),
           },
@@ -40,6 +42,8 @@ describe("live DB markdown document route provider", () => {
     ).resolves.toEqual({
       id: "doc-1",
       folderId: "folder-a",
+      containerKind: "task",
+      containerId: "task-1",
       title: "Note",
       body: "Body",
       version: 3,

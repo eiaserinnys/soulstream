@@ -6,6 +6,7 @@ import {
   useRenameSessionOperation,
 } from "@seosoyoung/soul-ui";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogBoardItem } from "@seosoyoung/soul-ui";
 
 import {
   createFolder,
@@ -24,12 +25,18 @@ import { useContinueSession } from "client/hooks/useContinueSession";
 
 interface BoardWorkspaceViewWrapperProps {
   sessions?: SessionSummary[];
+  taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
+  onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
+  onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
 }
 
 export function BoardWorkspaceView({
   sessions,
+  taskMoveTargets,
+  onBoardItemMoved,
+  onMarkdownDocumentDeleted,
   onLoadMore,
   hasMore,
 }: BoardWorkspaceViewWrapperProps = {}) {
@@ -59,6 +66,9 @@ export function BoardWorkspaceView({
   return (
     <SoulUIBoardWorkspaceView
       sessions={sessions}
+      taskMoveTargets={taskMoveTargets}
+      onBoardItemMoved={onBoardItemMoved}
+      onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSession}
       onDeleteSessions={deleteSessions}

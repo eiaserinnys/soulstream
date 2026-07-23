@@ -30,6 +30,7 @@ import type { MobilePlannerTab } from "./mobile-planner-state";
 
 export function TaskWorkspace({
   task,
+  taskResolutionError,
   projectTitle,
   projectFolderId,
   folders,
@@ -65,6 +66,7 @@ export function TaskWorkspace({
   onAcknowledgedReview,
 }: {
   task: PlannerTask | null;
+  taskResolutionError: string | null;
   projectTitle: string;
   projectFolderId: string | null;
   folders: readonly CatalogFolder[];
@@ -194,8 +196,10 @@ export function TaskWorkspace({
               </DashboardIconCap>
             </header>
             <div className="v3-chat-empty">
-              <strong>연결된 업무가 없습니다.</strong>
-              <p>이 세션의 채팅은 그대로 확인할 수 있습니다.</p>
+              <strong>{taskResolutionError ?? "연결된 업무가 없습니다."}</strong>
+              <p>{taskResolutionError
+                ? "업무 귀속을 다시 확인해 주세요. 이 세션의 채팅은 그대로 확인할 수 있습니다."
+                : "이 세션의 채팅은 그대로 확인할 수 있습니다."}</p>
             </div>
           </section>
           {divider("업무와 채팅 너비 조절")}
@@ -289,6 +293,7 @@ export function TaskWorkspace({
             projectFolderId={projectFolderId}
             projectTitle={projectTitle}
             sessions={sessions}
+            taskMoveTargets={taskMoveTargets}
             onClose={() => setBoardOpen(false)}
           />
         ) : (

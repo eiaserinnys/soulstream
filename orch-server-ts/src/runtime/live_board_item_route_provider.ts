@@ -24,6 +24,17 @@ export function createLiveBoardItemRouteProvider(
         `;
         return rows.flatMap(serializeBoardItemRow);
       }
+      if ("sessionId" in query) {
+        const rows = await sql`
+          SELECT *
+          FROM board_item_get_all()
+          WHERE item_type = 'session'
+            AND item_id = ${query.sessionId}
+            AND membership_kind = 'primary'
+          ORDER BY created_at
+        `;
+        return rows.flatMap(serializeBoardItemRow);
+      }
       const rows = await sql`
         SELECT board_items
         FROM board_yjs_catalog_cache
