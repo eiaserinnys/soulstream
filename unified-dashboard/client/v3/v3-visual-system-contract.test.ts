@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("PR-CL v3 visual system contract", () => {
-  it("loads the visual system after the legacy component styles", () => {
+  it("loads the visual system and its semantic selection policy after legacy component styles", () => {
     const entry = read("./v3-dashboard-styles.ts");
 
-    expect(entry.trim().endsWith('import "./v3-visual-system.css";')).toBe(true);
+    expect(entry.indexOf('import "./v3-visual-system.css";'))
+      .toBeLessThan(entry.indexOf('import "./v3-selection-policy.css";'));
+    expect(entry.trim().endsWith('import "./v3-selection-policy.css";')).toBe(true);
   });
 
   it("defines the seven typography roles with exact metrics", () => {

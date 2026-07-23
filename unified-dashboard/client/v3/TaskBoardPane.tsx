@@ -27,6 +27,7 @@ import {
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
+import type { PlannerTask } from "./planner-data";
 import "./v3-task-board.css";
 
 export function TaskBoardPane({
@@ -34,12 +35,14 @@ export function TaskBoardPane({
   projectFolderId,
   projectTitle,
   sessions,
+  taskMoveTargets,
   onClose,
 }: {
   taskId: string;
   projectFolderId: string | null;
   projectTitle: string;
   sessions: readonly SessionSummary[];
+  taskMoveTargets: readonly PlannerTask[];
   onClose(): void;
 }) {
   const [boardItems, setBoardItems] = useState<CatalogBoardItem[] | null>(null);
@@ -71,6 +74,22 @@ export function TaskBoardPane({
     () => mergeTaskBoardSessions(sessions, boardSessions),
     [boardSessions, sessions],
   );
+
+  const removeSourceBoardItem = useCallback((boardItemId: string, movedItem?: CatalogBoardItem) => {
+    setBoardItems((current) => current?.filter((item) => item.id !== boardItemId) ?? current);
+    const previous = previousStoreRef.current;
+    if (!previous?.catalog) return;
+    previousStoreRef.current = {
+      ...previous,
+      catalog: {
+        ...previous.catalog,
+        boardItems: [
+          ...(previous.catalog.boardItems ?? []).filter((item) => item.id !== boardItemId),
+          ...(movedItem ? [movedItem] : []),
+        ],
+      },
+    };
+  }, []);
 
   const reloadBoardItems = useCallback(async () => {
     try {
@@ -193,7 +212,14 @@ export function TaskBoardPane({
         ) : boardItems === null ? (
           <div className="v3-board-load-state" data-testid="v3-task-board-loading">업무 내용을 불러오는 중…</div>
         ) : (
-          <BoardWorkspaceView sessions={displaySessions} />
+          <BoardWorkspaceView
+            sessions={displaySessions}
+            taskMoveTargets={taskMoveTargets
+              .filter((target) => target.taskId !== taskId)
+              .map((target) => ({ id: target.taskId, title: target.page.title }))}
+            onBoardItemMoved={(item) => removeSourceBoardItem(item.id, item)}
+            onMarkdownDocumentDeleted={(_documentId, boardItemId) => removeSourceBoardItem(boardItemId)}
+          />
         )}
       </div>
     </article>

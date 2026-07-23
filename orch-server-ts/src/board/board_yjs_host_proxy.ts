@@ -53,6 +53,11 @@ export type BoardYjsHostProxyInput = {
   body?: unknown;
 };
 
+const localBoardYjsServices = new WeakMap<
+  BoardYjsHostProxyRouteOptions,
+  BoardYjsService
+>();
+
 export const boardYjsHostProxyRouteAuthRequirements = {
   "POST /api/board-yjs/host/{operation}": true,
 } as const;
@@ -178,14 +183,28 @@ function resolveLocalOperationOptions(
   app: FastifyInstance,
   options: BoardYjsHostProxyRouteOptions,
 ): BoardYjsHostOperationOptions {
-  const service = options.service ?? options.createService?.(app.log);
-  if (service === undefined) {
-    throw new Error("Board Yjs host service is required when BOARD_YJS_HOST_MODE=orch");
-  }
+  const service = resolveLocalBoardYjsService(app, options);
   if (options.authBearerToken === undefined) {
     throw new Error("Board Yjs host bearer token is required when BOARD_YJS_HOST_MODE=orch");
   }
   return { service, authBearerToken: options.authBearerToken };
+}
+
+export function resolveLocalBoardYjsService(
+  app: FastifyInstance,
+  options: BoardYjsHostProxyRouteOptions,
+): BoardYjsService {
+  if ((options.hostMode ?? "node") !== "orch") {
+    throw new Error("Local Board Yjs service is only available when BOARD_YJS_HOST_MODE=orch");
+  }
+  const existing = options.service ?? localBoardYjsServices.get(options);
+  if (existing !== undefined) return existing;
+  const created = options.createService?.(app.log);
+  if (created === undefined) {
+    throw new Error("Board Yjs host service is required when BOARD_YJS_HOST_MODE=orch");
+  }
+  localBoardYjsServices.set(options, created);
+  return created;
 }
 
 export async function requestBoardYjsHost(

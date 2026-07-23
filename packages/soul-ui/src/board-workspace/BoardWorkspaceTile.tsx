@@ -1,5 +1,6 @@
 import type {
   CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
@@ -52,6 +53,10 @@ interface BoardWorkspaceTileProps {
     event: ReactMouseEvent<HTMLElement>,
     item: BoardWorkspaceItem,
   ) => void;
+  onTileKeyboardContextMenu: (
+    event: ReactKeyboardEvent<HTMLElement>,
+    item: BoardWorkspaceItem,
+  ) => void;
   isStackExpanded?: boolean;
   isPulsing?: boolean;
   onToggleChildStack?: (item: Extract<BoardWorkspaceItem, { type: "session" }>) => void;
@@ -73,6 +78,7 @@ export function BoardWorkspaceTile({
   isSelected,
   remoteSelectionColor,
   onTileContextMenu,
+  onTileKeyboardContextMenu,
   isStackExpanded,
   isPulsing,
   onToggleChildStack,
@@ -137,6 +143,11 @@ export function BoardWorkspaceTile({
         style={tileStyle}
         onPointerDown={(event) => onTilePointerDown(event, item)}
         onContextMenu={(event) => onTileContextMenu(event, item)}
+        onKeyDown={(event) => {
+          if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+            onTileKeyboardContextMenu(event, item);
+          }
+        }}
         onClick={() => {
           if (shouldSuppressClick()) return;
           onOpenMarkdown(item.documentId);

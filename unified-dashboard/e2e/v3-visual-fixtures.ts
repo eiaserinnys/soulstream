@@ -30,6 +30,7 @@ export interface V3VisualQaRouteOptions {
   taskDefaultAssignment?: boolean;
   taskContextEditing?: boolean;
   legacyAtomContext?: boolean;
+  outsideTaskSession?: boolean;
   emptyPlannerProjectsWhen?: () => boolean;
   emptyProjectPlannerWhen?: () => boolean;
   excludeSessionIdsFromInitialStream?: readonly string[];
@@ -380,6 +381,25 @@ const sessions = [
   })),
 ];
 
+const outsideTaskSession = {
+  agentSessionId: "run-outside-task",
+  folderId: "folder-amber",
+  status: "running" as const,
+  reviewState: "not_required" as const,
+  sessionType: "claude",
+  createdAt: "2026-07-14T01:29:00.000Z",
+  updatedAt: NOW,
+  displayName: "데일리 밖 완료 업무 세션",
+  lastMessage: {
+    type: "assistant",
+    preview: "완료 업무의 소속을 canonical membership으로 찾습니다.",
+    timestamp: NOW,
+  },
+  nodeId: "eiaserinnys",
+  agentId: "roselin_codex",
+  agentName: "로젤린",
+};
+
 const runSessions: Record<string, string[]> = {
   [pages.taskCreated.id]: [],
   "rb-alpha": ["run-alpha-1", "run-alpha-2"],
@@ -507,6 +527,7 @@ export async function installV3VisualQaRoutes(
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
   let plannerTodayRequests = 0;
+  const qaSessions = options.outsideTaskSession ? [...sessions, outsideTaskSession] : sessions;
   let plannerProjectRequests = 0;
   let runHistoryRequests = 0;
   const visiblePages = () => options.includeCreatedTaskWhen?.() === true
@@ -522,6 +543,7 @@ export async function installV3VisualQaRoutes(
     body: "# 인라인 보드\n\n마크다운 본문은 행을 연 뒤에만 불러옵니다.",
     version: 2,
   };
+  let inlineMarkdownTaskId: string | null = "rb-alpha";
   await pageInstance.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -564,7 +586,7 @@ export async function installV3VisualQaRoutes(
         status: "connected",
         capabilities: {},
         connectedAt: Date.parse(YESTERDAY),
-        sessionCount: sessions.length,
+        sessionCount: qaSessions.length,
       }, ...(options.successionPickerRuns ? [{
         nodeId: "qa-node",
         host: "localhost",
@@ -584,10 +606,10 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/sessions/stream") {
       const streamedSessions = options.excludeSessionIdsFromInitialStream?.length
-        ? sessions.filter(
+        ? qaSessions.filter(
             (session) => !options.excludeSessionIdsFromInitialStream?.includes(session.agentSessionId),
           )
-        : sessions;
+        : qaSessions;
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
@@ -621,8 +643,8 @@ export async function installV3VisualQaRoutes(
       const requestedIds = url.searchParams.getAll("session_id");
       if (requestedIds.length === 0) await delay(options.catalogDelayMs);
       const selectedSessions = requestedIds.length > 0
-        ? sessions.filter((session) => requestedIds.includes(session.agentSessionId))
-        : sessions;
+        ? qaSessions.filter((session) => requestedIds.includes(session.agentSessionId))
+        : qaSessions;
       return fulfillJson(route, { sessions: selectedSessions, total: selectedSessions.length });
     }
     if (path === "/api/sessions" && request.method() === "POST") {
@@ -645,7 +667,7 @@ export async function installV3VisualQaRoutes(
     if (sessionRenameMatch && request.method() === "PATCH") {
       const sessionId = decodeURIComponent(sessionRenameMatch[1]);
       const payload = request.postDataJSON() as { displayName?: string | null };
-      const target = sessions.find((session) => session.agentSessionId === sessionId);
+      const target = qaSessions.find((session) => session.agentSessionId === sessionId);
       if (!target) return fulfillJson(route, { detail: "session not found" }, 404);
       target.displayName = payload.displayName ?? undefined;
       return fulfillJson(route, { status: "ok" });
@@ -719,7 +741,7 @@ export async function installV3VisualQaRoutes(
                 : []),
             ],
         memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
-        review_session_ids: yesterday ? [] : sessions
+        review_session_ids: yesterday ? [] : qaSessions
           .filter((session) => session.reviewState === "needs_review")
           .map((session) => session.agentSessionId),
       });
@@ -996,6 +1018,15 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);
+      const sessionId = url.searchParams.get("session_id");
+      if (sessionId) {
+        const owningTaskPageId = sessionId === "run-outside-task" ? pages.taskDone.id : null;
+        return fulfillJson(route, {
+          boardItems: owningTaskPageId
+            ? [boardItem("session", sessionId, owningTaskPageId, 0)]
+            : [],
+        });
+      }
       if (url.searchParams.has("folder_id")) {
         return fulfillJson(route, {
           boardItems: [
@@ -1005,7 +1036,7 @@ export async function installV3VisualQaRoutes(
         });
       }
       const taskId = url.searchParams.get("container_id") ?? "";
-      const inlineItems = taskId === "rb-alpha" ? [
+      const inlineItems = taskId === inlineMarkdownTaskId ? [
         boardItem("markdown", "doc-inline", taskId, 160, {
           title: inlineMarkdownDocument.title,
           version: inlineMarkdownDocument.version,
@@ -1023,10 +1054,20 @@ export async function installV3VisualQaRoutes(
     const boardMoveMatch = /^\/api\/board-items\/([^/]+)\/container$/.exec(path);
     if (boardMoveMatch && request.method() === "PATCH") {
       const boardItemId = decodeURIComponent(boardMoveMatch[1]);
-      const sessionId = boardItemId.startsWith("session:") ? boardItemId.slice("session:".length) : boardItemId;
       const body = request.postDataJSON() as { container?: { kind?: string; id?: string } };
       const targetTaskId = body.container?.kind === "task" ? body.container.id : null;
       if (!targetTaskId || !runSessions[targetTaskId]) return fulfillJson(route, { detail: "target not found" }, 404);
+      if (boardItemId === "markdown:doc-inline") {
+        inlineMarkdownTaskId = targetTaskId;
+        return fulfillJson(route, {
+          ok: true,
+          boardItem: boardItem("markdown", "doc-inline", targetTaskId, 160, {
+            title: inlineMarkdownDocument.title,
+            version: inlineMarkdownDocument.version,
+          }),
+        });
+      }
+      const sessionId = boardItemId.startsWith("session:") ? boardItemId.slice("session:".length) : boardItemId;
       for (const ids of Object.values(runSessions)) {
         const index = ids.indexOf(sessionId);
         if (index >= 0) ids.splice(index, 1);
@@ -1035,6 +1076,10 @@ export async function installV3VisualQaRoutes(
       return fulfillJson(route, { ok: true, boardItem: boardItem("session", sessionId, targetTaskId, 0) });
     }
     if (path === "/api/markdown-documents/doc-inline") {
+      if (request.method() === "DELETE") {
+        inlineMarkdownTaskId = null;
+        return fulfillJson(route, { ok: true });
+      }
       if (request.method() === "PUT") {
         const input = request.postDataJSON() as { title?: string; body?: string; expectedVersion: number };
         if (input.expectedVersion !== inlineMarkdownDocument.version) {

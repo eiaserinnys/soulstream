@@ -3,8 +3,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
 import {
   proxyBoardYjsHostRequest,
+  sendBoardYjsHostProxyError,
   type BoardYjsHostProxyRouteOptions,
 } from "./board_yjs_host_proxy.js";
+import {
+  findBoardItem,
+  moveLocalBoardItem,
+  updateLocalBoardItemPosition,
+} from "./board_item_local_mutations.js";
 
 export type BoardItemFolderRecord = {
   id: string;
@@ -32,7 +38,8 @@ export type BoardContainerTarget = {
 
 export type BoardItemListQuery =
   | { folderId: string }
-  | { container: BoardContainerTarget };
+  | { container: BoardContainerTarget }
+  | { sessionId: string };
 
 export type BoardItemCatalogSnapshot = {
   folders: readonly BoardItemFolderRecord[];
@@ -99,6 +106,16 @@ export function registerBoardItemRoutes(
     if (!query.ok) return badRequest(reply, query.message);
 
     const folders = [...(await options.provider.listFolders())];
+    if ("sessionId" in query.value) {
+      const boardItems = await options.provider.listBoardItems(query.value);
+      const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
+      if (boardItems.some((item) => (
+        !isFolderAllowed(access, folders, stringOrNull(item.folderId))
+      ))) {
+        return folderAccessDenied(reply);
+      }
+      return reply.send({ boardItems });
+    }
     const inheritedFolderIdResult =
       "folderId" in query.value
         ? { ok: true as const, value: query.value.folderId }
@@ -134,6 +151,19 @@ export function registerBoardItemRoutes(
         }
       }
 
+      if ((options.hostProxy.hostMode ?? "node") === "orch") {
+        try {
+          const snapshot = await options.provider.getCatalogSnapshot();
+          const boardItem = findBoardItem(snapshot.boardItems, boardItemId);
+          if (boardItem === undefined) return boardItemNotFound(reply);
+          await updateLocalBoardItemPosition(
+            app, options.hostProxy, boardItem, boardItemId, body.value.x, body.value.y,
+          );
+          return reply.send({ ok: true });
+        } catch (error) {
+          return sendBoardYjsHostProxyError(reply, error);
+        }
+      }
       return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
         method: "PATCH",
         upstreamPath: `/api/board-items/${encodeURIComponent(boardItemId)}/position`,
@@ -168,6 +198,25 @@ export function registerBoardItemRoutes(
         return folderAccessDenied(reply);
       }
 
+      if ((options.hostProxy.hostMode ?? "node") === "orch") {
+        try {
+          const position = body.value.x !== undefined && body.value.y !== undefined
+            ? { x: body.value.x, y: body.value.y }
+            : undefined;
+          const moved = await moveLocalBoardItem(
+            app,
+            options.hostProxy,
+            boardItem,
+            body.value.container,
+            targetFolderId.value,
+            position,
+            body.value.idempotencyKey,
+          );
+          return reply.send({ ok: true, boardItem: moved });
+        } catch (error) {
+          return sendBoardYjsHostProxyError(reply, error);
+        }
+      }
       return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
         method: "PATCH",
         upstreamPath: `/api/board-items/${encodeURIComponent(boardItemId)}/container`,
@@ -185,18 +234,23 @@ function parseListQuery(query: unknown): Validation<BoardItemListQuery> {
   const folderId = optionalQueryString(values, "folder_id");
   const containerKind = optionalQueryString(values, "container_kind");
   const containerId = optionalQueryString(values, "container_id");
+  const sessionId = optionalQueryString(values, "session_id");
 
-  if (folderId !== undefined && (containerKind !== undefined || containerId !== undefined)) {
+  const shapes = Number(folderId !== undefined)
+    + Number(containerKind !== undefined || containerId !== undefined)
+    + Number(sessionId !== undefined);
+  if (shapes > 1) {
     return {
       ok: false,
-      message: "folder_id and container_kind/container_id are mutually exclusive",
+      message: "folder_id, session_id, and container_kind/container_id are mutually exclusive",
     };
   }
   if (folderId !== undefined) return { ok: true, value: { folderId } };
+  if (sessionId !== undefined) return { ok: true, value: { sessionId } };
   if (containerKind === undefined || containerId === undefined) {
     return {
       ok: false,
-      message: "folder_id or container_kind/container_id is required",
+      message: "folder_id, session_id, or container_kind/container_id is required",
     };
   }
   const kind = parseContainerKind(containerKind);
@@ -359,13 +413,6 @@ function visibleFolderIds(
     stack.push(...(byParent.get(folderId) ?? []));
   }
   return visible;
-}
-
-function findBoardItem(
-  boardItems: readonly BoardItemRecord[],
-  boardItemId: string,
-): BoardItemRecord | undefined {
-  return boardItems.find((item) => item.id === boardItemId);
 }
 
 function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {

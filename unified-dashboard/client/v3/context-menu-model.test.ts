@@ -71,6 +71,25 @@ describe("v3 context menu model", () => {
     expect(mounted[3]?.disabled).toBe(true);
   });
 
+  it("adds task-board move and destructive delete without duplicating the common actions", () => {
+    const menu = buildDocumentContextMenuActions({
+      open: vi.fn(),
+      copyId: vi.fn(),
+      moveToTask: vi.fn(),
+      remove: vi.fn(),
+    });
+
+    expect(menu.map((action) => action.label)).toEqual([
+      "문서 열기",
+      "페이지 ID 복사",
+      "다른 업무로 이동",
+      "문서 삭제",
+    ]);
+    expect(menu[2]).toMatchObject({ separatorBefore: true });
+    expect(menu[2]?.destructive).toBeUndefined();
+    expect(menu[3]).toMatchObject({ destructive: true });
+  });
+
   it("owns project and task-bound session extension ordering", () => {
     expect(buildProjectContextMenuActions({
       open: vi.fn(),

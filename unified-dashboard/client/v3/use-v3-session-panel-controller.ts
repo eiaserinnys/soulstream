@@ -19,7 +19,8 @@ import {
 import { orchestratorSessionProvider } from "../providers";
 import {
   resolveSessionForOpen,
-  resolveSessionWorkspace,
+  resolveSessionTaskWorkspace,
+  SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
 
 export function useV3SessionPanelController({
@@ -47,6 +48,7 @@ export function useV3SessionPanelController({
   const focusRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => readV3SessionPanelWidth());
   const [focusRequest, setFocusRequest] = useState<TaskSectionFocusRequest | null>(null);
+  const [workspaceTaskError, setWorkspaceTaskError] = useState<string | null>(null);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
@@ -73,23 +75,16 @@ export function useV3SessionPanelController({
   const openSession = useCallback(async (session: SessionSummary) => {
     activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
     try {
-      const resolved = await resolveSessionWorkspace({
+      const resolved = await resolveSessionTaskWorkspace({
         session,
         boardItems: catalog?.boardItems ?? [],
+        currentTasks,
+        loadTask: (pageId) => loadPlannerTask(api, pageId),
       });
-      if (resolved.loadedBoardItems && resolved.folderId) {
-        useDashboardStore.getState().setBoardItemsForFolder(
-          resolved.folderId,
-          resolved.loadedBoardItems,
-        );
-      }
-      if (resolved.target.kind === "task") {
-        const { pageId } = resolved.target;
-        const loaded = currentTasks.find((task) => (
-          task.page.id === pageId || task.taskId === pageId
-        )) ?? await loadPlannerTask(api, pageId);
-        setSelectedTaskId(loaded.page.id);
-        setSelectedTaskSnapshot(loaded);
+      setWorkspaceTaskError(null);
+      if (resolved.task) {
+        setSelectedTaskId(resolved.task.page.id);
+        setSelectedTaskSnapshot(resolved.task);
         focusRequestSequence.current += 1;
         setFocusRequest({
           requestId: focusRequestSequence.current,
@@ -105,7 +100,14 @@ export function useV3SessionPanelController({
       setSelectedTaskId(null);
       setSelectedTaskSnapshot(null);
       setFocusRequest(null);
-      notify(`세션의 업무 열기 실패 · ${errorText(error)}`);
+      const message = error instanceof SessionWorkspaceResolutionError
+        ? error.message
+        : "세션의 업무를 열지 못했습니다.";
+      const detail = error instanceof SessionWorkspaceResolutionError && error.cause
+        ? errorText(error.cause)
+        : errorText(error);
+      setWorkspaceTaskError(message);
+      notify(`세션의 업무 열기 실패 · ${message} · ${detail}`);
     }
     setWorkspaceOpen(true);
     setChatOpen(true);
@@ -139,6 +141,7 @@ export function useV3SessionPanelController({
     sessions,
     reviewSessions,
     focusRequest,
+    workspaceTaskError,
     resize,
     openSession,
     openSessionById,

@@ -7,8 +7,10 @@ import type { BoardContainerRef, CatalogFolder, FolderSettings, SessionSummary }
 import { isSystemFolderId } from "../shared/constants";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { Button } from "../components/ui/button";
+import { Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../components/ui/dialog";
 import { toastManager } from "../components/ui/toast";
-import { renameMarkdownDocument } from "../lib/markdown-document-operations";
+import { deleteMarkdownDocument, renameMarkdownDocument } from "../lib/markdown-document-operations";
+import { MarkdownDeleteDialog } from "../components/MarkdownDeleteDialog";
 import { FolderDialog } from "../components/FolderDialog";
 import { FolderContextMenu, type FolderContextMenuTarget } from "../components/FolderContextMenu";
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
@@ -66,6 +68,7 @@ interface BoardWorkspaceContextMenusProps {
     item: MovableBoardWorkspaceItem,
     target: BoardContainerRef,
   ) => Promise<void>;
+  onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -97,6 +100,7 @@ export function BoardWorkspaceContextMenus({
   onToggleFrameCollapsed,
   onDeleteFrame,
   onMoveBoardItemToContainer,
+  onMarkdownDocumentDeleted,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -115,6 +119,9 @@ export function BoardWorkspaceContextMenus({
   const [renameMarkdownTarget, setRenameMarkdownTarget] = useState<{ documentId: string; title: string; version: number } | null>(null);
   const [renameMarkdownInput, setRenameMarkdownInput] = useState("");
   const [renameMarkdownError, setRenameMarkdownError] = useState("");
+  const [deleteMarkdownTarget, setDeleteMarkdownTarget] = useState<{ boardItemId: string; documentId: string; title: string } | null>(null);
+  const [deleteMarkdownPending, setDeleteMarkdownPending] = useState(false);
+  const [deleteMarkdownError, setDeleteMarkdownError] = useState("");
   const [renameFrameTarget, setRenameFrameTarget] = useState<Extract<BoardWorkspaceItem, { type: "frame" }> | null>(null);
   const [renameFrameInput, setRenameFrameInput] = useState("");
   const [moveTaskTarget, setMoveTaskTarget] = useState<{
@@ -122,6 +129,7 @@ export function BoardWorkspaceContextMenus({
     selectedTaskId: string;
   } | null>(null);
   const [moveTaskError, setMoveTaskError] = useState("");
+  const [moveTaskPending, setMoveTaskPending] = useState(false);
 
   const folderContextTarget: FolderContextMenuTarget | null =
     cardContextMenu?.item.type === "folder"
@@ -151,14 +159,14 @@ export function BoardWorkspaceContextMenus({
       ? movableContextMenu
       : null;
   const canMoveBoardItem = Boolean(onMoveBoardItemToContainer && boardContainer && resolvedBoardFolderId);
-  const moveLabel = boardContainer?.kind === "task"
-    ? "폴더 보드로 내보내기"
-    : "업무 보드로 이동...";
+  const availableTaskMoveTargets = taskMoveTargets.filter((target) => (
+    boardContainer?.kind !== "task" || target.id !== boardContainer.id
+  ));
 
   const moveSessionActions: SessionContextMenuExtraAction[] =
     movableContextMenu?.item.type === "session" && canMoveBoardItem
       ? [{
-          label: moveLabel,
+          label: boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동...",
           onClick: () => openMoveBoardItemTarget(movableContextMenu.item),
         }]
       : [];
@@ -166,14 +174,14 @@ export function BoardWorkspaceContextMenus({
   function openMoveBoardItemTarget(item: MovableBoardWorkspaceItem) {
     if (!onMoveBoardItemToContainer || !boardContainer || !resolvedBoardFolderId) return;
     onCloseCardContextMenu();
-    if (boardContainer.kind === "task") {
+    if (boardContainer.kind === "task" && item.type !== "markdown") {
       void handleMoveBoardItem(item, { kind: "folder", id: resolvedBoardFolderId });
       return;
     }
     setMoveTaskError("");
     setMoveTaskTarget({
       item,
-      selectedTaskId: taskMoveTargets[0]?.id ?? "",
+      selectedTaskId: availableTaskMoveTargets[0]?.id ?? "",
     });
   }
 
@@ -181,7 +189,8 @@ export function BoardWorkspaceContextMenus({
     item: MovableBoardWorkspaceItem,
     target: BoardContainerRef,
   ) {
-    if (!onMoveBoardItemToContainer) return;
+    if (!onMoveBoardItemToContainer || moveTaskPending) return;
+    setMoveTaskPending(true);
     try {
       setMoveTaskError("");
       await onMoveBoardItemToContainer(item, target);
@@ -195,6 +204,8 @@ export function BoardWorkspaceContextMenus({
         type: "error",
       });
       console.error("Board item container move failed:", err);
+    } finally {
+      setMoveTaskPending(false);
     }
   }
 
@@ -249,22 +260,29 @@ export function BoardWorkspaceContextMenus({
     }
   };
 
-  const handleDeleteMarkdown = async (documentId: string) => {
+  const handleDeleteMarkdown = async () => {
+    if (!deleteMarkdownTarget || deleteMarkdownPending) return;
+    setDeleteMarkdownPending(true);
+    setDeleteMarkdownError("");
     try {
-      if (boardYjsRuntime) {
-        boardYjsRuntime.deleteMarkdownDocument(documentId);
+      if (boardYjsRuntime?.isProviderBacked) {
+        boardYjsRuntime.deleteMarkdownDocument(deleteMarkdownTarget.documentId);
       } else {
-        const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
-          method: "DELETE",
-        });
-        if (!res.ok) throw new Error(`Delete markdown document failed: ${res.status}`);
+        await deleteMarkdownDocument(deleteMarkdownTarget.documentId);
+        boardYjsRuntime?.deleteMarkdownDocument(deleteMarkdownTarget.documentId);
       }
-      removeBoardItem(`markdown:${documentId}`);
-      if (activeBoardDocumentId === documentId) setActiveBoardDocument(null);
+      const boardItemId = deleteMarkdownTarget.boardItemId;
+      removeBoardItem(boardItemId);
+      if (activeBoardDocumentId === deleteMarkdownTarget.documentId) setActiveBoardDocument(null);
+      onMarkdownDocumentDeleted?.(deleteMarkdownTarget.documentId, boardItemId);
+      setDeleteMarkdownTarget(null);
     } catch (err) {
+      const message = err instanceof Error ? err.message : "문서를 삭제하지 못했습니다.";
+      setDeleteMarkdownError(message);
+      toastManager.add({ title: "문서 삭제 실패", description: message, type: "error" });
       console.error("Markdown document delete failed:", err);
     } finally {
-      onCloseCardContextMenu();
+      setDeleteMarkdownPending(false);
     }
   };
 
@@ -388,13 +406,21 @@ export function BoardWorkspaceContextMenus({
               onClick={() => openMoveBoardItemTarget(markdownContextMenu.item)}
             >
               <ArrowRightLeft className="h-4 w-4" />
-              {moveLabel}
+              {boardContainer?.kind === "task" ? "다른 업무로 이동..." : "업무 보드로 이동..."}
             </button>
           )}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
-            onClick={() => handleDeleteMarkdown(markdownContextMenu.item.documentId)}
+            onClick={() => {
+              setDeleteMarkdownTarget({
+                boardItemId: markdownContextMenu.item.boardItemId,
+                documentId: markdownContextMenu.item.documentId,
+                title: markdownContextMenu.item.title,
+              });
+              setDeleteMarkdownError("");
+              onCloseCardContextMenu();
+            }}
           >
             <Trash2 className="h-4 w-4" />
             삭제
@@ -413,7 +439,7 @@ export function BoardWorkspaceContextMenus({
             onClick={() => openMoveBoardItemTarget(assetOrCustomViewContextMenu.item)}
           >
             <ArrowRightLeft className="h-4 w-4" />
-            {moveLabel}
+            {boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동..."}
           </button>
         </div>
       )}
@@ -470,6 +496,19 @@ export function BoardWorkspaceContextMenus({
         onOpenChange={(open) => { if (!open) setDeleteFolderTarget(null); }}
         onConfirm={handleDeleteFolder}
         folderName={deleteFolderTarget?.name ?? ""}
+      />
+      <MarkdownDeleteDialog
+        open={deleteMarkdownTarget !== null}
+        title={deleteMarkdownTarget?.title ?? ""}
+        pending={deleteMarkdownPending}
+        error={deleteMarkdownError}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteMarkdownTarget(null);
+            setDeleteMarkdownError("");
+          }
+        }}
+        onConfirm={() => { void handleDeleteMarkdown(); }}
       />
       <FolderSettingsDialog
         folder={folders.find((folder) => folder.id === settingsFolderTarget?.id) ?? null}
@@ -572,10 +611,15 @@ export function BoardWorkspaceContextMenus({
           </form>
         </div>
       )}
-      {moveTaskTarget && (
-        <div className={BOARD_MODAL_BACKDROP_CLASS}>
+      <Dialog
+        open={moveTaskTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !moveTaskPending) setMoveTaskTarget(null);
+        }}
+      >
+        <DialogPopup className="max-w-sm">
+          {moveTaskTarget ? (
           <form
-            className="w-[22rem] max-w-[calc(100vw-2rem)] rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
               event.preventDefault();
               if (!moveTaskTarget.selectedTaskId) return;
@@ -585,49 +629,49 @@ export function BoardWorkspaceContextMenus({
               });
             }}
           >
-            <label className="mb-2 block text-sm font-medium" htmlFor="board-task-move-target">
-              대상 업무
-            </label>
-            <div id="board-task-move-target" className="mb-3 flex max-h-64 flex-col gap-1 overflow-auto">
-              {taskMoveTargets.length > 0 ? (
-                taskMoveTargets.map((target) => (
-                  <button
-                    key={target.id}
-                    type="button"
-                    className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                      moveTaskTarget.selectedTaskId === target.id
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-accent"
-                    }`}
-                    onClick={() =>
-                      setMoveTaskTarget((current) =>
-                        current ? { ...current, selectedTaskId: target.id } : current
-                      )
-                    }
-                  >
-                    {target.title}
-                  </button>
-                ))
-              ) : (
-                <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
-                  이동할 수 있는 업무가 없습니다.
-                </p>
-              )}
-            </div>
-            {moveTaskError && (
-              <p className="mb-3 text-xs text-destructive">{moveTaskError}</p>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setMoveTaskTarget(null)}>
+            <DialogHeader><DialogTitle>다른 업무로 이동</DialogTitle></DialogHeader>
+            <DialogPanel>
+              <div id="board-task-move-target" className="flex max-h-64 flex-col gap-1 overflow-auto">
+                {availableTaskMoveTargets.length > 0 ? (
+                  availableTaskMoveTargets.map((target) => (
+                    <button
+                      key={target.id}
+                      type="button"
+                      disabled={moveTaskPending}
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                        moveTaskTarget.selectedTaskId === target.id
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-accent"
+                      }`}
+                      onClick={() =>
+                        setMoveTaskTarget((current) =>
+                          current ? { ...current, selectedTaskId: target.id } : current
+                        )
+                      }
+                    >
+                      {target.title}
+                    </button>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
+                    이동할 수 있는 업무가 없습니다.
+                  </p>
+                )}
+              </div>
+              {moveTaskError ? <p className="mt-3 text-xs text-destructive" role="alert">{moveTaskError}</p> : null}
+            </DialogPanel>
+            <DialogFooter variant="bare">
+              <Button type="button" variant="outline" disabled={moveTaskPending} onClick={() => setMoveTaskTarget(null)}>
                 취소
               </Button>
-              <Button type="submit" disabled={!moveTaskTarget.selectedTaskId}>
-                이동
+              <Button type="submit" disabled={!moveTaskTarget.selectedTaskId || moveTaskPending}>
+                {moveTaskPending ? "이동 중…" : "이동"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+          ) : null}
+        </DialogPopup>
+      </Dialog>
     </>
   );
 }

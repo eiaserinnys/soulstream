@@ -9,6 +9,12 @@ import {
   proxyBoardYjsHostRequest,
   type BoardYjsHostProxyRouteOptions,
 } from "./board_yjs_host_proxy.js";
+import {
+  deleteLocalMarkdownDocument,
+  documentFolderId,
+  publicMarkdownDocumentRecord,
+  updateLocalMarkdownDocument,
+} from "./markdown_document_local_mutations.js";
 
 export type MarkdownDocumentFolderRecord = {
   id: string;
@@ -20,6 +26,8 @@ export type MarkdownDocumentRecord = {
   id?: string;
   folderId?: string | null;
   folder_id?: string | null;
+  containerKind?: MarkdownDocumentContainerKind | null;
+  containerId?: string | null;
   [key: string]: unknown;
 };
 
@@ -158,7 +166,7 @@ export function registerMarkdownDocumentRoutes(
       if (!isBoardFolderAllowed(access, folders, documentFolderId(document))) {
         return folderAccessDenied(reply);
       }
-      return reply.send(document);
+      return reply.send(publicMarkdownDocumentRecord(document));
     },
   );
 
@@ -196,6 +204,16 @@ export function registerMarkdownDocumentRoutes(
         return folderAccessDenied(reply);
       }
 
+      if ((options.hostProxy.hostMode ?? "node") === "orch") {
+        return await updateLocalMarkdownDocument(
+          app,
+          reply,
+          options.hostProxy,
+          existing,
+          documentId,
+          body.value,
+        );
+      }
       return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
         method: "PUT",
         upstreamPath: `/api/markdown-documents/${encodeURIComponent(documentId)}`,
@@ -218,6 +236,15 @@ export function registerMarkdownDocumentRoutes(
         return folderAccessDenied(reply);
       }
 
+      if ((options.hostProxy.hostMode ?? "node") === "orch") {
+        return await deleteLocalMarkdownDocument(
+          app,
+          reply,
+          options.hostProxy,
+          existing,
+          documentId,
+        );
+      }
       return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
         method: "DELETE",
         upstreamPath: `/api/markdown-documents/${encodeURIComponent(documentId)}`,
@@ -375,10 +402,6 @@ function parseContainerBody(
     return { ok: false, message: "invalid board container" };
   }
   return { ok: true, value: { kind: kindValue, id: idValue } };
-}
-
-function documentFolderId(document: MarkdownDocumentRecord): string | null {
-  return stringOrNull(document.folderId) ?? stringOrNull(document.folder_id);
 }
 
 function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {

@@ -47,7 +47,9 @@ export function createLiveMarkdownDocumentRouteProvider(
           md.version,
           md.created_at,
           md.updated_at,
-          bi.folder_id
+          bi.folder_id,
+          bi.container_kind,
+          bi.container_id
         FROM markdown_documents md
         LEFT JOIN board_items bi
           ON bi.item_type = 'markdown'
@@ -95,6 +97,12 @@ function serializeMarkdownDocumentRow(row: Record<string, unknown>): MarkdownDoc
   };
   const folderId = stringOrNull(row.folder_id ?? row.folderId);
   if (folderId !== null) record.folderId = folderId;
+  const containerKind = stringOrNull(row.container_kind ?? row.containerKind);
+  if (containerKind === "folder" || containerKind === "task") {
+    record.containerKind = containerKind;
+  }
+  const containerId = stringOrNull(row.container_id ?? row.containerId);
+  if (containerId !== null) record.containerId = containerId;
   const createdAt = timestampString(row.created_at ?? row.createdAt);
   if (createdAt !== undefined) record.createdAt = createdAt;
   const updatedAt = timestampString(row.updated_at ?? row.updatedAt);

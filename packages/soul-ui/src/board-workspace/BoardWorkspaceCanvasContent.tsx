@@ -1,4 +1,4 @@
-import type { CSSProperties, MutableRefObject, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MutableRefObject, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Loader2 } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
@@ -28,6 +28,7 @@ interface BoardWorkspaceCanvasContentProps {
   boardToCanvasStyle: (position: { x: number; y: number }) => { left: number; top: number };
   onTilePointerDown: (event: ReactPointerEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
   onTileContextMenu: (event: ReactMouseEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
+  onTileKeyboardContextMenu: (event: ReactKeyboardEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
   shouldSuppressTileClick: () => boolean;
   onOpenFolder: (item: BoardWorkspaceItem, folderId: string) => void;
   onOpenTaskBoard: (taskId: string) => void;
@@ -64,6 +65,7 @@ export function BoardWorkspaceCanvasContent({
   boardToCanvasStyle,
   onTilePointerDown,
   onTileContextMenu,
+  onTileKeyboardContextMenu,
   shouldSuppressTileClick,
   onOpenFolder,
   onOpenTaskBoard,
@@ -121,6 +123,7 @@ export function BoardWorkspaceCanvasContent({
           remoteSelectionColor={remoteSelectionByItemId.get(item.boardItemId)}
           onTilePointerDown={onTilePointerDown}
           onTileContextMenu={onTileContextMenu}
+          onTileKeyboardContextMenu={onTileKeyboardContextMenu}
           onToggleChildStack={onToggleChildStack}
           onNavigateToParent={onNavigateToParent}
           onToggleFrameCollapsed={onToggleFrameCollapsed}

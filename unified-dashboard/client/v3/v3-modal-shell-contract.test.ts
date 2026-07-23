@@ -11,8 +11,8 @@ const expectedV3DialogConsumers = [
   "ProjectDialog.tsx",
   "RitualModal.tsx",
   "SessionSuccessionModal.tsx",
+  "TaskMoveDialog.tsx",
   "TaskProjectMoveDialog.tsx",
-  "TaskRunHistory.tsx",
   "V3ContextMenu.tsx",
   "V3Navigation.tsx",
 ] as const;
@@ -27,6 +27,7 @@ const soulUiDialogConsumers = [
   "../../../packages/soul-ui/src/components/FolderContextMenu.tsx",
   "../../../packages/soul-ui/src/components/FolderDialog.tsx",
   "../../../packages/soul-ui/src/components/FolderSettingsDialog.tsx",
+  "../../../packages/soul-ui/src/components/MarkdownDeleteDialog.tsx",
   "../../../packages/soul-ui/src/components/NewSessionDialog.tsx",
   "../../../packages/soul-ui/src/components/RenameSessionDialog.tsx",
   "../../../packages/soul-ui/src/components/SessionContextMenu.tsx",

@@ -78,6 +78,8 @@ export function buildProjectContextMenuActions(actions: {
 export function buildDocumentContextMenuActions(actions: {
   open(): void | Promise<void>;
   copyId(): void | Promise<void>;
+  moveToTask?(): void | Promise<void>;
+  remove?(): void | Promise<void>;
   unmount?(): void | Promise<void>;
   promote?(): void | Promise<void>;
   canPromote?: boolean;
@@ -86,6 +88,20 @@ export function buildDocumentContextMenuActions(actions: {
     { label: "문서 열기", onSelect: actions.open },
     { label: "페이지 ID 복사", onSelect: actions.copyId },
   ];
+  if (actions.moveToTask) {
+    menu.push({
+      label: "다른 업무로 이동",
+      onSelect: actions.moveToTask,
+      separatorBefore: true,
+    });
+  }
+  if (actions.remove) {
+    menu.push({
+      label: "문서 삭제",
+      onSelect: actions.remove,
+      destructive: true,
+    });
+  }
   if (actions.unmount) {
     menu.push({
       label: "업무에서 마운트 해제",

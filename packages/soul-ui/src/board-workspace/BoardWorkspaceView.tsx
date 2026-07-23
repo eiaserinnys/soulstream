@@ -1,7 +1,7 @@
 // Size exception: this legacy coordinator still owns board sync, drag, upload,
 // creation, and view wiring. New frame domain logic is kept in board-frames.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary } from "../shared/types";
 import { useTaskStore, type TaskSnapshot } from "../stores/task-store";
@@ -311,6 +311,7 @@ async function extractMediaMetadata(
 }
 export function BoardWorkspaceView({
   sessions = EMPTY_SESSIONS,
+  taskMoveTargets: providedTaskMoveTargets,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -322,6 +323,8 @@ export function BoardWorkspaceView({
   onUpdateFolderSettings,
   onUpdateBoardItemPosition: _onUpdateBoardItemPosition,
   onMoveBoardItemToContainer,
+  onBoardItemMoved,
+  onMarkdownDocumentDeleted,
   onCreateMarkdownDocument: _onCreateMarkdownDocument,
   onUploadBoardAsset,
   onLoadMore,
@@ -503,7 +506,7 @@ export function BoardWorkspaceView({
     () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [assetPlaceholders, persistedBoardItems],
   );
-  const taskMoveTargets = useMemo<TaskMoveTarget[]>(() => {
+  const catalogTaskMoveTargets = useMemo<TaskMoveTarget[]>(() => {
     if (!effectiveCatalog || !resolvedBoardFolderId) return [];
     return (effectiveCatalog.boardItems ?? [])
       .filter((item) =>
@@ -520,6 +523,10 @@ export function BoardWorkspaceView({
       }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [effectiveCatalog, resolvedBoardFolderId]);
+  const taskMoveTargets = useMemo(
+    () => providedTaskMoveTargets ? [...providedTaskMoveTargets] : catalogTaskMoveTargets,
+    [catalogTaskMoveTargets, providedTaskMoveTargets],
+  );
   const allBoardItems = useMemo(
     () => [...allPersistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [allPersistedBoardItems, assetPlaceholders],
@@ -788,8 +795,9 @@ export function BoardWorkspaceView({
     });
     boardSync.runtime?.deleteBoardItem(item.boardItemId);
     addBoardItem(result.boardItem);
+    onBoardItemMoved?.(result.boardItem);
     clearBoardSelection();
-  }, [addBoardItem, boardSync.runtime, clearBoardSelection, onMoveBoardItemToContainer]);
+  }, [addBoardItem, boardSync.runtime, clearBoardSelection, onBoardItemMoved, onMoveBoardItemToContainer]);
 
   useEffect(() => {
     if (!boardSync.connectionError) return;
@@ -882,6 +890,16 @@ export function BoardWorkspaceView({
       return;
     }
     setCardContextMenu({ screenX: event.clientX, screenY: event.clientY, item });
+  };
+
+  const handleTileKeyboardContextMenu = (event: ReactKeyboardEvent<HTMLElement>, item: BoardWorkspaceItem) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setContextMenu(null);
+    selectSingleBoardItem(item.boardItemId);
+    raiseBoardItems([item.boardItemId]);
+    setCardContextMenu({ screenX: rect.left + 8, screenY: rect.bottom - 8, item });
   };
 
   const closeCardContextMenu = () => setCardContextMenu(null);
@@ -1089,6 +1107,7 @@ export function BoardWorkspaceView({
                 boardToCanvasStyle={boardToCanvasStyle}
                 onTilePointerDown={handleTilePointerDown}
                 onTileContextMenu={handleTileContextMenu}
+                onTileKeyboardContextMenu={handleTileKeyboardContextMenu}
                 shouldSuppressTileClick={shouldSuppressTileClick}
                 onToggleChildStack={childStack.toggleChildStack}
                 onNavigateToParent={childStack.navigateToParent}
@@ -1150,6 +1169,7 @@ export function BoardWorkspaceView({
             onToggleFrameCollapsed={toggleFrameCollapsed}
             onDeleteFrame={deleteFrame}
             onMoveBoardItemToContainer={moveBoardItemToContainer}
+            onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}

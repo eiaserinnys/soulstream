@@ -6,7 +6,9 @@ import {
   createApp,
   parseOrchServerConfig,
   type BoardYjsHostHttpClient,
+  type BoardYjsHostProxyRouteOptions,
   type MarkdownDocumentAccessProvider,
+  type MarkdownDocumentRecord,
   type MarkdownDocumentRouteProvider,
   type NodeRegistrationPayload,
 } from "../src/index.js";
@@ -23,8 +25,16 @@ const folders = [
   { id: "folder-b", parentFolderId: null, name: "Beta" },
 ];
 
-const documents = new Map([
-  ["doc/one", { id: "doc/one", folderId: "folder-a-child", title: "Doc" }],
+const documents = new Map<string, MarkdownDocumentRecord>([
+  ["doc/one", {
+    id: "doc/one",
+    folderId: "folder-a-child",
+    containerKind: "task",
+    containerId: "task-1",
+    title: "Doc",
+    body: "Before",
+    version: 7,
+  }],
   ["doc-snake", { id: "doc-snake", folder_id: "folder-a", title: "Snake" }],
   ["doc-b", { id: "doc-b", folderId: "folder-b", title: "Other" }],
 ]);
@@ -124,12 +134,13 @@ export function createAppWithMarkdownDocuments(
     body: { document: { id: "doc-1" } },
   })),
   includeBoardYjsProxyRoutes = false,
+  hostProxyOverrides: Partial<BoardYjsHostProxyRouteOptions> = {},
 ) {
   const registry = createRegistry();
   const connectionId = registerBoardHost(registry);
   const harness = createHarness(overrides);
   const accessProvider = createAccessProvider(access, harness.calls);
-  const hostProxy = { registry, httpClient };
+  const hostProxy = { registry, httpClient, ...hostProxyOverrides };
   const app = createApp({
     config,
     ...(includeBoardYjsProxyRoutes ? { boardYjsHostProxyRoutes: hostProxy } : {}),

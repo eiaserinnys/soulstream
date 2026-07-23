@@ -382,6 +382,8 @@ export function TaskDetailPane({
               <TaskInlineBoard
                 taskId={task.taskId}
                 folderId={projectFolderId}
+                api={api}
+                taskMoveTargets={taskMoveTargets}
                 onMarkdownDocumentsChanged={setBoardDocuments}
               />
             </div>

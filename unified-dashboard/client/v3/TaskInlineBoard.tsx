@@ -3,17 +3,20 @@ import {
   CustomViewIframe,
   DashboardIconCap,
   DisclosureActionIcon,
+  deleteMarkdownDocument,
   renameMarkdownDocument,
   retainEqualValue,
   useBoardYjsRuntime,
   useCustomViewBindings,
+  useDashboardStore,
   type CatalogBoardItem,
   type CatalogState,
   type CustomViewDocument,
   type MarkdownDocument,
 } from "@seosoyoung/soul-ui";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
-import { FilePlus2, Pencil } from "lucide-react";
+import { Check, FilePlus2, Pencil, X } from "lucide-react";
 
 import {
   fetchInlineCustomView,
@@ -22,6 +25,9 @@ import {
   saveInlineMarkdown,
 } from "./task-inline-board-api";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
+import { TaskDocumentContextMenu, type TaskDocumentContextTarget } from "./TaskDocumentContextMenu";
+import { documentContextMenuTargetForKey } from "./document-context-menu-keyboard";
+import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import "./v3-context-menus.css";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
@@ -33,6 +39,7 @@ import {
   patchBoardMarkdownTitle,
   type TaskBoardMarkdownDocument,
 } from "./task-inline-board-model";
+import type { TaskMoveTarget } from "./task-move-targets";
 
 interface MarkdownRenameState {
   documentId: string;
@@ -50,20 +57,30 @@ const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
 export function TaskInlineBoard({
   taskId,
   folderId,
+  api,
+  taskMoveTargets,
   onMarkdownDocumentsChanged,
 }: {
   taskId: string;
   folderId: string | null;
+  api: PageApiClient;
+  taskMoveTargets: readonly TaskMoveTarget[];
   onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
 }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [renameState, setRenameState] = useState<MarkdownRenameState | null>(null);
+  const [documentContext, setDocumentContext] = useState<TaskDocumentContextTarget | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const itemInvalidationKey = useV3InvalidationKey(["catalog", "task", "replay"]);
   const pageInvalidationKey = useV3InvalidationKey(["page", "replay"]);
   const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay"]);
   const itemsRef = useRef(items);
+  const departedItemIdsRef = useRef(new Set<string>());
+  const addBoardItem = useDashboardStore((state) => state.addBoardItem);
+  const removeBoardItem = useDashboardStore((state) => state.removeBoardItem);
+  const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
+  const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
   const loadedTaskIdRef = useRef<string | null>(null);
   itemsRef.current = items;
   const boardCatalog = useMemo<CatalogState>(() => ({
@@ -82,6 +99,8 @@ export function TaskInlineBoard({
   useEffect(() => {
     setExpandedId(null);
     setRenameState(null);
+    setDocumentContext(null);
+    departedItemIdsRef.current.clear();
   }, [taskId]);
 
   useEffect(() => {
@@ -103,6 +122,7 @@ export function TaskInlineBoard({
       clearsVisibleContent: (current, next) => current.length > 0 && next.length === 0,
     }).then((next) => {
       loadedTaskIdRef.current = taskId;
+      for (const item of next) departedItemIdsRef.current.delete(item.id);
       setItems((current) => retainEqualValue(current, next));
       setStatus("ready");
     }).catch((error: unknown) => {
@@ -114,7 +134,11 @@ export function TaskInlineBoard({
 
   useEffect(() => {
     if (!boardSync.hasSynced || !boardSync.boardItems) return;
-    setItems((current) => retainEqualValue(current, mergeRuntimeItems(boardSync.boardItems ?? [], current)));
+    setItems((current) => retainEqualValue(
+      current,
+      mergeRuntimeItems(boardSync.boardItems ?? [], current)
+        .filter((item) => !departedItemIdsRef.current.has(item.id)),
+    ));
   }, [boardSync.boardItems, boardSync.hasSynced]);
 
   useEffect(() => {
@@ -188,11 +212,41 @@ export function TaskInlineBoard({
       setItems((current) => patchBoardMarkdownTitle(current, item.itemId, previousTitle, version));
       setRenameState((current) => current ? {
         ...current,
-        input: previousTitle,
+        input: title,
         pending: false,
         error: error instanceof Error ? error.message : "문서 이름을 바꾸지 못했습니다.",
       } : null);
     }
+  };
+
+  const moveMarkdownToTask = async (item: CatalogBoardItem, target: TaskMoveTarget) => {
+    const result = await moveBoardItemToContainer({
+      boardItemId: item.id,
+      container: { kind: "task", id: target.taskId },
+      x: item.x,
+      y: item.y,
+      idempotencyKey: createMoveIdempotencyKey(item.id, target.taskId),
+    });
+    departedItemIdsRef.current.add(item.id);
+    boardSync.runtime?.deleteBoardItem(item.id);
+    setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+    removeBoardItem(item.id);
+    addBoardItem(result.boardItem);
+    if (expandedId === item.id) setExpandedId(null);
+  };
+
+  const deleteMarkdown = async (item: CatalogBoardItem) => {
+    if (boardSync.runtime?.isProviderBacked) {
+      boardSync.runtime.deleteMarkdownDocument(item.itemId);
+    } else {
+      await deleteMarkdownDocument(item.itemId);
+      boardSync.runtime?.deleteMarkdownDocument(item.itemId);
+    }
+    departedItemIdsRef.current.add(item.id);
+    setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+    removeBoardItem(item.id);
+    if (expandedId === item.id) setExpandedId(null);
+    if (activeBoardDocumentId === item.itemId) setActiveBoardDocument(null);
   };
 
   return (
@@ -219,7 +273,26 @@ export function TaskInlineBoard({
             const activeRename = renameState?.documentId === item.itemId ? renameState : null;
             return (
               <LiquidGlassCard key={item.id} webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="markdown">
-                <div className="v3-inline-board-row">
+                <div
+                  className="v3-inline-board-row"
+                  tabIndex={0}
+                  aria-label={`${title} 문서 작업`}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setDocumentContext({ item, target: { x: event.clientX, y: event.clientY } });
+                  }}
+                  onKeyDown={(event) => {
+                    const target = documentContextMenuTargetForKey(
+                      { key: event.key, shiftKey: event.shiftKey },
+                      event.currentTarget.getBoundingClientRect(),
+                    );
+                    if (!target) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setDocumentContext({ item, target });
+                  }}
+                >
                   {activeRename ? (
                     <form className="v3-inline-board-rename" onSubmit={(event) => { void commitRename(event); }}>
                       <span aria-hidden="true">📄</span>
@@ -236,7 +309,22 @@ export function TaskInlineBoard({
                           }
                         }}
                       />
-                      <button type="submit" disabled={activeRename.pending}>{activeRename.pending ? "저장 중…" : "저장"}</button>
+                      <div className="v3-inline-board-rename-actions">
+                        <DashboardIconCap
+                          label="마크다운 이름 변경 저장"
+                          type="submit"
+                          disabled={activeRename.pending}
+                        >
+                          <Check className="h-4 w-4" aria-hidden="true" />
+                        </DashboardIconCap>
+                        <DashboardIconCap
+                          label="마크다운 이름 변경 취소"
+                          disabled={activeRename.pending}
+                          onClick={() => setRenameState(null)}
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </DashboardIconCap>
+                      </div>
                     </form>
                   ) : (
                     <div className="v3-inline-board-label"><span>📄 {title}</span></div>
@@ -283,8 +371,25 @@ export function TaskInlineBoard({
           return <InlineAsset key={item.id} item={item} />;
         })}
       </div>
+      <TaskDocumentContextMenu
+        api={api}
+        currentTaskId={taskId}
+        defaultTargets={taskMoveTargets}
+        context={documentContext}
+        onClose={() => setDocumentContext(null)}
+        onOpen={(item) => setExpandedId(item.id)}
+        onMove={moveMarkdownToTask}
+        onDelete={deleteMarkdown}
+      />
     </section>
   );
+}
+
+function createMoveIdempotencyKey(boardItemId: string, targetTaskId: string): string {
+  const randomPart = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `board-item-move:${boardItemId}:task:${targetTaskId}:${randomPart}`;
 }
 
 function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; invalidationKey: number }) {

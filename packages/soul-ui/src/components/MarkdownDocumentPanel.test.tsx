@@ -188,28 +188,37 @@ describe("MarkdownDocumentPanel", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
   let fetchMock: ReturnType<typeof vi.fn>;
+  let storedDocument: { id: string; title: string; body: string; version: number };
   let cleanupRuntime: (() => void) | undefined;
   const standaloneCleanups: Array<() => void> = [];
 
   beforeEach(() => {
+    storedDocument = {
+      id: "doc-a",
+      title: "Design note",
+      body: "Initial body",
+      version: 1,
+    };
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/api/markdown-documents/doc-a") && !init) {
-        return new Response(JSON.stringify({
-          id: "doc-a",
-          title: "Design note",
-          body: "Initial body",
-          version: 1,
-        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init?.method) {
+        return new Response(JSON.stringify(storedDocument), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
-        return new Response(JSON.stringify({
+        storedDocument = {
           id: "doc-a",
           title: body.title,
           body: body.body,
           version: 2,
-        }), { status: 200, headers: { "Content-Type": "application/json" } });
+        };
+        return new Response(JSON.stringify(storedDocument), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       return new Response("not found", { status: 404 });
     });
@@ -267,7 +276,7 @@ describe("MarkdownDocumentPanel", () => {
   it("stale REST save keeps document dirty and shows a conflict message", async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/api/markdown-documents/doc-a") && !init) {
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init?.method) {
         return new Response(JSON.stringify({
           id: "doc-a",
           title: "Design note",
@@ -298,6 +307,40 @@ describe("MarkdownDocumentPanel", () => {
     });
 
     await waitForText(container, '[data-testid="markdown-save-status"]', "충돌: 새로고침 필요");
+  });
+
+  it("keeps the edited body visible and reports a retryable REST save failure", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init?.method) {
+        return new Response(JSON.stringify(storedDocument), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "PUT") {
+        return new Response("unavailable", { status: 503 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    ({ container, root } = renderPanel());
+
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    flushSync(() => readBody.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const view = await waitForEditorView(container);
+    flushSync(() => replaceEditorDoc(view, "503 뒤에도 남는 초안"));
+    flushSync(() => view.contentDOM.dispatchEvent(new FocusEvent("blur")));
+
+    await waitForText(container, '[data-testid="markdown-save-status"]', "저장 실패 · 다시 시도");
+    expect(container.querySelector('[data-testid="markdown-read-body"]')?.textContent)
+      .toContain("503 뒤에도 남는 초안");
+    expect(container.querySelector('[data-testid="markdown-save-status"]')?.getAttribute("title"))
+      .toContain("503");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Markdown document save failed:",
+      expect.objectContaining({ message: expect.stringContaining("503") }),
+    );
   });
 
   it("restores the last saved body when Escape is pressed", async () => {

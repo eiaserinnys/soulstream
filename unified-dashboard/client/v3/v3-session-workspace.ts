@@ -1,4 +1,5 @@
 import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
+import type { PlannerTask } from "./planner-data";
 
 import {
   sessionWorkspaceTargetFromBoardItems,
@@ -8,7 +9,17 @@ import {
 export interface ResolvedSessionWorkspace {
   target: SessionWorkspaceTarget;
   loadedBoardItems?: CatalogBoardItem[];
-  folderId?: string;
+}
+
+export class SessionWorkspaceResolutionError extends Error {
+  constructor(
+    public readonly phase: "membership" | "task",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "SessionWorkspaceResolutionError";
+  }
 }
 
 export async function resolveSessionForOpen({
@@ -38,9 +49,8 @@ export async function resolveSessionWorkspace({
 }): Promise<ResolvedSessionWorkspace> {
   const cached = sessionWorkspaceTargetFromBoardItems(boardItems, session.agentSessionId);
   if (cached) return { target: cached };
-  if (!session.folderId) return { target: { kind: "standalone" } };
 
-  const query = new URLSearchParams({ folder_id: session.folderId });
+  const query = new URLSearchParams({ session_id: session.agentSessionId });
   const response = await fetchImplementation(`/api/board-items?${query.toString()}`, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
@@ -56,6 +66,45 @@ export async function resolveSessionWorkspace({
       session.agentSessionId,
     ) ?? { kind: "standalone" },
     loadedBoardItems,
-    folderId: session.folderId,
   };
+}
+
+export async function resolveSessionTaskWorkspace({
+  session,
+  boardItems,
+  currentTasks,
+  loadTask,
+  fetchImplementation = globalThis.fetch,
+}: {
+  session: SessionSummary;
+  boardItems: readonly CatalogBoardItem[];
+  currentTasks: readonly PlannerTask[];
+  loadTask(pageId: string): Promise<PlannerTask>;
+  fetchImplementation?: typeof globalThis.fetch;
+}): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerTask | null }> {
+  let workspace: ResolvedSessionWorkspace;
+  try {
+    workspace = await resolveSessionWorkspace({ session, boardItems, fetchImplementation });
+  } catch (error) {
+    throw new SessionWorkspaceResolutionError(
+      "membership",
+      "세션의 소속 업무를 확인하지 못했습니다.",
+      { cause: error },
+    );
+  }
+  if (workspace.target.kind === "standalone") return { workspace, task: null };
+  const { pageId } = workspace.target;
+  const cached = currentTasks.find((task) => (
+    task.page.id === pageId || task.taskId === pageId
+  ));
+  if (cached) return { workspace, task: cached };
+  try {
+    return { workspace, task: await loadTask(pageId) };
+  } catch (error) {
+    throw new SessionWorkspaceResolutionError(
+      "task",
+      "소속 업무를 불러오지 못했습니다.",
+      { cause: error },
+    );
+  }
 }

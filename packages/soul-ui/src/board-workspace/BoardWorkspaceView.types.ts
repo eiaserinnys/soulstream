@@ -23,6 +23,7 @@ export interface CreateMarkdownDocumentResult {
 
 export interface BoardWorkspaceViewProps {
   sessions?: SessionSummary[];
+  taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -36,6 +37,8 @@ export interface BoardWorkspaceViewProps {
   onMoveBoardItemToContainer?: (
     input: MoveBoardItemToContainerInput,
   ) => Promise<MoveBoardItemToContainerResponse>;
+  onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
+  onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
   onUploadBoardAsset?: (input: UploadBoardAssetInput) => Promise<BoardAssetCommitResponse>;
   onLoadMore?: LoadMoreCallback;
