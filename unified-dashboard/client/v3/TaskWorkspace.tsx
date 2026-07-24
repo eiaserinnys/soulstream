@@ -241,6 +241,9 @@ export function TaskWorkspace({
         sessionDefaults={sessionDefaults}
         onClose={() => setBoardOpen(false)}
         onOpenSession={onOpenSession}
+        onRenameSession={onRenameSession}
+        onDeleteSessions={onDeleteSessions}
+        onMoveSession={onMoveSession}
         onAcknowledgedReview={onAcknowledgedReview}
       />
     );
