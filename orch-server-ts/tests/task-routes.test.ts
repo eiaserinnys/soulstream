@@ -215,6 +215,7 @@ function createAppWithTasks(
     mutateFromTask: vi.fn(),
     backfillLegacyTask: vi.fn(),
   },
+  dashboardUserId: string | null = "user@example.com",
 ) {
   const harness = createHarness(overrides);
   const app = createApp({
@@ -225,7 +226,7 @@ function createAppWithTasks(
       httpClient,
       async resolveDashboardUserId() {
         harness.calls.push(["user"]);
-        return "user@example.com";
+        return dashboardUserId;
       },
       taskIdentityService,
       authBearerToken: "service-token",
@@ -826,6 +827,103 @@ describe("task route harness", () => {
       userId: "user@example.com",
     });
     expect(httpClient).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("mutates a session-linked task as the authenticated dashboard user", async () => {
+    const userStatusMutation = vi.fn(async () => ({
+      ok: true as const,
+      taskId: "rb-1",
+      boardItemId: "task:rb-1",
+      eventId: 0 as const,
+      idempotent: false,
+      operation: {
+        id: "operation-user",
+        actor_kind: "user",
+        actor_session_id: null,
+        actor_event_id: null,
+        actor_user_id: "user@example.com",
+      },
+      snapshot: {
+        task: {
+          id: "rb-1",
+          board_item_id: "task:rb-1",
+          folder_id: "folder-a",
+          version: 2,
+          status: "completed",
+          created_session_id: "sess-created",
+          completed_session_id: null,
+          completed_user_id: "user@example.com",
+        },
+        sections: [],
+        items: [],
+      },
+    }));
+    const httpClient: TaskMutationHttpClient = vi.fn();
+    const { app } = createAppWithTasks(
+      { restricted: false },
+      { setTaskStatusAsUser: userStatusMutation },
+      httpClient,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tasks/rb%2F1/status",
+      headers: { authorization: "Bearer dashboard" },
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "dashboard-user-complete",
+        reason: "finished in soul-app",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(userStatusMutation).toHaveBeenCalledWith({
+      taskId: "rb/1",
+      status: "completed",
+      expectedVersion: 1,
+      idempotencyKey: "dashboard-user-complete",
+      reason: "finished in soul-app",
+      userId: "user@example.com",
+    });
+    expect(httpClient).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("keeps the owner-node proxy for a session-linked non-user mutation", async () => {
+    const userStatusMutation = vi.fn();
+    const httpClient: TaskMutationHttpClient = vi.fn(async () => ({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: { ok: true },
+    }));
+    const { app } = createAppWithTasks(
+      { restricted: false },
+      { setTaskStatusAsUser: userStatusMutation },
+      httpClient,
+      undefined,
+      null,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tasks/rb%2F1/status",
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "service-complete",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(userStatusMutation).not.toHaveBeenCalled();
+    expect(httpClient).toHaveBeenCalledWith(expect.objectContaining({
+      upstreamPath: "/api/tasks/rb%2F1/status",
+      target: ownerNode,
+    }));
 
     await app.close();
   });

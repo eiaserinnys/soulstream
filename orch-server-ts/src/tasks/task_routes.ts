@@ -141,26 +141,28 @@ export function registerTaskRoutes(
       if (!accessResult.ok) return sendTaskRouteError(reply, accessResult.error);
 
       const actorSessionId = resolveTaskActorSessionId(snapshot);
-      if (actorSessionId === null) {
-        if (options.provider.setTaskStatusAsUser === undefined) {
-          return reply.code(422).send({ detail: "Task has no session provenance" });
-        }
+      if (options.provider.setTaskStatusAsUser !== undefined) {
         const userId = await resolveDashboardUserId(options, request);
-        if (userId === null || userId.trim().length === 0) {
+        if (userId !== null && userId.trim().length > 0) {
+          try {
+            return reply.send(await options.provider.setTaskStatusAsUser({
+              taskId: params.task_id,
+              status: body.value.status,
+              expectedVersion: body.value.expectedVersion,
+              idempotencyKey: body.value.idempotencyKey,
+              ...(body.value.reason === undefined ? {} : { reason: body.value.reason }),
+              userId: userId.trim(),
+            }));
+          } catch (error) {
+            return sendTaskUserStatusError(reply, error);
+          }
+        }
+        if (actorSessionId === null) {
           return reply.code(401).send({ detail: "Authenticated user identity is required" });
         }
-        try {
-          return reply.send(await options.provider.setTaskStatusAsUser({
-            taskId: params.task_id,
-            status: body.value.status,
-            expectedVersion: body.value.expectedVersion,
-            idempotencyKey: body.value.idempotencyKey,
-            ...(body.value.reason === undefined ? {} : { reason: body.value.reason }),
-            userId: userId.trim(),
-          }));
-        } catch (error) {
-          return sendTaskUserStatusError(reply, error);
-        }
+      }
+      if (actorSessionId === null) {
+        return reply.code(422).send({ detail: "Task has no session provenance" });
       }
 
       return proxyTaskMutation(request, reply, options, actorSessionId, {
