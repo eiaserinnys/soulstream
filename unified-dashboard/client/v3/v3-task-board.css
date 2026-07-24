@@ -28,6 +28,28 @@
   --glass-chrome-surface-strong: var(--v3-glass-panel);
 }
 
+.v3-task-board-resize {
+  grid-row: 1;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-width: 0;
+}
+
+.v3-task-board-resize--left {
+  grid-column: 2;
+}
+
+.v3-task-board-resize--right {
+  grid-column: 4;
+}
+
+.v3-task-board-resize:focus-visible {
+  outline: none;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+}
+
 .v3-task-board-canvas {
   grid-column: 3;
   grid-row: 1;
@@ -54,13 +76,25 @@
   width: min(760px, calc(100% - var(--v3-space-8)));
   min-width: 0;
   min-height: 0;
-  margin-block: var(--v3-space-6);
+  height: 40%;
+  margin-block: 0 var(--v3-space-6);
   justify-self: center;
-  align-self: stretch;
+  align-self: end;
   flex-direction: column;
   overflow: hidden;
   background: var(--lg-card);
   box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
+  transition: height 220ms ease;
+}
+
+.v3-task-board-document-overlay.is-expanded {
+  height: 90%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-task-board-document-overlay {
+    transition: none;
+  }
 }
 
 .v3-board-pane {
@@ -132,13 +166,71 @@
   white-space: nowrap;
 }
 
-.v3-task-board-resource-tabs {
+.v3-task-board-resource-tabs-wrap {
+  position: relative;
   display: flex;
   flex: none;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 탭이 넘칠 때만 양 끝에 엣지 페이드를 노출한다(넘치는 방향만). */
+.v3-task-board-resource-tabs-wrap::before,
+.v3-task-board-resource-tabs-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--v3-space-6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  z-index: 1;
+}
+
+.v3-task-board-resource-tabs-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--v3-glass-panel, var(--lg-panel)), transparent);
+}
+
+.v3-task-board-resource-tabs-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--v3-glass-panel, var(--lg-panel)), transparent);
+}
+
+.v3-task-board-resource-tabs-wrap[data-overflow-left="true"]::before,
+.v3-task-board-resource-tabs-wrap[data-overflow-right="true"]::after {
+  opacity: 1;
+}
+
+.v3-task-board-resource-tabs-chevron {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-inline: 2px;
+  z-index: 2;
+}
+
+.v3-task-board-resource-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   gap: var(--v3-space-1);
   overflow-x: auto;
-  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
   padding: var(--v3-space-2);
+}
+
+/* 원시 가로 스크롤바 제거 — 트랙패드/휠 가로 스크롤은 overflow-x:auto로 유지. */
+.v3-task-board-resource-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-task-board-resource-tabs-wrap::before,
+  .v3-task-board-resource-tabs-wrap::after {
+    transition: none;
+  }
 }
 
 .v3-task-board-resource-tabs button {
@@ -185,6 +277,27 @@
 .v3-task-board-resource-content > [data-testid="task-card"] {
   height: 100%;
   min-height: 320px;
+}
+
+.v3-task-board-session-list {
+  display: grid;
+  gap: var(--v3-space-3);
+}
+
+.v3-task-board-session-head {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+
+.v3-task-board-session-head strong {
+  font-size: var(--font-size-sm);
+}
+
+.v3-task-board-session-count {
+  flex: 1;
+  color: var(--v3-text-tertiary);
+  font-size: var(--font-size-xs);
 }
 
 .v3-task-board-session-tree,
@@ -246,7 +359,7 @@
 @media (max-width: 1180px) {
   .v3-task-board-workspace {
     grid-template-columns:
-      minmax(220px, 24vw)
+      minmax(220px, var(--v3-navigation-width, 24vw))
       var(--v3-panel-gap)
       minmax(0, 1fr)
       var(--v3-panel-gap)
@@ -266,6 +379,7 @@
   }
 
   .v3-task-board-resources,
+  .v3-task-board-resize,
   .v3-task-board-chat {
     display: none;
   }
@@ -291,7 +405,12 @@
     inset: 0;
     display: flex;
     width: 100%;
+    height: auto;
     margin: 0;
     border-radius: 0;
+  }
+
+  .v3-task-board-document-overlay.is-expanded {
+    height: auto;
   }
 }

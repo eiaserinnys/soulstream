@@ -59,3 +59,54 @@ describe("task board r3 workspace contract", () => {
     expect(`${workspace}\n${resources}`).not.toContain("<svg");
   });
 });
+
+describe("task board panel resize, overlay height, and session list contract", () => {
+  it("adds independent left and right resize handles reusing the existing DragHandle", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    expect(workspace).toContain("DragHandle");
+    expect(workspace).toContain('data-testid="v3-task-board-resize-handle"');
+    expect(workspace).toContain('data-testid="v3-task-board-chat-resize-handle"');
+    expect(workspace).toContain("clampTaskResourceWidth");
+    expect(workspace).toContain("clampTaskChatWidth");
+    // widths are reflected onto the existing layout tokens via setProperty, not inline style.
+    expect(workspace).toContain('setProperty("--v3-navigation-width"');
+    expect(workspace).toContain('setProperty("--v3-session-panel-width"');
+    expect(workspace).not.toContain("style={{");
+    // separator role + keyboard nudge for accessibility.
+    expect(workspace).toContain('role="separator"');
+    expect(workspace).toContain("onKeyDown={handleResourceResizeKeyDown}");
+    expect(workspace).toContain("onKeyDown={handleChatResizeKeyDown}");
+  });
+
+  it("places the two resize handles in the grid gap tracks", () => {
+    const css = read("./v3-task-board.css");
+
+    expect(css).toMatch(/\.v3-task-board-resize--left\s*{[^}]*grid-column:\s*2;/s);
+    expect(css).toMatch(/\.v3-task-board-resize--right\s*{[^}]*grid-column:\s*4;/s);
+  });
+
+  it("opens the document overlay at 40% and toggles to 90% via an aria-pressed control", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+    const css = read("./v3-task-board.css");
+
+    expect(workspace).toContain("is-expanded");
+    expect(workspace).toContain("aria-pressed={overlayExpanded}");
+    expect(css).toMatch(/\.v3-task-board-document-overlay\s*{[^}]*height:\s*40%;/s);
+    expect(css).toMatch(/\.v3-task-board-document-overlay\.is-expanded\s*{[^}]*height:\s*90%;/s);
+    expect(css).toMatch(/prefers-reduced-motion/);
+  });
+
+  it("frames the sessions tab as a session list with reused caller-tree composition", () => {
+    const resources = read("./TaskBoardResourcePane.tsx");
+
+    // composition reuses the task panel's run tree + rich rows.
+    expect(resources).toContain("buildRunTree");
+    expect(resources).toContain("RichSessionRow");
+    // sub-delegations stay collapsed by default.
+    expect(resources).toContain("useState(false)");
+    // no longer framed/labelled as a "delegation relation".
+    expect(resources).not.toContain("위임 관계");
+    expect(resources).not.toContain("아직 위임된 세션이 없습니다");
+  });
+});

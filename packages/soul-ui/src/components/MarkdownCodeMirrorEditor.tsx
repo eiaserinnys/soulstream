@@ -210,8 +210,10 @@ const markdownEditorTheme = EditorView.theme({
     color: "var(--foreground)",
   },
   "&.cm-focused": {
-    outline: "2px solid var(--ring)",
-    outlineOffset: "0",
+    // 채팅 입력창과 동일한 둥근 사각형 + 회색 focus ring(ring-ring/50, 3px)을
+    // 재사용한다. 기존 --ring 토큰만 사용(신규 토큰 없음).
+    outline: "none",
+    boxShadow: "0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent)",
   },
   ".cm-scroller": {
     minHeight: "360px",

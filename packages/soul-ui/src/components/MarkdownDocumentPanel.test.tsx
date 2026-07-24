@@ -70,6 +70,15 @@ async function waitForText(container: ParentNode, selector: string, text: string
   throw new Error(`Timed out waiting for ${selector} text ${text}`);
 }
 
+async function waitForCondition(predicate: () => boolean) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (predicate()) return;
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("Timed out waiting for condition");
+}
+
 async function waitForEditorView(container: ParentNode): Promise<EditorView> {
   const editor = await waitForSelector<HTMLElement>(container, ".cm-editor");
   const view = EditorView.findFromDOM(editor);
@@ -431,5 +440,43 @@ describe("MarkdownDocumentPanel", () => {
 
     expect(runtime.getMarkdownText("doc-a").toString()).toBe("Collaborative body");
     await waitForText(container, '[data-testid="markdown-save-status"]', "동기화됨");
+  });
+
+  it("keeps a typed trailing space in the focused title despite the runtime feedback (🔴9)", async () => {
+    const runtime = createRuntime("folder-a");
+    cleanupRuntime = registerBoardYjsRuntime(runtime);
+    ({ container, root } = renderPanel({ folderId: "folder-a" }));
+
+    const input = await waitForSelector<HTMLInputElement>(container, 'input[aria-label="Document title"]');
+    flushSync(() => input.focus());
+
+    const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    flushSync(() => {
+      setNativeValue.call(input, "Design note ");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    // updateMarkdownTitle stores the trimmed title and notifies synchronously; without the
+    // titleEditingRef guard the snapshot would rewrite the input to "Design note" and drop
+    // the trailing space, which is exactly the "space does nothing" bug.
+    expect(input.value).toBe("Design note ");
+    expect(
+      runtime.getBoardItems().find((boardItem) => boardItem.id === "markdown:doc-a")?.metadata?.title,
+    ).toBe("Design note");
+  });
+
+  it("selects the default title on focus so the first keystroke replaces it (🔴8)", async () => {
+    const runtime = createRuntime("folder-a");
+    cleanupRuntime = registerBoardYjsRuntime(runtime);
+    // Reset the seeded title to the default placeholder value.
+    runtime.updateMarkdownTitle("doc-a", "Untitled document");
+    ({ container, root } = renderPanel({ folderId: "folder-a" }));
+
+    const input = await waitForSelector<HTMLInputElement>(container, 'input[aria-label="Document title"]');
+    await waitForCondition(() => input.value === "Untitled document");
+    flushSync(() => input.focus());
+
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe("Untitled document".length);
   });
 });

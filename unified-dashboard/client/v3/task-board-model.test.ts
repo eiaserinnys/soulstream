@@ -10,13 +10,20 @@ import {
 import {
   buildTaskBoardCatalog,
   buildTaskBoardResourceTabs,
+  clampTaskResourceWidth,
   extractTaskBoardSessionIds,
   initialTaskBoardResourceState,
   mergeTaskBoardSessions,
   openTaskBoardResource,
   reconcileTaskBoardResourceState,
+  clampTaskChatWidth,
+  computeTabStripOverflow,
   scopeCatalogUpdateToTaskBoard,
   scopeCatalogUpdateToTaskBoardPreservingSessionList,
+  TASK_CHAT_MAX_WIDTH_PX,
+  TASK_CHAT_MIN_WIDTH_PX,
+  TASK_RESOURCE_MAX_WIDTH_PX,
+  TASK_RESOURCE_MIN_WIDTH_PX,
 } from "./task-board-model";
 
 describe("task board bounded catalog", () => {
@@ -47,7 +54,7 @@ describe("task board bounded catalog", () => {
       { kind: "document", resourceId: "doc-b" },
     ])).toEqual([
       { id: "checklist", kind: "checklist", title: "체크리스트" },
-      { id: "sessions", kind: "sessions", title: "위임 관계" },
+      { id: "sessions", kind: "sessions", title: "세션" },
       { id: "custom-view:view-a", kind: "custom_view", title: "검증 현황", customViewId: "view-a" },
       { id: "document:doc-b", kind: "document", title: "운영 노트", documentId: "doc-b" },
     ]);
@@ -255,3 +262,71 @@ function session(
     displayName,
   } as unknown as SessionSummary;
 }
+
+describe("clampTaskResourceWidth", () => {
+  it("keeps a width inside the range untouched", () => {
+    expect(clampTaskResourceWidth(360)).toBe(360);
+  });
+
+  it("clamps below the minimum up to the left column floor", () => {
+    expect(clampTaskResourceWidth(120)).toBe(TASK_RESOURCE_MIN_WIDTH_PX);
+    expect(clampTaskResourceWidth(TASK_RESOURCE_MIN_WIDTH_PX - 1)).toBe(
+      TASK_RESOURCE_MIN_WIDTH_PX,
+    );
+  });
+
+  it("clamps above the maximum so the chat column is never invaded", () => {
+    expect(clampTaskResourceWidth(2000)).toBe(TASK_RESOURCE_MAX_WIDTH_PX);
+    expect(clampTaskResourceWidth(TASK_RESOURCE_MAX_WIDTH_PX + 1)).toBe(
+      TASK_RESOURCE_MAX_WIDTH_PX,
+    );
+  });
+
+  it("falls back to the minimum for non-finite input", () => {
+    expect(clampTaskResourceWidth(Number.NaN)).toBe(TASK_RESOURCE_MIN_WIDTH_PX);
+    expect(clampTaskResourceWidth(Number.POSITIVE_INFINITY)).toBe(
+      TASK_RESOURCE_MAX_WIDTH_PX,
+    );
+  });
+});
+
+describe("clampTaskChatWidth", () => {
+  it("keeps a width inside the range untouched", () => {
+    expect(clampTaskChatWidth(460)).toBe(460);
+  });
+
+  it("clamps to the chat column floor and ceiling independently of the left panel", () => {
+    expect(clampTaskChatWidth(100)).toBe(TASK_CHAT_MIN_WIDTH_PX);
+    expect(clampTaskChatWidth(2000)).toBe(TASK_CHAT_MAX_WIDTH_PX);
+  });
+
+  it("uses a floor matching the grid chat column minmax lower bound", () => {
+    expect(TASK_CHAT_MIN_WIDTH_PX).toBe(320);
+  });
+
+  it("falls back to the minimum for non-finite input", () => {
+    expect(clampTaskChatWidth(Number.NaN)).toBe(TASK_CHAT_MIN_WIDTH_PX);
+  });
+});
+
+describe("computeTabStripOverflow", () => {
+  it("hides both chevrons when the strip does not overflow", () => {
+    expect(computeTabStripOverflow({ scrollLeft: 0, clientWidth: 300, scrollWidth: 300 }))
+      .toEqual({ canScrollLeft: false, canScrollRight: false });
+  });
+
+  it("shows only the right chevron at the start of an overflowing strip", () => {
+    expect(computeTabStripOverflow({ scrollLeft: 0, clientWidth: 200, scrollWidth: 600 }))
+      .toEqual({ canScrollLeft: false, canScrollRight: true });
+  });
+
+  it("shows only the left chevron at the end of an overflowing strip", () => {
+    expect(computeTabStripOverflow({ scrollLeft: 400, clientWidth: 200, scrollWidth: 600 }))
+      .toEqual({ canScrollLeft: true, canScrollRight: false });
+  });
+
+  it("shows both chevrons in the middle", () => {
+    expect(computeTabStripOverflow({ scrollLeft: 200, clientWidth: 200, scrollWidth: 600 }))
+      .toEqual({ canScrollLeft: true, canScrollRight: true });
+  });
+});
