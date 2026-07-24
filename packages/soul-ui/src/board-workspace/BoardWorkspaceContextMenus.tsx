@@ -1,7 +1,7 @@
 // Size exception: this legacy menu coordinator still owns every board-card dialog.
 // Shared mutations are extracted as they are touched; splitting the coordinator is a separate migration.
 import { useState } from "react";
-import { ArrowRightLeft, Folder, Frame, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Copy, Folder, Frame, Hash, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
 import { isSystemFolderId } from "../shared/constants";
@@ -70,6 +70,7 @@ interface BoardWorkspaceContextMenusProps {
     target: BoardContainerRef,
   ) => Promise<void>;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
+  onEditBoardItem?: (item: Extract<BoardWorkspaceItem, { type: "markdown" | "custom_view" }>) => void;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -103,6 +104,7 @@ export function BoardWorkspaceContextMenus({
   onDeleteFrame,
   onMoveBoardItemToContainer,
   onMarkdownDocumentDeleted,
+  onEditBoardItem,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -156,11 +158,37 @@ export function BoardWorkspaceContextMenus({
     cardContextMenu && isMovableBoardWorkspaceItem(cardContextMenu.item)
       ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
       : null;
-  const assetOrCustomViewContextMenu =
-    movableContextMenu && (movableContextMenu.item.type === "asset" || movableContextMenu.item.type === "custom_view")
+  const assetContextMenu =
+    movableContextMenu && movableContextMenu.item.type === "asset"
       ? movableContextMenu
       : null;
+  const customViewContextMenu =
+    cardContextMenu?.item.type === "custom_view"
+      ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
+      : null;
   const canMoveBoardItem = Boolean(onMoveBoardItemToContainer && boardContainer && resolvedBoardFolderId);
+
+  const copyToClipboard = (text: string, label: string) => {
+    onCloseCardContextMenu();
+    const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+    if (!clipboard) {
+      toastManager.add({ title: `${label} 복사 실패`, description: "클립보드를 사용할 수 없습니다.", type: "error" });
+      return;
+    }
+    void clipboard.writeText(text).then(
+      () => toastManager.add({ title: `${label} 복사됨`, type: "success" }),
+      () => toastManager.add({ title: `${label} 복사 실패`, type: "error" }),
+    );
+  };
+
+  // custom_view(Flux) 카드 삭제 = 보드 아이템(카드 배치) 제거를 반드시 Y.Doc 경유로
+  // 수행한다. Flux 엔티티 자체는 보존되고 보드에서만 내려간다.
+  const handleDeleteCustomView = (item: Extract<BoardWorkspaceItem, { type: "custom_view" }>) => {
+    onCloseCardContextMenu();
+    boardYjsRuntime?.deleteBoardItem(item.boardItemId);
+    removeBoardItem(item.boardItemId);
+    if (activeBoardDocumentId === item.customViewId) setActiveBoardDocument(null);
+  };
   const availableTaskMoveTargets = taskMoveTargets.filter((target) => (
     boardContainer?.kind !== "task" || target.id !== boardContainer.id
   ));
@@ -383,9 +411,22 @@ export function BoardWorkspaceContextMenus({
 
       {markdownContextMenu && (
         <div
-          className="fixed z-30 w-40 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
+          className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: markdownContextMenu.screenX, top: markdownContextMenu.screenY }}
         >
+          {onEditBoardItem && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => {
+                onEditBoardItem(markdownContextMenu.item);
+                onCloseCardContextMenu();
+              }}
+            >
+              <SquarePen className="h-4 w-4" />
+              편집
+            </button>
+          )}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
@@ -415,6 +456,22 @@ export function BoardWorkspaceContextMenus({
           )}
           <button
             type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => copyToClipboard(markdownContextMenu.item.title, "제목")}
+          >
+            <Copy className="h-4 w-4" />
+            제목 복사
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => copyToClipboard(markdownContextMenu.item.documentId, "ID")}
+          >
+            <Hash className="h-4 w-4" />
+            ID 복사
+          </button>
+          <button
+            type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
             onClick={() => {
               setDeleteMarkdownTarget({
@@ -432,15 +489,70 @@ export function BoardWorkspaceContextMenus({
         </div>
       )}
 
-      {assetOrCustomViewContextMenu && canMoveBoardItem && (
+      {customViewContextMenu && (
+        <div
+          className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
+          style={{ left: customViewContextMenu.screenX, top: customViewContextMenu.screenY }}
+        >
+          {onEditBoardItem && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => {
+                onEditBoardItem(customViewContextMenu.item);
+                onCloseCardContextMenu();
+              }}
+            >
+              <SquarePen className="h-4 w-4" />
+              편집
+            </button>
+          )}
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => copyToClipboard(customViewContextMenu.item.title, "제목")}
+          >
+            <Copy className="h-4 w-4" />
+            제목 복사
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => copyToClipboard(customViewContextMenu.item.customViewId, "ID")}
+          >
+            <Hash className="h-4 w-4" />
+            ID 복사
+          </button>
+          {canMoveBoardItem && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => openMoveBoardItemTarget(customViewContextMenu.item)}
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+              {boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동..."}
+            </button>
+          )}
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
+            onClick={() => handleDeleteCustomView(customViewContextMenu.item)}
+          >
+            <Trash2 className="h-4 w-4" />
+            삭제
+          </button>
+        </div>
+      )}
+
+      {assetContextMenu && canMoveBoardItem && (
         <div
           className="fixed z-30 w-48 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
-          style={{ left: assetOrCustomViewContextMenu.screenX, top: assetOrCustomViewContextMenu.screenY }}
+          style={{ left: assetContextMenu.screenX, top: assetContextMenu.screenY }}
         >
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-            onClick={() => openMoveBoardItemTarget(assetOrCustomViewContextMenu.item)}
+            onClick={() => openMoveBoardItemTarget(assetContextMenu.item)}
           >
             <ArrowRightLeft className="h-4 w-4" />
             {boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동..."}

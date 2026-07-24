@@ -236,6 +236,9 @@ export function TaskWorkspace({
         mobileMode={mobileMode}
         mobileTab={mobileTab}
         taskMoveTargets={taskMoveTargets}
+        folders={folders}
+        contextInvalidationKey={contextInvalidationKey}
+        sessionDefaults={sessionDefaults}
         onClose={() => setBoardOpen(false)}
         onOpenSession={onOpenSession}
         onAcknowledgedReview={onAcknowledgedReview}

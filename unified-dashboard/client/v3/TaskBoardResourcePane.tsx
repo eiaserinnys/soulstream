@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CustomViewPanel,
   DashboardIconCap,
@@ -10,12 +10,13 @@ import {
   type MarkdownDocument,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { SquarePen } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, SquarePen } from "lucide-react";
 
 import { RichSessionRow } from "./RichSessionRow";
 import { fetchInlineMarkdown } from "./task-inline-board-api";
 import {
   buildTaskBoardResourceTabs,
+  computeTabStripOverflow,
   type TaskBoardResourceSelection,
   type TaskBoardResourceTab,
 } from "./task-board-model";
@@ -38,6 +39,7 @@ export function TaskBoardResourcePane({
   onOpenSession,
   onOpenDocument,
   onActiveTabChange,
+  onNewSession,
 }: {
   taskId: string;
   taskTitle: string;
@@ -51,6 +53,7 @@ export function TaskBoardResourcePane({
   onOpenSession(session: SessionSummary): void;
   onOpenDocument(documentId: string): void;
   onActiveTabChange(tabId: string): void;
+  onNewSession?: () => void;
 }) {
   const tabs = useMemo(
     () => buildTaskBoardResourceTabs(boardItems, openedResources),
@@ -66,22 +69,11 @@ export function TaskBoardResourcePane({
           <strong>{taskTitle}</strong>
         </div>
       </header>
-      <div className="v3-task-board-resource-tabs" role="tablist" aria-label="업무 자료">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={tab.id === activeTabId}
-            aria-controls="v3-task-board-resource-panel"
-            title={tab.title}
-            onClick={() => onActiveTabChange(tab.id)}
-          >
-            {tab.kind === "checklist" ? "✓" : tab.kind === "sessions" ? "↳" : tab.kind === "custom_view" ? "◇" : "▤"}
-            <span>{tab.title}</span>
-          </button>
-        ))}
-      </div>
+      <TaskBoardResourceTabStrip
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onActiveTabChange={onActiveTabChange}
+      />
       <div
         id="v3-task-board-resource-panel"
         className="v3-task-board-resource-content"
@@ -97,6 +89,7 @@ export function TaskBoardResourcePane({
             runSessionLoadStates={runSessionLoadStates}
             activeSessionId={activeSessionId}
             onOpenSession={onOpenSession}
+            onNewSession={onNewSession}
           />
         ) : activeTab.kind === "custom_view" ? (
           <CustomViewPanel customViewId={activeTab.customViewId} />
@@ -111,34 +104,142 @@ export function TaskBoardResourcePane({
   );
 }
 
+function TaskBoardResourceTabStrip({
+  tabs,
+  activeTabId,
+  onActiveTabChange,
+}: {
+  tabs: readonly TaskBoardResourceTab[];
+  activeTabId: string;
+  onActiveTabChange(tabId: string): void;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ canScrollLeft: false, canScrollRight: false });
+
+  const refreshOverflow = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setOverflow((current) => {
+      const next = computeTabStripOverflow({
+        scrollLeft: el.scrollLeft,
+        clientWidth: el.clientWidth,
+        scrollWidth: el.scrollWidth,
+      });
+      return next.canScrollLeft === current.canScrollLeft && next.canScrollRight === current.canScrollRight
+        ? current
+        : next;
+    });
+  }, []);
+
+  useEffect(() => {
+    refreshOverflow();
+    const el = scrollerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(refreshOverflow);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [refreshOverflow, tabs.length]);
+
+  const scrollByDirection = (direction: 1 | -1) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.7), behavior: "smooth" });
+  };
+
+  return (
+    <div
+      className="v3-task-board-resource-tabs-wrap"
+      data-overflow-left={overflow.canScrollLeft ? "true" : undefined}
+      data-overflow-right={overflow.canScrollRight ? "true" : undefined}
+    >
+      {overflow.canScrollLeft ? (
+        <DashboardIconCap
+          label="이전 탭 보기"
+          className="v3-task-board-resource-tabs-chevron v3-task-board-resource-tabs-chevron--left"
+          onClick={() => scrollByDirection(-1)}
+        >
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+      ) : null}
+      <div
+        ref={scrollerRef}
+        className="v3-task-board-resource-tabs"
+        role="tablist"
+        aria-label="업무 자료"
+        onScroll={refreshOverflow}
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={tab.id === activeTabId}
+            aria-controls="v3-task-board-resource-panel"
+            title={tab.title}
+            onClick={() => onActiveTabChange(tab.id)}
+          >
+            {tab.kind === "checklist" ? "✓" : tab.kind === "sessions" ? "↳" : tab.kind === "custom_view" ? "◇" : "▤"}
+            <span>{tab.title}</span>
+          </button>
+        ))}
+      </div>
+      {overflow.canScrollRight ? (
+        <DashboardIconCap
+          label="다음 탭 보기"
+          className="v3-task-board-resource-tabs-chevron v3-task-board-resource-tabs-chevron--right"
+          onClick={() => scrollByDirection(1)}
+        >
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+      ) : null}
+    </div>
+  );
+}
+
 function TaskBoardSessionTree({
   sessionIds,
   sessions,
   runSessionLoadStates,
   activeSessionId,
   onOpenSession,
+  onNewSession,
 }: {
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
+  onNewSession?: () => void;
 }) {
   const tree = useMemo(
     () => buildRunTree(sessionIds, sessions, runSessionLoadStates),
     [runSessionLoadStates, sessionIds, sessions],
   );
-  if (tree.length === 0) return <p className="v3-detail-empty">아직 위임된 세션이 없습니다.</p>;
   return (
-    <div className="v3-task-board-session-tree">
-      {tree.map((node) => (
-        <TaskBoardSessionNode
-          key={node.session.agentSessionId}
-          node={node}
-          activeSessionId={activeSessionId}
-          onOpenSession={onOpenSession}
-        />
-      ))}
+    <div className="v3-task-board-session-list">
+      <div className="v3-task-board-session-head">
+        <strong>세션 히스토리</strong>
+        <span className="v3-task-board-session-count">{tree.length}회</span>
+        {onNewSession ? (
+          <DashboardIconCap label="새 세션" onClick={onNewSession}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
+        ) : null}
+      </div>
+      {tree.length === 0 ? (
+        <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p>
+      ) : (
+        <div className="v3-task-board-session-tree">
+          {tree.map((node) => (
+            <TaskBoardSessionNode
+              key={node.session.agentSessionId}
+              node={node}
+              activeSessionId={activeSessionId}
+              onOpenSession={onOpenSession}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

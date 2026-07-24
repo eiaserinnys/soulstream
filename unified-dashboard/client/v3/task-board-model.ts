@@ -65,7 +65,7 @@ export function buildTaskBoardResourceTabs(
 ): TaskBoardResourceTab[] {
   const tabs: TaskBoardResourceTab[] = [
     { id: "checklist", kind: "checklist", title: "체크리스트" },
-    { id: "sessions", kind: "sessions", title: "위임 관계" },
+    { id: "sessions", kind: "sessions", title: "세션" },
   ];
   const seenTabIds = new Set<string>();
   for (const resource of openedResources) {
@@ -190,4 +190,58 @@ export function scopeCatalogUpdateToTaskBoardPreservingSessionList(
     ? currentCatalog.sessionList
     : retainEqualValue(currentCatalog.sessionList, incomingCatalog.sessionList);
   return sessionList === undefined ? scoped : { ...scoped, sessionList };
+}
+
+export const TASK_RESOURCE_MIN_WIDTH_PX = 240;
+export const TASK_RESOURCE_MAX_WIDTH_PX = 560;
+export const TASK_CHAT_MIN_WIDTH_PX = 320;
+export const TASK_CHAT_MAX_WIDTH_PX = 560;
+
+/**
+ * 좌측 업무 자료 패널 폭을 안전 범위로 clamp한다. 최소값은 그리드 좌 컬럼의
+ * `minmax(240px, ...)` 하한과 일치하고, 최대값은 고정 상한을 둔다. 좌·우 패널이
+ * 동시에 최대여도 그리드의 중앙 1fr 트랙이 남는 공간을 흡수해 오른쪽 채팅 열을
+ * 밀어내거나 오버플로하지 않는다(각 패널은 자기 min 이하로 줄지 않는다).
+ */
+export function clampTaskResourceWidth(widthPx: number): number {
+  if (Number.isNaN(widthPx)) return TASK_RESOURCE_MIN_WIDTH_PX;
+  return Math.min(
+    TASK_RESOURCE_MAX_WIDTH_PX,
+    Math.max(TASK_RESOURCE_MIN_WIDTH_PX, widthPx),
+  );
+}
+
+/**
+ * 오른쪽 채팅 패널 폭을 안전 범위로 clamp한다. 최소값은 그리드 우 컬럼의
+ * `minmax(320px, ...)` 하한과 일치한다. 좌측 리사이즈와 독립적으로 적용되며
+ * 기존 세션 패널 리사이즈와 동일하게 `--v3-session-panel-width` 토큰에 반영한다.
+ */
+export function clampTaskChatWidth(widthPx: number): number {
+  if (Number.isNaN(widthPx)) return TASK_CHAT_MIN_WIDTH_PX;
+  return Math.min(
+    TASK_CHAT_MAX_WIDTH_PX,
+    Math.max(TASK_CHAT_MIN_WIDTH_PX, widthPx),
+  );
+}
+
+export interface TabStripOverflow {
+  canScrollLeft: boolean;
+  canScrollRight: boolean;
+}
+
+/**
+ * 탭 스트립의 가로 스크롤 상태로부터 좌/우 셰브론 노출 여부를 계산한다(순수).
+ * 1px 허용 오차로 부동소수 반올림 흔들림을 흡수한다. 넘치지 않으면 둘 다 false.
+ */
+export function computeTabStripOverflow(metrics: {
+  scrollLeft: number;
+  clientWidth: number;
+  scrollWidth: number;
+}): TabStripOverflow {
+  const maxScroll = metrics.scrollWidth - metrics.clientWidth;
+  if (maxScroll <= 1) return { canScrollLeft: false, canScrollRight: false };
+  return {
+    canScrollLeft: metrics.scrollLeft > 1,
+    canScrollRight: metrics.scrollLeft < maxScroll - 1,
+  };
 }
