@@ -71,7 +71,6 @@ interface BoardWorkspaceContextMenusProps {
     target: BoardContainerRef,
   ) => Promise<void>;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
-  onEditBoardItem?: (item: Extract<BoardWorkspaceItem, { type: "markdown" | "custom_view" }>) => void;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -105,7 +104,6 @@ export function BoardWorkspaceContextMenus({
   onDeleteFrame,
   onMoveBoardItemToContainer,
   onMarkdownDocumentDeleted,
-  onEditBoardItem,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -419,19 +417,19 @@ export function BoardWorkspaceContextMenus({
           className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: markdownContextMenu.screenX, top: markdownContextMenu.screenY }}
         >
-          {onEditBoardItem && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-              onClick={() => {
-                onEditBoardItem(markdownContextMenu.item);
-                onCloseCardContextMenu();
-              }}
-            >
-              <SquarePen className="h-4 w-4" />
-              편집
-            </button>
-          )}
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => {
+              // 🔴25: 마크다운 "편집" = 중앙 오버레이/문서 패널을 편집 모드로 연다(왼쪽 탭 아님).
+              // 이미 열려 있으면 이 문서로 교체 후 편집(requestBoardDocumentEdit).
+              useDashboardStore.getState().requestBoardDocumentEdit(markdownContextMenu.item.documentId);
+              onCloseCardContextMenu();
+            }}
+          >
+            <SquarePen className="h-4 w-4" />
+            편집
+          </button>
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
@@ -499,19 +497,7 @@ export function BoardWorkspaceContextMenus({
           className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: customViewContextMenu.screenX, top: customViewContextMenu.screenY }}
         >
-          {onEditBoardItem && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-              onClick={() => {
-                onEditBoardItem(customViewContextMenu.item);
-                onCloseCardContextMenu();
-              }}
-            >
-              <SquarePen className="h-4 w-4" />
-              편집
-            </button>
-          )}
+          {/* 🔴25: custom_view(Flux)엔 마크다운 편집기가 없어 "편집" 항목을 두지 않는다. */}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"

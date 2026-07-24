@@ -230,6 +230,12 @@ export interface DashboardState {
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
 
+  /**
+   * 편집 모드로 열도록 요청된 보드 마크다운 문서(🔴25). MarkdownDocumentPanel이 해당 문서를
+   * 로드한 뒤 자동으로 편집 모드에 진입하고 소비(clear)한다. 일반 열기는 이 값을 비운다.
+   */
+  pendingBoardDocumentEditId: string | null;
+
   /** 오른쪽 Chat 슬롯에 표시 중인 커스텀 뷰 */
   activeCustomViewId: string | null;
 
@@ -362,6 +368,10 @@ export interface DashboardActions {
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
   setActiveBoardDocument: (documentId: string | null) => void;
+  /** 🔴25: 문서를 편집 모드로 연다(중앙 오버레이/문서 패널). 이미 열려 있으면 해당 문서로 교체 후 편집. */
+  requestBoardDocumentEdit: (documentId: string) => void;
+  /** 편집 요청을 소비 처리(clear)한다. */
+  clearPendingBoardDocumentEdit: () => void;
   setActiveCustomView: (customViewId: string | null) => void;
 
   // 대시보드 프로필 설정

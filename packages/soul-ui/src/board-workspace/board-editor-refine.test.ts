@@ -59,3 +59,34 @@ describe("🔴23 task board layout persistence slice", () => {
     expect(useDashboardStore.getState().taskBoardLayouts).toBe(before);
   });
 });
+
+describe("🔴25 markdown edit opens the center overlay in edit mode", () => {
+  it("requestBoardDocumentEdit sets active doc + pending edit; a normal open clears pending", () => {
+    const store = useDashboardStore.getState();
+    store.requestBoardDocumentEdit("doc-25");
+    let s = useDashboardStore.getState();
+    expect(s.activeBoardDocumentId).toBe("doc-25");
+    expect(s.pendingBoardDocumentEditId).toBe("doc-25");
+
+    // 일반 열기(카드/탭)는 편집 요청을 비운다 → 자동 편집 진입 없음.
+    store.setActiveBoardDocument("doc-25");
+    expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBeNull();
+
+    // 소비 clear.
+    store.requestBoardDocumentEdit("doc-25");
+    store.clearPendingBoardDocumentEdit();
+    expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBeNull();
+  });
+
+  it("markdown menu edits via requestBoardDocumentEdit; custom_view has no edit item", () => {
+    const menus = read("./BoardWorkspaceContextMenus.tsx");
+    // 마크다운 "편집"은 중앙 오버레이를 편집 모드로 연다.
+    expect(menus).toContain("requestBoardDocumentEdit(markdownContextMenu.item.documentId)");
+    // custom_view는 편집 항목/편집 위임 prop이 없다.
+    expect(menus).not.toContain("requestBoardDocumentEdit(customViewContextMenu");
+    expect(menus).not.toContain("onEditBoardItem");
+    // 왼쪽 탭으로 여는 onOpenMarkdownDocument는 더 이상 "편집" 액션에 쓰이지 않는다.
+    const view = read("./BoardWorkspaceView.tsx");
+    expect(view).not.toContain("onEditBoardItem");
+  });
+});

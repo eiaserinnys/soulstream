@@ -40,6 +40,8 @@ export function MarkdownDocumentPanel() {
   const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
   const setActiveBoardDocument = useDashboardStore((s) => s.setActiveBoardDocument);
   const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
+  const pendingEditId = useDashboardStore((s) => s.pendingBoardDocumentEditId);
+  const clearPendingBoardDocumentEdit = useDashboardStore((s) => s.clearPendingBoardDocumentEdit);
   const boardContainer = useMemo<BoardContainerRef | null>(
     () => activeBoardContainer ?? (selectedFolderId ? { kind: "folder", id: selectedFolderId } : null),
     [activeBoardContainer, selectedFolderId],
@@ -222,6 +224,17 @@ export function MarkdownDocumentPanel() {
     editBodySnapshotRef.current = yText ? yText.toString() : body;
     setIsEditingBody(true);
   };
+
+  // 🔴25: "편집" 요청(requestBoardDocumentEdit)으로 열린 문서는 로드된 뒤 자동으로 편집
+  // 모드에 진입한다. 요청 문서가 실제 로드된 문서와 일치할 때만 소비하고 즉시 clear한다.
+  useEffect(() => {
+    if (!pendingEditId || pendingEditId !== documentId) return;
+    if (!document || document.id !== documentId) return;
+    if (!isEditingBody) enterEditMode();
+    clearPendingBoardDocumentEdit();
+    // enterEditMode는 클로저(안정 동작); 소비 후 pendingEditId가 null이 되어 재실행돼도 무해.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingEditId, documentId, document, isEditingBody, clearPendingBoardDocumentEdit]);
 
   const updateBody = (value: string) => {
     setBody(value);

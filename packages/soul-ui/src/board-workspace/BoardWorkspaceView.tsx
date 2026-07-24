@@ -1191,14 +1191,6 @@ export function BoardWorkspaceView({
             onDeleteFrame={deleteFrame}
             onMoveBoardItemToContainer={moveBoardItemToContainer}
             onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
-            onEditBoardItem={
-              onOpenMarkdownDocument || onOpenCustomView
-                ? (item) => {
-                    if (item.type === "markdown") onOpenMarkdownDocument?.(item.documentId);
-                    else onOpenCustomView?.(item.customViewId);
-                  }
-                : undefined
-            }
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}
