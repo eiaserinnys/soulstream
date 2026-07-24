@@ -343,6 +343,7 @@ export function BoardWorkspaceView({
   hasMore,
   workspaceViewMode,
   onWorkspaceViewModeChange,
+  viewportPersistenceKey,
 }: BoardWorkspaceViewProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
@@ -648,6 +649,7 @@ export function BoardWorkspaceView({
     clearBoardSelection,
     raiseBoardItems,
     updateBoardItemPositions: yjsUpdateBoardItemPositions,
+    viewportPersistenceKey,
   });
 
   useEffect(() => {

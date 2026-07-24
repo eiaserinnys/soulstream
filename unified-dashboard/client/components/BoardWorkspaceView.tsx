@@ -32,6 +32,7 @@ interface BoardWorkspaceViewWrapperProps {
   onOpenCustomView?: (customViewId: string) => void;
   onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
+  viewportPersistenceKey?: string | null;
 }
 
 export function BoardWorkspaceView({
@@ -43,6 +44,7 @@ export function BoardWorkspaceView({
   onOpenCustomView,
   onLoadMore,
   hasMore,
+  viewportPersistenceKey,
 }: BoardWorkspaceViewWrapperProps = {}) {
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
@@ -88,6 +90,7 @@ export function BoardWorkspaceView({
       onUploadBoardAsset={uploadBoardAsset}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
+      viewportPersistenceKey={viewportPersistenceKey}
     />
   );
 }

@@ -30,7 +30,7 @@ describe("v3 icon action cap contract", () => {
     ["./TaskRunHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
     ["./TaskBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
     ["./TaskWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
-    ["./TaskBoardWorkspace.tsx", ["문서 편집기 접기"]],
+    ["./TaskBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
     ["./PlannerViews.tsx", ["아침 정리", "새 업무", "오늘로 돌아가기", "새 문서", "이전 문서 더 보기", "이전 업무 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],

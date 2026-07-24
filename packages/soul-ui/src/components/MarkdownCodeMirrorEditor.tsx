@@ -205,7 +205,10 @@ const markdownEditorTheme = EditorView.theme({
     height: "100%",
     minHeight: "360px",
     border: "1px solid var(--border)",
-    borderRadius: "0.375rem",
+    // 오버레이·제목·포커스 링과 일관되게 둥근 모서리(🔴18). 기존 radius 토큰만 재사용하고
+    // overflow를 감춰 내부 스크롤러/콘텐츠가 둥근 모서리를 넘지 않게 한다.
+    borderRadius: "var(--radius-lg)",
+    overflow: "hidden",
     backgroundColor: "var(--background)",
     color: "var(--foreground)",
   },

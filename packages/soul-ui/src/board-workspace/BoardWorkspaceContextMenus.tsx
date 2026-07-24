@@ -1,6 +1,7 @@
 // Size exception: this legacy menu coordinator still owns every board-card dialog.
 // Shared mutations are extracted as they are touched; splitting the coordinator is a separate migration.
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRightLeft, Copy, Folder, Frame, Hash, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
@@ -323,7 +324,11 @@ export function BoardWorkspaceContextMenus({
     setRenameFrameTarget(null);
   };
 
-  return (
+  // 🔴24: fixed-position 메뉴/다이얼로그를 document.body로 포털한다. 업무 보드 스크롤러는
+  // backdrop-filter(blur)를 걸어 스스로 fixed 자식의 containing block이 되고 overflow로
+  // 잘라내 메뉴가 화면에서 사라졌다(폴더 보드는 필터가 없어 정상). 포털로 뷰포트 기준
+  // 좌표(clientX/clientY)가 항상 올바르게 적용된다. 폴더 보드 동작은 그대로 유지된다.
+  const menuTree = (
     <>
       {contextMenu && canCreateBoardItems && (
         <div
@@ -790,6 +795,8 @@ export function BoardWorkspaceContextMenus({
       </Dialog>
     </>
   );
+
+  return typeof document === "undefined" ? menuTree : createPortal(menuTree, document.body);
 }
 
 function isMovableBoardWorkspaceItem(item: BoardWorkspaceItem): item is MovableBoardWorkspaceItem {

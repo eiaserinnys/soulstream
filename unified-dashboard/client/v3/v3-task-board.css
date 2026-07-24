@@ -80,6 +80,11 @@
   margin-block: 0 var(--v3-space-6);
   justify-self: center;
   align-self: end;
+  /* 🔴22: 탑바 드래그로 좌우 이동. 오프셋은 JS(setProperty)로 주입하며 보드 영역
+     내로 clamp된다. position:relative + left라 열림/닫힘 애니메이션(transform·height)과
+     충돌하지 않는다. */
+  position: relative;
+  left: var(--v3-overlay-offset-x, 0px);
   flex-direction: column;
   overflow: hidden;
   background: var(--lg-card);
@@ -87,19 +92,28 @@
   transition: height 220ms ease;
 }
 
+/* 🔴19: 확장 상한을 보드 영역(중앙 canvas grid track) 높이의 95%로 잡아 보드 위를
+   넘지 않게 한다. 오버레이는 grid-column:3 항목이라 %는 보드 행 높이를 기준으로 푼다. */
 .v3-task-board-document-overlay.is-expanded {
-  height: 90%;
+  height: 95%;
 }
 
-/* 🔴13: 열림 슬라이드/페이드 등장, 닫힘 전이. 40%↔90%는 위 height transition. */
+/* 🔴22: 탑바(헤더)를 가로 이동 드래그 핸들로 삼는다. 내부 버튼은 자기 커서를 유지한다. */
+.v3-task-board-document-overlay > .v3-chat-header {
+  cursor: move;
+  user-select: none;
+}
+
+/* 🔴13: 열림 슬라이드/페이드 등장. 40%↔95%는 위 height transition. */
 @keyframes v3-task-board-overlay-in {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 🔴21: 닫힘은 페이드아웃이 아니라 높이 축소(shrink-to-close). from을 생략해 현재
+   높이(40% 또는 95%)에서 0으로 줄어들며 닫힌다. 하단 여백도 함께 접는다. */
 @keyframes v3-task-board-overlay-out {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(16px); }
+  to { height: 0; margin-block-end: 0; }
 }
 
 .v3-task-board-document-overlay {
@@ -107,7 +121,7 @@
 }
 
 .v3-task-board-document-overlay.is-closing {
-  animation: v3-task-board-overlay-out 180ms ease forwards;
+  animation: v3-task-board-overlay-out 200ms ease forwards;
   pointer-events: none;
 }
 

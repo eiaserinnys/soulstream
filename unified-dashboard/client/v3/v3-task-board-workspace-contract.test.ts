@@ -86,14 +86,16 @@ describe("task board panel resize, overlay height, and session list contract", (
     expect(css).toMatch(/\.v3-task-board-resize--right\s*{[^}]*grid-column:\s*4;/s);
   });
 
-  it("opens the document overlay at 40% and toggles to 90% via an aria-pressed control", () => {
+  it("opens the document overlay at 40% and caps expansion at 95% of the board area (🔴19)", () => {
     const workspace = read("./TaskBoardWorkspace.tsx");
     const css = read("./v3-task-board.css");
 
     expect(workspace).toContain("is-expanded");
     expect(workspace).toContain("aria-pressed={overlayExpanded}");
     expect(css).toMatch(/\.v3-task-board-document-overlay\s*{[^}]*height:\s*40%;/s);
-    expect(css).toMatch(/\.v3-task-board-document-overlay\.is-expanded\s*{[^}]*height:\s*90%;/s);
+    // 확장 상한은 보드 영역(grid track) 높이의 95% — 이전 90%를 대체(🔴19).
+    expect(css).toMatch(/\.v3-task-board-document-overlay\.is-expanded\s*{[^}]*height:\s*95%;/s);
+    expect(css).not.toMatch(/\.v3-task-board-document-overlay\.is-expanded\s*{[^}]*height:\s*90%;/s);
     expect(css).toMatch(/prefers-reduced-motion/);
   });
 
@@ -126,11 +128,17 @@ describe("document overlay animation, close policy, and close button contract", 
     expect(css).toMatch(/prefers-reduced-motion[\s\S]*animation:\s*none/);
   });
 
-  it("closes only on central board clicks, not left/right panels or the overlay itself", () => {
+  it("shrinks (not closes) the overlay on central board interactions; only X closes (🔴20)", () => {
     const workspace = read("./TaskBoardWorkspace.tsx");
 
-    // the central canvas requests close; the overlay is a sibling so its clicks never reach it.
-    expect(workspace).toMatch(/v3-task-board-canvas[\s\S]*onMouseDownCapture=\{\(\) => \{ if \(activeBoardDocumentId\) requestCloseOverlay\(\); \}\}/);
+    // 🔴20: 보드 영역 상호작용은 닫지 않고 기본 높이(40%)로 축소한다.
+    expect(workspace).toMatch(/v3-task-board-canvas[\s\S]*onMouseDownCapture=\{\(\) => \{ if \(activeBoardDocumentId\) requestShrinkOverlay\(\); \}\}/);
+    expect(workspace).toContain("const requestShrinkOverlay");
+    expect(workspace).toContain("setOverlayExpanded(false)");
+    // 완전 닫기(requestCloseOverlay)는 X 버튼에만 남는다.
+    expect(workspace).toMatch(/data-testid="v3-task-board-document-overlay-close"[\s\S]*onClick=\{requestCloseOverlay\}/);
+    // 중앙 캔버스 핸들러는 close가 아니라 shrink를 호출한다.
+    expect(workspace).toMatch(/v3-task-board-canvas"[\s\S]{0,200}?onMouseDownCapture=\{\(\) => \{ if \(activeBoardDocumentId\) requestShrinkOverlay\(\); \}\}/);
   });
 
   it("adds an explicit close button beside the expand/shrink toggle", () => {
@@ -151,5 +159,46 @@ describe("document overlay animation, close policy, and close button contract", 
     // MarkdownDocumentPanel — appear identically in both surfaces without a new branch.
     expect(boardOverlay).toContain("<MarkdownDocumentPanel");
     expect(taskPanelInspector).toContain("<MarkdownDocumentPanel");
+  });
+});
+
+describe("task board editor refine (🔴18~24) contract", () => {
+  it("closes the overlay by shrinking its height to zero, not fading out (🔴21)", () => {
+    const css = read("./v3-task-board.css");
+
+    // 닫힘 키프레임은 height를 0으로 접는다. translateY/opacity 페이드는 제거한다.
+    expect(css).toMatch(/@keyframes\s+v3-task-board-overlay-out\s*{[^}]*height:\s*0;/s);
+    expect(css).not.toMatch(/@keyframes\s+v3-task-board-overlay-out\s*{[^}]*translateY/s);
+    expect(css).not.toMatch(/@keyframes\s+v3-task-board-overlay-out\s*{[^}]*opacity/s);
+    expect(css).toMatch(/\.v3-task-board-document-overlay\.is-closing\s*{[^}]*animation:\s*v3-task-board-overlay-out/s);
+  });
+
+  it("makes the overlay top bar a horizontal drag handle clamped to the board (🔴22)", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+    const css = read("./v3-task-board.css");
+
+    // 탑바(헤더) mousedown이 드래그를 시작하고, 버튼 위 mousedown은 제외한다.
+    expect(workspace).toContain("handleOverlayHeaderMouseDown");
+    expect(workspace).toMatch(/v3-chat-header"\s+onMouseDown=\{handleOverlayHeaderMouseDown\}/);
+    expect(workspace).toContain('closest("button")');
+    // 오프셋은 setProperty로만 반영(인라인 style 리터럴 금지 계약 유지).
+    expect(workspace).toContain('setProperty("--v3-overlay-offset-x"');
+    expect(workspace).not.toContain("style={{");
+    // clamp 기준은 보드 영역(canvas) 폭.
+    expect(workspace).toContain('querySelector<HTMLElement>(\'[data-testid="v3-task-board-canvas"]\')');
+    expect(css).toMatch(/\.v3-task-board-document-overlay\s*{[^}]*left:\s*var\(--v3-overlay-offset-x/s);
+    // 새 task-board 토큰을 만들지 않는다.
+    expect(css).not.toMatch(/--v3-task-board-[\w-]+\s*:/);
+  });
+
+  it("persists and restores the per-task board layout via dashboard-store persist (🔴23)", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    // task page id를 키로 기존 persist 슬라이스에 저장·복원한다.
+    expect(workspace).toContain("const layoutKey = task.page.id");
+    expect(workspace).toContain("setTaskBoardLayout");
+    expect(workspace).toContain("taskBoardLayouts");
+    // 보드 zoom/pan은 viewportPersistenceKey로 위임한다.
+    expect(workspace).toContain("viewportPersistenceKey={layoutKey}");
   });
 });

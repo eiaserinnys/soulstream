@@ -21,6 +21,7 @@ import {
   type BoardViewport,
 } from "./board-viewport";
 import { useBoardWorkspaceDrag } from "./useBoardWorkspaceDrag";
+import { useDashboardStore } from "../stores/dashboard-store";
 
 interface UseBoardCanvasViewportOptions {
   selectedFolderId: string | null;
@@ -31,6 +32,11 @@ interface UseBoardCanvasViewportOptions {
   clearBoardSelection: () => void;
   raiseBoardItems: (boardItemIds: string[]) => void;
   updateBoardItemPositions: (updates: BoardItemPositionUpdate[]) => void;
+  /**
+   * 지정 시 보드 zoom/pan을 task 레이아웃(dashboard-store persist)에 저장·복원한다(🔴23②).
+   * 미지정(폴더 보드 등)이면 기존 동작(매 진입 origin 리셋)을 그대로 유지한다.
+   */
+  viewportPersistenceKey?: string | null;
 }
 
 export function useBoardCanvasViewport({
@@ -42,12 +48,26 @@ export function useBoardCanvasViewport({
   clearBoardSelection,
   raiseBoardItems,
   updateBoardItemPositions,
+  viewportPersistenceKey = null,
 }: UseBoardCanvasViewportOptions) {
-  const [zoom, setZoom] = useState(DEFAULT_BOARD_ZOOM);
+  // 최초 마운트 시 1회만 저장된 viewport를 읽는다(이후 store 변경엔 재구독하지 않음).
+  const initialViewportRef = useRef<{ zoom?: number; scrollLeft?: number; scrollTop?: number } | null>(
+    viewportPersistenceKey
+      ? (() => {
+          const snap = useDashboardStore.getState().taskBoardLayouts[viewportPersistenceKey];
+          return snap
+            ? { zoom: snap.boardZoom, scrollLeft: snap.boardScrollLeft, scrollTop: snap.boardScrollTop }
+            : null;
+        })()
+      : null,
+  );
+  const initialZoom = clampBoardZoom(initialViewportRef.current?.zoom ?? DEFAULT_BOARD_ZOOM);
+  const [zoom, setZoom] = useState(initialZoom);
   const [minimapCollapsed, setMinimapCollapsed] = useState(false);
   const [viewport, setViewport] = useState<BoardViewport>({ scrollLeft: 0, scrollTop: 0, width: 0, height: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const zoomRef = useRef(DEFAULT_BOARD_ZOOM);
+  const zoomRef = useRef(initialZoom);
+  const restoredKeyRef = useRef<string | null>(null);
 
   const resolveBoardPoint = useCallback((clientX: number, clientY: number) => {
     const canvas = scrollRef.current?.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
@@ -149,11 +169,51 @@ export function useBoardCanvasViewport({
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
+    // 🔴23②: 영속 키가 있으면 최초 1회 저장된 pan으로 복원하고, 같은 키에서 이후
+    // selectedFolderId 변화엔 origin 리셋을 건너뛰어 복원 위치를 보존한다.
+    if (viewportPersistenceKey) {
+      if (restoredKeyRef.current === viewportPersistenceKey) return;
+      restoredKeyRef.current = viewportPersistenceKey;
+      const initial = initialViewportRef.current;
+      if (initial && (initial.scrollLeft != null || initial.scrollTop != null)) {
+        scroller.scrollLeft = initial.scrollLeft ?? (BOARD_CANVAS_ORIGIN_X - 80) * zoomRef.current;
+        scroller.scrollTop = initial.scrollTop ?? (BOARD_CANVAS_ORIGIN_Y - 60) * zoomRef.current;
+        clearBoardSelection();
+        refreshViewport();
+        return;
+      }
+    }
     scroller.scrollLeft = (BOARD_CANVAS_ORIGIN_X - 80) * zoomRef.current;
     scroller.scrollTop = (BOARD_CANVAS_ORIGIN_Y - 60) * zoomRef.current;
     clearBoardSelection();
     refreshViewport();
-  }, [clearBoardSelection, refreshViewport, selectedFolderId]);
+  }, [clearBoardSelection, refreshViewport, selectedFolderId, viewportPersistenceKey]);
+
+  // 🔴23②: viewport(zoom/pan) 변경을 task 레이아웃에 디바운스 저장한다.
+  useEffect(() => {
+    if (!viewportPersistenceKey) return undefined;
+    const scroller = scrollRef.current;
+    if (!scroller) return undefined;
+    let timer = 0;
+    const persist = () => {
+      timer = 0;
+      useDashboardStore.getState().setTaskBoardLayout(viewportPersistenceKey, {
+        boardZoom: zoomRef.current,
+        boardScrollLeft: Math.round(scroller.scrollLeft),
+        boardScrollTop: Math.round(scroller.scrollTop),
+      });
+    };
+    const schedule = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(persist, 400);
+    };
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    schedule();
+    return () => {
+      scroller.removeEventListener("scroll", schedule);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [viewportPersistenceKey, zoom]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
