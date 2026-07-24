@@ -244,3 +244,43 @@ describe("task board editor refine 3rd round (🔴26~28) contract", () => {
     expect(css).not.toMatch(/--v3-task-board-[\w-]+\s*:/);
   });
 });
+
+describe("task board session list context menu (🔴30) contract", () => {
+  it("wires the session rows to the shared context-menu callback", () => {
+    const resources = read("./TaskBoardResourcePane.tsx");
+
+    // 세션 행(RichSessionRow)이 우클릭 핸들러를 받아 연결한다(폴더 보드 세션 카드와 일관).
+    expect(resources).toContain("onSessionContextMenu");
+    expect(resources).toContain("onContextMenu={onSessionContextMenu}");
+    // 트리 → 노드 → 행으로 콜백을 스레딩한다(직접 자식·하위 위임 모두).
+    expect(resources).toMatch(/onSessionContextMenu\?\(session: SessionSummary, event: MouseEvent<HTMLDivElement>\): void;/);
+  });
+
+  it("reuses the canonical SessionContextMenu, actions, and dialogs in the board (🔴30)", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    // 업무 패널(TaskRunHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다.
+    expect(workspace).toContain("<SessionContextMenu");
+    expect(workspace).toContain("onRenameSession={onRenameSession}");
+    expect(workspace).toContain("onDeleteSessions={onDeleteSessions}");
+    expect(workspace).toContain("getRunSessionRenamePrefill(sessions, sessionId)");
+    expect(workspace).toContain("buildTaskSessionExtraActions");
+    expect(workspace).toContain("onSessionContextMenu={openSessionContextMenu}");
+    // 이어서 새 세션은 우클릭한 세션을 대상으로 승계 모달을 연다.
+    expect(workspace).toContain("currentSession={targetedSuccession}");
+    // 다른 업무로 이동은 기존 TaskMoveDialog 정본을 재사용한다.
+    expect(workspace).toContain("<TaskMoveDialog");
+    expect(workspace).toContain("await onMoveSession(moveSessionId, target)");
+    // 우클릭 메뉴는 별도 인라인 style·svg를 만들지 않는다(계약 유지).
+    expect(workspace).not.toContain("style={{");
+  });
+
+  it("threads the session mutation callbacks from TaskWorkspace into the board (🔴30)", () => {
+    const taskWorkspace = read("./TaskWorkspace.tsx");
+
+    // 예전엔 TaskDetailPane에만 전달하던 콜백을 보드 워크스페이스에도 전달한다.
+    expect(taskWorkspace).toMatch(
+      /<TaskBoardWorkspace[\s\S]*?onRenameSession=\{onRenameSession\}[\s\S]*?onDeleteSessions=\{onDeleteSessions\}[\s\S]*?onMoveSession=\{onMoveSession\}[\s\S]*?\/>/,
+    );
+  });
+});

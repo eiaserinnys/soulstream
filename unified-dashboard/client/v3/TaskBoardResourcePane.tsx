@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   CustomViewPanel,
   DashboardIconCap,
@@ -40,6 +40,7 @@ export function TaskBoardResourcePane({
   onOpenDocument,
   onActiveTabChange,
   onNewSession,
+  onSessionContextMenu,
 }: {
   taskId: string;
   taskTitle: string;
@@ -54,6 +55,7 @@ export function TaskBoardResourcePane({
   onOpenDocument(documentId: string): void;
   onActiveTabChange(tabId: string): void;
   onNewSession?: () => void;
+  onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const tabs = useMemo(
     () => buildTaskBoardResourceTabs(boardItems, openedResources),
@@ -90,6 +92,7 @@ export function TaskBoardResourcePane({
             activeSessionId={activeSessionId}
             onOpenSession={onOpenSession}
             onNewSession={onNewSession}
+            onSessionContextMenu={onSessionContextMenu}
           />
         ) : activeTab.kind === "custom_view" ? (
           <CustomViewPanel customViewId={activeTab.customViewId} />
@@ -203,6 +206,7 @@ function TaskBoardSessionTree({
   activeSessionId,
   onOpenSession,
   onNewSession,
+  onSessionContextMenu,
 }: {
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
@@ -210,6 +214,7 @@ function TaskBoardSessionTree({
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
   onNewSession?: () => void;
+  onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const tree = useMemo(
     () => buildRunTree(sessionIds, sessions, runSessionLoadStates),
@@ -236,6 +241,7 @@ function TaskBoardSessionTree({
               node={node}
               activeSessionId={activeSessionId}
               onOpenSession={onOpenSession}
+              onSessionContextMenu={onSessionContextMenu}
             />
           ))}
         </div>
@@ -248,10 +254,12 @@ function TaskBoardSessionNode({
   node,
   activeSessionId,
   onOpenSession,
+  onSessionContextMenu,
 }: {
   node: RunTreeNode;
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
+  onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const failed = node.loadState === "failed";
@@ -265,6 +273,7 @@ function TaskBoardSessionNode({
         active={!failed && !loading && node.session.agentSessionId === activeSessionId}
         preview={loading ? "세션 정보를 불러오는 중…" : undefined}
         onOpen={onOpenSession}
+        onContextMenu={onSessionContextMenu}
         actions={node.children.length > 0 ? (
           <DashboardIconCap
             label={`${node.children.length}개 위임 세션 ${expanded ? "접기" : "펼치기"}`}
@@ -283,6 +292,7 @@ function TaskBoardSessionNode({
               node={child}
               activeSessionId={activeSessionId}
               onOpenSession={onOpenSession}
+              onSessionContextMenu={onSessionContextMenu}
             />
           ))}
         </div>
