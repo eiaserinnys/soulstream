@@ -1,6 +1,7 @@
 // Size exception: this legacy menu coordinator still owns every board-card dialog.
 // Shared mutations are extracted as they are touched; splitting the coordinator is a separate migration.
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRightLeft, Copy, Folder, Frame, Hash, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
@@ -70,7 +71,6 @@ interface BoardWorkspaceContextMenusProps {
     target: BoardContainerRef,
   ) => Promise<void>;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
-  onEditBoardItem?: (item: Extract<BoardWorkspaceItem, { type: "markdown" | "custom_view" }>) => void;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -104,7 +104,6 @@ export function BoardWorkspaceContextMenus({
   onDeleteFrame,
   onMoveBoardItemToContainer,
   onMarkdownDocumentDeleted,
-  onEditBoardItem,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -323,7 +322,11 @@ export function BoardWorkspaceContextMenus({
     setRenameFrameTarget(null);
   };
 
-  return (
+  // 🔴24: fixed-position 메뉴/다이얼로그를 document.body로 포털한다. 업무 보드 스크롤러는
+  // backdrop-filter(blur)를 걸어 스스로 fixed 자식의 containing block이 되고 overflow로
+  // 잘라내 메뉴가 화면에서 사라졌다(폴더 보드는 필터가 없어 정상). 포털로 뷰포트 기준
+  // 좌표(clientX/clientY)가 항상 올바르게 적용된다. 폴더 보드 동작은 그대로 유지된다.
+  const menuTree = (
     <>
       {contextMenu && canCreateBoardItems && (
         <div
@@ -414,19 +417,19 @@ export function BoardWorkspaceContextMenus({
           className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: markdownContextMenu.screenX, top: markdownContextMenu.screenY }}
         >
-          {onEditBoardItem && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-              onClick={() => {
-                onEditBoardItem(markdownContextMenu.item);
-                onCloseCardContextMenu();
-              }}
-            >
-              <SquarePen className="h-4 w-4" />
-              편집
-            </button>
-          )}
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => {
+              // 🔴25: 마크다운 "편집" = 중앙 오버레이/문서 패널을 편집 모드로 연다(왼쪽 탭 아님).
+              // 이미 열려 있으면 이 문서로 교체 후 편집(requestBoardDocumentEdit).
+              useDashboardStore.getState().requestBoardDocumentEdit(markdownContextMenu.item.documentId);
+              onCloseCardContextMenu();
+            }}
+          >
+            <SquarePen className="h-4 w-4" />
+            편집
+          </button>
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
@@ -494,19 +497,7 @@ export function BoardWorkspaceContextMenus({
           className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: customViewContextMenu.screenX, top: customViewContextMenu.screenY }}
         >
-          {onEditBoardItem && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-              onClick={() => {
-                onEditBoardItem(customViewContextMenu.item);
-                onCloseCardContextMenu();
-              }}
-            >
-              <SquarePen className="h-4 w-4" />
-              편집
-            </button>
-          )}
+          {/* 🔴25: custom_view(Flux)엔 마크다운 편집기가 없어 "편집" 항목을 두지 않는다. */}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
@@ -790,6 +781,8 @@ export function BoardWorkspaceContextMenus({
       </Dialog>
     </>
   );
+
+  return typeof document === "undefined" ? menuTree : createPortal(menuTree, document.body);
 }
 
 function isMovableBoardWorkspaceItem(item: BoardWorkspaceItem): item is MovableBoardWorkspaceItem {

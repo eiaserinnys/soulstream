@@ -17,6 +17,7 @@ export type UISlice = Pick<
   | "newSessionDefaults"
   | "activeRightTab"
   | "activeBoardDocumentId"
+  | "pendingBoardDocumentEditId"
   | "activeCustomViewId"
   | "focusedBoardItem"
   | "dashboardConfig"
@@ -30,6 +31,8 @@ export type UISlice = Pick<
     | "closeNewSessionModal"
     | "setActiveRightTab"
     | "setActiveBoardDocument"
+    | "requestBoardDocumentEdit"
+    | "clearPendingBoardDocumentEdit"
     | "setActiveCustomView"
     | "focusBoardItem"
     | "clearFocusedBoardItem"
@@ -56,6 +59,7 @@ export const createUISlice: StateCreator<
   newSessionDefaults: null,
   activeRightTab: "chat",
   activeBoardDocumentId: null,
+  pendingBoardDocumentEditId: null,
   activeCustomViewId: null,
   focusedBoardItem: null,
   dashboardConfig: null,
@@ -76,7 +80,18 @@ export const createUISlice: StateCreator<
   setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
 
   setActiveBoardDocument: (activeBoardDocumentId) =>
-    set({ activeBoardDocumentId, activeCustomViewId: null, activeRightTab: "chat" }),
+    // 일반 열기/닫기는 편집 요청을 비운다(🔴25: 편집 요청은 requestBoardDocumentEdit만 설정).
+    set({ activeBoardDocumentId, pendingBoardDocumentEditId: null, activeCustomViewId: null, activeRightTab: "chat" }),
+
+  requestBoardDocumentEdit: (documentId) =>
+    set({
+      activeBoardDocumentId: documentId,
+      pendingBoardDocumentEditId: documentId,
+      activeCustomViewId: null,
+      activeRightTab: "chat",
+    }),
+
+  clearPendingBoardDocumentEdit: () => set({ pendingBoardDocumentEditId: null }),
 
   setActiveCustomView: (activeCustomViewId) =>
     set({ activeCustomViewId, activeBoardDocumentId: null, activeRightTab: "chat" }),

@@ -282,6 +282,26 @@ describe("MarkdownDocumentPanel", () => {
     expect(container.querySelector('button[title="Delete document"]')).not.toBeNull();
   });
 
+  it("auto-enters edit mode when opened via requestBoardDocumentEdit (🔴25)", async () => {
+    useDashboardStore.getState().reset();
+    useDashboardStore.getState().requestBoardDocumentEdit("doc-a");
+    const editContainer = document.createElement("div");
+    document.body.appendChild(editContainer);
+    const editRoot = createRoot(editContainer);
+    container = editContainer;
+    root = editRoot;
+    flushSync(() => {
+      editRoot.render(createElement(MarkdownDocumentPanel));
+    });
+
+    // 읽기 본문 클릭 없이 CodeMirror(편집 모드)가 나타난다.
+    await waitForEditorView(container);
+    expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="markdown-read-body"]')).toBeNull();
+    // 편집 요청은 소비되어 비워진다(재진입 시 중복 편집 방지).
+    await waitForCondition(() => useDashboardStore.getState().pendingBoardDocumentEditId === null);
+  });
+
   it("stale REST save keeps document dirty and shows a conflict message", async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

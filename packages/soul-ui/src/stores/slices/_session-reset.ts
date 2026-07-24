@@ -29,6 +29,7 @@ export function getSessionResetState() {
     ...getEventProcessingInitialState(),
     activeRightTab: "chat" as const, // ui-slice 소유 — 세션 전환 시 항상 "chat" 리셋이 의도된 동작
     activeBoardDocumentId: null,
+    pendingBoardDocumentEditId: null,
     activeCustomViewId: null,
   };
 }

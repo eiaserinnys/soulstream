@@ -47,4 +47,9 @@ export interface BoardWorkspaceViewProps {
   hasMore?: boolean;
   workspaceViewMode?: FolderWorkspaceViewMode;
   onWorkspaceViewModeChange?: (mode: FolderWorkspaceViewMode) => void;
+  /**
+   * 지정 시 보드 zoom/pan을 이 키(task page id)로 dashboard-store에 저장·복원한다(🔴23②).
+   * 폴더 보드 등 미지정이면 기존 origin 리셋 동작을 유지한다.
+   */
+  viewportPersistenceKey?: string | null;
 }

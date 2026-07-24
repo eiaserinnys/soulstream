@@ -944,8 +944,9 @@ describe("BoardWorkspaceView", () => {
         clientY: 50040,
       }));
     });
-    expect(container.textContent).not.toContain("새 세션 시작");
-    expect(container.textContent).toContain("새 문서");
+    // 🔴24: 컨텍스트 메뉴는 document.body로 포털된다.
+    expect(document.body.textContent).not.toContain("새 세션 시작");
+    expect(document.body.textContent).toContain("새 문서");
   });
 
   it("uploads dropped files from a task board with the task container target", async () => {
@@ -1553,12 +1554,13 @@ describe("BoardWorkspaceView", () => {
       }));
     });
 
-    const menuText = container.textContent ?? "";
+    // 🔴24: 컨텍스트 메뉴는 document.body로 포털된다.
+    const menuText = document.body.textContent ?? "";
     expect(menuText).toContain("폴더 추가");
     expect(menuText).toContain("새 세션 시작");
     expect(menuText).toContain("새 문서");
 
-    const sessionButton = Array.from(container.querySelectorAll("button"))
+    const sessionButton = Array.from(document.body.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("새 세션 시작"));
     expect(sessionButton).not.toBeUndefined();
 

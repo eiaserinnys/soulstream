@@ -230,6 +230,12 @@ export interface DashboardState {
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
 
+  /**
+   * 편집 모드로 열도록 요청된 보드 마크다운 문서(🔴25). MarkdownDocumentPanel이 해당 문서를
+   * 로드한 뒤 자동으로 편집 모드에 진입하고 소비(clear)한다. 일반 열기는 이 값을 비운다.
+   */
+  pendingBoardDocumentEditId: string | null;
+
   /** 오른쪽 Chat 슬롯에 표시 중인 커스텀 뷰 */
   activeCustomViewId: string | null;
 
@@ -250,6 +256,41 @@ export interface DashboardState {
 
   /** 폴더 목록 정렬 모드 (localStorage에 저장) */
   folderSortMode: FolderSortMode;
+
+  /**
+   * 업무 보드 워크스페이스의 마지막 레이아웃 상태 (task page id를 키로 localStorage 영속).
+   * 좌·우 패널 폭, 열린 자료 탭, 보드 zoom/pan, 편집 오버레이 상태, 활성 채팅 세션을 담는다.
+   * 재진입 시 근사 복원하며, 삭제된 문서/세션 참조는 소비 측에서 정리한다.
+   */
+  taskBoardLayouts: Record<string, TaskBoardLayoutSnapshot>;
+}
+
+/** 업무 보드 레이아웃 스냅샷 — 삭제 대상은 복원 시 안전 폴백한다. */
+export interface TaskBoardLayoutSnapshot {
+  /** 좌측 자료 패널 폭 (px) */
+  resourceWidth?: number;
+  /** 우측 채팅 패널 폭 (px) */
+  chatWidth?: number;
+  /** 활성 자료 탭 id (checklist/sessions/document:.../custom-view:...) */
+  activeTabId?: string;
+  /** 열린 문서·Flux 탭 목록·순서 */
+  openedResources?: { kind: "document" | "custom_view"; resourceId: string }[];
+  /** 보드 zoom 배율 */
+  boardZoom?: number;
+  /** 보드 스크롤 가로 위치 */
+  boardScrollLeft?: number;
+  /** 보드 스크롤 세로 위치 */
+  boardScrollTop?: number;
+  /** 편집 오버레이 열림 여부 */
+  overlayOpen?: boolean;
+  /** 편집 오버레이 확장(95%) 여부 */
+  overlayExpanded?: boolean;
+  /** 편집 오버레이 가로 오프셋 (px, 0 = 중앙) */
+  overlayOffsetX?: number;
+  /** 편집 오버레이의 활성 문서 id */
+  overlayDocumentId?: string | null;
+  /** 우측 활성 채팅 세션 key */
+  activeSessionKey?: string | null;
 }
 
 // === Actions Interface ===
@@ -327,6 +368,10 @@ export interface DashboardActions {
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
   setActiveBoardDocument: (documentId: string | null) => void;
+  /** 🔴25: 문서를 편집 모드로 연다(중앙 오버레이/문서 패널). 이미 열려 있으면 해당 문서로 교체 후 편집. */
+  requestBoardDocumentEdit: (documentId: string) => void;
+  /** 편집 요청을 소비 처리(clear)한다. */
+  clearPendingBoardDocumentEdit: () => void;
   setActiveCustomView: (customViewId: string | null) => void;
 
   // 대시보드 프로필 설정
@@ -377,6 +422,9 @@ export interface DashboardActions {
 
   // 폴더 정렬 모드
   setFolderSortMode: (mode: FolderSortMode) => void;
+
+  // 업무 보드 레이아웃 (task page id 키, 부분 병합 저장)
+  setTaskBoardLayout: (taskPageId: string, patch: Partial<TaskBoardLayoutSnapshot>) => void;
 
   // 모바일 탭 전환
   setActiveTab: (tab: MobileTab) => void;

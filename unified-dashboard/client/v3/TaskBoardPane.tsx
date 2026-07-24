@@ -36,6 +36,7 @@ export function TaskBoardPane({
   projectTitle,
   sessions,
   taskMoveTargets,
+  viewportPersistenceKey,
   onBoardItemsChanged,
   onOpenMarkdownDocument,
   onOpenCustomView,
@@ -46,6 +47,7 @@ export function TaskBoardPane({
   projectTitle: string;
   sessions: readonly SessionSummary[];
   taskMoveTargets: readonly PlannerTask[];
+  viewportPersistenceKey?: string;
   onBoardItemsChanged(items: readonly CatalogBoardItem[]): void;
   onOpenMarkdownDocument(documentId: string): void;
   onOpenCustomView(customViewId: string): void;
@@ -209,6 +211,7 @@ export function TaskBoardPane({
         ) : (
           <BoardWorkspaceView
             sessions={displaySessions}
+            viewportPersistenceKey={viewportPersistenceKey}
             taskMoveTargets={taskMoveTargets
               .filter((target) => target.taskId !== taskId)
               .map((target) => ({ id: target.taskId, title: target.page.title }))}

@@ -35,6 +35,7 @@ import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
 import { createWallpaperSlice } from "./slices/wallpaper-slice";
 import { createLiquidGlassSlice } from "./slices/liquid-glass-slice";
 import { createChatTypographySlice } from "./slices/chat-typography-slice";
+import { createBoardLayoutSlice } from "./slices/board-layout-slice";
 
 // === Re-exports for backward compatibility ===
 
@@ -106,6 +107,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createWallpaperSlice(set, get, store),
         ...createLiquidGlassSlice(set, get, store),
         ...createChatTypographySlice(set, get, store),
+        ...createBoardLayoutSlice(set, get, store),
       };
 
       // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.
@@ -134,6 +136,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         drafts: state.drafts,
         folderSortMode: state.folderSortMode,
         leftNavigationMode: state.leftNavigationMode,
+        taskBoardLayouts: state.taskBoardLayouts,
       }),
     },
   ),

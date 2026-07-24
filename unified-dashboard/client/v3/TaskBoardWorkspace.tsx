@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ChatView,
   DashboardIconCap,
@@ -84,13 +84,37 @@ export function TaskBoardWorkspace({
   onOpenSession(session: SessionSummary): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
+  // 🔴23: 이 task의 마지막 보드 레이아웃(dashboard-store persist)을 최초 1회만 읽어 복원 시드로 쓴다.
+  const layoutKey = task.page.id;
+  const initialLayoutRef = useRef(useDashboardStore.getState().taskBoardLayouts[layoutKey] ?? null);
+
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const resourceWidthRef = useRef<number>(V3_NAVIGATION_DEFAULT_WIDTH_PX);
-  const chatWidthRef = useRef<number>(V3_SESSION_PANEL_DEFAULT_WIDTH_PX);
+  const resourceWidthRef = useRef<number>(
+    clampTaskResourceWidth(initialLayoutRef.current?.resourceWidth ?? V3_NAVIGATION_DEFAULT_WIDTH_PX),
+  );
+  const chatWidthRef = useRef<number>(
+    clampTaskChatWidth(initialLayoutRef.current?.chatWidth ?? V3_SESSION_PANEL_DEFAULT_WIDTH_PX),
+  );
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const overlayOffsetRef = useRef<number>(initialLayoutRef.current?.overlayOffsetX ?? 0);
+  const didRestoreRef = useRef(false);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [boardItems, setBoardItems] = useState<readonly CatalogBoardItem[]>([]);
-  const [resourceState, setResourceState] = useState(initialTaskBoardResourceState);
+  const [resourceState, setResourceState] = useState(() => {
+    const snap = initialLayoutRef.current;
+    if (snap?.openedResources && snap.openedResources.length > 0) {
+      return {
+        openedResources: snap.openedResources.map((resource) => ({
+          kind: resource.kind,
+          resourceId: resource.resourceId,
+        })) as TaskBoardResourceSelection[],
+        activeTabId: snap.activeTabId ?? "checklist",
+      };
+    }
+    return initialTaskBoardResourceState();
+  });
   const [overlayExpanded, setOverlayExpanded] = useState(false);
   const [overlayClosing, setOverlayClosing] = useState(false);
   const [successionOpen, setSuccessionOpen] = useState(false);
@@ -136,6 +160,36 @@ export function TaskBoardWorkspace({
     useDashboardStore.getState().setActiveBoardDocument(null);
   }, []);
 
+  // 🔴23: persist 시점에 최신 값을 읽기 위한 미러 ref. 매 렌더 동기화(값 비용 없음).
+  const resourceStateRef = useRef(resourceState);
+  resourceStateRef.current = resourceState;
+  const overlayExpandedRef = useRef(overlayExpanded);
+  overlayExpandedRef.current = overlayExpanded;
+
+  // 🔴23: 이 task의 보드 레이아웃을 디바운스 저장한다. 여러 소유자(폭·탭·오버레이)가
+  // 같은 키에 부분 병합 기록하므로 stable하게 유지한다(deps=layoutKey).
+  const schedulePersist = useCallback(() => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      const store = useDashboardStore.getState();
+      store.setTaskBoardLayout(layoutKey, {
+        resourceWidth: Math.round(resourceWidthRef.current),
+        chatWidth: Math.round(chatWidthRef.current),
+        activeTabId: resourceStateRef.current.activeTabId,
+        openedResources: resourceStateRef.current.openedResources.map((resource) => ({
+          kind: resource.kind,
+          resourceId: resource.resourceId,
+        })),
+        overlayExpanded: overlayExpandedRef.current,
+        overlayOffsetX: Math.round(overlayOffsetRef.current),
+        overlayOpen: store.activeBoardDocumentId != null,
+        overlayDocumentId: store.activeBoardDocumentId,
+        activeSessionKey: store.activeSessionKey,
+      });
+    }, 300);
+  }, [layoutKey]);
+
   // 좌측 자료 패널 폭은 기존 `--v3-navigation-width`, 오른쪽 채팅 폭은 기존
   // `--v3-session-panel-width` 토큰(그리드 좌·우 컬럼)에 세션 로컬로 반영한다.
   // contract test가 JSX inline style 리터럴을 금지하므로 ref의 setProperty로
@@ -144,13 +198,15 @@ export function TaskBoardWorkspace({
     const clamped = clampTaskResourceWidth(widthPx);
     resourceWidthRef.current = clamped;
     workspaceRef.current?.style.setProperty("--v3-navigation-width", `${clamped}px`);
-  }, []);
+    schedulePersist();
+  }, [schedulePersist]);
 
   const applyChatWidth = useCallback((widthPx: number) => {
     const clamped = clampTaskChatWidth(widthPx);
     chatWidthRef.current = clamped;
     workspaceRef.current?.style.setProperty("--v3-session-panel-width", `${clamped}px`);
-  }, []);
+    schedulePersist();
+  }, [schedulePersist]);
 
   useEffect(() => {
     applyResourceWidth(resourceWidthRef.current);
@@ -211,6 +267,85 @@ export function TaskBoardWorkspace({
     if (overlayClosing) useDashboardStore.getState().setActiveBoardDocument(null);
   }, [overlayClosing]);
 
+  // 🔴20: 오버레이 바깥(보드 영역) 상호작용은 닫지 않고 기본 높이(40%)로 축소한다.
+  // 이미 40%면 그대로 유지(축소만, 닫힘 아님). 완전 닫기는 X 버튼(requestCloseOverlay)만.
+  const requestShrinkOverlay = useCallback(() => {
+    setOverlayExpanded(false);
+  }, []);
+
+  // 🔴22: 오버레이 가로 오프셋을 보드 영역(중앙 canvas) 안으로 clamp하여 CSS var로 반영.
+  // 오버레이 폭이 보드보다 넓으면(narrow desktop) maxOffset=0이라 이동하지 않아 채팅 열을 침범하지 않는다.
+  const applyOverlayOffset = useCallback((offsetPx: number) => {
+    const canvas = workspaceRef.current?.querySelector<HTMLElement>('[data-testid="v3-task-board-canvas"]');
+    const overlay = overlayRef.current;
+    let clamped = offsetPx;
+    if (canvas && overlay) {
+      const maxOffset = Math.max(0, (canvas.clientWidth - overlay.offsetWidth) / 2);
+      clamped = Math.max(-maxOffset, Math.min(maxOffset, offsetPx));
+    }
+    overlayOffsetRef.current = clamped;
+    overlay?.style.setProperty("--v3-overlay-offset-x", `${clamped}px`);
+  }, []);
+
+  // 🔴22: 탑바(헤더) 드래그로 오버레이를 좌우로 옮긴다. 버튼 위 mousedown은 이동 시작 아님.
+  const handleOverlayHeaderMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target || target.closest("button")) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startOffset = overlayOffsetRef.current;
+    const handleMove = (moveEvent: MouseEvent) => {
+      applyOverlayOffset(startOffset + (moveEvent.clientX - startX));
+    };
+    const handleUp = () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      schedulePersist();
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  }, [applyOverlayOffset, schedulePersist]);
+
+  // 🔴22/23: 오버레이가 열릴 때 저장된 가로 오프셋을 적용한다(마운트/문서 전환 시).
+  useEffect(() => {
+    if (activeBoardDocumentId) applyOverlayOffset(overlayOffsetRef.current);
+  }, [activeBoardDocumentId, applyOverlayOffset]);
+
+  // 🔴23: 오버레이 확장 상태·활성 문서·활성 세션·탭 변경을 저장한다.
+  useEffect(() => {
+    schedulePersist();
+  }, [schedulePersist, resourceState, overlayExpanded, activeBoardDocumentId, activeSessionKey]);
+
+  // 🔴23: 재진입 시 마지막 활성 채팅 세션과 편집 오버레이 문서를 복원한다. 대상이 아직
+  // 로딩 중이면 다음 렌더까지 대기하고, 목록이 로드됐는데도 없으면 삭제된 것으로 보고 건너뛴다.
+  useEffect(() => {
+    if (didRestoreRef.current) return;
+    const snap = initialLayoutRef.current;
+    if (!snap) { didRestoreRef.current = true; return; }
+    const wantSessionKey = snap.activeSessionKey ?? null;
+    const wantDocId = snap.overlayOpen ? (snap.overlayDocumentId ?? null) : null;
+    const restoredSession = wantSessionKey
+      ? sessions.find((candidate) => candidate.agentSessionId === wantSessionKey)
+      : undefined;
+    const docExists = wantDocId
+      ? boardItems.some((item) => item.itemType === "markdown" && item.itemId === wantDocId)
+      : false;
+    // 로딩 대기: 참조 대상이 안 보이는데 목록도 비어 있으면 아직 로딩 중일 수 있다.
+    if (wantSessionKey && !restoredSession && sessions.length === 0) return;
+    if (wantDocId && !docExists && boardItems.length === 0) return;
+    // 활성 세션 먼저(오버레이를 닫는 부작용 대비), 그다음 오버레이 문서를 마지막에 복원.
+    if (restoredSession) onOpenSession(restoredSession);
+    if (wantDocId && docExists) {
+      useDashboardStore.getState().setActiveBoardDocument(wantDocId);
+      if (snap.overlayExpanded) setOverlayExpanded(true);
+    }
+    didRestoreRef.current = true;
+  }, [boardItems, sessions, onOpenSession]);
+
+  useEffect(() => () => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+  }, []);
+
   const closeWorkspace = () => {
     useDashboardStore.getState().setActiveBoardDocument(null);
     onClose();
@@ -221,7 +356,11 @@ export function TaskBoardWorkspace({
   };
   const handleBoardItemsChanged = useCallback((items: readonly CatalogBoardItem[]) => {
     setBoardItems(items);
-    setResourceState((current) => reconcileTaskBoardResourceState(current, items));
+    // 로딩 중(빈 배열)엔 reconcile을 건너뛰어 복원된 탭을 보존한다. 실제 항목이 도착하면
+    // 삭제된 자료 탭을 정리한다(🔴23 안전 폴백).
+    setResourceState((current) => (
+      items.length === 0 ? current : reconcileTaskBoardResourceState(current, items)
+    ));
   }, []);
   const openResource = useCallback((resource: TaskBoardResourceSelection) => {
     setResourceState((current) => openTaskBoardResource(current, resource));
@@ -281,7 +420,7 @@ export function TaskBoardWorkspace({
         <main
           className="v3-task-board-canvas"
           data-testid="v3-task-board-canvas"
-          onMouseDownCapture={() => { if (activeBoardDocumentId) requestCloseOverlay(); }}
+          onMouseDownCapture={() => { if (activeBoardDocumentId) requestShrinkOverlay(); }}
         >
           <TaskBoardPane
             taskId={task.taskId}
@@ -289,6 +428,7 @@ export function TaskBoardWorkspace({
             projectTitle={projectTitle}
             sessions={sessions}
             taskMoveTargets={taskMoveTargets}
+            viewportPersistenceKey={layoutKey}
             onBoardItemsChanged={handleBoardItemsChanged}
             onOpenMarkdownDocument={(documentId) => {
               openResource({ kind: "document", resourceId: documentId });
@@ -349,6 +489,7 @@ export function TaskBoardWorkspace({
 
         {activeBoardDocumentId ? (
           <LiquidGlassCard
+            ref={overlayRef}
             webglSurface
             cornerRadius={24}
             className={`v3-task-board-document-overlay${overlayExpanded ? " is-expanded" : ""}${overlayClosing ? " is-closing" : ""}`}
@@ -356,7 +497,7 @@ export function TaskBoardWorkspace({
             data-state={overlayClosing ? "closing" : "open"}
             onAnimationEnd={handleOverlayAnimationEnd}
           >
-            <header className="v3-chat-header">
+            <header className="v3-chat-header" onMouseDown={handleOverlayHeaderMouseDown}>
               <div>
                 <small>{projectTitle} › {task.page.title}</small>
                 <strong>마크다운 문서</strong>

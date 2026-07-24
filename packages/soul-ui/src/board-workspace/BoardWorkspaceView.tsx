@@ -343,6 +343,7 @@ export function BoardWorkspaceView({
   hasMore,
   workspaceViewMode,
   onWorkspaceViewModeChange,
+  viewportPersistenceKey,
 }: BoardWorkspaceViewProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
@@ -648,6 +649,7 @@ export function BoardWorkspaceView({
     clearBoardSelection,
     raiseBoardItems,
     updateBoardItemPositions: yjsUpdateBoardItemPositions,
+    viewportPersistenceKey,
   });
 
   useEffect(() => {
@@ -1189,14 +1191,6 @@ export function BoardWorkspaceView({
             onDeleteFrame={deleteFrame}
             onMoveBoardItemToContainer={moveBoardItemToContainer}
             onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
-            onEditBoardItem={
-              onOpenMarkdownDocument || onOpenCustomView
-                ? (item) => {
-                    if (item.type === "markdown") onOpenMarkdownDocument?.(item.documentId);
-                    else onOpenCustomView?.(item.customViewId);
-                  }
-                : undefined
-            }
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}
