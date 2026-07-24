@@ -141,4 +141,15 @@ describe("document overlay animation, close policy, and close button contract", 
     // expand/shrink stays a height toggle; close uses the animated path.
     expect(workspace).toContain("onClick={requestCloseOverlay}");
   });
+
+  it("shares the MarkdownDocumentPanel edit surface between board overlay and task panel (🔴17)", () => {
+    const boardOverlay = read("./TaskBoardWorkspace.tsx");
+    const taskPanelInspector = read("./TaskWorkspace.tsx");
+
+    // Both the board overlay and the (non-board) task detail inspector mount the same shared
+    // panel, so the edit/done buttons (🔴16) and the editor focus ring (🔴7) — which live inside
+    // MarkdownDocumentPanel — appear identically in both surfaces without a new branch.
+    expect(boardOverlay).toContain("<MarkdownDocumentPanel");
+    expect(taskPanelInspector).toContain("<MarkdownDocumentPanel");
+  });
 });
