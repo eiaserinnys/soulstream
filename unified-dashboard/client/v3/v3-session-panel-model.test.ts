@@ -82,7 +82,7 @@ describe("v3 session panel model", () => {
     ];
 
     expect(sessionWorkspaceTargetFromBoardItems(items, "session-a"))
-      .toEqual({ kind: "task", pageId: "rb-task" });
+      .toEqual({ kind: "task", taskId: "rb-task" });
     expect(sessionWorkspaceTargetFromBoardItems([
       boardItem("primary", "folder", "folder-a"),
     ], "session-a")).toEqual({ kind: "standalone" });
@@ -110,7 +110,7 @@ describe("v3 session panel model", () => {
     } as CatalogBoardItem;
 
     expect(sessionWorkspaceTargetFromBoardItems([legacyTask], "session-a"))
-      .toEqual({ kind: "task", pageId: "rb-legacy" });
+      .toEqual({ kind: "task", taskId: "rb-legacy" });
     expect(sessionWorkspaceTargetFromBoardItems([legacyFolder], "session-a"))
       .toEqual({ kind: "standalone" });
   });

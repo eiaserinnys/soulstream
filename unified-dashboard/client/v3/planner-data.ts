@@ -238,14 +238,25 @@ export async function loadStarredPlannerTask(
   return isPlannerTask(task) ? task : await loadPlannerTask(api, task.id);
 }
 
+export async function loadPlannerTaskByTaskId(
+  api: PageApiClient,
+  taskId: string,
+): Promise<PlannerTask> {
+  const task = await fetchTaskSnapshot(taskId);
+  const taskPageId = task?.task.task_page_id?.trim();
+  if (!task || !taskPageId) throw new Error("업무 페이지 식별자가 없습니다.");
+  return await loadPlannerTask(api, taskPageId, task);
+}
+
 export async function loadPlannerTask(
   api: PageApiClient,
   taskPageId: string,
+  prefetchedTask?: TaskSnapshot,
 ): Promise<PlannerTask> {
   const snapshot = await api.getPage(taskPageId);
   const classification = classifyMountedPage(snapshot.blocks);
   if (classification.kind !== "task") throw new Error("별표 페이지가 task 업무가 아닙니다");
-  const task = await fetchTaskSnapshot(classification.taskId);
+  const task = prefetchedTask ?? await fetchTaskSnapshot(classification.taskId);
   const backlinks = await loadAllMountBacklinks(api, taskPageId);
   const projectPageId = await firstProjectPageId(api, backlinks.map((item) => item.sourcePageId));
   return {

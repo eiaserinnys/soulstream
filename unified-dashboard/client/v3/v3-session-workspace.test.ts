@@ -53,7 +53,7 @@ describe("resolveSessionWorkspace", () => {
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
 
-    expect(result).toEqual({ target: { kind: "task", pageId: "task-a" } });
+    expect(result).toEqual({ target: { kind: "task", taskId: "task-a" } });
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
@@ -91,7 +91,7 @@ describe("resolveSessionWorkspace", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(result).toEqual({
-      target: { kind: "task", pageId: "task-a" },
+      target: { kind: "task", taskId: "task-a" },
       loadedBoardItems: items,
     });
   });
@@ -131,35 +131,54 @@ describe("resolveSessionWorkspace", () => {
 });
 
 describe("resolveSessionTaskWorkspace", () => {
-  it("target-loads a task outside daily and loaded project pages without adding daily membership", async () => {
-    const target = plannerTask("task-outside-page", "in_progress");
-    const loadTask = vi.fn(async () => target);
+  it("target-loads a task outside daily and loaded project pages by its task id", async () => {
+    const target = plannerTask("task-outside-page", "task-outside", "in_progress");
+    const loadTaskByTaskId = vi.fn(async () => target);
     const result = await resolveSessionTaskWorkspace({
       session: session("session-a", "folder-a"),
       boardItems: [],
       currentTasks: [],
-      loadTask,
+      loadTaskByTaskId,
       fetchImplementation: vi.fn(async () => json({
-        boardItems: [boardItem("session-a", "task", "task-outside-page")],
+        boardItems: [boardItem("session-a", "task", "task-outside")],
       })) as typeof globalThis.fetch,
     });
 
     expect(result.task).toBe(target);
-    expect(loadTask).toHaveBeenCalledWith("task-outside-page");
+    expect(loadTaskByTaskId).toHaveBeenCalledWith("task-outside");
   });
 
   it("reuses a completed owning task even when it is absent from daily membership", async () => {
-    const completed = plannerTask("task-complete", "completed");
-    const loadTask = vi.fn();
+    const completed = plannerTask("task-complete-page", "task-complete", "completed");
+    const loadTaskByTaskId = vi.fn();
     const result = await resolveSessionTaskWorkspace({
       session: session("session-a", "folder-a"),
       boardItems: [boardItem("session-a", "task", "task-complete")],
       currentTasks: [completed],
-      loadTask,
+      loadTaskByTaskId,
     });
 
     expect(result.task).toBe(completed);
-    expect(loadTask).not.toHaveBeenCalled();
+    expect(loadTaskByTaskId).not.toHaveBeenCalled();
+  });
+
+  it("keeps membership lookup failures distinct from owning-task load failures", async () => {
+    const loadTaskByTaskId = vi.fn();
+    const promise = resolveSessionTaskWorkspace({
+      session: session("session-a", null),
+      boardItems: [],
+      currentTasks: [],
+      loadTaskByTaskId,
+      fetchImplementation: vi.fn(async () => new Response("unavailable", {
+        status: 503,
+      })) as typeof globalThis.fetch,
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      phase: "membership",
+      message: "세션의 소속 업무를 확인하지 못했습니다.",
+    });
+    expect(loadTaskByTaskId).not.toHaveBeenCalled();
   });
 
   it("distinguishes an owning-task load failure from a truly unassigned session", async () => {
@@ -170,7 +189,7 @@ describe("resolveSessionTaskWorkspace", () => {
       session: session("session-a", null),
       boardItems: [],
       currentTasks: [],
-      loadTask: async () => { throw new Error("Not Found"); },
+      loadTaskByTaskId: async () => { throw new Error("Not Found"); },
       fetchImplementation: lookup,
     });
     await expect(promise).rejects.toBeInstanceOf(SessionWorkspaceResolutionError);
@@ -183,7 +202,7 @@ describe("resolveSessionTaskWorkspace", () => {
       session: session("session-unassigned", null),
       boardItems: [],
       currentTasks: [],
-      loadTask: vi.fn(),
+      loadTaskByTaskId: vi.fn(),
       fetchImplementation: vi.fn(async () => json({ boardItems: [] })) as typeof globalThis.fetch,
     })).resolves.toMatchObject({ task: null, workspace: { target: { kind: "standalone" } } });
   });
@@ -223,10 +242,14 @@ function boardItem(
   };
 }
 
-function plannerTask(id: string, status: "in_progress" | "completed"): PlannerTask {
+function plannerTask(
+  pageId: string,
+  taskId: string,
+  status: "in_progress" | "completed",
+): PlannerTask {
   return {
-    page: { id, title: id },
-    taskId: id,
+    page: { id: pageId, title: pageId },
+    taskId,
     status,
   } as PlannerTask;
 }

@@ -6,7 +6,7 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
-import { loadPlannerTask, type PlannerTask } from "./planner-data";
+import { loadPlannerTaskByTaskId, type PlannerTask } from "./planner-data";
 import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
 import { activateRunSession } from "./task-workspace-model";
 import { errorText } from "./v3-dashboard-utils";
@@ -79,7 +79,7 @@ export function useV3SessionPanelController({
         session,
         boardItems: catalog?.boardItems ?? [],
         currentTasks,
-        loadTask: (pageId) => loadPlannerTask(api, pageId),
+        loadTaskByTaskId: (taskId) => loadPlannerTaskByTaskId(api, taskId),
       });
       setWorkspaceTaskError(null);
       if (resolved.task) {
