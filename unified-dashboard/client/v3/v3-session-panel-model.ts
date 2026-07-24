@@ -15,7 +15,7 @@ export interface SessionPanelGroups {
 }
 
 export type SessionWorkspaceTarget =
-  | { kind: "task"; pageId: string }
+  | { kind: "task"; taskId: string }
   | { kind: "standalone" };
 
 export function sessionPanelGroups(
@@ -58,7 +58,7 @@ export function sessionWorkspaceTargetFromBoardItems(
   const containerKind = primary.containerKind ?? "folder";
   const containerId = primary.containerId ?? primary.folderId;
   return containerKind === "task"
-    ? { kind: "task", pageId: containerId }
+    ? { kind: "task", taskId: containerId }
     : { kind: "standalone" };
 }
 

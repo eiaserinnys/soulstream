@@ -8,6 +8,7 @@ import {
   loadDailyPlanner,
   loadProjectDocumentPage,
   loadPlannerTask,
+  loadPlannerTaskByTaskId,
   loadStarredTasks,
   loadStarredPlannerTask,
   loadProjectPlanner,
@@ -237,6 +238,86 @@ describe("planner BFF data", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("resolves a task id to its distinct task page before loading the planner task", async () => {
+    const taskId = "task-id";
+    const taskPageId = "task-page-id";
+    const taskPage = page(taskPageId, "업무");
+    const api = {
+      getPage: vi.fn(async () => ({
+        page: taskPage,
+        blocks: [{
+          id: "task-ref",
+          page_id: taskPageId,
+          parent_id: null,
+          position_key: "A",
+          block_type: "task_ref",
+          text: "",
+          properties: { primary: true, taskId },
+          collapsed: false,
+        }],
+        state_vector: "AA==",
+      })),
+      getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
+    } as unknown as PageApiClient;
+    const fetchMock = vi.fn(async () => json({
+      task: {
+        id: taskId,
+        task_page_id: taskPageId,
+        board_item_id: `task:${taskId}`,
+        title: "업무",
+        archived: false,
+        version: 1,
+        created_session_id: null,
+        created_event_id: null,
+        created_at: "2026-07-24T00:00:00.000Z",
+        updated_at: "2026-07-24T00:00:00.000Z",
+      },
+      sections: [],
+      items: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await expect(loadPlannerTaskByTaskId(api, taskId)).resolves.toMatchObject({
+        page: { id: taskPageId },
+        taskId,
+      });
+      expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${taskId}`, expect.any(Object));
+      expect(api.getPage).toHaveBeenCalledWith(taskPageId);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("fails explicitly when a task has no task page identity", async () => {
+    const api = pageApiThatMustStayIdle();
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      task: {
+        id: "task-without-page",
+        task_page_id: null,
+        board_item_id: "task:task-without-page",
+        title: "업무",
+        archived: false,
+        version: 1,
+        created_session_id: null,
+        created_event_id: null,
+        created_at: "2026-07-24T00:00:00.000Z",
+        updated_at: "2026-07-24T00:00:00.000Z",
+      },
+      sections: [],
+      items: [],
+    })));
+
+    try {
+      await expect(loadPlannerTaskByTaskId(api, "task-without-page"))
+        .rejects.toThrow("업무 페이지 식별자가 없습니다.");
+      expectNoPageCalls(api);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 function pageApiThatMustStayIdle(): PageApiClient {
@@ -293,4 +374,11 @@ function page(id: string, title: string): PageDto {
     created_at: "2026-07-14T00:00:00.000Z",
     updated_at: "2026-07-14T00:00:00.000Z",
   };
+}
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }

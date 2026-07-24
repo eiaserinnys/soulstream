@@ -73,13 +73,13 @@ export async function resolveSessionTaskWorkspace({
   session,
   boardItems,
   currentTasks,
-  loadTask,
+  loadTaskByTaskId,
   fetchImplementation = globalThis.fetch,
 }: {
   session: SessionSummary;
   boardItems: readonly CatalogBoardItem[];
   currentTasks: readonly PlannerTask[];
-  loadTask(pageId: string): Promise<PlannerTask>;
+  loadTaskByTaskId(taskId: string): Promise<PlannerTask>;
   fetchImplementation?: typeof globalThis.fetch;
 }): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerTask | null }> {
   let workspace: ResolvedSessionWorkspace;
@@ -93,13 +93,11 @@ export async function resolveSessionTaskWorkspace({
     );
   }
   if (workspace.target.kind === "standalone") return { workspace, task: null };
-  const { pageId } = workspace.target;
-  const cached = currentTasks.find((task) => (
-    task.page.id === pageId || task.taskId === pageId
-  ));
+  const { taskId } = workspace.target;
+  const cached = currentTasks.find((task) => task.taskId === taskId);
   if (cached) return { workspace, task: cached };
   try {
-    return { workspace, task: await loadTask(pageId) };
+    return { workspace, task: await loadTaskByTaskId(taskId) };
   } catch (error) {
     throw new SessionWorkspaceResolutionError(
       "task",

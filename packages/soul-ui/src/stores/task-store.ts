@@ -32,6 +32,7 @@ export interface TaskAssigneeFields {
 export interface TaskRow {
   id: string;
   board_item_id: string;
+  task_page_id?: string | null;
   folder_id?: string | null;
   title: string;
   status?: TaskStatus | null;
