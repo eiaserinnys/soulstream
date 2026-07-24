@@ -292,10 +292,15 @@ export function TaskBoardWorkspace({
     const target = event.target as HTMLElement | null;
     if (!target || target.closest("button")) return;
     event.preventDefault();
-    const startX = event.clientX;
-    const startOffset = overlayOffsetRef.current;
+    // 🔴27: 논리 위치와 시각(clamp) 위치의 패리티를 맞춘다. mousedown 시점의 startOffset+전체델타로
+    // 계산하면 clamp 한도 너머 입력이 "의도"로 계속 누적돼, 되돌릴 때 그만큼 되감아야 시각이 반응한다.
+    // 대신 매 mousemove에서 직전 clientX 대비 증분만 clamp된 현재 오프셋에 적용해 재기준화한다 →
+    // clamp 경계 밖으로 밀어도 오프셋은 한도에 머물고, 되돌리는 즉시 1:1로 움직인다.
+    let lastX = event.clientX;
     const handleMove = (moveEvent: MouseEvent) => {
-      applyOverlayOffset(startOffset + (moveEvent.clientX - startX));
+      const deltaX = moveEvent.clientX - lastX;
+      lastX = moveEvent.clientX;
+      applyOverlayOffset(overlayOffsetRef.current + deltaX);
     };
     const handleUp = () => {
       window.removeEventListener("mousemove", handleMove);
@@ -351,8 +356,14 @@ export function TaskBoardWorkspace({
     onClose();
   };
   const openSession = (session: SessionSummary) => {
-    useDashboardStore.getState().setActiveBoardDocument(null);
+    // 🔴26: 세션 선택은 편집 오버레이를 닫지 않는다. 부모 onOpenSession→setActiveSession의
+    // 세션 리셋(_session-reset)이 activeBoardDocumentId를 비우므로, 같은 이벤트 핸들러 안에서
+    // 직전 문서를 즉시 다시 적용해 복원한다(React 배치로 재마운트·깜빡임 없음). 완전 닫기는 X 버튼만.
+    const preservedDocumentId = useDashboardStore.getState().activeBoardDocumentId;
     onOpenSession(session);
+    if (preservedDocumentId) {
+      useDashboardStore.getState().setActiveBoardDocument(preservedDocumentId);
+    }
   };
   const handleBoardItemsChanged = useCallback((items: readonly CatalogBoardItem[]) => {
     setBoardItems(items);

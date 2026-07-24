@@ -22,10 +22,26 @@ describe("🔴24 board card context menu portal", () => {
   it("portals the menus to document.body to escape backdrop-filter containing blocks", () => {
     const menus = read("./BoardWorkspaceContextMenus.tsx");
     expect(menus).toContain('import { createPortal } from "react-dom"');
-    expect(menus).toContain("createPortal(menuTree, document.body)");
+    // 🔴24 유지: 메뉴는 여전히 document.body로 포털한다(backdrop-filter containing block 탈출).
+    expect(menus).toContain(", document.body)");
     // 카드 메뉴 상태 자체는 컨테이너 종류로 게이트되지 않는다(폴더·업무 보드 공통).
     const view = read("./BoardWorkspaceView.tsx");
     expect(view).toContain("onTileContextMenu={handleTileContextMenu}");
+  });
+});
+
+describe("🔴29 portaled context menus inherit theme foreground", () => {
+  it("wraps the body portal in a text-foreground scope so labels aren't black on dark", () => {
+    const menus = read("./BoardWorkspaceContextMenus.tsx");
+    // document.body 포털은 앱 컨테이너의 color: var(--foreground) 상속을 잃으므로 래퍼로 재부여.
+    expect(menus).toContain('createPortal(<div className="text-foreground">{menuTree}</div>, document.body)');
+  });
+
+  it("gives the independently-portaled folder menu an explicit foreground token", () => {
+    const folderMenu = read("../components/FolderContextMenu.tsx");
+    // FolderContextMenu는 자체 createPortal(document.body)이라 별도로 text-foreground를 준다.
+    expect(folderMenu).toMatch(/createPortal\(/);
+    expect(folderMenu).toMatch(/className="fixed[^"]*text-foreground/);
   });
 });
 

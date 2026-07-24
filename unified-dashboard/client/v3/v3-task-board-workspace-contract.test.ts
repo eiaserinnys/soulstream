@@ -202,3 +202,45 @@ describe("task board editor refine (🔴18~24) contract", () => {
     expect(workspace).toContain("viewportPersistenceKey={layoutKey}");
   });
 });
+
+describe("task board editor refine 3rd round (🔴26~28) contract", () => {
+  it("keeps the overlay open when a chat session is selected; only X closes it (🔴26)", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    // openSession은 편집 오버레이를 닫지 않는다. 세션 리셋이 비운 activeBoardDocumentId를
+    // 같은 이벤트 핸들러 안에서 직전 문서로 복원한다(capture → onOpenSession → restore 순서).
+    expect(workspace).toMatch(
+      /const openSession = \(session[^)]*\) => \{[\s\S]*?const preservedDocumentId = useDashboardStore\.getState\(\)\.activeBoardDocumentId;[\s\S]*?onOpenSession\(session\);[\s\S]*?if \(preservedDocumentId\) \{[\s\S]*?setActiveBoardDocument\(preservedDocumentId\)/s,
+    );
+    // 세션 선택 경로가 오버레이를 무조건 닫던 예전 부작용(널 세팅 후 세션 열기)은 제거한다.
+    expect(workspace).not.toMatch(
+      /openSession = \(session[^)]*\) => \{\s*useDashboardStore\.getState\(\)\.setActiveBoardDocument\(null\);\s*onOpenSession/s,
+    );
+    // 완전 닫기는 여전히 X 버튼(requestCloseOverlay)에만 있다(🔴20 축소와 공존).
+    expect(workspace).toMatch(
+      /data-testid="v3-task-board-document-overlay-close"[\s\S]*onClick=\{requestCloseOverlay\}/,
+    );
+  });
+
+  it("moves the overlay top bar with 1:1 clamp parity via incremental delta (🔴27)", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    // 매 mousemove에서 직전 clientX 대비 증분을 clamp된 현재 오프셋에 적용해 재기준화한다.
+    expect(workspace).toContain("const deltaX = moveEvent.clientX - lastX;");
+    expect(workspace).toContain("applyOverlayOffset(overlayOffsetRef.current + deltaX)");
+    // clamp 한도 너머 입력이 누적되던 startOffset+전체델타 계산은 제거한다.
+    expect(workspace).not.toContain("startOffset + (moveEvent.clientX - startX)");
+    // clamp 기준(보드 canvas 폭)·setProperty 반영은 유지.
+    expect(workspace).toContain('setProperty("--v3-overlay-offset-x"');
+  });
+
+  it("rounds the overlay frame with the shared liquid-glass radius token (🔴28)", () => {
+    const css = read("./v3-task-board.css");
+
+    // 오버레이 프레임을 카드 코너 반경(--liquid-glass-radius)에 맞춰 둥글게 clip한다(신규 토큰 없음).
+    expect(css).toMatch(
+      /\.v3-task-board-document-overlay\s*{[^}]*border-radius:\s*var\(--liquid-glass-radius[^}]*overflow:\s*hidden;/s,
+    );
+    expect(css).not.toMatch(/--v3-task-board-[\w-]+\s*:/);
+  });
+});
