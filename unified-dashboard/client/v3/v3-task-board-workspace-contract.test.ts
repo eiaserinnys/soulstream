@@ -110,3 +110,35 @@ describe("task board panel resize, overlay height, and session list contract", (
     expect(resources).not.toContain("아직 위임된 세션이 없습니다");
   });
 });
+
+describe("document overlay animation, close policy, and close button contract", () => {
+  it("animates the overlay open/close and defers unmount to the close animation", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+    const css = read("./v3-task-board.css");
+
+    expect(workspace).toContain("onAnimationEnd={handleOverlayAnimationEnd}");
+    expect(workspace).toContain("is-closing");
+    expect(workspace).toContain("requestCloseOverlay");
+    expect(workspace).toContain("prefersReducedMotion");
+    expect(css).toMatch(/@keyframes\s+v3-task-board-overlay-in/);
+    expect(css).toMatch(/@keyframes\s+v3-task-board-overlay-out/);
+    expect(css).toMatch(/\.v3-task-board-document-overlay\.is-closing\s*{[^}]*animation:/s);
+    expect(css).toMatch(/prefers-reduced-motion[\s\S]*animation:\s*none/);
+  });
+
+  it("closes only on central board clicks, not left/right panels or the overlay itself", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    // the central canvas requests close; the overlay is a sibling so its clicks never reach it.
+    expect(workspace).toMatch(/v3-task-board-canvas[\s\S]*onMouseDownCapture=\{\(\) => \{ if \(activeBoardDocumentId\) requestCloseOverlay\(\); \}\}/);
+  });
+
+  it("adds an explicit close button beside the expand/shrink toggle", () => {
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    expect(workspace).toContain('data-testid="v3-task-board-document-overlay-close"');
+    expect(workspace).toContain('data-testid="v3-task-board-document-overlay-expand"');
+    // expand/shrink stays a height toggle; close uses the animated path.
+    expect(workspace).toContain("onClick={requestCloseOverlay}");
+  });
+});

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { Trash2 } from "lucide-react";
+import { Check, Pencil, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -10,6 +10,7 @@ import {
   type BoardYjsRuntime,
 } from "../board-workspace";
 import { Button } from "./ui/button";
+import { DashboardIconCap } from "./DashboardIconCap";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   deleteMarkdownDocument,
@@ -281,6 +282,12 @@ export function MarkdownDocumentPanel() {
     setIsEditingBody(false);
   }, [clearSaveTimer, documentId, runtime, savedBody, savedTitle]);
 
+  // 편집완료(체크) — 기존 자동 저장/동기화 흐름을 그대로 사용해 저장 후 읽기로 전환한다.
+  const finishEditing = useCallback(() => {
+    void saveNow();
+    setIsEditingBody(false);
+  }, [saveNow]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
@@ -317,6 +324,26 @@ export function MarkdownDocumentPanel() {
                   ? (runtime ? "동기화됨" : "저장됨")
                   : ""}
         </span>
+        {document ? (
+          isEditingBody ? (
+            <DashboardIconCap
+              label="편집 완료"
+              data-testid="markdown-edit-done"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={finishEditing}
+            >
+              <Check className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
+          ) : (
+            <DashboardIconCap
+              label="문서 편집"
+              data-testid="markdown-edit-start"
+              onClick={enterEditMode}
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
+          )
+        ) : null}
         <Button variant="ghost" size="icon" onClick={remove} title="Delete document">
           <Trash2 className="h-4 w-4" />
         </Button>

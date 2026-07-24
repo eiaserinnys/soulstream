@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent } from "react";
 import {
   ChatView,
   DashboardIconCap,
@@ -12,7 +12,7 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
-import { ChevronDown, ChevronUp, Minimize2 } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import type { MobilePlannerTab } from "./mobile-planner-state";
 import type { PlannerTask } from "./planner-data";
@@ -40,6 +40,12 @@ import { TaskBoardResourcePane } from "./TaskBoardResourcePane";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 
 const TASK_PANEL_KEYBOARD_STEP_PX = 24;
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function TaskBoardWorkspace({
   task,
@@ -86,6 +92,7 @@ export function TaskBoardWorkspace({
   const [boardItems, setBoardItems] = useState<readonly CatalogBoardItem[]>([]);
   const [resourceState, setResourceState] = useState(initialTaskBoardResourceState);
   const [overlayExpanded, setOverlayExpanded] = useState(false);
+  const [overlayClosing, setOverlayClosing] = useState(false);
   const [successionOpen, setSuccessionOpen] = useState(false);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
@@ -182,10 +189,27 @@ export function TaskBoardWorkspace({
     }
   }, [applyChatWidth]);
 
-  // 오버레이를 닫으면 다음에 열 때 다시 기본 높이(40%)에서 시작한다.
+  // 오버레이를 닫으면 다음에 열 때 다시 기본 높이(40%)에서 시작한다. 문서가 바뀌면
+  // 진행 중인 닫힘 애니메이션도 취소한다(새 문서 열림이 닫힘보다 우선).
   useEffect(() => {
     if (!activeBoardDocumentId) setOverlayExpanded(false);
+    setOverlayClosing(false);
   }, [activeBoardDocumentId]);
+
+  // 🔴13/14/15: 닫기(X)·중앙 보드 클릭은 🔴13 애니메이션을 태운다. reduced-motion이면
+  // 애니메이션 없이 즉시 닫는다. 닫힘 애니메이션 종료 시 실제로 오버레이를 해제한다.
+  const requestCloseOverlay = useCallback(() => {
+    if (prefersReducedMotion()) {
+      useDashboardStore.getState().setActiveBoardDocument(null);
+      return;
+    }
+    setOverlayClosing(true);
+  }, []);
+  const handleOverlayAnimationEnd = useCallback((event: ReactAnimationEvent<HTMLDivElement>) => {
+    // 자식 요소 애니메이션 버블은 무시하고 오버레이 자체의 닫힘 애니메이션에만 반응.
+    if (event.target !== event.currentTarget) return;
+    if (overlayClosing) useDashboardStore.getState().setActiveBoardDocument(null);
+  }, [overlayClosing]);
 
   const closeWorkspace = () => {
     useDashboardStore.getState().setActiveBoardDocument(null);
@@ -254,7 +278,11 @@ export function TaskBoardWorkspace({
           <DragHandle onDrag={resizeResources} widthPx={V3_PANEL_GAP_PX} />
         </div>
 
-        <main className="v3-task-board-canvas" data-testid="v3-task-board-canvas">
+        <main
+          className="v3-task-board-canvas"
+          data-testid="v3-task-board-canvas"
+          onMouseDownCapture={() => { if (activeBoardDocumentId) requestCloseOverlay(); }}
+        >
           <TaskBoardPane
             taskId={task.taskId}
             projectFolderId={projectFolderId}
@@ -323,8 +351,10 @@ export function TaskBoardWorkspace({
           <LiquidGlassCard
             webglSurface
             cornerRadius={24}
-            className={`v3-task-board-document-overlay${overlayExpanded ? " is-expanded" : ""}`}
+            className={`v3-task-board-document-overlay${overlayExpanded ? " is-expanded" : ""}${overlayClosing ? " is-closing" : ""}`}
             data-testid="v3-task-board-document-overlay"
+            data-state={overlayClosing ? "closing" : "open"}
+            onAnimationEnd={handleOverlayAnimationEnd}
           >
             <header className="v3-chat-header">
               <div>
@@ -344,10 +374,11 @@ export function TaskBoardWorkspace({
                 )}
               </DashboardIconCap>
               <DashboardIconCap
-                label="문서 편집기 접기"
-                onClick={() => useDashboardStore.getState().setActiveBoardDocument(null)}
+                label="문서 편집기 닫기"
+                data-testid="v3-task-board-document-overlay-close"
+                onClick={requestCloseOverlay}
               >
-                <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </DashboardIconCap>
             </header>
             <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>

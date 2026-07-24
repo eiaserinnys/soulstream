@@ -91,9 +91,31 @@
   height: 90%;
 }
 
+/* 🔴13: 열림 슬라이드/페이드 등장, 닫힘 전이. 40%↔90%는 위 height transition. */
+@keyframes v3-task-board-overlay-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes v3-task-board-overlay-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(16px); }
+}
+
+.v3-task-board-document-overlay {
+  animation: v3-task-board-overlay-in 200ms ease;
+}
+
+.v3-task-board-document-overlay.is-closing {
+  animation: v3-task-board-overlay-out 180ms ease forwards;
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .v3-task-board-document-overlay {
+  .v3-task-board-document-overlay,
+  .v3-task-board-document-overlay.is-closing {
     transition: none;
+    animation: none;
   }
 }
 

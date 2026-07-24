@@ -479,4 +479,21 @@ describe("MarkdownDocumentPanel", () => {
     expect(input.selectionStart).toBe(0);
     expect(input.selectionEnd).toBe("Untitled document".length);
   });
+
+  it("toggles read/edit via the pencil and check icon buttons (🔴16)", async () => {
+    const runtime = createRuntime("folder-a");
+    cleanupRuntime = registerBoardYjsRuntime(runtime);
+    ({ container, root } = renderPanel({ folderId: "folder-a" }));
+
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+    const editStart = await waitForSelector<HTMLButtonElement>(container, '[data-testid="markdown-edit-start"]');
+    flushSync(() => editStart.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    await waitForEditorView(container);
+    const editDone = await waitForSelector<HTMLButtonElement>(container, '[data-testid="markdown-edit-done"]');
+    flushSync(() => editDone.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+    expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).toBeNull();
+  });
 });
