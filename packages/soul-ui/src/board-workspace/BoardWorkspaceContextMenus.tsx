@@ -782,7 +782,13 @@ export function BoardWorkspaceContextMenus({
     </>
   );
 
-  return typeof document === "undefined" ? menuTree : createPortal(menuTree, document.body);
+  // 🔴29: document.body로 포털하면 앱 컨테이너의 color: var(--foreground) 상속을 잃어(body엔
+  // color 규칙이 없다) 메뉴 글자가 브라우저 기본색으로 폴백된다 → 다크 배경에서 검정으로 안 보인다.
+  // --foreground 변수 자체는 html.dark 스코프라 유효하므로, 포털 래퍼에 text-foreground를 줘 모든
+  // 메뉴 항목이 테마 전경색을 상속하게 한다(🔴24의 body 포털 위치는 유지). text-destructive 등
+  // 명시 색은 그대로 우선한다.
+  if (typeof document === "undefined") return menuTree;
+  return createPortal(<div className="text-foreground">{menuTree}</div>, document.body);
 }
 
 function isMovableBoardWorkspaceItem(item: BoardWorkspaceItem): item is MovableBoardWorkspaceItem {

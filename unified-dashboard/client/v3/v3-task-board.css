@@ -86,6 +86,11 @@
   position: relative;
   left: var(--v3-overlay-offset-x, 0px);
   flex-direction: column;
+  /* 🔴28: LiquidGlassCard 루트(.liquid-glass-card)는 border-radius를 세팅하지 않아 불투명
+     background/내부 패널이 사각으로 그려진다(둥근 건 SVG 글래스 레이어뿐). 카드가 인라인으로
+     세팅하는 --liquid-glass-radius(=cornerRadius 24px)를 프레임에 그대로 적용하고 overflow:hidden으로
+     헤더·에디터 컨테이너를 그 반경으로 clip해 read/edit 양쪽에서 둥근 리퀴드 글래스로 보이게 한다. */
+  border-radius: var(--liquid-glass-radius, 24px);
   overflow: hidden;
   background: var(--lg-card);
   box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
