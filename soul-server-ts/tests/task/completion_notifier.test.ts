@@ -126,6 +126,61 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("gate OFF는 ownership DB를 조회하지 않고 legacy local-first로 즉시 전달한다", async () => {
+    const tm = makeTaskManagerStub();
+    const getSession = vi.fn(async () => {
+      throw new Error("gate-off path must not touch the DB");
+    });
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      {
+        getSession,
+        getSupervisorRegistry: vi.fn(),
+      } as never,
+      false,
+    );
+
+    await notifier.notify(makeChild());
+
+    expect(getSession).not.toHaveBeenCalled();
+    expect(tm.addIntervention).toHaveBeenCalledTimes(1);
+  });
+
+  it("v2는 child terminal revision으로 local/cross-node 공통 delivery identity를 만든다", async () => {
+    const tm = makeTaskManagerStub();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      undefined,
+      true,
+    );
+
+    await notifier.notify(makeChild({ lastEventId: 42 }));
+    const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
+
+    expect(params).toMatchObject({
+      deliveryIntent: "completion_notification",
+      source: "completion_notifier",
+      producerTerminalRevision: "42",
+      relationKey: "child_session:child-sess-1:42",
+    });
+    expect(params.deliveryId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(params.completionId).toMatch(/^completion:/);
+  });
+
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {
     const tm = makeTaskManagerStub();
     const registry = makeAgentRegistry();

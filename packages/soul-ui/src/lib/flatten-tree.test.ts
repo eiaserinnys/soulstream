@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { flattenTree, clearFlattenTreeCache, extractEventId, type ChatMessage } from "./flatten-tree";
-import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
+import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, SessionNotificationNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
   return { type: "session", id: "session-root", content: "", completed: false, children };
@@ -79,6 +79,20 @@ function makeSystemMessage(id: string, text: string): SystemMessageNode {
   return { type: "system_message", id, content: text, completed: true, children: [] };
 }
 
+function makeSessionNotification(id: string, text: string): SessionNotificationNode {
+  return {
+    type: "session_notification",
+    id,
+    content: text,
+    completed: true,
+    children: [],
+    deliveryId: "22222222-2222-4222-8222-222222222222",
+    deliveryIntent: "completion_notification",
+    source: "completion_notifier",
+    disposition: "auto_resume",
+  };
+}
+
 function makeAgentUserMessage(
   id: string,
   text: string,
@@ -104,6 +118,17 @@ describe("flattenTree", () => {
 
   it("session 루트만 있으면 빈 배열", () => {
     expect(flattenTree(makeSession())).toEqual([]);
+  });
+
+  it("session_notification을 exactly-once 식별자와 함께 표시한다", () => {
+    const [message] = flattenTree(
+      makeSession([makeSessionNotification("session-notification-1", "완료 결과")]),
+    );
+
+    expect(message.role).toBe("notification");
+    expect(message.content).toBe("완료 결과");
+    expect(message.deliveryId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(message.deliveryDisposition).toBe("auto_resume");
   });
 
   it("user_message + thinking + text + tool 조합", () => {

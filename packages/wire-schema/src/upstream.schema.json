@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 111개 $defs (wire 53 + SSE event 58). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 112개 $defs (wire 53 + SSE event 59). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -155,6 +155,7 @@
             { "$ref": "#/$defs/SSEEventMemory" },
             { "$ref": "#/$defs/SSEEventSession" },
             { "$ref": "#/$defs/SSEEventInterventionSent" },
+            { "$ref": "#/$defs/SSEEventSessionNotification" },
             { "$ref": "#/$defs/SSEEventUserMessage" },
             { "$ref": "#/$defs/SSEEventAssistantMessage" },
             { "$ref": "#/$defs/SSEEventInputRequest" },
@@ -315,7 +316,22 @@
       "properties": {
         "type": { "const": "intervene_ack" },
         "requestId": { "type": "string" },
-        "status": { "type": "string", "enum": ["ok"] }
+        "status": { "type": "string", "enum": ["ok"] },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "steered",
+            "queued",
+            "deferred",
+            "auto_resumed",
+            "suppressed"
+          ]
+        },
+        "agentSessionId": { "type": "string" },
+        "queuePosition": { "type": "integer", "minimum": 1 },
+        "deliveryId": { "type": "string" },
+        "reason": { "type": "string" }
       }
     },
     "InterruptSessionAck": {
@@ -599,7 +615,27 @@
           "description": "Supervisor/live intervention ride-along context items.",
           "items": { "type": "object", "additionalProperties": true }
         },
-        "caller_info": { "type": "object", "additionalProperties": true }
+        "caller_info": { "type": "object", "additionalProperties": true },
+        "delivery_id": {
+          "type": "string",
+          "description": "Stable UUID for exactly-once delivery accounting."
+        },
+        "delivery_intent": {
+          "type": "string",
+          "enum": [
+            "human_live_steer",
+            "durable_next_turn",
+            "completion_notification",
+            "runtime_followup"
+          ]
+        },
+        "source": { "type": "string" },
+        "completion_id": { "type": "string" },
+        "relation_key": { "type": "string" },
+        "producer_terminal_revision": { "type": "string" },
+        "parent_delivery_id": { "type": "string" },
+        "caller_turn_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
       }
     },
     "InterruptSession": {
@@ -1285,6 +1321,36 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "intervention_sent" } }
+    },
+    "SSEEventSessionNotification": {
+      "type": "object",
+      "description": "SSE: completion/runtime delivery를 사용자 발화와 분리한 durable 알림.",
+      "required": [
+        "type",
+        "delivery_id",
+        "delivery_intent",
+        "source",
+        "text",
+        "disposition"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "session_notification" },
+        "delivery_id": { "type": "string" },
+        "delivery_intent": {
+          "type": "string",
+          "enum": ["completion_notification", "runtime_followup"]
+        },
+        "source": { "type": "string" },
+        "text": { "type": "string" },
+        "disposition": {
+          "type": "string",
+          "enum": ["queued", "auto_resume"]
+        },
+        "completion_id": { "type": "string" },
+        "relation_key": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventUserMessage": {
       "type": "object",

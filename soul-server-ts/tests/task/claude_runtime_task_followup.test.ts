@@ -28,7 +28,7 @@ function makeTask(): Task {
   };
 }
 
-function makeController() {
+function makeController(deliveryV2Enabled = false) {
   const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
   const onResume = vi.fn();
   const sleep = vi.fn(async () => undefined);
@@ -37,6 +37,7 @@ function makeController() {
     onResume,
     logger: silentLogger,
     sleep,
+    deliveryV2Enabled,
   });
   return { controller, addIntervention, onResume, sleep };
 }
@@ -79,6 +80,38 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("/tmp/task-1.output");
     expect(text).toContain("uploaded wav files");
     expect(text).toContain("직전 응답을 그대로 반복하지 마세요");
+  });
+
+  it("v2는 terminal revision 기반 stable runtime_followup identity를 전달한다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["task-v2"] = {
+      taskId: "task-v2",
+      status: "completed",
+      updatedAt: 123,
+      isBackgrounded: true,
+      summary: "done",
+    };
+    const { controller, addIntervention } = makeController(true);
+
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "task-v2",
+      status: "completed",
+      summary: "done",
+      _event_id: 77,
+    } as SSEEventPayload);
+    await controller.flush(task);
+
+    const params = addIntervention.mock.calls[0]![0];
+    expect(params).toMatchObject({
+      deliveryIntent: "runtime_followup",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      producerTerminalRevision: "task-v2@77",
+      relationKey: "claude_runtime:sess-1:unknown:task-v2@77",
+    });
+    expect(params.deliveryId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 
   it("interrupt 중에는 follow-up을 보류하고 다음 running turn까지 pending을 보존한다", async () => {

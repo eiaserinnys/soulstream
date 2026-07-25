@@ -16,6 +16,7 @@ import type {
   CompleteNode,
   UserMessageNode,
   SystemMessageNode,
+  SessionNotificationNode,
   InterventionNode,
   AssistantMessageNode,
   InputRequestNodeDef,
@@ -28,7 +29,7 @@ import type {
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool" | "system" | "system_message" | "intervention" | "input_request" | "tool_approval" | "away_summary";
+  role: "user" | "assistant" | "tool" | "system" | "system_message" | "notification" | "intervention" | "input_request" | "tool_approval" | "away_summary";
   /** 메인 표시 텍스트 */
   content: string;
   timestamp?: number;
@@ -95,6 +96,10 @@ export interface ChatMessage {
   callerInfo?: CallerInfo;
   /** DB 이벤트 ID. 히스토리-라이브 병합 시 dedup 기준. */
   eventId?: number;
+  /** session_notification 전용 exactly-once 식별자. */
+  deliveryId?: string;
+  /** session_notification 전용 전달 결과. */
+  deliveryDisposition?: "queued" | "auto_resume";
 }
 
 /**
@@ -293,6 +298,21 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         treeNodeId: n.id,
         treeNodeType: n.type,
         eventId,
+      };
+    }
+
+    case "session_notification": {
+      const n = node as SessionNotificationNode;
+      return {
+        id: n.id,
+        role: "notification",
+        content: n.content,
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        eventId,
+        deliveryId: n.deliveryId,
+        deliveryDisposition: n.disposition,
       };
     }
 

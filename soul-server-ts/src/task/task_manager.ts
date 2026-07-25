@@ -57,6 +57,8 @@ import {
   type StartExecutionCallback,
 } from "./task_intervention_route.js";
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
+import { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import { SessionNotificationPublisher } from "./task_session_notification.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   isClaudeRuntimeTaskTerminal,
@@ -94,6 +96,7 @@ export class TaskManager {
   private readonly deliveryRoute: TaskDeliveryRoute;
   private readonly interventionRoute: TaskInterventionRoute;
   private readonly lifecycleRoute: TaskLifecycleRoute;
+  private readonly deliveryLedgerGate: TaskDeliveryLedgerGate;
 
   constructor(
     private readonly nodeId: string,
@@ -114,6 +117,7 @@ export class TaskManager {
     private readonly agentRegistry?: AgentRegistry,
     private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
     taskCreationHook?: TaskCreationHook,
+    private readonly deliveryRuntimeV2Enabled = false,
   ) {
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
@@ -157,6 +161,15 @@ export class TaskManager {
       contextBuilder,
       agentRegistry,
     });
+    this.deliveryLedgerGate = new TaskDeliveryLedgerGate(
+      deliveryRuntimeV2Enabled,
+      deliveryRuntimeV2Enabled ? db.sessionDeliveries() : undefined,
+    );
+    const sessionNotificationPublisher = new SessionNotificationPublisher({
+      broadcaster,
+      logger,
+      persistence,
+    });
     this.responseEventPublisher = new ResponseEventPublisher({
       broadcaster,
       logger,
@@ -188,6 +201,8 @@ export class TaskManager {
       activeTaskRecovery,
       runningInterventionTransition,
       autoResumeTransition,
+      deliveryLedgerGate: deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined,
+      sessionNotificationPublisher: deliveryRuntimeV2Enabled ? sessionNotificationPublisher : undefined,
     });
   }
 
@@ -201,6 +216,13 @@ export class TaskManager {
 
   getTask(sessionId: string): Task | undefined {
     return this.tasks.get(sessionId);
+  }
+
+  getDeliveryConsumptionRecorder(): Pick<
+    TaskDeliveryLedgerGate,
+    "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
+  > | undefined {
+    return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }
 
   listTasks(): Task[] {

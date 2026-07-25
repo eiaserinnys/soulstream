@@ -28,6 +28,7 @@ describe("parseEnv", () => {
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
+    expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
     expect(env.MCP_TOOL_PROFILE).toBe("default");
     expect(env.SUPERVISOR_ENABLED).toBe(false);
     expect(env.SUPERVISOR_EVENT_INGEST_ENABLED).toBe(false);
@@ -181,6 +182,22 @@ describe("parseEnv", () => {
       CLAUDE_AUTH_TOKEN_PATH: "/var/lib/soulstream-ts/claude-auth.json",
     });
     expect(env.CLAUDE_AUTH_TOKEN_PATH).toBe("/var/lib/soulstream-ts/claude-auth.json");
+  });
+
+  it("Claude session runtime v2는 미설정 시 legacy이고 명시 true만 opt-in한다", () => {
+    expect(parseEnv(minimal).CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
+    expect(
+      parseEnv({
+        ...minimal,
+        CLAUDE_SESSION_RUNTIME_V2_ENABLED: "true",
+      }).CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+    ).toBe(true);
+    expect(() =>
+      parseEnv({
+        ...minimal,
+        CLAUDE_SESSION_RUNTIME_V2_ENABLED: "1",
+      }),
+    ).toThrow(ZodError);
   });
 
   it("CODEX_ADAPTER_MODE는 sdk가 기본이고 app-server만 opt-in 허용", () => {

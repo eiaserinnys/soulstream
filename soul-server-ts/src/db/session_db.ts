@@ -18,6 +18,7 @@ import { CustomViewRepository } from "./repositories/custom_view_repository.js";
 import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
+import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
 import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
 import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
@@ -35,6 +36,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private scheduleRepository?: SoulstreamScheduleRepository;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private checklistTaskProjectionRepository?: ChecklistTaskProjectionRepository;
+  private sessionDeliveryRepository?: SessionDeliveryRepository;
   private readonly sessionRepository: SessionRepository;
   private readonly boardRepository: BoardRepository;
   private readonly catalogRepository: CatalogRepository;
@@ -105,6 +107,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
   checklistTaskProjections(): ChecklistTaskProjectionRepository {
     this.checklistTaskProjectionRepository ??= new ChecklistTaskProjectionRepository(this.sql);
     return this.checklistTaskProjectionRepository;
+  }
+
+  sessionDeliveries(): SessionDeliveryRepository {
+    return this.sessionDeliveryRepository ??= new SessionDeliveryRepository(this.sql);
   }
 
   async registerSession(params: RegisterSessionParams): Promise<void> {

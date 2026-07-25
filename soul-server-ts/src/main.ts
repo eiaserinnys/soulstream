@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       agentsConfigPath: env.AGENTS_CONFIG_PATH,
       agentCount: agentRegistry.list().length,
       claudeAuthTokenPathConfigured: Boolean(env.CLAUDE_AUTH_TOKEN_PATH),
+      claudeSessionRuntimeV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     },
     "soul-server-ts starting (B-3 task lifecycle + DB)",
   );

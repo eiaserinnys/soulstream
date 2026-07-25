@@ -41,6 +41,7 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   // PREVIEW_FIELD_MAP에 키를 두지 않는다 (Python 정본 PREVIEW_FIELD_MAP도 system_message 없음).
   user_message: "text",
   intervention_sent: "text",
+  session_notification: "text",
   realtime_transcript: "text",
 };
 

@@ -9,7 +9,10 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB, SupervisorEventRow } from "../db/session_db.js";
 import type { EngineFactory } from "../task/task_executor.js";
 import { TaskExecutor } from "../task/task_executor.js";
-import { TaskCompletionNotifier } from "../task/completion_notifier.js";
+import {
+  TaskCompletionNotifier,
+  type CompletionNotifier,
+} from "../task/completion_notifier.js";
 import { ClaudeRuntimeTaskFollowupController } from "../task/claude_runtime_task_followup.js";
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
 import { extractCallerInfoFromMetadata } from "../task/task_metadata.js";
@@ -49,6 +52,7 @@ export interface SupervisorCompositionParams {
 
 export interface SupervisorComposition {
   taskExecutor: TaskExecutor;
+  completionNotifier: CompletionNotifier;
   onResume: StartExecutionCallback;
   scheduleDispatcher: ScheduleDispatcher;
   supervisorWakeScheduler?: SupervisorWakeScheduler;
@@ -95,11 +99,13 @@ export function composeSupervisorRuntime(
     orchProxyConfig,
     undefined,
     db,
+    env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
   );
   const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
     taskManager,
     onResume,
     logger,
+    deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
   });
   const supervisorWakeRouter = new SupervisorWakeRouter(
     {
@@ -300,6 +306,9 @@ export function composeSupervisorRuntime(
       softTokenThreshold: env.SUPERVISOR_SOFT_TOKEN_THRESHOLD,
       hardTokenThreshold: env.SUPERVISOR_HARD_TOKEN_THRESHOLD,
     },
+    env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+      ? taskManager.getDeliveryConsumptionRecorder()
+      : undefined,
   );
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },
@@ -328,6 +337,7 @@ export function composeSupervisorRuntime(
 
   return {
     taskExecutor,
+    completionNotifier,
     onResume,
     scheduleDispatcher,
     supervisorWakeScheduler,

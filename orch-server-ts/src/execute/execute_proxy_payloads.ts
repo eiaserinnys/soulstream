@@ -1,4 +1,8 @@
 import type { FastifyRequest } from "fastify";
+import type {
+  DeliveryIntent,
+  DeliveryMetadataWireFields,
+} from "../session/session_action_command_payloads.js";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -29,7 +33,7 @@ export type ExecuteProxyNewProviderRequest = {
   extra_context_items?: ExecuteProxyContextItem[];
 };
 
-export type ExecuteProxyResumeProviderRequest = {
+export type ExecuteProxyResumeProviderRequest = DeliveryMetadataWireFields & {
   agent_session_id: string;
   prompt: string;
   attachment_paths?: string[];
@@ -95,11 +99,14 @@ export function parseExecuteProxyPayload(
   if (!attachmentPaths.ok) return attachmentPaths;
   const callerInfo = optionalObject(object.value, "caller_info");
   if (!callerInfo.ok) return callerInfo;
+  const deliveryMetadata = parseDeliveryMetadata(object.value);
+  if (!deliveryMetadata.ok) return deliveryMetadata;
 
   if (agentSessionId.value !== undefined && agentSessionId.value.length > 0) {
     const resumeValue: ExecuteProxyResumeProviderRequest = {
       agent_session_id: agentSessionId.value,
       prompt: prompt.value,
+      ...deliveryMetadata.value,
     };
     if (attachmentPaths.value !== undefined) resumeValue.attachment_paths = attachmentPaths.value;
     if (callerInfo.value !== undefined) resumeValue.caller_info = callerInfo.value;
@@ -142,6 +149,51 @@ export function parseExecuteProxyPayload(
   }
   if (contextItems.value !== undefined) newValue.extra_context_items = contextItems.value;
   return { ok: true, value: { mode: "new", value: newValue } };
+}
+
+function parseDeliveryMetadata(
+  body: JsonObject,
+): { ok: true; value: DeliveryMetadataWireFields } | {
+  ok: false;
+  statusCode: number;
+  detail: string;
+} {
+  const deliveryId = optionalStringAlias(body, "delivery_id", "deliveryId");
+  if (!deliveryId.ok) return deliveryId;
+  const deliveryIntent = optionalStringAlias(body, "delivery_intent", "deliveryIntent");
+  if (!deliveryIntent.ok) return deliveryIntent;
+  if (
+    deliveryIntent.value !== undefined
+    && !isDeliveryIntent(deliveryIntent.value)
+  ) {
+    return { ok: false, statusCode: 422, detail: "delivery_intent is invalid" };
+  }
+
+  const fields = [
+    ["source", "source"],
+    ["completion_id", "completionId"],
+    ["relation_key", "relationKey"],
+    ["producer_terminal_revision", "producerTerminalRevision"],
+    ["parent_delivery_id", "parentDeliveryId"],
+    ["caller_turn_id", "callerTurnId"],
+    ["created_at", "createdAt"],
+  ] as const;
+  const value: DeliveryMetadataWireFields = {};
+  if (deliveryId.value !== undefined) value.delivery_id = deliveryId.value;
+  if (deliveryIntent.value !== undefined) value.delivery_intent = deliveryIntent.value;
+  for (const [wireKey, alias] of fields) {
+    const parsed = optionalStringAlias(body, wireKey, alias);
+    if (!parsed.ok) return parsed;
+    if (parsed.value !== undefined) value[wireKey] = parsed.value;
+  }
+  return { ok: true, value };
+}
+
+function isDeliveryIntent(value: string): value is DeliveryIntent {
+  return value === "human_live_steer"
+    || value === "durable_next_turn"
+    || value === "completion_notification"
+    || value === "runtime_followup";
 }
 
 type NewExecuteOptionalFields = Omit<

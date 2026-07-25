@@ -23,6 +23,7 @@ import type {
   ErrorEvent,
   UserMessageEvent,
   SystemMessageEvent,
+  SessionNotificationEvent,
   InterventionSentEvent,
   CompactEvent,
   InputRequestEvent,
@@ -127,6 +128,25 @@ export function createNodeFromEvent(
       return makeNode(`system-msg-${eventId}`, "system_message", e.text, {
         completed: true,
       });
+    }
+
+    case "session_notification": {
+      const e = event as SessionNotificationEvent;
+      return makeNode(
+        `session-notification-${e.delivery_id}`,
+        "session_notification",
+        e.text,
+        {
+          completed: true,
+          deliveryId: e.delivery_id,
+          deliveryIntent: e.delivery_intent,
+          source: e.source,
+          disposition: e.disposition,
+          completionId: e.completion_id,
+          relationKey: e.relation_key,
+          timestamp: e.timestamp,
+        },
+      );
     }
 
     case "intervention_sent": {

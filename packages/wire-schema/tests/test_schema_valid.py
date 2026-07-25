@@ -346,6 +346,7 @@ def test_known_sse_event_types_completeness() -> None:
         "memory",
         "session",
         "intervention_sent",
+        "session_notification",
         "user_message",
         "assistant_message",
         "input_request",

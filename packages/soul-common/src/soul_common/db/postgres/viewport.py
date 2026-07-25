@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 TIMELINE_EVENT_TYPES: tuple[str, ...] = (
     "user_message",
     "intervention_sent",
+    "session_notification",
     "assistant_message",
     "thinking",
     "tool_start",

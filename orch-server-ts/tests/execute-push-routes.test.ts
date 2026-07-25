@@ -282,6 +282,10 @@ describe("Execute proxy and push route harnesses", () => {
         attachmentPaths: ["uploads/map.png"],
         caller_info: callerInfo,
         context_items: contextItems,
+        delivery_id: "delivery-1",
+        delivery_intent: "runtime_followup",
+        source: "claude_runtime_followup",
+        relation_key: "runtime_task:task-1:done",
       },
     });
 
@@ -299,6 +303,10 @@ describe("Execute proxy and push route harnesses", () => {
       attachment_paths: ["uploads/map.png"],
       caller_info: callerInfo,
       extra_context_items: contextItems,
+      delivery_id: "delivery-1",
+      delivery_intent: "runtime_followup",
+      source: "claude_runtime_followup",
+      relation_key: "runtime_task:task-1:done",
     });
     expect(provider.executeNew).not.toHaveBeenCalled();
 

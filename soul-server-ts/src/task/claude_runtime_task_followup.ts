@@ -5,6 +5,7 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
 import type { InterventionMessage, Task } from "./task_models.js";
+import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
 
 export const CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE = "claude_runtime_task_followup";
 export const MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT = 3;
@@ -40,6 +41,7 @@ export interface ClaudeRuntimeTaskFollowupDeps {
   onResume: StartExecutionCallback;
   logger: Logger;
   sleep?: (ms: number) => Promise<void>;
+  deliveryV2Enabled?: boolean;
 }
 
 interface ScheduledRuntimeTaskFallback {
@@ -57,6 +59,7 @@ interface PendingRuntimeTaskFollowup {
   description?: string;
   toolUseId?: string;
   error?: string;
+  terminalRevision: string;
   firstSeen: number;
 }
 
@@ -120,6 +123,12 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       error:
         asString(payload.error) ?? asString(patch.error) ??
         runtimeTask?.error ?? previous?.error,
+      terminalRevision:
+        normalizeEventRevision(payload._event_id) ??
+        normalizeEventRevision(patch._event_id) ??
+        normalizeRevision(runtimeTask?.endTime ?? runtimeTask?.updatedAt) ??
+        previous?.terminalRevision ??
+        `${status}:unknown`,
       firstSeen: previous?.firstSeen ?? this.sequence++,
     });
   }
@@ -134,6 +143,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (!pending || pending.size === 0) return;
 
     const items = Array.from(pending.values()).sort((a, b) => a.firstSeen - b.firstSeen);
+    const delivery = this.deps.deliveryV2Enabled === true
+      ? buildClaudeRuntimeFollowupDelivery(task, items)
+      : {};
     try {
       await this.deps.taskManager.addIntervention(
         {
@@ -145,6 +157,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           followupAttempt: 1,
           followupKey: buildFollowupKey(task.agentSessionId, items),
           followupTaskIds: items.map((item) => item.taskId),
+          ...delivery,
         },
         this.deps.onResume,
       );
@@ -290,7 +303,15 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           followupAttempt: attempt,
           followupKey,
           followupTaskIds: message.followupTaskIds,
-          onlyIfTerminal: true,
+          deliveryId: message.deliveryId,
+          deliveryIntent: message.deliveryIntent,
+          completionId: message.completionId,
+          relationKey: message.relationKey,
+          producerTerminalRevision: message.producerTerminalRevision,
+          parentDeliveryId: message.parentDeliveryId,
+          callerTurnId: message.callerTurnId,
+          deliveryCreatedAt: message.deliveryCreatedAt,
+          onlyIfTerminal: this.deps.deliveryV2Enabled !== true,
         },
         this.deps.onResume,
       );
@@ -326,6 +347,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     this.pendingBySession.set(sessionId, created);
     return created;
   }
+
 }
 
 function resolveFallbackDelayMs(attempt: number): number {
@@ -341,6 +363,16 @@ function sleep(ms: number): Promise<void> {
     const timer = setTimeout(resolve, ms);
     timer.unref();
   });
+}
+
+function normalizeRevision(value: number | undefined): string | undefined {
+  return value === undefined || !Number.isFinite(value) ? undefined : String(value);
+}
+
+function normalizeEventRevision(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
 }
 
 export function buildClaudeRuntimeTaskFollowupPrompt(
@@ -421,6 +453,9 @@ function buildRefreshedClaudeRuntimeTaskFollowupPrompt(
       description: runtimeTask.description,
       toolUseId: runtimeTask.toolUseId,
       error: runtimeTask.error,
+      terminalRevision:
+        normalizeRevision(runtimeTask.endTime ?? runtimeTask.updatedAt) ??
+        `${runtimeTask.status ?? "unknown"}:unknown`,
       firstSeen,
     });
   }

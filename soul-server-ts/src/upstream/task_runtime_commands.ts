@@ -11,6 +11,7 @@ import type {
 } from "../task/task_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
+import type { DeliveryIntent } from "../task/delivery_contract.js";
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
@@ -50,6 +51,15 @@ export interface InterveneRuntimeParams {
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
   extraContextItems?: ContextItem[];
+  deliveryId?: string;
+  deliveryIntent?: DeliveryIntent;
+  source?: string;
+  completionId?: string;
+  relationKey?: string;
+  producerTerminalRevision?: string;
+  parentDeliveryId?: string;
+  callerTurnId?: string;
+  deliveryCreatedAt?: string;
 }
 
 export interface SessionCreatedAck {
@@ -95,6 +105,15 @@ export type InterveneAck =
       status: "ok";
       outcome: "deferred";
       agentSessionId: string;
+    }
+  | {
+      type: "intervene_ack";
+      requestId: string;
+      status: "ok";
+      outcome: "suppressed";
+      agentSessionId: string;
+      deliveryId: string;
+      reason: string;
     };
 
 export class UnknownAgentProfileError extends Error {
@@ -159,6 +178,15 @@ export class TaskRuntimeCommands {
         callerInfo: params.callerInfo,
         attachmentPaths: params.attachmentPaths,
         context: params.extraContextItems,
+        deliveryId: params.deliveryId,
+        deliveryIntent: params.deliveryIntent,
+        source: params.source,
+        completionId: params.completionId,
+        relationKey: params.relationKey,
+        producerTerminalRevision: params.producerTerminalRevision,
+        parentDeliveryId: params.parentDeliveryId,
+        callerTurnId: params.callerTurnId,
+        deliveryCreatedAt: params.deliveryCreatedAt,
       },
       (task) => this.startResumedTask(task),
     );
@@ -237,6 +265,17 @@ export function buildInterveneAck(params: {
       status: "ok",
       outcome: "deferred",
       agentSessionId,
+    };
+  }
+  if ("suppressed" in result) {
+    return {
+      type: "intervene_ack",
+      requestId,
+      status: "ok",
+      outcome: "suppressed",
+      agentSessionId,
+      deliveryId: result.deliveryId,
+      reason: result.reason,
     };
   }
   return {

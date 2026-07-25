@@ -6,6 +6,10 @@ import type {
   TaskStatus as SessionTaskStatus,
   TerminationReason,
 } from "../task/task_models.js";
+import type {
+  DeliveryIntent,
+  DeliveryState,
+} from "../task/delivery_contract.js";
 import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
 
 export type SessionType = "claude" | "llm";
@@ -295,6 +299,54 @@ export interface AppendEventParams {
   searchableText: string;
   createdAt: Date;
   dedupeKey?: string | null;
+}
+
+export interface SessionDeliveryRow {
+  delivery_id: string;
+  target_session_id: string;
+  source_session_id: string | null;
+  relation_key: string;
+  completion_id: string | null;
+  intent: DeliveryIntent;
+  source: string;
+  producer_kind: string | null;
+  producer_id: string | null;
+  producer_terminal_revision: string | null;
+  parent_delivery_id: string | null;
+  caller_turn_id: string | null;
+  payload_hash: string;
+  payload: Record<string, unknown>;
+  state: DeliveryState;
+  created_at: Date;
+  updated_at: Date;
+  claimed_at: Date | null;
+  queued_at: Date | null;
+  delivered_at: Date | null;
+  consumed_at: Date | null;
+}
+
+export interface RegisterSessionDeliveryParams {
+  deliveryId: string;
+  targetSessionId: string;
+  sourceSessionId?: string | null;
+  relationKey: string;
+  completionId?: string | null;
+  intent: DeliveryIntent;
+  source: string;
+  producerKind?: string | null;
+  producerId?: string | null;
+  producerTerminalRevision?: string | null;
+  parentDeliveryId?: string | null;
+  callerTurnId?: string | null;
+  payloadHash: string;
+  payload: Record<string, unknown>;
+  createdAt?: Date;
+}
+
+export interface RegisterSessionDeliveryResult {
+  row: SessionDeliveryRow;
+  inserted: boolean;
+  conflict: boolean;
 }
 
 export type TaskAssigneeKind = "agent" | "human" | "session";

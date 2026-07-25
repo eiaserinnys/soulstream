@@ -10,6 +10,8 @@ export const WAKE_CLASS_BY_EVENT_TYPE = {
   memory: "quiet",
   session: "quiet",
   intervention_sent: "wake",
+  // 이미 caller 전달 결정을 거친 durable 알림이다. supervisor wake로 재포장하지 않는다.
+  session_notification: "quiet",
   user_message: "wake",
   assistant_message: "batch",
   input_request: "wake",

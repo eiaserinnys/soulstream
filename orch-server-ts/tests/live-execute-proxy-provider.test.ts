@@ -114,6 +114,10 @@ describe("live execute proxy provider", () => {
       attachment_paths: ["uploads/a.png"],
       caller_info: { source: "slack" },
       extra_context_items: [{ key: "ctx" }],
+      delivery_id: "delivery-1",
+      delivery_intent: "runtime_followup",
+      source: "execute-proxy",
+      relation_key: "runtime_task:task-1:done",
     });
 
     expect(sent).toHaveLength(1);
@@ -126,6 +130,10 @@ describe("live execute proxy provider", () => {
       attachment_paths: ["uploads/a.png"],
       caller_info: { source: "slack" },
       extra_context_items: [{ key: "ctx" }],
+      delivery_id: "delivery-1",
+      delivery_intent: "runtime_followup",
+      source: "execute-proxy",
+      relation_key: "runtime_task:task-1:done",
     });
     await expect(resultBody(result)).resolves.toBe(
       'event: init\n' +

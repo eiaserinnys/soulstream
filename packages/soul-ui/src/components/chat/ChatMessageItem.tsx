@@ -53,6 +53,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     case "system_message":
       body = <SystemPromptMessage msg={msg} />;
       break;
+    case "notification":
+      body = <SystemMessage msg={msg} />;
+      break;
     case "input_request":
       body = sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
       break;

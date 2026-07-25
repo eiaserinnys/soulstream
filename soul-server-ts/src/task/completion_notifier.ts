@@ -32,6 +32,10 @@ import type {
   TaskManager,
 } from "./task_manager.js";
 import type { Task } from "./task_models.js";
+import {
+  buildDeterministicDeliveryIdentity,
+} from "./delivery_identity.js";
+import type { DeliveryMetadata } from "./delivery_contract.js";
 
 /**
  * 본 notifier의 *유일한* 진입점. 다른 public 메서드를 추가하지 않는다 —
@@ -57,7 +61,11 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     private readonly logger: Logger,
     private readonly orch?: OrchProxyConfig,
     fetchImpl?: typeof fetch,
-    private readonly supervisorRegistry?: Pick<SessionDB, "getSupervisorRegistry">,
+    private readonly supervisorRegistry?: Pick<
+      SessionDB,
+      "getSupervisorRegistry" | "getSession"
+    >,
+    private readonly deliveryV2Enabled = false,
   ) {
     // 테스트가 fetch mock을 주입 — 운영 시 globalThis.fetch (Node 18+ 내장).
     this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args));
@@ -81,28 +89,41 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     const callerInfo = this._buildCallerInfo(task);
     const text = this._buildNotifyText(task);
     const childId = task.agentSessionId;
-
-    // 1. local — 같은 노드에 caller가 있으면 즉시 처리.
-    try {
-      await this.taskManager.addIntervention(
-        {
-          agentSessionId: callerSessionId,
-          text,
-          user: "agent",
-          callerInfo,
-        },
-        this.onResume,
-      );
-      this.logger.info(
-        { childId, callerSessionId },
-        "Completion notification delivered locally",
+    const delivery = this._buildDeliveryMetadata(task, callerSessionId);
+    if (this.deliveryV2Enabled && !delivery) {
+      this.logger.error(
+        { childId, callerSessionId, lastEventId: task.lastEventId },
+        "Completion notification withheld: terminal revision is unavailable",
       );
       return;
-    } catch (err) {
-      this.logger.warn(
-        { err, childId, callerSessionId },
-        "Local completion notification failed — trying cross-node relay",
-      );
+    }
+
+    // Gate OFF is the pre-v2 local-first contract: do not add an ownership lookup
+    // (and therefore no DB scheduling point) before the local delivery attempt.
+    // V2 alone may route directly to the owning node.
+    if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
+      try {
+        await this.taskManager.addIntervention(
+          {
+            agentSessionId: callerSessionId,
+            text,
+            user: "agent",
+            callerInfo,
+            ...delivery,
+          },
+          this.onResume,
+        );
+        this.logger.info(
+          { childId, callerSessionId, deliveryId: delivery?.deliveryId },
+          "Completion notification delivered locally",
+        );
+        return;
+      } catch (err) {
+        this.logger.warn(
+          { err, childId, callerSessionId, deliveryId: delivery?.deliveryId },
+          "Local completion notification failed — trying cross-node relay",
+        );
+      }
     }
 
     // 2. orch fallback — caller가 다른 노드 또는 evicted 상태에서 hydrate 실패.
@@ -113,7 +134,43 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       );
       return;
     }
-    await this._relayCrossNode(callerSessionId, text, callerInfo, childId);
+    await this._relayCrossNode(callerSessionId, text, callerInfo, childId, delivery);
+  }
+
+  private _buildDeliveryMetadata(
+    task: Task,
+    callerSessionId: string,
+  ): DeliveryMetadata | undefined {
+    if (!this.deliveryV2Enabled) return undefined;
+    if (task.lastEventId === undefined) return undefined;
+    const revision = String(task.lastEventId);
+    const relationKey = `child_session:${task.agentSessionId}:${revision}`;
+    const identity = buildDeterministicDeliveryIdentity({
+      targetSessionId: callerSessionId,
+      relationKey,
+      intent: "completion_notification",
+    });
+    return {
+      ...identity,
+      deliveryIntent: "completion_notification",
+      source: "completion_notifier",
+      producerTerminalRevision: revision,
+      createdAt: (task.completedAt ?? new Date()).toISOString(),
+    };
+  }
+
+  private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
+    if (!this.supervisorRegistry) return true;
+    try {
+      const row = await this.supervisorRegistry.getSession(callerSessionId);
+      return !row?.node_id || row.node_id === this.nodeId;
+    } catch (err) {
+      this.logger.warn(
+        { err, callerSessionId },
+        "Completion target ownership lookup failed — retaining local-first compatibility",
+      );
+      return true;
+    }
   }
 
   private async _resolveTargetSessionId(task: Task): Promise<string | undefined> {
@@ -209,6 +266,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     text: string,
     callerInfo: AgentCallerInfo,
     childId: string,
+    delivery?: DeliveryMetadata,
   ): Promise<void> {
     if (!this.orch) return;
     const url = `${this.orch.baseUrl}/api/sessions/${callerSessionId}/intervene`;
@@ -220,6 +278,19 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       text,
       user: "agent",
       caller_info: callerInfo,  // snake_case 의무 (Pydantic 필드명)
+      ...(delivery
+        ? {
+            delivery_id: delivery.deliveryId,
+            delivery_intent: delivery.deliveryIntent,
+            source: delivery.source,
+            completion_id: delivery.completionId,
+            relation_key: delivery.relationKey,
+            producer_terminal_revision: delivery.producerTerminalRevision,
+            parent_delivery_id: delivery.parentDeliveryId,
+            caller_turn_id: delivery.callerTurnId,
+            created_at: delivery.createdAt,
+          }
+        : {}),
     };
     try {
       const resp = await this.fetchImpl(url, {

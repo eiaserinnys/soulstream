@@ -15,8 +15,26 @@ export type ExistingSessionActionPayload<TType extends string> =
     agentSessionId: string;
   };
 
+export type DeliveryIntent =
+  | "human_live_steer"
+  | "durable_next_turn"
+  | "completion_notification"
+  | "runtime_followup";
+
+export type DeliveryMetadataWireFields = {
+  delivery_id?: string;
+  delivery_intent?: DeliveryIntent;
+  source?: string;
+  completion_id?: string;
+  relation_key?: string;
+  producer_terminal_revision?: string;
+  parent_delivery_id?: string;
+  caller_turn_id?: string;
+  created_at?: string;
+};
+
 export type InterveneNodeCommandPayload =
-  ExistingSessionActionPayload<"intervene"> & {
+  ExistingSessionActionPayload<"intervene"> & DeliveryMetadataWireFields & {
     text: string;
     user: string;
     attachment_paths?: string[];
@@ -97,12 +115,15 @@ export function intervenePayload(
   if (!contextItems.ok) return contextItems;
   const callerInfo = optionalObject(body.caller_info, "caller_info");
   if (!callerInfo.ok) return callerInfo;
+  const deliveryMetadata = parseDeliveryMetadata(body);
+  if (!deliveryMetadata.ok) return deliveryMetadata;
 
   const payload: InterveneNodeCommandPayload = {
     type: "intervene",
     agentSessionId,
     text: body.text,
     user,
+    ...deliveryMetadata.value,
   };
   if (attachmentPaths.value !== undefined && attachmentPaths.value.length > 0) {
     payload.attachment_paths = attachmentPaths.value;
@@ -114,6 +135,58 @@ export function intervenePayload(
     payload.caller_info = callerInfo.value;
   }
   return { ok: true, value: payload };
+}
+
+function parseDeliveryMetadata(
+  body: JsonObject,
+): ParseResult<DeliveryMetadataWireFields> {
+  const deliveryId = optionalStringField(body, ["delivery_id", "deliveryId"]);
+  if (!deliveryId.ok) return deliveryId;
+  const intentRaw = optionalStringField(body, ["delivery_intent", "deliveryIntent"]);
+  if (!intentRaw.ok) return intentRaw;
+  if (
+    intentRaw.value !== undefined
+    && !isDeliveryIntent(intentRaw.value)
+  ) {
+    return { ok: false, message: "delivery_intent is invalid" };
+  }
+
+  const fields = [
+    ["source", "source"],
+    ["completion_id", "completionId"],
+    ["relation_key", "relationKey"],
+    ["producer_terminal_revision", "producerTerminalRevision"],
+    ["parent_delivery_id", "parentDeliveryId"],
+    ["caller_turn_id", "callerTurnId"],
+    ["created_at", "createdAt"],
+  ] as const;
+  const value: DeliveryMetadataWireFields = {};
+  if (deliveryId.value !== undefined) value.delivery_id = deliveryId.value;
+  if (intentRaw.value !== undefined) value.delivery_intent = intentRaw.value;
+  for (const [wireKey, alias] of fields) {
+    const parsed = optionalStringField(body, [wireKey, alias]);
+    if (!parsed.ok) return parsed;
+    if (parsed.value !== undefined) value[wireKey] = parsed.value;
+  }
+  return { ok: true, value };
+}
+
+function optionalStringField(
+  body: JsonObject,
+  aliases: readonly string[],
+): ParseResult<string | undefined> {
+  const [field, value] = firstAliasValue(body, aliases);
+  if (value === undefined || value === null) return { ok: true, value: undefined };
+  return typeof value === "string"
+    ? { ok: true, value }
+    : { ok: false, message: `${field} must be a string` };
+}
+
+function isDeliveryIntent(value: string): value is DeliveryIntent {
+  return value === "human_live_steer"
+    || value === "durable_next_turn"
+    || value === "completion_notification"
+    || value === "runtime_followup";
 }
 
 export function toolApprovalPayload(

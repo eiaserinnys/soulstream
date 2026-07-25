@@ -12,6 +12,7 @@ const NOTIFY_TYPES = new Set([
   "complete",
   "error",
   "intervention_sent",
+  "session_notification",
   "claude_runtime_notification",
 ]);
 

@@ -52,8 +52,23 @@ checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이
 | `LOG_LEVEL` | ❌ (default info) | pino 레벨 |
 | `DASH_USER_NAME` | ❌ | 노드 광고용 user.name |
 | `DASH_USER_PORTRAIT` | ❌ | 노드 광고용 user portrait 이미지 경로 |
+| `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | ❌ (default false) | delivery ledger·notification v2 준비 gate. persistent Query 어댑터 전환 전에는 켜지 않으며, 미설정 시 기존 runtime 유지 |
 | `SUPERVISOR_ENABLED` | ❌ (default false) | supervisor 세션 부팅, wake, watchdog 활성화. true면 event ingest도 함께 켜짐 |
 | `SUPERVISOR_EVENT_INGEST_ENABLED` | ❌ (default false) | supervisor 세션은 켜지 않고 durable event ingest만 별도로 켤 때 사용 |
+
+### Claude session runtime v2 활성화 금지
+
+`CLAUDE_SESSION_RUNTIME_V2_ENABLED`는 additive schema·wire와 dormant 상태기계를 검토하기
+위한 준비 gate다. 다음 항목을 모두 끝내기 전에는 어떤 노드에서도 `true`로 설정하지 않는다.
+
+- 운영 승인 뒤 `sql/pending/043_session_deliveries.sql`을 migration manifest로 승격하고 적용
+- persistent Query adapter와 session runtime registry 연결
+- inline child/runtime 결과가 같은 completion relation을 consumed로 정산하는 producer 연결
+- queued delivery dispatch 직전 ledger 재확인과 claimed/queued crash recovery
+- 실제 SDK harness·통합·disposable canary 검증
+
+현재 gate를 켜면 준비되지 않은 delivery 경로가 활성화된다. 미설정 또는 `false`만 배포 가능한
+상태다.
 
 ### 개발
 

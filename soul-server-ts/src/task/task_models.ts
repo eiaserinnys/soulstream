@@ -22,6 +22,7 @@ import type {
   QueuedToolApprovalDecision,
   ReasoningEffort,
 } from "../engine/protocol.js";
+import type { DeliveryIntent } from "./delivery_contract.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
@@ -56,6 +57,14 @@ export interface InterventionMessage {
    * intentionally not copied into intervention_sent/user_message wire payloads.
    */
   source?: string;
+  deliveryId?: string;
+  deliveryIntent?: DeliveryIntent;
+  completionId?: string;
+  relationKey?: string;
+  producerTerminalRevision?: string;
+  parentDeliveryId?: string;
+  callerTurnId?: string;
+  deliveryCreatedAt?: string;
   followupAttempt?: number;
   followupKey?: string;
   /** Runtime task ids used to refresh a replayed follow-up from rehydrated Claude state. */
