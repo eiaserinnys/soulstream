@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 111개 $defs (wire 53 + SSE event 58). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 112개 $defs (wire 53 + SSE event 59). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -173,6 +173,7 @@ export interface SessionEventEnvelope {
     | SSEEventMemory
     | SSEEventSession
     | SSEEventInterventionSent
+    | SSEEventSessionNotification
     | SSEEventUserMessage
     | SSEEventAssistantMessage
     | SSEEventInputRequest
@@ -267,6 +268,21 @@ export interface SSEEventSession {
  */
 export interface SSEEventInterventionSent {
   type: "intervention_sent";
+  [k: string]: unknown;
+}
+/**
+ * SSE: completion/runtime delivery를 사용자 발화와 분리한 durable 알림.
+ */
+export interface SSEEventSessionNotification {
+  type: "session_notification";
+  delivery_id: string;
+  delivery_intent: "completion_notification" | "runtime_followup";
+  source: string;
+  text: string;
+  disposition: "queued" | "auto_resume";
+  completion_id?: string;
+  relation_key?: string;
+  timestamp?: number;
   [k: string]: unknown;
 }
 /**
@@ -869,6 +885,11 @@ export interface InterveneAck {
   type: "intervene_ack";
   requestId: string;
   status?: "ok";
+  outcome?: "delivered" | "steered" | "queued" | "deferred" | "auto_resumed" | "suppressed";
+  agentSessionId?: string;
+  queuePosition?: number;
+  deliveryId?: string;
+  reason?: string;
   [k: string]: unknown;
 }
 /**
@@ -1119,6 +1140,18 @@ export interface Intervene {
   caller_info?: {
     [k: string]: unknown;
   };
+  /**
+   * Stable UUID for exactly-once delivery accounting.
+   */
+  delivery_id?: string;
+  delivery_intent?: "human_live_steer" | "durable_next_turn" | "completion_notification" | "runtime_followup";
+  source?: string;
+  completion_id?: string;
+  relation_key?: string;
+  producer_terminal_revision?: string;
+  parent_delivery_id?: string;
+  caller_turn_id?: string;
+  created_at?: string;
   [k: string]: unknown;
 }
 /**

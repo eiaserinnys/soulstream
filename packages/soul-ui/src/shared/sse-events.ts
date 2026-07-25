@@ -21,6 +21,7 @@ export type SSEEventType =
   | "intervention_sent"
   | "user_message"
   | "system_message"
+  | "session_notification"
   | "debug"
   | "complete"
   | "error"
@@ -120,6 +121,19 @@ export interface InterventionSentEvent {
    * UserMessageEvent.context와 동일 의미 — InterventionMessage가 ContextBlock 렌더링.
    */
   context?: ContextItem[];
+}
+
+/** Exactly-once 완료/후속 전달을 채팅 타임라인에 남기는 durable 알림. */
+export interface SessionNotificationEvent {
+  type: "session_notification";
+  delivery_id: string;
+  delivery_intent: "completion_notification" | "runtime_followup";
+  source: string;
+  text: string;
+  disposition: "queued" | "auto_resume";
+  completion_id?: string;
+  relation_key?: string;
+  timestamp: number;
 }
 
 export interface ContextItem {
@@ -770,6 +784,7 @@ export type SoulSSEEvent =
   | MemoryEvent
   | SessionEvent
   | InterventionSentEvent
+  | SessionNotificationEvent
   | UserMessageEvent
   | SystemMessageEvent
   | DebugEvent

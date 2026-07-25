@@ -1,0 +1,164 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+
+import { SessionDeliveryRepository } from "../../src/db/repositories/session_delivery_repository.js";
+import type {
+  SessionDeliveryRow,
+  SqlClient,
+} from "../../src/db/session_db_types.js";
+
+type MockCall = { query: string; values: unknown[] };
+
+function deliveryRow(
+  overrides: Partial<SessionDeliveryRow> = {},
+): SessionDeliveryRow {
+  const now = new Date("2026-07-26T00:00:00Z");
+  return {
+    delivery_id: "00000000-0000-5000-8000-000000000001",
+    target_session_id: "caller-1",
+    source_session_id: "child-1",
+    relation_key: "child:child-1:42",
+    completion_id: "child:child-1:42",
+    intent: "completion_notification",
+    source: "completion_notifier",
+    producer_kind: "child_session",
+    producer_id: "child-1",
+    producer_terminal_revision: "42",
+    parent_delivery_id: null,
+    caller_turn_id: null,
+    payload_hash: "hash-1",
+    payload: { text: "done" },
+    state: "pending",
+    created_at: now,
+    updated_at: now,
+    claimed_at: null,
+    queued_at: null,
+    delivered_at: null,
+    consumed_at: null,
+    ...overrides,
+  };
+}
+
+function createMockSql(results: unknown[][]) {
+  const calls: MockCall[] = [];
+  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ query: Array.from(strings).join("?"), values });
+    return Promise.resolve(results.shift() ?? []);
+  }) as unknown as SqlClient & {
+    json(value: unknown): unknown;
+  };
+  sql.json = vi.fn((value: unknown) => value);
+  return { sql, calls };
+}
+
+const registration = {
+  deliveryId: "00000000-0000-5000-8000-000000000001",
+  targetSessionId: "caller-1",
+  sourceSessionId: "child-1",
+  relationKey: "child:child-1:42",
+  completionId: "child:child-1:42",
+  intent: "completion_notification" as const,
+  source: "completion_notifier",
+  producerKind: "child_session",
+  producerId: "child-1",
+  producerTerminalRevision: "42",
+  payloadHash: "hash-1",
+  payload: { text: "done" },
+  createdAt: new Date("2026-07-26T00:00:00Z"),
+};
+
+describe("SessionDeliveryRepository", () => {
+  it("registers a new delivery with an atomic conflict boundary", async () => {
+    const row = deliveryRow();
+    const { sql, calls } = createMockSql([[row]]);
+
+    const result = await new SessionDeliveryRepository(sql).register(registration);
+
+    expect(result).toEqual({ row, inserted: true, conflict: false });
+    expect(calls[0].query).toContain("INSERT INTO session_deliveries");
+    expect(calls[0].query).toContain("ON CONFLICT DO NOTHING");
+  });
+
+  it("converges an identical retry on the existing ledger row", async () => {
+    const row = deliveryRow();
+    const { sql, calls } = createMockSql([[], [row]]);
+
+    const result = await new SessionDeliveryRepository(sql).register(registration);
+
+    expect(result).toEqual({ row, inserted: false, conflict: false });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].query).toContain("relation_key");
+  });
+
+  it("marks payload/relation identity conflicts uncertain instead of dispatching", async () => {
+    const conflicting = deliveryRow({ payload_hash: "other-hash" });
+    const uncertain = deliveryRow({ payload_hash: "other-hash", state: "uncertain" });
+    const { sql, calls } = createMockSql([[], [conflicting], [uncertain]]);
+
+    const result = await new SessionDeliveryRepository(sql).register(registration);
+
+    expect(result).toEqual({ row: uncertain, inserted: false, conflict: true });
+    expect(calls[2].query).toContain("state = 'uncertain'");
+  });
+
+  it("suppresses retargeted retries of one semantic completion relation", async () => {
+    const original = deliveryRow({ target_session_id: "caller-original" });
+    const uncertain = deliveryRow({
+      target_session_id: "caller-original",
+      state: "uncertain",
+    });
+    const { sql } = createMockSql([[], [original], [uncertain]]);
+
+    const result = await new SessionDeliveryRepository(sql).register({
+      ...registration,
+      targetSessionId: "caller-replacement",
+    });
+
+    expect(result).toEqual({ row: uncertain, inserted: false, conflict: true });
+  });
+
+  it("claims only pending rows and records explicit queued/delivered/consumed edges", async () => {
+    const row = deliveryRow();
+    const { sql, calls } = createMockSql([
+      [{ ...row, state: "claimed" }],
+      [{ ...row, state: "queued" }],
+      [{ ...row, state: "delivered", caller_turn_id: "turn-9" }],
+      [{ ...row, state: "consumed", caller_turn_id: "turn-9" }],
+    ]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await repository.claim(row.delivery_id);
+    await repository.markQueued(row.delivery_id);
+    await repository.markDelivered(row.delivery_id, "turn-9");
+    await repository.markConsumed(row.delivery_id, "turn-9");
+
+    expect(calls[0].query).toContain("state = 'pending'");
+    expect(calls[1].query).toContain("state IN ('claimed', 'pending')");
+    expect(calls[2].query).toContain("state IN ('claimed', 'queued')");
+    expect(calls[3].query).toContain("'consumed'");
+  });
+});
+
+describe("session_deliveries migration safety", () => {
+  it("keeps the additive migration outside the deployment manifest until operator approval", () => {
+    const manifest = readFileSync(
+      new URL("../../../packages/db-schema/migration-manifest.json", import.meta.url),
+      "utf8",
+    );
+    const pending = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const schema = readFileSync(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+      "utf8",
+    );
+
+    expect(manifest).not.toContain("043_session_deliveries.sql");
+    expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+  });
+});

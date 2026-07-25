@@ -75,6 +75,17 @@ export interface SystemMessageNode extends BaseNode {
   type: "system_message";
 }
 
+/** ledger가 dedupe한 완료/후속 전달 알림 노드. */
+export interface SessionNotificationNode extends BaseNode {
+  type: "session_notification";
+  deliveryId: string;
+  deliveryIntent: "completion_notification" | "runtime_followup";
+  source: string;
+  disposition: "queued" | "auto_resume";
+  completionId?: string;
+  relationKey?: string;
+}
+
 /** 인터벤션 노드 */
 export interface InterventionNode extends BaseNode {
   type: "intervention";
@@ -229,6 +240,7 @@ export type EventTreeNode =
   | SessionNode
   | UserMessageNode
   | SystemMessageNode
+  | SessionNotificationNode
   | InterventionNode
   | ThinkingNode
   | TextNode

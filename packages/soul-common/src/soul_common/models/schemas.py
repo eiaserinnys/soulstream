@@ -8,7 +8,7 @@ soul-server의 models/schemas.py에 잔류한다.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, List
+from typing import Any, Literal, Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -20,6 +20,7 @@ class SSEEventType(str, Enum):
     MEMORY = "memory"
     SESSION = "session"
     INTERVENTION_SENT = "intervention_sent"
+    SESSION_NOTIFICATION = "session_notification"
     DEBUG = "debug"
     COMPLETE = "complete"
     ERROR = "error"
@@ -76,6 +77,22 @@ class InterveneRequest(BaseModel):
             "발신자 정보(통합 v1). 비어있으면 서버 라우트가 HTTP Request에서 자동 조립."
         ),
     )
+    delivery_id: Optional[str] = None
+    delivery_intent: Optional[
+        Literal[
+            "human_live_steer",
+            "durable_next_turn",
+            "completion_notification",
+            "runtime_followup",
+        ]
+    ] = None
+    source: Optional[str] = None
+    completion_id: Optional[str] = None
+    relation_key: Optional[str] = None
+    producer_terminal_revision: Optional[str] = None
+    parent_delivery_id: Optional[str] = None
+    caller_turn_id: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class InputResponseRequest(BaseModel):

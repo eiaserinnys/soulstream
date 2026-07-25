@@ -1,0 +1,118 @@
+{
+  "generated_at": "2026-07-25T17:47:57.961Z",
+  "sdk_version": "0.3.218",
+  "claude_code_version": "2.1.220",
+  "claude_code_executable": "CLAUDE_CONTRACT_EXECUTABLE",
+  "required_assertions_passed": true,
+  "assertions": [
+    {
+      "id": "persistent-query-survives-result",
+      "description": "A streaming Query remains open after a foreground Result.",
+      "passed": true,
+      "evidence": {
+        "result_sequence": 6,
+        "iterator_settled_after_result": false
+      }
+    },
+    {
+      "id": "persistent-query-session-stable",
+      "description": "Multiple foreground turns on one Query retain one Claude session id.",
+      "passed": true,
+      "evidence": {
+        "session_ids": [
+          "041b833c-8eed-4561-8fc5-d5d81703517a"
+        ]
+      }
+    },
+    {
+      "id": "interrupt-receipt-capability",
+      "description": "The actual CLI advertises interrupt_receipt_v1.",
+      "passed": true,
+      "evidence": {
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "msg_lifecycle_v1"
+        ]
+      }
+    },
+    {
+      "id": "interrupt-receipt-before-result",
+      "description": "A clean interrupt receipt resolves before the interrupted Result is emitted.",
+      "passed": true,
+      "evidence": {
+        "receipt_sequence": 21,
+        "interrupted_result_sequence": 25
+      }
+    },
+    {
+      "id": "interrupt-receipt-plus-local-ledger",
+      "description": "A locally queued UUID survives exactly once even when the CLI receipt snapshot omits it.",
+      "passed": true,
+      "evidence": {
+        "queued_uuid": "9bc4aca8-1d6a-4349-94fd-f87d033bdf12",
+        "still_queued": [],
+        "receipt_contains_queued_uuid": false
+      }
+    },
+    {
+      "id": "interrupt-queued-message-exactly-once",
+      "description": "The surviving queued UUID produces exactly one later Result.",
+      "passed": true,
+      "evidence": {
+        "queued_result_sequence": 30
+      }
+    },
+    {
+      "id": "background-control-no-double-transition",
+      "description": "backgroundTasks(toolUseId) returns false once that task is already backgrounded.",
+      "passed": true,
+      "evidence": {
+        "response_sequence": 44,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "background-level-replace-set",
+      "description": "Background membership exposes a non-empty level and later returns to empty.",
+      "passed": true,
+      "evidence": {
+        "level_sizes": [
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "id": "background-notification-after-result",
+      "description": "The background task terminal notification can arrive after the foreground Result.",
+      "passed": true,
+      "evidence": {
+        "foreground_result_sequence": 46,
+        "task_notification_sequence": 50
+      }
+    },
+    {
+      "id": "close-settles-iterators",
+      "description": "Query.close settles both actual SDK iterators.",
+      "passed": true,
+      "evidence": {
+        "persistent_interrupt": true,
+        "background_runtime": true
+      }
+    }
+  ],
+  "observations": {
+    "interrupt_result_subtype": "error_during_execution",
+    "interrupt_receipt_still_queued_count": 0,
+    "interrupt_receipt_omitted_local_queued_uuid": true,
+    "background_level_sizes": [
+      1,
+      0
+    ],
+    "background_control_attempts": 1,
+    "background_control_after_level_result": false,
+    "background_event_order_is_contractual": false,
+    "background_event_order_note": "SDK d.ts declares ordering between background level and edge events unspecified."
+  }
+}

@@ -212,6 +212,7 @@ export async function composeWorkerRuntime(
     agentRegistry,
     boardYjsService,
     sessionPageBindingService,
+    env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
   );
   const scheduleService = new SoulstreamScheduleService(
     db.schedules(),

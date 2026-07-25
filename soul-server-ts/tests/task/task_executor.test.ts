@@ -13,7 +13,7 @@ import type {
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
-import type { Task } from "../../src/task/task_models.js";
+import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -110,6 +110,91 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("queued delivery를 turn 시작 시 delivered, 정상 Result 뒤 consumed로 기록한다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "child result",
+      user: "agent",
+      deliveryId: "99999999-9999-4999-8999-999999999999",
+      deliveryIntent: "completion_notification",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "consumed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordTurnFailure).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
+      deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("queued delivery turn이 실패하면 consumed 대신 uncertain 경계를 호출한다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "runtime result",
+      user: "system",
+      deliveryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      deliveryIntent: "runtime_followup",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([], { throwAt: 0 }),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordTurnFailure).toHaveBeenCalledWith(message);
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+  });
+
   it("정상 흐름: durable 이벤트만 persist + 모든 이벤트 broadcast/side effect + 완료 후 session_updated", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [

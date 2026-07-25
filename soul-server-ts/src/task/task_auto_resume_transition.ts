@@ -42,24 +42,31 @@ export class AutoResumeTransition {
     task: Task,
     message: InterventionMessage,
     onResume: AutoResumeCallback,
+    options: { publishUserMessage?: boolean } = {},
   ): Promise<{ autoResumed: true }> {
     this.requireResumableProfile(task);
     await this.awaitExecutionDrain(task);
     await this.closeStaleEngine(task);
     await this.promoteCallerInfo(task, message.callerInfo);
 
-    const userMessageEvent = buildUserMessageEvent({
-      text: message.text,
-      user: message.user,
-      callerInfo: message.callerInfo ?? task.callerInfo,
-      attachmentPaths: message.attachmentPaths,
-      contextItems: message.context,
-    });
-    await persistUserMessageEvent(task, userMessageEvent, this.deps, {
-      failOnError: true,
-    });
+    const userMessageEvent = options.publishUserMessage === false
+      ? null
+      : buildUserMessageEvent({
+          text: message.text,
+          user: message.user,
+          callerInfo: message.callerInfo ?? task.callerInfo,
+          attachmentPaths: message.attachmentPaths,
+          contextItems: message.context,
+        });
+    if (userMessageEvent) {
+      await persistUserMessageEvent(task, userMessageEvent, this.deps, {
+        failOnError: true,
+      });
+    }
     transitionTaskToRunning(task, message);
-    await finishUserMessageEvent(task, userMessageEvent, this.deps);
+    if (userMessageEvent) {
+      await finishUserMessageEvent(task, userMessageEvent, this.deps);
+    }
     await this.updateSessionStatus(task);
     await this.broadcastSessionUpdated(task);
 

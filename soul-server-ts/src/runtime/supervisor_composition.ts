@@ -95,11 +95,13 @@ export function composeSupervisorRuntime(
     orchProxyConfig,
     undefined,
     db,
+    env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
   );
   const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
     taskManager,
     onResume,
     logger,
+    deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
   });
   const supervisorWakeRouter = new SupervisorWakeRouter(
     {
@@ -300,6 +302,7 @@ export function composeSupervisorRuntime(
       softTokenThreshold: env.SUPERVISOR_SOFT_TOKEN_THRESHOLD,
       hardTokenThreshold: env.SUPERVISOR_HARD_TOKEN_THRESHOLD,
     },
+    taskManager.getDeliveryConsumptionRecorder(),
   );
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },

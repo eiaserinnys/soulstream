@@ -86,6 +86,21 @@ export class RunningInterventionTransition {
     };
   }
 
+  async queueOnly(
+    task: Task,
+    message: InterventionMessage,
+    options: { publishEvent?: boolean } = {},
+  ): Promise<RunningInterventionResult> {
+    if (options.publishEvent !== false) {
+      await publishInterventionSent(task, message, this.deps);
+    }
+    task.interventionQueue.push(message);
+    return {
+      queued: true,
+      queuePosition: task.interventionQueue.length,
+    };
+  }
+
   private async tryInterruptForSteer(
     task: Task,
     message: InterventionMessage,

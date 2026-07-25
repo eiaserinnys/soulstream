@@ -67,6 +67,19 @@ describe("shouldNotify", () => {
       };
       expect(shouldNotify(event)).toBe(true);
     });
+
+    it("should return true for session_notification", () => {
+      const event: SoulSSEEvent = {
+        type: "session_notification",
+        delivery_id: "33333333-3333-4333-8333-333333333333",
+        delivery_intent: "runtime_followup",
+        source: "runtime_followup",
+        text: "background task completed",
+        disposition: "queued",
+        timestamp: 10,
+      };
+      expect(shouldNotify(event)).toBe(true);
+    });
   });
 
   describe("events that should NOT trigger notification", () => {

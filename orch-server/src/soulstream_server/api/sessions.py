@@ -397,6 +397,15 @@ def create_sessions_router(
                 attachment_paths=body.attachmentPaths,
                 caller_info=caller_info,
                 extra_context_items=body.context_items,
+                delivery_id=body.delivery_id,
+                delivery_intent=body.delivery_intent,
+                source=body.source,
+                completion_id=body.completion_id,
+                relation_key=body.relation_key,
+                producer_terminal_revision=body.producer_terminal_revision,
+                parent_delivery_id=body.parent_delivery_id,
+                caller_turn_id=body.caller_turn_id,
+                created_at=body.created_at,
             )
             return result
         except (WebSocketDisconnect, ConnectionError) as e:

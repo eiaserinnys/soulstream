@@ -37,7 +37,7 @@ import { shouldNotify, deriveSessionStatus } from "./session-updater";
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
 const NEEDS_ROOT = new Set([
-  "user_message", "session", "system_message", "intervention_sent", "thinking",
+  "user_message", "session", "system_message", "session_notification", "intervention_sent", "thinking",
   "text_start", "subagent_start", "tool_start",
   "complete", "error", "result", "compact", "input_request",
   "tool_approval_requested", "agent_updated", "handoff_requested", "handoff_occurred",

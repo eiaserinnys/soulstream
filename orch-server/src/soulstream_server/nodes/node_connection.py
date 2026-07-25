@@ -446,6 +446,15 @@ class NodeConnection:
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
         extra_context_items: list[dict] | None = None,
+        delivery_id: str | None = None,
+        delivery_intent: str | None = None,
+        source: str | None = None,
+        completion_id: str | None = None,
+        relation_key: str | None = None,
+        producer_terminal_revision: str | None = None,
+        parent_delivery_id: str | None = None,
+        caller_turn_id: str | None = None,
+        created_at: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"agentSessionId": session_id, "text": text, "user": user}
         if attachment_paths:
@@ -459,6 +468,22 @@ class NodeConnection:
             payload["caller_info"] = caller_info
         if extra_context_items:
             payload["extra_context_items"] = extra_context_items
+        optional_delivery_fields = {
+            "delivery_id": delivery_id,
+            "delivery_intent": delivery_intent,
+            "source": source,
+            "completion_id": completion_id,
+            "relation_key": relation_key,
+            "producer_terminal_revision": producer_terminal_revision,
+            "parent_delivery_id": parent_delivery_id,
+            "caller_turn_id": caller_turn_id,
+            "created_at": created_at,
+        }
+        payload.update({
+            key: value
+            for key, value in optional_delivery_fields.items()
+            if value is not None
+        })
         return await self._send_command(CMD_INTERVENE, payload)
 
     async def send_interrupt_session(self, session_id: str) -> dict:

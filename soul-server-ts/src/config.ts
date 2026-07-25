@@ -97,6 +97,16 @@ export const EnvSchema = z
      */
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
     /**
+     * Exactly-once delivery + session notification preparation gate.
+     * The persistent Query adapter is not connected yet, so production must keep
+     * this false until that landing is independently reviewed. Absence preserves
+     * the legacy runtime and requires no env rollout.
+     */
+    CLAUDE_SESSION_RUNTIME_V2_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /**
      * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
      */

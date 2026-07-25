@@ -389,5 +389,25 @@ describe("TaskRuntimeCommands ACK builders", () => {
       outcome: "delivered",
       agentSessionId: "sess-1",
     });
+
+    expect(
+      buildInterveneAck({
+        requestId: "req-suppressed",
+        agentSessionId: "sess-1",
+        result: {
+          suppressed: true,
+          deliveryId: "77777777-7777-4777-8777-777777777777",
+          reason: "delivery_consumed",
+        },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-suppressed",
+      status: "ok",
+      outcome: "suppressed",
+      agentSessionId: "sess-1",
+      deliveryId: "77777777-7777-4777-8777-777777777777",
+      reason: "delivery_consumed",
+    });
   });
 });

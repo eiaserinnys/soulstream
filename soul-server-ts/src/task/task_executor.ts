@@ -51,6 +51,8 @@ import {
   type ClaudeRuntimeTaskFollowupPort,
 } from "./claude_runtime_task_followup.js";
 import type { InterventionMessage } from "./task_models.js";
+import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE =
   "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
@@ -67,6 +69,7 @@ export class TaskExecutor {
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
+  private readonly deliveryConsumption: TaskDeliveryConsumption;
 
   constructor(
     private readonly engineFactory: EngineFactory,
@@ -95,6 +98,10 @@ export class TaskExecutor {
     supervisorHandoverPolicy?: Pick<
       SupervisorHandoverPolicyOptions,
       "softTokenThreshold" | "hardTokenThreshold"
+    >,
+    deliveryConsumptionRecorder?: Pick<
+      TaskDeliveryLedgerGate,
+      "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
     >,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
@@ -141,6 +148,10 @@ export class TaskExecutor {
       snapshotPersistence: this.agentsSnapshotPersistence,
       scheduleToolHandler,
     });
+    this.deliveryConsumption = new TaskDeliveryConsumption(
+      deliveryConsumptionRecorder,
+      this.logger,
+    );
   }
 
   /**
@@ -211,6 +222,10 @@ export class TaskExecutor {
     let currentTurnIntervention = initialTurnInput.intervention;
     try {
       while (true) {
+        await this.deliveryConsumption.recordTurnStarted(
+          task,
+          currentTurnIntervention,
+        );
         if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
           this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
             task,
@@ -233,15 +248,21 @@ export class TaskExecutor {
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
+          await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
           await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
         }
         await this.flushClaudeRuntimeTaskFollowups(task);
-        await this.handleClaudeRuntimeFollowupStall(
+        const followupStalled = await this.handleClaudeRuntimeFollowupStall(
           task,
           currentTurnIntervention,
           previousAssistantText,
         );
+        if (followupStalled) {
+          await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
+        } else {
+          await this.deliveryConsumption.recordConsumed(task, currentTurnIntervention);
+        }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
@@ -315,11 +336,11 @@ export class TaskExecutor {
     task: Task,
     intervention: InterventionMessage | undefined,
     previousAssistantText: string,
-  ): Promise<void> {
-    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
+  ): Promise<boolean> {
+    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return false;
     const nextAssistantText = normalizeAssistantText(task.lastAssistantText);
     const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
-    if (!reason) return;
+    if (!reason) return false;
 
     const attempt = intervention.followupAttempt ?? 1;
     if (attempt < MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT && this.claudeRuntimeTaskFollowup) {
@@ -332,7 +353,7 @@ export class TaskExecutor {
         void scheduledFallback.catch((err: unknown) => {
           void this.handleScheduledClaudeRuntimeFollowupFailure(task, intervention, reason, err);
         });
-        return;
+        return true;
       } catch (err) {
         this.logger.warn(
           {
@@ -345,11 +366,12 @@ export class TaskExecutor {
           "Claude runtime task follow-up fallback enqueue failed",
         );
         await this.publishClaudeRuntimeFollowupRetryFailed(task, err);
-        return;
+        return true;
       }
     }
 
     await this.publishClaudeRuntimeFollowupExhausted(task, attempt);
+    return true;
   }
 
   private async handleScheduledClaudeRuntimeFollowupFailure(

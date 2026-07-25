@@ -111,7 +111,12 @@ def extract_searchable_text(event: dict) -> str:
         return _content_to_text(event.get("output") or event.get("result"))
     elif event_type == "error":
         return _content_to_text(event.get("message"))
-    elif event_type in ("away_summary", "intervention_sent", "realtime_transcript"):
+    elif event_type in (
+        "away_summary",
+        "intervention_sent",
+        "session_notification",
+        "realtime_transcript",
+    ):
         return _content_to_text(event.get("content") or event.get("text"))
     return ""
 

@@ -39,6 +39,8 @@ import type {
   ToolApprovalRequestedEvent,
   ToolApprovalNodeDef,
   SoulSSEEvent,
+  SessionNotificationEvent,
+  SessionNotificationNode,
 } from "../shared/types";
 
 // === Helpers ===
@@ -237,6 +239,28 @@ describe("createNodeFromEvent", () => {
       // F-9 fix: caller_info 부재 시 callerInfo/agentInfo 모두 undefined
       expect((node as InterventionNode).callerInfo).toBeUndefined();
       expect((node as InterventionNode).agentInfo).toBeUndefined();
+    });
+
+    it("should create a durable node for session_notification", () => {
+      const event: SessionNotificationEvent = {
+        type: "session_notification",
+        delivery_id: "11111111-1111-4111-8111-111111111111",
+        delivery_intent: "completion_notification",
+        source: "completion_notifier",
+        text: "child session completed",
+        disposition: "queued",
+        completion_id: "event-42",
+        relation_key: "child_session:child-1:42",
+        timestamp: 123,
+      };
+
+      const node = createNodeFromEvent(event, 42) as SessionNotificationNode;
+
+      expect(node.type).toBe("session_notification");
+      expect(node.id).toBe(`session-notification-${event.delivery_id}`);
+      expect(node.deliveryId).toBe(event.delivery_id);
+      expect(node.disposition).toBe("queued");
+      expect(node.timestamp).toBe(123);
     });
 
     it("should attach callerInfo from intervention_sent.caller_info (F-9 fix)", () => {

@@ -620,6 +620,44 @@ describe("CommandDispatcher.create_session", () => {
 });
 
 describe("CommandDispatcher.intervene (B-4)", () => {
+  it("optional delivery metadata를 손실 없이 task boundary로 전달한다", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const { dispatcher } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "caller-1",
+      text: "child done",
+      user: "system",
+      delivery_id: "00000000-0000-5000-8000-000000000001",
+      delivery_intent: "completion_notification",
+      source: "completion_notifier",
+      completion_id: "child:child-1:42",
+      relation_key: "child:child-1:42",
+      producer_terminal_revision: "42",
+      parent_delivery_id: "00000000-0000-5000-8000-000000000000",
+      caller_turn_id: "turn-8",
+      created_at: "2026-07-26T00:00:00.000Z",
+    });
+
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryId: "00000000-0000-5000-8000-000000000001",
+        deliveryIntent: "completion_notification",
+        source: "completion_notifier",
+        completionId: "child:child-1:42",
+        relationKey: "child:child-1:42",
+        producerTerminalRevision: "42",
+        parentDeliveryId: "00000000-0000-5000-8000-000000000000",
+        callerTurnId: "turn-8",
+        deliveryCreatedAt: "2026-07-26T00:00:00.000Z",
+      }),
+      expect.any(Function),
+    );
+  });
+
   it("running task에 intervene → addIntervention queued → intervene_ack(queued)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher, sent } = createDispatcher({

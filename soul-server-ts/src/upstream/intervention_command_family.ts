@@ -1,5 +1,6 @@
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
+import type { DeliveryIntent } from "../task/delivery_contract.js";
 import type { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
   CommandDispatchError,
@@ -27,6 +28,15 @@ interface InterveneCmd extends CommandLike {
   caller_info?: CallerInfo;
   attachment_paths?: string[];
   extra_context_items?: ContextItem[];
+  delivery_id?: string;
+  delivery_intent?: DeliveryIntent;
+  source?: string;
+  completion_id?: string;
+  relation_key?: string;
+  producer_terminal_revision?: string;
+  parent_delivery_id?: string;
+  caller_turn_id?: string;
+  created_at?: string;
 }
 
 interface SupervisorInterveneCmd extends CommandLike {
@@ -136,6 +146,15 @@ async function handleIntervene(
       callerInfo: cmd.caller_info,
       attachmentPaths: cmd.attachment_paths,
       extraContextItems: cmd.extra_context_items,
+      deliveryId: cmd.delivery_id,
+      deliveryIntent: cmd.delivery_intent,
+      source: cmd.source,
+      completionId: cmd.completion_id,
+      relationKey: cmd.relation_key,
+      producerTerminalRevision: cmd.producer_terminal_revision,
+      parentDeliveryId: cmd.parent_delivery_id,
+      callerTurnId: cmd.caller_turn_id,
+      deliveryCreatedAt: cmd.created_at,
     });
   } catch (err) {
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));
