@@ -34,7 +34,17 @@ function makeBaseEngine(overrides: Partial<EnginePort> = {}): EnginePort {
   } as EnginePort;
 }
 
-function makeSubject(initialTasks: Task[] = []) {
+function makeSubject(
+  initialTasks: Task[] = [],
+  sessionRuntimeControl?: {
+    has(sessionId: string): boolean;
+    deliverInputResponse(
+      sessionId: string,
+      requestId: string,
+      answers: Record<string, unknown>,
+    ): Promise<{ status: "delivered" }>;
+  },
+) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
   const toolApprovalRecovery = {
     resolveTaskForApproval: vi.fn(async (sessionId: string) => tasks.get(sessionId) ?? null),
@@ -56,6 +66,7 @@ function makeSubject(initialTasks: Task[] = []) {
     toolApprovalRecovery,
     responseEventPublisher,
     agentRegistry,
+    sessionRuntimeControl,
   });
 
   return {
@@ -152,6 +163,36 @@ describe("TaskDeliveryRoute.deliverInputResponse", () => {
       message: "request expired",
     });
     expect(responseEventPublisher.publishInputRequestResponded).not.toHaveBeenCalled();
+  });
+
+  it("delivers a pending response through the session registry after foreground completion", async () => {
+    const completedTask = makeTask({ status: "completed", engine: undefined });
+    const sessionRuntimeControl = {
+      has: vi.fn().mockReturnValue(true),
+      deliverInputResponse: vi.fn().mockResolvedValue({ status: "delivered" as const }),
+    };
+    const { route, responseEventPublisher } = makeSubject(
+      [completedTask],
+      sessionRuntimeControl,
+    );
+
+    await expect(route.deliverInputResponse({
+      agentSessionId: "sess-delivery",
+      requestId: "ask-late",
+      answers: { choice: "continue" },
+    })).resolves.toEqual({
+      status: "delivered",
+      requestId: "ask-late",
+      eventId: 77,
+    });
+
+    expect(sessionRuntimeControl.deliverInputResponse).toHaveBeenCalledWith(
+      "sess-delivery",
+      "ask-late",
+      { choice: "continue" },
+    );
+    expect(responseEventPublisher.publishInputRequestResponded)
+      .toHaveBeenCalledWith(completedTask, "ask-late");
   });
 });
 

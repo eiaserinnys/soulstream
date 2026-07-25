@@ -244,6 +244,7 @@ export async function composeWorkerRuntime(
             },
             logger,
           ),
+        { idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS, maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES, logger },
       )
     : undefined;
   taskManager = new TaskManager(
@@ -257,9 +258,7 @@ export async function composeWorkerRuntime(
     boardYjsService,
     sessionPageBindingService,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-    claudeSessionClientRegistry
-      ? (sessionId) => claudeSessionClientRegistry.close(sessionId)
-      : undefined,
+    claudeSessionClientRegistry,
   );
   const scheduleService =
     new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);

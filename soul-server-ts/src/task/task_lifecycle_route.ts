@@ -33,16 +33,18 @@ interface TaskLifecycleRouteDeps {
   db: SessionDB;
   broadcaster: SessionBroadcaster;
   logger: Logger;
-  closeSessionRuntime?: (sessionId: string) => Promise<void>;
+  closeSessionRuntime?: (sessionId: string) => Promise<boolean>;
 }
 
 export class TaskLifecycleRoute {
   constructor(private readonly deps: TaskLifecycleRouteDeps) {}
 
   async cancelTask(sessionId: string): Promise<boolean> {
-    return await this.deps.lifecycleTransition.cancelRunningTask(
-      this.deps.getTask(sessionId),
-    );
+    const task = this.deps.getTask(sessionId);
+    const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
+    if (cancelled || !task || task.status === "running") return cancelled;
+    if (!this.deps.closeSessionRuntime) return false;
+    return await this.deps.closeSessionRuntime(sessionId);
   }
 
   async deleteTask(sessionId: string): Promise<void> {

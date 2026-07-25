@@ -22,6 +22,7 @@ import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
+import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_client_registry.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
 import { ActiveTaskRecovery } from "./task_active_recovery.js";
@@ -58,16 +59,12 @@ import { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { SessionNotificationPublisher } from "./task_session_notification.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
-  isClaudeRuntimeTaskTerminal,
-  loadClaudeRuntimeStateFromEvents,
-  readClaudeRuntimeTaskOutput,
-  serializeClaudeRuntimeState,
-  supportsClaudeBackgroundTasks,
   type ClaudeRuntimeBackgroundTasksResult,
   type ClaudeRuntimeTaskListResult,
   type ClaudeRuntimeTaskOutputResult,
   type ClaudeRuntimeTaskStopResult,
 } from "./claude_runtime_control.js";
+import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {
@@ -94,6 +91,7 @@ export class TaskManager {
   private readonly interventionRoute: TaskInterventionRoute;
   private readonly lifecycleRoute: TaskLifecycleRoute;
   private readonly deliveryLedgerGate: TaskDeliveryLedgerGate;
+  private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
 
   constructor(
     private readonly nodeId: string,
@@ -115,8 +113,11 @@ export class TaskManager {
     private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
-    closeSessionRuntime?: (sessionId: string) => Promise<void>,
+    sessionRuntimeControl?: ClaudeSessionRuntimeControl,
   ) {
+    const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
+      ? sessionRuntimeControl
+      : undefined;
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
       db,
@@ -144,7 +145,9 @@ export class TaskManager {
       db,
       broadcaster,
       logger,
-      closeSessionRuntime,
+      closeSessionRuntime: gatedSessionRuntimeControl
+        ? (sessionId) => gatedSessionRuntimeControl.close(sessionId)
+        : undefined,
     });
     const activeTaskRecovery = new ActiveTaskRecovery(logger);
     const runningInterventionTransition = new RunningInterventionTransition({
@@ -190,6 +193,12 @@ export class TaskManager {
       toolApprovalRecovery: this.toolApprovalRecovery,
       responseEventPublisher: this.responseEventPublisher,
       agentRegistry,
+      sessionRuntimeControl: gatedSessionRuntimeControl,
+    });
+    this.claudeRuntimeControlRoute = new TaskClaudeRuntimeControlRoute({
+      db,
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      sessionRuntimeControl: gatedSessionRuntimeControl,
     });
     this.interventionRoute = new TaskInterventionRoute({
       getTask: (sessionId) => this.tasks.get(sessionId),
@@ -230,88 +239,34 @@ export class TaskManager {
   }
 
   async listClaudeRuntimeTasks(sessionId: string): Promise<ClaudeRuntimeTaskListResult> {
-    const runtime = await this.resolveClaudeRuntimeState(sessionId);
-    return serializeClaudeRuntimeState(sessionId, runtime);
+    return await this.claudeRuntimeControlRoute.list(sessionId);
   }
 
   async getClaudeRuntimeTaskOutput(
     sessionId: string,
     taskId: string,
   ): Promise<ClaudeRuntimeTaskOutputResult> {
-    const runtime = await this.resolveClaudeRuntimeState(sessionId);
-    const task = runtime?.tasks[taskId];
-    return await readClaudeRuntimeTaskOutput(sessionId, taskId, task);
+    return await this.claudeRuntimeControlRoute.output(sessionId, taskId);
   }
 
   async stopClaudeRuntimeTask(
     sessionId: string,
     taskId: string,
   ): Promise<ClaudeRuntimeTaskStopResult> {
-    const runtime = await this.resolveClaudeRuntimeState(sessionId);
-    const runtimeTask = runtime?.tasks[taskId];
-    if (runtimeTask && isClaudeRuntimeTaskTerminal(runtimeTask)) {
-      return {
-        sessionId,
-        taskId,
-        supported: true,
-        stopped: false,
-        alreadyTerminal: true,
-        status: "already_terminal",
-        task: runtimeTask,
-      };
-    }
-
-    const activeTask = this.tasks.get(sessionId);
-    if (!activeTask?.engine || !supportsClaudeBackgroundTasks(activeTask.engine)) {
-      return {
-        sessionId,
-        taskId,
-        supported: false,
-        stopped: false,
-        alreadyTerminal: false,
-        status: "not_supported",
-        message: "세션의 active Claude engine이 background task control을 지원하지 않습니다",
-        task: runtimeTask ?? null,
-      };
-    }
-
-    const result = await activeTask.engine.stopClaudeRuntimeTask(taskId);
-    return {
+    return await this.claudeRuntimeControlRoute.stopClaudeRuntimeTask(
       sessionId,
       taskId,
-      supported: result.status !== "not_supported",
-      stopped: result.status === "ok",
-      alreadyTerminal: false,
-      status: result.status,
-      ...(result.message ? { message: result.message } : {}),
-      task: runtimeTask ?? null,
-    };
+    );
   }
 
   async backgroundClaudeRuntimeTasks(
     sessionId: string,
     toolUseId?: string,
   ): Promise<ClaudeRuntimeBackgroundTasksResult> {
-    await this.resolveClaudeRuntimeState(sessionId);
-    const activeTask = this.tasks.get(sessionId);
-    if (!activeTask?.engine || !supportsClaudeBackgroundTasks(activeTask.engine)) {
-      return {
-        sessionId,
-        supported: false,
-        backgrounded: false,
-        status: "not_supported",
-        message: "세션의 active Claude engine이 background task control을 지원하지 않습니다",
-      };
-    }
-
-    const result = await activeTask.engine.backgroundClaudeRuntimeTasks(toolUseId);
-    return {
+    return await this.claudeRuntimeControlRoute.backgroundClaudeRuntimeTasks(
       sessionId,
-      supported: result.status !== "not_supported",
-      backgrounded: result.status === "ok",
-      status: result.status,
-      ...(result.message ? { message: result.message } : {}),
-    };
+      toolUseId,
+    );
   }
 
   /**
@@ -342,7 +297,8 @@ export class TaskManager {
   }
 
   /**
-   * 진행 중 turn abort. 성공 시 status=interrupted로 전환. 없으면 false.
+   * 진행 중 turn abort. Runtime v2에서는 terminal Task의 남은 session runtime도 회수.
+   * 성공 시 status=interrupted로 전환. 없으면 false.
    *
    * code-reviewer P1 정정: status="interrupted" 박힘은 *여기서* 책임진다.
    * adapter abort catch는 yield 없이 generator를 정상 종료 — task_executor의
@@ -445,16 +401,6 @@ export class TaskManager {
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
     return await this.interventionRoute.addIntervention(params, onResume);
-  }
-
-  private async resolveClaudeRuntimeState(sessionId: string) {
-    const activeTask = this.tasks.get(sessionId);
-    if (activeTask?.claudeRuntime) return activeTask.claudeRuntime;
-    const session = await this.db.getSession(sessionId);
-    if (!session) {
-      throw new Error(`Task not found: ${sessionId}`);
-    }
-    return await loadClaudeRuntimeStateFromEvents(this.db, sessionId);
   }
 
   /**

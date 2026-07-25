@@ -22,6 +22,7 @@ import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
   type ClaudeRuntimeCloseReason,
+  type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
@@ -114,6 +115,10 @@ export class ClaudeSdkPersistentSession {
     return this.runtime.snapshot().foregroundPhase;
   }
 
+  snapshot(): ClaudeSessionRuntimeSnapshot {
+    return this.runtime.snapshot();
+  }
+
   query(): ClaudeSdkQuery {
     return this.runtime.query as ClaudeSdkQuery;
   }
@@ -184,8 +189,18 @@ export class ClaudeSdkPersistentSession {
     const phase = this.runtime.snapshot().foregroundPhase;
     const active = this.activeForeground;
     const explicitUserMessageUuid = asString(message.user_message_uuid);
+    if (!explicitUserMessageUuid) {
+      this.logger.warn(
+        {
+          activeForegroundUuid: active?.uuid,
+          phase,
+          resultUuid: asString(message.uuid),
+        },
+        "Ignoring uncorrelated Claude Result without user_message_uuid",
+      );
+      return;
+    }
     if (
-      explicitUserMessageUuid &&
       (!active || explicitUserMessageUuid !== active.uuid)
     ) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
@@ -197,9 +212,8 @@ export class ClaudeSdkPersistentSession {
       return;
     }
 
-    const userMessageUuid = explicitUserMessageUuid ?? active?.uuid;
     this.runtime.observeResult({
-      ...(userMessageUuid ? { userMessageUuid } : {}),
+      userMessageUuid: explicitUserMessageUuid,
       interrupted: phase === "interrupting",
     });
     this.runtime.finishForegroundResult();

@@ -750,6 +750,96 @@ describe("TaskManager.deliverInputResponse", () => {
       backend: "codex",
     });
   });
+
+  it("gate OFF ignores an injected session registry without touching it", async () => {
+    const mocks = makeMocks();
+    const sessionRuntimeControl = {
+      has: vi.fn().mockReturnValue(true),
+      close: vi.fn().mockResolvedValue(true),
+      deliverInputResponse: vi.fn().mockResolvedValue({ status: "delivered" }),
+      backgroundClaudeRuntimeTasks: vi.fn().mockResolvedValue({ status: "ok" }),
+      stopClaudeRuntimeTask: vi.fn().mockResolvedValue({ status: "ok" }),
+    };
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      sessionRuntimeControl,
+    );
+    const task = await tm.createTask({
+      agentSessionId: "sess-gate-off",
+      prompt: "done",
+      profileId: "claude-roselin",
+    });
+    task.status = "completed";
+
+    await expect(tm.deliverInputResponse({
+      agentSessionId: task.agentSessionId,
+      requestId: "ask-late",
+      answers: {},
+    })).resolves.toMatchObject({
+      status: "session_not_running",
+    });
+    await expect(tm.cancelTask(task.agentSessionId)).resolves.toBe(false);
+
+    expect(sessionRuntimeControl.has).not.toHaveBeenCalled();
+    expect(sessionRuntimeControl.deliverInputResponse).not.toHaveBeenCalled();
+    expect(sessionRuntimeControl.close).not.toHaveBeenCalled();
+  });
+
+  it("gate ON routes completed-session input and explicit reclaim through the registry", async () => {
+    const mocks = makeMocks();
+    Object.assign(mocks.db, {
+      sessionDeliveries: vi.fn().mockReturnValue({}),
+    });
+    const sessionRuntimeControl = {
+      has: vi.fn().mockReturnValue(true),
+      close: vi.fn().mockResolvedValue(true),
+      deliverInputResponse: vi.fn().mockResolvedValue({ status: "delivered" }),
+      backgroundClaudeRuntimeTasks: vi.fn().mockResolvedValue({ status: "ok" }),
+      stopClaudeRuntimeTask: vi.fn().mockResolvedValue({ status: "ok" }),
+    };
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      sessionRuntimeControl,
+    );
+    const task = await tm.createTask({
+      agentSessionId: "sess-gate-on",
+      prompt: "done",
+      profileId: "claude-roselin",
+    });
+    task.status = "completed";
+
+    await expect(tm.deliverInputResponse({
+      agentSessionId: task.agentSessionId,
+      requestId: "ask-late",
+      answers: { choice: "continue" },
+    })).resolves.toMatchObject({ status: "delivered" });
+    await expect(tm.cancelTask(task.agentSessionId)).resolves.toBe(true);
+
+    expect(sessionRuntimeControl.deliverInputResponse).toHaveBeenCalledWith(
+      task.agentSessionId,
+      "ask-late",
+      { choice: "continue" },
+    );
+    expect(sessionRuntimeControl.close).toHaveBeenCalledWith(task.agentSessionId);
+  });
 });
 
 describe("TaskManager.finalizeTask", () => {

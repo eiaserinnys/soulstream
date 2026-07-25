@@ -32,6 +32,7 @@ import {
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
+import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {
   ClaudeBackgroundTaskControlResult,
   EngineUserInput,
@@ -277,6 +278,18 @@ export class ClaudeSdkClient implements ClaudeClient {
     return this.toolPermissionController.deliverInputResponse(requestId, answers);
   }
 
+  persistentRuntimeActivity(): ClaudePersistentRuntimeActivity | null {
+    const snapshot = this.persistentSession?.snapshot();
+    if (!snapshot) return null;
+    return {
+      foregroundPhase: snapshot.foregroundPhase,
+      queryLifecycle: snapshot.queryLifecycle,
+      backgroundTaskCount: snapshot.backgroundTaskIds.length,
+      pendingInputRequestCount:
+        this.toolPermissionController.pendingInputRequestCount(),
+    };
+  }
+
   async backgroundClaudeRuntimeTasks(
     toolUseId?: string,
   ): Promise<ClaudeBackgroundTaskControlResult> {
@@ -373,6 +386,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (this.persistentSession) {
       const persistent = this.persistentSession;
       persistent.close("shutdown");
+      this.toolPermissionController.abortPendingInputRequests();
       await persistent.settled();
       this.persistentSession = null;
     }

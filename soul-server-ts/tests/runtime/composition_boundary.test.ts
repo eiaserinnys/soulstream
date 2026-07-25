@@ -130,6 +130,7 @@ describe("worker composition boundary", () => {
   it("keeps gate-OFF intervention wiring free of feature-only awaits", () => {
     const taskManager = source("task/task_manager.ts");
     const interventionRoute = source("task/task_intervention_route.ts");
+    const lifecycleRoute = source("task/task_lifecycle_route.ts");
     const workerComposition = source("runtime/worker_composition.ts");
 
     expect(taskManager).toMatch(
@@ -138,8 +139,17 @@ describe("worker composition boundary", () => {
     expect(taskManager).toMatch(
       /sessionNotificationPublisher: deliveryRuntimeV2Enabled\s+\? sessionNotificationPublisher\s+: undefined/,
     );
+    expect(taskManager).toMatch(
+      /const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled\s+\?\s+sessionRuntimeControl\s+:\s+undefined/,
+    );
     expect(interventionRoute).not.toMatch(
       /await this\.deps\.(deliveryLedgerGate|sessionNotificationPublisher)\?\./,
+    );
+    expect(lifecycleRoute).toContain(
+      "if (!this.deps.closeSessionRuntime) return false;",
+    );
+    expect(lifecycleRoute).not.toMatch(
+      /await this\.deps\.closeSessionRuntime\?\./,
     );
     expect(workerComposition).toMatch(
       /const claudeSessionClientRegistry = env\.CLAUDE_SESSION_RUNTIME_V2_ENABLED\s+\?/,
@@ -171,6 +181,7 @@ describe("worker composition boundary", () => {
       "engine/claude_sdk_persistent_session.ts",
       "engine/claude_session_client_registry.ts",
       "engine/claude_session_runtime.ts",
+      "task/task_claude_runtime_control_route.ts",
     ];
 
     for (const file of files) {

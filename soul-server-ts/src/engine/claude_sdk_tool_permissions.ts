@@ -44,6 +44,10 @@ export class ClaudeSdkToolPermissionController {
     return true;
   }
 
+  pendingInputRequestCount(): number {
+    return this.pendingInputRequests.size;
+  }
+
   abortPendingInputRequests(): void {
     for (const [requestId, pending] of this.pendingInputRequests) {
       clearTimeout(pending.timeout);

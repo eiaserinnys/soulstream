@@ -6,6 +6,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalDeliveryResult,
 } from "../engine/protocol.js";
+import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_client_registry.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import type { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import {
@@ -72,6 +73,10 @@ export interface TaskDeliveryRouteDeps {
     "publishInputRequestResponded" | "publishToolApprovalResolved"
   >;
   agentRegistry?: AgentBackendLookup;
+  sessionRuntimeControl?: Pick<
+    ClaudeSessionRuntimeControl,
+    "has" | "deliverInputResponse"
+  >;
 }
 
 export type { AgentBackendLookup } from "./task_live_delivery_result.js";
@@ -100,7 +105,9 @@ export class TaskDeliveryRoute {
     if (!task) {
       return { status: "session_not_found", requestId: params.requestId };
     }
-    if (task.status !== "running") {
+    const registryAvailable =
+      this.deps.sessionRuntimeControl?.has(params.agentSessionId) === true;
+    if (task.status !== "running" && !registryAvailable) {
       return {
         status: "session_not_running",
         requestId: params.requestId,
@@ -108,7 +115,20 @@ export class TaskDeliveryRoute {
       };
     }
 
-    const engine = task.engine;
+    const engine = supportsInputResponse(task.engine)
+      ? task.engine
+      : registryAvailable
+        ? {
+            deliverInputResponse: (
+              requestId: string,
+              answers: Record<string, unknown>,
+            ) => this.deps.sessionRuntimeControl!.deliverInputResponse(
+              params.agentSessionId,
+              requestId,
+              answers,
+            ),
+          }
+        : undefined;
     if (!supportsInputResponse(engine)) {
       return {
         status: "not_supported",
@@ -173,8 +193,8 @@ export class TaskDeliveryRoute {
 }
 
 function supportsInputResponse(
-  engine: Task["engine"],
-): engine is NonNullable<Task["engine"]> & SupportsInputResponse {
+  engine: unknown,
+): engine is SupportsInputResponse {
   return Boolean(
     engine &&
       typeof (engine as unknown as Partial<SupportsInputResponse>).deliverInputResponse ===

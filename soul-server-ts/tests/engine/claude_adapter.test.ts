@@ -509,7 +509,10 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       runPersistent,
       close,
     };
-    const registry = new ClaudeSessionClientRegistry(() => client);
+    const registry = new ClaudeSessionClientRegistry(
+      () => client,
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
     const first = new ClaudeEngineAdapter(
       {
         workspaceDir: "/tmp/claude-work",
