@@ -26,6 +26,9 @@ import {
 } from "./stdio_transport.js";
 import type {
   AppServerNotification,
+  AppServerRequestId,
+  AppServerResponseError,
+  AppServerServerRequest,
   InitializeParams,
   InitializeResponse,
   ThreadResumeParams,
@@ -60,6 +63,9 @@ export interface CodexAppServerClientPort {
   steerTurn(params: TurnSteerParams): Promise<TurnSteerResponse>;
   interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse>;
   onNotification(handler: (notification: AppServerNotification) => void): () => void;
+  onServerRequest(handler: (request: AppServerServerRequest) => void): () => void;
+  resolveServerRequest(id: AppServerRequestId, result: unknown): Promise<void>;
+  rejectServerRequest(id: AppServerRequestId, error: AppServerResponseError): Promise<void>;
   onError(handler: (error: Error) => void): () => void;
   onClose(handler: (error?: Error) => void): () => void;
   close(): Promise<void>;
@@ -109,6 +115,9 @@ export class CodexAppServerEngineAdapter
     const unsubscribe = [
       this.client.onNotification((notification) => {
         this.handleNotification(notification, queue, Boolean(params.resumeSessionId));
+      }),
+      this.client.onServerRequest((request) => {
+        this.handleServerRequest(request, queue);
       }),
       this.client.onError((error) => {
         queue.push(fatalErrorPayload(error));
@@ -287,6 +296,44 @@ export class CodexAppServerEngineAdapter
     if (result.closeQueue) {
       queue.close();
     }
+  }
+
+  private handleServerRequest(
+    request: AppServerServerRequest,
+    queue: AsyncPayloadQueue<SSEEventPayload>,
+  ): void {
+    const message = `Unsupported Codex app-server server request: ${request.method}`;
+    this.logger.warn(
+      { requestId: request.id, method: request.method },
+      "Codex app-server server request received; rejecting by default",
+    );
+    void this.client
+      .rejectServerRequest(request.id, {
+        code: -32000,
+        message,
+      })
+      .then(() => {
+        this.logger.warn(
+          { requestId: request.id, method: request.method, code: -32000 },
+          "Codex app-server server request rejection sent",
+        );
+        queue.push({
+          type: "debug",
+          message: `Rejected Codex app-server server request: ${request.method}`,
+          timestamp: Date.now() / 1000,
+          raw_event_type: request.method,
+        } as SSEEventPayload);
+      })
+      .catch((error: unknown) => {
+        const rejectionError =
+          error instanceof Error ? error : new Error(String(error));
+        this.logger.error(
+          { error: rejectionError, requestId: request.id, method: request.method },
+          "Codex app-server server request rejection failed",
+        );
+        queue.push(fatalErrorPayload(rejectionError));
+        queue.close();
+      });
   }
 
   private createClient(

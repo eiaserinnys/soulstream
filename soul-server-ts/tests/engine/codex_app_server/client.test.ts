@@ -266,6 +266,30 @@ describe("CodexAppServerClient inbound dispatch", () => {
     ]);
   });
 
+  it("sends successful and error responses for server-initiated requests", async () => {
+    const { client, transport } = createClient();
+
+    await client.resolveServerRequest("srv-success", { accepted: false });
+    await client.rejectServerRequest("srv-error", {
+      code: -32000,
+      message: "Unsupported Codex app-server server request",
+    });
+
+    expect(transport.sent).toEqual([
+      {
+        id: "srv-success",
+        result: { accepted: false },
+      },
+      {
+        id: "srv-error",
+        error: {
+          code: -32000,
+          message: "Unsupported Codex app-server server request",
+        },
+      },
+    ]);
+  });
+
   it("forwards transport parse errors to error subscribers", () => {
     const { client, transport } = createClient();
     const errors: string[] = [];

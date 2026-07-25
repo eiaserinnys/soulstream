@@ -82,12 +82,15 @@ function renderBanner(node: EventTreeNode) {
   return { container, root };
 }
 
-describe("AskQuestionBanner layout", () => {
+describe("AskQuestionBanner", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
+  let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     useDashboardStore.getState().reset();
+    fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
   });
 
@@ -102,6 +105,7 @@ describe("AskQuestionBanner layout", () => {
     root = undefined;
     container = undefined;
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("uses a wider viewport-bound layout for ask-user-question prompts", () => {
@@ -145,5 +149,27 @@ describe("AskQuestionBanner layout", () => {
     expect(banner?.className).toContain("max-w-3xl");
     expect(banner?.className).not.toContain("max-w-[520px]");
     expect(banner?.className).not.toContain("min-w-80");
+  });
+
+  it("shows a retryable error when AskUserQuestion submission fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
+    ({ container, root } = renderBanner(makeInputRequest()));
+
+    const button = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((candidate) => candidate.textContent?.includes("피드와 동일"));
+    expect(button).toBeTruthy();
+    flushSync(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+        "응답 전송에 실패했습니다",
+      );
+    });
+    expect(consoleError).toHaveBeenCalled();
+    expect(button?.disabled).toBe(false);
   });
 });

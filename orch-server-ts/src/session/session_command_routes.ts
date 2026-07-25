@@ -115,7 +115,9 @@ export function registerSessionCommandRoutes(
     if (body === undefined) {
       return badRequest(reply, "Request body must be a JSON object");
     }
-    const inputRequestId = body.request_id;
+    const inputRequestId = Object.prototype.hasOwnProperty.call(body, "request_id")
+      ? body.request_id
+      : body.requestId;
     if (typeof inputRequestId !== "string" || inputRequestId.length === 0) {
       return badRequest(reply, "request_id is required");
     }

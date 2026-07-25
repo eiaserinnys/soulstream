@@ -1,7 +1,10 @@
 import { memo, useRef, useState } from "react";
 import type { InputRequestQuestion } from "@shared/types";
 import type { ChatMessage } from "../../lib/flatten-tree";
-import { submitInputResponse } from "../../lib/input-request-actions";
+import {
+  INPUT_RESPONSE_ERROR_MESSAGE,
+  submitInputResponse,
+} from "../../lib/input-request-actions";
 import { useInputRequestTimer } from "../../hooks/useInputRequestTimer";
 import { formatTime } from "../../lib/input-request-utils";
 import { Button } from "../ui/button";
@@ -18,6 +21,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   const { remainingSec, isExpired } = useInputRequestTimer(msg.receivedAt, msg.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
+  const [submissionFailed, setSubmissionFailed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const webglActive = useGlassSurface(cardRef, { enabled: true });
 
@@ -27,6 +31,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   const handleSelect = async (answer: string) => {
     if (selectedAnswer || msg.responded || msg.expired || isExpired) return;
     if (!msg.requestId) return;
+    setSubmissionFailed(false);
     setSelectedAnswer(answer);  // 낙관적 UI
     const success = await submitInputResponse(
       sessionId,
@@ -37,6 +42,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
     );
     if (!success) {
       setSelectedAnswer(null);  // 실패 시 롤백
+      setSubmissionFailed(true);
     }
   };
 
@@ -102,6 +108,11 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                 전송
               </Button>
             </form>
+            {submissionFailed && (
+              <div role="alert" className="text-xs text-destructive">
+                {INPUT_RESPONSE_ERROR_MESSAGE}
+              </div>
+            )}
             <div className="text-right text-xs text-muted-foreground">⏱️ {formatTime(remainingSec)}</div>
           </>
         )}

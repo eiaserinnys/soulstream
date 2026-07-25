@@ -346,60 +346,77 @@ describe("session command HTTP route harness", () => {
     });
   });
 
-  it("maps respond request_id to inputRequestId without letting body.requestId override the command requestId", async () => {
-    const { registry, transports, router, bridge } = createHarness();
-    const connectionId = registerNode(registry);
-    await createExistingSession(registry);
-    const sent: Array<Record<string, unknown>> = [];
-    transports.attach({
-      nodeId: "fake-node",
-      connectionId,
-      transport: {
-        send: (data) => {
-          const message = JSON.parse(data) as Record<string, unknown>;
-          sent.push(message);
-          registry.receiveNodeMessage(
-            { nodeId: "fake-node", connectionId },
-            {
-              type: "respond_ack",
-              requestId: message.requestId,
-              status: "ok",
-              inputRequestId: message.inputRequestId,
-            },
-          );
-        },
-      },
-    });
-    const app = createApp({
-      config,
-      sessionCommandRoutes: { router, bridge },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/sessions/sess-contract/respond",
+  it.each([
+    {
+      label: "canonical request_id",
       payload: {
         request_id: upstream.outbound.respond.inputRequestId,
         requestId: "malicious-command-id",
         answers: upstream.outbound.respond.answers,
       },
-    });
+      expectedInputRequestId: "input-req-contract",
+    },
+    {
+      label: "legacy requestId",
+      payload: {
+        requestId: "legacy-input-request",
+        answers: upstream.outbound.respond.answers,
+      },
+      expectedInputRequestId: "legacy-input-request",
+    },
+  ])(
+    "maps respond $label to inputRequestId without overriding command correlation",
+    async ({ payload, expectedInputRequestId }) => {
+      const { registry, transports, router, bridge } = createHarness();
+      const connectionId = registerNode(registry);
+      await createExistingSession(registry);
+      const sent: Array<Record<string, unknown>> = [];
+      transports.attach({
+        nodeId: "fake-node",
+        connectionId,
+        transport: {
+          send: (data) => {
+            const message = JSON.parse(data) as Record<string, unknown>;
+            sent.push(message);
+            registry.receiveNodeMessage(
+              { nodeId: "fake-node", connectionId },
+              {
+                type: "respond_ack",
+                requestId: message.requestId,
+                status: "ok",
+                inputRequestId: message.inputRequestId,
+              },
+            );
+          },
+        },
+      });
+      const app = createApp({
+        config,
+        sessionCommandRoutes: { router, bridge },
+      });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      status: "ok",
-      inputRequestId: "input-req-contract",
-    });
-    expect(sent[0]).toMatchObject({
-      type: "respond",
-      agentSessionId: "sess-contract",
-      inputRequestId: "input-req-contract",
-      answers: { choice: "yes" },
-      requestId: "route-respond-2-1700000000000",
-    });
-    expect(sent[0]?.requestId).not.toBe(sent[0]?.inputRequestId);
-    expect(sent[0]?.requestId).not.toBe("malicious-command-id");
-  });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/sessions/sess-contract/respond",
+        payload,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "ok",
+        inputRequestId: expectedInputRequestId,
+      });
+      expect(sent[0]).toMatchObject({
+        type: "respond",
+        agentSessionId: "sess-contract",
+        inputRequestId: expectedInputRequestId,
+        answers: { choice: "yes" },
+        requestId: "route-respond-2-1700000000000",
+      });
+      expect(sent[0]?.requestId).not.toBe(sent[0]?.inputRequestId);
+      expect(sent[0]?.requestId).not.toBe(payload.requestId);
+    },
+  );
 
   it("maps route and transport failures to HTTP status codes without pending leaks", async () => {
     const { registry, transports, router, bridge } = createHarness();
