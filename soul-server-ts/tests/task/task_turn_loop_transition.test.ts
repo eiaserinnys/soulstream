@@ -87,6 +87,35 @@ describe("Task turn loop transition", () => {
     expect(task.status).toBe("running");
   });
 
+  it("persistent Claude runtime keeps background lifecycle orthogonal to foreground completion", () => {
+    const task = makeTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        detachedClaudeRuntime: true,
+        execute: async function* () {},
+        interrupt: async () => false,
+        close: async () => undefined,
+      },
+      claudeRuntime: {
+        sessionState: "running",
+        updatedAt: Date.now(),
+        tasks: {
+          "task-bg-persistent": {
+            taskId: "task-bg-persistent",
+            status: "running",
+            updatedAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision).toEqual({ kind: "stop" });
+    expect(task.status).toBe("completed");
+  });
+
   it("background-only Claude runtime work allows queued intervention continuation", () => {
     const task = makeTask({
       claudeRuntime: {

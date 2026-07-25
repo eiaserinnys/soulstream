@@ -1,5 +1,6 @@
 import type { AgentProfile } from "../agent_registry.js";
 import { formatContextItems } from "../context/prompt_assembler.js";
+import type { SupportsDetachedClaudeRuntime } from "../engine/protocol.js";
 
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
@@ -27,7 +28,7 @@ export function resolveTurnLoopTransition(
   if (agent.backend === "openai-agents" && isOpenAiAgentsApprovalPending(task)) {
     return { kind: "awaiting_approval" };
   }
-  if (hasPendingClaudeRuntimeWork(task)) {
+  if (hasPendingClaudeRuntimeWork(task) && !hasDetachedClaudeRuntime(task)) {
     return { kind: "awaiting_runtime" };
   }
 
@@ -44,6 +45,13 @@ export function resolveTurnLoopTransition(
     imageAttachmentPaths: composed.imageAttachmentPaths,
     intervention: next,
   };
+}
+
+function hasDetachedClaudeRuntime(task: Task): boolean {
+  const engine = task.engine as
+    | (Task["engine"] & Partial<SupportsDetachedClaudeRuntime>)
+    | undefined;
+  return engine?.detachedClaudeRuntime === true;
 }
 
 export function isOpenAiAgentsApprovalPending(task: Task): boolean {

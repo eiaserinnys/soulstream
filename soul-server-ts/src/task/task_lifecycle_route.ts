@@ -33,6 +33,7 @@ interface TaskLifecycleRouteDeps {
   db: SessionDB;
   broadcaster: SessionBroadcaster;
   logger: Logger;
+  closeSessionRuntime?: (sessionId: string) => Promise<void>;
 }
 
 export class TaskLifecycleRoute {
@@ -49,6 +50,13 @@ export class TaskLifecycleRoute {
     if (!task) return;
 
     await this.deps.lifecycleTransition.interruptAndDrain(task);
+    if (this.deps.closeSessionRuntime) {
+      try {
+        await this.deps.closeSessionRuntime(sessionId);
+      } catch (err) {
+        this.deps.logger.warn({ err, sessionId }, "session runtime close failed");
+      }
+    }
     this.deps.forgetTask(sessionId);
 
     try {

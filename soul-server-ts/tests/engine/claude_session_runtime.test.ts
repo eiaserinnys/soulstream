@@ -26,7 +26,7 @@ describe("ClaudeSessionRuntime", () => {
 
     expect(runtime.snapshot()).toMatchObject({
       sessionId: "claude-session-1",
-      foregroundPhase: "idle",
+      foregroundPhase: "drain",
       queryLifecycle: "open",
     });
     expect(query.close).not.toHaveBeenCalled();
@@ -92,10 +92,65 @@ describe("ClaudeSessionRuntime", () => {
     runtime.finishForegroundResult();
     runtime.replaceBackgroundTasks([]);
     expect(runtime.snapshot()).toMatchObject({
-      foregroundPhase: "idle",
+      foregroundPhase: "drain",
       backgroundTaskIds: [],
       queryLifecycle: "open",
     });
+  });
+
+  it("detached Result는 foreground phase를 바꾸지 않고 UUID 중복을 차단한다", () => {
+    const { runtime } = makeSubject();
+    runtime.enqueueInput({ uuid: "turn-1", payloadHash: "hash-1", message: "first" });
+    runtime.beginForegroundTurn("turn-1");
+    runtime.enqueueInput({ uuid: "queued-2", payloadHash: "hash-2", message: "second" });
+
+    expect(runtime.observeDetachedResult("queued-2")).toBe("settled");
+    expect(runtime.observeDetachedResult("queued-2")).toBe("duplicate");
+    expect(runtime.observeDetachedResult("unknown")).toBe("unknown");
+    expect(runtime.snapshot().foregroundPhase).toBe("generating");
+  });
+
+  it("drain phase input starts the next turn without interrupting the settled turn", () => {
+    const { runtime, query } = makeSubject();
+    runtime.enqueueInput({ uuid: "turn-1", payloadHash: "hash-1", message: "first" });
+    runtime.beginForegroundTurn("turn-1");
+    runtime.observeResult({ userMessageUuid: "turn-1", interrupted: false });
+    runtime.finishForegroundResult();
+
+    expect(runtime.enqueueInput({
+      uuid: "turn-2",
+      payloadHash: "hash-2",
+      message: "second",
+    })).toBe(true);
+    runtime.beginForegroundTurn("turn-2");
+
+    expect(runtime.snapshot().foregroundPhase).toBe("generating");
+    expect(query.interrupt).not.toHaveBeenCalled();
+  });
+
+  it("idle/generating/interrupting/turn_result/drain phase transitions are explicit", async () => {
+    const { runtime } = makeSubject();
+    expect(runtime.snapshot().foregroundPhase).toBe("idle");
+
+    runtime.enqueueInput({ uuid: "turn-1", payloadHash: "hash-1", message: "first" });
+    runtime.beginForegroundTurn("turn-1");
+    expect(runtime.snapshot().foregroundPhase).toBe("generating");
+
+    await runtime.interruptThenDeliver({
+      uuid: "turn-2",
+      payloadHash: "hash-2",
+      message: "second",
+    });
+    expect(runtime.snapshot().foregroundPhase).toBe("interrupting");
+
+    runtime.observeResult({ userMessageUuid: "turn-1", interrupted: true });
+    expect(runtime.snapshot().foregroundPhase).toBe("turn_result");
+
+    runtime.finishForegroundResult();
+    expect(runtime.snapshot().foregroundPhase).toBe("drain");
+
+    runtime.finishDrain();
+    expect(runtime.snapshot().foregroundPhase).toBe("idle");
   });
 
   it("명시 cancel/shutdown/fatal만 Query를 닫는다", async () => {

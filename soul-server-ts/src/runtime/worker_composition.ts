@@ -17,7 +17,13 @@ import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
-import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
+import { ClaudeEngineAdapter, ClaudeSdkClient } from "../engine/claude_adapter.js";
+import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import {
+  isPostResultDrainEvent,
+  markPostResultDrainEvent,
+} from "../engine/claude_event_phase.js";
+import { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
@@ -44,6 +50,7 @@ import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { buildServer, type ServerInstance } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import type { EngineFactory } from "../task/task_executor.js";
+import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
@@ -76,6 +83,7 @@ export interface WorkerComposition extends SupervisorComposition {
   sessionPageBindingService: SessionPageBindingService;
   checklistTaskAdapter: ChecklistTaskAdapter;
   checklistTaskReconciler: ChecklistTaskReconciler;
+  claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 
@@ -202,7 +210,43 @@ export async function composeWorkerRuntime(
     logger,
     pageContextResolver,
   );
-  const taskManager = new TaskManager(
+  const detachedClaudeEventPublisher = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? new TaskEngineEventPublisher({
+        broadcaster,
+        db,
+        logger,
+        persistence,
+      })
+    : undefined;
+  let supervisor!: SupervisorComposition, taskManager!: TaskManager;
+  const claudeSessionClientRegistry = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? new ClaudeSessionClientRegistry(
+        (sessionId) =>
+          new ClaudeSdkClient(
+            {
+              detachedEventSink: async (event) => {
+                const task = taskManager.getTask(sessionId);
+                if (!task || !detachedClaudeEventPublisher) {
+                  logger.warn(
+                    { sessionId, eventType: event.type },
+                    "Detached Claude runtime event has no in-memory task",
+                  );
+                  return;
+                }
+                for (const payload of mapClaudeClientEvent(event)) {
+                  if (isPostResultDrainEvent(event)) {
+                    markPostResultDrainEvent(payload);
+                  }
+                  await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
+                  await supervisor.claudeRuntimeTaskFollowup.collectDetached(task, payload);
+                }
+              },
+            },
+            logger,
+          ),
+      )
+    : undefined;
+  taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,
     db,
     broadcaster,
@@ -213,13 +257,12 @@ export async function composeWorkerRuntime(
     boardYjsService,
     sessionPageBindingService,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+    claudeSessionClientRegistry
+      ? (sessionId) => claudeSessionClientRegistry.close(sessionId)
+      : undefined,
   );
-  const scheduleService = new SoulstreamScheduleService(
-    db.schedules(),
-    broadcaster,
-    persistence,
-    logger,
-  );
+  const scheduleService =
+    new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory: EngineFactory = (agent) => {
     writeScratchAgentMarker({ workspaceDir: agent.workspace_dir, agentId: agent.id });
     if (agent.backend === "codex") {
@@ -255,6 +298,9 @@ export async function composeWorkerRuntime(
           sessionStore: claudeSessionStore,
           sessionStoreFlush: "batched",
           loadTimeoutMs: 60_000,
+          ...(claudeSessionClientRegistry
+            ? { persistentSessionRegistry: claudeSessionClientRegistry }
+            : {}),
         },
         logger,
       );
@@ -269,7 +315,7 @@ export async function composeWorkerRuntime(
       `Unsupported backend "${agent.backend}" in soul-server-ts (agent=${agent.id})`,
     );
   };
-  const supervisor = composeSupervisorRuntime({
+  supervisor = composeSupervisorRuntime({
     env,
     db,
     logger,
@@ -446,6 +492,7 @@ export async function composeWorkerRuntime(
     sessionPageBindingService,
     checklistTaskAdapter,
     checklistTaskReconciler,
+    ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
     createUpstreamAdapter,
   };
 }

@@ -18,7 +18,10 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
-type Scenario = "persistent_interrupt" | "background_runtime";
+type Scenario =
+  | "persistent_interrupt"
+  | "post_result_drain_steer"
+  | "background_runtime";
 type Channel = "sdk" | "control" | "harness";
 
 type HarnessRecord = {
@@ -546,6 +549,78 @@ async function runPersistentInterruptScenario(
   };
 }
 
+async function runPostResultDrainSteerScenario(
+  cwd: string,
+): Promise<{
+  init: SDKMessage;
+  probe: EventProbe;
+  queuedUuid: string;
+  firstResult: SDKMessage;
+  queuedResult: SDKMessage;
+  queryOpenBeforeQueuedTurn: boolean;
+  closeSettled: boolean;
+}> {
+  const scenario: Scenario = "post_result_drain_steer";
+  const startedAt = Date.now();
+  const input = createEventQueue<SDKUserMessage>();
+  const query = createQuery({
+    prompt: input,
+    options: {
+      cwd,
+      pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+      settingSources: [],
+      persistSession: false,
+      maxTurns: 3,
+      maxBudgetUsd: 0.5,
+    },
+  });
+  const probe = new EventProbe(query, scenario, startedAt);
+  const initPromise = probe.waitFor(isInit, "post-result drain SDK init");
+
+  input.push(makeUserMessage("Reply with exactly DRAIN_FIRST_DONE and nothing else."));
+  const init = await initPromise;
+  const firstResult = await probe.waitFor(isResult, "post-result drain first Result");
+  const queryOpenBeforeQueuedTurn = !probe.isSettled();
+  record(startedAt, scenario, "harness", {
+    kind: "post_result_drain_window_open",
+    iterator_settled: probe.isSettled(),
+  });
+
+  const queuedUuid = randomUUID();
+  input.push(
+    makeUserMessage(
+      "Reply with exactly DRAIN_STEER_DELIVERED and nothing else.",
+      queuedUuid,
+      "next",
+    ),
+  );
+  record(startedAt, scenario, "control", {
+    kind: "drain_phase_input_queued_without_interrupt",
+    queued_uuid: queuedUuid,
+  });
+  const queuedResult = await probe.waitFor(
+    (message) =>
+      message.type === "result" &&
+      "user_message_uuid" in message &&
+      message.user_message_uuid === queuedUuid,
+    "post-result drain queued Result",
+  );
+
+  await delay(LATE_REPLAY_SETTLE_MS);
+  await settleAfterClose(query, input, probe, startedAt, scenario);
+  return {
+    init,
+    probe,
+    queuedUuid,
+    firstResult,
+    queuedResult,
+    queryOpenBeforeQueuedTurn,
+    closeSettled: probe.isSettled(),
+  };
+}
+
 async function runBackgroundRuntimeScenario(
   cwd: string,
 ): Promise<{
@@ -668,6 +743,7 @@ async function main(): Promise<void> {
   const tempCwd = await mkdtemp(resolve(tmpdir(), "soulstream-claude-contract-"));
   try {
     const persistent = await runPersistentInterruptScenario(tempCwd);
+    const postResultDrain = await runPostResultDrainSteerScenario(tempCwd);
     const background = await runBackgroundRuntimeScenario(tempCwd);
 
     const persistentInit =
@@ -677,6 +753,11 @@ async function main(): Promise<void> {
     const backgroundInit =
       background.init.type === "system" && background.init.subtype === "init"
         ? background.init
+        : null;
+    const postResultDrainInit =
+      postResultDrain.init.type === "system" &&
+      postResultDrain.init.subtype === "init"
+        ? postResultDrain.init
         : null;
     const persistentSessionIds = new Set(
       persistent.probe.messages
@@ -715,6 +796,20 @@ async function main(): Promise<void> {
       message.type === "system" && message.subtype === "background_tasks_changed"
         ? message.tasks.length
         : -1,
+    );
+    const postResultDrainMatchingResults = postResultDrain.probe.messages.filter(
+      (message) =>
+        message.type === "result" &&
+        "user_message_uuid" in message &&
+        message.user_message_uuid === postResultDrain.queuedUuid,
+    );
+    const postResultDrainExecutionErrors = postResultDrain.probe.messages.filter(
+      (message) =>
+        message.type === "result" &&
+        (message.is_error ||
+          message.subtype === "error_during_execution" ||
+          message.subtype === "error_max_turns" ||
+          message.subtype === "error_max_budget_usd"),
     );
 
     const assertions: Assertion[] = [
@@ -787,6 +882,28 @@ async function main(): Promise<void> {
         },
       ),
       makeAssertion(
+        "post-result-drain-queues-without-interrupt",
+        "A user input queued immediately after foreground Result reaches the next turn without interrupting the drain phase.",
+        postResultDrain.queryOpenBeforeQueuedTurn &&
+          postResultDrainMatchingResults.length === 1,
+        {
+          queued_uuid: postResultDrain.queuedUuid,
+          matching_result_count: postResultDrainMatchingResults.length,
+          query_open_before_queued_turn: postResultDrain.queryOpenBeforeQueuedTurn,
+        },
+      ),
+      makeAssertion(
+        "post-result-drain-no-execution-diagnostic",
+        "Queue-only delivery during the post-Result drain emits no execution diagnostic Result.",
+        postResultDrainExecutionErrors.length === 0,
+        {
+          execution_error_count: postResultDrainExecutionErrors.length,
+          result_subtypes: postResultDrain.probe.messages
+            .filter(isResult)
+            .map((message) => message.type === "result" ? message.subtype : null),
+        },
+      ),
+      makeAssertion(
         "background-control-no-double-transition",
         "backgroundTasks(toolUseId) returns false once that task is already backgrounded.",
         !background.backgroundCallResult,
@@ -815,9 +932,12 @@ async function main(): Promise<void> {
       makeAssertion(
         "close-settles-iterators",
         "Query.close settles both actual SDK iterators.",
-        persistent.closeSettled && background.closeSettled,
+        persistent.closeSettled &&
+          postResultDrain.closeSettled &&
+          background.closeSettled,
         {
           persistent_interrupt: persistent.closeSettled,
+          post_result_drain_steer: postResultDrain.closeSettled,
           background_runtime: background.closeSettled,
         },
       ),
@@ -828,6 +948,7 @@ async function main(): Promise<void> {
       sdk_version: SDK_VERSION,
       claude_code_version:
         persistentInit?.claude_code_version ??
+        postResultDrainInit?.claude_code_version ??
         backgroundInit?.claude_code_version ??
         null,
     claude_code_executable:

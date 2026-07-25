@@ -76,18 +76,6 @@ export class SessionDeliveryRepository {
       existing.intent !== params.intent ||
       existing.completion_id !== (params.completionId ?? null);
     if (!conflict) {
-      if (
-        existing.state === "pending"
-        && existing.target_session_id !== params.targetSessionId
-      ) {
-        const retargeted = await this.retargetPending(
-          existing.delivery_id,
-          params.targetSessionId,
-        );
-        if (retargeted) {
-          return { row: retargeted, inserted: false, conflict: false };
-        }
-      }
       return { row: existing, inserted: false, conflict: false };
     }
 
@@ -115,6 +103,23 @@ export class SessionDeliveryRepository {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
       SET state = 'claimed', claimed_at = NOW(), updated_at = NOW()
+      WHERE delivery_id = ${deliveryId} AND state = 'pending'
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  }
+
+  async claimForTarget(
+    deliveryId: string,
+    targetSessionId: string,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET
+        target_session_id = ${targetSessionId},
+        state = 'claimed',
+        claimed_at = NOW(),
+        updated_at = NOW()
       WHERE delivery_id = ${deliveryId} AND state = 'pending'
       RETURNING *
     `;
@@ -167,6 +172,26 @@ export class SessionDeliveryRepository {
     return rows[0] ?? null;
   }
 
+  async markConsumedByRelation(
+    relationKey: string,
+    completionId: string,
+    callerTurnId: string,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET
+        state = 'consumed',
+        caller_turn_id = ${callerTurnId},
+        consumed_at = NOW(),
+        updated_at = NOW()
+      WHERE relation_key = ${relationKey}
+        AND completion_id = ${completionId}
+        AND state IN ('pending', 'claimed', 'queued', 'delivered', 'uncertain')
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  }
+
   async markUncertain(deliveryId: string): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
@@ -177,16 +202,4 @@ export class SessionDeliveryRepository {
     return rows[0] ?? null;
   }
 
-  private async retargetPending(
-    deliveryId: string,
-    targetSessionId: string,
-  ): Promise<SessionDeliveryRow | null> {
-    const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET target_session_id = ${targetSessionId}, updated_at = NOW()
-      WHERE delivery_id = ${deliveryId} AND state = 'pending'
-      RETURNING *
-    `;
-    return rows[0] ?? null;
-  }
 }

@@ -38,10 +38,7 @@ import {
 } from "./task_lifecycle_route.js";
 import { ToolApprovalRecovery } from "./task_tool_approval_recovery.js";
 import { RunningInterventionTransition } from "./task_running_intervention_transition.js";
-import {
-  TaskCreation,
-  type CreateTaskParams,
-} from "./task_creation.js";
+import { TaskCreation, type CreateTaskParams } from "./task_creation.js";
 import type { TaskCreationHook } from "./task_creation_hook.js";
 import {
   TaskDeliveryRoute,
@@ -118,6 +115,7 @@ export class TaskManager {
     private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
+    closeSessionRuntime?: (sessionId: string) => Promise<void>,
   ) {
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
@@ -146,6 +144,7 @@ export class TaskManager {
       db,
       broadcaster,
       logger,
+      closeSessionRuntime,
     });
     const activeTaskRecovery = new ActiveTaskRecovery(logger);
     const runningInterventionTransition = new RunningInterventionTransition({
@@ -221,6 +220,7 @@ export class TaskManager {
   getDeliveryConsumptionRecorder(): Pick<
     TaskDeliveryLedgerGate,
     "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
+      | "recordInlineConsumed"
   > | undefined {
     return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }

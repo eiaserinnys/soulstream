@@ -19,8 +19,8 @@ export type DeliveryLedgerAdmission =
 
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
-  "register" | "claim" | "markQueued" | "markDelivered" | "markUncertain"
-  | "markConsumed"
+  "register" | "claimForTarget" | "get" | "markQueued" | "markDelivered"
+  | "markUncertain" | "markConsumed" | "markConsumedByRelation"
 >;
 
 export class TaskDeliveryLedgerGate {
@@ -40,35 +40,12 @@ export class TaskDeliveryLedgerGate {
       );
     }
 
-    const registration: RegisterSessionDeliveryParams = {
+    const registration = buildRegistration({
+      ...params,
       deliveryId: params.deliveryId,
-      targetSessionId: params.agentSessionId,
       relationKey: params.relationKey,
       completionId: params.completionId,
-      intent: params.deliveryIntent,
-      source: params.source ?? "unknown",
-      producerTerminalRevision: params.producerTerminalRevision,
-      parentDeliveryId: params.parentDeliveryId,
-      callerTurnId: params.callerTurnId,
-      payloadHash: hashDeliveryPayload({
-        text: params.text,
-        user: params.user,
-        source: params.source ?? null,
-        completion_id: params.completionId,
-        relation_key: params.relationKey,
-        attachment_paths: params.attachmentPaths ?? null,
-        context: params.context ?? null,
-        caller_info: params.callerInfo ?? null,
-      }),
-      payload: {
-        text: params.text,
-        user: params.user,
-        attachment_paths: params.attachmentPaths ?? null,
-        context: params.context ?? null,
-        caller_info: params.callerInfo ?? null,
-      },
-      createdAt: parseCreatedAt(params.deliveryCreatedAt),
-    };
+    });
     const registered = await repository.register(registration);
     if (registered.conflict) {
       return {
@@ -85,7 +62,10 @@ export class TaskDeliveryLedgerGate {
       };
     }
 
-    const claimed = await repository.claim(registered.row.delivery_id);
+    const claimed = await repository.claimForTarget(
+      registered.row.delivery_id,
+      params.agentSessionId,
+    );
     if (!claimed) {
       return {
         kind: "suppressed",
@@ -94,6 +74,43 @@ export class TaskDeliveryLedgerGate {
       };
     }
     return { kind: "admitted", deliveryId: claimed.delivery_id, row: claimed };
+  }
+
+  async recheckBeforeDispatch(
+    admission: DeliveryLedgerAdmission,
+  ): Promise<DeliveryLedgerAdmission> {
+    if (admission.kind !== "admitted") return admission;
+    const current = await this.requireRepository().get(admission.deliveryId);
+    if (current?.state === "consumed") {
+      return {
+        kind: "suppressed",
+        deliveryId: admission.deliveryId,
+        reason: "delivery_consumed_before_dispatch",
+      };
+    }
+    return admission;
+  }
+
+  async recordInlineConsumed(
+    params: AddInterventionParams,
+    task: Task,
+  ): Promise<boolean> {
+    if (!this.enabled || !isLedgerControlled(params)) return false;
+    if (!params.deliveryId || !params.relationKey || !params.completionId) return false;
+    const repository = this.requireRepository();
+    const registered = await repository.register(buildRegistration({
+      ...params,
+      deliveryId: params.deliveryId,
+      relationKey: params.relationKey,
+      completionId: params.completionId,
+    }));
+    if (registered.conflict) return false;
+    const consumed = await repository.markConsumedByRelation(
+      params.relationKey,
+      params.completionId,
+      `event:${task.lastEventId ?? "unknown"}`,
+    );
+    return consumed?.state === "consumed";
   }
 
   async recordResult(
@@ -151,6 +168,45 @@ export class TaskDeliveryLedgerGate {
     }
     return this.repository;
   }
+}
+
+function buildRegistration(
+  params: AddInterventionParams & {
+    deliveryId: string;
+    relationKey: string;
+    completionId: string;
+    deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
+  },
+): RegisterSessionDeliveryParams {
+  return {
+    deliveryId: params.deliveryId,
+    targetSessionId: params.agentSessionId,
+    relationKey: params.relationKey,
+    completionId: params.completionId,
+    intent: params.deliveryIntent,
+    source: params.source ?? "unknown",
+    producerTerminalRevision: params.producerTerminalRevision,
+    parentDeliveryId: params.parentDeliveryId,
+    callerTurnId: params.callerTurnId,
+    payloadHash: hashDeliveryPayload({
+      text: params.text,
+      user: params.user,
+      source: params.source ?? null,
+      completion_id: params.completionId,
+      relation_key: params.relationKey,
+      attachment_paths: params.attachmentPaths ?? null,
+      context: params.context ?? null,
+      caller_info: params.callerInfo ?? null,
+    }),
+    payload: {
+      text: params.text,
+      user: params.user,
+      attachment_paths: params.attachmentPaths ?? null,
+      context: params.context ?? null,
+      caller_info: params.callerInfo ?? null,
+    },
+    createdAt: parseCreatedAt(params.deliveryCreatedAt),
+  };
 }
 
 export function isLedgerControlled(

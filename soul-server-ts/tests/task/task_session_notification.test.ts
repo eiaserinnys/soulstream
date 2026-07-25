@@ -87,4 +87,17 @@ describe("SessionNotificationPublisher", () => {
       "queued",
     )).rejects.toThrow("session_notification does not support durable_next_turn");
   });
+
+  it("isolates notification persistence failure after delivery without broadcasting", async () => {
+    const { publisher, persistence, broadcaster } = makeSubject(true);
+    persistence.persistEventWithResult.mockRejectedValueOnce(
+      new Error("notification store unavailable"),
+    );
+
+    await expect(
+      publisher.publish(makeTask(), makeMessage(), "queued"),
+    ).resolves.toBeUndefined();
+
+    expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
+  });
 });

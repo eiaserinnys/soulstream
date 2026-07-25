@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-25T19:27:50.763Z",
+  "generated_at": "2026-07-25T21:24:36.771Z",
   "sdk_version": "0.3.218",
   "claude_code_version": "2.1.220",
   "claude_code_executable": "PATH:claude",
@@ -20,7 +20,7 @@
       "passed": true,
       "evidence": {
         "session_ids": [
-          "542e103d-870a-4417-a2f2-0978c2a9cc98"
+          "3c3df57c-4424-40e6-8cbb-9fc16530a312"
         ]
       }
     },
@@ -50,7 +50,7 @@
       "description": "A locally queued UUID survives exactly once even when the CLI receipt snapshot omits it.",
       "passed": true,
       "evidence": {
-        "queued_uuid": "c58b6ae1-583d-409c-836a-ab3377fe77f1",
+        "queued_uuid": "b877c8f6-5213-4a81-96af-c7bebc05e61e",
         "still_queued": [],
         "receipt_contains_queued_uuid": false
       }
@@ -63,8 +63,30 @@
         "queued_result_sequence": 30,
         "same_uuid_retry_accepted": true,
         "late_duplicate_result_observed": false,
-        "observation_ms": 17017,
+        "observation_ms": 17012,
         "query_open_during_window": true
+      }
+    },
+    {
+      "id": "post-result-drain-queues-without-interrupt",
+      "description": "A user input queued immediately after foreground Result reaches the next turn without interrupting the drain phase.",
+      "passed": true,
+      "evidence": {
+        "queued_uuid": "66150853-5a8a-4e4b-aa1f-e32ea2bfcbd4",
+        "matching_result_count": 1,
+        "query_open_before_queued_turn": true
+      }
+    },
+    {
+      "id": "post-result-drain-no-execution-diagnostic",
+      "description": "Queue-only delivery during the post-Result drain emits no execution diagnostic Result.",
+      "passed": true,
+      "evidence": {
+        "execution_error_count": 0,
+        "result_subtypes": [
+          "success",
+          "success"
+        ]
       }
     },
     {
@@ -72,7 +94,7 @@
       "description": "backgroundTasks(toolUseId) returns false once that task is already backgrounded.",
       "passed": true,
       "evidence": {
-        "response_sequence": 47,
+        "response_sequence": 66,
         "attempts": 1
       }
     },
@@ -92,8 +114,8 @@
       "description": "The background task terminal notification can arrive after the foreground Result.",
       "passed": true,
       "evidence": {
-        "foreground_result_sequence": 49,
-        "task_notification_sequence": 53
+        "foreground_result_sequence": 68,
+        "task_notification_sequence": 72
       }
     },
     {
@@ -102,6 +124,7 @@
       "passed": true,
       "evidence": {
         "persistent_interrupt": true,
+        "post_result_drain_steer": true,
         "background_runtime": true
       }
     }
@@ -112,7 +135,7 @@
     "interrupt_receipt_omitted_local_queued_uuid": true,
     "same_uuid_retry_accepted": true,
     "late_duplicate_result_observed": false,
-    "exactly_once_observation_ms": 17017,
+    "exactly_once_observation_ms": 17012,
     "background_level_sizes": [
       1,
       0

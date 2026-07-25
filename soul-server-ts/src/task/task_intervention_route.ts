@@ -78,7 +78,7 @@ export interface TaskInterventionRouteDeps {
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "recordResult" | "recordFailure"
+    "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -128,6 +128,7 @@ export class TaskInterventionRoute {
     }
 
     let task: Task | undefined;
+    let ledgerResultRecorded = false;
     try {
       task = await this.resolveTask(params.agentSessionId);
       if (params.onlyIfTerminal === true && task.status === "running") {
@@ -136,6 +137,18 @@ export class TaskInterventionRoute {
           await this.deps.deliveryLedgerGate.recordResult(admission, result);
         }
         return result;
+      }
+      if (this.deps.deliveryLedgerGate) {
+        const rechecked = await this.deps.deliveryLedgerGate.recheckBeforeDispatch(
+          admission,
+        );
+        if (rechecked.kind === "suppressed") {
+          return {
+            suppressed: true,
+            deliveryId: rechecked.deliveryId,
+            reason: rechecked.reason,
+          };
+        }
       }
       const isRunning =
         this.deps.activeTaskRecovery.prepareForIntervention(task) === "running";
@@ -181,6 +194,7 @@ export class TaskInterventionRoute {
       }
       if (this.deps.deliveryLedgerGate) {
         await this.deps.deliveryLedgerGate.recordResult(admission, result);
+        ledgerResultRecorded = true;
       }
       if (notificationDisposition && this.deps.sessionNotificationPublisher) {
         await this.deps.sessionNotificationPublisher.publish(
@@ -191,7 +205,7 @@ export class TaskInterventionRoute {
       }
       return result;
     } catch (err) {
-      if (this.deps.deliveryLedgerGate) {
+      if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         await this.deps.deliveryLedgerGate.recordFailure(admission);
       }
       throw err;

@@ -4,7 +4,16 @@ import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 
-export function makeUserMessage(content: string, imageAttachmentPaths?: string[]): SDKUserMessage {
+export interface ClaudeUserMessageIdentity {
+  uuid: string;
+  priority?: SDKUserMessage["priority"];
+}
+
+export function makeUserMessage(
+  content: string,
+  imageAttachmentPaths?: string[],
+  identity?: ClaudeUserMessageIdentity,
+): SDKUserMessage {
   return {
     type: "user",
     message: {
@@ -12,7 +21,13 @@ export function makeUserMessage(content: string, imageAttachmentPaths?: string[]
       content: buildUserMessageContent(content, imageAttachmentPaths),
     },
     parent_tool_use_id: null,
-    priority: "now",
+    priority: identity?.priority ?? "now",
+    ...(identity
+      ? {
+          uuid: identity.uuid as NonNullable<SDKUserMessage["uuid"]>,
+          origin: { kind: "human" as const },
+        }
+      : {}),
   };
 }
 

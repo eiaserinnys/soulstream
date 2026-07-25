@@ -29,6 +29,7 @@ import {
   normalizeClaudeModel,
 } from "./claude_options.js";
 import { ClaudeSdkClient } from "./claude_sdk_client.js";
+import type { ClaudeSessionClientRegistry } from "./claude_session_client_registry.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 
 export {
@@ -67,6 +68,10 @@ export interface ClaudeRunOptions {
 
 export interface ClaudeClient {
   run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent>;
+  runPersistent?(
+    options: ClaudeRunOptions,
+    signal: AbortSignal,
+  ): AsyncIterable<ClaudeClientEvent>;
   compact?(sessionId: string): Promise<void>;
   deliverInputResponse?(
     requestId: string,
@@ -94,6 +99,10 @@ export interface ClaudeAdapterConfig {
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
+  persistentSessionRegistry?: Pick<
+    ClaudeSessionClientRegistry,
+    "acquire" | "close"
+  >;
 }
 
 export class ClaudeEngineAdapter
@@ -106,6 +115,7 @@ export class ClaudeEngineAdapter
 {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
+  public readonly detachedClaudeRuntime: true | undefined;
 
   private readonly client: ClaudeClient;
   private readonly logger: Logger;
@@ -114,18 +124,26 @@ export class ClaudeEngineAdapter
   private readonly sessionStore?: SessionStore;
   private readonly sessionStoreFlush?: SessionStoreFlush;
   private readonly loadTimeoutMs?: number;
+  private readonly persistentSessionRegistry?: Pick<
+    ClaudeSessionClientRegistry,
+    "acquire" | "close"
+  >;
+  private activeClient: ClaudeClient | null = null;
+  private persistentSessionId: string | null = null;
   private currentTurn: AbortController | null = null;
   private closed = false;
   private readonly inputRequests = new Map<string, "pending" | "responded" | "expired">();
 
   constructor(config: ClaudeAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
+    this.detachedClaudeRuntime = config.persistentSessionRegistry ? true : undefined;
     this.agentId = config.agentId;
     this.client = config.client ?? new ClaudeSdkClient({}, logger);
     this.processEnv = config.processEnv;
     this.sessionStore = config.sessionStore;
     this.sessionStoreFlush = config.sessionStoreFlush;
     this.loadTimeoutMs = config.loadTimeoutMs;
+    this.persistentSessionRegistry = config.persistentSessionRegistry;
     this.logger = logger;
   }
 
@@ -142,10 +160,18 @@ export class ClaudeEngineAdapter
     const controller = new AbortController();
     this.currentTurn = controller;
     const options = this.buildRunOptions(params);
+    const client = this.resolveClient(params.agentSessionId);
+    this.activeClient = client;
     let lastText: string | undefined;
 
     try {
-      for await (const clientEvent of this.client.run(options, controller.signal)) {
+      const events = this.persistentSessionRegistry
+        ? client.runPersistent?.(options, controller.signal)
+        : client.run(options, controller.signal);
+      if (!events) {
+        throw new Error("Persistent Claude client does not implement runPersistent()");
+      }
+      for await (const clientEvent of events) {
         this.trackInputRequest(clientEvent);
 
         if (clientEvent.type === "session") {
@@ -197,8 +223,14 @@ export class ClaudeEngineAdapter
       return false;
     }
     this.currentTurn.abort();
-    if (this.client.interrupt) {
-      return await this.client.interrupt();
+    const client = this.activeClient ?? this.client;
+    if (client.interrupt) {
+      const interrupted = await client.interrupt();
+      if (this.persistentSessionRegistry && this.persistentSessionId) {
+        await this.persistentSessionRegistry.close(this.persistentSessionId);
+        this.activeClient = null;
+      }
+      return interrupted;
     }
     return true;
   }
@@ -207,11 +239,12 @@ export class ClaudeEngineAdapter
     if (!this.currentTurn) {
       return false;
     }
-    if (this.client.interruptActiveTurnForSteer) {
-      return await this.client.interruptActiveTurnForSteer();
+    const client = this.activeClient ?? this.client;
+    if (client.interruptActiveTurnForSteer) {
+      return await client.interruptActiveTurnForSteer();
     }
-    if (this.client.interrupt) {
-      return await this.client.interrupt();
+    if (client.interrupt) {
+      return await client.interrupt();
     }
     return false;
   }
@@ -228,32 +261,35 @@ export class ClaudeEngineAdapter
     if (!sessionId) {
       throw new Error("ClaudeEngineAdapter.compact requires sessionId");
     }
-    if (!this.client.compact) {
+    const client = this.activeClient ?? this.client;
+    if (!client.compact) {
       throw new Error("Claude client does not support compact");
     }
-    await this.client.compact(sessionId);
+    await client.compact(sessionId);
   }
 
   async backgroundClaudeRuntimeTasks(
     toolUseId?: string,
   ): Promise<ClaudeBackgroundTaskControlResult> {
-    if (!this.client.backgroundClaudeRuntimeTasks) {
+    const client = this.activeClient ?? this.client;
+    if (!client.backgroundClaudeRuntimeTasks) {
       return {
         status: "not_supported",
         message: "Claude client does not support background task control",
       };
     }
-    return await this.client.backgroundClaudeRuntimeTasks(toolUseId);
+    return await client.backgroundClaudeRuntimeTasks(toolUseId);
   }
 
   async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
-    if (!this.client.stopClaudeRuntimeTask) {
+    const client = this.activeClient ?? this.client;
+    if (!client.stopClaudeRuntimeTask) {
       return {
         status: "not_supported",
         message: "Claude client does not support background task control",
       };
     }
-    return await this.client.stopClaudeRuntimeTask(taskId);
+    return await client.stopClaudeRuntimeTask(taskId);
   }
 
   async deliverInputResponse(
@@ -270,14 +306,15 @@ export class ClaudeEngineAdapter
     if (current === "responded") {
       return { status: "already_responded" };
     }
-    if (!this.client.deliverInputResponse) {
+    const client = this.activeClient ?? this.client;
+    if (!client.deliverInputResponse) {
       return {
         status: "not_supported",
         message: "Claude client does not support input responses",
       };
     }
 
-    const delivered = await this.client.deliverInputResponse(requestId, answers);
+    const delivered = await client.deliverInputResponse(requestId, answers);
     if (!delivered) {
       return { status: "request_not_pending" };
     }
@@ -293,7 +330,10 @@ export class ClaudeEngineAdapter
       this.currentTurn = null;
     }
     this.inputRequests.clear();
-    await this.client.close?.();
+    if (!this.persistentSessionRegistry) {
+      await this.client.close?.();
+    }
+    this.activeClient = null;
   }
 
   private buildRunOptions(params: EngineExecuteParams): ClaudeRunOptions {
@@ -330,6 +370,15 @@ export class ClaudeEngineAdapter
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
       ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
     };
+  }
+
+  private resolveClient(agentSessionId: string | undefined): ClaudeClient {
+    if (!this.persistentSessionRegistry) return this.client;
+    if (!agentSessionId) {
+      throw new Error("Persistent Claude runtime requires agentSessionId");
+    }
+    this.persistentSessionId = agentSessionId;
+    return this.persistentSessionRegistry.acquire(agentSessionId);
   }
 
   private trackInputRequest(event: ClaudeClientEvent): void {

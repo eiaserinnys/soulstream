@@ -11,6 +11,7 @@ import {
   type ClaudeClientEvent,
   type ClaudeRunOptions,
 } from "../../src/engine/claude_adapter.js";
+import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
 import {
   AGENT_COMMON_FILES_DIR_ENV,
   SCRATCH_WORKSPACE_DIR_ENV,
@@ -492,6 +493,63 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       value: { type: "complete" },
     });
     await expect(iterator.next()).resolves.toMatchObject({ done: true });
+  });
+
+  it("runtime-v2 adapters reuse a session client and normal close keeps its Query owner alive", async () => {
+    const runPersistent = vi.fn(
+      async function* (): AsyncIterable<ClaudeClientEvent> {
+        yield { type: "complete", result: "done" };
+      },
+    );
+    const close = vi.fn().mockResolvedValue(undefined);
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        throw new Error("legacy run must remain unreachable behind runtime-v2");
+      },
+      runPersistent,
+      close,
+    };
+    const registry = new ClaudeSessionClientRegistry(() => client);
+    const first = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: {
+          async *run(): AsyncIterable<ClaudeClientEvent> {
+            throw new Error("adapter-local legacy client must remain unused");
+          },
+        },
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    for await (const _ of first.execute({
+      agentSessionId: "agent-session-1",
+      prompt: "first",
+    })) {}
+    await first.close();
+
+    const second = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        persistentSessionRegistry: registry,
+        client,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    for await (const _ of second.execute({
+      agentSessionId: "agent-session-1",
+      prompt: "second",
+    })) {}
+    await second.close();
+
+    expect(runPersistent).toHaveBeenCalledTimes(2);
+    expect(registry.size()).toBe(1);
+    expect(close).not.toHaveBeenCalled();
+    await registry.shutdown();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("ClaudeEngineAdapter.compact는 fake client compact boundary를 호출한다", async () => {
