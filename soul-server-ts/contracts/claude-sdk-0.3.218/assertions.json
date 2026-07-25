@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-07-25T17:47:57.961Z",
+  "generated_at": "2026-07-25T19:27:50.763Z",
   "sdk_version": "0.3.218",
   "claude_code_version": "2.1.220",
-  "claude_code_executable": "CLAUDE_CONTRACT_EXECUTABLE",
+  "claude_code_executable": "PATH:claude",
   "required_assertions_passed": true,
   "assertions": [
     {
@@ -20,7 +20,7 @@
       "passed": true,
       "evidence": {
         "session_ids": [
-          "041b833c-8eed-4561-8fc5-d5d81703517a"
+          "542e103d-870a-4417-a2f2-0978c2a9cc98"
         ]
       }
     },
@@ -50,17 +50,21 @@
       "description": "A locally queued UUID survives exactly once even when the CLI receipt snapshot omits it.",
       "passed": true,
       "evidence": {
-        "queued_uuid": "9bc4aca8-1d6a-4349-94fd-f87d033bdf12",
+        "queued_uuid": "c58b6ae1-583d-409c-836a-ab3377fe77f1",
         "still_queued": [],
         "receipt_contains_queued_uuid": false
       }
     },
     {
       "id": "interrupt-queued-message-exactly-once",
-      "description": "The surviving queued UUID produces exactly one later Result.",
+      "description": "The surviving queued UUID produces exactly one Result across a same-UUID retry and late/reconnect observation window.",
       "passed": true,
       "evidence": {
-        "queued_result_sequence": 30
+        "queued_result_sequence": 30,
+        "same_uuid_retry_accepted": true,
+        "late_duplicate_result_observed": false,
+        "observation_ms": 17017,
+        "query_open_during_window": true
       }
     },
     {
@@ -68,7 +72,7 @@
       "description": "backgroundTasks(toolUseId) returns false once that task is already backgrounded.",
       "passed": true,
       "evidence": {
-        "response_sequence": 44,
+        "response_sequence": 47,
         "attempts": 1
       }
     },
@@ -88,8 +92,8 @@
       "description": "The background task terminal notification can arrive after the foreground Result.",
       "passed": true,
       "evidence": {
-        "foreground_result_sequence": 46,
-        "task_notification_sequence": 50
+        "foreground_result_sequence": 49,
+        "task_notification_sequence": 53
       }
     },
     {
@@ -106,6 +110,9 @@
     "interrupt_result_subtype": "error_during_execution",
     "interrupt_receipt_still_queued_count": 0,
     "interrupt_receipt_omitted_local_queued_uuid": true,
+    "same_uuid_retry_accepted": true,
+    "late_duplicate_result_observed": false,
+    "exactly_once_observation_ms": 17017,
     "background_level_sizes": [
       1,
       0

@@ -275,6 +275,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       { publishUserMessage: false },
     );
     expect(sessionNotificationPublisher.publish).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(autoResumeTransition.resume).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
+    );
+    expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
+    );
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
@@ -311,9 +317,81 @@ describe("TaskInterventionRoute.addIntervention", () => {
       expect.objectContaining({ deliveryId }),
       "queued",
     );
+    expect(
+      vi.mocked(runningInterventionTransition.queueOnly).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
+    );
+    expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
+    );
     expect(runningInterventionTransition.queueOnly).toHaveBeenCalledTimes(1);
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
+  });
+
+  it("does not publish completion UI when queueing the delivery fails", async () => {
+    const deliveryId = "77777777-7777-4777-8777-777777777777";
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<TaskDeliveryLedgerGate, "admit" | "recordResult" | "recordFailure">;
+    const task = makeTask({ status: "running" });
+    const {
+      route,
+      runningInterventionTransition,
+      sessionNotificationPublisher,
+    } = makeSubject([task], gate);
+    vi.mocked(runningInterventionTransition.queueOnly).mockRejectedValueOnce(
+      new Error("queue unavailable"),
+    );
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "background result",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: "completion-3",
+      relationKey: "runtime_task:task-3:100",
+      source: "runtime_followup",
+    }, vi.fn())).rejects.toThrow("queue unavailable");
+
+    expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
+    expect(gate.recordFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not publish completion UI when terminal auto-resume fails", async () => {
+    const deliveryId = "88888888-8888-4888-8888-888888888888";
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<TaskDeliveryLedgerGate, "admit" | "recordResult" | "recordFailure">;
+    const task = makeTask({ status: "completed" });
+    const {
+      route,
+      autoResumeTransition,
+      sessionNotificationPublisher,
+    } = makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockRejectedValueOnce(
+      new Error("resume unavailable"),
+    );
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "child completed",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+      completionId: "completion-4",
+      relationKey: "child_session:child-4:101",
+      source: "completion_notifier",
+    }, vi.fn())).rejects.toThrow("resume unavailable");
+
+    expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
+    expect(gate.recordFailure).toHaveBeenCalledTimes(1);
   });
 
   it("durable_next_turn은 notification으로 오인하지 않고 queue-only user delivery를 유지한다", async () => {

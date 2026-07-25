@@ -62,6 +62,8 @@ const SDK_VERSION = "0.3.218" as const;
 const CLAUDE_EXECUTABLE =
   process.env.CLAUDE_CONTRACT_EXECUTABLE ?? "claude";
 const CONTRACT_TIMEOUT_MS = 90_000;
+const EXACTLY_ONCE_OBSERVATION_MS = 15_000;
+const LATE_REPLAY_SETTLE_MS = 2_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = resolve(SCRIPT_DIR, "../contracts/claude-sdk-0.3.218");
 const RAW_LOG_PATH = resolve(OUTPUT_DIR, "raw-events.jsonl");
@@ -397,6 +399,10 @@ async function runPersistentInterruptScenario(
   receipt: SDKControlInterruptResponse | undefined;
   receiptRecord: HarnessRecord;
   interruptedResult: SDKMessage;
+  sameUuidRetryAccepted: boolean;
+  lateDuplicateResult: SDKMessage | null;
+  exactlyOnceObservationMs: number;
+  queryOpenDuringExactlyOnceWindow: boolean;
   closeSettled: boolean;
 }> {
   const scenario: Scenario = "persistent_interrupt";
@@ -477,6 +483,53 @@ async function runPersistentInterruptScenario(
     "queued post-interrupt result",
   );
 
+  const retryStartIndex = probe.messages.length;
+  const retryStartedAt = Date.now();
+  const sameUuidRetryAccepted = input.push(
+    makeUserMessage(
+      "The previous work was interrupted. Reply with exactly QUEUED_AFTER_INTERRUPT.",
+      queuedUuid,
+      "next",
+    ),
+  );
+  record(startedAt, scenario, "control", {
+    kind: "same_uuid_retry_enqueued",
+    queued_uuid: queuedUuid,
+    accepted: sameUuidRetryAccepted,
+  });
+  const lateDuplicateResult = await waitForOptional(
+    probe,
+    (message) => {
+      const index = probe.messages.indexOf(message);
+      return (
+        index >= retryStartIndex &&
+        message.type === "result" &&
+        "user_message_uuid" in message &&
+        message.user_message_uuid === queuedUuid
+      );
+    },
+    "late duplicate Result after same-UUID retry",
+    EXACTLY_ONCE_OBSERVATION_MS,
+    startedAt,
+    scenario,
+  );
+  await delay(LATE_REPLAY_SETTLE_MS);
+  const exactlyOnceObservationMs = Date.now() - retryStartedAt;
+  const queryOpenDuringExactlyOnceWindow = !probe.isSettled();
+  record(startedAt, scenario, "harness", {
+    kind: "late_or_reconnect_observation_complete",
+    queued_uuid: queuedUuid,
+    observation_ms: exactlyOnceObservationMs,
+    iterator_settled: probe.isSettled(),
+    late_duplicate_result: lateDuplicateResult !== null,
+    matching_result_count: probe.messages.filter(
+      (message) =>
+        message.type === "result" &&
+        "user_message_uuid" in message &&
+        message.user_message_uuid === queuedUuid,
+    ).length,
+  });
+
   await settleAfterClose(query, input, probe, startedAt, scenario);
   return {
     init,
@@ -485,6 +538,10 @@ async function runPersistentInterruptScenario(
     receipt,
     receiptRecord,
     interruptedResult,
+    sameUuidRetryAccepted,
+    lateDuplicateResult,
+    exactlyOnceObservationMs,
+    queryOpenDuringExactlyOnceWindow,
     closeSettled: probe.isSettled(),
   };
 }
@@ -711,14 +768,23 @@ async function main(): Promise<void> {
       ),
       makeAssertion(
         "interrupt-queued-message-exactly-once",
-        "The surviving queued UUID produces exactly one later Result.",
+        "The surviving queued UUID produces exactly one Result across a same-UUID retry and late/reconnect observation window.",
         persistent.probe.messages.filter(
           (message) =>
             message.type === "result" &&
             "user_message_uuid" in message &&
             message.user_message_uuid === persistent.queuedUuid,
-        ).length === 1,
-        { queued_result_sequence: queuedResultSequence },
+        ).length === 1 &&
+          persistent.sameUuidRetryAccepted &&
+          persistent.lateDuplicateResult === null &&
+          persistent.queryOpenDuringExactlyOnceWindow,
+        {
+          queued_result_sequence: queuedResultSequence,
+          same_uuid_retry_accepted: persistent.sameUuidRetryAccepted,
+          late_duplicate_result_observed: persistent.lateDuplicateResult !== null,
+          observation_ms: persistent.exactlyOnceObservationMs,
+          query_open_during_window: persistent.queryOpenDuringExactlyOnceWindow,
+        },
       ),
       makeAssertion(
         "background-control-no-double-transition",
@@ -779,6 +845,9 @@ async function main(): Promise<void> {
           persistent.receipt?.still_queued.length ?? null,
         interrupt_receipt_omitted_local_queued_uuid:
           persistent.receipt?.still_queued.includes(persistent.queuedUuid) === false,
+        same_uuid_retry_accepted: persistent.sameUuidRetryAccepted,
+        late_duplicate_result_observed: persistent.lateDuplicateResult !== null,
+        exactly_once_observation_ms: persistent.exactlyOnceObservationMs,
         background_level_sizes: backgroundLevelSizes,
         background_control_attempts: background.backgroundCallAttempts,
         background_control_after_level_result: background.backgroundCallResult,

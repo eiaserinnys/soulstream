@@ -71,12 +71,23 @@ export class SessionDeliveryRepository {
 
     const conflict =
       existing.delivery_id !== params.deliveryId ||
-      existing.target_session_id !== params.targetSessionId ||
       existing.relation_key !== params.relationKey ||
       existing.payload_hash !== params.payloadHash ||
       existing.intent !== params.intent ||
       existing.completion_id !== (params.completionId ?? null);
     if (!conflict) {
+      if (
+        existing.state === "pending"
+        && existing.target_session_id !== params.targetSessionId
+      ) {
+        const retargeted = await this.retargetPending(
+          existing.delivery_id,
+          params.targetSessionId,
+        );
+        if (retargeted) {
+          return { row: retargeted, inserted: false, conflict: false };
+        }
+      }
       return { row: existing, inserted: false, conflict: false };
     }
 
@@ -161,6 +172,19 @@ export class SessionDeliveryRepository {
       UPDATE session_deliveries
       SET state = 'uncertain', updated_at = NOW()
       WHERE delivery_id = ${deliveryId} AND state <> 'consumed'
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  }
+
+  private async retargetPending(
+    deliveryId: string,
+    targetSessionId: string,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET target_session_id = ${targetSessionId}, updated_at = NOW()
+      WHERE delivery_id = ${deliveryId} AND state = 'pending'
       RETURNING *
     `;
     return rows[0] ?? null;

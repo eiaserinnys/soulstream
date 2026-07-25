@@ -101,20 +101,36 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[2].query).toContain("state = 'uncertain'");
   });
 
-  it("suppresses retargeted retries of one semantic completion relation", async () => {
+  it("retargets a still-pending semantic completion without making it uncertain", async () => {
     const original = deliveryRow({ target_session_id: "caller-original" });
-    const uncertain = deliveryRow({
-      target_session_id: "caller-original",
-      state: "uncertain",
-    });
-    const { sql } = createMockSql([[], [original], [uncertain]]);
+    const replacement = deliveryRow({ target_session_id: "caller-replacement" });
+    const { sql, calls } = createMockSql([[], [original], [replacement]]);
 
     const result = await new SessionDeliveryRepository(sql).register({
       ...registration,
       targetSessionId: "caller-replacement",
     });
 
-    expect(result).toEqual({ row: uncertain, inserted: false, conflict: true });
+    expect(result).toEqual({ row: replacement, inserted: false, conflict: false });
+    expect(calls).toHaveLength(3);
+    expect(calls[2].query).toContain("target_session_id");
+    expect(calls[2].query).toContain("state = 'pending'");
+  });
+
+  it("keeps the original target once a semantic completion has already been queued", async () => {
+    const queued = deliveryRow({
+      target_session_id: "caller-original",
+      state: "queued",
+    });
+    const { sql, calls } = createMockSql([[], [queued]]);
+
+    const result = await new SessionDeliveryRepository(sql).register({
+      ...registration,
+      targetSessionId: "caller-replacement",
+    });
+
+    expect(result).toEqual({ row: queued, inserted: false, conflict: false });
+    expect(calls).toHaveLength(2);
   });
 
   it("claims only pending rows and records explicit queued/delivered/consumed edges", async () => {

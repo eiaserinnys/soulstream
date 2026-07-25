@@ -216,6 +216,21 @@ function interveneCommandPayload(
   if (payload.extra_context_items !== undefined) {
     command.extra_context_items = payload.extra_context_items;
   }
+  if (payload.delivery_id !== undefined) command.delivery_id = payload.delivery_id;
+  if (payload.delivery_intent !== undefined) {
+    command.delivery_intent = payload.delivery_intent;
+  }
+  if (payload.source !== undefined) command.source = payload.source;
+  if (payload.completion_id !== undefined) command.completion_id = payload.completion_id;
+  if (payload.relation_key !== undefined) command.relation_key = payload.relation_key;
+  if (payload.producer_terminal_revision !== undefined) {
+    command.producer_terminal_revision = payload.producer_terminal_revision;
+  }
+  if (payload.parent_delivery_id !== undefined) {
+    command.parent_delivery_id = payload.parent_delivery_id;
+  }
+  if (payload.caller_turn_id !== undefined) command.caller_turn_id = payload.caller_turn_id;
+  if (payload.created_at !== undefined) command.created_at = payload.created_at;
   return command;
 }
 

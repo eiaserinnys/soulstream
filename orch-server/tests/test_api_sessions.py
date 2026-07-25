@@ -341,53 +341,6 @@ class TestCreateSession:
 class TestIntervene:
     """POST /api/sessions/{session_id}/intervene tests."""
 
-    async def test_forwards_optional_delivery_metadata(
-        self, client, mock_db, node_manager
-    ):
-        ws = AsyncMock()
-        ws.send_json = AsyncMock()
-        ws.close = AsyncMock()
-        node = await node_manager.register_node(
-            ws,
-            {"node_id": "owner-node", **DEFAULT_AGENT_REGISTRATION},
-        )
-        node.send_intervene = AsyncMock(return_value={"status": "queued"})
-        mock_db.get_session = AsyncMock(
-            return_value={"session_id": "sess-owned", "node_id": "owner-node"}
-        )
-
-        response = await client.post(
-            "/api/sessions/sess-owned/intervene",
-            json={
-                "text": "child completed",
-                "user": "agent",
-                "delivery_id": "delivery-1",
-                "delivery_intent": "completion_notification",
-                "source": "completion_notifier",
-                "completion_id": "completion-1",
-                "relation_key": "child_session:child-1:event-9",
-                "producer_terminal_revision": "event-9",
-                "parent_delivery_id": "delivery-parent",
-                "caller_turn_id": "turn-3",
-                "created_at": "2026-07-26T00:00:00Z",
-            },
-        )
-
-        assert response.status_code == 200
-        assert response.json() == {"status": "queued"}
-        node.send_intervene.assert_awaited_once()
-        args = node.send_intervene.await_args
-        assert args.args == ("sess-owned", "child completed", "agent")
-        assert args.kwargs["delivery_id"] == "delivery-1"
-        assert args.kwargs["delivery_intent"] == "completion_notification"
-        assert args.kwargs["source"] == "completion_notifier"
-        assert args.kwargs["completion_id"] == "completion-1"
-        assert args.kwargs["relation_key"] == "child_session:child-1:event-9"
-        assert args.kwargs["producer_terminal_revision"] == "event-9"
-        assert args.kwargs["parent_delivery_id"] == "delivery-parent"
-        assert args.kwargs["caller_turn_id"] == "turn-3"
-        assert args.kwargs["created_at"] == "2026-07-26T00:00:00Z"
-
     @pytest.mark.parametrize(
         "node_error",
         [

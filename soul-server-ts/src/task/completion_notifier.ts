@@ -98,8 +98,10 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return;
     }
 
-    // 1. local — 같은 노드에 caller가 있으면 즉시 처리.
-    if (await this._isLocalTarget(callerSessionId)) {
+    // Gate OFF is the pre-v2 local-first contract: do not add an ownership lookup
+    // (and therefore no DB scheduling point) before the local delivery attempt.
+    // V2 alone may route directly to the owning node.
+    if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
       try {
         await this.taskManager.addIntervention(
           {

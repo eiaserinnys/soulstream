@@ -69,8 +69,7 @@ export class TaskExecutor {
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
-  private readonly deliveryConsumption: TaskDeliveryConsumption;
-
+  private readonly deliveryConsumption?: TaskDeliveryConsumption;
   constructor(
     private readonly engineFactory: EngineFactory,
     db: SessionDB,
@@ -148,10 +147,9 @@ export class TaskExecutor {
       snapshotPersistence: this.agentsSnapshotPersistence,
       scheduleToolHandler,
     });
-    this.deliveryConsumption = new TaskDeliveryConsumption(
-      deliveryConsumptionRecorder,
-      this.logger,
-    );
+    this.deliveryConsumption = deliveryConsumptionRecorder
+      ? new TaskDeliveryConsumption(deliveryConsumptionRecorder, this.logger)
+      : undefined;
   }
 
   /**
@@ -222,10 +220,9 @@ export class TaskExecutor {
     let currentTurnIntervention = initialTurnInput.intervention;
     try {
       while (true) {
-        await this.deliveryConsumption.recordTurnStarted(
-          task,
-          currentTurnIntervention,
-        );
+        if (this.deliveryConsumption) {
+          await this.deliveryConsumption.recordTurnStarted(task, currentTurnIntervention);
+        }
         if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
           this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
             task,
@@ -248,7 +245,9 @@ export class TaskExecutor {
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
-          await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
+          if (this.deliveryConsumption) {
+            await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
+          }
           await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
         }
@@ -259,8 +258,10 @@ export class TaskExecutor {
           previousAssistantText,
         );
         if (followupStalled) {
-          await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
-        } else {
+          if (this.deliveryConsumption) {
+            await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
+          }
+        } else if (this.deliveryConsumption) {
           await this.deliveryConsumption.recordConsumed(task, currentTurnIntervention);
         }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정

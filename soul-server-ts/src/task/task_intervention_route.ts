@@ -116,9 +116,9 @@ export class TaskInterventionRoute {
       followupKey: params.followupKey,
       followupTaskIds: params.followupTaskIds,
     };
-    const admission = await this.deps.deliveryLedgerGate?.admit(params) ?? {
-      kind: "legacy",
-    } satisfies DeliveryLedgerAdmission;
+    const admission: DeliveryLedgerAdmission = this.deps.deliveryLedgerGate
+      ? await this.deps.deliveryLedgerGate.admit(params)
+      : { kind: "legacy" };
     if (admission.kind === "suppressed") {
       return {
         suppressed: true,
@@ -132,7 +132,9 @@ export class TaskInterventionRoute {
       task = await this.resolveTask(params.agentSessionId);
       if (params.onlyIfTerminal === true && task.status === "running") {
         const result = { deferred: true } as const;
-        await this.deps.deliveryLedgerGate?.recordResult(admission, result);
+        if (this.deps.deliveryLedgerGate) {
+          await this.deps.deliveryLedgerGate.recordResult(admission, result);
+        }
         return result;
       }
       const isRunning =
@@ -146,14 +148,15 @@ export class TaskInterventionRoute {
             )
           : undefined;
       let result: AddInterventionResult;
+      let notificationDisposition: "queued" | "auto_resume" | undefined;
       if (isRunning && admission.kind === "admitted") {
         if (notificationDecision?.action === "queue_only") {
-          await this.deps.sessionNotificationPublisher?.publish(task, message, "queued");
           result = await this.deps.runningInterventionTransition.queueOnly(
             task,
             message,
             { publishEvent: false },
           );
+          notificationDisposition = "queued";
         } else {
           result = await this.deps.runningInterventionTransition.queueOnly(task, message);
         }
@@ -163,27 +166,34 @@ export class TaskInterventionRoute {
         });
       } else if (admission.kind === "admitted") {
         if (notificationDecision?.action === "resume_next_turn") {
-          await this.deps.sessionNotificationPublisher?.publish(
-            task,
-            message,
-            "auto_resume",
-          );
           result = await this.deps.autoResumeTransition.resume(
             task,
             message,
             onResume,
             { publishUserMessage: false },
           );
+          notificationDisposition = "auto_resume";
         } else {
           result = await this.deps.autoResumeTransition.resume(task, message, onResume);
         }
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
       }
-      await this.deps.deliveryLedgerGate?.recordResult(admission, result);
+      if (this.deps.deliveryLedgerGate) {
+        await this.deps.deliveryLedgerGate.recordResult(admission, result);
+      }
+      if (notificationDisposition && this.deps.sessionNotificationPublisher) {
+        await this.deps.sessionNotificationPublisher.publish(
+          task,
+          message,
+          notificationDisposition,
+        );
+      }
       return result;
     } catch (err) {
-      await this.deps.deliveryLedgerGate?.recordFailure(admission);
+      if (this.deps.deliveryLedgerGate) {
+        await this.deps.deliveryLedgerGate.recordFailure(admission);
+      }
       throw err;
     }
   }

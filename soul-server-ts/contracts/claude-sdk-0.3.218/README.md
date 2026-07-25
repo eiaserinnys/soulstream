@@ -8,6 +8,8 @@
 - 하나의 streaming `Query`가 여러 foreground `Result` 뒤에도 열려 있는지
 - `interrupt()` receipt와 interrupted `Result`의 순서
 - UUID가 부여된 다음 턴 메시지가 `still_queued`에 포함되고 정확히 한 번 실행되는지
+- 첫 matching `Result` 뒤 Query를 닫지 않고 같은 UUID를 재전송한 뒤, 늦은 replay나
+  내부 reconnect가 중복 `Result`를 만들지 않는지
 - 진행 중 Bash를 `backgroundTasks(toolUseId)`로 넘긴 뒤 foreground `Result`,
   `background_tasks_changed`, `task_notification`이 어떻게 관측되는지
 - `Query.close()`가 iterator와 subprocess를 끝내는지
@@ -17,6 +19,9 @@
 - 로컬 input queue에 UUID 메시지를 넣은 뒤 `interrupt()`를 호출하면 receipt의
   `still_queued`는 비어 있어도 해당 UUID는 다음 턴에서 정확히 한 번 실행됐다.
   따라서 receipt만 정본으로 삼지 않고 로컬 delivery ledger와 합쳐 판정해야 한다.
+- 같은 UUID를 다시 input queue에 넣고 15초의 late/reconnect 관측창을 유지해도 matching
+  `Result`는 하나뿐이었다. subprocess Query는 강제 transport reconnect API를 노출하지
+  않으므로, 이 창은 CLI/SDK가 내부적으로 늦게 전달하거나 재생하는 frame까지 관측한다.
 - interrupt 뒤 foreground `Result`는 정상 완료가 아니라
   `error_during_execution` / `aborted_streaming`으로 도착했다. 이 조합은 사용자 오류로
   승격하지 않고 계획된 interrupt의 turn 종료 edge로 처리해야 한다.

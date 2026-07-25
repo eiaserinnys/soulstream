@@ -117,6 +117,15 @@ describe("session action command HTTP route harness", () => {
         attachment_paths: ["/tmp/a.png"],
         contextItems: [{ type: "note", text: "extra" }],
         caller_info: { source: "browser", display_name: "서소영" },
+        delivery_id: "delivery-1",
+        delivery_intent: "completion_notification",
+        source: "completion_notifier",
+        completion_id: "completion-1",
+        relation_key: "child_session:child-1:event-9",
+        producer_terminal_revision: "event-9",
+        parent_delivery_id: "delivery-parent",
+        caller_turn_id: "turn-3",
+        created_at: "2026-07-26T00:00:00.000Z",
       },
     });
 
@@ -132,6 +141,15 @@ describe("session action command HTTP route harness", () => {
       attachment_paths: ["/tmp/a.png"],
       extra_context_items: [{ type: "note", text: "extra" }],
       caller_info: { source: "browser", display_name: "서소영" },
+      delivery_id: "delivery-1",
+      delivery_intent: "completion_notification",
+      source: "completion_notifier",
+      completion_id: "completion-1",
+      relation_key: "child_session:child-1:event-9",
+      producer_terminal_revision: "event-9",
+      parent_delivery_id: "delivery-parent",
+      caller_turn_id: "turn-3",
+      created_at: "2026-07-26T00:00:00.000Z",
     });
 
     await app.close();

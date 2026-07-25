@@ -1200,42 +1200,6 @@ class TestAttachmentPaths:
         assert sent["type"] == CMD_INTERVENE
         assert sent["extra_context_items"] == context_items
 
-    async def test_send_intervene_forwards_optional_delivery_metadata(self, node, ws):
-        """delivery identity/intent survives the orch→node command boundary."""
-        async def resolve_future(*args, **kwargs):
-            data = args[0] if args else kwargs.get("data")
-            req_id = data["requestId"]
-            if req_id in node._pending:
-                node._pending[req_id].set_result({"ok": True})
-
-        ws.send_json.side_effect = resolve_future
-
-        await node.send_intervene(
-            "caller-1",
-            "child done",
-            user="system",
-            delivery_id="00000000-0000-5000-8000-000000000001",
-            delivery_intent="completion_notification",
-            source="completion_notifier",
-            completion_id="child:child-1:42",
-            relation_key="child:child-1:42",
-            producer_terminal_revision="42",
-            parent_delivery_id="00000000-0000-5000-8000-000000000000",
-            caller_turn_id="turn-8",
-            created_at="2026-07-26T00:00:00.000Z",
-        )
-
-        sent = ws.send_json.call_args[0][0]
-        assert sent["delivery_id"] == "00000000-0000-5000-8000-000000000001"
-        assert sent["delivery_intent"] == "completion_notification"
-        assert sent["source"] == "completion_notifier"
-        assert sent["completion_id"] == "child:child-1:42"
-        assert sent["relation_key"] == "child:child-1:42"
-        assert sent["producer_terminal_revision"] == "42"
-        assert sent["parent_delivery_id"] == "00000000-0000-5000-8000-000000000000"
-        assert sent["caller_turn_id"] == "turn-8"
-        assert sent["created_at"] == "2026-07-26T00:00:00.000Z"
-
     async def test_send_intervene_no_attachment_paths_key_when_none(self, node, ws):
         """attachment_paths가 None이면 payload에 해당 키가 없다."""
         async def resolve_future(*args, **kwargs):

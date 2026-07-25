@@ -9,13 +9,13 @@ export interface DeterministicDeliveryIdentity {
 }
 
 export function buildDeterministicDeliveryIdentity(params: {
+  /** Routing target is deliberately not identity: supervisors may be replaced. */
   targetSessionId: string;
   relationKey: string;
   intent: DeliveryIntent;
 }): DeterministicDeliveryIdentity {
   const completionId = `completion:${hashHex(params.relationKey)}`;
   const deliverySeed = [
-    params.targetSessionId,
     params.intent,
     params.relationKey,
   ].join("\u0000");
@@ -27,7 +27,22 @@ export function buildDeterministicDeliveryIdentity(params: {
 }
 
 export function hashDeliveryPayload(value: Record<string, unknown>): string {
-  return hashHex(JSON.stringify(value));
+  return hashHex(JSON.stringify(canonicalize(value)));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => item === undefined ? null : canonicalize(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
 }
 
 function hashHex(value: string): string {

@@ -126,6 +126,32 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("gate OFF는 ownership DB를 조회하지 않고 legacy local-first로 즉시 전달한다", async () => {
+    const tm = makeTaskManagerStub();
+    const getSession = vi.fn(async () => {
+      throw new Error("gate-off path must not touch the DB");
+    });
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      {
+        getSession,
+        getSupervisorRegistry: vi.fn(),
+      } as never,
+      false,
+    );
+
+    await notifier.notify(makeChild());
+
+    expect(getSession).not.toHaveBeenCalled();
+    expect(tm.addIntervention).toHaveBeenCalledTimes(1);
+  });
+
   it("v2는 child terminal revision으로 local/cross-node 공통 delivery identity를 만든다", async () => {
     const tm = makeTaskManagerStub();
     const notifier = new TaskCompletionNotifier(

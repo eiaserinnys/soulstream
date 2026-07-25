@@ -117,7 +117,7 @@ export class TaskManager {
     private readonly agentRegistry?: AgentRegistry,
     private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
     taskCreationHook?: TaskCreationHook,
-    deliveryRuntimeV2Enabled = false,
+    private readonly deliveryRuntimeV2Enabled = false,
   ) {
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
@@ -201,8 +201,8 @@ export class TaskManager {
       activeTaskRecovery,
       runningInterventionTransition,
       autoResumeTransition,
-      deliveryLedgerGate: this.deliveryLedgerGate,
-      sessionNotificationPublisher,
+      deliveryLedgerGate: deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined,
+      sessionNotificationPublisher: deliveryRuntimeV2Enabled ? sessionNotificationPublisher : undefined,
     });
   }
 
@@ -221,8 +221,8 @@ export class TaskManager {
   getDeliveryConsumptionRecorder(): Pick<
     TaskDeliveryLedgerGate,
     "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
-  > {
-    return this.deliveryLedgerGate;
+  > | undefined {
+    return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }
 
   listTasks(): Task[] {

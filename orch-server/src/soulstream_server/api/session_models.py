@@ -80,22 +80,6 @@ class InterveneRequest(BaseModel):
         validation_alias=AliasChoices("context_items", "contextItems"),
     )
     caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 라우트가 HTTP Request에서 조립.
-    delivery_id: Optional[str] = None
-    delivery_intent: Optional[
-        Literal[
-            "human_live_steer",
-            "durable_next_turn",
-            "completion_notification",
-            "runtime_followup",
-        ]
-    ] = None
-    source: Optional[str] = None
-    completion_id: Optional[str] = None
-    relation_key: Optional[str] = None
-    producer_terminal_revision: Optional[str] = None
-    parent_delivery_id: Optional[str] = None
-    caller_turn_id: Optional[str] = None
-    created_at: Optional[str] = None
 
 
 class RespondRequest(BaseModel):
