@@ -185,13 +185,26 @@ describe("parseEnv", () => {
   });
 
   it("Claude session runtime v2는 미설정 시 legacy이고 명시 true만 opt-in한다", () => {
-    expect(parseEnv(minimal).CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
+    const defaults = parseEnv(minimal);
+    expect(defaults.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
+    expect(defaults.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS).toBe(300_000);
+    expect(defaults.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES).toBe(16);
     expect(
       parseEnv({
         ...minimal,
         CLAUDE_SESSION_RUNTIME_V2_ENABLED: "true",
+        CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: "60000",
+        CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: "8",
       }).CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     ).toBe(true);
+    expect(parseEnv({
+      ...minimal,
+      CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: "60000",
+      CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: "8",
+    })).toMatchObject({
+      CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: 60_000,
+      CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: 8,
+    });
     expect(() =>
       parseEnv({
         ...minimal,

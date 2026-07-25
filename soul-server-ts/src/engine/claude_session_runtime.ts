@@ -51,6 +51,13 @@ export interface ClaudeSessionRuntimeSnapshot {
   interruptedResultObserved: boolean;
 }
 
+export interface ClaudePersistentRuntimeActivity {
+  foregroundPhase: ClaudeForegroundPhase;
+  queryLifecycle: ClaudeQueryLifecycle;
+  backgroundTaskCount: number;
+  pendingInputRequestCount: number;
+}
+
 /**
  * Async input queue owned by one persistent Claude Query.
  *

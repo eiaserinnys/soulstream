@@ -98,14 +98,19 @@ export const EnvSchema = z
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
     /**
      * Exactly-once delivery + session notification preparation gate.
-     * The persistent Query adapter is not connected yet, so production must keep
-     * this false until that landing is independently reviewed. Absence preserves
-     * the legacy runtime and requires no env rollout.
+     * The persistent Query path remains canary-prohibited. Absence preserves the
+     * legacy runtime and requires no env rollout.
      */
     CLAUDE_SESSION_RUNTIME_V2_ENABLED: z
       .union([z.literal("true"), z.literal("false")])
       .default("false")
       .transform((v) => v === "true"),
+    /** Runtime v2 only. Released idle Queries are reclaimed after this TTL. */
+    CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: z.coerce
+      .number().int().positive().default(300_000),
+    /** Runtime v2 only. Hard worker-local cap; active/background Queries are never evicted. */
+    CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: z.coerce
+      .number().int().positive().default(16),
     /**
      * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).

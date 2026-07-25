@@ -53,6 +53,8 @@ checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이
 | `DASH_USER_NAME` | ❌ | 노드 광고용 user.name |
 | `DASH_USER_PORTRAIT` | ❌ | 노드 광고용 user portrait 이미지 경로 |
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | ❌ (default false) | persistent Query·delivery ledger·notification v2 준비 gate. 미설정 시 기존 runtime 유지 |
+| `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | ❌ (default 300000) | runtime v2에서 foreground 종료 후 idle Query 회수 유예 |
+| `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | ❌ (default 16) | runtime v2 worker별 persistent Query 상한 |
 | `SUPERVISOR_ENABLED` | ❌ (default false) | supervisor 세션 부팅, wake, watchdog 활성화. true면 event ingest도 함께 켜짐 |
 | `SUPERVISOR_EVENT_INGEST_ENABLED` | ❌ (default false) | supervisor 세션은 켜지 않고 durable event ingest만 별도로 켤 때 사용 |
 

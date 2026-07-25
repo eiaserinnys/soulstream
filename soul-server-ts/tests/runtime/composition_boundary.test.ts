@@ -138,6 +138,9 @@ describe("worker composition boundary", () => {
     expect(taskManager).toMatch(
       /sessionNotificationPublisher: deliveryRuntimeV2Enabled\s+\? sessionNotificationPublisher\s+: undefined/,
     );
+    expect(taskManager).toMatch(
+      /const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled\s+\?\s+sessionRuntimeControl\s+:\s+undefined/,
+    );
     expect(interventionRoute).not.toMatch(
       /await this\.deps\.(deliveryLedgerGate|sessionNotificationPublisher)\?\./,
     );
@@ -171,6 +174,7 @@ describe("worker composition boundary", () => {
       "engine/claude_sdk_persistent_session.ts",
       "engine/claude_session_client_registry.ts",
       "engine/claude_session_runtime.ts",
+      "task/task_claude_runtime_control_route.ts",
     ];
 
     for (const file of files) {

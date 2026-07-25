@@ -30,6 +30,7 @@ import {
 } from "./claude_options.js";
 import { ClaudeSdkClient } from "./claude_sdk_client.js";
 import type { ClaudeSessionClientRegistry } from "./claude_session_client_registry.js";
+import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 
 export {
@@ -88,6 +89,7 @@ export interface ClaudeClient {
   ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
   interruptActiveTurnForSteer?(): Promise<boolean>;
   interrupt?(): Promise<boolean>;
+  persistentRuntimeActivity?(): ClaudePersistentRuntimeActivity | null;
   close?(): Promise<void>;
 }
 
@@ -101,7 +103,7 @@ export interface ClaudeAdapterConfig {
   loadTimeoutMs?: number;
   persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
-    "acquire" | "close"
+    "acquire" | "close" | "release"
   >;
 }
 
@@ -126,7 +128,7 @@ export class ClaudeEngineAdapter
   private readonly loadTimeoutMs?: number;
   private readonly persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
-    "acquire" | "close"
+    "acquire" | "close" | "release"
   >;
   private activeClient: ClaudeClient | null = null;
   private persistentSessionId: string | null = null;
@@ -332,6 +334,8 @@ export class ClaudeEngineAdapter
     this.inputRequests.clear();
     if (!this.persistentSessionRegistry) {
       await this.client.close?.();
+    } else if (this.persistentSessionId) {
+      this.persistentSessionRegistry.release(this.persistentSessionId);
     }
     this.activeClient = null;
   }
@@ -376,6 +380,14 @@ export class ClaudeEngineAdapter
     if (!this.persistentSessionRegistry) return this.client;
     if (!agentSessionId) {
       throw new Error("Persistent Claude runtime requires agentSessionId");
+    }
+    if (this.persistentSessionId === agentSessionId && this.activeClient) {
+      return this.activeClient;
+    }
+    if (this.persistentSessionId && this.persistentSessionId !== agentSessionId) {
+      throw new Error(
+        `ClaudeEngineAdapter cannot switch persistent session: ${this.persistentSessionId} -> ${agentSessionId}`,
+      );
     }
     this.persistentSessionId = agentSessionId;
     return this.persistentSessionRegistry.acquire(agentSessionId);

@@ -26,7 +26,7 @@ export interface TaskLiveDeliveryResultDeps {
 
 export interface LiveInputResponseParams {
   task: Task;
-  engine: NonNullable<Task["engine"]> & SupportsInputResponse;
+  engine: SupportsInputResponse;
   requestId: string;
   answers: Record<string, unknown>;
 }

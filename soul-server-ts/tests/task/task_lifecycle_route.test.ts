@@ -28,7 +28,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 function makeRoute(
   initialTasks: Task[] = [],
   onForget: (sessionId: string) => void = () => undefined,
-  closeSessionRuntime?: (sessionId: string) => Promise<void>,
+  closeSessionRuntime?: (sessionId: string) => Promise<boolean>,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
   const deleteSession = vi.fn().mockResolvedValue(undefined);
@@ -78,6 +78,22 @@ describe("TaskLifecycleRoute.cancelTask", () => {
 
     expect(lifecycleTransition.cancelRunningTask).toHaveBeenCalledWith(task);
   });
+
+  it("explicitly reclaims a completed session runtime without changing task status", async () => {
+    const closeSessionRuntime = vi.fn().mockResolvedValue(true);
+    const task = makeTask({ agentSessionId: "s1", status: "completed" });
+    const { route, lifecycleTransition } = makeRoute(
+      [task],
+      () => undefined,
+      closeSessionRuntime,
+    );
+    vi.mocked(lifecycleTransition.cancelRunningTask).mockResolvedValueOnce(false);
+
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+
+    expect(closeSessionRuntime).toHaveBeenCalledWith("s1");
+    expect(task.status).toBe("completed");
+  });
 });
 
 describe("TaskLifecycleRoute.deleteTask", () => {
@@ -97,6 +113,7 @@ describe("TaskLifecycleRoute.deleteTask", () => {
       },
       async () => {
         events.push("close-runtime");
+        return true;
       },
     );
     vi.mocked(lifecycleTransition.interruptAndDrain).mockImplementationOnce(async () => {

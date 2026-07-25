@@ -182,6 +182,46 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
+  it("does not bind a UUID-less late Result to the active foreground turn", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        postResultDrainMs: 10_000,
+        detachedEventSink: harness.detached,
+      },
+      silentLogger,
+    );
+
+    const first = collect(client.runPersistent(runOptions("first"), abortSignal()));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    let secondSettled = false;
+    const second = collect(
+      client.runPersistent(runOptions("second"), abortSignal()),
+    ).finally(() => {
+      secondSettled = true;
+    });
+    const secondInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", undefined, "late uncorrelated"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(secondSettled).toBe(false);
+    expect(harness.detached).not.toHaveBeenCalledWith(
+      expect.objectContaining({ output: "late uncorrelated" }),
+    );
+
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await expect(second).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "complete", result: "second done" }),
+      ]),
+    );
+    await client.close();
+  });
+
   it("adapter drain-window intervention emits no error and reaches the next turn exactly once", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
@@ -192,7 +232,10 @@ describe("ClaudeSdkClient persistent runtime", () => {
       },
       silentLogger,
     );
-    const registry = new ClaudeSessionClientRegistry(() => client);
+    const registry = new ClaudeSessionClientRegistry(
+      () => client,
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
     const engine = new ClaudeEngineAdapter(
       {
         workspaceDir: "/tmp/claude-persistent",
@@ -233,6 +276,107 @@ describe("ClaudeSdkClient persistent runtime", () => {
     expect(secondEvents.filter((event) => event.type === "error")).toEqual([]);
     expect(secondEvents.filter((event) => event.type === "complete")).toHaveLength(1);
     expect(harness.captured).toHaveLength(1);
+    await registry.shutdown();
+  });
+
+  it("adapter release lets the registry reclaim the real persistent Query after idle TTL", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          postResultDrainMs: 1,
+          detachedEventSink: harness.detached,
+        },
+        silentLogger,
+      );
+      const registry = new ClaudeSessionClientRegistry(
+        () => client,
+        { idleTtlMs: 10, maxEntries: 2 },
+      );
+      const engine = new ClaudeEngineAdapter(
+        {
+          workspaceDir: "/tmp/claude-persistent",
+          persistentSessionRegistry: registry,
+          processEnv: {},
+        },
+        silentLogger,
+      );
+
+      const turn = collectSse(engine.execute({
+        agentSessionId: "agent-session",
+        prompt: "finish",
+      }));
+      const input = await harness.nextInput();
+      harness.push(sdkResult("sdk-session", input.uuid, "done"));
+      await turn;
+      await engine.close();
+
+      expect(registry.has("agent-session")).toBe(true);
+      await vi.advanceTimersByTimeAsync(10);
+      await vi.waitFor(() => expect(registry.has("agent-session")).toBe(false));
+      expect(harness.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a late turn reacquires the same Query through a new turn-scoped adapter", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        postResultDrainMs: 10_000,
+        detachedEventSink: harness.detached,
+      },
+      silentLogger,
+    );
+    const registry = new ClaudeSessionClientRegistry(
+      () => client,
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
+    const firstEngine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-persistent",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    const first = collectSse(firstEngine.execute({
+      agentSessionId: "agent-session",
+      prompt: "first",
+    }));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+    await firstEngine.close();
+
+    const secondEngine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-persistent",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    const second = collectSse(secondEngine.execute({
+      agentSessionId: "agent-session",
+      prompt: "late input",
+    }));
+    const secondInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+
+    await expect(second).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "complete", result: "second done" }),
+      ]),
+    );
+    expect(harness.captured).toHaveLength(1);
+    expect(harness.close).not.toHaveBeenCalled();
+    await secondEngine.close();
     await registry.shutdown();
   });
 });
