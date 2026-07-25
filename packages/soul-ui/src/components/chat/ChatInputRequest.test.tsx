@@ -64,6 +64,7 @@ describe("ChatInputRequest", () => {
     });
     container.remove();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   function render(message = makeMessage()) {
@@ -84,7 +85,7 @@ describe("ChatInputRequest", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        requestId: "request-1",
+        request_id: "request-1",
         answers: { "계속 진행할까요?": "진행" },
       }),
     });
@@ -113,10 +114,28 @@ describe("ChatInputRequest", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        requestId: "request-1",
+        request_id: "request-1",
         answers: { "계속 진행할까요?": "직접 답변" },
       }),
     });
+  });
+
+  it("shows a retryable error when AskUserQuestion submission fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
+    render();
+
+    flushSync(() => {
+      findButton(container, "진행").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "응답 전송에 실패했습니다",
+      );
+    });
+    expect(consoleError).toHaveBeenCalled();
+    expect(findButton(container, "진행").disabled).toBe(false);
   });
 
   it("uses the same stable label and description grid as the banner", () => {

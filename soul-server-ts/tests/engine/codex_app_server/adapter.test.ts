@@ -8,6 +8,8 @@ import {
 } from "../../../src/engine/codex_app_server/index.js";
 import type {
   AppServerNotification,
+  AppServerResponseError,
+  AppServerServerRequest,
   AppServerTurn,
   InitializeParams,
   InitializeResponse,
@@ -50,15 +52,27 @@ class FakeClient implements CodexAppServerClientPort {
   public readonly interruptTurn = vi.fn(
     async (_params: TurnInterruptParams): Promise<TurnInterruptResponse> => ({}),
   );
+  public readonly resolveServerRequest = vi.fn(
+    async (_requestId: string | number, _result: unknown): Promise<void> => {},
+  );
+  public readonly rejectServerRequest = vi.fn(
+    async (_requestId: string | number, _error: AppServerResponseError): Promise<void> => {},
+  );
   public readonly close = vi.fn(async () => {});
 
   private notificationHandlers = new Set<(notification: AppServerNotification) => void>();
+  private serverRequestHandlers = new Set<(request: AppServerServerRequest) => void>();
   private errorHandlers = new Set<(error: Error) => void>();
   private closeHandlers = new Set<(error?: Error) => void>();
 
   onNotification(handler: (notification: AppServerNotification) => void): () => void {
     this.notificationHandlers.add(handler);
     return () => this.notificationHandlers.delete(handler);
+  }
+
+  onServerRequest(handler: (request: AppServerServerRequest) => void): () => void {
+    this.serverRequestHandlers.add(handler);
+    return () => this.serverRequestHandlers.delete(handler);
   }
 
   onError(handler: (error: Error) => void): () => void {
@@ -73,6 +87,10 @@ class FakeClient implements CodexAppServerClientPort {
 
   emit(notification: AppServerNotification): void {
     for (const handler of this.notificationHandlers) handler(notification);
+  }
+
+  emitServerRequest(request: AppServerServerRequest): void {
+    for (const handler of this.serverRequestHandlers) handler(request);
   }
 
   fail(error: Error): void {
@@ -261,6 +279,77 @@ describe("CodexAppServerEngineAdapter", () => {
     await expect(adapter.steerActiveTurn({ prompt: "late" })).resolves.toEqual({
       status: "no_active_turn",
       message: "No active Codex app-server turn",
+    });
+  });
+
+  it("rejects known and future server requests without leaving Codex waiting", async () => {
+    const { adapter, client } = makeAdapter();
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emitServerRequest({
+      id: "srv-user-input",
+      method: "item/tool/requestUserInput",
+      params: { prompt: "continue?" },
+    });
+    client.emitServerRequest({
+      id: "srv-future",
+      method: "future/server/request",
+      params: {},
+    });
+
+    await vi.waitFor(() => expect(client.rejectServerRequest).toHaveBeenCalledTimes(2));
+    expect(client.rejectServerRequest).toHaveBeenNthCalledWith(1, "srv-user-input", {
+      code: -32000,
+      message:
+        "Unsupported Codex app-server server request: item/tool/requestUserInput",
+    });
+    expect(client.rejectServerRequest).toHaveBeenNthCalledWith(2, "srv-future", {
+      code: -32000,
+      message: "Unsupported Codex app-server server request: future/server/request",
+    });
+
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    const events = await eventsPromise;
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "debug",
+          message:
+            "Rejected Codex app-server server request: item/tool/requestUserInput",
+          raw_event_type: "item/tool/requestUserInput",
+        }),
+        expect.objectContaining({
+          type: "debug",
+          message:
+            "Rejected Codex app-server server request: future/server/request",
+          raw_event_type: "future/server/request",
+        }),
+      ]),
+    );
+  });
+
+  it("surfaces server-request rejection send failures as fatal engine errors", async () => {
+    const client = new FakeClient();
+    client.rejectServerRequest.mockRejectedValueOnce(new Error("response write failed"));
+    const { adapter } = makeAdapter(client);
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emitServerRequest({
+      id: "srv-failed-response",
+      method: "future/server/request",
+      params: {},
+    });
+
+    const events = await eventsPromise;
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      message: "response write failed",
+      fatal: true,
     });
   });
 

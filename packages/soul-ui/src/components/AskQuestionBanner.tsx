@@ -8,7 +8,11 @@
 
 import { useEffect, useState } from 'react';
 import { useDashboardStore, type DashboardState, type DashboardActions } from '../stores/dashboard-store';
-import { submitInputResponse, submitToolApproval } from '../lib/input-request-actions';
+import {
+  INPUT_RESPONSE_ERROR_MESSAGE,
+  submitInputResponse,
+  submitToolApproval,
+} from '../lib/input-request-actions';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
 import { formatTime } from '../lib/input-request-utils';
 import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion, ToolApprovalNodeDef } from '@shared/types';
@@ -118,6 +122,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
+  const [submissionFailed, setSubmissionFailed] = useState(false);
 
   // 두 만료 경로 통합: 클라이언트 타이머(isExpired) 또는 서버 이벤트(serverExpiredAt)
   const isEffectivelyExpired = isExpired || !!node.serverExpiredAt;
@@ -136,6 +141,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
 
   const handleSelect = async (answer: string) => {
     if (selectedAnswer) return;
+    setSubmissionFailed(false);
     setSelectedAnswer(answer);  // 낙관적 UI: 버튼 즉시 비활성화
     const success = await submitInputResponse(
       sessionId,
@@ -146,6 +152,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
     );
     if (!success) {
       setSelectedAnswer(null);  // 실패 시 롤백
+      setSubmissionFailed(true);
     }
     // 성공 시 상태 갱신은 SSE로 돌아오는 input_request_responded 이벤트가 처리한다.
     // responded=true → findPendingInputRequest 필터링 → 배너 컴포넌트 언마운트
@@ -205,6 +212,11 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
               전송
             </Button>
           </form>
+          {submissionFailed && (
+            <div role="alert" className="text-xs text-destructive">
+              {INPUT_RESPONSE_ERROR_MESSAGE}
+            </div>
+          )}
           {!isEffectivelyExpired && (
             <div className="text-xs text-muted-foreground text-right">
               {formatTime(remainingSec)}

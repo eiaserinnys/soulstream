@@ -1,5 +1,6 @@
 import type {
   AppServerRequestId,
+  AppServerResponseError,
   AppServerServerRequest,
   CodexAppServerMethod,
   CodexAppServerMethodMap,
@@ -127,6 +128,23 @@ export class JsonRpcAppServerClient {
   onServerRequest(handler: (request: AppServerServerRequest) => void): () => void {
     this.serverRequestHandlers.add(handler);
     return () => this.serverRequestHandlers.delete(handler);
+  }
+
+  resolveServerRequest(id: AppServerRequestId, result: unknown): Promise<void> {
+    if (this.closed) {
+      return Promise.reject(new Error("Codex app-server client is closed"));
+    }
+    return this.transport.send({ id, result });
+  }
+
+  rejectServerRequest(
+    id: AppServerRequestId,
+    error: AppServerResponseError,
+  ): Promise<void> {
+    if (this.closed) {
+      return Promise.reject(new Error("Codex app-server client is closed"));
+    }
+    return this.transport.send({ id, error });
   }
 
   onError(handler: (error: Error) => void): () => void {

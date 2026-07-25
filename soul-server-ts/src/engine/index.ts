@@ -47,6 +47,7 @@ export type {
   AppServerJsonMessage,
   AppServerNotification,
   AppServerRequestId,
+  AppServerResponseError,
   AppServerServerRequest,
   AppServerThread,
   AppServerThreadItem,

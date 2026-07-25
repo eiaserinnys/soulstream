@@ -1,5 +1,7 @@
 import type {
   AppServerNotification,
+  AppServerRequestId,
+  AppServerResponseError,
   AppServerServerRequest,
   InitializeParams,
   InitializeResponse,
@@ -69,6 +71,17 @@ export class CodexAppServerClient {
 
   onServerRequest(handler: (request: AppServerServerRequest) => void): () => void {
     return this.rpc.onServerRequest(handler);
+  }
+
+  resolveServerRequest(id: AppServerRequestId, result: unknown): Promise<void> {
+    return this.rpc.resolveServerRequest(id, result);
+  }
+
+  rejectServerRequest(
+    id: AppServerRequestId,
+    error: AppServerResponseError,
+  ): Promise<void> {
+    return this.rpc.rejectServerRequest(id, error);
   }
 
   onError(handler: (error: Error) => void): () => void {

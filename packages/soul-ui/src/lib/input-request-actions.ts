@@ -6,6 +6,9 @@
 
 import { useDashboardStore } from '../stores/dashboard-store';
 
+export const INPUT_RESPONSE_ERROR_MESSAGE =
+  '응답 전송에 실패했습니다. 다시 시도해 주세요.';
+
 /**
  * 사용자의 응답을 서버에 제출합니다.
  * 상태 갱신은 서버가 발행하는 input_request_responded SSE 이벤트가 처리합니다.
@@ -27,12 +30,24 @@ export async function submitInputResponse(
     const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requestId, answers: { [question]: answer } }),
+      body: JSON.stringify({ request_id: requestId, answers: { [question]: answer } }),
     });
-    if (!response.ok) return false;
+    if (!response.ok) {
+      console.error('AskUserQuestion response submission failed', {
+        sessionId,
+        nodeId,
+        status: response.status,
+      });
+      return false;
+    }
     // 상태 갱신은 SSE로 돌아오는 input_request_responded 이벤트가 처리한다.
     return true;
-  } catch {
+  } catch (error) {
+    console.error('AskUserQuestion response submission failed', {
+      sessionId,
+      nodeId,
+      error,
+    });
     return false;
   }
 }

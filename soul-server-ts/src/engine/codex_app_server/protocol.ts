@@ -424,6 +424,12 @@ export type AppServerServerRequest = {
   params?: unknown;
 };
 
+export type AppServerResponseError = {
+  code: number;
+  message: string;
+  data?: unknown;
+};
+
 export function toCodexUserInput(input: EngineUserInput): AppServerUserInput[] {
   return [
     { type: "text", text: input.prompt, text_elements: [] },

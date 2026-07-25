@@ -6,6 +6,7 @@ export {
 export type {
   AppServerNotification,
   AppServerRequestId,
+  AppServerResponseError,
   AppServerServerRequest,
   AppServerThread,
   AppServerThreadItem,
