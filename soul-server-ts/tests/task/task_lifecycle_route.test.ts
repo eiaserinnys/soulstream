@@ -94,6 +94,14 @@ describe("TaskLifecycleRoute.cancelTask", () => {
     expect(closeSessionRuntime).toHaveBeenCalledWith("s1");
     expect(task.status).toBe("completed");
   });
+
+  it("returns directly for a completed legacy task without the feature close seam", async () => {
+    const task = makeTask({ agentSessionId: "s1", status: "completed" });
+    const { route, lifecycleTransition } = makeRoute([task]);
+    vi.mocked(lifecycleTransition.cancelRunningTask).mockResolvedValueOnce(false);
+
+    await expect(route.cancelTask("s1")).resolves.toBe(false);
+  });
 });
 
 describe("TaskLifecycleRoute.deleteTask", () => {

@@ -130,6 +130,7 @@ describe("worker composition boundary", () => {
   it("keeps gate-OFF intervention wiring free of feature-only awaits", () => {
     const taskManager = source("task/task_manager.ts");
     const interventionRoute = source("task/task_intervention_route.ts");
+    const lifecycleRoute = source("task/task_lifecycle_route.ts");
     const workerComposition = source("runtime/worker_composition.ts");
 
     expect(taskManager).toMatch(
@@ -143,6 +144,12 @@ describe("worker composition boundary", () => {
     );
     expect(interventionRoute).not.toMatch(
       /await this\.deps\.(deliveryLedgerGate|sessionNotificationPublisher)\?\./,
+    );
+    expect(lifecycleRoute).toContain(
+      "if (!this.deps.closeSessionRuntime) return false;",
+    );
+    expect(lifecycleRoute).not.toMatch(
+      /await this\.deps\.closeSessionRuntime\?\./,
     );
     expect(workerComposition).toMatch(
       /const claudeSessionClientRegistry = env\.CLAUDE_SESSION_RUNTIME_V2_ENABLED\s+\?/,

@@ -787,9 +787,11 @@ describe("TaskManager.deliverInputResponse", () => {
     })).resolves.toMatchObject({
       status: "session_not_running",
     });
+    await expect(tm.cancelTask(task.agentSessionId)).resolves.toBe(false);
 
     expect(sessionRuntimeControl.has).not.toHaveBeenCalled();
     expect(sessionRuntimeControl.deliverInputResponse).not.toHaveBeenCalled();
+    expect(sessionRuntimeControl.close).not.toHaveBeenCalled();
   });
 
   it("gate ON routes completed-session input and explicit reclaim through the registry", async () => {

@@ -43,7 +43,8 @@ export class TaskLifecycleRoute {
     const task = this.deps.getTask(sessionId);
     const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
     if (cancelled || !task || task.status === "running") return cancelled;
-    return await this.deps.closeSessionRuntime?.(sessionId) ?? false;
+    if (!this.deps.closeSessionRuntime) return false;
+    return await this.deps.closeSessionRuntime(sessionId);
   }
 
   async deleteTask(sessionId: string): Promise<void> {
