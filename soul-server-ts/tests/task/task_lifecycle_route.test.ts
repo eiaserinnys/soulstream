@@ -28,6 +28,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 function makeRoute(
   initialTasks: Task[] = [],
   onForget: (sessionId: string) => void = () => undefined,
+  closeSessionRuntime?: (sessionId: string) => Promise<void>,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
   const deleteSession = vi.fn().mockResolvedValue(undefined);
@@ -56,6 +57,7 @@ function makeRoute(
     db,
     broadcaster,
     logger: silentLogger,
+    closeSessionRuntime,
   });
 
   return {
@@ -88,9 +90,15 @@ describe("TaskLifecycleRoute.deleteTask", () => {
       deleteSession,
       emitSessionDeleted,
       lifecycleTransition,
-    } = makeRoute([task], () => {
-      events.push("forget");
-    });
+    } = makeRoute(
+      [task],
+      () => {
+        events.push("forget");
+      },
+      async () => {
+        events.push("close-runtime");
+      },
+    );
     vi.mocked(lifecycleTransition.interruptAndDrain).mockImplementationOnce(async () => {
       events.push("interrupt");
     });
@@ -107,7 +115,13 @@ describe("TaskLifecycleRoute.deleteTask", () => {
     expect(lifecycleTransition.interruptAndDrain).toHaveBeenCalledWith(task);
     expect(deleteSession).toHaveBeenCalledWith("s1");
     expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
-    expect(events).toEqual(["interrupt", "forget", "delete", "broadcast"]);
+    expect(events).toEqual([
+      "interrupt",
+      "close-runtime",
+      "forget",
+      "delete",
+      "broadcast",
+    ]);
   });
 
   it("treats missing sessions as no-op and isolates delete side-effect failures", async () => {

@@ -1,11 +1,24 @@
 import type { Logger } from "pino";
 
 import type { SSEEventPayload } from "../engine/protocol.js";
+import { isPostResultDrainEvent } from "../engine/claude_event_phase.js";
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
 import type { InterventionMessage, Task } from "./task_models.js";
+import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
+import {
+  buildClaudeRuntimeTaskFollowupFallbackPrompt,
+  buildClaudeRuntimeTaskFollowupPrompt,
+  buildFollowupKey,
+  buildRefreshedClaudeRuntimeTaskFollowupPrompt,
+  buildTaskKey,
+  type PendingRuntimeTaskFollowup,
+} from "./claude_runtime_task_followup_prompt.js";
+
+export { buildClaudeRuntimeTaskFollowupPrompt } from
+  "./claude_runtime_task_followup_prompt.js";
 
 export const CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE = "claude_runtime_task_followup";
 export const MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT = 3;
@@ -21,6 +34,7 @@ export type ClaudeRuntimeFollowupStallReason =
 export interface ClaudeRuntimeTaskFollowupPort {
   collect(task: Task, event: SSEEventPayload): void;
   flush(task: Task): Promise<void>;
+  collectDetached(task: Task, event: SSEEventPayload): Promise<void>;
   queueFallback(
     task: Task,
     message: InterventionMessage,
@@ -42,6 +56,7 @@ export interface ClaudeRuntimeTaskFollowupDeps {
   logger: Logger;
   sleep?: (ms: number) => Promise<void>;
   deliveryV2Enabled?: boolean;
+  inlineConsumptionRecorder?: Pick<TaskDeliveryLedgerGate, "recordInlineConsumed">;
 }
 
 interface ScheduledRuntimeTaskFallback {
@@ -49,18 +64,6 @@ interface ScheduledRuntimeTaskFallback {
   token: symbol;
   promise: Promise<void>;
   pending: ClaudeRuntimeScheduledFallback;
-}
-
-interface PendingRuntimeTaskFollowup {
-  taskId: string;
-  status?: string;
-  outputFile?: string;
-  summary?: string;
-  description?: string;
-  toolUseId?: string;
-  error?: string;
-  terminalRevision: string;
-  firstSeen: number;
 }
 
 const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
@@ -130,6 +133,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         previous?.terminalRevision ??
         `${status}:unknown`,
       firstSeen: previous?.firstSeen ?? this.sequence++,
+      inlineObserved:
+        (previous?.inlineObserved ?? true) && !isPostResultDrainEvent(event),
     });
   }
 
@@ -138,7 +143,15 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     // 이때 addIntervention()은 auto-resume 경로에서 같은 executionPromise를 기다리므로
     // 자기대기 교착이 된다. Pending은 지우지 않고 다음 정상 running turn까지 보존한다.
     if (task.status !== "running") return;
+    await this.flushPending(task);
+  }
 
+  async collectDetached(task: Task, event: SSEEventPayload): Promise<void> {
+    this.collect(task, event);
+    await this.flushPending(task);
+  }
+
+  private async flushPending(task: Task): Promise<void> {
     const pending = this.pendingBySession.get(task.agentSessionId);
     if (!pending || pending.size === 0) return;
 
@@ -146,21 +159,32 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const delivery = this.deps.deliveryV2Enabled === true
       ? buildClaudeRuntimeFollowupDelivery(task, items)
       : {};
+    const intervention = {
+      agentSessionId: task.agentSessionId,
+      text: buildClaudeRuntimeTaskFollowupPrompt(items),
+      user: "system",
+      callerInfo: { source: "system" as const, display_name: "Soulstream" },
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      followupAttempt: 1,
+      followupKey: buildFollowupKey(task.agentSessionId, items),
+      followupTaskIds: items.map((item) => item.taskId),
+      ...delivery,
+    };
     try {
-      await this.deps.taskManager.addIntervention(
-        {
-          agentSessionId: task.agentSessionId,
-          text: buildClaudeRuntimeTaskFollowupPrompt(items),
-          user: "system",
-          callerInfo: { source: "system", display_name: "Soulstream" },
-          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-          followupAttempt: 1,
-          followupKey: buildFollowupKey(task.agentSessionId, items),
-          followupTaskIds: items.map((item) => item.taskId),
-          ...delivery,
-        },
-        this.deps.onResume,
-      );
+      const consumedInline =
+        items.every((item) => item.inlineObserved) &&
+        this.deps.inlineConsumptionRecorder
+          ? await this.deps.inlineConsumptionRecorder.recordInlineConsumed(
+              intervention,
+              task,
+            )
+          : false;
+      if (!consumedInline) {
+        await this.deps.taskManager.addIntervention(
+          intervention,
+          this.deps.onResume,
+        );
+      }
       for (const item of items) {
         pending.delete(item.taskId);
         this.flushedTaskKeys.add(buildTaskKey(task.agentSessionId, item.taskId));
@@ -373,117 +397,6 @@ function normalizeEventRevision(value: unknown): string | undefined {
   if (typeof value === "string" && value.length > 0) return value;
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return undefined;
-}
-
-export function buildClaudeRuntimeTaskFollowupPrompt(
-  items: PendingRuntimeTaskFollowup[],
-): string {
-  const allCompleted = items.every((item) => item.status === "completed");
-  const taskLines = items.map((item, index) => {
-    const fields = [
-      `task_id=${item.taskId}`,
-      item.status ? `status=${item.status}` : undefined,
-      item.outputFile ? `output_file=${item.outputFile}` : undefined,
-      item.summary ? `summary=${item.summary}` : undefined,
-      item.description ? `description=${item.description}` : undefined,
-      item.toolUseId ? `tool_use_id=${item.toolUseId}` : undefined,
-      item.error ? `error=${item.error}` : undefined,
-    ].filter(Boolean);
-    return `${index + 1}. ${fields.join(" | ")}`;
-  });
-  const statusNotes = items
-    .map((item, index) => formatRuntimeTaskStatusNote(index + 1, item))
-    .filter(Boolean);
-
-  return [
-    "<claude-runtime-background-task-followup>",
-    allCompleted
-      ? "백그라운드 Claude runtime task가 완료되었습니다."
-      : "백그라운드 Claude runtime task가 종료되었습니다. 일부 항목은 완료되지 않았을 수 있습니다.",
-    allCompleted
-      ? "아래 완료 항목을 확인하고 사용자가 기대한 다음 작업을 즉시 이어서 진행하세요."
-      : "아래 항목의 실제 status를 먼저 확인하고, 완료되지 않은 항목은 필요한 경우 다른 방식으로 작업을 재수립하세요.",
-    "output_file이나 summary가 있으면 먼저 읽어 실제 결과를 검증하세요.",
-    ...statusNotes,
-    "직전 응답을 그대로 반복하지 마세요. 진행할 수 없다면 이유와 필요한 사용자 확인을 명시하세요.",
-    "",
-    ...taskLines,
-    "</claude-runtime-background-task-followup>",
-  ].join("\n");
-}
-
-function buildClaudeRuntimeTaskFollowupFallbackPrompt(
-  originalText: string,
-  reason: ClaudeRuntimeFollowupStallReason,
-): string {
-  const reasonText = reason === "empty_response"
-    ? "이전 follow-up turn이 빈 응답으로 끝났습니다."
-    : "이전 follow-up turn이 직전 응답을 반복했습니다.";
-  return [
-    "<claude-runtime-background-task-followup-retry>",
-    reasonText,
-    "아래 원래 follow-up 지시를 다시 수행하되, 백그라운드 작업의 실제 상태와 output_file/summary를 다시 확인하고 다음 사용자-visible 작업을 이어서 진행하세요.",
-    "같은 문장을 반복하지 말고, 진행 불가 시 이유와 필요한 사용자 확인을 명시하세요.",
-    "",
-    originalText,
-    "</claude-runtime-background-task-followup-retry>",
-  ].join("\n");
-}
-
-function buildFollowupKey(sessionId: string, items: PendingRuntimeTaskFollowup[]): string {
-  return `${sessionId}:${items.map((item) => item.taskId).join(",")}`;
-}
-
-function buildRefreshedClaudeRuntimeTaskFollowupPrompt(
-  task: Task,
-  message: InterventionMessage,
-): string | undefined {
-  const taskIds = message.followupTaskIds;
-  if (!taskIds || taskIds.length === 0) return undefined;
-
-  const items: PendingRuntimeTaskFollowup[] = [];
-  for (const [firstSeen, taskId] of taskIds.entries()) {
-    const runtimeTask = task.claudeRuntime?.tasks[taskId];
-    if (!runtimeTask) return undefined;
-    items.push({
-      taskId,
-      status: runtimeTask.status,
-      outputFile: runtimeTask.outputFile,
-      summary: runtimeTask.summary,
-      description: runtimeTask.description,
-      toolUseId: runtimeTask.toolUseId,
-      error: runtimeTask.error,
-      terminalRevision:
-        normalizeRevision(runtimeTask.endTime ?? runtimeTask.updatedAt) ??
-        `${runtimeTask.status ?? "unknown"}:unknown`,
-      firstSeen,
-    });
-  }
-  return buildClaudeRuntimeTaskFollowupPrompt(items);
-}
-
-function buildTaskKey(sessionId: string, taskId: string): string {
-  return `${sessionId}:${taskId}`;
-}
-
-function formatRuntimeTaskStatusNote(
-  index: number,
-  item: PendingRuntimeTaskFollowup,
-): string | undefined {
-  switch (item.status) {
-    case "completed":
-      return undefined;
-    case "failed":
-      return `${index}. status=failed 항목은 실패했습니다. error나 output_file이 있으면 원인을 확인한 뒤 재시도 가능 여부를 판단하세요.`;
-    case "stopped":
-      return `${index}. status=stopped 항목은 완료 전에 중단되었습니다. 결과가 없을 수 있습니다. output_file이나 summary가 있으면 부분 결과만 신뢰하세요.`;
-    case "killed":
-      return `${index}. status=killed 항목은 완료 전에 강제 종료되었습니다. 결과가 없을 수 있습니다. 턴 종료 teardown 등으로 끊긴 작업은 필요한 경우 다른 방식으로 재수립하세요.`;
-    default:
-      return item.status
-        ? `${index}. status=${item.status} 항목은 완료 여부를 단정하지 말고 실제 결과를 먼저 확인하세요.`
-        : undefined;
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

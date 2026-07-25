@@ -17,14 +17,18 @@ describe("TaskDeliveryLedgerGate", () => {
       inserted: true,
       conflict: false,
     }));
-    const claim = vi.fn(async (deliveryId: string) => row(deliveryId, "claimed"));
+    const claimForTarget = vi.fn(
+      async (deliveryId: string) => row(deliveryId, "claimed"),
+    );
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
-      claim,
+      claimForTarget,
+      get: vi.fn(),
       markQueued: vi.fn(),
       markDelivered: vi.fn(),
       markUncertain: vi.fn(),
       markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
     });
     const base = {
       agentSessionId: "caller-1",
@@ -54,5 +58,76 @@ describe("TaskDeliveryLedgerGate", () => {
       caller_info: { source: "agent", agent_id: "child-1" },
     });
     expect(first.payloadHash).not.toBe(second.payloadHash);
+  });
+
+  it("records an inline completion against its semantic relation and caller turn", async () => {
+    const deliveryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const pending = row(deliveryId, "pending");
+    const consumed = row(deliveryId, "consumed");
+    const register = vi.fn().mockResolvedValue({
+      row: pending,
+      inserted: true,
+      conflict: false,
+    });
+    const markConsumedByRelation = vi.fn().mockResolvedValue(consumed);
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register,
+      claimForTarget: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation,
+    });
+
+    await expect(gate.recordInlineConsumed({
+      agentSessionId: "caller-1",
+      text: "runtime finished",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: "completion-runtime-1",
+      relationKey: "claude_runtime:caller-1:session-1:task-1@77",
+      source: "claude_runtime_task_followup",
+    }, {
+      agentSessionId: "caller-1",
+      prompt: "run",
+      status: "running",
+      createdAt: new Date(),
+      lastEventId: 91,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    })).resolves.toBe(true);
+
+    expect(markConsumedByRelation).toHaveBeenCalledWith(
+      "claude_runtime:caller-1:session-1:task-1@77",
+      "completion-runtime-1",
+      "event:91",
+    );
+  });
+
+  it("suppresses an admitted completion when its relation became consumed before dispatch", async () => {
+    const deliveryId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      get: vi.fn().mockResolvedValue(row(deliveryId, "consumed")),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+    });
+
+    await expect(gate.recheckBeforeDispatch({
+      kind: "admitted",
+      deliveryId,
+      row: row(deliveryId, "claimed"),
+    })).resolves.toEqual({
+      kind: "suppressed",
+      deliveryId,
+      reason: "delivery_consumed_before_dispatch",
+    });
   });
 });

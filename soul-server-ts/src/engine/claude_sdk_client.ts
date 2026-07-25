@@ -13,17 +13,19 @@ import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import {
   ClaudePostResultDrain,
-  MAX_COMPACT_RETRIES,
-  type PostResultContinuationKind,
 } from "./claude_sdk_drain.js";
 import {
   createEventQueue,
   type EventQueue,
 } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import { asRecord } from "./claude_sdk_helpers.js";
 import { buildClaudeSdkHooks } from "./claude_sdk_hooks.js";
+import { pumpLegacyClaudeQuery } from "./claude_sdk_legacy_pump.js";
 import { buildMcpOptions } from "./claude_sdk_mcp_options.js";
+import {
+  ClaudeSdkPersistentSession,
+  type ClaudeDetachedEventSink,
+} from "./claude_sdk_persistent_session.js";
 import {
   makeCacheableSystemPrompt,
 } from "./claude_sdk_prompt.js";
@@ -79,6 +81,7 @@ export interface ClaudeSdkClientConfig {
    */
   runtimeDrainMaxMs?: number;
   resolveClaudeExecutablePath?: () => string | undefined;
+  detachedEventSink?: ClaudeDetachedEventSink;
 }
 
 export class ClaudeSdkClient implements ClaudeClient {
@@ -91,11 +94,13 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly eventMapper: ClaudeSdkEventMapper;
   private readonly toolPermissionController: ClaudeSdkToolPermissionController;
   private readonly postResultDrainer: ClaudePostResultDrain;
+  private readonly detachedEventSink: ClaudeDetachedEventSink;
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: EventQueue<SDKUserMessage> | null = null;
   private lastWorkspaceDir: string | null = null;
   private lastEnv: Record<string, string> | undefined;
+  private persistentSession: ClaudeSdkPersistentSession | null = null;
 
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
     this.queryFn = config.query ?? defaultQuery;
@@ -121,6 +126,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       eventMapper: this.eventMapper,
       runtimeState: this.runtimeState,
     });
+    this.detachedEventSink = config.detachedEventSink ?? (async () => undefined);
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -151,7 +157,18 @@ export class ClaudeSdkClient implements ClaudeClient {
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     }
     this.activeQuery = query;
-    const pump = this.pumpQuery(query, output, abortController.signal, input);
+    const pump = pumpLegacyClaudeQuery({
+      query,
+      output,
+      signal: abortController.signal,
+      input,
+      eventMapper: this.eventMapper,
+      postResultDrainer: this.postResultDrainer,
+      runtimeState: this.runtimeState,
+      logger: this.logger,
+      isQueryActive: (candidate) => this.isQueryActive(candidate),
+      closeInput: (candidate) => this.closeActiveInput(candidate),
+    });
 
     try {
       for await (const event of output) {
@@ -166,6 +183,57 @@ export class ClaudeSdkClient implements ClaudeClient {
       this.closeActiveInput(input);
       this.toolPermissionController.abortPendingInputRequests();
       await pump.catch(() => undefined);
+    }
+  }
+
+  async *runPersistent(
+    options: ClaudeRunOptions,
+    signal: AbortSignal,
+  ): AsyncIterable<ClaudeClientEvent> {
+    if (options.maxTurns !== undefined) {
+      throw new Error(
+        "Persistent Claude runtime cannot preserve per-turn maxTurns; keep runtime v2 disabled",
+      );
+    }
+    this.lastWorkspaceDir = options.workspaceDir;
+    this.lastEnv = options.env;
+    if (!this.persistentSession) {
+      this.clearPerRunState();
+      const hookOutput = createEventQueue<ClaudeClientEvent>();
+      const abortController = new AbortController();
+      const queryOptions = this.buildSdkOptions(options, abortController, hookOutput);
+      this.persistentSession = new ClaudeSdkPersistentSession({
+        createQuery: (input) => {
+          let query: ClaudeSdkQuery;
+          try {
+            query = this.queryFn({ prompt: input, options: queryOptions });
+          } catch (err) {
+            throw this.normalizeExecutionError(
+              err,
+              queryOptions.pathToClaudeCodeExecutable,
+            );
+          }
+          this.activeQuery = query;
+          return query;
+        },
+        eventMapper: this.eventMapper,
+        hookOutput,
+        detachedEventSink: this.detachedEventSink,
+        logger: this.logger,
+        postResultDrainMs: this.postResultDrainMs,
+        onClosed: () => {
+          this.activeQuery = null;
+          this.persistentSession = null;
+        },
+      });
+    }
+
+    try {
+      for await (const event of this.persistentSession.runTurn(options, signal)) {
+        yield event;
+      }
+    } catch (err) {
+      throw this.normalizeExecutionError(err);
     }
   }
 
@@ -258,6 +326,11 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async interrupt(): Promise<boolean> {
+    if (this.persistentSession) {
+      this.persistentSession.close("explicit_cancel");
+      this.toolPermissionController.abortPendingInputRequests();
+      return true;
+    }
     const query = this.activeQuery;
     if (!query) return false;
     try {
@@ -271,6 +344,11 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async interruptActiveTurnForSteer(): Promise<boolean> {
+    if (this.persistentSession) {
+      const interrupted = await this.persistentSession.interruptForeground();
+      if (interrupted) this.toolPermissionController.abortPendingInputRequests();
+      return interrupted;
+    }
     const query = this.activeQuery;
     if (!query) return false;
     try {
@@ -292,6 +370,12 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async close(): Promise<void> {
+    if (this.persistentSession) {
+      const persistent = this.persistentSession;
+      persistent.close("shutdown");
+      await persistent.settled();
+      this.persistentSession = null;
+    }
     this.closeActiveInput();
     this.activeQuery?.close();
     this.toolPermissionController.abortPendingInputRequests();
@@ -344,133 +428,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     };
   }
 
-  private async pumpQuery(
-    query: ClaudeSdkQuery,
-    output: EventQueue<ClaudeClientEvent>,
-    signal: AbortSignal,
-    input: EventQueue<SDKUserMessage>,
-  ): Promise<void> {
-    try {
-      let compactRetryCount = 0;
-      for (;;) {
-        const queryIter = query[Symbol.asyncIterator]();
-        const compactSnapshot = this.eventMapper.getCompactHookEventCount();
-        let sawResult = false;
-        for (;;) {
-          const next = await queryIter.next();
-          if (next.done) {
-            if (
-              this.shouldRetryAfterCompactNoResult({
-                compactSnapshot,
-                compactRetryCount,
-                query,
-                signal,
-                sawResult,
-              })
-            ) {
-              compactRetryCount += 1;
-              break;
-            }
-            if (this.runtimeState.hasPendingWork()) {
-              output.push({
-                type: "error",
-                fatal: true,
-                errorCode: "claude_runtime_ended_before_idle",
-                message: "Claude SDK stream ended while runtime work was still pending.",
-              });
-            }
-            this.closeActiveInput(input);
-            output.close();
-            return;
-          }
-          const message = next.value;
-
-          const msg = asRecord(message);
-          if (msg?.type === "result") {
-            sawResult = true;
-            this.closeActiveInput(input);
-            const terminalEvents = this.eventMapper.mapResultMessage(msg);
-            const resultEvent = terminalEvents.find((event) => event.type === "result");
-            const continuations =
-              resultEvent?.type === "result"
-                ? this.postResultDrainer.postResultContinuations(resultEvent, compactRetryCount)
-                : new Set<PostResultContinuationKind>();
-
-            const drain = await this.postResultDrainer.drainAfterResult(queryIter, continuations);
-
-            if (drain.action === "continue") {
-              if (drain.reason === "compact_boundary") compactRetryCount += 1;
-              for (const event of drain.events) output.push(event);
-              continue;
-            }
-
-            for (const event of this.postResultDrainer.orderTerminalEvents(terminalEvents, drain.events)) {
-              output.push(event);
-            }
-            query.close();
-            output.close();
-            return;
-          }
-
-          let shouldStop = false;
-          for (const event of this.eventMapper.mapSdkMessage(message)) {
-            output.push(event);
-            if (event.type === "complete" || (event.type === "error" && event.fatal !== false)) {
-              shouldStop = true;
-            }
-          }
-          if (shouldStop) {
-            this.closeActiveInput(input);
-            // Result/complete (또는 fatal error) 도착 — post-result drain phase로 진입.
-            // Python `receive_loop._drain_after_result` (L126-188) 정합:
-            //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
-            //   - 그 외 메시지(StreamEvent · stray assistant 등)는 narrowing → logger.warn 후 무시
-            //   - timeout / EOS / 에러 모두 조용히 종료 (drain은 부가 기능, §8 실패 격리)
-            const drain = await this.postResultDrainer.drainAfterResult(
-              queryIter,
-              new Set<PostResultContinuationKind>(),
-            );
-            for (const event of drain.events) output.push(event);
-            query.close();
-            output.close();
-            return;
-          }
-        }
-      }
-    } catch (err) {
-      output.fail(err);
-      throw err;
-    }
-  }
-
-  private shouldRetryAfterCompactNoResult(params: {
-    compactSnapshot: number;
-    compactRetryCount: number;
-    query: ClaudeSdkQuery;
-    signal: AbortSignal;
-    sawResult: boolean;
-  }): boolean {
-    if (params.sawResult) return false;
-    if (this.eventMapper.getCompactHookEventCount() <= params.compactSnapshot) return false;
-    if (params.compactRetryCount >= MAX_COMPACT_RETRIES) return false;
-    if (!this.isQueryAlive(params.query, params.signal)) {
-      this.logger.warn?.(
-        { compactRetryCount: params.compactRetryCount, aborted: params.signal.aborted },
-        "compact retry skipped because Claude SDK query is no longer active",
-      );
-      return false;
-    }
-    this.logger.info?.(
-      { compactRetryCount: params.compactRetryCount + 1, maxRetries: MAX_COMPACT_RETRIES },
-      "compact happened without a result; re-entering Claude SDK receive loop",
-    );
-    return true;
-  }
-
-  private isQueryAlive(query: ClaudeSdkQuery, signal: AbortSignal): boolean {
-    if (signal.aborted || this.activeQuery !== query) return false;
-    const isClosed = asRecord(query)?.isClosed;
-    return typeof isClosed === "function" ? isClosed.call(query) !== true : true;
+  private isQueryActive(query: ClaudeSdkQuery): boolean {
+    return this.activeQuery === query;
   }
 
   private normalizeExecutionError(err: unknown, executablePath?: string): Error {

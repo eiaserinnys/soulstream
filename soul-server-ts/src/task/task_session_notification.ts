@@ -46,19 +46,27 @@ export class SessionNotificationPublisher {
 
     let shouldBroadcast = true;
     if (this.deps.persistence) {
-      const persisted = await this.deps.persistence.persistEventWithResult(
-        task.agentSessionId,
-        event,
-      );
-      task.lastEventId = persisted.eventId;
-      (event as Record<string, unknown>)._event_id = persisted.eventId;
-      shouldBroadcast = persisted.inserted;
-      if (persisted.inserted) {
-        await this.deps.persistence.handleSideEffects(
+      try {
+        const persisted = await this.deps.persistence.persistEventWithResult(
           task.agentSessionId,
           event,
-          task,
         );
+        task.lastEventId = persisted.eventId;
+        (event as Record<string, unknown>)._event_id = persisted.eventId;
+        shouldBroadcast = persisted.inserted;
+        if (persisted.inserted) {
+          await this.deps.persistence.handleSideEffects(
+            task.agentSessionId,
+            event,
+            task,
+          );
+        }
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId, deliveryId: message.deliveryId },
+          "session_notification persistence failed after delivery; ledger state retained",
+        );
+        return;
       }
     }
     if (!shouldBroadcast) return;

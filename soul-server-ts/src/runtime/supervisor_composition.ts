@@ -57,6 +57,10 @@ export interface SupervisorComposition {
   scheduleDispatcher: ScheduleDispatcher;
   supervisorWakeScheduler?: SupervisorWakeScheduler;
   supervisorWatchdogInterval?: NodeJS.Timeout;
+  claudeRuntimeTaskFollowup: Pick<
+    ClaudeRuntimeTaskFollowupController,
+    "collectDetached"
+  >;
 }
 
 /** Owns TaskExecutor's supervisor, completion, schedule, and resume wiring. */
@@ -106,6 +110,9 @@ export function composeSupervisorRuntime(
     onResume,
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+    inlineConsumptionRecorder: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+      ? taskManager.getDeliveryConsumptionRecorder()
+      : undefined,
   });
   const supervisorWakeRouter = new SupervisorWakeRouter(
     {
@@ -342,6 +349,7 @@ export function composeSupervisorRuntime(
     scheduleDispatcher,
     supervisorWakeScheduler,
     supervisorWatchdogInterval,
+    claudeRuntimeTaskFollowup,
   };
 }
 

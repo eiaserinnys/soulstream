@@ -1,6 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
+import { markPostResultDrainEvent } from "../../src/engine/claude_event_phase.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
@@ -28,7 +29,10 @@ function makeTask(): Task {
   };
 }
 
-function makeController(deliveryV2Enabled = false) {
+function makeController(
+  deliveryV2Enabled = false,
+  recordInlineConsumed?: ReturnType<typeof vi.fn>,
+) {
   const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
   const onResume = vi.fn();
   const sleep = vi.fn(async () => undefined);
@@ -38,6 +42,9 @@ function makeController(deliveryV2Enabled = false) {
     logger: silentLogger,
     sleep,
     deliveryV2Enabled,
+    inlineConsumptionRecorder: recordInlineConsumed
+      ? { recordInlineConsumed }
+      : undefined,
   });
   return { controller, addIntervention, onResume, sleep };
 }
@@ -111,6 +118,77 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     });
     expect(params.deliveryId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("caller turn이 inline으로 소비한 runtime 완료는 늦은 notifier를 표시·재개하지 않는다", async () => {
+    const task = makeTask();
+    task.lastEventId = 91;
+    task.claudeRuntime!.tasks["task-inline"] = {
+      taskId: "task-inline",
+      status: "completed",
+      updatedAt: 77,
+      isBackgrounded: true,
+      summary: "already reflected inline",
+    };
+    const recordInlineConsumed = vi.fn().mockResolvedValue(true);
+    const { controller, addIntervention, onResume } =
+      makeController(true, recordInlineConsumed);
+    const event = {
+      type: "claude_runtime_task_notification",
+      task_id: "task-inline",
+      status: "completed",
+      summary: "already reflected inline",
+      _event_id: 77,
+    } as SSEEventPayload;
+
+    controller.collect(task, event);
+    await controller.flush(task);
+    await controller.collectDetached(task, markPostResultDrainEvent(event));
+
+    expect(recordInlineConsumed).toHaveBeenCalledTimes(1);
+    expect(recordInlineConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "sess-1",
+        deliveryIntent: "runtime_followup",
+        relationKey: "claude_runtime:sess-1:unknown:task-inline@77",
+      }),
+      task,
+    );
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("foreground Result 뒤 detached 완료는 terminal caller에 정확히 한 번 전달한다", async () => {
+    const task = makeTask();
+    task.status = "completed";
+    task.claudeRuntime!.tasks["task-after-result"] = {
+      taskId: "task-after-result",
+      status: "completed",
+      updatedAt: 78,
+      isBackgrounded: true,
+    };
+    const recordInlineConsumed = vi.fn().mockResolvedValue(true);
+    const { controller, addIntervention } =
+      makeController(true, recordInlineConsumed);
+    const event = markPostResultDrainEvent({
+      type: "claude_runtime_task_notification",
+      task_id: "task-after-result",
+      status: "completed",
+      _event_id: 78,
+    } as SSEEventPayload);
+
+    await controller.collectDetached(task, event);
+    await controller.collectDetached(task, event);
+
+    expect(recordInlineConsumed).not.toHaveBeenCalled();
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "sess-1",
+        deliveryIntent: "runtime_followup",
+      }),
+      expect.any(Function),
     );
   });
 

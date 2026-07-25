@@ -101,20 +101,35 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[2].query).toContain("state = 'uncertain'");
   });
 
-  it("retargets a still-pending semantic completion without making it uncertain", async () => {
+  it("defers retargeting until the atomic claim boundary", async () => {
     const original = deliveryRow({ target_session_id: "caller-original" });
-    const replacement = deliveryRow({ target_session_id: "caller-replacement" });
-    const { sql, calls } = createMockSql([[], [original], [replacement]]);
+    const { sql, calls } = createMockSql([[], [original]]);
 
     const result = await new SessionDeliveryRepository(sql).register({
       ...registration,
       targetSessionId: "caller-replacement",
     });
 
-    expect(result).toEqual({ row: replacement, inserted: false, conflict: false });
-    expect(calls).toHaveLength(3);
-    expect(calls[2].query).toContain("target_session_id");
-    expect(calls[2].query).toContain("state = 'pending'");
+    expect(result).toEqual({ row: original, inserted: false, conflict: false });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("retargets and claims a pending delivery in one atomic update", async () => {
+    const claimed = deliveryRow({
+      target_session_id: "caller-replacement",
+      state: "claimed",
+    });
+    const { sql, calls } = createMockSql([[claimed]]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.claimForTarget(
+      claimed.delivery_id,
+      "caller-replacement",
+    )).resolves.toEqual(claimed);
+
+    expect(calls[0].query).toContain("target_session_id");
+    expect(calls[0].query).toContain("state = 'claimed'");
+    expect(calls[0].query).toContain("state = 'pending'");
   });
 
   it("keeps the original target once a semantic completion has already been queued", async () => {
@@ -152,6 +167,22 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[1].query).toContain("state IN ('claimed', 'pending')");
     expect(calls[2].query).toContain("state IN ('claimed', 'queued')");
     expect(calls[3].query).toContain("'consumed'");
+  });
+
+  it("marks consumed by relation and completion identity", async () => {
+    const consumed = deliveryRow({ state: "consumed", caller_turn_id: "turn-inline" });
+    const { sql, calls } = createMockSql([[consumed]]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.markConsumedByRelation(
+      consumed.relation_key,
+      consumed.completion_id!,
+      "turn-inline",
+    )).resolves.toEqual(consumed);
+
+    expect(calls[0].query).toContain("relation_key");
+    expect(calls[0].query).toContain("completion_id");
+    expect(calls[0].query).toContain("state = 'consumed'");
   });
 });
 

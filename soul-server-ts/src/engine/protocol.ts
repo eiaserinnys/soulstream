@@ -210,6 +210,14 @@ export interface SupportsCompact {
 }
 
 /**
+ * Result ends only the foreground turn; runtime/background work remains owned
+ * by a session-scoped engine runtime and must not block the Task turn loop.
+ */
+export interface SupportsDetachedClaudeRuntime {
+  readonly detachedClaudeRuntime: true;
+}
+
+/**
  * 백엔드가 thread fork를 지원하면 구현.
  *
  * Codex의 향후 thread_fork API 도입 시 본 어댑터에서 구현. 본 PR 범위 외.

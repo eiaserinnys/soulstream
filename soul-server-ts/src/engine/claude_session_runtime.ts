@@ -2,7 +2,8 @@ export type ClaudeForegroundPhase =
   | "idle"
   | "generating"
   | "interrupting"
-  | "turn_result";
+  | "turn_result"
+  | "drain";
 
 export type ClaudeQueryLifecycle = "open" | "closed" | "fatal";
 
@@ -13,6 +14,11 @@ export type ClaudeInputState =
   | "submitted"
   | "receipt_still_queued"
   | "settled";
+
+export type ClaudeDetachedResultObservation =
+  | "settled"
+  | "duplicate"
+  | "unknown";
 
 export interface ClaudeRuntimeInput<TMessage> {
   uuid: string;
@@ -31,7 +37,7 @@ export interface ClaudeInterruptReceipt {
 }
 
 export interface ClaudePersistentQuery {
-  interrupt(): Promise<ClaudeInterruptReceipt>;
+  interrupt(): Promise<ClaudeInterruptReceipt | undefined>;
   close(): void;
 }
 
@@ -97,8 +103,8 @@ export class ClaudeSessionInputQueue<T> implements AsyncIterableIterator<T> {
 /**
  * Persistent Claude session ownership model.
  *
- * This module is deliberately dormant until the engine adapter landing is
- * independently reviewed. It owns the contracts measured by the SDK harness:
+ * The runtime is connected only behind the default-off v2 gate. It owns the
+ * contracts measured by the SDK harness:
  * one Query, one input queue, UUID-local exactly-once state, and a background
  * replace-set orthogonal to the foreground turn phase.
  */
@@ -152,7 +158,11 @@ export class ClaudeSessionRuntime<TMessage> {
 
   beginForegroundTurn(uuid: string): void {
     this.assertOpen();
-    if (this.foregroundPhase !== "idle" && this.foregroundPhase !== "turn_result") {
+    if (
+      this.foregroundPhase !== "idle" &&
+      this.foregroundPhase !== "turn_result" &&
+      this.foregroundPhase !== "drain"
+    ) {
       throw new Error(`Cannot begin Claude turn while ${this.foregroundPhase}`);
     }
     const input = this.requireInput(uuid);
@@ -169,12 +179,17 @@ export class ClaudeSessionRuntime<TMessage> {
     input: ClaudeRuntimeInput<TMessage>,
   ): Promise<ClaudeInterruptReceipt> {
     this.assertOpen();
+    this.enqueueInput(input);
+    return await this.interruptForeground();
+  }
+
+  async interruptForeground(): Promise<ClaudeInterruptReceipt> {
+    this.assertOpen();
     if (this.foregroundPhase !== "generating") {
       throw new Error(`Cannot interrupt Claude turn while ${this.foregroundPhase}`);
     }
-    this.enqueueInput(input);
     this.foregroundPhase = "interrupting";
-    const receipt = await this.query.interrupt();
+    const receipt = await this.query.interrupt() ?? {};
     this.observeInterruptReceipt(receipt);
     return receipt;
   }
@@ -206,17 +221,41 @@ export class ClaudeSessionRuntime<TMessage> {
     this.foregroundPhase = "turn_result";
   }
 
+  observeDetachedResult(userMessageUuid: string): ClaudeDetachedResultObservation {
+    this.assertOpen();
+    const input = this.inputs.get(userMessageUuid);
+    if (!input) return "unknown";
+    if (input.state === "settled") return "duplicate";
+    input.state = "settled";
+    return "settled";
+  }
+
   finishForegroundResult(): void {
     this.assertOpen();
     if (this.foregroundPhase !== "turn_result") {
       throw new Error(`Cannot finish Claude result while ${this.foregroundPhase}`);
     }
-    this.foregroundPhase = "idle";
+    this.foregroundPhase = "drain";
+  }
+
+  finishDrain(): void {
+    this.assertOpen();
+    if (this.foregroundPhase === "drain") {
+      this.foregroundPhase = "idle";
+    }
   }
 
   replaceBackgroundTasks(taskIds: Iterable<string>): void {
     this.backgroundTaskIds.clear();
     for (const taskId of taskIds) this.backgroundTaskIds.add(taskId);
+  }
+
+  observeBackgroundTask(taskId: string, terminal: boolean): void {
+    if (terminal) {
+      this.backgroundTaskIds.delete(taskId);
+      return;
+    }
+    this.backgroundTaskIds.add(taskId);
   }
 
   close(reason: ClaudeRuntimeCloseReason): void {
