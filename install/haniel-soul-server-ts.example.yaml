@@ -9,8 +9,11 @@
 #   시 본 파일을 갱신하여 추적한다.
 #
 # 가정:
-# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨. 아래
-#   `release_manifest` 필드를 같은 repo 항목에 추가해야 migration-aware 계약이 활성화된다.
+# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨.
+# - 이 조각은 worker-only 노드용이다. 공유 DB migration은 중앙
+#   `soulstream-orch-server` Haniel release manifest가 1회 적용한다.
+#   worker repo는 apply 단계가 없는 전용 manifest를 명시해 중앙
+#   conventional manifest 자동 활성화를 차단한다.
 # - cwd 경로는 `./services/soulstream`
 # - 모노레포 루트는 `cwd` 기준 `src/soulstream/`
 #
@@ -18,7 +21,7 @@
 
 repos:
   soulstream-server-src:
-    release_manifest: deploy/release-manifest.json
+    release_manifest: deploy/release-manifest-worker.json
 
 services:
   # 운영 `haniel.yaml`의 `services:` 섹션에 추가

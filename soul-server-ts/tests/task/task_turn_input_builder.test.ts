@@ -7,6 +7,7 @@ import {
   type TaskInitialMessagePublisherPort,
   TaskTurnInputBuilder,
 } from "../../src/task/task_turn_input_builder.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskInitialMessagePublisher } from "../../src/task/task_initial_message_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -303,6 +304,32 @@ describe("TaskTurnInputBuilder", () => {
       claudeAgent,
       expect.objectContaining({ includeClaudeSessionIdUpdate: false }),
     );
+  });
+
+  it("binds a durable delivery to one stable engine input UUID", async () => {
+    const deliveryId = "delivery-after-worker-restart";
+    const task = makeTask();
+    const { builder } = makeSubject();
+    const intervention = {
+      text: "replay me exactly once",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification" as const,
+    };
+
+    const first = await builder.prepareFollowupTurnInput(
+      task,
+      claudeAgent,
+      intervention,
+    );
+    const replay = await builder.prepareFollowupTurnInput(
+      task,
+      claudeAgent,
+      intervention,
+    );
+
+    expect(first.inputUuid).toBe(buildDeliveryInputUuid(deliveryId));
+    expect(replay.inputUuid).toBe(first.inputUuid);
   });
 
   it("passes caller_info delta to follow-up context and records the injected caller", async () => {

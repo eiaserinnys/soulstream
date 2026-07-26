@@ -1,8 +1,7 @@
--- 043: async intervention/completion exactly-once delivery ledger
+-- 045: async intervention/completion exactly-once delivery ledger
 --
--- Intentionally NOT listed in migration-manifest.json yet. The runtime v2 gate
--- defaults to legacy/off, and the next operator-approved release must first
--- promote this additive migration into the manifest after backup/preflight.
+-- Versioned additive migration. Apply before code whose persistent runtime is
+-- enabled by default.
 
 CREATE TABLE IF NOT EXISTS session_deliveries (
     delivery_id                TEXT PRIMARY KEY,
@@ -54,7 +53,7 @@ CREATE TABLE IF NOT EXISTS session_deliveries (
     ))
 );
 
--- Re-running the pending migration over a canary DB created by the earlier
+-- Re-running the versioned migration over a canary DB created by the earlier
 -- gate-OFF schema must preserve deliveries when a target session disappears.
 ALTER TABLE session_deliveries
     DROP CONSTRAINT IF EXISTS session_deliveries_target_session_id_fkey;

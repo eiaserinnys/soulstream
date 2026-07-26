@@ -13,10 +13,7 @@ import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import { createEventQueue, type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
-import {
-  isFatalClientError,
-  isRuntimeClientEvent,
-} from "./claude_sdk_runtime_state.js";
+import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import {
   ClaudeResultLivenessGuard,
@@ -43,12 +40,16 @@ export interface ClaudeSdkPersistentSessionConfig {
   logger: Logger;
   postResultDrainMs: number;
   uncorrelatedResultTimeoutMs: number;
+  turnTimeoutMs: number;
   onClosed?(): void;
 }
 
 type ActiveForeground = {
   uuid: string;
   output: EventQueue<ClaudeClientEvent>;
+  deadlineTimer: ReturnType<typeof setTimeout>;
+  interruptResultTimer: ReturnType<typeof setTimeout> | null;
+  timedOut: boolean;
 };
 
 /**
@@ -66,6 +67,7 @@ export class ClaudeSdkPersistentSession {
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly logger: Logger;
   private readonly postResultDrainMs: number;
+  private readonly turnTimeoutMs: number;
   private readonly pump: Promise<void>;
   private readonly hookPump: Promise<void>;
   private readonly resultLiveness: ClaudeResultLivenessGuard;
@@ -79,6 +81,7 @@ export class ClaudeSdkPersistentSession {
     this.runtimeEventSink = config.runtimeEventSink;
     this.logger = config.logger;
     this.postResultDrainMs = config.postResultDrainMs;
+    this.turnTimeoutMs = config.turnTimeoutMs;
     this.resultLiveness = new ClaudeResultLivenessGuard(
       config.uncorrelatedResultTimeoutMs,
       (event) => this.handleUncorrelatedResultTimeout(event),
@@ -102,7 +105,7 @@ export class ClaudeSdkPersistentSession {
     }
 
     const output = createEventQueue<ClaudeClientEvent>();
-    const uuid = randomUUID();
+    const uuid = options.inputUuid ?? randomUUID();
     const message = makeUserMessage(
       options.prompt,
       options.imageAttachmentPaths,
@@ -116,7 +119,17 @@ export class ClaudeSdkPersistentSession {
       payloadHash: hashSdkUserMessage(message),
       message,
     });
-    this.activeForeground = { uuid, output };
+    const deadlineTimer = setTimeout(() => {
+      void this.handleTurnTimeout(uuid);
+    }, this.turnTimeoutMs);
+    deadlineTimer.unref?.();
+    this.activeForeground = {
+      uuid,
+      output,
+      deadlineTimer,
+      interruptResultTimer: null,
+      timedOut: false,
+    };
     this.runtime.beginForegroundTurn(uuid);
     return output;
   }
@@ -147,6 +160,7 @@ export class ClaudeSdkPersistentSession {
     this.resultLiveness.clear();
     await this.terminalizeBackgroundTasks(reason);
     this.runtime.close(reason);
+    this.clearForegroundTimers(this.activeForeground);
     this.activeForeground?.output.close();
     this.activeForeground = null;
     this.hookOutput.close();
@@ -171,7 +185,9 @@ export class ClaudeSdkPersistentSession {
         await this.close("fatal");
       }
     } catch (err) {
-      this.activeForeground?.output.fail(err);
+      const active = this.activeForeground;
+      active?.output.fail(err);
+      this.clearForegroundTimers(active);
       this.activeForeground = null;
       await this.emitDetached({
         type: "error",
@@ -196,7 +212,9 @@ export class ClaudeSdkPersistentSession {
       await this.routeEvent(event);
       if (event.type === "session") this.runtime.setSessionId(event.sessionId);
       if (isFatalClientError(event)) {
-        this.activeForeground?.output.close();
+        const active = this.activeForeground;
+        active?.output.close();
+        this.clearForegroundTimers(active);
         this.activeForeground = null;
         await this.close("fatal");
       }
@@ -241,16 +259,21 @@ export class ClaudeSdkPersistentSession {
       interrupted: phase === "interrupting",
     });
     this.resultLiveness.settle(explicitUserMessageUuid);
+    this.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
     this.armDrainTimer();
 
-    const terminalEvents = this.eventMapper.mapResultMessage(message);
-    for (const event of terminalEvents) {
-      if (phase === "interrupting" && isExpectedInterruptDiagnostic(event)) continue;
-      if (active) {
-        active.output.push(event);
-      } else {
-        await this.emitDetached(event);
+    if (active?.timedOut) {
+      active.output.push(turnTimeoutError(this.turnTimeoutMs));
+    } else {
+      const terminalEvents = this.eventMapper.mapResultMessage(message);
+      for (const event of terminalEvents) {
+        if (phase === "interrupting" && isExpectedInterruptDiagnostic(event)) continue;
+        if (active) {
+          active.output.push(event);
+        } else {
+          await this.emitDetached(event);
+        }
       }
     }
     active?.output.close();
@@ -344,8 +367,50 @@ export class ClaudeSdkPersistentSession {
     };
     active.output.push(error);
     active.output.close();
+    this.clearForegroundTimers(active);
     this.activeForeground = null;
     await this.close("fatal");
+  }
+
+  private async handleTurnTimeout(uuid: string): Promise<void> {
+    const active = this.activeForeground;
+    if (!active || active.uuid !== uuid || active.timedOut) return;
+    active.timedOut = true;
+    try {
+      if (this.runtime.snapshot().foregroundPhase === "generating") {
+        await this.runtime.interruptForeground();
+      }
+      active.interruptResultTimer = setTimeout(() => {
+        void this.handleTimedOutTurnWithoutResult(uuid);
+      }, this.postResultDrainMs);
+      active.interruptResultTimer.unref?.();
+    } catch (err) {
+      this.logger.warn({ err, uuid }, "Persistent Claude turn timeout interrupt failed");
+      active.output.push(turnTimeoutError(this.turnTimeoutMs));
+      active.output.close();
+      this.clearForegroundTimers(active);
+      this.activeForeground = null;
+      await this.close("fatal");
+    }
+  }
+
+  private async handleTimedOutTurnWithoutResult(uuid: string): Promise<void> {
+    const active = this.activeForeground;
+    if (!active || active.uuid !== uuid || !active.timedOut) return;
+    active.output.push(turnTimeoutError(this.turnTimeoutMs));
+    active.output.close();
+    this.clearForegroundTimers(active);
+    this.activeForeground = null;
+    await this.close("fatal");
+  }
+
+  private clearForegroundTimers(active: ActiveForeground | null): void {
+    if (!active) return;
+    clearTimeout(active.deadlineTimer);
+    if (active.interruptResultTimer) {
+      clearTimeout(active.interruptResultTimer);
+      active.interruptResultTimer = null;
+    }
   }
 
   private async terminalizeBackgroundTasks(
@@ -420,4 +485,13 @@ function isTerminalBackgroundEvent(event: ClaudeClientEvent): boolean {
 
 function hashSdkUserMessage(message: SDKUserMessage): string {
   return createHash("sha256").update(JSON.stringify(message)).digest("hex");
+}
+
+function turnTimeoutError(timeoutMs: number): ClaudeClientEvent {
+  return {
+    type: "error",
+    fatal: true,
+    errorCode: "claude_persistent_turn_timeout",
+    message: `Claude foreground turn exceeded ${timeoutMs}ms and was interrupted.`,
+  };
 }

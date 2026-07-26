@@ -45,6 +45,7 @@ function makeRuntime(params: {
   searchEvents?: ReturnType<typeof vi.fn>;
   searchEventsBySessionId?: ReturnType<typeof vi.fn>;
   db?: Record<string, unknown>;
+  childCompletionConsumption?: McpRuntime["childCompletionConsumption"];
 }): McpRuntime {
   return {
     nodeId: "node-test",
@@ -56,13 +57,19 @@ function makeRuntime(params: {
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
     taskExecutor: {} as TaskExecutor,
+    ...(params.childCompletionConsumption
+      ? { childCompletionConsumption: params.childCompletionConsumption }
+      : {}),
     agentRegistry: {} as McpRuntime["agentRegistry"],
     catalogService: {} as CatalogService,
     logger: createSilentLogger(),
   };
 }
 
-async function createClient(runtime: McpRuntime): Promise<Client> {
+async function createClient(
+  runtime: McpRuntime,
+  headers?: Record<string, string>,
+): Promise<Client> {
   const server = await buildServer({
     host: "127.0.0.1",
     port: 0,
@@ -81,7 +88,10 @@ async function createClient(runtime: McpRuntime): Promise<Client> {
   openServers.push(server);
   const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   const client = new Client({ name: "session-query-test", version: "0.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`)));
+  await client.connect(new StreamableHTTPClientTransport(
+    new URL(`${baseUrl}/mcp`),
+    headers ? { requestInit: { headers } } : undefined,
+  ));
   openClients.push(client);
   return client;
 }
@@ -138,6 +148,48 @@ describe("list_session_events", () => {
       notice: "7건 중 cursor 0부터 2건 표시. cursor=2로 계속 조회하세요.",
     });
     expect(result.structuredContent?.events).toHaveLength(2);
+  });
+});
+
+describe("get_session_summary child completion", () => {
+  it("fails closed when the durable relation cannot be recorded", async () => {
+    const recordObservedBatch =
+      vi.fn().mockRejectedValue(new Error("ledger unavailable"));
+    const runtime = makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({
+          session_id: "child-1",
+          display_name: "Child",
+          status: "completed",
+          created_at: new Date("2026-07-26T00:00:00Z"),
+          caller_session_id: "caller-1",
+          last_event_id: 42,
+        })),
+        countEvents: vi.fn(async () => 0),
+        readEvents: vi.fn(async () => []),
+      },
+      childCompletionConsumption: {
+        recordObserved: vi.fn(),
+        recordObservedBatch,
+      },
+    });
+    const client = await createClient(runtime, {
+      "x-soulstream-agent-session-id": "caller-1",
+    });
+
+    const result = await client.callTool({
+      name: "get_session_summary",
+      arguments: { session_id: "child-1" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("ledger unavailable");
+    expect(recordObservedBatch).toHaveBeenCalledWith([{
+      childSessionId: "child-1",
+      callerSessionId: "caller-1",
+      source: "get_session_summary",
+      terminalRevision: 42,
+    }]);
   });
 });
 

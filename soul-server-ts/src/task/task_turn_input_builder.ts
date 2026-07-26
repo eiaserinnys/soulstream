@@ -10,6 +10,7 @@ import {
 import { formatContextItems } from "../context/prompt_assembler.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 
@@ -17,6 +18,7 @@ export interface TaskTurnInput {
   prompt: string;
   imageAttachmentPaths: string[];
   systemPrompt?: string;
+  inputUuid?: string;
   intervention?: InterventionMessage;
 }
 
@@ -80,6 +82,9 @@ export class TaskTurnInputBuilder {
       prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      ...(intervention.deliveryId
+        ? { inputUuid: buildDeliveryInputUuid(intervention.deliveryId) }
+        : {}),
       intervention,
     };
   }

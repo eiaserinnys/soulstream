@@ -56,13 +56,13 @@ describe("TaskDeliveryConsumption", () => {
     const task = makeTask();
     const message = makeMessage();
 
-    await subject.recordTurnStarted(task, message);
+    await expect(subject.recordTurnStarted(task, message)).resolves.toBe(true);
 
     expect(recorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
     expect(recorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("isolates ledger persistence failures from the foreground turn", async () => {
+  it("isolates ordinary receipt failures but fails closed for child consumption", async () => {
     const warn = vi.fn();
     const subject = new TaskDeliveryConsumption(
       {
@@ -72,8 +72,13 @@ describe("TaskDeliveryConsumption", () => {
       { warn } as unknown as Logger,
     );
 
-    await expect(subject.recordTurnStarted(makeTask(), makeMessage())).resolves.toBeUndefined();
+    await expect(subject.recordTurnStarted(makeTask(), makeMessage())).resolves.toBe(false);
     await expect(subject.recordConsumed(makeTask(), makeMessage())).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(2);
+    await expect(subject.recordConsumed(makeTask(), {
+      ...makeMessage(),
+      completionId: "completion-child",
+      relationKey: "child_session:child-1:42",
+    })).rejects.toThrow("db unavailable");
+    expect(warn).toHaveBeenCalledTimes(3);
   });
 });

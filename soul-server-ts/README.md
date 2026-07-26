@@ -22,18 +22,20 @@ ledger만 멱등 bootstrap한다. destructive pending은 검증된 backup gate �
 
 Haniel migration-aware 배포가 먼저 적용된 뒤의 최초 승인/재시작 pull은 저장소의
 `deploy/release-manifest.json`을 자동 발견해 기존 `repos.soulstream` 설정에 원자적으로
-활성화한다. 운영자가 `haniel.yaml`을 손으로 수정할 필요가 없다. manifest는 특정 환경의
-service key를 고정하지 않으며, Haniel이 repo에 연결된 실제 서비스
-(`soulstream-orch-server`, `soulstream-soul-server-ts` 등)를 사용한다. post-start success는
-HTTP/MCP/DB뿐 아니라 인증된 `/api/nodes`에서 `SOULSTREAM_NODE_ID`가 connected인 경우에만
-성립한다.
+활성화한다. 중앙 클러스터 manifest는 `environment_service=soulstream-orch-server`를
+고정한다. 따라서 공유 PostgreSQL migration은 오케스트레이터 Haniel 배포에서 advisory
+lock 아래 정확히 한 번 적용되고, worker-only Haniel은 apply 단계가 없는
+`deploy/release-manifest-worker.json`을 고정해 완료된 ledger만 검증한다. post-start
+success는 HTTP/MCP/DB뿐 아니라 인증된
+`/api/nodes`에서 `SOULSTREAM_NODE_ID`가 connected인 경우에만 성립한다.
 
 ### Haniel 통합 적용
 
-신규 standalone 설치용 정본은 **`install/haniel-soul-server-ts.example.yaml`** 이다.
-기존 클러스터의 one-time transition은 Haniel migration-aware 배포가 처리한다. 현재 config의
-repo/service key·cwd·ready·pre_start는 유지하고 `repos.soulstream.release_manifest` 한 필드만
-checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이나 reload를 요구하지 않는다.
+worker-only 노드 참조 정본은 **`install/haniel-soul-server-ts.example.yaml`** 이다. 이
+조각은 apply 단계가 없는 worker manifest를 고정한다. 기존 클러스터의 one-time transition은
+중앙 오케스트레이터 Haniel migration-aware 배포가 처리한다. worker는 그 배포가 성공한
+뒤에만 새 코드로 재기동한다. 별도 DB를 소유하는 standalone 설치는
+`deploy/release-manifest-standalone.json`을 자기 단일 권위로 사용한다.
 
 ### 환경 변수
 
@@ -52,26 +54,26 @@ checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이
 | `LOG_LEVEL` | ❌ (default info) | pino 레벨 |
 | `DASH_USER_NAME` | ❌ | 노드 광고용 user.name |
 | `DASH_USER_PORTRAIT` | ❌ | 노드 광고용 user portrait 이미지 경로 |
-| `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | ❌ (default false) | persistent Query·delivery ledger·notification v2 준비 gate. 미설정 시 기존 runtime 유지 |
+| `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | ❌ (default true) | persistent Query·delivery ledger·notification v2. 긴급 롤백 시 명시적으로 `false`를 설정해 legacy 경로 사용 |
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | ❌ (default 300000) | runtime v2에서 foreground 종료 후 idle Query 회수 유예 |
 | `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | ❌ (default 16) | runtime v2 worker별 persistent Query 상한 |
+| `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | ❌ (default 1800000) | runtime v2 foreground 턴 상한. legacy `SESSION_TIMEOUT_SECONDS=1800` 경계를 보존 |
 | `SUPERVISOR_ENABLED` | ❌ (default false) | supervisor 세션 부팅, wake, watchdog 활성화. true면 event ingest도 함께 켜짐 |
 | `SUPERVISOR_EVENT_INGEST_ENABLED` | ❌ (default false) | supervisor 세션은 켜지 않고 durable event ingest만 별도로 켤 때 사용 |
 
-### Claude session runtime v2 활성화 금지
+### Claude session runtime v2 기본 활성화와 kill-switch
 
-`CLAUDE_SESSION_RUNTIME_V2_ENABLED`는 persistent Query·additive schema·wire를 독립 검수하기
-위한 준비 gate다. 다음 항목을 모두 끝내기 전에는 어떤 노드에서도 `true`로 설정하지 않는다.
+`CLAUDE_SESSION_RUNTIME_V2_ENABLED`는 미설정 시 `true`다. 전 노드는 같은 코드를 배포하면
+persistent Query·delivery ledger·notification v2를 사용한다. 배포 전에는 versioned migration
+045·046·047을 공유 PostgreSQL에 먼저 적용해야 한다. 긴급 롤백은 각 노드의
+`.env.soul-server-ts`에 `CLAUDE_SESSION_RUNTIME_V2_ENABLED=false`를 명시하고 재기동한다.
+legacy 경로는 이 kill-switch를 위해 계속 검증한다.
 
-- 운영 승인 뒤 `sql/pending/043_session_deliveries.sql`과
-  `sql/pending/045_claude_background_tasks.sql`을 migration manifest로 승격하고 적용
-- inline child completion이 caller turn에서 소비된 relation을 정산하는 producer 연결
-- persistent runtime crash 뒤 session/query rehydration 정책 확정
-- persistent Query에서 `agents.yaml.max_turns`의 turn별 의미를 보존하는 정책 확정
-- 실제 SDK harness·통합 검증 결과의 독립 재검수와 disposable canary 검증
-
-현재 gate를 켜면 아직 canary를 통과하지 않은 엔진·delivery 경로가 활성화된다. 미설정 또는
-`false`만 배포 가능한 상태다.
+Persistent Query에는 SDK `maxTurns`를 전달하지 않는다. SDK 0.3.218에서 이 값은 턴이
+아니라 Query 전체 상한이므로, 전달하면 장기 세션의 후속 턴을 예기치 않게 막는다. 대신
+runtime v2는 legacy worker 설정의 30분 foreground 상한을
+`CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS`로 유지하고, 초과 시 그 턴만 interrupt한다.
+kill-switch legacy 경로는 기존 `agents.yaml.max_turns` 전달을 그대로 유지한다.
 
 ### 개발
 

@@ -12,6 +12,8 @@ import type {
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
+import { TaskDeliveryTurnReceipt } from
+  "../../src/task/task_delivery_turn_receipt.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -110,6 +112,30 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("gate OFF executor never enters the delivery receipt async boundary", async () => {
+    const mocks = makeMocks();
+    const observe = vi.spyOn(TaskDeliveryTurnReceipt.prototype, "observe");
+    const consume = vi.spyOn(TaskDeliveryTurnReceipt.prototype, "consume");
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "legacy", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(observe).not.toHaveBeenCalled();
+    expect(consume).not.toHaveBeenCalled();
+    observe.mockRestore();
+    consume.mockRestore();
+  });
+
   it("queued delivery를 turn 시작 시 delivered, 정상 Result 뒤 consumed로 기록한다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
@@ -124,6 +150,7 @@ describe("TaskExecutor.startExecution", () => {
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
+        { type: "session", session_id: "claude-session" },
         { type: "assistant_message", content: "consumed", timestamp: 1 },
       ] as SSEEventPayload[]),
       mocks.db,
@@ -150,6 +177,9 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
     expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
       deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.setClaudeSessionId.mock.invocationCallOrder[0]).toBeLessThan(
+      deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]!,
     );
   });
 
@@ -187,8 +217,92 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+  });
+
+  it("turn-start receipt 일시 실패 뒤 성공한 turn 종료에서 receipt를 재기록한다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "child result",
+      user: "agent",
+      deliveryId: "abababab-abab-4bab-8bab-abababababab",
+      deliveryIntent: "completion_notification",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn()
+        .mockRejectedValueOnce(new Error("transient database error"))
+        .mockResolvedValueOnce(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "error", error: "recoverable diagnostic" },
+        { type: "assistant_message", content: "consumed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+  });
+
+  it("error 이벤트만 관측한 성공 turn도 종료 시 receipt를 기록한다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "runtime result",
+      user: "system",
+      deliveryId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+      deliveryIntent: "runtime_followup",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "error", error: "recoverable diagnostic" },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
   });
 
   it("정상 흐름: durable 이벤트만 persist + 모든 이벤트 broadcast/side effect + 완료 후 session_updated", async () => {

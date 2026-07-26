@@ -11,6 +11,8 @@ import {
   readCanonicalDeliveryPayload,
 } from "./delivery_payload.js";
 import type { CallerInfo } from "./task_models.js";
+import type { QueuedDeliveryTranscriptRecovery } from
+  "./queued_delivery_transcript_recovery.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -43,6 +45,11 @@ export interface CompletionDeliveryCoordinatorDeps {
   repository: CompletionDeliveryRepository;
   dispatch(params: AddInterventionParams): Promise<void>;
   logger: Pick<Logger, "error" | "warn">;
+  sourceNode?: string;
+  queuedDeliveryRecovery?: Pick<
+    QueuedDeliveryTranscriptRecovery,
+    "recoverPeriodic"
+  >;
 }
 
 /**
@@ -58,6 +65,7 @@ export class CompletionDeliveryCoordinator {
     private readonly deps: CompletionDeliveryCoordinatorDeps,
     workerId = `completion:${randomUUID()}`,
     private readonly leaseMs = 15_000,
+    private readonly queuedRecoveryMaxAgeMs = 1_800_000,
   ) {
     this.workerId = workerId;
   }
@@ -87,6 +95,16 @@ export class CompletionDeliveryCoordinator {
   async recoverPending(limit = 100): Promise<void> {
     let rows: SessionDeliveryRow[];
     try {
+      const now = Date.now();
+      if (this.deps.sourceNode && this.deps.queuedDeliveryRecovery) {
+        await this.deps.queuedDeliveryRecovery.recoverPeriodic({
+          recoveryNodeId: this.deps.sourceNode,
+          // Schedule heartbeats run every few seconds; two minutes avoids
+          // transient ownership gaps while still recovering a dead node quickly.
+          staleNodeBefore: new Date(now - 120_000),
+          queuedBefore: new Date(now - this.queuedRecoveryMaxAgeMs),
+        }, limit);
+      }
       await this.deps.repository.releaseExpiredDeliveryLeases();
       rows = await this.deps.repository.claimRecoverableCompletionDeliveries(
         this.workerId,

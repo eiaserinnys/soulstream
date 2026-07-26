@@ -86,6 +86,12 @@ export interface ClaudeSdkClientConfig {
   detachedEventSink?: ClaudeDetachedEventSink;
   runtimeEventSink?: ClaudeRuntimeEventSink;
   uncorrelatedResultTimeoutMs?: number;
+  /**
+   * Persistent runtime foreground deadline. The legacy worker exposed a
+   * 30-minute SESSION_TIMEOUT_SECONDS boundary; runtime v2 preserves it
+   * without forwarding Query-global SDK maxTurns.
+   */
+  persistentTurnTimeoutMs?: number;
 }
 
 export class ClaudeSdkClient implements ClaudeClient {
@@ -101,6 +107,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly detachedEventSink: ClaudeDetachedEventSink;
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly uncorrelatedResultTimeoutMs: number;
+  private readonly persistentTurnTimeoutMs: number;
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: EventQueue<SDKUserMessage> | null = null;
@@ -138,6 +145,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.runtimeEventSink = config.runtimeEventSink;
     this.uncorrelatedResultTimeoutMs =
       config.uncorrelatedResultTimeoutMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
+    this.persistentTurnTimeoutMs =
+      config.persistentTurnTimeoutMs ?? 1_800_000;
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -201,18 +210,18 @@ export class ClaudeSdkClient implements ClaudeClient {
     options: ClaudeRunOptions,
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent> {
-    if (options.maxTurns !== undefined) {
-      throw new Error(
-        "Persistent Claude runtime cannot preserve per-turn maxTurns; keep runtime v2 disabled",
-      );
-    }
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     if (!this.persistentSession) {
       this.clearPerRunState();
       const hookOutput = createEventQueue<ClaudeClientEvent>();
       const abortController = new AbortController();
-      const queryOptions = this.buildSdkOptions(options, abortController, hookOutput);
+      const { maxTurns: _queryGlobalMaxTurns, ...persistentOptions } = options;
+      const queryOptions = this.buildSdkOptions(
+        persistentOptions,
+        abortController,
+        hookOutput,
+      );
       this.persistentSession = new ClaudeSdkPersistentSession({
         createQuery: (input) => {
           let query: ClaudeSdkQuery;
@@ -234,6 +243,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,
         uncorrelatedResultTimeoutMs: this.uncorrelatedResultTimeoutMs,
+        turnTimeoutMs: this.persistentTurnTimeoutMs,
         onClosed: () => {
           this.activeQuery = null;
           this.persistentSession = null;

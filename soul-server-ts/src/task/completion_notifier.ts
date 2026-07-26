@@ -34,6 +34,8 @@ import type {
   TaskManager,
 } from "./task_manager.js";
 import type { Task } from "./task_models.js";
+import type { QueuedDeliveryTranscriptRecovery } from
+  "./queued_delivery_transcript_recovery.js";
 
 /**
  * 본 notifier의 *유일한* 진입점. 다른 public 메서드를 추가하지 않는다 —
@@ -67,6 +69,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     >,
     private readonly deliveryV2Enabled = false,
     deliveryRepository?: SessionDeliveryRepository,
+    queuedRecoveryMaxAgeMs?: number,
+    queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery,
   ) {
     // 테스트가 fetch mock을 주입 — 운영 시 globalThis.fetch (Node 18+ 내장).
     this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args));
@@ -80,7 +84,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           }
         },
         logger,
-      });
+        sourceNode: nodeId,
+        queuedDeliveryRecovery,
+      }, undefined, undefined, queuedRecoveryMaxAgeMs);
     }
   }
 

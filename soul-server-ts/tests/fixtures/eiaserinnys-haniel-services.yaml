@@ -9,7 +9,7 @@ services:
     repo: soulstream
     ready: port:5200
     hooks:
-      pre_start: /usr/bin/node soul-server-ts/scripts/apply-schema.mjs
+      pre_start: /usr/bin/node soul-server-ts/scripts/verify-migrations.mjs
   soulstream-soul-server-ts:
     cwd: ./services/soulstream
     repo: soulstream

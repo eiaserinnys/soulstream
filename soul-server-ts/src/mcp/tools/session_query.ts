@@ -14,6 +14,8 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { searchSessionEvents } from "../../search/session_search.js";
 import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
+import { SessionQueryConsumptionBoundary } from
+  "./session_query_consumption_boundary.js";
 
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
@@ -22,6 +24,9 @@ export function registerSessionQueryTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
+  const consumptionBoundary = new SessionQueryConsumptionBoundary(
+    runtime.childCompletionConsumption,
+  );
   server.registerTool(
     "list_sessions",
     {
@@ -123,7 +128,7 @@ export function registerSessionQueryTools(
       );
       const last = events[events.length - 1];
       const nextCursor = hasMore && last ? last.id : null;
-      return jsonResult({
+      const result = jsonResult({
         session_id,
         total: totalEvents,
         events: processed,
@@ -139,6 +144,11 @@ export function registerSessionQueryTools(
                 + `cursor=${nextCursor}로 계속 조회하세요.`,
             }),
       });
+      return consumptionBoundary.commit(
+        "list_session_events",
+        result,
+        [{ session, reflectedRevision: last?.id ?? null }],
+      );
     },
   );
 
@@ -162,7 +172,11 @@ export function registerSessionQueryTools(
           `이벤트를 찾을 수 없습니다: session=${session_id}, event_id=${event_id}`,
         );
       }
-      return jsonResult({ id: ev.id, event: ev.payload });
+      return consumptionBoundary.commit(
+        "get_session_event",
+        jsonResult({ id: ev.id, event: ev.payload }),
+        [{ session, reflectedRevision: ev.id }],
+      );
     },
   );
 
@@ -205,11 +219,19 @@ export function registerSessionQueryTools(
         lines.length > 0 ? `${lines}\n` : "",
         "utf-8",
       );
-      return jsonResult({
+      const result = jsonResult({
         session_id,
         file_path: filePath,
         event_count: rows.length,
       });
+      return consumptionBoundary.commit(
+        "download_session_history",
+        result,
+        [{
+          session,
+          reflectedRevision: rows[rows.length - 1]?.id ?? null,
+        }],
+      );
     },
   );
 
@@ -235,7 +257,14 @@ export function registerSessionQueryTools(
           searchSessionId: search_session_id,
           limit: top_k ?? 10,
         });
-        return jsonResult({ results });
+        const observations = consumptionBoundary.enabled
+          ? await buildSearchObservations(runtime, results)
+          : [];
+        return consumptionBoundary.commit(
+          "search_session_history",
+          jsonResult({ results }),
+          observations,
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return errorResult(msg);
@@ -262,7 +291,7 @@ export function registerSessionQueryTools(
         session_id,
         max_response_chars ?? 500,
       );
-      return jsonResult({
+      const result = jsonResult({
         session_id,
         display_name: session.display_name,
         status: session.status,
@@ -273,8 +302,38 @@ export function registerSessionQueryTools(
         total_events: totalEvents,
         turns,
       });
+      return consumptionBoundary.commit(
+        "get_session_summary",
+        result,
+        [{ session, reflectedRevision: session.last_event_id }],
+      );
     },
   );
+}
+
+async function buildSearchObservations(
+  runtime: McpRuntime,
+  results: Array<{ session_id: string; event_id: number }>,
+): Promise<Array<{
+  session: NonNullable<Awaited<ReturnType<McpRuntime["db"]["getSession"]>>>;
+  reflectedRevision: number;
+}>> {
+  const highestReflectedRevision = new Map<string, number>();
+  for (const result of results) {
+    highestReflectedRevision.set(
+      result.session_id,
+      Math.max(
+        highestReflectedRevision.get(result.session_id) ?? 0,
+        result.event_id,
+      ),
+    );
+  }
+  const observations = [];
+  for (const [sessionId, reflectedRevision] of highestReflectedRevision) {
+    const session = await runtime.db.getSession(sessionId);
+    if (session) observations.push({ session, reflectedRevision });
+  }
+  return observations;
 }
 
 function serializeDate(d: Date | null | undefined): string | null {

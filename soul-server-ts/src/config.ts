@@ -97,13 +97,13 @@ export const EnvSchema = z
      */
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
     /**
-     * Exactly-once delivery + session notification preparation gate.
-     * The persistent Query path remains canary-prohibited. Absence preserves the
-     * legacy runtime and requires no env rollout.
+     * Persistent Query + exactly-once delivery runtime.
+     * Enabled cluster-wide by default after the migration/canary hardening
+     * cycle. Explicit false remains the emergency legacy kill switch.
      */
     CLAUDE_SESSION_RUNTIME_V2_ENABLED: z
       .union([z.literal("true"), z.literal("false")])
-      .default("false")
+      .default("true")
       .transform((v) => v === "true"),
     /** Runtime v2 only. Released idle Queries are reclaimed after this TTL. */
     CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: z.coerce
@@ -111,6 +111,13 @@ export const EnvSchema = z
     /** Runtime v2 only. Hard worker-local cap; active/background Queries are never evicted. */
     CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: z.coerce
       .number().int().positive().default(16),
+    /**
+     * Runtime v2 only. One foreground turn may run for at most the legacy
+     * SESSION_TIMEOUT_SECONDS default (30 minutes). This replaces SDK
+     * maxTurns, whose scope becomes Query-global under a persistent Query.
+     */
+    CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: z.coerce
+      .number().int().positive().default(1_800_000),
     /**
      * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).

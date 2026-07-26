@@ -15,6 +15,7 @@ const ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL";
 
 export interface TaskEngineTurnInput {
   prompt: string;
+  inputUuid?: string;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
 }
@@ -134,6 +135,7 @@ export class TaskEngineTurnRunner {
     return engine.execute({
       agentSessionId: task.agentSessionId,
       prompt: input.prompt,
+      ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
       imageAttachmentPaths: input.imageAttachmentPaths,
       model: effectiveModel,
       reasoningEffort: task.reasoningEffort,

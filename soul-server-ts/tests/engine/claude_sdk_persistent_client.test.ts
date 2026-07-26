@@ -22,18 +22,230 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
-  it("fails closed instead of turning per-turn maxTurns into a session-global cap", async () => {
+  it("omits SDK maxTurns from one persistent Query while preserving later turns", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
       { query: harness.queryFn, detachedEventSink: harness.detached },
       silentLogger,
     );
 
-    await expect(collect(client.runPersistent(
-      { ...runOptions("bounded"), maxTurns: 2 },
+    const first = collect(client.runPersistent(
+      { ...runOptions("bounded-1"), maxTurns: 2 },
       abortSignal(),
-    ))).rejects.toThrow("cannot preserve per-turn maxTurns");
-    expect(harness.captured).toHaveLength(0);
+    ));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const second = collect(client.runPersistent(
+      { ...runOptions("bounded-2"), maxTurns: 2 },
+      abortSignal(),
+    ));
+    const secondInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await second;
+
+    expect(harness.captured).toHaveLength(1);
+    expect(harness.captured[0]?.options).not.toHaveProperty("maxTurns");
+    await client.close();
+  });
+
+  it("interrupts an overlong foreground turn without closing the persistent Query", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        persistentTurnTimeoutMs: 10,
+        postResultDrainMs: 1_000,
+      },
+      silentLogger,
+    );
+
+    const timedOut = collect(client.runPersistent(
+      runOptions("long turn"),
+      abortSignal(),
+    ));
+    const firstInput = await harness.nextInput();
+    await vi.waitFor(() => {
+      expect(harness.interrupt).toHaveBeenCalledTimes(1);
+    });
+    harness.push(sdkInterruptedResult("sdk-session", firstInput.uuid));
+
+    await expect(timedOut).resolves.toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        fatal: true,
+        errorCode: "claude_persistent_turn_timeout",
+      }),
+    );
+    expect(harness.close).not.toHaveBeenCalled();
+
+    const resumed = collect(client.runPersistent(
+      runOptions("after timeout"),
+      abortSignal(),
+    ));
+    const secondInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "recovered"));
+    await expect(resumed).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "recovered" }),
+    );
+    expect(harness.captured).toHaveLength(1);
+    await client.close();
+  });
+
+  it("creates a fresh Query after worker restart with the persisted Claude session id", async () => {
+    const persistedSessionId = "claude-session-before-worker-crash";
+    const restartedHarness = makeHarness();
+    const restartedClient = new ClaudeSdkClient(
+      {
+        query: restartedHarness.queryFn,
+        detachedEventSink: restartedHarness.detached,
+      },
+      silentLogger,
+    );
+
+    const resumed = collect(restartedClient.runPersistent(
+      {
+        ...runOptions("resume pending delivery after restart"),
+        resumeSessionId: persistedSessionId,
+        maxTurns: 7,
+      },
+      abortSignal(),
+    ));
+    const input = await restartedHarness.nextInput();
+    restartedHarness.push(sdkInit(persistedSessionId));
+    restartedHarness.push(sdkResult(persistedSessionId, input.uuid, "recovered"));
+
+    await expect(resumed).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "recovered" }),
+    );
+    expect(restartedHarness.captured).toHaveLength(1);
+    expect(restartedHarness.captured[0]?.options).toMatchObject({
+      resume: persistedSessionId,
+    });
+    expect(restartedHarness.captured[0]?.options).not.toHaveProperty("maxTurns");
+    await restartedClient.close();
+  });
+
+  it("reuses a delivery-bound SDK input UUID after a worker restart", async () => {
+    const inputUuid = "11111111-1111-5111-8111-111111111111";
+    const beforeCrash = makeHarness();
+    const firstClient = new ClaudeSdkClient(
+      { query: beforeCrash.queryFn, detachedEventSink: beforeCrash.detached },
+      silentLogger,
+    );
+    const firstTurn = collect(firstClient.runPersistent(
+      { ...runOptions("delivery before crash"), inputUuid },
+      abortSignal(),
+    ));
+    const firstInput = await beforeCrash.nextInput();
+    beforeCrash.push(sdkResult("sdk-session", firstInput.uuid, "accepted"));
+    await firstTurn;
+    await firstClient.close();
+
+    const afterCrash = makeHarness();
+    const secondClient = new ClaudeSdkClient(
+      { query: afterCrash.queryFn, detachedEventSink: afterCrash.detached },
+      silentLogger,
+    );
+    const recoveredTurn = collect(secondClient.runPersistent(
+      {
+        ...runOptions("same durable delivery after restart"),
+        inputUuid,
+        resumeSessionId: "sdk-session",
+      },
+      abortSignal(),
+    ));
+    const recoveredInput = await afterCrash.nextInput();
+    afterCrash.push(sdkResult("sdk-session", recoveredInput.uuid, "deduplicated"));
+    await recoveredTurn;
+
+    expect(firstInput.uuid).toBe(inputUuid);
+    expect(recoveredInput.uuid).toBe(inputUuid);
+    await secondClient.close();
+  });
+
+  it("clears the foreground timeout when the Query pump fails fatally", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnTimeoutMs: 30 * 60_000,
+        },
+        silentLogger,
+      );
+      const turn = collect(client.runPersistent(
+        runOptions("query failure"),
+        abortSignal(),
+      ));
+      await harness.nextInput();
+      harness.fail(new Error("query exploded"));
+
+      await expect(turn).rejects.toThrow("query exploded");
+      await vi.waitFor(() => {
+        expect(harness.detached).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "error",
+            fatal: true,
+            errorCode: "claude_persistent_query_failed",
+          }),
+        );
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(30 * 60_000 + 1);
+      expect(harness.interrupt).not.toHaveBeenCalled();
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the foreground timeout when a mapped SDK Result is fatal", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnTimeoutMs: 30 * 60_000,
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+      const turn = collect(client.runPersistent(
+        runOptions("fatal result"),
+        abortSignal(),
+      ));
+      const input = await harness.nextInput();
+      harness.push({
+        ...sdkResult("sdk-session", input.uuid, ""),
+        subtype: "error_max_turns",
+        is_error: true,
+        errors: ["turn failed fatally"],
+      } as unknown as SDKMessage);
+
+      await expect(turn).resolves.toContainEqual(
+        expect.objectContaining({
+          type: "error",
+          fatal: true,
+        }),
+      );
+      // The foreground deadline is gone; only the normal post-Result drain
+      // timer remains.
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(11);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      expect(harness.interrupt).not.toHaveBeenCalled();
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps one Query open across Results and queues a drain-phase input without interrupt", async () => {

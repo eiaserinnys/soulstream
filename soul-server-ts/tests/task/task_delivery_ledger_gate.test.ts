@@ -31,6 +31,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markUncertain: vi.fn(),
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
     });
     const base = {
       agentSessionId: "caller-1",
@@ -83,6 +84,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markUncertain: vi.fn(),
       markConsumed: vi.fn(),
       markConsumedByRelation,
+      recordRelationConsumed: vi.fn(),
     });
 
     await expect(gate.recordInlineConsumed({
@@ -111,6 +113,52 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
+  it("records a child completion relation even before a notifier delivery row exists", async () => {
+    const recordRelationConsumed = vi.fn().mockResolvedValue({
+      relation: {},
+      relationInserted: true,
+      deliveryConsumed: false,
+    });
+    const markConsumed = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      claimForCurrentSupervisor: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed,
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed,
+    });
+
+    await gate.recordConsumed({
+      text: "child result already consumed inline",
+      user: "agent",
+      deliveryIntent: "completion_notification",
+      completionId: "completion-child-42",
+      relationKey: "child_session:child-1:42",
+    }, {
+      agentSessionId: "caller-1",
+      prompt: "delegate",
+      status: "running",
+      createdAt: new Date(),
+      lastEventId: 93,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    });
+
+    expect(recordRelationConsumed).toHaveBeenCalledWith({
+      relationKey: "child_session:child-1:42",
+      completionId: "completion-child-42",
+      callerSessionId: "caller-1",
+      consumedTurnId: "event:93",
+    });
+    expect(markConsumed).not.toHaveBeenCalled();
+  });
+
   it("suppresses an admitted completion when consumed wins the dispatch CAS", async () => {
     const deliveryId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const gate = new TaskDeliveryLedgerGate(true, {
@@ -124,6 +172,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markUncertain: vi.fn(),
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
     });
 
     await expect(gate.beginDispatch({
@@ -160,6 +209,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markUncertain: vi.fn(),
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
     });
 
     await expect(gate.admit({

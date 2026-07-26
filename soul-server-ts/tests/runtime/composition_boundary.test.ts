@@ -56,6 +56,7 @@ describe("worker composition boundary", () => {
       BOARD_YJS_HOST_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
       DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
+      CLAUDE_SESSION_RUNTIME_V2_ENABLED: "false",
     });
     const getSession = vi.fn(async () => {
       throw new Error("gate-off completion delivery must not touch SessionDB");
@@ -135,6 +136,7 @@ describe("worker composition boundary", () => {
 
   it("keeps gate-OFF intervention wiring free of feature-only awaits", () => {
     const taskManager = source("task/task_manager.ts");
+    const taskExecutor = source("task/task_executor.ts");
     const interventionRoute = source("task/task_intervention_route.ts");
     const lifecycleRoute = source("task/task_lifecycle_route.ts");
     const workerComposition = source("runtime/worker_composition.ts");
@@ -163,12 +165,58 @@ describe("worker composition boundary", () => {
     expect(workerComposition).toMatch(
       /:\s+\{\};\s+const claudeSessionClientRegistry = claudeRuntime\.registry/,
     );
+    expect(taskExecutor).toMatch(
+      /const turnReceipt = this\.deliveryConsumption\s+\?\s+new TaskDeliveryTurnReceipt\(/,
+    );
+    expect(taskExecutor).toContain(
+      "if (turnReceipt) await turnReceipt.observe(task, event);",
+    );
+    expect(taskExecutor).toContain(
+      "if (!followupStalled && turnReceipt) await turnReceipt.consume(task);",
+    );
+    expect(taskExecutor).not.toMatch(
+      /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
+    );
+    expect(taskExecutor).not.toMatch(
+      /(?<!if \(!followupStalled && turnReceipt\) )await turnReceipt\.consume\(/,
+    );
+  });
+
+  it("starts delivery recovery only after the crash-resume executor is bound", () => {
+    const supervisorComposition = source("runtime/supervisor_composition.ts");
+    const executorIndex = supervisorComposition.indexOf(
+      "taskExecutor = new TaskExecutor(",
+    );
+    const recoveryIndex = supervisorComposition.indexOf(
+      "completionDeliveryRecoveryWorker?.start();",
+    );
+
+    expect(executorIndex).toBeGreaterThan(-1);
+    expect(recoveryIndex).toBeGreaterThan(executorIndex);
+  });
+
+  it("fails closed on runtime schema before startup cleanup or index work", () => {
+    const workerComposition = source("runtime/worker_composition.ts");
+    const preflightIndex = workerComposition.indexOf(
+      "await preflightPersistentRuntimeSchema(",
+    );
+    const indexEnsureIndex = workerComposition.indexOf(
+      "ensureStableSessionOrderIndexInBackground(db, logger);",
+    );
+    const cleanupIndex = workerComposition.indexOf(
+      "await db.interruptRunningSessionsForNode(",
+    );
+
+    expect(preflightIndex).toBeGreaterThan(-1);
+    expect(indexEnsureIndex).toBeGreaterThan(preflightIndex);
+    expect(cleanupIndex).toBeGreaterThan(preflightIndex);
   });
 
   it("keeps every production module touched by the extraction below 500 lines", () => {
     const files = [
       "main.ts",
       "runtime/worker_composition.ts",
+      "runtime/worker_schema_preflight.ts",
       "runtime/supervisor_composition.ts",
       "context/context_builder.ts",
       "context/context_builder_helpers.ts",
@@ -191,6 +239,12 @@ describe("worker composition boundary", () => {
       "task/completion_delivery_coordinator.ts",
       "task/completion_delivery_recovery_worker.ts",
       "task/completion_notifier.ts",
+      "task/queued_delivery_transcript_recovery.ts",
+      "db/repositories/session_delivery_repository.ts",
+      "db/repositories/session_delivery_recovery_repository.ts",
+      "db/repositories/session_delivery_relation_repository.ts",
+      "db/runtime_schema_preflight.ts",
+      "engine/claude_delivery_transcript_receipt.ts",
     ];
 
     for (const file of files) {

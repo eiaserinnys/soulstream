@@ -37,7 +37,7 @@ import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
-import type { Task, TaskStatus } from "./task_models.js";
+import type { InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import {
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
@@ -50,12 +50,11 @@ import {
   type ClaudeRuntimeFollowupStallReason,
   type ClaudeRuntimeTaskFollowupPort,
 } from "./claude_runtime_task_followup.js";
-import type { InterventionMessage } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
+import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
 
-const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE =
-  "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
+const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
@@ -223,12 +222,10 @@ export class TaskExecutor {
     let turnPrompt = initialTurnInput.prompt;
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
+    let turnInputUuid = initialTurnInput.inputUuid;
     let currentTurnIntervention = initialTurnInput.intervention;
     try {
       while (true) {
-        if (this.deliveryConsumption) {
-          await this.deliveryConsumption.recordTurnStarted(task, currentTurnIntervention);
-        }
         if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
           this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
             task,
@@ -236,6 +233,12 @@ export class TaskExecutor {
           );
         }
         const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
+        const turnReceipt = this.deliveryConsumption
+          ? new TaskDeliveryTurnReceipt(
+              this.deliveryConsumption,
+              currentTurnIntervention,
+            )
+          : undefined;
         try {
           for await (const event of this.engineTurnRunner.executeTurn({
             task,
@@ -243,10 +246,12 @@ export class TaskExecutor {
             engine,
             input: {
               prompt: turnPrompt,
+              ...(turnInputUuid !== undefined ? { inputUuid: turnInputUuid } : {}),
               imageAttachmentPaths: turnImageAttachmentPaths,
               ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
             },
           })) {
+            if (turnReceipt) await turnReceipt.observe(task, event);
             await this.engineEventPublisher.publishEngineEvent(task, event);
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
@@ -260,9 +265,7 @@ export class TaskExecutor {
           currentTurnIntervention,
           previousAssistantText,
         );
-        if (!followupStalled && this.deliveryConsumption) {
-          await this.deliveryConsumption.recordConsumed(task, currentTurnIntervention);
-        }
+        if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
@@ -280,6 +283,7 @@ export class TaskExecutor {
         turnPrompt = followupTurnInput.prompt;
         turnImageAttachmentPaths = followupTurnInput.imageAttachmentPaths;
         turnSystemPrompt = followupTurnInput.systemPrompt;
+        turnInputUuid = followupTurnInput.inputUuid;
         currentTurnIntervention = transition.intervention;
       }
     } finally {

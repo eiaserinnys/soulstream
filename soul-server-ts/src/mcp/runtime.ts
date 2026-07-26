@@ -18,6 +18,8 @@ import type { TaskService } from "../work-task/task_service.js";
 import type { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
+import type { ChildCompletionConsumptionRecorder } from
+  "../task/child_completion_consumption.js";
 import type { McpToolProfile } from "./tool_access.js";
 
 export interface OrchProxyConfig {
@@ -34,6 +36,11 @@ export interface McpRuntime {
   db: SessionDB;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
+  /** Present only behind the persistent-runtime gate. */
+  childCompletionConsumption?: Pick<
+    ChildCompletionConsumptionRecorder,
+    "recordObserved" | "recordObservedBatch"
+  >;
   agentRegistry: AgentRegistry;
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;

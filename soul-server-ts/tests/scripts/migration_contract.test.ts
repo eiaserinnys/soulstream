@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { REQUIRED_RUNTIME_MIGRATIONS } from
+  "../../src/db/runtime_schema_preflight.js";
 import { validateBackupArchive } from "../../../packages/db-schema/scripts/backup.mjs";
 import {
   assertLegacyBackupResolved,
@@ -66,16 +68,38 @@ describe("versioned migration contract", () => {
     expect(migrationSha256(crlf)).toBe(migrationSha256(lf));
   });
 
-  it("keeps deployment-specific service keys out and declares previous-release recovery", () => {
+  it("pins migration execution to the central orch service and declares recovery", () => {
     const manifest = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest.json", import.meta.url),
     ), "utf8"));
 
-    expect(manifest).not.toHaveProperty("environment_service");
+    expect(manifest.environment_service).toBe("soulstream-orch-server");
     expect(manifest.recovery.fallback).toMatchObject({
       name: "recover-previous-release-data",
       command: "node packages/db-schema/scripts/backup.mjs recover",
     });
+  });
+
+  it("keeps worker deployments verify-only and standalone migration-authoritative", () => {
+    const worker = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/release-manifest-worker.json", import.meta.url),
+    ), "utf8"));
+    const standalone = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/release-manifest-standalone.json", import.meta.url),
+    ), "utf8"));
+    const cluster = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/release-manifest.json", import.meta.url),
+    ), "utf8"));
+
+    expect(worker).not.toHaveProperty("environment_service");
+    expect(worker).not.toHaveProperty("migration");
+    expect(worker.post_start_verify[0].command).toBe(
+      "node packages/db-schema/scripts/migrate.mjs verify",
+    );
+
+    expect(standalone.environment_service).toBe("soul-server-ts");
+    expect(standalone.migration).toEqual(cluster.migration);
+    expect(standalone.post_start_verify).toEqual(cluster.post_start_verify);
   });
   it("loads release settings from the declared Haniel service cwd", () => {
     expect(deploymentEnvironmentPath(
@@ -90,9 +114,11 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(45);
+    expect(migrations).toHaveLength(48);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
-    expect(migrations.at(-1)?.id).toBe("044_session_metadata_search.sql");
+    expect(migrations.at(-1)?.id).toBe(
+      "047_session_delivery_relation_consumptions.sql",
+    );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
     );
@@ -100,14 +126,26 @@ describe("versioned migration contract", () => {
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
     ]);
-    expect(migrations.slice(0, -3).every(
+    expect(migrations.slice(0, -6).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-3).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-6).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
       "previous_release_safe",
+      "previous_release_safe",
+      "previous_release_safe",
+      "previous_release_safe",
     ]);
+  });
+
+  it("keeps the worker startup preflight pinned to the published manifest tail", async () => {
+    const migrations = await loadMigrationManifest();
+    expect(migrations.slice(44).map((migration) => ({
+      ordinal: migration.ordinal,
+      migrationId: migration.id,
+      checksum: migration.sha256,
+    }))).toEqual(REQUIRED_RUNTIME_MIGRATIONS);
   });
 
   it("treats only explicit one-release compatibility as data-preserving rollback", () => {
@@ -139,6 +177,9 @@ describe("versioned migration contract", () => {
     expect(plan.bootstrap).toHaveLength(44);
     expect(plan.pending.map((item) => item.id)).toEqual([
       "044_session_metadata_search.sql",
+      "045_session_deliveries.sql",
+      "046_claude_background_tasks.sql",
+      "047_session_delivery_relation_consumptions.sql",
     ]);
   });
 
@@ -151,6 +192,9 @@ describe("versioned migration contract", () => {
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
       "044_session_metadata_search.sql",
+      "045_session_deliveries.sql",
+      "046_claude_background_tasks.sql",
+      "047_session_delivery_relation_consumptions.sql",
     ]);
   });
 

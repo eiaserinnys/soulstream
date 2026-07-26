@@ -1,4 +1,4 @@
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,6 +9,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 const SCRIPT_PATH = fileURLToPath(new URL("../../scripts/apply-schema.mjs", import.meta.url));
+const MIGRATION_SCRIPT_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/scripts/migrate.mjs",
+  import.meta.url,
+));
 const PAGE_MODEL_MIGRATION_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/032_page_block_model.sql",
   import.meta.url,
@@ -84,7 +88,7 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
-        migration_count: 44,
+        migration_count: 48,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -277,6 +281,136 @@ describe("apply-schema.mjs", () => {
     }
   });
 
+  itWithDocker(
+    "applies runtime migrations after the published 044@45 baseline once",
+    async () => {
+      const { url } = await startPostgres();
+      const cwd = writeEnv(url);
+      expect(runApplySchema(cwd).status).toBe(0);
+
+      const sql = postgres(url, { max: 2, idle_timeout: 1 });
+      try {
+        await resetToPreRuntimeMigrationState(sql);
+        const baseline = await sql<Array<{
+          migration_id: string;
+          ordinal: number;
+        }>>`
+          SELECT migration_id, ordinal
+          FROM schema_migrations
+          WHERE ordinal = 45
+        `;
+        expect(baseline).toEqual([{
+          migration_id: "044_session_metadata_search.sql",
+          ordinal: 45,
+        }]);
+
+        const [left, right] = await Promise.all([
+          runMigrationAsync(cwd, "apply"),
+          runMigrationAsync(cwd, "apply"),
+        ]);
+        expect(left.status).toBe(0);
+        expect(right.status).toBe(0);
+        expectNoSecretLeak(left);
+        expectNoSecretLeak(right);
+
+        const promoted = await sql<Array<{
+          migration_id: string;
+          ordinal: number;
+          applied_kind: string;
+        }>>`
+          SELECT migration_id, ordinal, applied_kind
+          FROM schema_migrations
+          WHERE ordinal >= 46
+          ORDER BY ordinal
+        `;
+        expect(promoted).toEqual([
+          {
+            migration_id: "045_session_deliveries.sql",
+            ordinal: 46,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "046_claude_background_tasks.sql",
+            ordinal: 47,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "047_session_delivery_relation_consumptions.sql",
+            ordinal: 48,
+            applied_kind: "migration",
+          },
+        ]);
+
+        const objects = await sql<Array<{
+          deliveries: string | null;
+          background_tasks: string | null;
+          relation_consumptions: string | null;
+        }>>`
+          SELECT
+            to_regclass('session_deliveries')::text AS deliveries,
+            to_regclass('claude_background_tasks')::text AS background_tasks,
+            to_regclass('session_delivery_relation_consumptions')::text
+              AS relation_consumptions
+        `;
+        expect(objects[0]).toEqual({
+          deliveries: "session_deliveries",
+          background_tasks: "claude_background_tasks",
+          relation_consumptions: "session_delivery_relation_consumptions",
+        });
+
+        const repeated = runMigration(cwd, "apply");
+        expect(repeated.status).toBe(0);
+        expect(repeated.stdout).toContain('"pending":[]');
+        expectNoSecretLeak(repeated);
+
+        const verified = runMigration(cwd, "verify");
+        expect(verified.status).toBe(0);
+        expect(verified.stdout).toContain('"ledger_count":48');
+        expectNoSecretLeak(verified);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    },
+    90_000,
+  );
+
+  itWithDocker(
+    "aborts the release migration transaction and blocks startup verification on DDL failure",
+    async () => {
+      const { url } = await startPostgres();
+      const cwd = writeEnv(url);
+      expect(runApplySchema(cwd).status).toBe(0);
+
+      const sql = postgres(url, { max: 1, idle_timeout: 1 });
+      try {
+        await resetToPreRuntimeMigrationState(sql);
+        await sql.unsafe(`
+          CREATE VIEW session_deliveries AS
+          SELECT 'incompatible-object'::text AS delivery_id
+        `);
+
+        const failed = runMigration(cwd, "apply");
+        expect(failed.status).not.toBe(0);
+        expect(failed.stderr).toContain('"status":"error"');
+        expectNoSecretLeak(failed);
+
+        const ledger = await sql<Array<{ count: number }>>`
+          SELECT COUNT(*)::int AS count
+          FROM schema_migrations
+        `;
+        expect(ledger[0]?.count).toBe(45);
+
+        const startupVerify = runMigration(cwd, "verify");
+        expect(startupVerify.status).not.toBe(0);
+        expect(startupVerify.stderr).toContain("migration ledger incomplete");
+        expectNoSecretLeak(startupVerify);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    },
+    90_000,
+  );
+
   it("exits non-zero without leaking the DATABASE_URL when schema apply fails", () => {
     const cwd = writeEnv(
       `postgresql://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:1/${TEST_DB_NAME}`,
@@ -297,6 +431,9 @@ describe("apply-schema.mjs", () => {
     const service = parsed.services["soul-server-ts"];
     const envConfig = parsed.install.configs["soul-server-ts-env"];
 
+    expect(parsed.repos["soulstream-server-src"].release_manifest).toBe(
+      "deploy/release-manifest-worker.json",
+    );
     expect(service.hooks.pre_start).toBe(
       "node src/soulstream/soul-server-ts/scripts/verify-migrations.mjs",
     );
@@ -310,7 +447,9 @@ describe("apply-schema.mjs", () => {
     const service = parsed.services["soul-server-ts"];
     const installer = readFileSync(INSTALLER_PATH, "utf8");
 
-    expect(parsed.repos.soulstream.release_manifest).toBe("deploy/release-manifest.json");
+    expect(parsed.repos.soulstream.release_manifest).toBe(
+      "deploy/release-manifest-standalone.json",
+    );
     expect(service.ready).toBe("http://127.0.0.1:__PORT__/health");
     expect(service.hooks.pre_start).toBe(
       "node soul-server-ts/scripts/verify-migrations.mjs",
@@ -333,7 +472,7 @@ describe("apply-schema.mjs", () => {
     ).toBeLessThan(installer.indexOf('Write-Step "Starting Soulstream service..."'));
   });
 
-  it("pins the eiaserinnys service keys while keeping them out of the repo manifest", () => {
+  it("pins release migration execution to the eiaserinnys orch authority", () => {
     const fixture = parseYaml(readFileSync(EIASERINNYS_FIXTURE_PATH, "utf8")) as {
       services: Record<string, { cwd: string; repo: string; hooks?: { pre_start?: string } }>;
     };
@@ -348,9 +487,15 @@ describe("apply-schema.mjs", () => {
     ]);
     expect(fixture.services["soulstream-orch-server"].cwd).toBe("./services/soulstream");
     expect(fixture.services["soulstream-orch-server"].hooks?.pre_start).toContain(
-      "apply-schema.mjs",
+      "verify-migrations.mjs",
     );
-    expect(manifest).not.toHaveProperty("environment_service");
+    expect(manifest.environment_service).toBe("soulstream-orch-server");
+    expect(manifest.migration.apply.command).toBe(
+      "node packages/db-schema/scripts/migrate.mjs apply",
+    );
+    expect(fixture.services["soulstream-soul-server-ts"].after).toEqual([
+      "soulstream-orch-server",
+    ]);
   });
 });
 
@@ -360,6 +505,11 @@ function hasDockerBinary(): boolean {
 }
 
 interface HanielSoulServerTsExample {
+  repos: {
+    "soulstream-server-src": {
+      release_manifest: string;
+    };
+  };
   services: {
     "soul-server-ts": {
       hooks: {
@@ -394,6 +544,60 @@ function runApplySchema(cwd: string) {
     env: minimalEnv(),
     timeout: 15_000,
   });
+}
+
+function runMigration(cwd: string, mode: "apply" | "verify") {
+  return spawnSync(process.execPath, [MIGRATION_SCRIPT_PATH, mode], {
+    cwd,
+    encoding: "utf8",
+    env: minimalEnv(),
+    timeout: 30_000,
+  });
+}
+
+async function runMigrationAsync(
+  cwd: string,
+  mode: "apply" | "verify",
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [MIGRATION_SCRIPT_PATH, mode], {
+      cwd,
+      env: minimalEnv(),
+    });
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`migration ${mode} timed out`));
+    }, 30_000);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (status) => {
+      clearTimeout(timeout);
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
+async function resetToPreRuntimeMigrationState(
+  sql: ReturnType<typeof postgres>,
+): Promise<void> {
+  await sql`
+    DELETE FROM schema_migrations
+    WHERE ordinal >= 46
+  `;
+  await sql.unsafe(`
+    DROP TABLE IF EXISTS session_delivery_relation_consumptions CASCADE;
+    DROP TABLE IF EXISTS claude_background_tasks CASCADE;
+    DROP TABLE IF EXISTS session_delivery_notification_outbox CASCADE;
+    DROP TABLE IF EXISTS session_deliveries CASCADE;
+  `);
 }
 
 function minimalEnv(): NodeJS.ProcessEnv {

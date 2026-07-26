@@ -1,5 +1,4 @@
 import type { Logger } from "pino";
-
 import { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
@@ -54,14 +53,13 @@ import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
-
 import {
   composeSupervisorRuntime,
   type SupervisorComposition,
 } from "./supervisor_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
-
+import { preflightPersistentRuntimeSchema } from "./worker_schema_preflight.js";
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -69,7 +67,6 @@ export interface WorkerCompositionParams {
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
 }
-
 export interface WorkerComposition extends SupervisorComposition {
   db: SessionDB;
   server: ServerInstance;
@@ -87,7 +84,6 @@ export interface WorkerComposition extends SupervisorComposition {
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   createUpstreamAdapter(): UpstreamAdapter;
 }
-
 /** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
@@ -114,6 +110,7 @@ export async function composeWorkerRuntime(
     logger,
   );
   const db = new SessionDB(env.DATABASE_URL);
+  await preflightPersistentRuntimeSchema(db, env.CLAUDE_SESSION_RUNTIME_V2_ENABLED);
   ensureStableSessionOrderIndexInBackground(db, logger);
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const interruptedOnStartup = await db.interruptRunningSessionsForNode(env.SOULSTREAM_NODE_ID);
@@ -123,7 +120,6 @@ export async function composeWorkerRuntime(
       "Interrupted stale running sessions on startup",
     );
   }
-
   const send = async (data: unknown): Promise<void> => {
     if (!upstreamAdapter) {
       logger.warn({ data }, "broadcast send called before UpstreamAdapter ready");
@@ -224,9 +220,12 @@ export async function composeWorkerRuntime(
     ? await composeClaudeRuntime({
         enabled: true,
         db,
+        agentRegistry,
+        sessionStore: claudeSessionStore,
         sourceNode: env.SOULSTREAM_NODE_ID,
         idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+        turnTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
         detachedEventSink: async (sessionId, event) => {
           const task = taskManager.getTask(sessionId);
@@ -294,7 +293,8 @@ export async function composeWorkerRuntime(
           agentId: agent.id,
           processEnv: claudeAuth.buildProcessEnv(process.env),
           sessionStore: claudeSessionStore,
-          sessionStoreFlush: "batched",
+          // V2 uses the shared transcript as its cross-node receiver receipt.
+          sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED ? "eager" : "batched",
           loadTimeoutMs: 60_000,
           ...(claudeSessionClientRegistry
             ? { persistentSessionRegistry: claudeSessionClientRegistry }
@@ -325,8 +325,8 @@ export async function composeWorkerRuntime(
     broadcaster,
     scheduleService,
     orchProxyConfig,
+    queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
   });
-
   const catalogService = new CatalogService(
     db,
     broadcaster,
@@ -386,7 +386,6 @@ export async function composeWorkerRuntime(
   } else {
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
-
   const mcpRuntime: McpRuntime = {
     nodeId: env.SOULSTREAM_NODE_ID,
     boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
@@ -394,6 +393,9 @@ export async function composeWorkerRuntime(
     db,
     taskManager,
     taskExecutor: supervisor.taskExecutor,
+    ...(claudeRuntime.childCompletionConsumption
+      ? { childCompletionConsumption: claudeRuntime.childCompletionConsumption }
+      : {}),
     agentRegistry,
     agentConfigService,
     mcpConfigService,

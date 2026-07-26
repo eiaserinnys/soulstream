@@ -1,7 +1,10 @@
 import type { Logger } from "pino";
 
 import type { InterventionMessage, Task } from "./task_models.js";
-import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import {
+  isInlineChildCompletion,
+  type TaskDeliveryLedgerGate,
+} from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
@@ -26,21 +29,29 @@ export class TaskDeliveryConsumption {
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger consume update failed",
       );
+      if (isInlineChildCompletion(intervention)) {
+        // Child result consumption is an exactly-once boundary. Returning
+        // success without its relation tombstone lets a later notifier wake
+        // and display the already-observed completion again.
+        throw err;
+      }
     }
   }
 
   async recordTurnStarted(
     task: Task,
     intervention: InterventionMessage | undefined,
-  ): Promise<void> {
-    if (!intervention || !this.recorder) return;
+  ): Promise<boolean> {
+    if (!intervention || !this.recorder) return false;
     try {
       await this.recorder.recordTurnStarted(intervention, task);
+      return true;
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger turn-start update failed",
       );
+      return false;
     }
   }
 }

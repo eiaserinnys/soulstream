@@ -118,7 +118,8 @@ export class ClaudeSessionInputQueue<T> implements AsyncIterableIterator<T> {
 /**
  * Persistent Claude session ownership model.
  *
- * The runtime is connected only behind the default-off v2 gate. It owns the
+ * The runtime is the default Claude path and is disconnected only by the
+ * explicit legacy kill switch. It owns the
  * contracts measured by the SDK harness:
  * one Query, one input queue, UUID-local exactly-once state, and a background
  * replace-set orthogonal to the foreground turn phase.

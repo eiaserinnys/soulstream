@@ -101,6 +101,12 @@ export type ScheduleToolUseHandler = (
 export interface EngineExecuteParams {
   agentSessionId?: string;
   prompt: string;
+  /**
+   * Stable logical input identity. Persistent Claude runtimes bind durable
+   * delivery_id to this UUID so restart replay cannot enqueue a second SDK
+   * input with a fresh random identity. Other engines ignore it.
+   */
+  inputUuid?: string;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;

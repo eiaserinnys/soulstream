@@ -26,6 +26,15 @@ export function buildDeterministicDeliveryIdentity(params: {
   };
 }
 
+/**
+ * A durable delivery owns one stable Claude SDK input UUID across worker
+ * restarts. The UUID is deliberately derived instead of reusing delivery_id
+ * verbatim because external callers may supply non-UUID delivery identities.
+ */
+export function buildDeliveryInputUuid(deliveryId: string): string {
+  return uuidFromHash(hashHex(`claude_input\u0000${deliveryId}`));
+}
+
 export function hashDeliveryPayload(value: Record<string, unknown>): string {
   return hashHex(JSON.stringify(canonicalize(value)));
 }
