@@ -132,6 +132,7 @@ export interface ClaudeRuntimeTaskState {
   usage?: Record<string, unknown>;
   lastToolName?: string;
   error?: string;
+  closeReason?: string;
   isBackgrounded?: boolean;
   endTime?: number;
   totalPausedMs?: number;

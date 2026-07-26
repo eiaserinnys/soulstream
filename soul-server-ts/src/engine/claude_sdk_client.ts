@@ -25,6 +25,7 @@ import { buildMcpOptions } from "./claude_sdk_mcp_options.js";
 import {
   ClaudeSdkPersistentSession,
   type ClaudeDetachedEventSink,
+  type ClaudeRuntimeEventSink,
 } from "./claude_sdk_persistent_session.js";
 import {
   makeCacheableSystemPrompt,
@@ -83,6 +84,8 @@ export interface ClaudeSdkClientConfig {
   runtimeDrainMaxMs?: number;
   resolveClaudeExecutablePath?: () => string | undefined;
   detachedEventSink?: ClaudeDetachedEventSink;
+  runtimeEventSink?: ClaudeRuntimeEventSink;
+  uncorrelatedResultTimeoutMs?: number;
 }
 
 export class ClaudeSdkClient implements ClaudeClient {
@@ -96,6 +99,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly toolPermissionController: ClaudeSdkToolPermissionController;
   private readonly postResultDrainer: ClaudePostResultDrain;
   private readonly detachedEventSink: ClaudeDetachedEventSink;
+  private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
+  private readonly uncorrelatedResultTimeoutMs: number;
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: EventQueue<SDKUserMessage> | null = null;
@@ -114,7 +119,9 @@ export class ClaudeSdkClient implements ClaudeClient {
       config.runtimeDrainMaxMs ?? DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS;
     this.resolveClaudeExecutablePath =
       config.resolveClaudeExecutablePath ?? resolveClaudeExecutableFromPath;
-    this.runtimeState = new ClaudeRuntimeState();
+    this.runtimeState = new ClaudeRuntimeState(
+      config.runtimeEventSink !== undefined,
+    );
     this.eventMapper = new ClaudeSdkEventMapper(this.runtimeState);
     this.toolPermissionController = new ClaudeSdkToolPermissionController({
       inputRequestTimeoutMs,
@@ -128,6 +135,9 @@ export class ClaudeSdkClient implements ClaudeClient {
       runtimeState: this.runtimeState,
     });
     this.detachedEventSink = config.detachedEventSink ?? (async () => undefined);
+    this.runtimeEventSink = config.runtimeEventSink;
+    this.uncorrelatedResultTimeoutMs =
+      config.uncorrelatedResultTimeoutMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -220,8 +230,10 @@ export class ClaudeSdkClient implements ClaudeClient {
         eventMapper: this.eventMapper,
         hookOutput,
         detachedEventSink: this.detachedEventSink,
+        runtimeEventSink: this.runtimeEventSink,
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,
+        uncorrelatedResultTimeoutMs: this.uncorrelatedResultTimeoutMs,
         onClosed: () => {
           this.activeQuery = null;
           this.persistentSession = null;
@@ -287,6 +299,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       backgroundTaskCount: snapshot.backgroundTaskIds.length,
       pendingInputRequestCount:
         this.toolPermissionController.pendingInputRequestCount(),
+      pendingRuntimeSignalCount: this.runtimeState.hasPendingWork() ? 1 : 0,
     };
   }
 
@@ -340,7 +353,7 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   async interrupt(): Promise<boolean> {
     if (this.persistentSession) {
-      this.persistentSession.close("explicit_cancel");
+      await this.persistentSession.close("explicit_cancel");
       this.toolPermissionController.abortPendingInputRequests();
       return true;
     }
@@ -382,10 +395,12 @@ export class ClaudeSdkClient implements ClaudeClient {
     };
   }
 
-  async close(): Promise<void> {
+  async close(
+    reason: import("./claude_session_runtime.js").ClaudeRuntimeCloseReason = "shutdown",
+  ): Promise<void> {
     if (this.persistentSession) {
       const persistent = this.persistentSession;
-      persistent.close("shutdown");
+      await persistent.close(reason);
       this.toolPermissionController.abortPendingInputRequests();
       await persistent.settled();
       this.persistentSession = null;

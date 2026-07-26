@@ -194,6 +194,33 @@ describe("TaskDeliveryRoute.deliverInputResponse", () => {
     expect(responseEventPublisher.publishInputRequestResponded)
       .toHaveBeenCalledWith(completedTask, "ask-late");
   });
+
+  it("routes a bind-window response through the reserved registry, not the turn engine", async () => {
+    const engineDelivery = vi.fn().mockResolvedValue({ status: "delivered" });
+    const task = makeTask({
+      engine: {
+        ...makeBaseEngine(),
+        deliverInputResponse: engineDelivery,
+      } as EnginePort & SupportsInputResponse,
+    });
+    const sessionRuntimeControl = {
+      has: vi.fn().mockReturnValue(true),
+      deliverInputResponse: vi.fn().mockResolvedValue({ status: "delivered" as const }),
+    };
+    const { route } = makeSubject([task], sessionRuntimeControl);
+
+    await expect(route.deliverInputResponse({
+      agentSessionId: "sess-delivery",
+      requestId: "ask-bind",
+      answers: { choice: "registry" },
+    })).resolves.toMatchObject({ status: "delivered", eventId: 77 });
+    expect(sessionRuntimeControl.deliverInputResponse).toHaveBeenCalledWith(
+      "sess-delivery",
+      "ask-bind",
+      { choice: "registry" },
+    );
+    expect(engineDelivery).not.toHaveBeenCalled();
+  });
 });
 
 describe("TaskDeliveryRoute.deliverToolApproval", () => {

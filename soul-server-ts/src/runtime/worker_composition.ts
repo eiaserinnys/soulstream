@@ -17,13 +17,13 @@ import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
-import { ClaudeEngineAdapter, ClaudeSdkClient } from "../engine/claude_adapter.js";
+import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
 import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
 import {
   isPostResultDrainEvent,
   markPostResultDrainEvent,
 } from "../engine/claude_event_phase.js";
-import { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
+import type { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
@@ -60,6 +60,7 @@ import {
   type SupervisorComposition,
 } from "./supervisor_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
+import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 
 export interface WorkerCompositionParams {
   env: Env;
@@ -219,34 +220,32 @@ export async function composeWorkerRuntime(
       })
     : undefined;
   let supervisor!: SupervisorComposition, taskManager!: TaskManager;
-  const claudeSessionClientRegistry = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
-    ? new ClaudeSessionClientRegistry(
-        (sessionId) =>
-          new ClaudeSdkClient(
-            {
-              detachedEventSink: async (event) => {
-                const task = taskManager.getTask(sessionId);
-                if (!task || !detachedClaudeEventPublisher) {
-                  logger.warn(
-                    { sessionId, eventType: event.type },
-                    "Detached Claude runtime event has no in-memory task",
-                  );
-                  return;
-                }
-                for (const payload of mapClaudeClientEvent(event)) {
-                  if (isPostResultDrainEvent(event)) {
-                    markPostResultDrainEvent(payload);
-                  }
-                  await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
-                  await supervisor.claudeRuntimeTaskFollowup.collectDetached(task, payload);
-                }
-              },
-            },
-            logger,
-          ),
-        { idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS, maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES, logger },
-      )
-    : undefined;
+  const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? await composeClaudeRuntime({
+        enabled: true,
+        db,
+        sourceNode: env.SOULSTREAM_NODE_ID,
+        idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+        maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+        logger,
+        detachedEventSink: async (sessionId, event) => {
+          const task = taskManager.getTask(sessionId);
+          if (!task || !detachedClaudeEventPublisher) {
+            logger.warn(
+              { sessionId, eventType: event.type },
+              "Detached Claude runtime event has no in-memory task",
+            );
+            return;
+          }
+          for (const payload of mapClaudeClientEvent(event)) {
+            if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
+            await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
+            await supervisor.claudeRuntimeTaskFollowup.collectDetached(task, payload);
+          }
+        },
+      })
+    : {};
+  const claudeSessionClientRegistry = claudeRuntime.registry;
   taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,
     db,

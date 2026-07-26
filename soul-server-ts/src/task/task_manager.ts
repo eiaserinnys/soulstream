@@ -149,7 +149,7 @@ export class TaskManager {
       broadcaster,
       logger,
       closeSessionRuntime: gatedSessionRuntimeControl
-        ? (sessionId) => gatedSessionRuntimeControl.close(sessionId)
+        ? (sessionId, reason) => gatedSessionRuntimeControl.close(sessionId, reason)
         : undefined,
     });
     const activeTaskRecovery = new ActiveTaskRecovery(logger);

@@ -158,10 +158,10 @@ describe("worker composition boundary", () => {
       /await this\.deps\.closeSessionRuntime\?\./,
     );
     expect(workerComposition).toMatch(
-      /const claudeSessionClientRegistry = env\.CLAUDE_SESSION_RUNTIME_V2_ENABLED\s+\?/,
+      /const claudeRuntime = env\.CLAUDE_SESSION_RUNTIME_V2_ENABLED\s+\?\s+await composeClaudeRuntime\(/,
     );
     expect(workerComposition).toMatch(
-      /\.\.\.\(claudeSessionClientRegistry\s+\?\s+\{ persistentSessionRegistry: claudeSessionClientRegistry \}\s+:\s+\{\}\)/,
+      /:\s+\{\};\s+const claudeSessionClientRegistry = claudeRuntime\.registry/,
     );
   });
 

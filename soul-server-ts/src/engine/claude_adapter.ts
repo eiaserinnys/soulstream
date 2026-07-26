@@ -90,7 +90,7 @@ export interface ClaudeClient {
   interruptActiveTurnForSteer?(): Promise<boolean>;
   interrupt?(): Promise<boolean>;
   persistentRuntimeActivity?(): ClaudePersistentRuntimeActivity | null;
-  close?(): Promise<void>;
+  close?(reason?: import("./claude_session_runtime.js").ClaudeRuntimeCloseReason): Promise<void>;
 }
 
 export interface ClaudeAdapterConfig {
@@ -103,7 +103,7 @@ export interface ClaudeAdapterConfig {
   loadTimeoutMs?: number;
   persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
-    "acquire" | "close" | "release"
+    "acquire" | "close" | "release" | "reserve"
   >;
 }
 
@@ -128,7 +128,7 @@ export class ClaudeEngineAdapter
   private readonly loadTimeoutMs?: number;
   private readonly persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
-    "acquire" | "close" | "release"
+    "acquire" | "close" | "release" | "reserve"
   >;
   private activeClient: ClaudeClient | null = null;
   private persistentSessionId: string | null = null;
@@ -147,6 +147,10 @@ export class ClaudeEngineAdapter
     this.loadTimeoutMs = config.loadTimeoutMs;
     this.persistentSessionRegistry = config.persistentSessionRegistry;
     this.logger = logger;
+  }
+
+  prepareSessionRuntime(agentSessionId: string): void {
+    this.persistentSessionRegistry?.reserve(agentSessionId);
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
@@ -229,7 +233,10 @@ export class ClaudeEngineAdapter
     if (client.interrupt) {
       const interrupted = await client.interrupt();
       if (this.persistentSessionRegistry && this.persistentSessionId) {
-        await this.persistentSessionRegistry.close(this.persistentSessionId);
+        await this.persistentSessionRegistry.close(
+          this.persistentSessionId,
+          "explicit_cancel",
+        );
         this.activeClient = null;
       }
       return interrupted;

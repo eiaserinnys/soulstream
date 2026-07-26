@@ -29,6 +29,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
         is_backgrounded: true,
         output_file: "/tmp/bg-1.out",
         summary: "sleeping",
+        close_reason: "registry_ttl",
       },
       timestamp: 12,
     } as unknown as SoulSSEEvent);
@@ -65,6 +66,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
           outputFile: "/tmp/bg-1.out",
           summary: "sleeping",
           isBackgrounded: true,
+          closeReason: "registry_ttl",
         },
         "sdk-task-1": {
           taskId: "sdk-task-1",

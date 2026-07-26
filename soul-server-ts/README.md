@@ -63,9 +63,10 @@ checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이
 `CLAUDE_SESSION_RUNTIME_V2_ENABLED`는 persistent Query·additive schema·wire를 독립 검수하기
 위한 준비 gate다. 다음 항목을 모두 끝내기 전에는 어떤 노드에서도 `true`로 설정하지 않는다.
 
-- 운영 승인 뒤 `sql/pending/043_session_deliveries.sql`을 migration manifest로 승격하고 적용
+- 운영 승인 뒤 `sql/pending/043_session_deliveries.sql`과
+  `sql/pending/045_claude_background_tasks.sql`을 migration manifest로 승격하고 적용
 - inline child completion이 caller turn에서 소비된 relation을 정산하는 producer 연결
-- claimed/queued delivery crash recovery
+- persistent runtime crash 뒤 session/query rehydration 정책 확정
 - persistent Query에서 `agents.yaml.max_turns`의 turn별 의미를 보존하는 정책 확정
 - 실제 SDK harness·통합 검증 결과의 독립 재검수와 disposable canary 검증
 

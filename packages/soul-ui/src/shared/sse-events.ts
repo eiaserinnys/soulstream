@@ -518,6 +518,7 @@ export interface ClaudeRuntimeTaskUpdatedEvent {
     total_paused_ms?: number;
     error?: string;
     is_backgrounded?: boolean;
+    close_reason?: string;
     [key: string]: unknown;
   };
   timestamp: number;

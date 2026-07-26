@@ -28,6 +28,7 @@ export interface ClaudeRuntimeTaskView {
   lastToolName?: string;
   error?: string;
   isBackgrounded?: boolean;
+  closeReason?: string;
   endTime?: number;
   totalPausedMs?: number;
 }
@@ -295,6 +296,7 @@ export function applyClaudeRuntimeStoreEvent(
       copyString(patch, "output_file", runtimeTask, "outputFile");
       copyString(patch, "summary", runtimeTask);
       copyString(patch, "error", runtimeTask);
+      copyString(patch, "close_reason", runtimeTask, "closeReason");
       if (typeof patch.is_backgrounded === "boolean") {
         runtimeTask.isBackgrounded = patch.is_backgrounded;
       }

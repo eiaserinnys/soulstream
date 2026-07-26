@@ -210,10 +210,19 @@ function toInterventionParams(
     producerTerminalRevision: row.producer_terminal_revision ?? undefined,
     parentDeliveryId: row.parent_delivery_id ?? undefined,
     callerTurnId: row.caller_turn_id ?? undefined,
+    followupTaskIds: asStringArray(row.payload.followup_task_ids),
     deliveryCreatedAt: row.created_at.toISOString(),
     supervisorRole: row.supervisor_role ?? undefined,
     deliveryLeaseOwner: leaseOwner,
   };
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter(
+    (item): item is string => typeof item === "string" && item.length > 0,
+  );
+  return values.length > 0 ? values : undefined;
 }
 
 function isRecoverable(row: SessionDeliveryRow): boolean {

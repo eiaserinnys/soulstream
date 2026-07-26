@@ -19,6 +19,10 @@ import {
 } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import {
+  ClaudeResultLivenessGuard,
+  type ClaudeUncorrelatedResultTimeout,
+} from "./claude_result_liveness_guard.js";
+import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
   type ClaudeRuntimeCloseReason,
@@ -26,14 +30,19 @@ import {
 } from "./claude_session_runtime.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
+export type ClaudeRuntimeEventSink = (
+  event: ClaudeClientEvent,
+) => Promise<boolean | void>;
 
 export interface ClaudeSdkPersistentSessionConfig {
   createQuery(input: AsyncIterable<SDKUserMessage>): ClaudeSdkQuery;
   eventMapper: ClaudeSdkEventMapper;
   hookOutput: EventQueue<ClaudeClientEvent>;
   detachedEventSink: ClaudeDetachedEventSink;
+  runtimeEventSink?: ClaudeRuntimeEventSink;
   logger: Logger;
   postResultDrainMs: number;
+  uncorrelatedResultTimeoutMs: number;
   onClosed?(): void;
 }
 
@@ -54,10 +63,12 @@ export class ClaudeSdkPersistentSession {
   private readonly eventMapper: ClaudeSdkEventMapper;
   private readonly hookOutput: EventQueue<ClaudeClientEvent>;
   private readonly detachedEventSink: ClaudeDetachedEventSink;
+  private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly logger: Logger;
   private readonly postResultDrainMs: number;
   private readonly pump: Promise<void>;
   private readonly hookPump: Promise<void>;
+  private readonly resultLiveness: ClaudeResultLivenessGuard;
   private activeForeground: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -65,8 +76,13 @@ export class ClaudeSdkPersistentSession {
     this.eventMapper = config.eventMapper;
     this.hookOutput = config.hookOutput;
     this.detachedEventSink = config.detachedEventSink;
+    this.runtimeEventSink = config.runtimeEventSink;
     this.logger = config.logger;
     this.postResultDrainMs = config.postResultDrainMs;
+    this.resultLiveness = new ClaudeResultLivenessGuard(
+      config.uncorrelatedResultTimeoutMs,
+      (event) => this.handleUncorrelatedResultTimeout(event),
+    );
     this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
@@ -123,11 +139,13 @@ export class ClaudeSdkPersistentSession {
     return this.runtime.query as ClaudeSdkQuery;
   }
 
-  close(reason: ClaudeRuntimeCloseReason): void {
+  async close(reason: ClaudeRuntimeCloseReason): Promise<void> {
     if (this.drainTimer) {
       clearTimeout(this.drainTimer);
       this.drainTimer = null;
     }
+    this.resultLiveness.clear();
+    await this.terminalizeBackgroundTasks(reason);
     this.runtime.close(reason);
     this.activeForeground?.output.close();
     this.activeForeground = null;
@@ -150,7 +168,7 @@ export class ClaudeSdkPersistentSession {
           errorCode: "claude_persistent_query_ended",
           message: "Persistent Claude SDK Query ended without an explicit close.",
         });
-        this.runtime.close("fatal");
+        await this.close("fatal");
       }
     } catch (err) {
       this.activeForeground?.output.fail(err);
@@ -161,7 +179,7 @@ export class ClaudeSdkPersistentSession {
         errorCode: "claude_persistent_query_failed",
         message: err instanceof Error ? err.message : String(err),
       });
-      this.runtime.close("fatal");
+      await this.close("fatal");
     } finally {
       this.hookOutput.close();
       onClosed?.();
@@ -180,7 +198,7 @@ export class ClaudeSdkPersistentSession {
       if (isFatalClientError(event)) {
         this.activeForeground?.output.close();
         this.activeForeground = null;
-        this.runtime.close("fatal");
+        await this.close("fatal");
       }
     }
   }
@@ -198,6 +216,12 @@ export class ClaudeSdkPersistentSession {
         },
         "Ignoring uncorrelated Claude Result without user_message_uuid",
       );
+      if (active) {
+        this.resultLiveness.observe(
+          active.uuid,
+          asString(message.uuid) ?? null,
+        );
+      }
       return;
     }
     if (
@@ -216,6 +240,7 @@ export class ClaudeSdkPersistentSession {
       userMessageUuid: explicitUserMessageUuid,
       interrupted: phase === "interrupting",
     });
+    this.resultLiveness.settle(explicitUserMessageUuid);
     this.runtime.finishForegroundResult();
     this.armDrainTimer();
 
@@ -233,7 +258,14 @@ export class ClaudeSdkPersistentSession {
   }
 
   private async routeEvent(event: ClaudeClientEvent): Promise<void> {
-    this.observeBackgroundEvent(event);
+    const runtimeEventAccepted =
+      !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
+    if (runtimeEventAccepted || isTerminalBackgroundEvent(event)) {
+      this.observeBackgroundEvent(event);
+    }
+    if (!runtimeEventAccepted) {
+      return;
+    }
     const phase = this.runtime.snapshot().foregroundPhase;
     const runtimeEvent = isRuntimeClientEvent(event);
     if (
@@ -297,6 +329,58 @@ export class ClaudeSdkPersistentSession {
     }
   }
 
+  private async handleUncorrelatedResultTimeout(
+    event: ClaudeUncorrelatedResultTimeout,
+  ): Promise<void> {
+    const active = this.activeForeground;
+    if (!active || active.uuid !== event.activeTurnUuid) return;
+    const error: ClaudeClientEvent = {
+      type: "error",
+      fatal: true,
+      errorCode: "claude_uncorrelated_result_timeout",
+      message:
+        `Claude Result ${event.resultUuid ?? "without UUID"} could not be correlated ` +
+        `to active turn ${event.activeTurnUuid}.`,
+    };
+    active.output.push(error);
+    active.output.close();
+    this.activeForeground = null;
+    await this.close("fatal");
+  }
+
+  private async terminalizeBackgroundTasks(
+    reason: ClaudeRuntimeCloseReason,
+  ): Promise<void> {
+    const taskIds = this.runtime.snapshot().backgroundTaskIds;
+    const status =
+      reason === "explicit_cancel"
+        ? "stopped"
+        : reason === "fatal"
+          ? "failed"
+          : "killed";
+    for (const taskId of taskIds) {
+      try {
+        await this.routeEvent({
+          type: "claude_runtime_task_updated",
+          taskId,
+          patch: {
+            status,
+            is_backgrounded: true,
+            close_reason: reason,
+          },
+        });
+      } catch (err) {
+        // The active journal row is deliberately left recoverable. Query
+        // shutdown must not hang because terminal persistence is temporarily
+        // unavailable; startup recovery will finish the same semantic task.
+        this.logger.warn(
+          { err, taskId, reason },
+          "Claude background terminal persistence deferred to restart recovery",
+        );
+      }
+    }
+  }
+
   private armDrainTimer(): void {
     if (this.drainTimer) clearTimeout(this.drainTimer);
     this.drainTimer = setTimeout(() => {
@@ -315,6 +399,22 @@ function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {
     event.type === "error" &&
     event.fatal === false &&
     event.errorCode === "error_during_execution"
+  );
+}
+
+function isTerminalBackgroundEvent(event: ClaudeClientEvent): boolean {
+  if (
+    event.type === "claude_runtime_task_completed" ||
+    event.type === "claude_runtime_task_notification"
+  ) {
+    return true;
+  }
+  if (event.type !== "claude_runtime_task_updated") return false;
+  return (
+    event.patch.status === "completed" ||
+    event.patch.status === "failed" ||
+    event.patch.status === "stopped" ||
+    event.patch.status === "killed"
   );
 }
 

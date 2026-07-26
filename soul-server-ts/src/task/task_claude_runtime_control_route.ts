@@ -65,11 +65,14 @@ export class TaskClaudeRuntimeControlRoute {
       };
     }
 
+    const registryAvailable = this.deps.sessionRuntimeControl?.has(sessionId) === true;
     const activeEngine = this.deps.getTask(sessionId)?.engine;
     const result =
-      activeEngine && supportsClaudeBackgroundTasks(activeEngine)
-        ? await activeEngine.stopClaudeRuntimeTask(taskId)
-        : await this.stopThroughRegistry(sessionId, taskId);
+      registryAvailable
+        ? await this.stopThroughRegistry(sessionId, taskId)
+        : activeEngine && supportsClaudeBackgroundTasks(activeEngine)
+          ? await activeEngine.stopClaudeRuntimeTask(taskId)
+          : notSupported();
     return {
       sessionId,
       taskId,
@@ -87,11 +90,14 @@ export class TaskClaudeRuntimeControlRoute {
     toolUseId?: string,
   ): Promise<ClaudeRuntimeBackgroundTasksResult> {
     await this.resolveState(sessionId);
+    const registryAvailable = this.deps.sessionRuntimeControl?.has(sessionId) === true;
     const activeEngine = this.deps.getTask(sessionId)?.engine;
     const result =
-      activeEngine && supportsClaudeBackgroundTasks(activeEngine)
-        ? await activeEngine.backgroundClaudeRuntimeTasks(toolUseId)
-        : await this.backgroundThroughRegistry(sessionId, toolUseId);
+      registryAvailable
+        ? await this.backgroundThroughRegistry(sessionId, toolUseId)
+        : activeEngine && supportsClaudeBackgroundTasks(activeEngine)
+          ? await activeEngine.backgroundClaudeRuntimeTasks(toolUseId)
+          : notSupported();
     return {
       sessionId,
       supported: result.status !== "not_supported",

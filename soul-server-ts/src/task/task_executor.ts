@@ -165,6 +165,12 @@ export class TaskExecutor {
       );
     }
     const engine = this.engineFactory(agent);
+    if (
+      "prepareSessionRuntime" in engine &&
+      typeof engine.prepareSessionRuntime === "function"
+    ) {
+      engine.prepareSessionRuntime(task.agentSessionId);
+    }
     task.engine = engine;
 
     const promise = this._consumeEventStream(task, engine, agent).catch(
