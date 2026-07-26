@@ -35,9 +35,6 @@ import {
 } from "./planner-mutation-projection";
 import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
 
-const STARRED_TASK_PAGE_SIZE = 50;
-const PROJECT_CONTENT_PAGE_SIZE = 20;
-const RUN_HISTORY_PAGE_SIZE = 20;
 const EMPTY_SESSION_IDS: string[] = [];
 
 export function usePlannerCollections({
@@ -86,7 +83,7 @@ export function usePlannerCollections({
     setStarredTaskIndex(beginPlannerLoad);
     void loadConfirmedResult({
       previous,
-      load: () => loadStarredTasks(dependencies, { limit: STARRED_TASK_PAGE_SIZE }),
+      load: () => loadStarredTasks(dependencies, {}),
       clearsVisibleContent: (current, next) => current.items.length > 0 && next.items.length === 0,
     }).then((data) => {
       if (active) setStarredTaskIndex((current) => completePlannerLoad(current, data));
@@ -247,7 +244,7 @@ export function usePlannerCollections({
     if (!cursor || starredTasksLoadingMore) return;
     setStarredTasksLoadingMore(true);
     try {
-      const next = await loadStarredTasks(dependencies, { cursor, limit: STARRED_TASK_PAGE_SIZE });
+      const next = await loadStarredTasks(dependencies, { cursor });
       setStarredTaskIndex((current) => current.data
         ? completePlannerLoad(current, {
           items: mergeStarredPlannerTasks(current.data.items, next.items),
@@ -266,7 +263,7 @@ export function usePlannerCollections({
     if (!data?.nextTaskCursor || projectTasksLoadingMore) return;
     setProjectTasksLoadingMore(true);
     try {
-      const next = await loadProjectTaskPage(dependencies, data.project.id, data.nextTaskCursor, PROJECT_CONTENT_PAGE_SIZE);
+      const next = await loadProjectTaskPage(dependencies, data.project.id, data.nextTaskCursor);
       setProject((current) => current.data?.project.id === data.project.id
         ? completePlannerLoad(current, {
           ...current.data,
@@ -286,7 +283,7 @@ export function usePlannerCollections({
     if (!data?.nextDocumentCursor || projectDocumentsLoadingMore) return;
     setProjectDocumentsLoadingMore(true);
     try {
-      const next = await loadProjectDocumentPage(dependencies, data.project.id, data.nextDocumentCursor, PROJECT_CONTENT_PAGE_SIZE);
+      const next = await loadProjectDocumentPage(dependencies, data.project.id, data.nextDocumentCursor);
       setProject((current) => current.data?.project.id === data.project.id
         ? completePlannerLoad(current, {
           ...current.data,
@@ -375,7 +372,7 @@ export function useTaskRunHistory({
     void loadConfirmedResult({
       previous,
       load: async () => {
-        const page = await loadTaskRunHistory(dependencies, taskPageId, undefined, RUN_HISTORY_PAGE_SIZE);
+        const page = await loadTaskRunHistory(dependencies, taskPageId, undefined);
         return {
           taskPageId,
           sessionIds: mergeIds(task.sessionIds, page.sessionIds),
@@ -405,7 +402,7 @@ export function useTaskRunHistory({
     const cursor = state.nextCursor;
     setState((current) => current ? retainEqualValue(current, { ...current, loading: true }) : current);
     try {
-      const page = await loadTaskRunHistory(dependencies, task.page.id, cursor, RUN_HISTORY_PAGE_SIZE);
+      const page = await loadTaskRunHistory(dependencies, task.page.id, cursor);
       setState((current) => current?.taskPageId === task.page.id
         ? retainEqualValue(current, {
           ...current,
