@@ -638,12 +638,7 @@
         "created_at": { "type": "string", "format": "date-time" },
         "supervisor_role": {
           "type": "string",
-          "description": "Supervisor registry role used for epoch-conditional delivery claim."
-        },
-        "supervisor_epoch": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Registry epoch observed when the completion target was resolved."
+          "description": "Supervisor registry role resolved atomically when the durable delivery is claimed."
         }
       }
     },

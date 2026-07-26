@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../src/db/repositories/session_delivery_repository.js";
@@ -27,7 +27,6 @@ function deliveryRow(
     parent_delivery_id: null,
     caller_turn_id: null,
     supervisor_role: null,
-    supervisor_epoch: null,
     payload_hash: "hash-1",
     payload: { text: "done" },
     state: "pending",
@@ -132,30 +131,26 @@ describe("SessionDeliveryRepository", () => {
 
     expect(calls[0].query).toContain("target_session_id");
     expect(calls[0].query).toContain("state = 'claimed'");
-    expect(calls[0].query).toContain("state = 'pending'");
+    expect(calls[0].query).toContain("'pending', 'claimed'");
   });
 
-  it("claims a supervisor target only when role, active session, and epoch match", async () => {
+  it("resolves and claims the current supervisor in one atomic statement", async () => {
     const claimed = deliveryRow({
       target_session_id: "supervisor-current",
       supervisor_role: "ariella",
-      supervisor_epoch: 9,
       state: "claimed",
     });
     const { sql, calls } = createMockSql([[claimed]]);
     const repository = new SessionDeliveryRepository(sql);
 
-    await expect(repository.claimForSupervisorTarget(
+    await expect(repository.claimForCurrentSupervisor(
       claimed.delivery_id,
-      "supervisor-current",
       "ariella",
-      9,
     )).resolves.toEqual(claimed);
 
     expect(calls[0].query).toContain("FROM supervisor_registry AS registry");
     expect(calls[0].query).toContain("registry.active_session_id");
-    expect(calls[0].query).toContain("registry.epoch");
-    expect(calls[0].query).toContain("delivery.state = 'pending'");
+    expect(calls[0].query).toContain("'pending', 'claimed'");
   });
 
   it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {
@@ -243,27 +238,26 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
-    const epochPending = readFileSync(
-      new URL(
-        "../../../packages/db-schema/sql/pending/044_supervisor_registry_epoch_monotonic.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
+    const removedEpochMigration = new URL(
+      "../../../packages/db-schema/sql/pending/044_supervisor_registry_epoch_monotonic.sql",
+      import.meta.url,
+    );
 
     expect(manifest).not.toContain("043_session_deliveries.sql");
-    expect(manifest).not.toContain("044_supervisor_registry_epoch_monotonic.sql");
+    expect(existsSync(removedEpochMigration)).toBe(false);
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
-    expect(epochPending).toContain(
-      "supervisor target change requires epoch increase",
-    );
+    expect(pending).not.toContain("supervisor_epoch");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
-    expect(schema).toContain(
-      "supervisor target change requires epoch increase",
+    expect(schema).not.toContain("supervisor_epoch");
+    const supervisorUpsert = schema.slice(
+      schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_upsert("),
+      schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_get("),
     );
+    expect(supervisorUpsert).not.toContain("supervisor target change requires epoch increase");
+    expect(supervisorUpsert).not.toContain("pg_advisory_xact_lock");
   });
 });

@@ -187,21 +187,6 @@ function parseDeliveryMetadata(
     if (!parsed.ok) return parsed;
     if (parsed.value !== undefined) value[wireKey] = parsed.value;
   }
-  const supervisorEpoch = body.supervisor_epoch ?? body.supervisorEpoch;
-  if (
-    supervisorEpoch !== undefined &&
-    supervisorEpoch !== null &&
-    (!Number.isSafeInteger(supervisorEpoch) || Number(supervisorEpoch) < 0)
-  ) {
-    return {
-      ok: false,
-      statusCode: 422,
-      detail: "supervisor_epoch must be a non-negative integer",
-    };
-  }
-  if (supervisorEpoch !== undefined && supervisorEpoch !== null) {
-    value.supervisor_epoch = Number(supervisorEpoch);
-  }
   return { ok: true, value };
 }
 

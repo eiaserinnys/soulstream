@@ -60,8 +60,12 @@ describe("worker composition boundary", () => {
     const getSession = vi.fn(async () => {
       throw new Error("gate-off completion delivery must not touch SessionDB");
     });
+    const sessionDeliveries = vi.fn(() => {
+      throw new Error("gate-off completion delivery must not create its repository");
+    });
     const db = {
       getSession,
+      sessionDeliveries,
     } as unknown as SessionDB;
     const addIntervention = vi.fn().mockResolvedValue({
       queued: true,
@@ -119,9 +123,11 @@ describe("worker composition boundary", () => {
 
       expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
       expect(getSession).not.toHaveBeenCalled();
+      expect(sessionDeliveries).not.toHaveBeenCalled();
       expect(getDeliveryConsumptionRecorder).not.toHaveBeenCalled();
       expect(addIntervention).toHaveBeenCalledTimes(1);
       expect(addIntervention.mock.calls[0]![0]).not.toHaveProperty("deliveryId");
+      expect(composition.completionDeliveryRecoveryWorker).toBeUndefined();
     } finally {
       composition.scheduleDispatcher.stop();
     }
@@ -182,6 +188,9 @@ describe("worker composition boundary", () => {
       "engine/claude_session_client_registry.ts",
       "engine/claude_session_runtime.ts",
       "task/task_claude_runtime_control_route.ts",
+      "task/completion_delivery_coordinator.ts",
+      "task/completion_delivery_recovery_worker.ts",
+      "task/completion_notifier.ts",
     ];
 
     for (const file of files) {

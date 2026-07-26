@@ -1153,13 +1153,9 @@ export interface Intervene {
   caller_turn_id?: string;
   created_at?: string;
   /**
-   * Supervisor registry role used for epoch-conditional delivery claim.
+   * Supervisor registry role resolved atomically when the durable delivery is claimed.
    */
   supervisor_role?: string;
-  /**
-   * Registry epoch observed when the completion target was resolved.
-   */
-  supervisor_epoch?: number;
   [k: string]: unknown;
 }
 /**

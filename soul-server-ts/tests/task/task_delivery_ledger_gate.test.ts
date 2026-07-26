@@ -23,7 +23,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget,
-      claimForSupervisorTarget: vi.fn(),
+      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -75,7 +75,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget: vi.fn(),
-      claimForSupervisorTarget: vi.fn(),
+      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -116,7 +116,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
-      claimForSupervisorTarget: vi.fn(),
+      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn().mockResolvedValue(null),
       get: vi.fn().mockResolvedValue(row(deliveryId, "consumed")),
       markQueued: vi.fn(),
@@ -137,10 +137,10 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
-  it("admits a supervisor delivery only while target and epoch still match", async () => {
+  it("admits a supervisor delivery only when the atomic claim resolves the requested target", async () => {
     const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     const pending = row(deliveryId, "pending");
-    const claimForSupervisorTarget = vi.fn().mockResolvedValue({
+    const claimForCurrentSupervisor = vi.fn().mockResolvedValue({
       ...pending,
       state: "claimed",
       target_session_id: "supervisor-current",
@@ -152,7 +152,7 @@ describe("TaskDeliveryLedgerGate", () => {
         conflict: false,
       }),
       claimForTarget: vi.fn(),
-      claimForSupervisorTarget,
+      claimForCurrentSupervisor,
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -171,13 +171,10 @@ describe("TaskDeliveryLedgerGate", () => {
       completionId: "completion-1",
       relationKey: "child:1",
       supervisorRole: "ariella",
-      supervisorEpoch: 8,
     })).resolves.toMatchObject({ kind: "admitted" });
-    expect(claimForSupervisorTarget).toHaveBeenCalledWith(
+    expect(claimForCurrentSupervisor).toHaveBeenCalledWith(
       deliveryId,
-      "supervisor-current",
       "ariella",
-      8,
     );
   });
 });

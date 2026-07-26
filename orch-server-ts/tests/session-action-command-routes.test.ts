@@ -127,7 +127,6 @@ describe("session action command HTTP route harness", () => {
         caller_turn_id: "turn-3",
         created_at: "2026-07-26T00:00:00.000Z",
         supervisor_role: "ariella",
-        supervisor_epoch: 12,
       },
     });
 
@@ -153,7 +152,6 @@ describe("session action command HTTP route harness", () => {
       caller_turn_id: "turn-3",
       created_at: "2026-07-26T00:00:00.000Z",
       supervisor_role: "ariella",
-      supervisor_epoch: 12,
     });
 
     await app.close();

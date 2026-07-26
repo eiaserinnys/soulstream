@@ -1,7 +1,6 @@
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
-import { hasCompleteSupervisorLedgerIdentity } from "../task/delivery_contract.js";
 import type { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
   CommandDispatchError,
@@ -39,7 +38,6 @@ interface InterveneCmd extends CommandLike {
   caller_turn_id?: string;
   created_at?: string;
   supervisor_role?: string;
-  supervisor_epoch?: number;
 }
 
 interface SupervisorInterveneCmd extends CommandLike {
@@ -59,7 +57,6 @@ interface InterventionCommandFamilyDeps {
   deliveryCommands: DeliveryCommands;
   taskRuntimeCommands: TaskRuntimeCommands;
   supervisorDirectTargetGuard?: SupervisorDirectTargetGuard;
-  deliveryV2Enabled?: boolean;
 }
 
 export function createInterventionCommandFamily(
@@ -142,19 +139,7 @@ async function handleIntervene(
 
   let result;
   try {
-    const ledgerOwnsTargetValidation =
-      deps.deliveryV2Enabled === true &&
-      hasCompleteSupervisorLedgerIdentity({
-        deliveryId: cmd.delivery_id,
-        deliveryIntent: cmd.delivery_intent,
-        completionId: cmd.completion_id,
-        relationKey: cmd.relation_key,
-        supervisorRole: cmd.supervisor_role,
-        supervisorEpoch: cmd.supervisor_epoch,
-      });
-    if (!ledgerOwnsTargetValidation) {
-      await deps.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
-    }
+    await deps.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
     result = await deps.taskRuntimeCommands.intervene({
       agentSessionId: sessionId,
       text: cmd.text,
@@ -172,7 +157,6 @@ async function handleIntervene(
       callerTurnId: cmd.caller_turn_id,
       deliveryCreatedAt: cmd.created_at,
       supervisorRole: cmd.supervisor_role,
-      supervisorEpoch: cmd.supervisor_epoch,
     });
   } catch (err) {
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));

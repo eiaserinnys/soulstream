@@ -315,7 +315,6 @@ export interface SessionDeliveryRow {
   parent_delivery_id: string | null;
   caller_turn_id: string | null;
   supervisor_role: string | null;
-  supervisor_epoch: number | null;
   payload_hash: string;
   payload: Record<string, unknown>;
   state: DeliveryState;
@@ -342,7 +341,6 @@ export interface RegisterSessionDeliveryParams {
   parentDeliveryId?: string | null;
   callerTurnId?: string | null;
   supervisorRole?: string | null;
-  supervisorEpoch?: number | null;
   payloadHash: string;
   payload: Record<string, unknown>;
   createdAt?: Date;

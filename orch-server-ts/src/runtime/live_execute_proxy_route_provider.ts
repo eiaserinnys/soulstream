@@ -234,9 +234,6 @@ function interveneCommandPayload(
   if (payload.supervisor_role !== undefined) {
     command.supervisor_role = payload.supervisor_role;
   }
-  if (payload.supervisor_epoch !== undefined) {
-    command.supervisor_epoch = payload.supervisor_epoch;
-  }
   return command;
 }
 

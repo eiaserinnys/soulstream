@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS session_deliveries (
     parent_delivery_id         TEXT,
     caller_turn_id             TEXT,
     supervisor_role            TEXT,
-    supervisor_epoch           BIGINT,
     payload_hash               TEXT NOT NULL,
     payload                    JSONB NOT NULL DEFAULT '{}'::jsonb,
     state                      TEXT NOT NULL DEFAULT 'pending',

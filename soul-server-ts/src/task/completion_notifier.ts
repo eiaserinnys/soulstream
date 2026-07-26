@@ -23,19 +23,17 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import { buildAgentCallerInfo, type AgentCallerInfo } from "../caller_info.js";
+import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
+import { CompletionDeliveryCoordinator } from "./completion_delivery_coordinator.js";
 import type {
   AddInterventionParams,
   StartExecutionCallback,
   TaskManager,
 } from "./task_manager.js";
 import type { Task } from "./task_models.js";
-import {
-  buildDeterministicDeliveryIdentity,
-} from "./delivery_identity.js";
-import type { DeliveryMetadata } from "./delivery_contract.js";
 
 /**
  * 본 notifier의 *유일한* 진입점. 다른 public 메서드를 추가하지 않는다 —
@@ -43,16 +41,12 @@ import type { DeliveryMetadata } from "./delivery_contract.js";
  */
 export interface CompletionNotifier {
   notify(task: Task): Promise<void>;
-}
-
-interface CompletionTarget {
-  sessionId: string;
-  supervisorRole?: string;
-  supervisorEpoch?: number;
+  recoverPending?(): Promise<void>;
 }
 
 export class TaskCompletionNotifier implements CompletionNotifier {
   private readonly fetchImpl: typeof fetch;
+  private readonly durableCoordinator?: CompletionDeliveryCoordinator;
 
   constructor(
     private readonly nodeId: string,
@@ -69,12 +63,20 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     fetchImpl?: typeof fetch,
     private readonly supervisorRegistry?: Pick<
       SessionDB,
-      "getSupervisorRegistry" | "getSession"
+      "getSession"
     >,
     private readonly deliveryV2Enabled = false,
+    deliveryRepository?: SessionDeliveryRepository,
   ) {
     // 테스트가 fetch mock을 주입 — 운영 시 globalThis.fetch (Node 18+ 내장).
     this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args));
+    if (deliveryV2Enabled && deliveryRepository) {
+      this.durableCoordinator = new CompletionDeliveryCoordinator({
+        repository: deliveryRepository,
+        dispatch: (params) => this._deliver(params, params.agentSessionId),
+        logger,
+      });
+    }
   }
 
   async notify(task: Task): Promise<void> {
@@ -86,107 +88,59 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return;
     }
 
-    let target = await this._resolveTarget(task);
-    if (!target) {
-      // 위임받지 않은 task — 회송 대상 없음.
-      return;
-    }
-
+    const callerSessionId = task.callerSessionId;
+    if (!callerSessionId) return;
     const callerInfo = this._buildCallerInfo(task);
     const text = this._buildNotifyText(task);
     const childId = task.agentSessionId;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const delivery = this._buildDeliveryMetadata(task, target);
-      if (this.deliveryV2Enabled && !delivery) {
+    if (this.deliveryV2Enabled) {
+      if (!this.durableCoordinator || task.lastEventId === undefined) {
         this.logger.error(
-          { childId, callerSessionId: target.sessionId, lastEventId: task.lastEventId },
-          "Completion notification withheld: terminal revision is unavailable",
+          { childId, callerSessionId, lastEventId: task.lastEventId },
+          "Completion notification withheld: durable ledger dependency is unavailable",
         );
         return;
       }
-      const retry = await this._deliver(
-        target.sessionId,
+      await this.durableCoordinator.enqueue({
+        targetSessionId: callerSessionId,
+        sourceSessionId: childId,
+        supervisorRole: supervisorCallerRole(task),
+        terminalRevision: String(task.lastEventId),
         text,
         callerInfo,
-        childId,
-        delivery,
-      );
-      if (!retry || !this.deliveryV2Enabled || !target.supervisorRole) return;
-
-      const refreshed = await this._resolveTarget(task);
-      if (
-        !refreshed ||
-        (refreshed.sessionId === target.sessionId &&
-          refreshed.supervisorEpoch === target.supervisorEpoch)
-      ) {
-        this.logger.warn(
-          { childId, supervisorRole: target.supervisorRole },
-          "Supervisor delivery retry could not resolve a newer registry epoch",
-        );
-        return;
-      }
-      target = refreshed;
+        createdAt: task.completedAt ?? new Date(),
+      });
+      return;
     }
+    await this._deliver({
+      agentSessionId: callerSessionId,
+      text,
+      user: "agent",
+      callerInfo,
+    }, childId);
   }
 
-  private _buildDeliveryMetadata(
-    task: Task,
-    target: CompletionTarget,
-  ): DeliveryMetadata | undefined {
-    if (!this.deliveryV2Enabled) return undefined;
-    if (task.lastEventId === undefined) return undefined;
-    const revision = String(task.lastEventId);
-    const relationKey = `child_session:${task.agentSessionId}:${revision}`;
-    const identity = buildDeterministicDeliveryIdentity({
-      targetSessionId: target.sessionId,
-      relationKey,
-      intent: "completion_notification",
-    });
-    return {
-      ...identity,
-      deliveryIntent: "completion_notification",
-      source: "completion_notifier",
-      producerTerminalRevision: revision,
-      createdAt: (task.completedAt ?? new Date()).toISOString(),
-      supervisorRole: target.supervisorRole,
-      supervisorEpoch: target.supervisorEpoch,
-    };
+  async recoverPending(): Promise<void> {
+    await this.durableCoordinator?.recoverPending();
   }
 
   private async _deliver(
-    callerSessionId: string,
-    text: string,
-    callerInfo: AgentCallerInfo,
+    params: AddInterventionParams,
     childId: string,
-    delivery?: DeliveryMetadata,
-  ): Promise<boolean> {
+  ): Promise<void> {
+    const callerSessionId = params.agentSessionId;
     // Gate OFF is the pre-v2 local-first contract: no ownership DB scheduling point.
     if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
       try {
-        const result = await this.taskManager.addIntervention(
-          {
-            agentSessionId: callerSessionId,
-            text,
-            user: "agent",
-            callerInfo,
-            ...delivery,
-          },
-          this.onResume,
-        );
-        if (
-          "suppressed" in result &&
-          result.reason === "supervisor_handover_retry"
-        ) {
-          return true;
-        }
+        await this.taskManager.addIntervention(params, this.onResume);
         this.logger.info(
-          { childId, callerSessionId, deliveryId: delivery?.deliveryId },
+          { childId, callerSessionId, deliveryId: params.deliveryId },
           "Completion notification delivered locally",
         );
-        return false;
+        return;
       } catch (err) {
         this.logger.warn(
-          { err, childId, callerSessionId, deliveryId: delivery?.deliveryId },
+          { err, childId, callerSessionId, deliveryId: params.deliveryId },
           "Local completion notification failed — trying cross-node relay",
         );
       }
@@ -197,15 +151,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         { childId, callerSessionId },
         "orch fallback unavailable (single-node config) — notification dropped",
       );
-      return false;
+      return;
     }
-    return await this._relayCrossNode(
-      callerSessionId,
-      text,
-      callerInfo,
-      childId,
-      delivery,
-    );
+    await this._relayCrossNode(params, childId);
   }
 
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
@@ -214,80 +162,12 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       const row = await this.supervisorRegistry.getSession(callerSessionId);
       return !row?.node_id || row.node_id === this.nodeId;
     } catch (err) {
+      if (this.deliveryV2Enabled) throw err;
       this.logger.warn(
         { err, callerSessionId },
         "Completion target ownership lookup failed — retaining local-first compatibility",
       );
       return true;
-    }
-  }
-
-  private async _resolveTarget(task: Task): Promise<CompletionTarget | undefined> {
-    const callerSessionId = task.callerSessionId;
-    if (!callerSessionId) return undefined;
-
-    const supervisorRole = supervisorCallerRole(task);
-    if (!supervisorRole) {
-      return { sessionId: callerSessionId };
-    }
-    if (!this.supervisorRegistry) {
-      if (!this.deliveryV2Enabled) return { sessionId: callerSessionId };
-      this.logger.error(
-        { childId: task.agentSessionId, supervisorRole, callerSessionId },
-        "Supervisor completion withheld: registry dependency is unavailable",
-      );
-      return undefined;
-    }
-
-    try {
-      const registry = await this.supervisorRegistry.getSupervisorRegistry(supervisorRole);
-      if (!registry?.activeSessionId) {
-        if (!this.deliveryV2Enabled) return { sessionId: callerSessionId };
-        this.logger.warn(
-          { childId: task.agentSessionId, supervisorRole, callerSessionId },
-          "Supervisor completion withheld: active registry target is unavailable",
-        );
-        return undefined;
-      }
-      if (
-        this.deliveryV2Enabled &&
-        (!Number.isSafeInteger(registry.epoch) || registry.epoch < 0)
-      ) {
-        this.logger.error(
-          {
-            childId: task.agentSessionId,
-            supervisorRole,
-            callerSessionId,
-            supervisorEpoch: registry.epoch,
-          },
-          "Supervisor completion withheld: registry epoch is invalid",
-        );
-        return undefined;
-      }
-      const sessionId = registry.activeSessionId;
-      if (sessionId !== callerSessionId) {
-        this.logger.info(
-          {
-            childId: task.agentSessionId,
-            supervisorRole,
-            originalCallerSessionId: callerSessionId,
-            targetSessionId: sessionId,
-            supervisorEpoch: registry?.epoch,
-          },
-          "Completion notification retargeted to active supervisor session",
-        );
-      }
-      return {
-        sessionId,
-        supervisorRole,
-        supervisorEpoch: registry.epoch,
-      };
-    } catch (err) {
-      this.logger.warn(
-        { err, childId: task.agentSessionId, supervisorRole, callerSessionId },
-        "Supervisor completion target lookup failed",
-      );
-      return this.deliveryV2Enabled ? undefined : { sessionId: callerSessionId };
     }
   }
 
@@ -350,35 +230,32 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    * 응답 non-2xx 또는 fetch throw 모두 *child finalize에 throw 전파 금지*.
    */
   private async _relayCrossNode(
-    callerSessionId: string,
-    text: string,
-    callerInfo: AgentCallerInfo,
+    params: AddInterventionParams,
     childId: string,
-    delivery?: DeliveryMetadata,
-  ): Promise<boolean> {
-    if (!this.orch) return false;
+  ): Promise<void> {
+    if (!this.orch) return;
+    const callerSessionId = params.agentSessionId;
     const url = `${this.orch.baseUrl}/api/sessions/${callerSessionId}/intervene`;
     const headers: Record<string, string> = {
       ...this.orch.headers,
       "content-type": "application/json",
     };
     const body = {
-      text,
-      user: "agent",
-      caller_info: callerInfo,  // snake_case 의무 (Pydantic 필드명)
-      ...(delivery
+      text: params.text,
+      user: params.user,
+      caller_info: params.callerInfo,  // snake_case 의무 (Pydantic 필드명)
+      ...(params.deliveryId
         ? {
-            delivery_id: delivery.deliveryId,
-            delivery_intent: delivery.deliveryIntent,
-            source: delivery.source,
-            completion_id: delivery.completionId,
-            relation_key: delivery.relationKey,
-            producer_terminal_revision: delivery.producerTerminalRevision,
-            parent_delivery_id: delivery.parentDeliveryId,
-            caller_turn_id: delivery.callerTurnId,
-            created_at: delivery.createdAt,
-            supervisor_role: delivery.supervisorRole,
-            supervisor_epoch: delivery.supervisorEpoch,
+            delivery_id: params.deliveryId,
+            delivery_intent: params.deliveryIntent,
+            source: params.source,
+            completion_id: params.completionId,
+            relation_key: params.relationKey,
+            producer_terminal_revision: params.producerTerminalRevision,
+            parent_delivery_id: params.parentDeliveryId,
+            caller_turn_id: params.callerTurnId,
+            created_at: params.deliveryCreatedAt,
+            supervisor_role: params.supervisorRole,
           }
         : {}),
     };
@@ -394,26 +271,17 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           { childId, callerSessionId, status: resp.status, body: bodyText },
           "Cross-node completion notification: orch returned non-2xx",
         );
-        return false;
-      }
-      const responseBody = await safeReadJson(resp);
-      if (
-        responseBody?.outcome === "suppressed" &&
-        responseBody.reason === "supervisor_handover_retry"
-      ) {
-        return true;
+        return;
       }
       this.logger.info(
         { childId, callerSessionId },
         "Completion notification delivered via cross-node relay",
       );
-      return false;
     } catch (err) {
       this.logger.error(
         { err, childId, callerSessionId },
         "Cross-node completion notification failed",
       );
-      return false;
     }
   }
 }
@@ -423,17 +291,6 @@ async function safeReadText(resp: Response): Promise<string> {
     return await resp.text();
   } catch {
     return "";
-  }
-}
-
-async function safeReadJson(resp: Response): Promise<Record<string, unknown> | undefined> {
-  try {
-    const value = await resp.json();
-    return typeof value === "object" && value !== null
-      ? value as Record<string, unknown>
-      : undefined;
-  } catch {
-    return undefined;
   }
 }
 

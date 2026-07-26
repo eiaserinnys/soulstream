@@ -20,7 +20,7 @@ export type DeliveryLedgerAdmission =
 
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
-  "register" | "claimForTarget" | "claimForSupervisorTarget" | "beginDispatch" | "get"
+  "register" | "claimForTarget" | "claimForCurrentSupervisor" | "beginDispatch" | "get"
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
 >;
@@ -41,15 +41,6 @@ export class TaskDeliveryLedgerGate {
         `Delivery identity required for ${params.deliveryIntent}: delivery_id, relation_key, completion_id`,
       );
     }
-    if (
-      (params.supervisorRole === undefined) !==
-      (params.supervisorEpoch === undefined)
-    ) {
-      throw new Error(
-        "Supervisor delivery requires supervisor_role and supervisor_epoch together",
-      );
-    }
-
     const registration = buildRegistration({
       ...params,
       deliveryId: params.deliveryId,
@@ -64,6 +55,23 @@ export class TaskDeliveryLedgerGate {
         reason: "identity_conflict_uncertain",
       };
     }
+    if (registered.row.state === "claimed") {
+      if (
+        registered.row.target_session_id !== params.agentSessionId ||
+        registered.row.supervisor_role !== (params.supervisorRole ?? null)
+      ) {
+        return {
+          kind: "suppressed",
+          deliveryId: registered.row.delivery_id,
+          reason: "supervisor_handover_retry",
+        };
+      }
+      return {
+        kind: "admitted",
+        deliveryId: registered.row.delivery_id,
+        row: registered.row,
+      };
+    }
     if (registered.row.state !== "pending") {
       return {
         kind: "suppressed",
@@ -73,12 +81,10 @@ export class TaskDeliveryLedgerGate {
     }
 
     const claimed =
-      params.supervisorRole !== undefined && params.supervisorEpoch !== undefined
-        ? await repository.claimForSupervisorTarget(
+      params.supervisorRole !== undefined
+        ? await repository.claimForCurrentSupervisor(
             registered.row.delivery_id,
-            params.agentSessionId,
             params.supervisorRole,
-            params.supervisorEpoch,
           )
         : await repository.claimForTarget(
             registered.row.delivery_id,
@@ -91,10 +97,19 @@ export class TaskDeliveryLedgerGate {
         deliveryId: registered.row.delivery_id,
         reason:
           params.supervisorRole !== undefined &&
-          params.supervisorEpoch !== undefined &&
           current?.state === "pending"
             ? "supervisor_handover_retry"
             : "concurrent_claim",
+      };
+    }
+    if (
+      params.supervisorRole !== undefined &&
+      claimed.target_session_id !== params.agentSessionId
+    ) {
+      return {
+        kind: "suppressed",
+        deliveryId: claimed.delivery_id,
+        reason: "supervisor_handover_retry",
       };
     }
     return { kind: "admitted", deliveryId: claimed.delivery_id, row: claimed };
@@ -108,10 +123,14 @@ export class TaskDeliveryLedgerGate {
       admission.deliveryId,
     );
     if (!dispatching) {
+      const current = await this.requireRepository().get(admission.deliveryId);
       return {
         kind: "suppressed",
         deliveryId: admission.deliveryId,
-        reason: "delivery_consumed_before_dispatch",
+        reason:
+          current?.state === "claimed" && current.supervisor_role !== null
+            ? "supervisor_handover_retry"
+            : "delivery_consumed_before_dispatch",
       };
     }
     return { ...admission, row: dispatching };
@@ -215,7 +234,6 @@ function buildRegistration(
     parentDeliveryId: params.parentDeliveryId,
     callerTurnId: params.callerTurnId,
     supervisorRole: params.supervisorRole,
-    supervisorEpoch: params.supervisorEpoch,
     payloadHash: hashDeliveryPayload({
       text: params.text,
       user: params.user,

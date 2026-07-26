@@ -648,7 +648,6 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       text: "child done",
       user: "system",
       supervisor_role: "ariella",
-      supervisor_epoch: 1,
       requestId: "gate-off-stale",
     });
 
@@ -657,12 +656,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     expect(sent[0]).toMatchObject({ type: "error", requestId: "gate-off-stale" });
   });
 
-  it("gate ON supervisor snapshot은 direct guard 대신 ledger conditional claim 경계로 전달한다", async () => {
-    const addIntervention = vi.fn(async () => ({
-      suppressed: true,
-      deliveryId: "delivery-handover",
-      reason: "supervisor_handover_retry",
-    }));
+  it("gate ON complete ledger identity도 stale direct target guard를 우회하지 않는다", async () => {
+    const addIntervention = vi.fn();
     const { dispatcher, sent } = createDispatcher({
       taskManager: { addIntervention },
       sessionDb: {
@@ -671,6 +666,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
           activeSessionId: "supervisor-new",
           epoch: 2,
         }]),
+        getSession: vi.fn(async () => ({ agent_id: "ariella" })),
       },
       deliveryV2Enabled: true,
     });
@@ -685,16 +681,11 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       completion_id: "completion-handover",
       relation_key: "child:handover",
       supervisor_role: "ariella",
-      supervisor_epoch: 1,
       requestId: "gate-on-stale",
     });
 
-    expect(addIntervention).toHaveBeenCalledTimes(1);
-    expect(sent[0]).toMatchObject({
-      type: "intervene_ack",
-      outcome: "suppressed",
-      reason: "supervisor_handover_retry",
-    });
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({ type: "error", requestId: "gate-on-stale" });
   });
 
   it.each([
@@ -745,7 +736,6 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       text: "stale delivery",
       user: "system",
       supervisor_role: "ariella",
-      supervisor_epoch: 1,
       requestId: `gate-on-${delivery.delivery_id ?? "missing"}`,
       ...delivery,
     });
@@ -774,7 +764,6 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       producer_terminal_revision: "42",
       parent_delivery_id: "00000000-0000-5000-8000-000000000000",
       supervisor_role: "ariella",
-      supervisor_epoch: 12,
       caller_turn_id: "turn-8",
       created_at: "2026-07-26T00:00:00.000Z",
     });
@@ -789,7 +778,6 @@ describe("CommandDispatcher.intervene (B-4)", () => {
         producerTerminalRevision: "42",
         parentDeliveryId: "00000000-0000-5000-8000-000000000000",
         supervisorRole: "ariella",
-        supervisorEpoch: 12,
         callerTurnId: "turn-8",
         deliveryCreatedAt: "2026-07-26T00:00:00.000Z",
       }),

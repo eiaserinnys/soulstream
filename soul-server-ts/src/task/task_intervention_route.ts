@@ -45,7 +45,6 @@ export interface AddInterventionParams {
   callerTurnId?: string;
   deliveryCreatedAt?: string;
   supervisorRole?: string;
-  supervisorEpoch?: number;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -115,7 +114,6 @@ export class TaskInterventionRoute {
       callerTurnId: params.callerTurnId,
       deliveryCreatedAt: params.deliveryCreatedAt,
       supervisorRole: params.supervisorRole,
-      supervisorEpoch: params.supervisorEpoch,
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,
       followupTaskIds: params.followupTaskIds,

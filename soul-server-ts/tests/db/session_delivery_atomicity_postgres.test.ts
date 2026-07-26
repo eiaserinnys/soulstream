@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../src/db/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
+import { CompletionDeliveryCoordinator } from "../../src/task/completion_delivery_coordinator.js";
+import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
+import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
@@ -32,7 +35,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       INSERT INTO sessions (session_id, session_type, status, agent_id)
       VALUES
         ('supervisor-old', 'claude', 'completed', 'ariella'),
-        ('supervisor-new', 'claude', 'completed', 'ariella')
+        ('supervisor-mid', 'claude', 'completed', 'ariella'),
+        ('supervisor-new', 'claude', 'completed', 'ariella'),
+        ('child-session', 'claude', 'completed', 'worker')
     `;
   });
 
@@ -40,7 +45,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
-  it("serializes both consume-first and dispatch-first interleavings on the real row", async () => {
+  it("serializes consume-first, dispatch-first, and queued-first on the real row", async () => {
     await register("delivery-consume-first", "relation-consume-first");
     await repository.claimForTarget("delivery-consume-first", "supervisor-old");
 
@@ -118,146 +123,129 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         .resolves.toMatchObject({ state: "queued" });
     });
     await expect(blockedQueuedConsume).resolves.toBeNull();
-    expect((await repository.get("delivery-queued-first"))?.state)
-      .toBe("queued");
+    expect((await repository.get("delivery-queued-first"))?.state).toBe("queued");
   });
 
-  it("rejects a stale supervisor snapshot and lets retry claim the new epoch", async () => {
-    await harness.sql`
-      INSERT INTO supervisor_registry (
-        role, active_session_id, epoch, cursor_offset, handover_state,
-        cumulative_tokens, compaction_count
-      ) VALUES ('ariella', 'supervisor-old', 4, 0, 'idle', 0, 0)
-    `;
-    const lookedUp = await harness.sql<Array<{
-      active_session_id: string;
-      epoch: number;
-    }>>`
-      SELECT active_session_id, epoch::int AS epoch
-      FROM supervisor_registry
-      WHERE role = 'ariella'
-    `;
-    await register("delivery-handover", "relation-handover");
+  it("persists before the supervisor exists and recovers exactly once to the current supervisor", async () => {
+    let delivered = 0;
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository,
+      dispatch: async (params) => {
+        const won = await repository.beginDispatch(params.deliveryId!);
+        if (!won) return;
+        delivered += 1;
+        await repository.markQueued(params.deliveryId!);
+      },
+      logger: silentLogger(),
+    });
 
-    // Real handover occurs after producer lookup but before its conditional claim.
-    await peer`
-      UPDATE supervisor_registry
-      SET active_session_id = 'supervisor-new', epoch = 5, updated_at = NOW()
-      WHERE role = 'ariella'
-    `;
+    await coordinator.enqueue(completionInput());
+    const pending = await repository.getByRelation("child_session:child-session:42");
+    expect(pending).toMatchObject({
+      state: "pending",
+      target_session_id: "supervisor-old",
+    });
+    expect(delivered).toBe(0);
 
-    await expect(repository.claimForSupervisorTarget(
-      "delivery-handover",
-      lookedUp[0]!.active_session_id,
-      "ariella",
-      lookedUp[0]!.epoch,
-    )).resolves.toBeNull();
-    expect((await repository.get("delivery-handover"))?.state).toBe("pending");
+    await insertSupervisor("supervisor-new", 5);
+    await coordinator.recoverPending();
+    await coordinator.recoverPending();
 
-    await expect(repository.claimForSupervisorTarget(
-      "delivery-handover",
-      "supervisor-new",
-      "ariella",
-      5,
-    )).resolves.toMatchObject({
+    expect(delivered).toBe(1);
+    expect(await repository.get(pending!.delivery_id)).toMatchObject({
+      state: "queued",
       target_session_id: "supervisor-new",
-      supervisor_role: "ariella",
-      supervisor_epoch: 5,
-      state: "claimed",
     });
   });
 
-  it("leaves a supervisor delivery pending when the registry disappears after lookup", async () => {
-    await harness.sql`
-      INSERT INTO supervisor_registry (
-        role, active_session_id, epoch, cursor_offset, handover_state,
-        cumulative_tokens, compaction_count
-      ) VALUES ('ariella', 'supervisor-old', 4, 0, 'idle', 0, 0)
-    `;
-    const lookedUp = await harness.sql<Array<{
-      active_session_id: string;
-      epoch: number;
-    }>>`
-      SELECT active_session_id, epoch::int AS epoch
-      FROM supervisor_registry
-      WHERE role = 'ariella'
-    `;
-    await register("delivery-registry-lost", "relation-registry-lost");
-
-    await peer`DELETE FROM supervisor_registry WHERE role = 'ariella'`;
-
-    await expect(repository.claimForSupervisorTarget(
-      "delivery-registry-lost",
-      lookedUp[0]!.active_session_id,
-      "ariella",
-      lookedUp[0]!.epoch,
-    )).resolves.toBeNull();
-    expect((await repository.get("delivery-registry-lost"))?.state).toBe("pending");
-  });
-
-  it("rejects epoch regression and requires a strict increase when the target changes", async () => {
-    await harness.sql`
-      SELECT * FROM supervisor_registry_upsert(
-        'ariella', 'supervisor-old', 4, 0, 'idle', 0, 0, NOW()
-      )
-    `;
-
-    await expect(harness.sql`
-      SELECT * FROM supervisor_registry_upsert(
-        'ariella', 'supervisor-old', 3, 0, 'idle', 0, 0, NOW()
-      )
-    `).rejects.toThrow(/epoch/i);
-    await expect(harness.sql`
-      SELECT * FROM supervisor_registry_upsert(
-        'ariella', 'supervisor-new', 4, 0, 'idle', 0, 0, NOW()
-      )
-    `).rejects.toThrow(/epoch/i);
-
-    await expect(harness.sql`
-      SELECT * FROM supervisor_registry_upsert(
-        'ariella', 'supervisor-old', 4, 0, 'hard_pending', 0, 0, NOW()
-      )
-    `).resolves.toHaveLength(1);
-    await harness.sql`
-      SELECT * FROM supervisor_registry_upsert(
-        'ariella', 'supervisor-new', 5, 0, 'idle', 0, 0, NOW()
-      )
-    `;
-    await expect(harness.sql`
-      SELECT active_session_id, epoch::int AS epoch
-      FROM supervisor_registry
-      WHERE role = 'ariella'
-    `).resolves.toMatchObject([{
-      active_session_id: "supervisor-new",
-      epoch: 5,
-    }]);
-  });
-
-  it("serializes concurrent first writes before enforcing supervisor epoch monotonicity", async () => {
-    let blockedStaleWrite!: ReturnType<SqlClient>;
-    await peer.begin(async (transaction) => {
-      await transaction`
-        SELECT * FROM supervisor_registry_upsert(
-          'ariella', 'supervisor-new', 5, 0, 'idle', 0, 0, NOW()
-        )
-      `;
-      blockedStaleWrite = harness.sql`
-        SELECT * FROM supervisor_registry_upsert(
-          'ariella', 'supervisor-old', 4, 0, 'idle', 0, 0, NOW()
-        )
-      `;
-      await new Promise((resolve) => setImmediate(resolve));
+  it("survives consecutive handovers with one durable effect and no stale claim", async () => {
+    await insertSupervisor("supervisor-old", 1);
+    const dispatchTargets: string[] = [];
+    let delivered = 0;
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository,
+      dispatch: async (params) => {
+        dispatchTargets.push(params.agentSessionId);
+        if (dispatchTargets.length === 1) {
+          await updateSupervisor("supervisor-mid", 2);
+        } else if (dispatchTargets.length === 2) {
+          await updateSupervisor("supervisor-new", 3);
+        }
+        const won = await repository.beginDispatch(params.deliveryId!);
+        if (!won) return;
+        delivered += 1;
+        await repository.markQueued(params.deliveryId!);
+      },
+      logger: silentLogger(),
     });
 
-    await expect(blockedStaleWrite).rejects.toThrow(/epoch/i);
-    await expect(harness.sql`
-      SELECT active_session_id, epoch::int AS epoch
-      FROM supervisor_registry
-      WHERE role = 'ariella'
-    `).resolves.toMatchObject([{
-      active_session_id: "supervisor-new",
-      epoch: 5,
-    }]);
+    await coordinator.enqueue(completionInput());
+    await coordinator.recoverPending();
+    await coordinator.recoverPending();
+    await coordinator.recoverPending();
+
+    expect(dispatchTargets).toEqual([
+      "supervisor-old",
+      "supervisor-mid",
+      "supervisor-new",
+    ]);
+    expect(delivered).toBe(1);
+    expect(await repository.getByRelation("child_session:child-session:42"))
+      .toMatchObject({
+        state: "queued",
+        target_session_id: "supervisor-new",
+      });
+  });
+
+  it("suppresses an already-consumed PostgreSQL row before queue, resume, wake, or publish", async () => {
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    const params = {
+      agentSessionId: "supervisor-old",
+      text: "done",
+      user: "agent",
+      deliveryId: "delivery-consumed-e2e",
+      deliveryIntent: "completion_notification" as const,
+      source: "completion_notifier",
+      completionId: "completion-consumed-e2e",
+      relationKey: "relation-consumed-e2e",
+    };
+    await gate.recordInlineConsumed(params, {
+      agentSessionId: "supervisor-old",
+      prompt: "",
+      status: "completed",
+      lastEventId: 9,
+      lastReadEventId: 0,
+      interventionQueue: [],
+      createdAt: new Date(),
+    });
+
+    const getTask = vi.fn();
+    const queueOnly = vi.fn();
+    const deliver = vi.fn();
+    const resume = vi.fn();
+    const publish = vi.fn();
+    const wake = vi.fn();
+    const route = new TaskInterventionRoute({
+      getTask,
+      loadEvictedTask: vi.fn(),
+      rememberTask: vi.fn(),
+      activeTaskRecovery: { prepareForIntervention: vi.fn() },
+      runningInterventionTransition: { queueOnly, deliver },
+      autoResumeTransition: { resume },
+      deliveryLedgerGate: gate,
+      sessionNotificationPublisher: { publish },
+    });
+
+    await expect(route.addIntervention(params, wake)).resolves.toMatchObject({
+      suppressed: true,
+      reason: "delivery_consumed",
+    });
+    expect(getTask).not.toHaveBeenCalled();
+    expect(queueOnly).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 
   async function register(deliveryId: string, relationKey: string): Promise<void> {
@@ -272,7 +260,43 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       payload: { text: "done" },
     });
   }
+
+  async function insertSupervisor(sessionId: string, epoch: number): Promise<void> {
+    await harness.sql`
+      INSERT INTO supervisor_registry (
+        role, active_session_id, epoch, cursor_offset, handover_state,
+        cumulative_tokens, compaction_count
+      ) VALUES ('ariella', ${sessionId}, ${epoch}, 0, 'idle', 0, 0)
+    `;
+  }
+
+  async function updateSupervisor(sessionId: string, epoch: number): Promise<void> {
+    await peer`
+      UPDATE supervisor_registry
+      SET active_session_id = ${sessionId}, epoch = ${epoch}, updated_at = NOW()
+      WHERE role = 'ariella'
+    `;
+  }
 });
+
+function completionInput() {
+  return {
+    targetSessionId: "supervisor-old",
+    sourceSessionId: "child-session",
+    supervisorRole: "ariella",
+    terminalRevision: "42",
+    text: "done",
+    callerInfo: { source: "agent", agent_id: "ariella" },
+    createdAt: new Date("2026-07-26T00:00:00Z"),
+  };
+}
+
+function silentLogger() {
+  return {
+    error: vi.fn(),
+    warn: vi.fn(),
+  };
+}
 
 function hasDockerBinary(): boolean {
   return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;

@@ -27,7 +27,6 @@ export class SessionDeliveryRepository {
         parent_delivery_id,
         caller_turn_id,
         supervisor_role,
-        supervisor_epoch,
         payload_hash,
         payload,
         created_at,
@@ -46,7 +45,6 @@ export class SessionDeliveryRepository {
         ${params.parentDeliveryId ?? null},
         ${params.callerTurnId ?? null},
         ${params.supervisorRole ?? null},
-        ${params.supervisorEpoch ?? null},
         ${params.payloadHash},
         ${this.sql.json(asPostgresJsonValue(params.payload))},
         ${params.createdAt ?? new Date()},
@@ -126,38 +124,35 @@ export class SessionDeliveryRepository {
         state = 'claimed',
         claimed_at = NOW(),
         updated_at = NOW()
-      WHERE delivery_id = ${deliveryId} AND state = 'pending'
+      WHERE delivery_id = ${deliveryId} AND state IN ('pending', 'claimed')
       RETURNING *
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   /**
-   * Claims only while the producer's supervisor snapshot is still current.
-   * A handover between lookup and this statement leaves the delivery pending,
-   * allowing the producer to resolve the new active supervisor and retry.
+   * Resolves the active supervisor and claims the durable delivery in one
+   * statement. Pending and not-yet-dispatched claims may be retargeted after a
+   * handover; dispatching/terminal rows remain immutable.
    */
-  async claimForSupervisorTarget(
+  async claimForCurrentSupervisor(
     deliveryId: string,
-    targetSessionId: string,
     supervisorRole: string,
-    supervisorEpoch: number,
   ): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries AS delivery
       SET
-        target_session_id = ${targetSessionId},
+        target_session_id = registry.active_session_id,
         supervisor_role = ${supervisorRole},
-        supervisor_epoch = ${supervisorEpoch},
         state = 'claimed',
-        claimed_at = NOW(),
+        claimed_at = COALESCE(delivery.claimed_at, NOW()),
         updated_at = NOW()
       FROM supervisor_registry AS registry
       WHERE delivery.delivery_id = ${deliveryId}
-        AND delivery.state = 'pending'
+        AND delivery.state IN ('pending', 'claimed')
+        AND delivery.supervisor_role = ${supervisorRole}
         AND registry.role = ${supervisorRole}
-        AND registry.active_session_id = ${targetSessionId}
-        AND registry.epoch = ${supervisorEpoch}
+        AND registry.active_session_id IS NOT NULL
       RETURNING delivery.*
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
@@ -165,12 +160,37 @@ export class SessionDeliveryRepository {
 
   async beginDispatch(deliveryId: string): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
+      UPDATE session_deliveries AS delivery
       SET state = 'dispatching', dispatching_at = NOW(), updated_at = NOW()
-      WHERE delivery_id = ${deliveryId} AND state = 'claimed'
-      RETURNING *
+      WHERE delivery.delivery_id = ${deliveryId}
+        AND delivery.state = 'claimed'
+        AND (
+          delivery.supervisor_role IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM supervisor_registry AS registry
+            WHERE registry.role = delivery.supervisor_role
+              AND registry.active_session_id = delivery.target_session_id
+          )
+        )
+      RETURNING delivery.*
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+  }
+
+  async listRecoverableCompletionDeliveries(
+    limit = 100,
+  ): Promise<SessionDeliveryRow[]> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      SELECT *
+      FROM session_deliveries
+      WHERE intent = 'completion_notification'
+        AND source = 'completion_notifier'
+        AND state IN ('pending', 'claimed')
+      ORDER BY updated_at, created_at, delivery_id
+      LIMIT ${limit}
+    `;
+    return rows.map(normalizeDeliveryRow);
   }
 
   async markQueued(deliveryId: string): Promise<SessionDeliveryRow | null> {
@@ -252,9 +272,5 @@ export class SessionDeliveryRepository {
 }
 
 function normalizeDeliveryRow(row: SessionDeliveryRow): SessionDeliveryRow {
-  const epoch = row.supervisor_epoch as number | string | null;
-  return {
-    ...row,
-    supervisor_epoch: epoch === null ? null : Number(epoch),
-  };
+  return row;
 }

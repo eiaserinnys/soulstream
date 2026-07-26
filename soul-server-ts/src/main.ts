@@ -166,6 +166,7 @@ async function main(): Promise<void> {
       clearInterval(runtime.supervisorWatchdogInterval);
     }
     runtime.supervisorWakeScheduler?.dispose();
+    runtime.completionDeliveryRecoveryWorker?.stop();
     runtime.sessionPageBindingService.stop();
     runtime.checklistTaskReconciler.stop();
     try {

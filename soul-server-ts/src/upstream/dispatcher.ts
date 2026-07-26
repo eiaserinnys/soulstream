@@ -93,7 +93,7 @@ export class CommandDispatcher {
     agentConfigService?: AgentConfigCommandHandler,
     reflectionRuntime?: McpRuntime,
     scheduleCommands?: ClaudeRuntimeScheduleCommands,
-    deliveryV2Enabled = false,
+    _deliveryV2Enabled = false,
   ) {
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -141,7 +141,6 @@ export class CommandDispatcher {
         deliveryCommands,
         taskRuntimeCommands,
         supervisorDirectTargetGuard,
-        deliveryV2Enabled,
       }),
       ...createClaudeRuntimeCommandFamily({ send, claudeRuntimeCommands }),
       ...createRealtimeCommandFamily({ send, realtimeCommands }),
