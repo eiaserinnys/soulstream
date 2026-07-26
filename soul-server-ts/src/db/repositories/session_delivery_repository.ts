@@ -233,7 +233,7 @@ export class SessionDeliveryRepository {
         updated_at = NOW()
       WHERE relation_key = ${relationKey}
         AND completion_id = ${completionId}
-        AND state IN ('pending', 'claimed', 'queued', 'delivered', 'uncertain')
+        AND state IN ('pending', 'claimed')
       RETURNING *
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;

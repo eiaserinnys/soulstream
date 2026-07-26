@@ -91,6 +91,35 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await expect(blockedConsume).resolves.toBeNull();
     expect((await repository.get("delivery-dispatch-first"))?.state)
       .toBe("dispatching");
+
+    await register("delivery-queued-first", "relation-queued-first");
+    await repository.claimForTarget("delivery-queued-first", "supervisor-old");
+    let blockedQueuedConsume!: ReturnType<
+      SessionDeliveryRepository["markConsumedByRelation"]
+    >;
+    await peer.begin(async (transaction) => {
+      const transactional = new SessionDeliveryRepository(
+        transaction as unknown as SqlClient,
+      );
+      await transaction`
+        SELECT 1 FROM session_deliveries
+        WHERE delivery_id = 'delivery-queued-first'
+        FOR UPDATE
+      `;
+      blockedQueuedConsume = repository.markConsumedByRelation(
+        "relation-queued-first",
+        "completion-relation-queued-first",
+        "turn-inline-late",
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      await expect(transactional.beginDispatch("delivery-queued-first"))
+        .resolves.toMatchObject({ state: "dispatching" });
+      await expect(transactional.markQueued("delivery-queued-first"))
+        .resolves.toMatchObject({ state: "queued" });
+    });
+    await expect(blockedQueuedConsume).resolves.toBeNull();
+    expect((await repository.get("delivery-queued-first"))?.state)
+      .toBe("queued");
   });
 
   it("rejects a stale supervisor snapshot and lets retry claim the new epoch", async () => {
@@ -136,6 +165,99 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       supervisor_epoch: 5,
       state: "claimed",
     });
+  });
+
+  it("leaves a supervisor delivery pending when the registry disappears after lookup", async () => {
+    await harness.sql`
+      INSERT INTO supervisor_registry (
+        role, active_session_id, epoch, cursor_offset, handover_state,
+        cumulative_tokens, compaction_count
+      ) VALUES ('ariella', 'supervisor-old', 4, 0, 'idle', 0, 0)
+    `;
+    const lookedUp = await harness.sql<Array<{
+      active_session_id: string;
+      epoch: number;
+    }>>`
+      SELECT active_session_id, epoch::int AS epoch
+      FROM supervisor_registry
+      WHERE role = 'ariella'
+    `;
+    await register("delivery-registry-lost", "relation-registry-lost");
+
+    await peer`DELETE FROM supervisor_registry WHERE role = 'ariella'`;
+
+    await expect(repository.claimForSupervisorTarget(
+      "delivery-registry-lost",
+      lookedUp[0]!.active_session_id,
+      "ariella",
+      lookedUp[0]!.epoch,
+    )).resolves.toBeNull();
+    expect((await repository.get("delivery-registry-lost"))?.state).toBe("pending");
+  });
+
+  it("rejects epoch regression and requires a strict increase when the target changes", async () => {
+    await harness.sql`
+      SELECT * FROM supervisor_registry_upsert(
+        'ariella', 'supervisor-old', 4, 0, 'idle', 0, 0, NOW()
+      )
+    `;
+
+    await expect(harness.sql`
+      SELECT * FROM supervisor_registry_upsert(
+        'ariella', 'supervisor-old', 3, 0, 'idle', 0, 0, NOW()
+      )
+    `).rejects.toThrow(/epoch/i);
+    await expect(harness.sql`
+      SELECT * FROM supervisor_registry_upsert(
+        'ariella', 'supervisor-new', 4, 0, 'idle', 0, 0, NOW()
+      )
+    `).rejects.toThrow(/epoch/i);
+
+    await expect(harness.sql`
+      SELECT * FROM supervisor_registry_upsert(
+        'ariella', 'supervisor-old', 4, 0, 'hard_pending', 0, 0, NOW()
+      )
+    `).resolves.toHaveLength(1);
+    await harness.sql`
+      SELECT * FROM supervisor_registry_upsert(
+        'ariella', 'supervisor-new', 5, 0, 'idle', 0, 0, NOW()
+      )
+    `;
+    await expect(harness.sql`
+      SELECT active_session_id, epoch::int AS epoch
+      FROM supervisor_registry
+      WHERE role = 'ariella'
+    `).resolves.toMatchObject([{
+      active_session_id: "supervisor-new",
+      epoch: 5,
+    }]);
+  });
+
+  it("serializes concurrent first writes before enforcing supervisor epoch monotonicity", async () => {
+    let blockedStaleWrite!: ReturnType<SqlClient>;
+    await peer.begin(async (transaction) => {
+      await transaction`
+        SELECT * FROM supervisor_registry_upsert(
+          'ariella', 'supervisor-new', 5, 0, 'idle', 0, 0, NOW()
+        )
+      `;
+      blockedStaleWrite = harness.sql`
+        SELECT * FROM supervisor_registry_upsert(
+          'ariella', 'supervisor-old', 4, 0, 'idle', 0, 0, NOW()
+        )
+      `;
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+
+    await expect(blockedStaleWrite).rejects.toThrow(/epoch/i);
+    await expect(harness.sql`
+      SELECT active_session_id, epoch::int AS epoch
+      FROM supervisor_registry
+      WHERE role = 'ariella'
+    `).resolves.toMatchObject([{
+      active_session_id: "supervisor-new",
+      epoch: 5,
+    }]);
   });
 
   async function register(deliveryId: string, relationKey: string): Promise<void> {

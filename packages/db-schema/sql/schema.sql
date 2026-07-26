@@ -1986,9 +1986,39 @@ CREATE OR REPLACE FUNCTION supervisor_registry_upsert(
     created_at         TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ
 ) LANGUAGE plpgsql AS $$
+DECLARE
+    v_active_session_id TEXT;
+    v_epoch BIGINT;
 BEGIN
     IF p_epoch < 0 OR p_cursor_offset < 0 OR p_cumulative_tokens < 0 OR p_compaction_count < 0 THEN
         RAISE EXCEPTION 'epoch, cursor_offset, cumulative_tokens, and compaction_count must be non-negative';
+    END IF;
+
+    -- A same-role first insert has no row to lock yet. Serialize every role
+    -- before reading so concurrent initial writes cannot bypass monotonicity.
+    PERFORM pg_advisory_xact_lock(
+        hashtext('supervisor_registry'),
+        hashtext(p_role)
+    );
+
+    SELECT sr.active_session_id, sr.epoch
+    INTO v_active_session_id, v_epoch
+    FROM supervisor_registry AS sr
+    WHERE sr.role = p_role
+    FOR UPDATE;
+
+    IF FOUND THEN
+        IF p_epoch < v_epoch THEN
+            RAISE EXCEPTION
+                'supervisor epoch regression for role %: current %, requested %',
+                p_role, v_epoch, p_epoch;
+        END IF;
+        IF p_active_session_id IS DISTINCT FROM v_active_session_id
+           AND p_epoch <= v_epoch THEN
+            RAISE EXCEPTION
+                'supervisor target change requires epoch increase for role %: current %, requested %',
+                p_role, v_epoch, p_epoch;
+        END IF;
     END IF;
 
     INSERT INTO supervisor_registry (

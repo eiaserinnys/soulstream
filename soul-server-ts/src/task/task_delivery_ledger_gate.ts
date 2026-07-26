@@ -11,6 +11,7 @@ import type {
 import type { Task } from "./task_models.js";
 import type { InterventionMessage } from "./task_models.js";
 import { hashDeliveryPayload } from "./delivery_identity.js";
+import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -241,11 +242,7 @@ export function isLedgerControlled(
 ): params is Pick<AddInterventionParams, "deliveryIntent"> & {
   deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
 } {
-  return (
-    params.deliveryIntent === "durable_next_turn" ||
-    params.deliveryIntent === "completion_notification" ||
-    params.deliveryIntent === "runtime_followup"
-  );
+  return isLedgerControlledDeliveryIntent(params.deliveryIntent);
 }
 
 function parseCreatedAt(value: string | undefined): Date | undefined {

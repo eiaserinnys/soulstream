@@ -1,6 +1,7 @@
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
+import { hasCompleteSupervisorLedgerIdentity } from "../task/delivery_contract.js";
 import type { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
   CommandDispatchError,
@@ -141,11 +142,17 @@ async function handleIntervene(
 
   let result;
   try {
-    if (
-      deps.deliveryV2Enabled !== true ||
-      cmd.supervisor_role === undefined ||
-      cmd.supervisor_epoch === undefined
-    ) {
+    const ledgerOwnsTargetValidation =
+      deps.deliveryV2Enabled === true &&
+      hasCompleteSupervisorLedgerIdentity({
+        deliveryId: cmd.delivery_id,
+        deliveryIntent: cmd.delivery_intent,
+        completionId: cmd.completion_id,
+        relationKey: cmd.relation_key,
+        supervisorRole: cmd.supervisor_role,
+        supervisorEpoch: cmd.supervisor_epoch,
+      });
+    if (!ledgerOwnsTargetValidation) {
       await deps.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
     }
     result = await deps.taskRuntimeCommands.intervene({

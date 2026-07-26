@@ -224,6 +224,9 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("relation_key");
     expect(calls[0].query).toContain("completion_id");
     expect(calls[0].query).toContain("state = 'consumed'");
+    expect(calls[0].query).toContain("'pending', 'claimed'");
+    expect(calls[0].query).not.toContain("'queued'");
+    expect(calls[0].query).not.toContain("'delivered'");
   });
 });
 
@@ -240,13 +243,27 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const epochPending = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/pending/044_supervisor_registry_epoch_monotonic.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
 
     expect(manifest).not.toContain("043_session_deliveries.sql");
+    expect(manifest).not.toContain("044_supervisor_registry_epoch_monotonic.sql");
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(epochPending).toContain(
+      "supervisor target change requires epoch increase",
+    );
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(schema).toContain(
+      "supervisor target change requires epoch increase",
+    );
   });
 });

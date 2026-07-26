@@ -296,6 +296,74 @@ describe("TaskCompletionNotifier.notify", () => {
     ).toBe(addIntervention.mock.calls[1]![0].deliveryId);
   });
 
+  it.each([
+    {
+      name: "registry row가 없음",
+      getSupervisorRegistry: vi.fn().mockResolvedValue(null),
+    },
+    {
+      name: "registry 조회가 실패",
+      getSupervisorRegistry: vi.fn().mockRejectedValue(new Error("registry unavailable")),
+    },
+  ])("v2 supervisor $name이면 legacy caller로 강등하지 않는다", async ({
+    getSupervisorRegistry,
+  }) => {
+    const tm = makeTaskManagerStub();
+    const fetchImpl = vi.fn();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+      {
+        getSupervisorRegistry,
+        getSession: vi.fn(),
+      } as never,
+      true,
+    );
+
+    await notifier.notify(makeChild({
+      callerSessionId: "supervisor-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "ariella-ashwood-codex",
+      },
+    }));
+
+    expect(tm.addIntervention).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("v2 supervisor registry dependency가 없으면 legacy caller로 강등하지 않는다", async () => {
+    const tm = makeTaskManagerStub();
+    const fetchImpl = vi.fn();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+      undefined,
+      true,
+    );
+
+    await notifier.notify(makeChild({
+      callerSessionId: "supervisor-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "ariella-ashwood-codex",
+      },
+    }));
+
+    expect(tm.addIntervention).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("2. orch fallback — local throw 시 /api/sessions/{caller}/intervene POST", async () => {
     const tm = makeTaskManagerStub(new Error("Task not found: parent-sess-1"));
     const registry = makeAgentRegistry();

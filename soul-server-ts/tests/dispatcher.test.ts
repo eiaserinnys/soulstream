@@ -697,6 +697,64 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     });
   });
 
+  it.each([
+    {
+      name: "delivery intent 없음",
+      delivery: {},
+    },
+    {
+      name: "human live steer",
+      delivery: {
+        delivery_id: "delivery-human",
+        delivery_intent: "human_live_steer",
+        completion_id: "completion-human",
+        relation_key: "human:1",
+      },
+    },
+    {
+      name: "completion identity 불완전",
+      delivery: {
+        delivery_id: "delivery-incomplete",
+        delivery_intent: "completion_notification",
+        relation_key: "child:incomplete",
+      },
+    },
+  ])("gate ON이어도 $name supervisor metadata는 stale-target guard를 우회하지 않는다", async ({
+    delivery,
+  }) => {
+    const addIntervention = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: {
+        addIntervention,
+        getTask: vi.fn(() => undefined),
+      },
+      sessionDb: {
+        listSupervisorRegistries: vi.fn(async () => [{
+          role: "ariella",
+          activeSessionId: "supervisor-new",
+          epoch: 2,
+        }]),
+        getSession: vi.fn(async () => ({ agent_id: "ariella" })),
+      },
+      deliveryV2Enabled: true,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "supervisor-old",
+      text: "stale delivery",
+      user: "system",
+      supervisor_role: "ariella",
+      supervisor_epoch: 1,
+      requestId: `gate-on-${delivery.delivery_id ?? "missing"}`,
+      ...delivery,
+    });
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "error" });
+  });
+
   it("optional delivery metadata를 손실 없이 task boundary로 전달한다", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher } = createDispatcher({

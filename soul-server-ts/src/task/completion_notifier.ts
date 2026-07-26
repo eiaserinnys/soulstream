@@ -227,14 +227,44 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     if (!callerSessionId) return undefined;
 
     const supervisorRole = supervisorCallerRole(task);
-    if (!supervisorRole || !this.supervisorRegistry) {
+    if (!supervisorRole) {
       return { sessionId: callerSessionId };
+    }
+    if (!this.supervisorRegistry) {
+      if (!this.deliveryV2Enabled) return { sessionId: callerSessionId };
+      this.logger.error(
+        { childId: task.agentSessionId, supervisorRole, callerSessionId },
+        "Supervisor completion withheld: registry dependency is unavailable",
+      );
+      return undefined;
     }
 
     try {
       const registry = await this.supervisorRegistry.getSupervisorRegistry(supervisorRole);
-      const activeSessionId = registry?.activeSessionId;
-      const sessionId = activeSessionId ?? callerSessionId;
+      if (!registry?.activeSessionId) {
+        if (!this.deliveryV2Enabled) return { sessionId: callerSessionId };
+        this.logger.warn(
+          { childId: task.agentSessionId, supervisorRole, callerSessionId },
+          "Supervisor completion withheld: active registry target is unavailable",
+        );
+        return undefined;
+      }
+      if (
+        this.deliveryV2Enabled &&
+        (!Number.isSafeInteger(registry.epoch) || registry.epoch < 0)
+      ) {
+        this.logger.error(
+          {
+            childId: task.agentSessionId,
+            supervisorRole,
+            callerSessionId,
+            supervisorEpoch: registry.epoch,
+          },
+          "Supervisor completion withheld: registry epoch is invalid",
+        );
+        return undefined;
+      }
+      const sessionId = registry.activeSessionId;
       if (sessionId !== callerSessionId) {
         this.logger.info(
           {
@@ -247,19 +277,17 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           "Completion notification retargeted to active supervisor session",
         );
       }
-      return registry
-        ? {
-            sessionId,
-            supervisorRole,
-            supervisorEpoch: registry.epoch,
-          }
-        : { sessionId };
+      return {
+        sessionId,
+        supervisorRole,
+        supervisorEpoch: registry.epoch,
+      };
     } catch (err) {
       this.logger.warn(
         { err, childId: task.agentSessionId, supervisorRole, callerSessionId },
         "Supervisor completion target lookup failed",
       );
-      return { sessionId: callerSessionId };
+      return this.deliveryV2Enabled ? undefined : { sessionId: callerSessionId };
     }
   }
 
