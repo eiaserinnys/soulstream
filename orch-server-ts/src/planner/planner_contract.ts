@@ -99,6 +99,18 @@ export interface PlannerTaskRunPageDto extends PlannerPageSlice<{
   total: number;
 }
 
+export const PLANNER_READ_PAGE_LIMITS = {
+  starredTasks: { default: 50, max: 100 },
+  dailyHistory: { default: 2, max: 10 },
+  project: { default: 20, max: 50 },
+  projectTasks: { default: 20, max: 50 },
+  projectDocuments: { default: 20, max: 50 },
+  taskRuns: { default: 20, max: 50 },
+} as const satisfies Record<string, {
+  default: number;
+  max: number;
+}>;
+
 export interface PlannerReadProvider {
   getStarredTasks(input: {
     cursor?: string;

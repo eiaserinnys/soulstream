@@ -118,25 +118,25 @@ describe("planner BFF data", () => {
     });
     const dependencies = { fetchPlanner } satisfies PlannerDataDependencies;
 
-    await expect(loadStarredTasks(dependencies, { cursor: "cursor-a", limit: 50 }))
+    await expect(loadStarredTasks(dependencies, { cursor: "cursor-a" }))
       .resolves.toMatchObject({
         items: [{ page: { id: "task" }, taskId: "task", status: "in_progress" }],
         nextCursor: "task-next",
       });
-    await expect(loadDailyHistoryDates(dependencies, "2026-07-14", 2))
+    await expect(loadDailyHistoryDates(dependencies, "2026-07-14"))
       .resolves.toEqual(["2026-07-13", "2026-07-11"]);
-    await expect(loadProjectTaskPage(dependencies, "project/a", "cursor-b", 20))
+    await expect(loadProjectTaskPage(dependencies, "project/a", "cursor-b"))
       .resolves.toMatchObject({ items: [{ page: { id: "task" } }], nextCursor: "task-next" });
-    await expect(loadProjectDocumentPage(dependencies, "project/a", "cursor-c", 20))
+    await expect(loadProjectDocumentPage(dependencies, "project/a", "cursor-c"))
       .resolves.toMatchObject({ items: [{ id: "document" }], nextCursor: null });
-    await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-d", 20))
+    await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-d"))
       .resolves.toEqual({ sessionIds: ["session-a"], nextCursor: "run-next", total: 61 });
 
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&limit=50&detail=full");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14&limit=2");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b&limit=20");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c&limit=20");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/tasks/task%2Fa/runs?cursor=cursor-d&limit=20");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&detail=full");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/tasks/task%2Fa/runs?cursor=cursor-d");
   });
 
   it("uses one authenticated JSON fetch in the production dependency", async () => {

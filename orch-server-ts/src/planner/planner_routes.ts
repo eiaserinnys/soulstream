@@ -6,7 +6,10 @@ import {
   type PageBrowserUser,
 } from "../page/page_browser_routes.js";
 import type { PageYjsService } from "../page/page_service.js";
-import type { PlannerReadProvider } from "./planner_contract.js";
+import {
+  PLANNER_READ_PAGE_LIMITS,
+  type PlannerReadProvider,
+} from "./planner_contract.js";
 import { PlannerCursorError } from "./planner_repository_reads.js";
 
 export const plannerRouteAuthRequirements = {
@@ -30,17 +33,19 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const todayQuery = z.object({ date });
 const starredTasksQuery = z.object({
   cursor: id.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.starredTasks),
   detail: z.enum(["full"]).optional(),
 });
 const dailyHistoryQuery = z.object({
   before: date,
-  limit: z.coerce.number().int().min(1).max(10).default(2),
+  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.dailyHistory),
 });
 const projectQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.project),
 });
-const cursorPageQuery = projectQuery.extend({ cursor: id.optional() });
+const projectTasksQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.projectTasks);
+const projectDocumentsQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.projectDocuments);
+const taskRunsQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.taskRuns);
 
 export function registerPlannerRoutes(
   app: FastifyInstance,
@@ -119,7 +124,7 @@ export function registerPlannerRoutes(
     if (!await options.resolveUser(request)) return unauthorized(reply);
     const pageId = id.safeParse(request.params.pageId);
     if (!pageId.success) return invalid(reply, pageId.error.message);
-    const query = cursorPageQuery.safeParse(request.query);
+    const query = taskRunsQuery.safeParse(request.query);
     if (!query.success) return invalid(reply, query.error.message);
     try {
       const page = await options.provider.getTaskRuns(pageId.data, query.data);
@@ -144,7 +149,9 @@ function registerProjectSliceRoute(
     if (!await options.resolveUser(request)) return unauthorized(reply);
     const pageId = id.safeParse(request.params.pageId);
     if (!pageId.success) return invalid(reply, pageId.error.message);
-    const query = cursorPageQuery.safeParse(request.query);
+    const query = (
+      kind === "tasks" ? projectTasksQuery : projectDocumentsQuery
+    ).safeParse(request.query);
     if (!query.success) return invalid(reply, query.error.message);
     try {
       const page = kind === "tasks"
@@ -156,6 +163,17 @@ function registerProjectSliceRoute(
     } catch (error) {
       return failed(request, reply, error, `project-${kind}`);
     }
+  });
+}
+
+function pageLimit(limits: { default: number; max: number }) {
+  return z.coerce.number().int().min(1).max(limits.max).default(limits.default);
+}
+
+function cursorPageQuery(limits: { default: number; max: number }) {
+  return z.object({
+    cursor: id.optional(),
+    limit: pageLimit(limits),
   });
 }
 

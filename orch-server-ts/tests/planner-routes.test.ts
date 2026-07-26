@@ -2,6 +2,7 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  PLANNER_READ_PAGE_LIMITS,
   plannerRouteAuthRequirements,
   registerPlannerRoutes,
   type PlannerReadProvider,
@@ -202,6 +203,110 @@ describe("planner routes", () => {
       expect(provider.getProjectTasks).toHaveBeenCalledWith("project", { cursor: "task-cursor", limit: 10 });
       expect(provider.getProjectDocuments).toHaveBeenCalledWith("project", { cursor: undefined, limit: 8 });
       expect(provider.getTaskRuns).toHaveBeenCalledWith("task", { cursor: "run-cursor", limit: 20 });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("applies the canonical default and maximum limit to every planner page route", async () => {
+    expect(PLANNER_READ_PAGE_LIMITS).toEqual({
+      starredTasks: { default: 50, max: 100 },
+      dailyHistory: { default: 2, max: 10 },
+      project: { default: 20, max: 50 },
+      projectTasks: { default: 20, max: 50 },
+      projectDocuments: { default: 20, max: 50 },
+      taskRuns: { default: 20, max: 50 },
+    });
+
+    const provider = providerDouble();
+    const app = Fastify({ logger: false });
+    registerPlannerRoutes(app, {
+      provider,
+      dailyPages: dailyPageServiceDouble(),
+      resolveUser: cookieUserResolver(),
+    });
+    const headers = { cookie: browserCookie };
+    const cases = [
+      {
+        url: "/api/planner/starred-tasks",
+        limits: PLANNER_READ_PAGE_LIMITS.starredTasks,
+      },
+      {
+        url: "/api/planner/daily-history?before=2026-07-14",
+        limits: PLANNER_READ_PAGE_LIMITS.dailyHistory,
+      },
+      {
+        url: "/api/planner/projects/project",
+        limits: PLANNER_READ_PAGE_LIMITS.project,
+      },
+      {
+        url: "/api/planner/projects/project/tasks",
+        limits: PLANNER_READ_PAGE_LIMITS.projectTasks,
+      },
+      {
+        url: "/api/planner/projects/project/documents",
+        limits: PLANNER_READ_PAGE_LIMITS.projectDocuments,
+      },
+      {
+        url: "/api/planner/tasks/task/runs",
+        limits: PLANNER_READ_PAGE_LIMITS.taskRuns,
+      },
+    ] as const;
+
+    try {
+      for (const { url, limits } of cases) {
+        const separator = url.includes("?") ? "&" : "?";
+        await app.inject({ method: "GET", url, headers });
+        const maximum = await app.inject({
+          method: "GET",
+          url: `${url}${separator}limit=${limits.max}`,
+          headers,
+        });
+        const overMaximum = await app.inject({
+          method: "GET",
+          url: `${url}${separator}limit=${limits.max + 1}`,
+          headers,
+        });
+        expect(maximum.statusCode).not.toBe(422);
+        expect(overMaximum.statusCode).toBe(422);
+      }
+
+      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(1, { limit: 50 });
+      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(2, { limit: 100 });
+      expect(provider.getDailyHistory).toHaveBeenNthCalledWith(1, {
+        before: "2026-07-14",
+        limit: 2,
+      });
+      expect(provider.getDailyHistory).toHaveBeenNthCalledWith(2, {
+        before: "2026-07-14",
+        limit: 10,
+      });
+      expect(provider.getProject).toHaveBeenNthCalledWith(1, "project", { limit: 20 });
+      expect(provider.getProject).toHaveBeenNthCalledWith(2, "project", { limit: 50 });
+      expect(provider.getProjectTasks).toHaveBeenNthCalledWith(1, "project", {
+        cursor: undefined,
+        limit: 20,
+      });
+      expect(provider.getProjectTasks).toHaveBeenNthCalledWith(2, "project", {
+        cursor: undefined,
+        limit: 50,
+      });
+      expect(provider.getProjectDocuments).toHaveBeenNthCalledWith(1, "project", {
+        cursor: undefined,
+        limit: 20,
+      });
+      expect(provider.getProjectDocuments).toHaveBeenNthCalledWith(2, "project", {
+        cursor: undefined,
+        limit: 50,
+      });
+      expect(provider.getTaskRuns).toHaveBeenNthCalledWith(1, "task", {
+        cursor: undefined,
+        limit: 20,
+      });
+      expect(provider.getTaskRuns).toHaveBeenNthCalledWith(2, "task", {
+        cursor: undefined,
+        limit: 50,
+      });
     } finally {
       await app.close();
     }

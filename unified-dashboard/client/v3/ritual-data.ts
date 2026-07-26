@@ -23,7 +23,6 @@ export async function loadMorningRitualData(input: {
   const historicalDates = await loadDailyHistoryDates(
     input.plannerDependencies,
     input.today,
-    2,
   );
   const [todayPlanner, ...historicalPlanners] = await Promise.all([
     loadDailyPlanner(input.api, input.today, input.plannerDependencies),

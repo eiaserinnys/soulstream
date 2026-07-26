@@ -35,7 +35,7 @@ describe("morning ritual data", () => {
 
     expect(api.listPages).not.toHaveBeenCalled();
     expect(fetchPlanner).toHaveBeenCalledWith(
-      "/api/planner/daily-history?before=2026-07-14&limit=2",
+      "/api/planner/daily-history?before=2026-07-14",
     );
     expect(fetchPlanner).toHaveBeenCalledTimes(4);
   });

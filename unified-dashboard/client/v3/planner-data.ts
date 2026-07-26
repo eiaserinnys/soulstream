@@ -163,9 +163,9 @@ export async function loadProjectPlanner(
 
 export async function loadStarredTasks(
   dependencies: PlannerDataDependencies,
-  input: { cursor?: string; limit: number },
+  input: { cursor?: string },
 ): Promise<PlannerPage<PlannerTask>> {
-  const query = pageQuery(input.cursor, input.limit);
+  const query = pageQuery(input.cursor);
   query.set("detail", "full");
   const payload = await dependencies.fetchPlanner(
     `/api/planner/starred-tasks?${query.toString()}`,
@@ -179,9 +179,8 @@ export async function loadStarredTasks(
 export async function loadDailyHistoryDates(
   dependencies: PlannerDataDependencies,
   before: string,
-  limit: number,
 ): Promise<string[]> {
-  const query = new URLSearchParams({ before, limit: String(limit) });
+  const query = new URLSearchParams({ before });
   const payload = await dependencies.fetchPlanner(
     `/api/planner/daily-history?${query.toString()}`,
   ) as { dates: string[] };
@@ -192,10 +191,12 @@ export async function loadProjectTaskPage(
   dependencies: PlannerDataDependencies,
   projectPageId: string,
   cursor: string | undefined,
-  limit: number,
 ): Promise<PlannerPage<PlannerTask>> {
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/projects/${encodeURIComponent(projectPageId)}/tasks?${pageQuery(cursor, limit).toString()}`,
+    pagePath(
+      `/api/planner/projects/${encodeURIComponent(projectPageId)}/tasks`,
+      cursor,
+    ),
   ) as PageSlicePayload<PlannerTaskPayload>;
   return {
     items: plannerTasks(payload.items),
@@ -207,10 +208,12 @@ export async function loadProjectDocumentPage(
   dependencies: PlannerDataDependencies,
   projectPageId: string,
   cursor: string | undefined,
-  limit: number,
 ): Promise<PlannerPage<PageDto>> {
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/projects/${encodeURIComponent(projectPageId)}/documents?${pageQuery(cursor, limit).toString()}`,
+    pagePath(
+      `/api/planner/projects/${encodeURIComponent(projectPageId)}/documents`,
+      cursor,
+    ),
   ) as PageSlicePayload<PageDto>;
   return plannerPage(payload);
 }
@@ -219,10 +222,12 @@ export async function loadTaskRunHistory(
   dependencies: PlannerDataDependencies,
   taskPageId: string,
   cursor: string | undefined,
-  limit: number,
 ): Promise<TaskRunHistoryPage> {
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/tasks/${encodeURIComponent(taskPageId)}/runs?${pageQuery(cursor, limit).toString()}`,
+    pagePath(
+      `/api/planner/tasks/${encodeURIComponent(taskPageId)}/runs`,
+      cursor,
+    ),
   ) as PageSlicePayload<{ agent_session_id: string }> & { total: number };
   return {
     sessionIds: payload.items.map((item) => item.agent_session_id),
@@ -285,11 +290,15 @@ async function firstProjectPageId(api: PageApiClient, sourcePageIds: readonly st
   return null;
 }
 
-function pageQuery(cursor: string | undefined, limit: number): URLSearchParams {
+function pageQuery(cursor: string | undefined): URLSearchParams {
   const query = new URLSearchParams();
   if (cursor) query.set("cursor", cursor);
-  query.set("limit", String(limit));
   return query;
+}
+
+function pagePath(path: string, cursor: string | undefined): string {
+  const query = pageQuery(cursor).toString();
+  return query ? `${path}?${query}` : path;
 }
 
 function plannerPage<T>(payload: PageSlicePayload<T>): PlannerPage<T> {
