@@ -279,7 +279,7 @@ describe("session_deliveries migration safety", () => {
     expect(backgroundPending).not.toContain(
       "REFERENCES sessions(session_id)",
     );
-    expect(schema).not.toContain(
+    expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");

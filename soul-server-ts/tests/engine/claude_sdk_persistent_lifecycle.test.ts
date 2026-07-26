@@ -93,6 +93,86 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     }
   });
 
+  it("projects a real TaskCreated hook-pump signal into registry retention", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        postResultDrainMs: 5,
+      },
+      silentLogger,
+    );
+    const registry = new ClaudeSessionClientRegistry(
+      (sessionId) =>
+        sessionId === "agent-session"
+          ? client
+          : { async *run() {} },
+      { idleTtlMs: 60_000, maxEntries: 1 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-persistent",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    const turn = collectSse(engine.execute({
+      agentSessionId: "agent-session",
+      prompt: "create hooked task",
+    }));
+    const input = await harness.nextInput();
+    const createdHook =
+      harness.captured[0]?.options?.hooks?.TaskCreated?.[0]?.hooks[0];
+    const completedHook =
+      harness.captured[0]?.options?.hooks?.TaskCompleted?.[0]?.hooks[0];
+    await createdHook?.(
+      {
+        hook_event_name: "TaskCreated",
+        task_id: "hook-pump-task",
+        task_subject: "Queued hook work",
+        session_id: "sdk-session",
+      } as any,
+      "hook-created",
+      { signal: new AbortController().signal },
+    );
+    await vi.waitFor(() =>
+      expect(client.persistentRuntimeActivity()).toMatchObject({
+        backgroundTaskCount: 1,
+        pendingRuntimeSignalCount: 1,
+      })
+    );
+    harness.push(sdkResult("sdk-session", input.uuid, "foreground done"));
+    await turn;
+    await engine.close();
+
+    expect(() => registry.acquire("next-session")).toThrow("capacity");
+
+    await completedHook?.(
+      {
+        hook_event_name: "TaskCompleted",
+        task_id: "hook-pump-task",
+        task_subject: "Queued hook work",
+        session_id: "sdk-session",
+      } as any,
+      "hook-completed",
+      { signal: new AbortController().signal },
+    );
+    await vi.waitFor(() =>
+      expect(client.persistentRuntimeActivity()).toMatchObject({
+        foregroundPhase: "idle",
+        backgroundTaskCount: 0,
+        pendingRuntimeSignalCount: 0,
+      })
+    );
+
+    expect(registry.acquire("next-session")).toBeDefined();
+    await vi.waitFor(() => expect(harness.close).toHaveBeenCalledTimes(1));
+    await registry.shutdown();
+  });
+
   it("emits an explicit killed terminal with close reason before forced Query close", async () => {
     const harness = makeHarness();
     const runtimeEvents: ClaudeClientEvent[] = [];

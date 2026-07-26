@@ -12,8 +12,8 @@ import type { RegisterSessionDeliveryParams } from "../db/session_db_types.js";
 
 import {
   buildDeterministicDeliveryIdentity,
-  hashDeliveryPayload,
 } from "./delivery_identity.js";
+import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
   buildClaudeRuntimeTaskFollowupPrompt,
   type PendingRuntimeTaskFollowup,
@@ -232,12 +232,15 @@ function buildDelivery(input: {
     firstSeen: 0,
     inlineObserved: false,
   };
-  const payload = {
+  const canonical = buildCanonicalDeliveryPayload({
     text: buildClaudeRuntimeTaskFollowupPrompt([item]),
     user: "system",
-    caller_info: { source: "system", display_name: "Soulstream" },
-    followup_task_ids: [input.taskId],
-  };
+    source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+    completionId: identity.completionId,
+    relationKey,
+    callerInfo: { source: "system", display_name: "Soulstream" },
+    followupTaskIds: [input.taskId],
+  });
   return {
     registration: {
       deliveryId: identity.deliveryId,
@@ -249,13 +252,8 @@ function buildDelivery(input: {
       producerKind: "claude_background_task",
       producerId: input.taskId,
       producerTerminalRevision: input.terminalRevision,
-      payloadHash: hashDeliveryPayload({
-        ...payload,
-        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-        completion_id: identity.completionId,
-        relation_key: relationKey,
-      }),
-      payload,
+      payloadHash: canonical.payloadHash,
+      payload: canonical.payload,
       createdAt: input.createdAt,
     },
     metadata: {

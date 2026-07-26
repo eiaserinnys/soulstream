@@ -6,8 +6,8 @@ import type { CallerInfo } from "./task_models.js";
 import type { AddInterventionParams } from "./task_intervention_route.js";
 import {
   buildDeterministicDeliveryIdentity,
-  hashDeliveryPayload,
 } from "./delivery_identity.js";
+import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -162,11 +162,14 @@ function buildCompletionRegistration(
     relationKey,
     intent: "completion_notification",
   });
-  const payload = {
+  const canonical = buildCanonicalDeliveryPayload({
     text: input.text,
     user: "agent",
-    caller_info: input.callerInfo,
-  };
+    source: "completion_notifier",
+    completionId: identity.completionId,
+    relationKey,
+    callerInfo: input.callerInfo,
+  });
   return {
     deliveryId: identity.deliveryId,
     targetSessionId: input.supervisorRole ? null : input.targetSessionId,
@@ -179,15 +182,8 @@ function buildCompletionRegistration(
     producerId: input.sourceSessionId,
     producerTerminalRevision: input.terminalRevision,
     supervisorRole: input.supervisorRole,
-    payloadHash: hashDeliveryPayload({
-      ...payload,
-      source: "completion_notifier",
-      completion_id: identity.completionId,
-      relation_key: relationKey,
-      attachment_paths: null,
-      context: null,
-    }),
-    payload,
+    payloadHash: canonical.payloadHash,
+    payload: canonical.payload,
     createdAt: input.createdAt,
   };
 }

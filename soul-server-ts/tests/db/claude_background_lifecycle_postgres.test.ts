@@ -280,6 +280,34 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
       "worker-dead",
     )).resolves.toBeNull();
   });
+
+  it("lets shutdown and restart recovery race without duplicate terminal delivery", async () => {
+    const shutdownWorker = makeLifecycle(harness.createPeer());
+    const recoveryWorker = makeLifecycle(harness.createPeer());
+    await shutdownWorker.observe("caller-session", started("task-shutdown-race"));
+
+    const [shutdownAccepted, recovered] = await Promise.all([
+      shutdownWorker.observe(
+        "caller-session",
+        updated("task-shutdown-race", "killed", "shutdown"),
+      ),
+      recoveryWorker.recoverAfterRestart(),
+    ]);
+
+    expect(Number(shutdownAccepted) + recovered).toBe(1);
+    await expect(background(harness.sql).get(
+      "node-test",
+      "caller-session",
+      "task-shutdown-race",
+    )).resolves.toMatchObject({ status: "killed" });
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count
+      FROM session_deliveries
+      WHERE producer_kind = 'claude_background_task'
+        AND producer_id = 'task-shutdown-race'
+    `).resolves.toMatchObject([{ count: 1 }]);
+  });
+
 });
 
 function makeLifecycle(sql: SqlClient): ClaudeBackgroundTaskLifecycle {

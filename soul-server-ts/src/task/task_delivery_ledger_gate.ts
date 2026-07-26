@@ -12,8 +12,8 @@ import type {
 } from "./task_intervention_route.js";
 import type { Task } from "./task_models.js";
 import type { InterventionMessage } from "./task_models.js";
-import { hashDeliveryPayload } from "./delivery_identity.js";
 import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
+import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -285,34 +285,31 @@ function buildRegistration(
     deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
   },
 ): RegisterSessionDeliveryParams {
+  const source = params.source ?? "unknown";
+  const canonical = buildCanonicalDeliveryPayload({
+    text: params.text,
+    user: params.user,
+    source,
+    completionId: params.completionId,
+    relationKey: params.relationKey,
+    attachmentPaths: params.attachmentPaths,
+    context: params.context,
+    callerInfo: params.callerInfo,
+    followupTaskIds: params.followupTaskIds,
+  });
   return {
     deliveryId: params.deliveryId,
     targetSessionId: params.agentSessionId,
     relationKey: params.relationKey,
     completionId: params.completionId,
     intent: params.deliveryIntent,
-    source: params.source ?? "unknown",
+    source,
     producerTerminalRevision: params.producerTerminalRevision,
     parentDeliveryId: params.parentDeliveryId,
     callerTurnId: params.callerTurnId,
     supervisorRole: params.supervisorRole,
-    payloadHash: hashDeliveryPayload({
-      text: params.text,
-      user: params.user,
-      source: params.source ?? null,
-      completion_id: params.completionId,
-      relation_key: params.relationKey,
-      attachment_paths: params.attachmentPaths ?? null,
-      context: params.context ?? null,
-      caller_info: params.callerInfo ?? null,
-    }),
-    payload: {
-      text: params.text,
-      user: params.user,
-      attachment_paths: params.attachmentPaths ?? null,
-      context: params.context ?? null,
-      caller_info: params.callerInfo ?? null,
-    },
+    payloadHash: canonical.payloadHash,
+    payload: canonical.payload,
     createdAt: parseCreatedAt(params.deliveryCreatedAt),
   };
 }
