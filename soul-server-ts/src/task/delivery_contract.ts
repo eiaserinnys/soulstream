@@ -10,6 +10,7 @@ export type DeliveryIntent = (typeof DELIVERY_INTENTS)[number];
 export const DELIVERY_STATES = [
   "pending",
   "claimed",
+  "dispatching",
   "queued",
   "delivered",
   "consumed",
@@ -34,6 +35,8 @@ export interface DeliveryMetadata {
   parentDeliveryId?: string;
   callerTurnId?: string;
   createdAt?: string;
+  supervisorRole?: string;
+  supervisorEpoch?: number;
 }
 
 export function isDeliveryIntent(value: unknown): value is DeliveryIntent {

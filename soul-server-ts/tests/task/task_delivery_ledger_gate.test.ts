@@ -23,6 +23,8 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget,
+      claimForSupervisorTarget: vi.fn(),
+      beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
       markDelivered: vi.fn(),
@@ -73,6 +75,8 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget: vi.fn(),
+      claimForSupervisorTarget: vi.fn(),
+      beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
       markDelivered: vi.fn(),
@@ -107,11 +111,13 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("suppresses an admitted completion when its relation became consumed before dispatch", async () => {
+  it("suppresses an admitted completion when consumed wins the dispatch CAS", async () => {
     const deliveryId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
+      claimForSupervisorTarget: vi.fn(),
+      beginDispatch: vi.fn().mockResolvedValue(null),
       get: vi.fn().mockResolvedValue(row(deliveryId, "consumed")),
       markQueued: vi.fn(),
       markDelivered: vi.fn(),
@@ -120,7 +126,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumedByRelation: vi.fn(),
     });
 
-    await expect(gate.recheckBeforeDispatch({
+    await expect(gate.beginDispatch({
       kind: "admitted",
       deliveryId,
       row: row(deliveryId, "claimed"),
@@ -129,5 +135,49 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       reason: "delivery_consumed_before_dispatch",
     });
+  });
+
+  it("admits a supervisor delivery only while target and epoch still match", async () => {
+    const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const pending = row(deliveryId, "pending");
+    const claimForSupervisorTarget = vi.fn().mockResolvedValue({
+      ...pending,
+      state: "claimed",
+      target_session_id: "supervisor-current",
+    });
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn().mockResolvedValue({
+        row: pending,
+        inserted: true,
+        conflict: false,
+      }),
+      claimForTarget: vi.fn(),
+      claimForSupervisorTarget,
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+    });
+
+    await expect(gate.admit({
+      agentSessionId: "supervisor-current",
+      text: "done",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+      completionId: "completion-1",
+      relationKey: "child:1",
+      supervisorRole: "ariella",
+      supervisorEpoch: 8,
+    })).resolves.toMatchObject({ kind: "admitted" });
+    expect(claimForSupervisorTarget).toHaveBeenCalledWith(
+      deliveryId,
+      "supervisor-current",
+      "ariella",
+      8,
+    );
   });
 });

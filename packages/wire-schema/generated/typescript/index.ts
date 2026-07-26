@@ -1152,6 +1152,14 @@ export interface Intervene {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
+  /**
+   * Supervisor registry role used for epoch-conditional delivery claim.
+   */
+  supervisor_role?: string;
+  /**
+   * Registry epoch observed when the completion target was resolved.
+   */
+  supervisor_epoch?: number;
   [k: string]: unknown;
 }
 /**

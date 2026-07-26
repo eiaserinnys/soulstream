@@ -31,6 +31,8 @@ export type DeliveryMetadataWireFields = {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
+  supervisor_role?: string;
+  supervisor_epoch?: number;
 };
 
 export type InterveneNodeCommandPayload =
@@ -159,6 +161,7 @@ function parseDeliveryMetadata(
     ["parent_delivery_id", "parentDeliveryId"],
     ["caller_turn_id", "callerTurnId"],
     ["created_at", "createdAt"],
+    ["supervisor_role", "supervisorRole"],
   ] as const;
   const value: DeliveryMetadataWireFields = {};
   if (deliveryId.value !== undefined) value.delivery_id = deliveryId.value;
@@ -167,6 +170,23 @@ function parseDeliveryMetadata(
     const parsed = optionalStringField(body, [wireKey, alias]);
     if (!parsed.ok) return parsed;
     if (parsed.value !== undefined) value[wireKey] = parsed.value;
+  }
+  const supervisorEpoch = firstAliasValue(body, [
+    "supervisor_epoch",
+    "supervisorEpoch",
+  ]);
+  if (
+    supervisorEpoch[1] !== undefined &&
+    supervisorEpoch[1] !== null &&
+    (!Number.isSafeInteger(supervisorEpoch[1]) || Number(supervisorEpoch[1]) < 0)
+  ) {
+    return {
+      ok: false,
+      message: `${supervisorEpoch[0]} must be a non-negative integer`,
+    };
+  }
+  if (supervisorEpoch[1] !== undefined && supervisorEpoch[1] !== null) {
+    value.supervisor_epoch = Number(supervisorEpoch[1]);
   }
   return { ok: true, value };
 }

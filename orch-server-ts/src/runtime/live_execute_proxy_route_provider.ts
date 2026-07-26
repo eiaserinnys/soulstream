@@ -231,6 +231,12 @@ function interveneCommandPayload(
   }
   if (payload.caller_turn_id !== undefined) command.caller_turn_id = payload.caller_turn_id;
   if (payload.created_at !== undefined) command.created_at = payload.created_at;
+  if (payload.supervisor_role !== undefined) {
+    command.supervisor_role = payload.supervisor_role;
+  }
+  if (payload.supervisor_epoch !== undefined) {
+    command.supervisor_epoch = payload.supervisor_epoch;
+  }
   return command;
 }
 

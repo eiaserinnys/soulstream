@@ -45,6 +45,7 @@ function createDispatcher(opts: {
   claudeAuth?: ClaudeAuthCommandHandler;
   sessionDb?: Partial<SessionDB>;
   realtimeBroker?: Partial<RealtimeBroker>;
+  deliveryV2Enabled?: boolean;
   agentConfigService?: Pick<
     AgentConfigService,
     "listSnapshots" | "planProfileUpdate" | "replaceProfile" | "rollback"
@@ -127,6 +128,9 @@ function createDispatcher(opts: {
     opts.realtimeBroker as RealtimeBroker | undefined,
     undefined,
     opts.agentConfigService,
+    undefined,
+    undefined,
+    opts.deliveryV2Enabled,
   );
   return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
@@ -620,6 +624,79 @@ describe("CommandDispatcher.create_session", () => {
 });
 
 describe("CommandDispatcher.intervene (B-4)", () => {
+  it("gate OFF에서는 supervisor delivery metadata가 stale-target guard를 우회하지 않는다", async () => {
+    const addIntervention = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: {
+        addIntervention,
+        getTask: vi.fn(() => undefined),
+      },
+      sessionDb: {
+        listSupervisorRegistries: vi.fn(async () => [{
+          role: "ariella",
+          activeSessionId: "supervisor-new",
+          epoch: 2,
+        }]),
+        getSession: vi.fn(async () => ({ agent_id: "ariella" })),
+      },
+      deliveryV2Enabled: false,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "supervisor-old",
+      text: "child done",
+      user: "system",
+      supervisor_role: "ariella",
+      supervisor_epoch: 1,
+      requestId: "gate-off-stale",
+    });
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "error", requestId: "gate-off-stale" });
+  });
+
+  it("gate ON supervisor snapshot은 direct guard 대신 ledger conditional claim 경계로 전달한다", async () => {
+    const addIntervention = vi.fn(async () => ({
+      suppressed: true,
+      deliveryId: "delivery-handover",
+      reason: "supervisor_handover_retry",
+    }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention },
+      sessionDb: {
+        listSupervisorRegistries: vi.fn(async () => [{
+          role: "ariella",
+          activeSessionId: "supervisor-new",
+          epoch: 2,
+        }]),
+      },
+      deliveryV2Enabled: true,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "supervisor-old",
+      text: "child done",
+      user: "system",
+      delivery_id: "delivery-handover",
+      delivery_intent: "completion_notification",
+      completion_id: "completion-handover",
+      relation_key: "child:handover",
+      supervisor_role: "ariella",
+      supervisor_epoch: 1,
+      requestId: "gate-on-stale",
+    });
+
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(sent[0]).toMatchObject({
+      type: "intervene_ack",
+      outcome: "suppressed",
+      reason: "supervisor_handover_retry",
+    });
+  });
+
   it("optional delivery metadata를 손실 없이 task boundary로 전달한다", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher } = createDispatcher({
@@ -638,6 +715,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       relation_key: "child:child-1:42",
       producer_terminal_revision: "42",
       parent_delivery_id: "00000000-0000-5000-8000-000000000000",
+      supervisor_role: "ariella",
+      supervisor_epoch: 12,
       caller_turn_id: "turn-8",
       created_at: "2026-07-26T00:00:00.000Z",
     });
@@ -651,6 +730,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
         relationKey: "child:child-1:42",
         producerTerminalRevision: "42",
         parentDeliveryId: "00000000-0000-5000-8000-000000000000",
+        supervisorRole: "ariella",
+        supervisorEpoch: 12,
         callerTurnId: "turn-8",
         deliveryCreatedAt: "2026-07-26T00:00:00.000Z",
       }),

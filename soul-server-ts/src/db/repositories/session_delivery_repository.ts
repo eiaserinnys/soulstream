@@ -26,6 +26,8 @@ export class SessionDeliveryRepository {
         producer_terminal_revision,
         parent_delivery_id,
         caller_turn_id,
+        supervisor_role,
+        supervisor_epoch,
         payload_hash,
         payload,
         created_at,
@@ -43,6 +45,8 @@ export class SessionDeliveryRepository {
         ${params.producerTerminalRevision ?? null},
         ${params.parentDeliveryId ?? null},
         ${params.callerTurnId ?? null},
+        ${params.supervisorRole ?? null},
+        ${params.supervisorEpoch ?? null},
         ${params.payloadHash},
         ${this.sql.json(asPostgresJsonValue(params.payload))},
         ${params.createdAt ?? new Date()},
@@ -53,7 +57,7 @@ export class SessionDeliveryRepository {
     `;
     const inserted = insertedRows[0];
     if (inserted) {
-      return { row: inserted, inserted: true, conflict: false };
+      return { row: normalizeDeliveryRow(inserted), inserted: true, conflict: false };
     }
 
     const existingRows = await this.sql<SessionDeliveryRow[]>`
@@ -64,7 +68,9 @@ export class SessionDeliveryRepository {
       ORDER BY CASE WHEN delivery_id = ${params.deliveryId} THEN 0 ELSE 1 END
       LIMIT 1
     `;
-    const existing = existingRows[0];
+    const existing = existingRows[0]
+      ? normalizeDeliveryRow(existingRows[0])
+      : undefined;
     if (!existing) {
       throw new Error(`Delivery disappeared after registration conflict: ${params.deliveryId}`);
     }
@@ -87,7 +93,7 @@ export class SessionDeliveryRepository {
     const rows = await this.sql<SessionDeliveryRow[]>`
       SELECT * FROM session_deliveries WHERE delivery_id = ${deliveryId}
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async getByRelation(relationKey: string): Promise<SessionDeliveryRow | null> {
@@ -96,7 +102,7 @@ export class SessionDeliveryRepository {
       FROM session_deliveries
       WHERE relation_key = ${relationKey}
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async claim(deliveryId: string): Promise<SessionDeliveryRow | null> {
@@ -106,7 +112,7 @@ export class SessionDeliveryRepository {
       WHERE delivery_id = ${deliveryId} AND state = 'pending'
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async claimForTarget(
@@ -123,17 +129,58 @@ export class SessionDeliveryRepository {
       WHERE delivery_id = ${deliveryId} AND state = 'pending'
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+  }
+
+  /**
+   * Claims only while the producer's supervisor snapshot is still current.
+   * A handover between lookup and this statement leaves the delivery pending,
+   * allowing the producer to resolve the new active supervisor and retry.
+   */
+  async claimForSupervisorTarget(
+    deliveryId: string,
+    targetSessionId: string,
+    supervisorRole: string,
+    supervisorEpoch: number,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries AS delivery
+      SET
+        target_session_id = ${targetSessionId},
+        supervisor_role = ${supervisorRole},
+        supervisor_epoch = ${supervisorEpoch},
+        state = 'claimed',
+        claimed_at = NOW(),
+        updated_at = NOW()
+      FROM supervisor_registry AS registry
+      WHERE delivery.delivery_id = ${deliveryId}
+        AND delivery.state = 'pending'
+        AND registry.role = ${supervisorRole}
+        AND registry.active_session_id = ${targetSessionId}
+        AND registry.epoch = ${supervisorEpoch}
+      RETURNING delivery.*
+    `;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+  }
+
+  async beginDispatch(deliveryId: string): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET state = 'dispatching', dispatching_at = NOW(), updated_at = NOW()
+      WHERE delivery_id = ${deliveryId} AND state = 'claimed'
+      RETURNING *
+    `;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async markQueued(deliveryId: string): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
       SET state = 'queued', queued_at = NOW(), updated_at = NOW()
-      WHERE delivery_id = ${deliveryId} AND state IN ('claimed', 'pending')
+      WHERE delivery_id = ${deliveryId} AND state IN ('dispatching', 'claimed', 'pending')
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async markDelivered(
@@ -148,10 +195,10 @@ export class SessionDeliveryRepository {
         delivered_at = NOW(),
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
-        AND state IN ('claimed', 'queued')
+        AND state IN ('dispatching', 'claimed', 'queued')
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async markConsumed(
@@ -166,10 +213,10 @@ export class SessionDeliveryRepository {
         consumed_at = NOW(),
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
-        AND state IN ('pending', 'claimed', 'queued', 'delivered')
+        AND state IN ('pending', 'claimed', 'dispatching', 'queued', 'delivered')
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async markConsumedByRelation(
@@ -189,7 +236,7 @@ export class SessionDeliveryRepository {
         AND state IN ('pending', 'claimed', 'queued', 'delivered', 'uncertain')
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async markUncertain(deliveryId: string): Promise<SessionDeliveryRow | null> {
@@ -199,7 +246,15 @@ export class SessionDeliveryRepository {
       WHERE delivery_id = ${deliveryId} AND state <> 'consumed'
       RETURNING *
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
+}
+
+function normalizeDeliveryRow(row: SessionDeliveryRow): SessionDeliveryRow {
+  const epoch = row.supervisor_epoch as number | string | null;
+  return {
+    ...row,
+    supervisor_epoch: epoch === null ? null : Number(epoch),
+  };
 }

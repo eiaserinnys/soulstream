@@ -37,6 +37,8 @@ interface InterveneCmd extends CommandLike {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
+  supervisor_role?: string;
+  supervisor_epoch?: number;
 }
 
 interface SupervisorInterveneCmd extends CommandLike {
@@ -56,6 +58,7 @@ interface InterventionCommandFamilyDeps {
   deliveryCommands: DeliveryCommands;
   taskRuntimeCommands: TaskRuntimeCommands;
   supervisorDirectTargetGuard?: SupervisorDirectTargetGuard;
+  deliveryV2Enabled?: boolean;
 }
 
 export function createInterventionCommandFamily(
@@ -138,7 +141,13 @@ async function handleIntervene(
 
   let result;
   try {
-    await deps.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
+    if (
+      deps.deliveryV2Enabled !== true ||
+      cmd.supervisor_role === undefined ||
+      cmd.supervisor_epoch === undefined
+    ) {
+      await deps.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
+    }
     result = await deps.taskRuntimeCommands.intervene({
       agentSessionId: sessionId,
       text: cmd.text,
@@ -155,6 +164,8 @@ async function handleIntervene(
       parentDeliveryId: cmd.parent_delivery_id,
       callerTurnId: cmd.caller_turn_id,
       deliveryCreatedAt: cmd.created_at,
+      supervisorRole: cmd.supervisor_role,
+      supervisorEpoch: cmd.supervisor_epoch,
     });
   } catch (err) {
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));

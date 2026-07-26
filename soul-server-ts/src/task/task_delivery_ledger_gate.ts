@@ -19,7 +19,8 @@ export type DeliveryLedgerAdmission =
 
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
-  "register" | "claimForTarget" | "get" | "markQueued" | "markDelivered"
+  "register" | "claimForTarget" | "claimForSupervisorTarget" | "beginDispatch" | "get"
+  | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
 >;
 
@@ -37,6 +38,14 @@ export class TaskDeliveryLedgerGate {
     if (!params.deliveryId || !params.relationKey || !params.completionId) {
       throw new Error(
         `Delivery identity required for ${params.deliveryIntent}: delivery_id, relation_key, completion_id`,
+      );
+    }
+    if (
+      (params.supervisorRole === undefined) !==
+      (params.supervisorEpoch === undefined)
+    ) {
+      throw new Error(
+        "Supervisor delivery requires supervisor_role and supervisor_epoch together",
       );
     }
 
@@ -62,33 +71,49 @@ export class TaskDeliveryLedgerGate {
       };
     }
 
-    const claimed = await repository.claimForTarget(
-      registered.row.delivery_id,
-      params.agentSessionId,
-    );
+    const claimed =
+      params.supervisorRole !== undefined && params.supervisorEpoch !== undefined
+        ? await repository.claimForSupervisorTarget(
+            registered.row.delivery_id,
+            params.agentSessionId,
+            params.supervisorRole,
+            params.supervisorEpoch,
+          )
+        : await repository.claimForTarget(
+            registered.row.delivery_id,
+            params.agentSessionId,
+          );
     if (!claimed) {
+      const current = await repository.get(registered.row.delivery_id);
       return {
         kind: "suppressed",
         deliveryId: registered.row.delivery_id,
-        reason: "concurrent_claim",
+        reason:
+          params.supervisorRole !== undefined &&
+          params.supervisorEpoch !== undefined &&
+          current?.state === "pending"
+            ? "supervisor_handover_retry"
+            : "concurrent_claim",
       };
     }
     return { kind: "admitted", deliveryId: claimed.delivery_id, row: claimed };
   }
 
-  async recheckBeforeDispatch(
+  async beginDispatch(
     admission: DeliveryLedgerAdmission,
   ): Promise<DeliveryLedgerAdmission> {
     if (admission.kind !== "admitted") return admission;
-    const current = await this.requireRepository().get(admission.deliveryId);
-    if (current?.state === "consumed") {
+    const dispatching = await this.requireRepository().beginDispatch(
+      admission.deliveryId,
+    );
+    if (!dispatching) {
       return {
         kind: "suppressed",
         deliveryId: admission.deliveryId,
         reason: "delivery_consumed_before_dispatch",
       };
     }
-    return admission;
+    return { ...admission, row: dispatching };
   }
 
   async recordInlineConsumed(
@@ -188,6 +213,8 @@ function buildRegistration(
     producerTerminalRevision: params.producerTerminalRevision,
     parentDeliveryId: params.parentDeliveryId,
     callerTurnId: params.callerTurnId,
+    supervisorRole: params.supervisorRole,
+    supervisorEpoch: params.supervisorEpoch,
     payloadHash: hashDeliveryPayload({
       text: params.text,
       user: params.user,

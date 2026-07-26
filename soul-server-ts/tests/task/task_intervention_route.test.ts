@@ -33,7 +33,7 @@ function makeSubject(
   initialTasks: Task[] = [],
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
   >,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
@@ -239,10 +239,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
         }),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
-      recheckBeforeDispatch: vi.fn((admission) => Promise.resolve(admission)),
+      beginDispatch: vi.fn((admission) => Promise.resolve(admission)),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
     >;
     const task = makeTask({ status: "completed" });
     const {
@@ -296,10 +296,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admission),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
-      recheckBeforeDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
     >;
     const task = makeTask({ status: "running" });
     const {
@@ -342,7 +342,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
-      recheckBeforeDispatch: vi.fn().mockResolvedValue({
+      beginDispatch: vi.fn().mockResolvedValue({
         kind: "suppressed",
         deliveryId,
         reason: "delivery_consumed_before_dispatch",
@@ -351,7 +351,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       recordFailure: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
     >;
     const task = makeTask({ status: "completed" });
     const {
@@ -387,12 +387,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const deliveryId = "77777777-7777-4777-8777-777777777777";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
-      recheckBeforeDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
     >;
     const task = makeTask({ status: "running" });
     const {
@@ -423,12 +423,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const deliveryId = "88888888-8888-4888-8888-888888888888";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
-      recheckBeforeDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
     >;
     const task = makeTask({ status: "completed" });
     const {
@@ -459,12 +459,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const deliveryId = "66666666-6666-4666-8666-666666666666";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
-      recheckBeforeDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
     >;
     const task = makeTask({ status: "running" });
     const {

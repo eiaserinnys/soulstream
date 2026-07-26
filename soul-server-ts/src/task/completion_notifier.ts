@@ -45,6 +45,12 @@ export interface CompletionNotifier {
   notify(task: Task): Promise<void>;
 }
 
+interface CompletionTarget {
+  sessionId: string;
+  supervisorRole?: string;
+  supervisorEpoch?: number;
+}
+
 export class TaskCompletionNotifier implements CompletionNotifier {
   private readonly fetchImpl: typeof fetch;
 
@@ -80,8 +86,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return;
     }
 
-    const callerSessionId = await this._resolveTargetSessionId(task);
-    if (!callerSessionId) {
+    let target = await this._resolveTarget(task);
+    if (!target) {
       // 위임받지 않은 task — 회송 대상 없음.
       return;
     }
@@ -89,64 +95,50 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     const callerInfo = this._buildCallerInfo(task);
     const text = this._buildNotifyText(task);
     const childId = task.agentSessionId;
-    const delivery = this._buildDeliveryMetadata(task, callerSessionId);
-    if (this.deliveryV2Enabled && !delivery) {
-      this.logger.error(
-        { childId, callerSessionId, lastEventId: task.lastEventId },
-        "Completion notification withheld: terminal revision is unavailable",
-      );
-      return;
-    }
-
-    // Gate OFF is the pre-v2 local-first contract: do not add an ownership lookup
-    // (and therefore no DB scheduling point) before the local delivery attempt.
-    // V2 alone may route directly to the owning node.
-    if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
-      try {
-        await this.taskManager.addIntervention(
-          {
-            agentSessionId: callerSessionId,
-            text,
-            user: "agent",
-            callerInfo,
-            ...delivery,
-          },
-          this.onResume,
-        );
-        this.logger.info(
-          { childId, callerSessionId, deliveryId: delivery?.deliveryId },
-          "Completion notification delivered locally",
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const delivery = this._buildDeliveryMetadata(task, target);
+      if (this.deliveryV2Enabled && !delivery) {
+        this.logger.error(
+          { childId, callerSessionId: target.sessionId, lastEventId: task.lastEventId },
+          "Completion notification withheld: terminal revision is unavailable",
         );
         return;
-      } catch (err) {
-        this.logger.warn(
-          { err, childId, callerSessionId, deliveryId: delivery?.deliveryId },
-          "Local completion notification failed — trying cross-node relay",
-        );
       }
-    }
-
-    // 2. orch fallback — caller가 다른 노드 또는 evicted 상태에서 hydrate 실패.
-    if (!this.orch) {
-      this.logger.warn(
-        { childId, callerSessionId },
-        "orch fallback unavailable (single-node config) — notification dropped",
+      const retry = await this._deliver(
+        target.sessionId,
+        text,
+        callerInfo,
+        childId,
+        delivery,
       );
-      return;
+      if (!retry || !this.deliveryV2Enabled || !target.supervisorRole) return;
+
+      const refreshed = await this._resolveTarget(task);
+      if (
+        !refreshed ||
+        (refreshed.sessionId === target.sessionId &&
+          refreshed.supervisorEpoch === target.supervisorEpoch)
+      ) {
+        this.logger.warn(
+          { childId, supervisorRole: target.supervisorRole },
+          "Supervisor delivery retry could not resolve a newer registry epoch",
+        );
+        return;
+      }
+      target = refreshed;
     }
-    await this._relayCrossNode(callerSessionId, text, callerInfo, childId, delivery);
   }
 
   private _buildDeliveryMetadata(
     task: Task,
-    callerSessionId: string,
+    target: CompletionTarget,
   ): DeliveryMetadata | undefined {
     if (!this.deliveryV2Enabled) return undefined;
     if (task.lastEventId === undefined) return undefined;
     const revision = String(task.lastEventId);
     const relationKey = `child_session:${task.agentSessionId}:${revision}`;
     const identity = buildDeterministicDeliveryIdentity({
-      targetSessionId: callerSessionId,
+      targetSessionId: target.sessionId,
       relationKey,
       intent: "completion_notification",
     });
@@ -156,7 +148,64 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       source: "completion_notifier",
       producerTerminalRevision: revision,
       createdAt: (task.completedAt ?? new Date()).toISOString(),
+      supervisorRole: target.supervisorRole,
+      supervisorEpoch: target.supervisorEpoch,
     };
+  }
+
+  private async _deliver(
+    callerSessionId: string,
+    text: string,
+    callerInfo: AgentCallerInfo,
+    childId: string,
+    delivery?: DeliveryMetadata,
+  ): Promise<boolean> {
+    // Gate OFF is the pre-v2 local-first contract: no ownership DB scheduling point.
+    if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
+      try {
+        const result = await this.taskManager.addIntervention(
+          {
+            agentSessionId: callerSessionId,
+            text,
+            user: "agent",
+            callerInfo,
+            ...delivery,
+          },
+          this.onResume,
+        );
+        if (
+          "suppressed" in result &&
+          result.reason === "supervisor_handover_retry"
+        ) {
+          return true;
+        }
+        this.logger.info(
+          { childId, callerSessionId, deliveryId: delivery?.deliveryId },
+          "Completion notification delivered locally",
+        );
+        return false;
+      } catch (err) {
+        this.logger.warn(
+          { err, childId, callerSessionId, deliveryId: delivery?.deliveryId },
+          "Local completion notification failed — trying cross-node relay",
+        );
+      }
+    }
+
+    if (!this.orch) {
+      this.logger.warn(
+        { childId, callerSessionId },
+        "orch fallback unavailable (single-node config) — notification dropped",
+      );
+      return false;
+    }
+    return await this._relayCrossNode(
+      callerSessionId,
+      text,
+      callerInfo,
+      childId,
+      delivery,
+    );
   }
 
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
@@ -173,33 +222,44 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     }
   }
 
-  private async _resolveTargetSessionId(task: Task): Promise<string | undefined> {
+  private async _resolveTarget(task: Task): Promise<CompletionTarget | undefined> {
     const callerSessionId = task.callerSessionId;
     if (!callerSessionId) return undefined;
 
     const supervisorRole = supervisorCallerRole(task);
-    if (!supervisorRole || !this.supervisorRegistry) return callerSessionId;
+    if (!supervisorRole || !this.supervisorRegistry) {
+      return { sessionId: callerSessionId };
+    }
 
     try {
       const registry = await this.supervisorRegistry.getSupervisorRegistry(supervisorRole);
       const activeSessionId = registry?.activeSessionId;
-      if (!activeSessionId || activeSessionId === callerSessionId) return callerSessionId;
-      this.logger.info(
-        {
-          childId: task.agentSessionId,
-          supervisorRole,
-          originalCallerSessionId: callerSessionId,
-          targetSessionId: activeSessionId,
-        },
-        "Completion notification retargeted to active supervisor session",
-      );
-      return activeSessionId;
+      const sessionId = activeSessionId ?? callerSessionId;
+      if (sessionId !== callerSessionId) {
+        this.logger.info(
+          {
+            childId: task.agentSessionId,
+            supervisorRole,
+            originalCallerSessionId: callerSessionId,
+            targetSessionId: sessionId,
+            supervisorEpoch: registry?.epoch,
+          },
+          "Completion notification retargeted to active supervisor session",
+        );
+      }
+      return registry
+        ? {
+            sessionId,
+            supervisorRole,
+            supervisorEpoch: registry.epoch,
+          }
+        : { sessionId };
     } catch (err) {
       this.logger.warn(
         { err, childId: task.agentSessionId, supervisorRole, callerSessionId },
         "Supervisor completion target lookup failed",
       );
-      return callerSessionId;
+      return { sessionId: callerSessionId };
     }
   }
 
@@ -267,8 +327,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     callerInfo: AgentCallerInfo,
     childId: string,
     delivery?: DeliveryMetadata,
-  ): Promise<void> {
-    if (!this.orch) return;
+  ): Promise<boolean> {
+    if (!this.orch) return false;
     const url = `${this.orch.baseUrl}/api/sessions/${callerSessionId}/intervene`;
     const headers: Record<string, string> = {
       ...this.orch.headers,
@@ -289,6 +349,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
             parent_delivery_id: delivery.parentDeliveryId,
             caller_turn_id: delivery.callerTurnId,
             created_at: delivery.createdAt,
+            supervisor_role: delivery.supervisorRole,
+            supervisor_epoch: delivery.supervisorEpoch,
           }
         : {}),
     };
@@ -304,17 +366,26 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           { childId, callerSessionId, status: resp.status, body: bodyText },
           "Cross-node completion notification: orch returned non-2xx",
         );
-        return;
+        return false;
+      }
+      const responseBody = await safeReadJson(resp);
+      if (
+        responseBody?.outcome === "suppressed" &&
+        responseBody.reason === "supervisor_handover_retry"
+      ) {
+        return true;
       }
       this.logger.info(
         { childId, callerSessionId },
         "Completion notification delivered via cross-node relay",
       );
+      return false;
     } catch (err) {
       this.logger.error(
         { err, childId, callerSessionId },
         "Cross-node completion notification failed",
       );
+      return false;
     }
   }
 }
@@ -324,6 +395,17 @@ async function safeReadText(resp: Response): Promise<string> {
     return await resp.text();
   } catch {
     return "";
+  }
+}
+
+async function safeReadJson(resp: Response): Promise<Record<string, unknown> | undefined> {
+  try {
+    const value = await resp.json();
+    return typeof value === "object" && value !== null
+      ? value as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 

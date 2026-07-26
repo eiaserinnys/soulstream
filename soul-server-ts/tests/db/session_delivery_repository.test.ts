@@ -26,12 +26,15 @@ function deliveryRow(
     producer_terminal_revision: "42",
     parent_delivery_id: null,
     caller_turn_id: null,
+    supervisor_role: null,
+    supervisor_epoch: null,
     payload_hash: "hash-1",
     payload: { text: "done" },
     state: "pending",
     created_at: now,
     updated_at: now,
     claimed_at: null,
+    dispatching_at: null,
     queued_at: null,
     delivered_at: null,
     consumed_at: null,
@@ -132,6 +135,41 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("state = 'pending'");
   });
 
+  it("claims a supervisor target only when role, active session, and epoch match", async () => {
+    const claimed = deliveryRow({
+      target_session_id: "supervisor-current",
+      supervisor_role: "ariella",
+      supervisor_epoch: 9,
+      state: "claimed",
+    });
+    const { sql, calls } = createMockSql([[claimed]]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.claimForSupervisorTarget(
+      claimed.delivery_id,
+      "supervisor-current",
+      "ariella",
+      9,
+    )).resolves.toEqual(claimed);
+
+    expect(calls[0].query).toContain("FROM supervisor_registry AS registry");
+    expect(calls[0].query).toContain("registry.active_session_id");
+    expect(calls[0].query).toContain("registry.epoch");
+    expect(calls[0].query).toContain("delivery.state = 'pending'");
+  });
+
+  it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {
+    const dispatching = deliveryRow({ state: "dispatching" });
+    const { sql, calls } = createMockSql([[dispatching]]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.beginDispatch(dispatching.delivery_id))
+      .resolves.toEqual(dispatching);
+
+    expect(calls[0].query).toContain("state = 'dispatching'");
+    expect(calls[0].query).toContain("state = 'claimed'");
+  });
+
   it("keeps the original target once a semantic completion has already been queued", async () => {
     const queued = deliveryRow({
       target_session_id: "caller-original",
@@ -152,6 +190,7 @@ describe("SessionDeliveryRepository", () => {
     const row = deliveryRow();
     const { sql, calls } = createMockSql([
       [{ ...row, state: "claimed" }],
+      [{ ...row, state: "dispatching" }],
       [{ ...row, state: "queued" }],
       [{ ...row, state: "delivered", caller_turn_id: "turn-9" }],
       [{ ...row, state: "consumed", caller_turn_id: "turn-9" }],
@@ -159,14 +198,16 @@ describe("SessionDeliveryRepository", () => {
     const repository = new SessionDeliveryRepository(sql);
 
     await repository.claim(row.delivery_id);
+    await repository.beginDispatch(row.delivery_id);
     await repository.markQueued(row.delivery_id);
     await repository.markDelivered(row.delivery_id, "turn-9");
     await repository.markConsumed(row.delivery_id, "turn-9");
 
     expect(calls[0].query).toContain("state = 'pending'");
-    expect(calls[1].query).toContain("state IN ('claimed', 'pending')");
-    expect(calls[2].query).toContain("state IN ('claimed', 'queued')");
-    expect(calls[3].query).toContain("'consumed'");
+    expect(calls[1].query).toContain("state = 'claimed'");
+    expect(calls[2].query).toContain("'dispatching'");
+    expect(calls[3].query).toContain("'dispatching'");
+    expect(calls[4].query).toContain("'consumed'");
   });
 
   it("marks consumed by relation and completion identity", async () => {

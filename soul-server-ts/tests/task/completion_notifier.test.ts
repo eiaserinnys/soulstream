@@ -238,6 +238,64 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("v2 supervisor handover claim 실패는 새 epoch를 재해결해 정확히 한 번 재시도한다", async () => {
+    const addIntervention = vi.fn()
+      .mockResolvedValueOnce({
+        suppressed: true,
+        deliveryId: "delivery-1",
+        reason: "supervisor_handover_retry",
+      })
+      .mockResolvedValueOnce({ queued: true, queuePosition: 1 });
+    const getSupervisorRegistry = vi.fn()
+      .mockResolvedValueOnce({
+        role: "ariella-ashwood-codex",
+        activeSessionId: "supervisor-old",
+        epoch: 4,
+      })
+      .mockResolvedValueOnce({
+        role: "ariella-ashwood-codex",
+        activeSessionId: "supervisor-new",
+        epoch: 5,
+      });
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      { addIntervention } as unknown as TaskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      {
+        getSupervisorRegistry,
+        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+      } as never,
+      true,
+    );
+
+    await notifier.notify(makeChild({
+      callerSessionId: "supervisor-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "ariella-ashwood-codex",
+      },
+    }));
+
+    expect(addIntervention).toHaveBeenCalledTimes(2);
+    expect(addIntervention.mock.calls[0]![0]).toMatchObject({
+      agentSessionId: "supervisor-old",
+      supervisorRole: "ariella-ashwood-codex",
+      supervisorEpoch: 4,
+    });
+    expect(addIntervention.mock.calls[1]![0]).toMatchObject({
+      agentSessionId: "supervisor-new",
+      supervisorRole: "ariella-ashwood-codex",
+      supervisorEpoch: 5,
+    });
+    expect(
+      addIntervention.mock.calls[0]![0].deliveryId,
+    ).toBe(addIntervention.mock.calls[1]![0].deliveryId);
+  });
+
   it("2. orch fallback — local throw 시 /api/sessions/{caller}/intervene POST", async () => {
     const tm = makeTaskManagerStub(new Error("Task not found: parent-sess-1"));
     const registry = makeAgentRegistry();

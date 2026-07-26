@@ -635,7 +635,16 @@
         "producer_terminal_revision": { "type": "string" },
         "parent_delivery_id": { "type": "string" },
         "caller_turn_id": { "type": "string" },
-        "created_at": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" },
+        "supervisor_role": {
+          "type": "string",
+          "description": "Supervisor registry role used for epoch-conditional delivery claim."
+        },
+        "supervisor_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Registry epoch observed when the completion target was resolved."
+        }
       }
     },
     "InterruptSession": {

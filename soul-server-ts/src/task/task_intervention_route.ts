@@ -44,6 +44,8 @@ export interface AddInterventionParams {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
+  supervisorRole?: string;
+  supervisorEpoch?: number;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -78,7 +80,7 @@ export interface TaskInterventionRouteDeps {
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -112,6 +114,8 @@ export class TaskInterventionRoute {
       parentDeliveryId: params.parentDeliveryId,
       callerTurnId: params.callerTurnId,
       deliveryCreatedAt: params.deliveryCreatedAt,
+      supervisorRole: params.supervisorRole,
+      supervisorEpoch: params.supervisorEpoch,
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,
       followupTaskIds: params.followupTaskIds,
@@ -139,7 +143,7 @@ export class TaskInterventionRoute {
         return result;
       }
       if (this.deps.deliveryLedgerGate) {
-        const rechecked = await this.deps.deliveryLedgerGate.recheckBeforeDispatch(
+        const rechecked = await this.deps.deliveryLedgerGate.beginDispatch(
           admission,
         );
         if (rechecked.kind === "suppressed") {

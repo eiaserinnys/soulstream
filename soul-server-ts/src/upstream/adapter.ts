@@ -49,6 +49,7 @@ export interface UpstreamDependencies {
   agentConfigService?: AgentConfigService;
   reflectionRuntime?: McpRuntime;
   scheduleCommands?: ClaudeRuntimeScheduleCommands;
+  deliveryV2Enabled?: boolean;
 }
 
 /**
@@ -91,6 +92,7 @@ export class UpstreamAdapter {
       deps.agentConfigService,
       deps.reflectionRuntime,
       deps.scheduleCommands,
+      deps.deliveryV2Enabled,
     );
   }
 

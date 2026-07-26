@@ -12,6 +12,7 @@ const TEST_PASSWORD = "container_browse_test";
 
 export interface FullSchemaPostgresHarness {
   sql: SqlClient;
+  createPeer(): SqlClient;
   cleanup(): Promise<void>;
 }
 
@@ -58,6 +59,7 @@ async function connect(
 ): Promise<FullSchemaPostgresHarness> {
   const schema = `container_browse_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
+  const peers: SqlClient[] = [];
   await waitForPostgres(sql);
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
   await sql.unsafe(`SET search_path TO ${schema}`);
@@ -68,8 +70,18 @@ async function connect(
   await sql.unsafe(schemaSql);
   return {
     sql,
+    createPeer() {
+      const peer = postgres(url, {
+        max: 1,
+        idle_timeout: 1,
+        connection: { search_path: schema },
+      }) as SqlClient;
+      peers.push(peer);
+      return peer;
+    },
     async cleanup() {
       try {
+        await Promise.all(peers.map((peer) => peer.end({ timeout: 5 })));
         await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       } finally {
         await sql.end({ timeout: 5 });

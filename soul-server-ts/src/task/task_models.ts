@@ -65,6 +65,8 @@ export interface InterventionMessage {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
+  supervisorRole?: string;
+  supervisorEpoch?: number;
   followupAttempt?: number;
   followupKey?: string;
   /** Runtime task ids used to refresh a replayed follow-up from rehydrated Claude state. */
