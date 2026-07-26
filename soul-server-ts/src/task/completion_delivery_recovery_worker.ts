@@ -2,13 +2,15 @@ import type { Logger } from "pino";
 
 export interface CompletionDeliveryRecoveryWorkerDeps {
   recoverPending(): Promise<void>;
+  recoverNotifications(): Promise<void>;
   logger: Pick<Logger, "warn">;
 }
 
 /** Replays durable completion rows until they leave pending/claimed state. */
 export class CompletionDeliveryRecoveryWorker {
   private timer?: NodeJS.Timeout;
-  private running = false;
+  private activeTick?: Promise<void>;
+  private stopping = false;
 
   constructor(
     private readonly deps: CompletionDeliveryRecoveryWorkerDeps,
@@ -17,26 +19,56 @@ export class CompletionDeliveryRecoveryWorker {
 
   start(): void {
     if (this.timer) return;
+    this.stopping = false;
     void this.runOnce();
     this.timer = setInterval(() => void this.runOnce(), this.intervalMs);
     this.timer.unref();
   }
 
-  stop(): void {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = undefined;
+  async stop(timeoutMs = 5_000): Promise<"drained" | "timed_out"> {
+    this.stopping = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+    if (!this.activeTick) return "drained";
+    return await Promise.race([
+      this.activeTick.then(() => "drained" as const),
+      new Promise<"timed_out">((resolve) => {
+        const timer = setTimeout(() => resolve("timed_out"), timeoutMs);
+        timer.unref();
+      }),
+    ]);
   }
 
   async runOnce(): Promise<void> {
-    if (this.running) return;
-    this.running = true;
+    if (this.stopping || this.activeTick) return;
+    this.activeTick = this.runTick().finally(() => {
+      this.activeTick = undefined;
+    });
+    await this.activeTick;
+  }
+
+  private async runTick(): Promise<void> {
+    await this.runRecoveryStep(
+      () => this.deps.recoverPending(),
+      "Completion delivery recovery tick failed",
+    );
+    if (this.stopping) return;
+    await this.runRecoveryStep(
+      () => this.deps.recoverNotifications(),
+      "Session notification recovery tick failed",
+    );
+  }
+
+  private async runRecoveryStep(
+    step: () => Promise<void>,
+    message: string,
+  ): Promise<void> {
     try {
-      await this.deps.recoverPending();
+      await step();
     } catch (err) {
-      this.deps.logger.warn({ err }, "Completion delivery recovery tick failed");
-    } finally {
-      this.running = false;
+      this.deps.logger.warn({ err }, message);
     }
   }
 }

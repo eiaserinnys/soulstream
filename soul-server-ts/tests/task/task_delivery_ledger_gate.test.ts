@@ -175,6 +175,7 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(claimForCurrentSupervisor).toHaveBeenCalledWith(
       deliveryId,
       "ariella",
+      expect.stringMatching(/^route:/),
     );
   });
 });

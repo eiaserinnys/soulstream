@@ -50,6 +50,8 @@ function createMockSql(results: unknown[][]) {
     json(value: unknown): unknown;
   };
   sql.json = vi.fn((value: unknown) => value);
+  sql.begin = vi.fn(async (callback: (transaction: typeof sql) => unknown) =>
+    await callback(sql)) as never;
   return { sql, calls };
 }
 
@@ -131,7 +133,7 @@ describe("SessionDeliveryRepository", () => {
 
     expect(calls[0].query).toContain("target_session_id");
     expect(calls[0].query).toContain("state = 'claimed'");
-    expect(calls[0].query).toContain("'pending', 'claimed'");
+    expect(calls[0].query).toContain("state = 'pending'");
   });
 
   it("resolves and claims the current supervisor in one atomic statement", async () => {
@@ -140,7 +142,11 @@ describe("SessionDeliveryRepository", () => {
       supervisor_role: "ariella",
       state: "claimed",
     });
-    const { sql, calls } = createMockSql([[claimed]]);
+    const { sql, calls } = createMockSql([
+      [deliveryRow({ supervisor_role: "ariella" })],
+      [{ active_session_id: "supervisor-current" }],
+      [claimed],
+    ]);
     const repository = new SessionDeliveryRepository(sql);
 
     await expect(repository.claimForCurrentSupervisor(
@@ -148,9 +154,10 @@ describe("SessionDeliveryRepository", () => {
       "ariella",
     )).resolves.toEqual(claimed);
 
-    expect(calls[0].query).toContain("FROM supervisor_registry AS registry");
-    expect(calls[0].query).toContain("registry.active_session_id");
-    expect(calls[0].query).toContain("'pending', 'claimed'");
+    expect(calls[0].query).toContain("FOR UPDATE");
+    expect(calls[1].query).toContain("FROM supervisor_registry AS registry");
+    expect(calls[1].query).toContain("registry.active_session_id");
+    expect(calls[2].query).toContain("state = 'pending'");
   });
 
   it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {
@@ -250,8 +257,12 @@ describe("session_deliveries migration safety", () => {
     expect(manifest).not.toContain("043_session_deliveries.sql");
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(pending).toContain("ON DELETE SET NULL");
+    expect(pending).toContain("ALTER COLUMN target_session_id DROP NOT NULL");
+    expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
     expect(pending).not.toContain("supervisor_epoch");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
     expect(schema).not.toContain("supervisor_epoch");
     const supervisorUpsert = schema.slice(
       schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_upsert("),

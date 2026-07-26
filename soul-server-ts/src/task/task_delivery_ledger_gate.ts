@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
@@ -23,7 +25,12 @@ type LedgerRepository = Pick<
   "register" | "claimForTarget" | "claimForCurrentSupervisor" | "beginDispatch" | "get"
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
->;
+> & {
+  notifications: Pick<
+    SessionDeliveryRepository["notifications"],
+    "stageWithQueuedDelivery" | "markPublished" | "retry"
+  >;
+};
 
 export class TaskDeliveryLedgerGate {
   constructor(
@@ -58,7 +65,9 @@ export class TaskDeliveryLedgerGate {
     if (registered.row.state === "claimed") {
       if (
         registered.row.target_session_id !== params.agentSessionId ||
-        registered.row.supervisor_role !== (params.supervisorRole ?? null)
+        registered.row.supervisor_role !== (params.supervisorRole ?? null) ||
+        !params.deliveryLeaseOwner ||
+        registered.row.lease_owner !== params.deliveryLeaseOwner
       ) {
         return {
           kind: "suppressed",
@@ -85,10 +94,12 @@ export class TaskDeliveryLedgerGate {
         ? await repository.claimForCurrentSupervisor(
             registered.row.delivery_id,
             params.supervisorRole,
+            params.deliveryLeaseOwner ?? `route:${randomUUID()}`,
           )
         : await repository.claimForTarget(
             registered.row.delivery_id,
             params.agentSessionId,
+            params.deliveryLeaseOwner ?? `route:${randomUUID()}`,
           );
     if (!claimed) {
       const current = await repository.get(registered.row.delivery_id);
@@ -121,6 +132,7 @@ export class TaskDeliveryLedgerGate {
     if (admission.kind !== "admitted") return admission;
     const dispatching = await this.requireRepository().beginDispatch(
       admission.deliveryId,
+      admission.row.lease_owner ?? undefined,
     );
     if (!dispatching) {
       const current = await this.requireRepository().get(admission.deliveryId);
@@ -164,12 +176,30 @@ export class TaskDeliveryLedgerGate {
   ): Promise<void> {
     if (admission.kind !== "admitted") return;
     const repository = this.requireRepository();
-    if ("queued" in result) {
-      await repository.markQueued(admission.deliveryId);
-      return;
-    }
-    if ("autoResumed" in result) {
-      await repository.markQueued(admission.deliveryId);
+    if ("queued" in result || "autoResumed" in result) {
+      const disposition = "queued" in result ? "queued" : "auto_resume";
+      const leaseOwner = admission.row.lease_owner;
+      const targetSessionId = admission.row.target_session_id;
+      if (!leaseOwner || !targetSessionId) {
+        throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
+      }
+      if (isNotificationIntent(admission.row.intent)) {
+        const staged = await repository.notifications.stageWithQueuedDelivery({
+          deliveryId: admission.deliveryId,
+          leaseOwner,
+          targetSessionId,
+          disposition,
+          payload: buildNotificationOutboxPayload(admission.row, disposition),
+        });
+        if (!staged) {
+          throw new Error(`Delivery ${admission.deliveryId} could not stage notification`);
+        }
+      } else {
+        const queued = await repository.markQueued(admission.deliveryId, leaseOwner);
+        if (!queued) {
+          throw new Error(`Delivery ${admission.deliveryId} lost queued-state CAS`);
+        }
+      }
       return;
     }
     await repository.markUncertain(admission.deliveryId);
@@ -177,7 +207,39 @@ export class TaskDeliveryLedgerGate {
 
   async recordFailure(admission: DeliveryLedgerAdmission): Promise<void> {
     if (admission.kind !== "admitted") return;
-    await this.requireRepository().markUncertain(admission.deliveryId);
+    // The end-to-end coordinator owns retry scheduling. Keeping the lease
+    // intact lets a cross-node fallback reuse the same fenced attempt token.
+  }
+
+  async recordNotificationPublished(
+    admission: DeliveryLedgerAdmission,
+  ): Promise<void> {
+    if (admission.kind !== "admitted" || !isNotificationIntent(admission.row.intent)) {
+      return;
+    }
+    const leaseOwner = admission.row.lease_owner;
+    if (!leaseOwner) return;
+    await this.requireRepository().notifications.markPublished(
+      admission.deliveryId,
+      leaseOwner,
+    );
+  }
+
+  async recordNotificationFailure(
+    admission: DeliveryLedgerAdmission,
+    error: string,
+  ): Promise<void> {
+    if (admission.kind !== "admitted" || !isNotificationIntent(admission.row.intent)) {
+      return;
+    }
+    const leaseOwner = admission.row.lease_owner;
+    if (!leaseOwner) return;
+    await this.requireRepository().notifications.retry(
+      admission.deliveryId,
+      leaseOwner,
+      error,
+      nextAttemptAt(admission.row.attempt_count),
+    );
   }
 
   async recordConsumed(
@@ -277,4 +339,32 @@ function isControlledMessage(
     message.deliveryIntent === "completion_notification" ||
     message.deliveryIntent === "runtime_followup"
   );
+}
+
+function isNotificationIntent(
+  intent: SessionDeliveryRow["intent"],
+): intent is "completion_notification" | "runtime_followup" {
+  return intent === "completion_notification" || intent === "runtime_followup";
+}
+
+function buildNotificationOutboxPayload(
+  row: SessionDeliveryRow,
+  disposition: "queued" | "auto_resume",
+): Record<string, unknown> {
+  return {
+    text: row.payload.text,
+    user: row.payload.user,
+    caller_info: row.payload.caller_info ?? null,
+    source: row.source,
+    delivery_id: row.delivery_id,
+    delivery_intent: row.intent,
+    completion_id: row.completion_id,
+    relation_key: row.relation_key,
+    disposition,
+  };
+}
+
+function nextAttemptAt(attemptCount: number): Date {
+  const delayMs = Math.min(60_000, 100 * 2 ** Math.min(attemptCount, 9));
+  return new Date(Date.now() + delayMs);
 }

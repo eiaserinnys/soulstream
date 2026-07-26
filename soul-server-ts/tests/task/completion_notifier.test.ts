@@ -187,17 +187,25 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForCurrentSupervisor: vi.fn(async () => {
+      claimForCurrentSupervisor: vi.fn(async (
+        _deliveryId: string,
+        _supervisorRole: string,
+        leaseOwner: string,
+      ) => {
         calls.push("claim-current");
         stored = {
           ...stored,
           target_session_id: "supervisor-current",
           state: "claimed",
+          lease_owner: leaseOwner,
         };
         return stored;
       }),
       claimForTarget: vi.fn(),
-      listRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
     };
     const notifier = new TaskCompletionNotifier(
       NODE_ID,
@@ -295,8 +303,17 @@ describe("TaskCompletionNotifier.notify", () => {
     let stored: Record<string, unknown> | undefined;
     const claimForCurrentSupervisor = vi.fn()
       .mockRejectedValueOnce(new Error("temporary registry failure"))
-      .mockImplementation(async () => {
-        stored = { ...stored, state: "claimed" };
+      .mockImplementation(async (
+        _deliveryId: string,
+        _supervisorRole: string,
+        leaseOwner: string,
+      ) => {
+        stored = {
+          ...stored,
+          target_session_id: "supervisor-current",
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
         return stored;
       });
     const repository = {
@@ -331,7 +348,18 @@ describe("TaskCompletionNotifier.notify", () => {
       get: vi.fn(async () => stored),
       claimForCurrentSupervisor,
       claimForTarget: vi.fn(),
-      listRecoverableCompletionDeliveries: vi.fn(async () => [stored]),
+      claimRecoverableCompletionDeliveries: vi.fn(async (leaseOwner: string) => {
+        stored = {
+          ...stored,
+          target_session_id: "supervisor-current",
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
+        return [stored];
+      }),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
     };
     const notifier = new TaskCompletionNotifier(
       NODE_ID,

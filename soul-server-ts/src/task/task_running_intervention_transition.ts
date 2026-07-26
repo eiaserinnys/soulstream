@@ -10,6 +10,7 @@ import type {
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { InterventionMessage, Task } from "./task_models.js";
+import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 
@@ -79,10 +80,10 @@ export class RunningInterventionTransition {
       return { deferred: true };
     }
 
-    task.interventionQueue.push(message);
+    const queuePosition = enqueueInterventionOnce(task, message);
     return {
       queued: true,
-      queuePosition: task.interventionQueue.length,
+      queuePosition,
     };
   }
 
@@ -94,10 +95,10 @@ export class RunningInterventionTransition {
     if (options.publishEvent !== false) {
       await publishInterventionSent(task, message, this.deps);
     }
-    task.interventionQueue.push(message);
+    const queuePosition = enqueueInterventionOnce(task, message);
     return {
       queued: true,
-      queuePosition: task.interventionQueue.length,
+      queuePosition,
     };
   }
 

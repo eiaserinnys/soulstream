@@ -96,7 +96,7 @@ describe("SessionNotificationPublisher", () => {
 
     await expect(
       publisher.publish(makeTask(), makeMessage(), "queued"),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
 
     expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });

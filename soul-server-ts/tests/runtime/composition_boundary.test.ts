@@ -143,7 +143,7 @@ describe("worker composition boundary", () => {
       /deliveryLedgerGate: deliveryRuntimeV2Enabled\s+\? this\.deliveryLedgerGate\s+: undefined/,
     );
     expect(taskManager).toMatch(
-      /sessionNotificationPublisher: deliveryRuntimeV2Enabled\s+\? sessionNotificationPublisher\s+: undefined/,
+      /sessionNotificationPublisher: deliveryRuntimeV2Enabled\s+\? this\.sessionNotificationPublisher\s+: undefined/,
     );
     expect(taskManager).toMatch(
       /const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled\s+\?\s+sessionRuntimeControl\s+:\s+undefined/,

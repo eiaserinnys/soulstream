@@ -166,7 +166,14 @@ async function main(): Promise<void> {
       clearInterval(runtime.supervisorWatchdogInterval);
     }
     runtime.supervisorWakeScheduler?.dispose();
-    runtime.completionDeliveryRecoveryWorker?.stop();
+    if (runtime.completionDeliveryRecoveryWorker) {
+      const deliveryDrain =
+        await runtime.completionDeliveryRecoveryWorker.stop(5_000);
+      logger.info(
+        { outcome: deliveryDrain },
+        "Completion delivery recovery shutdown drain finished",
+      );
+    }
     runtime.sessionPageBindingService.stop();
     runtime.checklistTaskReconciler.stop();
     try {

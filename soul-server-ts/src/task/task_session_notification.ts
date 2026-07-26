@@ -19,7 +19,7 @@ export class SessionNotificationPublisher {
     task: Task,
     message: InterventionMessage,
     disposition: "queued" | "auto_resume",
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!message.deliveryId || !message.deliveryIntent) {
       throw new Error("session_notification requires delivery identity and intent");
     }
@@ -66,10 +66,10 @@ export class SessionNotificationPublisher {
           { err, sessionId: task.agentSessionId, deliveryId: message.deliveryId },
           "session_notification persistence failed after delivery; ledger state retained",
         );
-        return;
+        return false;
       }
     }
-    if (!shouldBroadcast) return;
+    if (!shouldBroadcast) return true;
     try {
       await this.deps.broadcaster.emitEventEnvelope(task.agentSessionId, event);
     } catch (err) {
@@ -78,5 +78,6 @@ export class SessionNotificationPublisher {
         "session_notification broadcast failed",
       );
     }
+    return true;
   }
 }

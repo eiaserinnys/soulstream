@@ -40,6 +40,7 @@ export interface DeliveryMetadata {
   callerTurnId?: string;
   createdAt?: string;
   supervisorRole?: string;
+  deliveryLeaseOwner?: string;
 }
 
 export function isDeliveryIntent(value: unknown): value is DeliveryIntent {

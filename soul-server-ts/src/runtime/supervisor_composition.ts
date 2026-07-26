@@ -99,6 +99,9 @@ export function composeSupervisorRuntime(
   const completionDeliveryRepository = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? db.sessionDeliveries()
     : undefined;
+  const notificationRecoveryLeaseOwner = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? `notification:${env.SOULSTREAM_NODE_ID}:${randomUUID()}`
+    : undefined;
   const completionNotifier = new TaskCompletionNotifier(
     env.SOULSTREAM_NODE_ID,
     taskManager,
@@ -114,6 +117,11 @@ export function composeSupervisorRuntime(
   const completionDeliveryRecoveryWorker = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? new CompletionDeliveryRecoveryWorker({
         recoverPending: () => completionNotifier.recoverPending(),
+        recoverNotifications: async () => {
+          await taskManager.recoverDeliveryNotifications(
+            notificationRecoveryLeaseOwner!,
+          );
+        },
         logger,
       })
     : undefined;

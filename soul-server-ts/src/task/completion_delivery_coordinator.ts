@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Logger } from "pino";
 
 import type { CallerInfo } from "./task_models.js";
@@ -28,7 +30,10 @@ type CompletionDeliveryRepository = Pick<
   | "get"
   | "claimForTarget"
   | "claimForCurrentSupervisor"
-  | "listRecoverableCompletionDeliveries"
+  | "claimRecoverableCompletionDeliveries"
+  | "deferPending"
+  | "retryLeasedDelivery"
+  | "releaseExpiredDeliveryLeases"
 >;
 
 export interface CompletionDeliveryCoordinatorDeps {
@@ -44,7 +49,15 @@ export interface CompletionDeliveryCoordinatorDeps {
  * leaves a replayable `pending` row instead of losing the finalizer's only call.
  */
 export class CompletionDeliveryCoordinator {
-  constructor(private readonly deps: CompletionDeliveryCoordinatorDeps) {}
+  private readonly workerId: string;
+
+  constructor(
+    private readonly deps: CompletionDeliveryCoordinatorDeps,
+    workerId = `completion:${randomUUID()}`,
+    private readonly leaseMs = 15_000,
+  ) {
+    this.workerId = workerId;
+  }
 
   async enqueue(input: DurableCompletionInput): Promise<void> {
     const registration = buildCompletionRegistration(input);
@@ -65,23 +78,28 @@ export class CompletionDeliveryCoordinator {
       );
       return;
     }
-    await this.attempt(registered.row.delivery_id);
+    await this.attemptPending(registered.row.delivery_id);
   }
 
   async recoverPending(limit = 100): Promise<void> {
     let rows: SessionDeliveryRow[];
     try {
-      rows = await this.deps.repository.listRecoverableCompletionDeliveries(limit);
+      await this.deps.repository.releaseExpiredDeliveryLeases();
+      rows = await this.deps.repository.claimRecoverableCompletionDeliveries(
+        this.workerId,
+        limit,
+        this.leaseMs,
+      );
     } catch (err) {
       this.deps.logger.warn({ err }, "Completion delivery recovery scan failed");
       return;
     }
     for (const row of rows) {
-      await this.attempt(row.delivery_id);
+      await this.dispatchClaimed(row);
     }
   }
 
-  private async attempt(deliveryId: string): Promise<void> {
+  private async attemptPending(deliveryId: string): Promise<void> {
     try {
       const current = await this.deps.repository.get(deliveryId);
       if (!current || !isRecoverable(current)) return;
@@ -89,19 +107,46 @@ export class CompletionDeliveryCoordinator {
         ? await this.deps.repository.claimForCurrentSupervisor(
             deliveryId,
             current.supervisor_role,
+            this.workerId,
+            this.leaseMs,
           )
         : await this.deps.repository.claimForTarget(
             deliveryId,
-            current.target_session_id,
+            requiredTarget(current),
+            this.workerId,
+            this.leaseMs,
           );
-      if (!claimed) return;
-      await this.deps.dispatch(toInterventionParams(claimed));
+      if (!claimed) {
+        await this.deps.repository.deferPending(
+          deliveryId,
+          "no_current_target",
+          nextAttemptAt(current.attempt_count),
+        );
+        return;
+      }
+      await this.dispatchClaimed(claimed);
     } catch (err) {
-      // The durable row remains pending/claimed. The worker retries without a
-      // fixed attempt cap and with the same delivery identity.
       this.deps.logger.warn(
         { err, deliveryId },
         "Completion delivery attempt deferred for durable recovery",
+      );
+    }
+  }
+
+  private async dispatchClaimed(row: SessionDeliveryRow): Promise<void> {
+    const leaseOwner = requiredLeaseOwner(row);
+    try {
+      await this.deps.dispatch(toInterventionParams(row, leaseOwner));
+    } catch (err) {
+      await this.deps.repository.retryLeasedDelivery(
+        row.delivery_id,
+        leaseOwner,
+        errorText(err),
+        nextAttemptAt(row.attempt_count),
+      );
+      this.deps.logger.warn(
+        { err, deliveryId: row.delivery_id },
+        "Completion delivery dispatch failed; durable retry scheduled",
       );
     }
   }
@@ -124,7 +169,7 @@ function buildCompletionRegistration(
   };
   return {
     deliveryId: identity.deliveryId,
-    targetSessionId: input.targetSessionId,
+    targetSessionId: input.supervisorRole ? null : input.targetSessionId,
     sourceSessionId: input.sourceSessionId,
     relationKey,
     completionId: identity.completionId,
@@ -147,10 +192,13 @@ function buildCompletionRegistration(
   };
 }
 
-function toInterventionParams(row: SessionDeliveryRow): AddInterventionParams {
+function toInterventionParams(
+  row: SessionDeliveryRow,
+  leaseOwner: string,
+): AddInterventionParams {
   const callerInfo = asCallerInfo(row.payload.caller_info);
   return {
-    agentSessionId: row.target_session_id,
+    agentSessionId: requiredTarget(row),
     text: requiredString(row.payload.text, "text"),
     user: requiredString(row.payload.user, "user"),
     callerInfo,
@@ -164,6 +212,7 @@ function toInterventionParams(row: SessionDeliveryRow): AddInterventionParams {
     callerTurnId: row.caller_turn_id ?? undefined,
     deliveryCreatedAt: row.created_at.toISOString(),
     supervisorRole: row.supervisor_role ?? undefined,
+    deliveryLeaseOwner: leaseOwner,
   };
 }
 
@@ -182,4 +231,27 @@ function asCallerInfo(value: unknown): CallerInfo | undefined {
   return value && typeof value === "object"
     ? value as CallerInfo
     : undefined;
+}
+
+function requiredTarget(row: SessionDeliveryRow): string {
+  if (!row.target_session_id) {
+    throw new Error(`Delivery ${row.delivery_id} has no resolved target`);
+  }
+  return row.target_session_id;
+}
+
+function requiredLeaseOwner(row: SessionDeliveryRow): string {
+  if (!row.lease_owner) {
+    throw new Error(`Delivery ${row.delivery_id} has no lease owner`);
+  }
+  return row.lease_owner;
+}
+
+function nextAttemptAt(attemptCount: number): Date {
+  const delayMs = Math.min(60_000, 100 * 2 ** Math.min(attemptCount, 9));
+  return new Date(Date.now() + delayMs);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

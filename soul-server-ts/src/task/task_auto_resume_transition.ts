@@ -7,6 +7,7 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
+import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
 import {
@@ -176,5 +177,5 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.pendingTerminationHint = undefined;
   task.pendingTerminationDetail = undefined;
   task.terminationEventRecorded = false;
-  task.interventionQueue.push(message);
+  enqueueInterventionOnce(task, message);
 }

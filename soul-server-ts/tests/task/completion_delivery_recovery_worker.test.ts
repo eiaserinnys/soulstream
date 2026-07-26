@@ -8,9 +8,10 @@ describe("CompletionDeliveryRecoveryWorker", () => {
       .mockRejectedValueOnce(new Error("temporary failure 1"))
       .mockRejectedValueOnce(new Error("temporary failure 2"))
       .mockResolvedValue(undefined);
+    const recoverNotifications = vi.fn().mockResolvedValue(undefined);
     const logger = { warn: vi.fn() };
     const worker = new CompletionDeliveryRecoveryWorker(
-      { recoverPending, logger },
+      { recoverPending, recoverNotifications, logger },
       10,
     );
 
@@ -19,6 +20,7 @@ describe("CompletionDeliveryRecoveryWorker", () => {
     await worker.runOnce();
 
     expect(recoverPending).toHaveBeenCalledTimes(3);
+    expect(recoverNotifications).toHaveBeenCalledTimes(3);
     expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 
@@ -28,8 +30,9 @@ describe("CompletionDeliveryRecoveryWorker", () => {
       release = resolve;
     });
     const recoverPending = vi.fn(() => blocked);
+    const recoverNotifications = vi.fn().mockResolvedValue(undefined);
     const worker = new CompletionDeliveryRecoveryWorker(
-      { recoverPending, logger: { warn: vi.fn() } },
+      { recoverPending, recoverNotifications, logger: { warn: vi.fn() } },
       10,
     );
 
@@ -41,5 +44,27 @@ describe("CompletionDeliveryRecoveryWorker", () => {
     await first;
     await worker.runOnce();
     expect(recoverPending).toHaveBeenCalledTimes(2);
+    expect(recoverNotifications).toHaveBeenCalledTimes(2);
+  });
+
+  it("awaits the active recovery tick during graceful shutdown", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const recoverPending = vi.fn(() => blocked);
+    const recoverNotifications = vi.fn().mockResolvedValue(undefined);
+    const worker = new CompletionDeliveryRecoveryWorker(
+      { recoverPending, recoverNotifications, logger: { warn: vi.fn() } },
+      10,
+    );
+
+    const tick = worker.runOnce();
+    const stopping = worker.stop(1_000);
+    release();
+
+    await expect(stopping).resolves.toBe("drained");
+    await tick;
+    expect(recoverNotifications).not.toHaveBeenCalled();
   });
 });

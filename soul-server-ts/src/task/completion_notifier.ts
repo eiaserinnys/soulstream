@@ -73,7 +73,12 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     if (deliveryV2Enabled && deliveryRepository) {
       this.durableCoordinator = new CompletionDeliveryCoordinator({
         repository: deliveryRepository,
-        dispatch: (params) => this._deliver(params, params.agentSessionId),
+        dispatch: async (params) => {
+          const delivered = await this._deliver(params, params.agentSessionId);
+          if (!delivered) {
+            throw new Error("Completion delivery exhausted local and cross-node routes");
+          }
+        },
         logger,
       });
     }
@@ -127,7 +132,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   private async _deliver(
     params: AddInterventionParams,
     childId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const callerSessionId = params.agentSessionId;
     // Gate OFF is the pre-v2 local-first contract: no ownership DB scheduling point.
     if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
@@ -137,7 +142,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           { childId, callerSessionId, deliveryId: params.deliveryId },
           "Completion notification delivered locally",
         );
-        return;
+        return true;
       } catch (err) {
         this.logger.warn(
           { err, childId, callerSessionId, deliveryId: params.deliveryId },
@@ -151,9 +156,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         { childId, callerSessionId },
         "orch fallback unavailable (single-node config) — notification dropped",
       );
-      return;
+      return false;
     }
-    await this._relayCrossNode(params, childId);
+    return await this._relayCrossNode(params, childId);
   }
 
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
@@ -232,8 +237,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   private async _relayCrossNode(
     params: AddInterventionParams,
     childId: string,
-  ): Promise<void> {
-    if (!this.orch) return;
+  ): Promise<boolean> {
+    if (!this.orch) return false;
     const callerSessionId = params.agentSessionId;
     const url = `${this.orch.baseUrl}/api/sessions/${callerSessionId}/intervene`;
     const headers: Record<string, string> = {
@@ -256,6 +261,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
             caller_turn_id: params.callerTurnId,
             created_at: params.deliveryCreatedAt,
             supervisor_role: params.supervisorRole,
+            delivery_lease_owner: params.deliveryLeaseOwner,
           }
         : {}),
     };
@@ -271,17 +277,19 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           { childId, callerSessionId, status: resp.status, body: bodyText },
           "Cross-node completion notification: orch returned non-2xx",
         );
-        return;
+        return false;
       }
       this.logger.info(
         { childId, callerSessionId },
         "Completion notification delivered via cross-node relay",
       );
+      return true;
     } catch (err) {
       this.logger.error(
         { err, childId, callerSessionId },
         "Cross-node completion notification failed",
       );
+      return false;
     }
   }
 }

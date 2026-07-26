@@ -57,6 +57,7 @@ import {
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { SessionNotificationPublisher } from "./task_session_notification.js";
+import { SessionDeliveryNotificationRecovery } from "./session_delivery_notification_recovery.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   type ClaudeRuntimeBackgroundTasksResult,
@@ -91,6 +92,8 @@ export class TaskManager {
   private readonly interventionRoute: TaskInterventionRoute;
   private readonly lifecycleRoute: TaskLifecycleRoute;
   private readonly deliveryLedgerGate: TaskDeliveryLedgerGate;
+  private readonly deliveryNotificationRecovery?: SessionDeliveryNotificationRecovery;
+  private readonly sessionNotificationPublisher: SessionNotificationPublisher;
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
 
   constructor(
@@ -163,15 +166,28 @@ export class TaskManager {
       contextBuilder,
       agentRegistry,
     });
+    const deliveryRepository = deliveryRuntimeV2Enabled
+      ? db.sessionDeliveries()
+      : undefined;
     this.deliveryLedgerGate = new TaskDeliveryLedgerGate(
       deliveryRuntimeV2Enabled,
-      deliveryRuntimeV2Enabled ? db.sessionDeliveries() : undefined,
+      deliveryRepository,
     );
-    const sessionNotificationPublisher = new SessionNotificationPublisher({
+    this.sessionNotificationPublisher = new SessionNotificationPublisher({
       broadcaster,
       logger,
       persistence,
     });
+    this.deliveryNotificationRecovery =
+      deliveryRuntimeV2Enabled && deliveryRepository
+        ? new SessionDeliveryNotificationRecovery({
+            repository: deliveryRepository.notifications,
+            publish: (task, message, disposition) =>
+              this.sessionNotificationPublisher.publish(task, message, disposition),
+            resolveTask: (sessionId) => this.resolveNotificationTask(sessionId),
+            logger,
+          })
+        : undefined;
     this.responseEventPublisher = new ResponseEventPublisher({
       broadcaster,
       logger,
@@ -210,7 +226,9 @@ export class TaskManager {
       runningInterventionTransition,
       autoResumeTransition,
       deliveryLedgerGate: deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined,
-      sessionNotificationPublisher: deliveryRuntimeV2Enabled ? sessionNotificationPublisher : undefined,
+      sessionNotificationPublisher: deliveryRuntimeV2Enabled
+        ? this.sessionNotificationPublisher
+        : undefined,
     });
   }
 
@@ -236,6 +254,13 @@ export class TaskManager {
 
   listTasks(): Task[] {
     return Array.from(this.tasks.values());
+  }
+
+  async recoverDeliveryNotifications(
+    leaseOwner: string,
+    limit = 100,
+  ): Promise<number> {
+    return await this.deliveryNotificationRecovery?.recover(leaseOwner, limit) ?? 0;
   }
 
   async listClaudeRuntimeTasks(sessionId: string): Promise<ClaudeRuntimeTaskListResult> {
@@ -401,6 +426,17 @@ export class TaskManager {
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
     return await this.interventionRoute.addIntervention(params, onResume);
+  }
+
+  private async resolveNotificationTask(sessionId: string): Promise<Task> {
+    const active = this.tasks.get(sessionId);
+    if (active) return active;
+    const loaded = await this.loadEvictedTask(sessionId);
+    if (!loaded) {
+      throw new Error(`Notification target session not found: ${sessionId}`);
+    }
+    this.tasks.set(sessionId, loaded);
+    return loaded;
   }
 
   /**

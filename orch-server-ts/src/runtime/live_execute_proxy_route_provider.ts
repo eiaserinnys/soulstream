@@ -234,6 +234,9 @@ function interveneCommandPayload(
   if (payload.supervisor_role !== undefined) {
     command.supervisor_role = payload.supervisor_role;
   }
+  if (payload.delivery_lease_owner !== undefined) {
+    command.delivery_lease_owner = payload.delivery_lease_owner;
+  }
   return command;
 }
 

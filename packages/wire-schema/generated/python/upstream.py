@@ -431,6 +431,7 @@ class Intervene(TypedDict):
     caller_turn_id: NotRequired[str]
     created_at: NotRequired[str]
     supervisor_role: NotRequired[str]
+    delivery_lease_owner: NotRequired[str]
 
 
 class InterruptSession(TypedDict):

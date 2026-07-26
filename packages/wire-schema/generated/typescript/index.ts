@@ -1156,6 +1156,10 @@ export interface Intervene {
    * Supervisor registry role resolved atomically when the durable delivery is claimed.
    */
   supervisor_role?: string;
+  /**
+   * Opaque recovery lease token fencing one delivery attempt.
+   */
+  delivery_lease_owner?: string;
   [k: string]: unknown;
 }
 /**

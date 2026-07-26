@@ -131,10 +131,16 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const coordinator = new CompletionDeliveryCoordinator({
       repository,
       dispatch: async (params) => {
-        const won = await repository.beginDispatch(params.deliveryId!);
-        if (!won) return;
+        const won = await repository.beginDispatch(
+          params.deliveryId!,
+          params.deliveryLeaseOwner,
+        );
+        if (!won) throw new Error("dispatch lease lost");
         delivered += 1;
-        await repository.markQueued(params.deliveryId!);
+        await repository.markQueued(
+          params.deliveryId!,
+          params.deliveryLeaseOwner,
+        );
       },
       logger: silentLogger(),
     });
@@ -143,11 +149,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const pending = await repository.getByRelation("child_session:child-session:42");
     expect(pending).toMatchObject({
       state: "pending",
-      target_session_id: "supervisor-old",
+      target_session_id: null,
     });
     expect(delivered).toBe(0);
 
     await insertSupervisor("supervisor-new", 5);
+    await makeDeliveriesDue();
     await coordinator.recoverPending();
     await coordinator.recoverPending();
 
@@ -171,17 +178,26 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         } else if (dispatchTargets.length === 2) {
           await updateSupervisor("supervisor-new", 3);
         }
-        const won = await repository.beginDispatch(params.deliveryId!);
-        if (!won) return;
+        const won = await repository.beginDispatch(
+          params.deliveryId!,
+          params.deliveryLeaseOwner,
+        );
+        if (!won) throw new Error("supervisor changed before dispatch");
         delivered += 1;
-        await repository.markQueued(params.deliveryId!);
+        await repository.markQueued(
+          params.deliveryId!,
+          params.deliveryLeaseOwner,
+        );
       },
       logger: silentLogger(),
     });
 
     await coordinator.enqueue(completionInput());
+    await makeDeliveriesDue();
     await coordinator.recoverPending();
+    await makeDeliveriesDue();
     await coordinator.recoverPending();
+    await makeDeliveriesDue();
     await coordinator.recoverPending();
 
     expect(dispatchTargets).toEqual([
@@ -275,6 +291,14 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       UPDATE supervisor_registry
       SET active_session_id = ${sessionId}, epoch = ${epoch}, updated_at = NOW()
       WHERE role = 'ariella'
+    `;
+  }
+
+  async function makeDeliveriesDue(): Promise<void> {
+    await harness.sql`
+      UPDATE session_deliveries
+      SET next_attempt_at = NOW()
+      WHERE state = 'pending'
     `;
   }
 });
