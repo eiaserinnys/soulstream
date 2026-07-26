@@ -14,6 +14,7 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { searchSessionEvents } from "../../search/session_search.js";
 import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
+import { resolveEffectiveCallerSessionId } from "./caller_session.js";
 
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
@@ -262,6 +263,22 @@ export function registerSessionQueryTools(
         session_id,
         max_response_chars ?? 500,
       );
+      const callerSessionId = resolveEffectiveCallerSessionId(undefined);
+      if (callerSessionId && runtime.childCompletionConsumption) {
+        // This write is part of the tool-result boundary: if it fails, the
+        // child summary is not returned and cannot be falsely considered
+        // consumed. Late notifier suppression is therefore fail-closed.
+        await runtime.childCompletionConsumption.recordObserved({
+          childSessionId: session.session_id,
+          childCallerSessionId: session.caller_session_id,
+          callerSessionId,
+          status: session.status,
+          terminalRevision:
+            session.last_event_id === null
+              ? null
+              : String(session.last_event_id),
+        });
+      }
       return jsonResult({
         session_id,
         display_name: session.display_name,

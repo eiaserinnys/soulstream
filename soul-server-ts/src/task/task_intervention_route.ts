@@ -144,6 +144,7 @@ export class TaskInterventionRoute {
 
     let task: Task | undefined;
     let ledgerResultRecorded = false;
+    let deferredResumeTask: Task | undefined;
     try {
       task = await this.resolveTask(params.agentSessionId);
       if (params.onlyIfTerminal === true && task.status === "running") {
@@ -193,16 +194,23 @@ export class TaskInterventionRoute {
           queueIfUndelivered: params.queueIfRunning ?? true,
         });
       } else if (admission.kind === "admitted") {
+        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
+          deferredResumeTask = resumedTask;
+        };
         if (notificationDecision?.action === "resume_next_turn") {
           result = await this.deps.autoResumeTransition.resume(
             task,
             message,
-            onResume,
+            deferResumeUntilQueued,
             { publishUserMessage: false },
           );
           notificationDisposition = "auto_resume";
         } else {
-          result = await this.deps.autoResumeTransition.resume(task, message, onResume);
+          result = await this.deps.autoResumeTransition.resume(
+            task,
+            message,
+            deferResumeUntilQueued,
+          );
         }
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
@@ -227,6 +235,12 @@ export class TaskInterventionRoute {
             );
           }
         }
+      }
+      // A terminal delivery must exist durably in `queued` before the executor
+      // can dequeue it. A worker crash before this callback is recoverable from
+      // the ledger; starting first would leave a running task with no receipt.
+      if (deferredResumeTask) {
+        onResume(deferredResumeTask);
       }
       return result;
     } catch (err) {

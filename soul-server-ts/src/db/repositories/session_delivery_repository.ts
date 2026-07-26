@@ -342,6 +342,46 @@ export class SessionDeliveryRepository {
     return rows.length;
   }
 
+  /**
+   * `queued` means the previous process durably staged the delivery but had
+   * not yet observed the first engine event (the turn receipt). In-memory
+   * intervention queues never survive a worker restart, so startup may safely
+   * move these rows back to pending before any listener accepts traffic.
+   *
+   * This is deliberately a startup-only transition. Periodic lease expiry
+   * must not replay a legitimately long foreground turn.
+   */
+  async requeueQueuedDeliveriesAfterRestart(nodeId: string): Promise<number> {
+    const rows = await this.sql<Array<{ delivery_id: string }>>`
+      UPDATE session_deliveries AS delivery
+      SET
+        state = 'pending',
+        target_session_id = CASE
+          WHEN supervisor_role IS NULL THEN target_session_id
+          ELSE NULL
+        END,
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        attempt_count = attempt_count + 1,
+        next_attempt_at = NOW(),
+        last_error = 'worker_restart_before_turn_receipt',
+        updated_at = NOW()
+      WHERE delivery.state = 'queued'
+        AND delivery.intent IN ('completion_notification', 'runtime_followup')
+        AND (
+          delivery.target_session_id IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM sessions AS target
+            WHERE target.session_id = delivery.target_session_id
+              AND target.node_id = ${nodeId}
+          )
+        )
+      RETURNING delivery.delivery_id
+    `;
+    return rows.length;
+  }
+
   async markQueued(
     deliveryId: string,
     leaseOwner?: string,

@@ -7,6 +7,8 @@ import { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../task/claude_background_task_lifecycle.js";
+import { ChildCompletionConsumptionRecorder } from
+  "../task/child_completion_consumption.js";
 
 interface ComposeClaudeRuntimeParams {
   enabled: boolean;
@@ -25,6 +27,7 @@ interface ComposeClaudeRuntimeParams {
 export interface ClaudeRuntimeComposition {
   registry?: ClaudeSessionClientRegistry;
   backgroundLifecycle?: ClaudeBackgroundTaskLifecycle;
+  childCompletionConsumption?: ChildCompletionConsumptionRecorder;
 }
 
 /** Keeps the default-off persistent runtime object graph out of legacy composition. */
@@ -32,6 +35,15 @@ export async function composeClaudeRuntime(
   params: ComposeClaudeRuntimeParams,
 ): Promise<ClaudeRuntimeComposition> {
   if (!params.enabled) return {};
+  const requeuedDeliveries = await params.db
+    .sessionDeliveries()
+    .requeueQueuedDeliveriesAfterRestart(params.sourceNode);
+  if (requeuedDeliveries > 0) {
+    params.logger.warn(
+      { count: requeuedDeliveries, nodeId: params.sourceNode },
+      "Recovered queued deliveries without a durable turn receipt",
+    );
+  }
   const backgroundLifecycle = new ClaudeBackgroundTaskLifecycle({
     repository: params.db.claudeBackgroundTasks(),
     sourceNode: params.sourceNode,
@@ -61,5 +73,11 @@ export async function composeClaudeRuntime(
       logger: params.logger,
     },
   );
-  return { registry, backgroundLifecycle };
+  return {
+    registry,
+    backgroundLifecycle,
+    childCompletionConsumption: new ChildCompletionConsumptionRecorder(
+      params.db.sessionDeliveries(),
+    ),
+  };
 }

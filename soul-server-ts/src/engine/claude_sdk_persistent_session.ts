@@ -13,10 +13,7 @@ import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import { createEventQueue, type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
-import {
-  isFatalClientError,
-  isRuntimeClientEvent,
-} from "./claude_sdk_runtime_state.js";
+import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import {
   ClaudeResultLivenessGuard,
@@ -108,7 +105,7 @@ export class ClaudeSdkPersistentSession {
     }
 
     const output = createEventQueue<ClaudeClientEvent>();
-    const uuid = randomUUID();
+    const uuid = options.inputUuid ?? randomUUID();
     const message = makeUserMessage(
       options.prompt,
       options.imageAttachmentPaths,
@@ -188,7 +185,9 @@ export class ClaudeSdkPersistentSession {
         await this.close("fatal");
       }
     } catch (err) {
-      this.activeForeground?.output.fail(err);
+      const active = this.activeForeground;
+      active?.output.fail(err);
+      this.clearForegroundTimers(active);
       this.activeForeground = null;
       await this.emitDetached({
         type: "error",
@@ -213,7 +212,9 @@ export class ClaudeSdkPersistentSession {
       await this.routeEvent(event);
       if (event.type === "session") this.runtime.setSessionId(event.sessionId);
       if (isFatalClientError(event)) {
-        this.activeForeground?.output.close();
+        const active = this.activeForeground;
+        active?.output.close();
+        this.clearForegroundTimers(active);
         this.activeForeground = null;
         await this.close("fatal");
       }

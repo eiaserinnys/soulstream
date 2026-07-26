@@ -418,7 +418,7 @@ function isControlledMessage(
   );
 }
 
-function isInlineChildCompletion(
+export function isInlineChildCompletion(
   message: InterventionMessage,
 ): message is InterventionMessage & {
   completionId: string;

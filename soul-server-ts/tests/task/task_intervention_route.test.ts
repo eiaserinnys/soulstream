@@ -278,6 +278,13 @@ describe("TaskInterventionRoute.addIntervention", () => {
       runningInterventionTransition,
       sessionNotificationPublisher,
     } = makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(
+      async (resumedTask, _message, callback) => {
+        callback(resumedTask);
+        return { autoResumed: true };
+      },
+    );
+    const onResume = vi.fn();
     const params = {
       agentSessionId: task.agentSessionId,
       text: "child completed",
@@ -289,7 +296,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       source: "completion_notifier",
     };
 
-    await expect(route.addIntervention(params, vi.fn())).resolves.toEqual({
+    await expect(route.addIntervention(params, onResume)).resolves.toEqual({
       autoResumed: true,
     });
     await expect(route.addIntervention(params, vi.fn())).resolves.toEqual({
@@ -312,6 +319,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
+    expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
+      onResume.mock.invocationCallOrder[0]!,
+    );
+    expect(
+      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0],
+    ).toBeLessThan(onResume.mock.invocationCallOrder[0]!);
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });

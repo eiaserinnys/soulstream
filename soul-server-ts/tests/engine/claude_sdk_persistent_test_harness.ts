@@ -38,6 +38,7 @@ export function makeHarness(
     captured,
     close,
     detached: vi.fn(async (_event: ClaudeClientEvent) => undefined),
+    fail: (error: Error) => output.fail(error),
     interrupt,
     push: (message: SDKMessage) => output.push(message),
     queryFn,

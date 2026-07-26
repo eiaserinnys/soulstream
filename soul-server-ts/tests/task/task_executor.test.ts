@@ -124,6 +124,7 @@ describe("TaskExecutor.startExecution", () => {
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
+        { type: "session", session_id: "claude-session" },
         { type: "assistant_message", content: "consumed", timestamp: 1 },
       ] as SSEEventPayload[]),
       mocks.db,
@@ -150,6 +151,9 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
     expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
       deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.setClaudeSessionId.mock.invocationCallOrder[0]).toBeLessThan(
+      deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]!,
     );
   });
 
@@ -187,7 +191,7 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 

@@ -115,6 +115,7 @@ describe("TaskEngineTurnRunner", () => {
         prompt: "turn prompt",
         imageAttachmentPaths: ["/tmp/a.png"],
         systemPrompt: "system prompt",
+        inputUuid: "22222222-2222-5222-8222-222222222222",
       },
     }));
 
@@ -134,6 +135,7 @@ describe("TaskEngineTurnRunner", () => {
       useMcp: false,
       claudePermissionMode: "default",
       maxTurns: 25,
+      inputUuid: "22222222-2222-5222-8222-222222222222",
       extraEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token" },
     });
     expect(captured?.onIntervention).toBeUndefined();

@@ -133,6 +133,28 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
+  it("delivery-bound inputUuid를 Claude client run options로 전달한다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient([], captured),
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    const inputUuid = "33333333-3333-5333-8333-333333333333";
+
+    for await (const _ of engine.execute({
+      prompt: "durable delivery",
+      inputUuid,
+    })) {
+      // drain
+    }
+
+    expect(captured[0]).toMatchObject({ inputUuid });
+  });
+
   it("Claude subprocess env는 부모 process env를 보존하고 prompt suggestion 기본값을 더한다", () => {
     const env = buildClaudeEnvironment({
       processEnv: {

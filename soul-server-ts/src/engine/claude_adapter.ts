@@ -45,6 +45,7 @@ export type { ClaudeClientEvent } from "./claude_event_mapper.js";
 export interface ClaudeRunOptions {
   agentSessionId?: string;
   prompt: string;
+  inputUuid?: string;
   workspaceDir: string;
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;
@@ -358,6 +359,7 @@ export class ClaudeEngineAdapter
     );
     return {
       prompt: params.prompt,
+      ...(params.inputUuid ? { inputUuid: params.inputUuid } : {}),
       ...(params.agentSessionId ? { agentSessionId: params.agentSessionId } : {}),
       workspaceDir: this.workspaceDir,
       ...(params.imageAttachmentPaths !== undefined

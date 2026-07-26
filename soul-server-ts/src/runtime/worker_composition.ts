@@ -123,7 +123,6 @@ export async function composeWorkerRuntime(
       "Interrupted stale running sessions on startup",
     );
   }
-
   const send = async (data: unknown): Promise<void> => {
     if (!upstreamAdapter) {
       logger.warn({ data }, "broadcast send called before UpstreamAdapter ready");
@@ -387,7 +386,6 @@ export async function composeWorkerRuntime(
   } else {
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
-
   const mcpRuntime: McpRuntime = {
     nodeId: env.SOULSTREAM_NODE_ID,
     boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
@@ -395,6 +393,9 @@ export async function composeWorkerRuntime(
     db,
     taskManager,
     taskExecutor: supervisor.taskExecutor,
+    ...(claudeRuntime.childCompletionConsumption
+      ? { childCompletionConsumption: claudeRuntime.childCompletionConsumption }
+      : {}),
     agentRegistry,
     agentConfigService,
     mcpConfigService,
