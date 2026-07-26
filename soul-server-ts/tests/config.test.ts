@@ -189,21 +189,25 @@ describe("parseEnv", () => {
     expect(defaults.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
     expect(defaults.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS).toBe(300_000);
     expect(defaults.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES).toBe(16);
+    expect(defaults.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS).toBe(1_800_000);
     expect(
       parseEnv({
         ...minimal,
         CLAUDE_SESSION_RUNTIME_V2_ENABLED: "true",
         CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: "60000",
         CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: "8",
+        CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: "120000",
       }).CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     ).toBe(true);
     expect(parseEnv({
       ...minimal,
       CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: "60000",
       CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: "8",
+      CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: "120000",
     })).toMatchObject({
       CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: 60_000,
       CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: 8,
+      CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: 120_000,
     });
     expect(() =>
       parseEnv({

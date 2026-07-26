@@ -55,6 +55,7 @@ checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | ❌ (default false) | persistent Query·delivery ledger·notification v2 준비 gate. 미설정 시 기존 runtime 유지 |
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | ❌ (default 300000) | runtime v2에서 foreground 종료 후 idle Query 회수 유예 |
 | `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | ❌ (default 16) | runtime v2 worker별 persistent Query 상한 |
+| `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | ❌ (default 1800000) | runtime v2 foreground 턴 상한. legacy `SESSION_TIMEOUT_SECONDS=1800` 경계를 보존 |
 | `SUPERVISOR_ENABLED` | ❌ (default false) | supervisor 세션 부팅, wake, watchdog 활성화. true면 event ingest도 함께 켜짐 |
 | `SUPERVISOR_EVENT_INGEST_ENABLED` | ❌ (default false) | supervisor 세션은 켜지 않고 durable event ingest만 별도로 켤 때 사용 |
 
@@ -64,14 +65,18 @@ checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이
 위한 준비 gate다. 다음 항목을 모두 끝내기 전에는 어떤 노드에서도 `true`로 설정하지 않는다.
 
 - 운영 승인 뒤 `sql/pending/043_session_deliveries.sql`과
-  `sql/pending/045_claude_background_tasks.sql`을 migration manifest로 승격하고 적용
-- inline child completion이 caller turn에서 소비된 relation을 정산하는 producer 연결
-- persistent runtime crash 뒤 session/query rehydration 정책 확정
-- persistent Query에서 `agents.yaml.max_turns`의 turn별 의미를 보존하는 정책 확정
+  `sql/pending/045_claude_background_tasks.sql`,
+  `sql/pending/046_session_delivery_relation_consumptions.sql`을 migration manifest로 승격하고 적용
 - 실제 SDK harness·통합 검증 결과의 독립 재검수와 disposable canary 검증
 
 현재 gate를 켜면 아직 canary를 통과하지 않은 엔진·delivery 경로가 활성화된다. 미설정 또는
 `false`만 배포 가능한 상태다.
+
+Persistent Query에는 SDK `maxTurns`를 전달하지 않는다. SDK 0.3.218에서 이 값은 턴이
+아니라 Query 전체 상한이므로, 전달하면 장기 세션의 후속 턴을 예기치 않게 막는다. 대신
+runtime v2는 legacy worker 설정의 30분 foreground 상한을
+`CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS`로 유지하고, 초과 시 그 턴만 interrupt한다.
+gate OFF legacy 경로는 기존 `agents.yaml.max_turns` 전달을 그대로 유지한다.
 
 ### 개발
 

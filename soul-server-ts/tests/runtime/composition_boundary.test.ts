@@ -165,6 +165,19 @@ describe("worker composition boundary", () => {
     );
   });
 
+  it("starts delivery recovery only after the crash-resume executor is bound", () => {
+    const supervisorComposition = source("runtime/supervisor_composition.ts");
+    const executorIndex = supervisorComposition.indexOf(
+      "taskExecutor = new TaskExecutor(",
+    );
+    const recoveryIndex = supervisorComposition.indexOf(
+      "completionDeliveryRecoveryWorker?.start();",
+    );
+
+    expect(executorIndex).toBeGreaterThan(-1);
+    expect(recoveryIndex).toBeGreaterThan(executorIndex);
+  });
+
   it("keeps every production module touched by the extraction below 500 lines", () => {
     const files = [
       "main.ts",
@@ -191,6 +204,8 @@ describe("worker composition boundary", () => {
       "task/completion_delivery_coordinator.ts",
       "task/completion_delivery_recovery_worker.ts",
       "task/completion_notifier.ts",
+      "db/repositories/session_delivery_repository.ts",
+      "db/repositories/session_delivery_relation_repository.ts",
     ];
 
     for (const file of files) {

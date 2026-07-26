@@ -137,7 +137,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     },
   );
 
-  it("keeps schema-only fresh install equal to the 043 then 045 upgrade", async () => {
+  it("keeps schema-only fresh install equal to the 043 then 045 then 046 upgrade", async () => {
     const suffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const freshSchema = `background_fresh_${suffix}`;
     const upgradeSchema = `background_upgrade_${suffix}`;
@@ -161,6 +161,13 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       ),
       "utf8",
     );
+    const relationConsumptionMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/pending/046_session_delivery_relation_consumptions.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
 
     try {
       await fresh.unsafe(`CREATE SCHEMA ${freshSchema}`);
@@ -172,10 +179,12 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       await upgrade.unsafe("CREATE TABLE sessions (session_id TEXT PRIMARY KEY)");
       await upgrade.unsafe(deliveryMigration);
       await upgrade.unsafe(backgroundMigration);
+      await upgrade.unsafe(relationConsumptionMigration);
       await upgrade.unsafe(backgroundMigration);
+      await upgrade.unsafe(relationConsumptionMigration);
 
-      await expect(backgroundCatalog(fresh, freshSchema)).resolves.toEqual(
-        await backgroundCatalog(upgrade, upgradeSchema),
+      await expect(runtimeV2Catalog(fresh, freshSchema)).resolves.toEqual(
+        await runtimeV2Catalog(upgrade, upgradeSchema),
       );
     } finally {
       await harness.sql.unsafe(`DROP SCHEMA IF EXISTS ${freshSchema} CASCADE`);
@@ -358,9 +367,27 @@ async function expectExactlyOnceDelivery(
   `).resolves.toMatchObject([{ count: 0 }]);
 }
 
-async function backgroundCatalog(
+async function runtimeV2Catalog(
   sql: SqlClient,
   schema: string,
+): Promise<{
+  background: Awaited<ReturnType<typeof tableCatalog>>;
+  relationConsumptions: Awaited<ReturnType<typeof tableCatalog>>;
+}> {
+  return {
+    background: await tableCatalog(sql, schema, "claude_background_tasks"),
+    relationConsumptions: await tableCatalog(
+      sql,
+      schema,
+      "session_delivery_relation_consumptions",
+    ),
+  };
+}
+
+async function tableCatalog(
+  sql: SqlClient,
+  schema: string,
+  table: string,
 ): Promise<{
   columns: Array<Record<string, unknown>>;
   constraints: Array<Record<string, unknown>>;
@@ -370,7 +397,7 @@ async function backgroundCatalog(
     SELECT column_name, data_type, is_nullable, column_default
     FROM information_schema.columns
     WHERE table_schema = ${schema}
-      AND table_name = 'claude_background_tasks'
+      AND table_name = ${table}
     ORDER BY ordinal_position
   `;
   const constraints = await sql<Array<Record<string, unknown>>>`
@@ -384,7 +411,7 @@ async function backgroundCatalog(
     INNER JOIN pg_namespace AS namespace
       ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname = ${schema}
-      AND relation.relname = 'claude_background_tasks'
+      AND relation.relname = ${table}
       AND constraint_row.contype <> 'n'
     ORDER BY constraint_row.conname
   `;
@@ -392,7 +419,7 @@ async function backgroundCatalog(
     SELECT indexname, indexdef
     FROM pg_indexes
     WHERE schemaname = ${schema}
-      AND tablename = 'claude_background_tasks'
+      AND tablename = ${table}
     ORDER BY indexname
   `;
   return {

@@ -252,6 +252,13 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const relationConsumptionPending = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/pending/046_session_delivery_relation_consumptions.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
@@ -263,6 +270,9 @@ describe("session_deliveries migration safety", () => {
 
     expect(manifest).not.toContain("043_session_deliveries.sql");
     expect(manifest).not.toContain("045_claude_background_tasks.sql");
+    expect(manifest).not.toContain(
+      "046_session_delivery_relation_consumptions.sql",
+    );
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(pending).toContain("ON DELETE SET NULL");
@@ -279,10 +289,17 @@ describe("session_deliveries migration safety", () => {
     expect(backgroundPending).not.toContain(
       "REFERENCES sessions(session_id)",
     );
+    expect(relationConsumptionPending).toContain(
+      "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
+    );
+    expect(relationConsumptionPending).not.toContain("REFERENCES sessions");
     expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(schema).toContain(
+      "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
+    );
     expect(schema).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
     expect(schema).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
     expect(schema).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");

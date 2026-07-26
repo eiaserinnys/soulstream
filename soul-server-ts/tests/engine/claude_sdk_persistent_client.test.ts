@@ -22,18 +22,110 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
-  it("fails closed instead of turning per-turn maxTurns into a session-global cap", async () => {
+  it("omits SDK maxTurns from one persistent Query while preserving later turns", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
       { query: harness.queryFn, detachedEventSink: harness.detached },
       silentLogger,
     );
 
-    await expect(collect(client.runPersistent(
-      { ...runOptions("bounded"), maxTurns: 2 },
+    const first = collect(client.runPersistent(
+      { ...runOptions("bounded-1"), maxTurns: 2 },
       abortSignal(),
-    ))).rejects.toThrow("cannot preserve per-turn maxTurns");
-    expect(harness.captured).toHaveLength(0);
+    ));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const second = collect(client.runPersistent(
+      { ...runOptions("bounded-2"), maxTurns: 2 },
+      abortSignal(),
+    ));
+    const secondInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await second;
+
+    expect(harness.captured).toHaveLength(1);
+    expect(harness.captured[0]?.options).not.toHaveProperty("maxTurns");
+    await client.close();
+  });
+
+  it("interrupts an overlong foreground turn without closing the persistent Query", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        persistentTurnTimeoutMs: 10,
+        postResultDrainMs: 1_000,
+      },
+      silentLogger,
+    );
+
+    const timedOut = collect(client.runPersistent(
+      runOptions("long turn"),
+      abortSignal(),
+    ));
+    const firstInput = await harness.nextInput();
+    await vi.waitFor(() => {
+      expect(harness.interrupt).toHaveBeenCalledTimes(1);
+    });
+    harness.push(sdkInterruptedResult("sdk-session", firstInput.uuid));
+
+    await expect(timedOut).resolves.toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        fatal: true,
+        errorCode: "claude_persistent_turn_timeout",
+      }),
+    );
+    expect(harness.close).not.toHaveBeenCalled();
+
+    const resumed = collect(client.runPersistent(
+      runOptions("after timeout"),
+      abortSignal(),
+    ));
+    const secondInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "recovered"));
+    await expect(resumed).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "recovered" }),
+    );
+    expect(harness.captured).toHaveLength(1);
+    await client.close();
+  });
+
+  it("creates a fresh Query after worker restart with the persisted Claude session id", async () => {
+    const persistedSessionId = "claude-session-before-worker-crash";
+    const restartedHarness = makeHarness();
+    const restartedClient = new ClaudeSdkClient(
+      {
+        query: restartedHarness.queryFn,
+        detachedEventSink: restartedHarness.detached,
+      },
+      silentLogger,
+    );
+
+    const resumed = collect(restartedClient.runPersistent(
+      {
+        ...runOptions("resume pending delivery after restart"),
+        resumeSessionId: persistedSessionId,
+        maxTurns: 7,
+      },
+      abortSignal(),
+    ));
+    const input = await restartedHarness.nextInput();
+    restartedHarness.push(sdkInit(persistedSessionId));
+    restartedHarness.push(sdkResult(persistedSessionId, input.uuid, "recovered"));
+
+    await expect(resumed).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "recovered" }),
+    );
+    expect(restartedHarness.captured).toHaveLength(1);
+    expect(restartedHarness.captured[0]?.options).toMatchObject({
+      resume: persistedSessionId,
+    });
+    expect(restartedHarness.captured[0]?.options).not.toHaveProperty("maxTurns");
+    await restartedClient.close();
   });
 
   it("keeps one Query open across Results and queues a drain-phase input without interrupt", async () => {

@@ -28,6 +28,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
   }, 45_000);
 
   beforeEach(async () => {
+    await harness.sql`DELETE FROM session_delivery_relation_consumptions`;
     await harness.sql`DELETE FROM session_deliveries`;
     await harness.sql`DELETE FROM supervisor_registry`;
     await harness.sql`DELETE FROM sessions`;
@@ -262,6 +263,109 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     expect(resume).not.toHaveBeenCalled();
     expect(wake).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("suppresses a late child notifier after inline consumption existed before its row", async () => {
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    const relationKey = "child_session:child-session:77";
+    const completionId = "completion-inline-before-notifier";
+    await gate.recordConsumed({
+      text: "child result consumed directly by the caller turn",
+      user: "agent",
+      deliveryIntent: "completion_notification",
+      completionId,
+      relationKey,
+    }, {
+      agentSessionId: "supervisor-old",
+      prompt: "delegate",
+      status: "running",
+      lastEventId: 44,
+      lastReadEventId: 0,
+      interventionQueue: [],
+      createdAt: new Date(),
+    });
+
+    const getTask = vi.fn();
+    const queueOnly = vi.fn();
+    const deliver = vi.fn();
+    const resume = vi.fn();
+    const publish = vi.fn();
+    const wake = vi.fn();
+    const route = new TaskInterventionRoute({
+      getTask,
+      loadEvictedTask: vi.fn(),
+      rememberTask: vi.fn(),
+      activeTaskRecovery: { prepareForIntervention: vi.fn() },
+      runningInterventionTransition: { queueOnly, deliver },
+      autoResumeTransition: { resume },
+      deliveryLedgerGate: gate,
+      sessionNotificationPublisher: { publish },
+    });
+    const params = {
+      agentSessionId: "supervisor-old",
+      text: "late duplicate",
+      user: "agent",
+      deliveryId: "delivery-late-child-notifier",
+      deliveryIntent: "completion_notification" as const,
+      source: "completion_notifier",
+      completionId,
+      relationKey,
+    };
+
+    await expect(route.addIntervention(params, wake)).resolves.toMatchObject({
+      suppressed: true,
+      reason: "delivery_consumed",
+    });
+    expect(await repository.getRelationConsumption(relationKey)).toMatchObject({
+      completion_id: completionId,
+      caller_session_id: "supervisor-old",
+      consumed_turn_id: "event:44",
+    });
+    expect(await repository.get(params.deliveryId)).toMatchObject({
+      state: "consumed",
+      consumed_at: expect.any(Date),
+    });
+    expect(getTask).not.toHaveBeenCalled();
+    expect(queueOnly).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("serializes notifier registration against inline relation consumption", async () => {
+    const writer = new SessionDeliveryRepository(harness.createPeer());
+    const relationKey = "child_session:child-session:88";
+    const completionId = "completion-concurrent-inline";
+    const registration = {
+      deliveryId: "delivery-concurrent-inline",
+      targetSessionId: "supervisor-old",
+      sourceSessionId: "child-session",
+      relationKey,
+      completionId,
+      intent: "completion_notification" as const,
+      source: "completion_notifier",
+      payloadHash: "hash-concurrent-inline",
+      payload: { text: "done" },
+    };
+
+    await Promise.all([
+      repository.register(registration),
+      writer.recordRelationConsumed({
+        relationKey,
+        completionId,
+        callerSessionId: "supervisor-old",
+        consumedTurnId: "event:55",
+      }),
+    ]);
+
+    expect(await repository.get(registration.deliveryId)).toMatchObject({
+      state: "consumed",
+    });
+    expect(await repository.getRelationConsumption(relationKey)).toMatchObject({
+      completion_id: completionId,
+      caller_session_id: "supervisor-old",
+    });
   });
 
   async function register(deliveryId: string, relationKey: string): Promise<void> {

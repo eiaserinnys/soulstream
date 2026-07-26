@@ -14,6 +14,7 @@ interface ComposeClaudeRuntimeParams {
   sourceNode: string;
   idleTtlMs: number;
   maxEntries: number;
+  turnTimeoutMs: number;
   logger: Logger;
   detachedEventSink(
     sessionId: string,
@@ -50,6 +51,7 @@ export async function composeClaudeRuntime(
             backgroundLifecycle.observe(sessionId, event),
           detachedEventSink: (event) =>
             params.detachedEventSink(sessionId, event),
+          persistentTurnTimeoutMs: params.turnTimeoutMs,
         },
         params.logger,
       ),

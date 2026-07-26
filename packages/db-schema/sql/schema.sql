@@ -361,6 +361,21 @@ CREATE INDEX IF NOT EXISTS idx_session_deliveries_completion
     ON session_deliveries(completion_id)
     WHERE completion_id IS NOT NULL;
 
+-- Semantic completion consumption is intentionally independent from the
+-- delivery row. A caller can consume an inline child result before the
+-- notifier creates session_deliveries, and target session deletion must not
+-- erase that exactly-once fact.
+CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions (
+    relation_key       TEXT PRIMARY KEY,
+    completion_id      TEXT NOT NULL,
+    caller_session_id  TEXT NOT NULL,
+    consumed_turn_id   TEXT NOT NULL,
+    consumed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_delivery_relation_consumptions_caller
+    ON session_delivery_relation_consumptions(caller_session_id, consumed_at);
+
 CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox (
     delivery_id        TEXT PRIMARY KEY
         REFERENCES session_deliveries(delivery_id) ON DELETE CASCADE,

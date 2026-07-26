@@ -26,6 +26,7 @@ type LedgerRepository = Pick<
   "register" | "claimForTarget" | "claimForCurrentSupervisor" | "beginDispatch" | "get"
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
+  | "recordRelationConsumed"
 > & {
   notifications: Pick<
     SessionDeliveryRepository["notifications"],
@@ -256,11 +257,20 @@ export class TaskDeliveryLedgerGate {
     message: InterventionMessage,
     task: Task,
   ): Promise<void> {
-    if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
-    await this.requireRepository().markConsumed(
-      message.deliveryId,
-      `event:${task.lastEventId ?? "unknown"}`,
-    );
+    if (!this.enabled || !isControlledMessage(message)) return;
+    const consumedTurnId = `event:${task.lastEventId ?? "unknown"}`;
+    const repository = this.requireRepository();
+    if (isInlineChildCompletion(message)) {
+      await repository.recordRelationConsumed({
+        relationKey: message.relationKey,
+        completionId: message.completionId,
+        callerSessionId: task.agentSessionId,
+        consumedTurnId,
+      });
+    }
+    if (message.deliveryId) {
+      await repository.markConsumed(message.deliveryId, consumedTurnId);
+    }
   }
 
   async recordTurnStarted(
@@ -405,6 +415,21 @@ function isControlledMessage(
     message.deliveryIntent === "durable_next_turn" ||
     message.deliveryIntent === "completion_notification" ||
     message.deliveryIntent === "runtime_followup"
+  );
+}
+
+function isInlineChildCompletion(
+  message: InterventionMessage,
+): message is InterventionMessage & {
+  completionId: string;
+  relationKey: string;
+} {
+  return (
+    message.deliveryIntent === "completion_notification" &&
+    typeof message.completionId === "string" &&
+    message.completionId.length > 0 &&
+    typeof message.relationKey === "string" &&
+    message.relationKey.startsWith("child_session:")
   );
 }
 

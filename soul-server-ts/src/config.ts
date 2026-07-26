@@ -112,6 +112,13 @@ export const EnvSchema = z
     CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: z.coerce
       .number().int().positive().default(16),
     /**
+     * Runtime v2 only. One foreground turn may run for at most the legacy
+     * SESSION_TIMEOUT_SECONDS default (30 minutes). This replaces SDK
+     * maxTurns, whose scope becomes Query-global under a persistent Query.
+     */
+    CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: z.coerce
+      .number().int().positive().default(1_800_000),
+    /**
      * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
      */

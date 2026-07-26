@@ -357,6 +357,27 @@ export interface RegisterSessionDeliveryResult {
   conflict: boolean;
 }
 
+export interface SessionDeliveryRelationConsumptionRow {
+  relation_key: string;
+  completion_id: string;
+  caller_session_id: string;
+  consumed_turn_id: string;
+  consumed_at: Date;
+}
+
+export interface RecordSessionDeliveryRelationConsumptionParams {
+  relationKey: string;
+  completionId: string;
+  callerSessionId: string;
+  consumedTurnId: string;
+}
+
+export interface RecordSessionDeliveryRelationConsumptionResult {
+  relation: SessionDeliveryRelationConsumptionRow;
+  relationInserted: boolean;
+  deliveryConsumed: boolean;
+}
+
 export interface SessionDeliveryNotificationOutboxRow {
   delivery_id: string;
   target_session_id: string;

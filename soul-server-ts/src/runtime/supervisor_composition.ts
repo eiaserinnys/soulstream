@@ -125,7 +125,6 @@ export function composeSupervisorRuntime(
         logger,
       })
     : undefined;
-  completionDeliveryRecoveryWorker?.start();
   const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
     taskManager,
     onResume,
@@ -338,6 +337,10 @@ export function composeSupervisorRuntime(
       ? taskManager.getDeliveryConsumptionRecorder()
       : undefined,
   );
+  // Startup recovery may auto-resume a hydrated caller immediately. Start it
+  // only after the executor closure is fully bound so the resumed turn can
+  // create a fresh Query with the persisted Claude session id.
+  completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },
     scheduleService,
