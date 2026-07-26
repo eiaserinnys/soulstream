@@ -97,13 +97,13 @@ export const EnvSchema = z
      */
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
     /**
-     * Exactly-once delivery + session notification preparation gate.
-     * The persistent Query path remains canary-prohibited. Absence preserves the
-     * legacy runtime and requires no env rollout.
+     * Persistent Query + exactly-once delivery runtime.
+     * Enabled cluster-wide by default after the migration/canary hardening
+     * cycle. Explicit false remains the emergency legacy kill switch.
      */
     CLAUDE_SESSION_RUNTIME_V2_ENABLED: z
       .union([z.literal("true"), z.literal("false")])
-      .default("false")
+      .default("true")
       .transform((v) => v === "true"),
     /** Runtime v2 only. Released idle Queries are reclaimed after this TTL. */
     CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: z.coerce

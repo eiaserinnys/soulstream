@@ -41,7 +41,7 @@ export interface ClaudeRuntimeComposition {
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
 }
 
-/** Keeps the default-off persistent runtime object graph out of legacy composition. */
+/** Keeps the persistent runtime object graph out of explicit kill-switch mode. */
 export async function composeClaudeRuntime(
   params: ComposeClaudeRuntimeParams,
 ): Promise<ClaudeRuntimeComposition> {

@@ -13,4 +13,20 @@ Canonical PostgreSQL DDL for Soulstream.
 
 `soul-server-ts/scripts/apply-schema.mjs` is a legacy-compatible `initialize` entrypoint. It executes the canonical schema only for an empty database, safely bootstraps the ledger for an already-current database, and fails closed on a pending destructive migration unless the migration preflight and verified backup gate are satisfied. The standalone installer calls the same `initialize` mode once, while `soul-server-ts/scripts/verify-migrations.mjs` is the normal fail-closed `pre_start` hook. Every migration that changes existing objects must still be mirrored in `sql/schema.sql` so a new database reaches the same canonical shape without replaying history.
 
-`deploy/release-manifest.json` always has a previous-release fallback. For an empty or `previous_release_safe` pending plan the fallback preserves the database and only lets Haniel roll code back. For `restore_required` migrations it restores the verified archive before code rollback. Both migration preflight and apply reject rollback-unsafe DDL unless `SOULSTREAM_CLUSTER_WRITE_FENCE_PATH` names a verified fence for every cluster writer, with zero active writers and the same release/head. A local process stop is not treated as cluster-wide quiescence.
+`deploy/release-manifest.json` pins `environment_service` to
+`soulstream-orch-server`. That central Haniel deployment is the single migration
+authority for the shared PostgreSQL database: it builds, preflights, stops the
+central services, takes the migration advisory lock, applies the ordered
+manifest, and only then starts services. Worker-only Haniel configurations pin
+`deploy/release-manifest-worker.json`, which has no migration phase; they verify
+the completed ledger before starting after the authority deployment. This also
+prevents Haniel's conventional-manifest auto-discovery from activating the
+cluster authority manifest on a worker.
+
+The release manifest always has a previous-release fallback. For an empty or
+`previous_release_safe` pending plan the fallback preserves the database and only
+lets Haniel roll code back. For `restore_required` migrations it restores the
+verified archive before code rollback. Both migration preflight and apply reject
+rollback-unsafe DDL unless `SOULSTREAM_CLUSTER_WRITE_FENCE_PATH` names a verified
+fence for every cluster writer, with zero active writers and the same
+release/head. A local process stop is not treated as cluster-wide quiescence.

@@ -233,28 +233,28 @@ describe("SessionDeliveryRepository", () => {
 });
 
 describe("session_deliveries migration safety", () => {
-  it("keeps the additive migration outside the deployment manifest until operator approval", () => {
+  it("keeps promoted additive migrations aligned with canonical fresh-install schema", () => {
     const manifest = readFileSync(
       new URL("../../../packages/db-schema/migration-manifest.json", import.meta.url),
       "utf8",
     );
-    const pending = readFileSync(
+    const deliveryMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",
     );
-    const backgroundPending = readFileSync(
+    const backgroundMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/045_claude_background_tasks.sql",
+        "../../../packages/db-schema/sql/migrations/045_claude_background_tasks.sql",
         import.meta.url,
       ),
       "utf8",
     );
-    const relationConsumptionPending = readFileSync(
+    const relationConsumptionMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/046_session_delivery_relation_consumptions.sql",
+        "../../../packages/db-schema/sql/migrations/046_session_delivery_relation_consumptions.sql",
         import.meta.url,
       ),
       "utf8",
@@ -268,31 +268,31 @@ describe("session_deliveries migration safety", () => {
       import.meta.url,
     );
 
-    expect(manifest).not.toContain("043_session_deliveries.sql");
-    expect(manifest).not.toContain("045_claude_background_tasks.sql");
-    expect(manifest).not.toContain(
+    expect(manifest).toContain("043_session_deliveries.sql");
+    expect(manifest).toContain("045_claude_background_tasks.sql");
+    expect(manifest).toContain(
       "046_session_delivery_relation_consumptions.sql",
     );
     expect(existsSync(removedEpochMigration)).toBe(false);
-    expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
-    expect(pending).toContain("ON DELETE SET NULL");
-    expect(pending).toContain("ALTER COLUMN target_session_id DROP NOT NULL");
-    expect(pending).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
-    expect(pending).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
-    expect(pending).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
-    expect(pending).toContain("'dispatching'");
-    expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
-    expect(pending).not.toContain("supervisor_epoch");
-    expect(backgroundPending).toContain(
+    expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(deliveryMigration).toContain("ON DELETE SET NULL");
+    expect(deliveryMigration).toContain("ALTER COLUMN target_session_id DROP NOT NULL");
+    expect(deliveryMigration).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
+    expect(deliveryMigration).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
+    expect(deliveryMigration).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
+    expect(deliveryMigration).toContain("'dispatching'");
+    expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
+    expect(deliveryMigration).not.toContain("supervisor_epoch");
+    expect(backgroundMigration).toContain(
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );
-    expect(backgroundPending).not.toContain(
+    expect(backgroundMigration).not.toContain(
       "REFERENCES sessions(session_id)",
     );
-    expect(relationConsumptionPending).toContain(
+    expect(relationConsumptionMigration).toContain(
       "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
     );
-    expect(relationConsumptionPending).not.toContain("REFERENCES sessions");
+    expect(relationConsumptionMigration).not.toContain("REFERENCES sessions");
     expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );

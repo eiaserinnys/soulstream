@@ -1,7 +1,7 @@
 {
   "schema_version": "haniel.release.v1",
-  "release_id": "soulstream-claude-runtime-v2",
-  "environment_service": "soulstream-orch-server",
+  "release_id": "soulstream-standalone-runtime-v2",
+  "environment_service": "soul-server-ts",
   "migration": {
     "destructive": true,
     "preflight": {

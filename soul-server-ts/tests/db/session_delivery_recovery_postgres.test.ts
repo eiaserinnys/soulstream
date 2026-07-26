@@ -27,7 +27,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     harness = await createFullSchemaPostgresHarness();
     const pendingMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",
@@ -209,7 +209,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     const currentMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",

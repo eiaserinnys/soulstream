@@ -61,8 +61,8 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
     for (const migration of [
-      "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
-      "../../../packages/db-schema/sql/pending/045_claude_background_tasks.sql",
+      "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
+      "../../../packages/db-schema/sql/migrations/045_claude_background_tasks.sql",
     ]) {
       await harness.sql.unsafe(readFileSync(new URL(migration, import.meta.url), "utf8"));
     }
@@ -149,21 +149,21 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     );
     const deliveryMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",
     );
     const backgroundMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/045_claude_background_tasks.sql",
+        "../../../packages/db-schema/sql/migrations/045_claude_background_tasks.sql",
         import.meta.url,
       ),
       "utf8",
     );
     const relationConsumptionMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/pending/046_session_delivery_relation_consumptions.sql",
+        "../../../packages/db-schema/sql/migrations/046_session_delivery_relation_consumptions.sql",
         import.meta.url,
       ),
       "utf8",

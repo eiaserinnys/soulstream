@@ -56,6 +56,7 @@ describe("worker composition boundary", () => {
       BOARD_YJS_HOST_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
       DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
+      CLAUDE_SESSION_RUNTIME_V2_ENABLED: "false",
     });
     const getSession = vi.fn(async () => {
       throw new Error("gate-off completion delivery must not touch SessionDB");

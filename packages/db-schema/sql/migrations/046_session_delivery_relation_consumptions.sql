@@ -1,7 +1,6 @@
 -- 046: semantic completion relations consumed before a late notifier arrives
 --
--- Intentionally NOT listed in migration-manifest.json. Runtime v2 remains
--- default-off until operator-approved migration and disposable canary gates.
+-- Apply after 043 so late completion notifiers can converge to consumed.
 
 CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions (
     relation_key       TEXT PRIMARY KEY,

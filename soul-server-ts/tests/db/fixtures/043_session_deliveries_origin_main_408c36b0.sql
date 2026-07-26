@@ -1,6 +1,6 @@
--- Snapshot of packages/db-schema/sql/pending/043_session_deliveries.sql
+-- Snapshot of the pre-promotion 043_session_deliveries.sql.
 -- from origin/main commit 408c36b0. This fixture is the deployed gate-OFF
--- baseline used to prove the pending migration remains upgrade-safe.
+-- baseline used to prove the promoted migration remains upgrade-safe.
 
 -- 043: async intervention/completion exactly-once delivery ledger
 --

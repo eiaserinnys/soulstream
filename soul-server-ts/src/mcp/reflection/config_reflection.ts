@@ -49,7 +49,7 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
     envEntry("CLAUDE_SESSION_RUNTIME_V2_ENABLED", {
       required: false,
       sensitive: false,
-      defaultValue: "false",
+      defaultValue: "true",
     }),
     envEntry("MCP_ENABLED", { required: false, sensitive: false, defaultValue: "false" }),
     envEntry("MCP_PATH", { required: false, sensitive: false, defaultValue: "/mcp" }),

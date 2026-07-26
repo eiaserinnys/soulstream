@@ -45,6 +45,9 @@
     { "id": "040_session_predecessor.sql", "sha256": "d8b794c0e75c95909cae871c9affc7977fd99e97e4cd0b010d3ffc9ddf094d69", "destructive": false, "rollback_compatibility": "bootstrap_only" },
     { "id": "041_retire_task_tree.sql", "sha256": "60d88e9144062ef11b4af8181215ab4a91703359cd974f8fe11e431b3cad6bf1", "destructive": true, "rollback_compatibility": "restore_required" },
     { "id": "042_runbook_to_task.sql", "sha256": "7f36feb5612fe394f460e62f7ffa1d74708bd867f6da33071d16b1d5a65846bd", "destructive": true, "rollback_compatibility": "restore_required" },
-    { "id": "044_session_metadata_search.sql", "sha256": "79cbf2d4731a922cb6c9463f919507748aefde692fc9a0b6f9010d7f3b68f362", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "043_session_deliveries.sql", "sha256": "7a45f011fe921b1cc4d6421ad13f856cb55396d416c5d35280b51e0ae5c28a76", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "044_session_metadata_search.sql", "sha256": "79cbf2d4731a922cb6c9463f919507748aefde692fc9a0b6f9010d7f3b68f362", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "045_claude_background_tasks.sql", "sha256": "604659149db89facc168a29ff32337587186efbcb9a0f3807c1ccdd373bb5bba", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "046_session_delivery_relation_consumptions.sql", "sha256": "bf9db3d58ec204cbe6e7f01a0f3572321d4943507d45ce790cdba4f27fe057b8", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }

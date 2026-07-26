@@ -24,7 +24,7 @@ repos:
     url: __REPOSITORY_URL__
     branch: __REPOSITORY_BRANCH__
     path: __INSTALL_DIR__/soulstream
-    release_manifest: deploy/release-manifest.json
+    release_manifest: deploy/release-manifest-standalone.json
 
 services:
   soul-server-ts:
