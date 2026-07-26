@@ -1,4 +1,8 @@
-import type { RegisterSessionDeliveryParams, SqlClient } from "../session_db_types.js";
+import type {
+  RegisterSessionDeliveryParams,
+  SessionDeliveryRow,
+  SqlClient,
+} from "../session_db_types.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";
 
 export type ClaudeBackgroundTaskStatus =
@@ -53,10 +57,16 @@ export interface TerminalizeClaudeBackgroundTaskParams
   delivery: RegisterSessionDeliveryParams;
 }
 
-export interface TerminalizeClaudeBackgroundTaskResult {
-  accepted: boolean;
-  row: ClaudeBackgroundTaskRow;
-}
+export type TerminalizeClaudeBackgroundTaskResult =
+  | {
+      accepted: true;
+      row: ClaudeBackgroundTaskRow;
+      delivery: SessionDeliveryRow;
+    }
+  | {
+      accepted: false;
+      row: ClaudeBackgroundTaskRow;
+    };
 
 /** PostgreSQL CAS owner for background state and its semantic delivery outbox. */
 export class ClaudeBackgroundTaskRepository {
@@ -171,7 +181,11 @@ export class ClaudeBackgroundTaskRepository {
           AND task_id = ${params.taskId}
         RETURNING *
       `;
-      return { accepted: true, row: rows[0]! };
+      return {
+        accepted: true,
+        row: rows[0]!,
+        delivery: registered.row,
+      };
     });
   }
 

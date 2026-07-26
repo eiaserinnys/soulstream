@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
-import type { CallerInfo } from "./task_models.js";
 import type { AddInterventionParams } from "./task_intervention_route.js";
 import {
   buildDeterministicDeliveryIdentity,
 } from "./delivery_identity.js";
-import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
+import {
+  buildCanonicalDeliveryPayload,
+  readCanonicalDeliveryPayload,
+} from "./delivery_payload.js";
+import type { CallerInfo } from "./task_models.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -192,12 +195,14 @@ function toInterventionParams(
   row: SessionDeliveryRow,
   leaseOwner: string,
 ): AddInterventionParams {
-  const callerInfo = asCallerInfo(row.payload.caller_info);
+  const message = readCanonicalDeliveryPayload(row.payload);
   return {
     agentSessionId: requiredTarget(row),
-    text: requiredString(row.payload.text, "text"),
-    user: requiredString(row.payload.user, "user"),
-    callerInfo,
+    text: message.text,
+    user: message.user,
+    callerInfo: message.callerInfo,
+    attachmentPaths: message.attachmentPaths,
+    context: message.context,
     source: row.source,
     deliveryId: row.delivery_id,
     deliveryIntent: row.intent,
@@ -206,36 +211,17 @@ function toInterventionParams(
     producerTerminalRevision: row.producer_terminal_revision ?? undefined,
     parentDeliveryId: row.parent_delivery_id ?? undefined,
     callerTurnId: row.caller_turn_id ?? undefined,
-    followupTaskIds: asStringArray(row.payload.followup_task_ids),
+    followupTaskIds: message.followupTaskIds,
     deliveryCreatedAt: row.created_at.toISOString(),
     supervisorRole: row.supervisor_role ?? undefined,
     deliveryLeaseOwner: leaseOwner,
+    storedDeliveryPayload: row.payload,
+    storedDeliveryPayloadHash: row.payload_hash,
   };
-}
-
-function asStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const values = value.filter(
-    (item): item is string => typeof item === "string" && item.length > 0,
-  );
-  return values.length > 0 ? values : undefined;
 }
 
 function isRecoverable(row: SessionDeliveryRow): boolean {
   return row.state === "pending" || row.state === "claimed";
-}
-
-function requiredString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Stored completion delivery is missing ${name}`);
-  }
-  return value;
-}
-
-function asCallerInfo(value: unknown): CallerInfo | undefined {
-  return value && typeof value === "object"
-    ? value as CallerInfo
-    : undefined;
 }
 
 function requiredTarget(row: SessionDeliveryRow): string {

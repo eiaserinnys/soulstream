@@ -12,6 +12,7 @@ import type { TaskManager } from "./task_manager.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
+import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
   buildClaudeRuntimeTaskFollowupFallbackPrompt,
   buildClaudeRuntimeTaskFollowupPrompt,
@@ -192,6 +193,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
             buildTaskKey(task.agentSessionId, items[0]!.taskId),
           )
         : undefined;
+    const storedMessage = durable
+      ? readCanonicalDeliveryPayload(durable.storedPayload)
+      : undefined;
     const delivery = durable
       ? {
           deliveryId: durable.deliveryId,
@@ -200,19 +204,25 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           deliveryIntent: "runtime_followup" as const,
           producerTerminalRevision: durable.producerTerminalRevision,
           deliveryCreatedAt: durable.deliveryCreatedAt,
+          storedDeliveryPayload: durable.storedPayload,
+          storedDeliveryPayloadHash: durable.storedPayloadHash,
         }
       : this.deps.deliveryV2Enabled === true
         ? buildClaudeRuntimeFollowupDelivery(task, items)
         : {};
     const intervention = {
       agentSessionId: task.agentSessionId,
-      text: buildClaudeRuntimeTaskFollowupPrompt(items),
-      user: "system",
-      callerInfo: { source: "system" as const, display_name: "Soulstream" },
-      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      text: storedMessage?.text ?? buildClaudeRuntimeTaskFollowupPrompt(items),
+      user: storedMessage?.user ?? "system",
+      callerInfo: storedMessage?.callerInfo ??
+        { source: "system" as const, display_name: "Soulstream" },
+      attachmentPaths: storedMessage?.attachmentPaths,
+      context: storedMessage?.context,
+      source: durable?.source ?? CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
       followupAttempt: 1,
       followupKey: buildFollowupKey(task.agentSessionId, items),
-      followupTaskIds: items.map((item) => item.taskId),
+      followupTaskIds:
+        storedMessage?.followupTaskIds ?? items.map((item) => item.taskId),
       ...delivery,
     };
     try {

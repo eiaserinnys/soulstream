@@ -33,6 +33,28 @@ import {
 const describePostgres =
   hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
 
+const TERMINAL_VARIANTS: ReadonlyArray<{
+  name: string;
+  event(taskId: string): ClaudeClientEvent;
+  expectedText: string;
+}> = [
+  {
+    name: "task_notification",
+    event: (taskId) => terminal(taskId, "completed"),
+    expectedText: "completed summary",
+  },
+  {
+    name: "task_updated completed",
+    event: (taskId) => updatedTerminal(taskId, "completed"),
+    expectedText: "updated completed summary",
+  },
+  {
+    name: "task_updated failed+error",
+    event: (taskId) => updatedTerminal(taskId, "failed", "boom"),
+    expectedText: "error=boom",
+  },
+];
+
 describePostgres("Claude background delivery PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
 
@@ -62,36 +84,58 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
-  it("keeps one canonical hash from terminal persistence through inline flush", async () => {
-    const lifecycle = makeLifecycle(harness.sql);
-    const event = terminal("task-inline-flush", "completed");
-    await lifecycle.observe("caller-session", started("task-inline-flush"));
-    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
-    const path = makeDeliveryPath(harness.sql);
-    const payloads = mapClaudeClientEvent(event);
+  it.each(TERMINAL_VARIANTS)(
+    "replays the terminal-stored canonical payload through inline flush: $name",
+    async ({ name, event: makeEvent, expectedText }) => {
+      const taskId = `task-inline-${name.replaceAll(/[^a-z]+/g, "-")}`;
+      const event = makeEvent(taskId);
+      const lifecycle = makeLifecycle(harness.sql);
+      await lifecycle.observe("caller-session", started(taskId));
+      await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+      const storedHash = await storedPayloadHash(harness.sql, taskId);
+      const path = makeDeliveryPath(harness.sql);
+      const payloads = mapClaudeClientEvent(event);
 
-    for (const payload of payloads) {
-      await path.followup.collectDetached(path.task, payload);
-      await path.followup.collectDetached(path.task, payload);
-    }
+      for (const payload of payloads) {
+        await path.followup.collectDetached(path.task, payload);
+        await path.followup.collectDetached(path.task, payload);
+      }
 
-    await expectExactlyOnceDelivery(harness.sql, "task-inline-flush", path.counts);
-  });
+      await expectStoredPayloadText(harness.sql, taskId, expectedText);
+      await expectExactlyOnceDelivery(
+        harness.sql,
+        taskId,
+        storedHash,
+        path.counts,
+      );
+    },
+  );
 
-  it("keeps one canonical hash from terminal persistence through recovery", async () => {
-    const lifecycle = makeLifecycle(harness.sql);
-    await lifecycle.observe("caller-session", started("task-recovery-flush"));
-    await expect(lifecycle.observe(
-      "caller-session",
-      terminal("task-recovery-flush", "completed"),
-    )).resolves.toBe(true);
-    const path = makeDeliveryPath(harness.sql);
+  it.each(TERMINAL_VARIANTS)(
+    "replays the terminal-stored canonical payload through recovery: $name",
+    async ({ name, event: makeEvent, expectedText }) => {
+      const taskId = `task-recovery-${name.replaceAll(/[^a-z]+/g, "-")}`;
+      const lifecycle = makeLifecycle(harness.sql);
+      await lifecycle.observe("caller-session", started(taskId));
+      await expect(lifecycle.observe(
+        "caller-session",
+        makeEvent(taskId),
+      )).resolves.toBe(true);
+      const storedHash = await storedPayloadHash(harness.sql, taskId);
+      const path = makeDeliveryPath(harness.sql);
 
-    await path.recovery.recoverPending();
-    await path.recovery.recoverPending();
+      await path.recovery.recoverPending();
+      await path.recovery.recoverPending();
 
-    await expectExactlyOnceDelivery(harness.sql, "task-recovery-flush", path.counts);
-  });
+      await expectStoredPayloadText(harness.sql, taskId, expectedText);
+      await expectExactlyOnceDelivery(
+        harness.sql,
+        taskId,
+        storedHash,
+        path.counts,
+      );
+    },
+  );
 
   it("keeps schema-only fresh install equal to the 043 then 045 upgrade", async () => {
     const suffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -148,6 +192,40 @@ function makeLifecycle(sql: SqlClient): ClaudeBackgroundTaskLifecycle {
   });
 }
 
+async function expectStoredPayloadText(
+  sql: SqlClient,
+  taskId: string,
+  expectedText: string,
+): Promise<void> {
+  const rows = await sql<Array<{ text: string }>>`
+    SELECT delivery.payload->>'text' AS text
+    FROM session_deliveries AS delivery
+    WHERE delivery.producer_kind = 'claude_background_task'
+      AND delivery.producer_id = ${taskId}
+  `;
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.text).toContain(expectedText);
+}
+
+async function storedPayloadHash(
+  sql: SqlClient,
+  taskId: string,
+): Promise<string> {
+  const rows = await sql<Array<{ payload_hash: string }>>`
+    SELECT payload_hash
+    FROM session_deliveries
+    WHERE producer_kind = 'claude_background_task'
+      AND producer_id = ${taskId}
+  `;
+  expect(rows).toHaveLength(1);
+  return rows[0]!.payload_hash;
+}
+
+/*
+ * Delivery execution helpers intentionally use the real ledger gate and route.
+ * A second registration with a divergent hash therefore transitions the row to
+ * uncertain instead of being hidden by a test double.
+ */
 function makeDeliveryPath(sql: SqlClient): {
   task: Task;
   followup: ClaudeRuntimeTaskFollowupController;
@@ -242,6 +320,7 @@ interface DeliveryPathCounts {
 async function expectExactlyOnceDelivery(
   sql: SqlClient,
   taskId: string,
+  storedHash: string,
   counts: DeliveryPathCounts,
 ): Promise<void> {
   expect(counts).toEqual({
@@ -250,12 +329,16 @@ async function expectExactlyOnceDelivery(
     notification: 1,
   });
   await expect(sql`
-    SELECT state, COUNT(*)::int AS count
+    SELECT state, payload_hash, COUNT(*)::int AS count
     FROM session_deliveries
     WHERE producer_kind = 'claude_background_task'
       AND producer_id = ${taskId}
-    GROUP BY state
-  `).resolves.toMatchObject([{ state: "queued", count: 1 }]);
+    GROUP BY state, payload_hash
+  `).resolves.toMatchObject([{
+    state: "queued",
+    payload_hash: storedHash,
+    count: 1,
+  }]);
   await expect(sql`
     SELECT state, COUNT(*)::int AS count
     FROM session_delivery_notification_outbox
@@ -341,6 +424,25 @@ function terminal(
     sessionId: "sdk-session",
     status,
     summary: `${status} summary`,
+  };
+}
+
+function updatedTerminal(
+  taskId: string,
+  status: "completed" | "failed",
+  error?: string,
+): ClaudeClientEvent {
+  return {
+    type: "claude_runtime_task_updated",
+    taskId,
+    sessionId: "sdk-session",
+    patch: {
+      status,
+      is_backgrounded: true,
+      summary: `updated ${status} summary`,
+      end_time: status === "completed" ? 201 : 202,
+      ...(error ? { error } : {}),
+    },
   };
 }
 

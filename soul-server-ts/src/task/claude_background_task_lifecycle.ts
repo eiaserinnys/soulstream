@@ -8,7 +8,10 @@ import type {
   ClaudeBackgroundTaskRow,
   ClaudeBackgroundTerminalStatus,
 } from "../db/repositories/claude_background_task_repository.js";
-import type { RegisterSessionDeliveryParams } from "../db/session_db_types.js";
+import type {
+  RegisterSessionDeliveryParams,
+  SessionDeliveryRow,
+} from "../db/session_db_types.js";
 
 import {
   buildDeterministicDeliveryIdentity,
@@ -69,6 +72,7 @@ export class ClaudeBackgroundTaskLifecycle {
       summary: parsed.summary,
       outputFile: parsed.outputFile,
       toolUseId: parsed.toolUseId,
+      error: parsed.error,
       createdAt: observedAt,
     });
     const result = await this.deps.repository.terminalize({
@@ -84,10 +88,13 @@ export class ClaudeBackgroundTaskLifecycle {
       outputFile: parsed.outputFile,
       toolUseId: parsed.toolUseId,
       observedAt,
-      delivery: delivery.registration,
+      delivery,
     });
     if (!result.accepted) return false;
-    attachClaudeBackgroundDeliveryMetadata(event, delivery.metadata);
+    attachClaudeBackgroundDeliveryMetadata(
+      event,
+      deliveryMetadata(result.delivery),
+    );
     return true;
   }
 
@@ -132,7 +139,7 @@ export class ClaudeBackgroundTaskLifecycle {
       outputFile: row.output_file ?? undefined,
       toolUseId: row.tool_use_id ?? undefined,
       observedAt: createdAt,
-      delivery: delivery.registration,
+      delivery,
     });
     return result.accepted;
   }
@@ -149,6 +156,7 @@ interface ParsedBackgroundEvent {
   summary?: string;
   outputFile?: string;
   toolUseId?: string;
+  error?: string;
 }
 
 function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent | null {
@@ -193,6 +201,7 @@ function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent |
         summary: asString(event.patch.summary),
         outputFile: asString(event.patch.output_file),
         toolUseId: asString(event.patch.tool_use_id),
+        error: asString(event.patch.error),
       };
     }
     default:
@@ -210,11 +219,9 @@ function buildDelivery(input: {
   summary?: string;
   outputFile?: string;
   toolUseId?: string;
+  error?: string;
   createdAt: Date;
-}): {
-  registration: RegisterSessionDeliveryParams;
-  metadata: ClaudeBackgroundDeliveryMetadata;
-} {
+}): RegisterSessionDeliveryParams {
   const relationKey = `claude_runtime:${input.sessionId}:${input.taskId}`;
   const identity = buildDeterministicDeliveryIdentity({
     targetSessionId: input.sessionId,
@@ -228,6 +235,7 @@ function buildDelivery(input: {
     summary: input.summary,
     outputFile: input.outputFile,
     toolUseId: input.toolUseId,
+    error: input.error,
     terminalRevision: input.terminalRevision,
     firstSeen: 0,
     inlineObserved: false,
@@ -242,27 +250,34 @@ function buildDelivery(input: {
     followupTaskIds: [input.taskId],
   });
   return {
-    registration: {
-      deliveryId: identity.deliveryId,
-      targetSessionId: input.sessionId,
-      relationKey,
-      completionId: identity.completionId,
-      intent: "runtime_followup",
-      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-      producerKind: "claude_background_task",
-      producerId: input.taskId,
-      producerTerminalRevision: input.terminalRevision,
-      payloadHash: canonical.payloadHash,
-      payload: canonical.payload,
-      createdAt: input.createdAt,
-    },
-    metadata: {
-      deliveryId: identity.deliveryId,
-      completionId: identity.completionId,
-      relationKey,
-      producerTerminalRevision: input.terminalRevision,
-      deliveryCreatedAt: input.createdAt.toISOString(),
-    },
+    deliveryId: identity.deliveryId,
+    targetSessionId: input.sessionId,
+    relationKey,
+    completionId: identity.completionId,
+    intent: "runtime_followup",
+    source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+    producerKind: "claude_background_task",
+    producerId: input.taskId,
+    producerTerminalRevision: input.terminalRevision,
+    payloadHash: canonical.payloadHash,
+    payload: canonical.payload,
+    createdAt: input.createdAt,
+  };
+}
+
+function deliveryMetadata(row: SessionDeliveryRow): ClaudeBackgroundDeliveryMetadata {
+  if (!row.completion_id || !row.producer_terminal_revision) {
+    throw new Error(`Background delivery ${row.delivery_id} is missing identity metadata`);
+  }
+  return {
+    deliveryId: row.delivery_id,
+    completionId: row.completion_id,
+    relationKey: row.relation_key,
+    producerTerminalRevision: row.producer_terminal_revision,
+    deliveryCreatedAt: row.created_at.toISOString(),
+    source: row.source,
+    storedPayload: row.payload,
+    storedPayloadHash: row.payload_hash,
   };
 }
 

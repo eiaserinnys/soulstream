@@ -49,6 +49,9 @@ export interface AddInterventionParams {
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
+  /** Exact JSONB/hash read back from a durable delivery row. Internal; never wire-forwarded. */
+  storedDeliveryPayload?: Record<string, unknown>;
+  storedDeliveryPayloadHash?: string;
   /**
    * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
    * a running task that cannot be live-steered returns `{deferred: true}` so the

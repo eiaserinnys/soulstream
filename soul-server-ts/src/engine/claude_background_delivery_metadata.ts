@@ -6,6 +6,9 @@ export interface ClaudeBackgroundDeliveryMetadata {
   relationKey: string;
   producerTerminalRevision: string;
   deliveryCreatedAt: string;
+  source: string;
+  storedPayload: Record<string, unknown>;
+  storedPayloadHash: string;
 }
 
 const DELIVERY_METADATA = Symbol("claude-background-delivery");

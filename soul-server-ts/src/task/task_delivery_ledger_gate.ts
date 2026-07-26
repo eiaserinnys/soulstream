@@ -286,17 +286,18 @@ function buildRegistration(
   },
 ): RegisterSessionDeliveryParams {
   const source = params.source ?? "unknown";
-  const canonical = buildCanonicalDeliveryPayload({
-    text: params.text,
-    user: params.user,
-    source,
-    completionId: params.completionId,
-    relationKey: params.relationKey,
-    attachmentPaths: params.attachmentPaths,
-    context: params.context,
-    callerInfo: params.callerInfo,
-    followupTaskIds: params.followupTaskIds,
-  });
+  const canonical = storedCanonicalPayload(params) ??
+    buildCanonicalDeliveryPayload({
+      text: params.text,
+      user: params.user,
+      source,
+      completionId: params.completionId,
+      relationKey: params.relationKey,
+      attachmentPaths: params.attachmentPaths,
+      context: params.context,
+      callerInfo: params.callerInfo,
+      followupTaskIds: params.followupTaskIds,
+    });
   return {
     deliveryId: params.deliveryId,
     targetSessionId: params.agentSessionId,
@@ -312,6 +313,21 @@ function buildRegistration(
     payload: canonical.payload,
     createdAt: parseCreatedAt(params.deliveryCreatedAt),
   };
+}
+
+function storedCanonicalPayload(
+  params: Pick<
+    AddInterventionParams,
+    "storedDeliveryPayload" | "storedDeliveryPayloadHash"
+  >,
+): { payload: Record<string, unknown>; payloadHash: string } | undefined {
+  const payload = params.storedDeliveryPayload;
+  const payloadHash = params.storedDeliveryPayloadHash;
+  if (payload === undefined && payloadHash === undefined) return undefined;
+  if (payload === undefined || !payloadHash) {
+    throw new Error("Stored delivery payload and hash must be provided together");
+  }
+  return { payload, payloadHash };
 }
 
 export function isLedgerControlled(
