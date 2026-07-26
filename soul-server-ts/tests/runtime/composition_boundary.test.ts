@@ -135,6 +135,7 @@ describe("worker composition boundary", () => {
 
   it("keeps gate-OFF intervention wiring free of feature-only awaits", () => {
     const taskManager = source("task/task_manager.ts");
+    const taskExecutor = source("task/task_executor.ts");
     const interventionRoute = source("task/task_intervention_route.ts");
     const lifecycleRoute = source("task/task_lifecycle_route.ts");
     const workerComposition = source("runtime/worker_composition.ts");
@@ -162,6 +163,21 @@ describe("worker composition boundary", () => {
     );
     expect(workerComposition).toMatch(
       /:\s+\{\};\s+const claudeSessionClientRegistry = claudeRuntime\.registry/,
+    );
+    expect(taskExecutor).toMatch(
+      /const turnReceipt = this\.deliveryConsumption\s+\?\s+new TaskDeliveryTurnReceipt\(/,
+    );
+    expect(taskExecutor).toContain(
+      "if (turnReceipt) await turnReceipt.observe(task, event);",
+    );
+    expect(taskExecutor).toContain(
+      "if (!followupStalled && turnReceipt) await turnReceipt.consume(task);",
+    );
+    expect(taskExecutor).not.toMatch(
+      /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
+    );
+    expect(taskExecutor).not.toMatch(
+      /(?<!if \(!followupStalled && turnReceipt\) )await turnReceipt\.consume\(/,
     );
   });
 
@@ -204,8 +220,11 @@ describe("worker composition boundary", () => {
       "task/completion_delivery_coordinator.ts",
       "task/completion_delivery_recovery_worker.ts",
       "task/completion_notifier.ts",
+      "task/queued_delivery_transcript_recovery.ts",
       "db/repositories/session_delivery_repository.ts",
+      "db/repositories/session_delivery_recovery_repository.ts",
       "db/repositories/session_delivery_relation_repository.ts",
+      "engine/claude_delivery_transcript_receipt.ts",
     ];
 
     for (const file of files) {

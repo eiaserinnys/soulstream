@@ -54,14 +54,12 @@ import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
-
 import {
   composeSupervisorRuntime,
   type SupervisorComposition,
 } from "./supervisor_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
-
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -69,7 +67,6 @@ export interface WorkerCompositionParams {
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
 }
-
 export interface WorkerComposition extends SupervisorComposition {
   db: SessionDB;
   server: ServerInstance;
@@ -223,6 +220,8 @@ export async function composeWorkerRuntime(
     ? await composeClaudeRuntime({
         enabled: true,
         db,
+        agentRegistry,
+        sessionStore: claudeSessionStore,
         sourceNode: env.SOULSTREAM_NODE_ID,
         idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
@@ -294,7 +293,8 @@ export async function composeWorkerRuntime(
           agentId: agent.id,
           processEnv: claudeAuth.buildProcessEnv(process.env),
           sessionStore: claudeSessionStore,
-          sessionStoreFlush: "batched",
+          // V2 uses the shared transcript as its cross-node receiver receipt.
+          sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED ? "eager" : "batched",
           loadTimeoutMs: 60_000,
           ...(claudeSessionClientRegistry
             ? { persistentSessionRegistry: claudeSessionClientRegistry }
@@ -325,8 +325,8 @@ export async function composeWorkerRuntime(
     broadcaster,
     scheduleService,
     orchProxyConfig,
+    queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
   });
-
   const catalogService = new CatalogService(
     db,
     broadcaster,

@@ -15,6 +15,8 @@ import {
 } from "../task/completion_notifier.js";
 import { CompletionDeliveryRecoveryWorker } from "../task/completion_delivery_recovery_worker.js";
 import { ClaudeRuntimeTaskFollowupController } from "../task/claude_runtime_task_followup.js";
+import type { QueuedDeliveryTranscriptRecovery } from
+  "../task/queued_delivery_transcript_recovery.js";
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
 import { extractCallerInfoFromMetadata } from "../task/task_metadata.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -49,6 +51,7 @@ export interface SupervisorCompositionParams {
   broadcaster: SessionBroadcaster;
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
+  queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
 }
 
 export interface SupervisorComposition {
@@ -81,6 +84,7 @@ export function composeSupervisorRuntime(
     broadcaster,
     scheduleService,
     orchProxyConfig,
+    queuedDeliveryRecovery,
   } = params;
   let taskExecutor: TaskExecutor;
   const onResume: StartExecutionCallback = (task) => {
@@ -113,6 +117,8 @@ export function composeSupervisorRuntime(
     db,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     completionDeliveryRepository,
+    env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+    queuedDeliveryRecovery,
   );
   const completionDeliveryRecoveryWorker = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? new CompletionDeliveryRecoveryWorker({

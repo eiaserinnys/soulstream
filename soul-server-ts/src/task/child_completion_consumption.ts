@@ -5,21 +5,22 @@ import { buildDeterministicDeliveryIdentity } from "./delivery_identity.js";
 
 export interface ChildCompletionObservation {
   childSessionId: string;
-  childCallerSessionId: string | null;
   callerSessionId: string;
-  status: string | null;
-  terminalRevision: string | null;
+  terminalRevision: number;
+  source: string;
 }
 
 export type ChildCompletionObservationResult =
   | "recorded"
+  | "not_found"
   | "not_child_caller"
   | "not_terminal"
-  | "missing_terminal_revision";
+  | "missing_terminal_revision"
+  | "revision_mismatch";
 
 type ChildCompletionRepository = Pick<
   SessionDeliveryRepository,
-  "recordRelationConsumed"
+  "recordObservedChildCompletion"
 >;
 
 /**
@@ -35,16 +36,6 @@ export class ChildCompletionConsumptionRecorder {
   async recordObserved(
     observation: ChildCompletionObservation,
   ): Promise<ChildCompletionObservationResult> {
-    if (observation.childCallerSessionId !== observation.callerSessionId) {
-      return "not_child_caller";
-    }
-    if (!isTerminalStatus(observation.status)) {
-      return "not_terminal";
-    }
-    if (!observation.terminalRevision) {
-      return "missing_terminal_revision";
-    }
-
     const relationKey = [
       "child_session",
       observation.childSessionId,
@@ -55,23 +46,18 @@ export class ChildCompletionConsumptionRecorder {
       relationKey,
       intent: "completion_notification",
     });
-    await this.repository.recordRelationConsumed({
+    return await this.repository.recordObservedChildCompletion({
+      childSessionId: observation.childSessionId,
+      observedRevision: observation.terminalRevision,
       relationKey,
       completionId: identity.completionId,
       callerSessionId: observation.callerSessionId,
       consumedTurnId: [
         "mcp",
-        "get_session_summary",
+        observation.source,
         observation.childSessionId,
         observation.terminalRevision,
       ].join(":"),
     });
-    return "recorded";
   }
-}
-
-function isTerminalStatus(
-  status: string | null,
-): status is "completed" | "error" | "interrupted" {
-  return status === "completed" || status === "error" || status === "interrupted";
 }

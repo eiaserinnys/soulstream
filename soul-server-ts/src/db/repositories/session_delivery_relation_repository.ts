@@ -1,4 +1,6 @@
 import type {
+  RecordObservedChildCompletionParams,
+  RecordObservedChildCompletionResult,
   RecordSessionDeliveryRelationConsumptionParams,
   RecordSessionDeliveryRelationConsumptionResult,
   RegisterSessionDeliveryParams,
@@ -115,7 +117,50 @@ export async function recordSessionDeliveryRelationConsumed(
   sql: SqlClient,
   params: RecordSessionDeliveryRelationConsumptionParams,
 ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
+  return await withTransaction(sql, async (transaction) =>
+    await recordRelationConsumedInTransaction(transaction, params));
+}
+
+/**
+ * Commits the observation tombstone against the exact child revision exposed
+ * to the caller. The child row remains share-locked until the relation write
+ * commits, so excerpt construction cannot race a later terminal revision into
+ * a mismatched tombstone.
+ */
+export async function recordObservedChildCompletion(
+  sql: SqlClient,
+  params: RecordObservedChildCompletionParams,
+): Promise<RecordObservedChildCompletionResult> {
   return await withTransaction(sql, async (transaction) => {
+    const childRows = await transaction<Array<{
+      caller_session_id: string | null;
+      status: string | null;
+      last_event_id: number | null;
+    }>>`
+      SELECT caller_session_id, status, last_event_id
+      FROM sessions
+      WHERE session_id = ${params.childSessionId}
+      FOR SHARE
+    `;
+    const child = childRows[0];
+    if (!child) return "not_found";
+    if (child.caller_session_id !== params.callerSessionId) {
+      return "not_child_caller";
+    }
+    if (!isTerminalStatus(child.status)) return "not_terminal";
+    if (child.last_event_id === null) return "missing_terminal_revision";
+    if (child.last_event_id !== params.observedRevision) {
+      return "revision_mismatch";
+    }
+    await recordRelationConsumedInTransaction(transaction, params);
+    return "recorded";
+  });
+}
+
+async function recordRelationConsumedInTransaction(
+  transaction: SqlClient,
+  params: RecordSessionDeliveryRelationConsumptionParams,
+): Promise<RecordSessionDeliveryRelationConsumptionResult> {
     await lockRelation(transaction, params.relationKey);
     const insertedRows =
       await transaction<SessionDeliveryRelationConsumptionRow[]>`
@@ -164,7 +209,10 @@ export async function recordSessionDeliveryRelationConsumed(
       relationInserted: Boolean(insertedRows[0]),
       deliveryConsumed: Boolean(consumedRows[0]),
     };
-  });
+}
+
+function isTerminalStatus(status: string | null): boolean {
+  return status === "completed" || status === "error" || status === "interrupted";
 }
 
 async function lockRelation(sql: SqlClient, relationKey: string): Promise<void> {

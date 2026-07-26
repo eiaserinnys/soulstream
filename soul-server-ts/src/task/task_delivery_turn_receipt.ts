@@ -12,14 +12,13 @@ export class TaskDeliveryTurnReceipt {
   private recorded = false;
 
   constructor(
-    private readonly consumption: TaskDeliveryConsumption | undefined,
+    private readonly consumption: TaskDeliveryConsumption,
     private readonly intervention: InterventionMessage | undefined,
   ) {}
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
     if (
       this.recorded ||
-      !this.consumption ||
       event.type === "session" ||
       event.type === "error"
     ) {
@@ -30,7 +29,14 @@ export class TaskDeliveryTurnReceipt {
   }
 
   async consume(task: Task): Promise<void> {
-    if (!this.recorded || !this.consumption) return;
+    // A transient turn-start receipt failure must not strand a successfully
+    // completed delivery in `queued`. Retry the durable receipt at the turn
+    // boundary before marking it consumed.
+    if (!this.recorded) {
+      this.recorded =
+        await this.consumption.recordTurnStarted(task, this.intervention);
+    }
+    if (!this.recorded) return;
     await this.consumption.recordConsumed(task, this.intervention);
   }
 }

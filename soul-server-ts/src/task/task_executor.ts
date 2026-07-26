@@ -233,8 +233,12 @@ export class TaskExecutor {
           );
         }
         const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
-        const turnReceipt =
-          new TaskDeliveryTurnReceipt(this.deliveryConsumption, currentTurnIntervention);
+        const turnReceipt = this.deliveryConsumption
+          ? new TaskDeliveryTurnReceipt(
+              this.deliveryConsumption,
+              currentTurnIntervention,
+            )
+          : undefined;
         try {
           for await (const event of this.engineTurnRunner.executeTurn({
             task,
@@ -247,7 +251,7 @@ export class TaskExecutor {
               ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
             },
           })) {
-            await turnReceipt.observe(task, event);
+            if (turnReceipt) await turnReceipt.observe(task, event);
             await this.engineEventPublisher.publishEngineEvent(task, event);
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
@@ -261,7 +265,7 @@ export class TaskExecutor {
           currentTurnIntervention,
           previousAssistantText,
         );
-        if (!followupStalled) await turnReceipt.consume(task);
+        if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {

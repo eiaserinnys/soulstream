@@ -39,23 +39,8 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       INSERT INTO sessions (
         session_id, node_id, session_type, status, agent_id, caller_session_id
       ) VALUES
-        ('caller-session', 'node-test', 'claude', 'completed', 'caller', NULL),
-        (
-          'child-session', 'node-test', 'claude', 'completed', 'child',
-          'caller-session'
-        )
+        ('caller-session', 'node-test', 'claude', 'completed', 'caller', NULL)
     `;
-    const terminalEventId = await db.appendEvent({
-      sessionId: "child-session",
-      eventType: "assistant_message",
-      payload: JSON.stringify({ text: "child completed inline" }),
-      searchableText: "child completed inline",
-      createdAt: new Date("2026-07-26T00:00:00Z"),
-    });
-    await db.updateSession("child-session", {
-      last_event_id: terminalEventId,
-      status: "completed",
-    });
 
     const runtime: McpRuntime = {
       nodeId: "node-test",
@@ -109,23 +94,75 @@ describePostgres("child completion observation PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
-  it("records the real tool observation before suppressing the late notifier", async () => {
-    const summary = await client.callTool({
-      name: "get_session_summary",
-      arguments: { session_id: "child-session" },
-    });
-    expect(summary.isError).not.toBe(true);
-    const child = await db.getSession("child-session");
-    const terminalRevision = String(child!.last_event_id);
-    const relationKey = `child_session:child-session:${terminalRevision}`;
-    await expect(
-      db.sessionDeliveries().getRelationConsumption(relationKey),
-    ).resolves.toMatchObject({
-      relation_key: relationKey,
-      caller_session_id: "caller-session",
-      consumed_turn_id:
-        `mcp:get_session_summary:child-session:${terminalRevision}`,
-    });
+  it("routes every child-result session query through one revision-checked consumption boundary", async () => {
+    const cases = [
+      {
+        source: "list_session_events",
+        call: async (sessionId: string, _revision: number, _text: string) =>
+          await client.callTool({
+            name: "list_session_events",
+            arguments: { session_id: sessionId, limit: 20 },
+          }),
+      },
+      {
+        source: "get_session_event",
+        call: async (sessionId: string, revision: number, _text: string) =>
+          await client.callTool({
+            name: "get_session_event",
+            arguments: { session_id: sessionId, event_id: revision },
+          }),
+      },
+      {
+        source: "download_session_history",
+        call: async (sessionId: string, _revision: number, _text: string) =>
+          await client.callTool({
+            name: "download_session_history",
+            arguments: {
+              session_id: sessionId,
+              output_dir: "/tmp/soulstream_child_completion_boundary",
+            },
+          }),
+      },
+      {
+        source: "search_session_history",
+        call: async (sessionId: string, _revision: number, text: string) =>
+          await client.callTool({
+            name: "search_session_history",
+            arguments: { query: text, session_ids: [sessionId], top_k: 10 },
+          }),
+      },
+      {
+        source: "get_session_summary",
+        call: async (sessionId: string, _revision: number, _text: string) =>
+          await client.callTool({
+            name: "get_session_summary",
+            arguments: { session_id: sessionId },
+          }),
+      },
+    ] as const;
+
+    let lateNotifierChild:
+      | { sessionId: string; revision: number; relationKey: string }
+      | undefined;
+    for (const [index, testCase] of cases.entries()) {
+      const sessionId = `child-session-${index}`;
+      const text = `child-completion-boundary-${index}`;
+      const revision = await createTerminalChild(sessionId, text);
+      const response = await testCase.call(sessionId, revision, text);
+      expect(response.isError, testCase.source).not.toBe(true);
+      const relationKey = `child_session:${sessionId}:${revision}`;
+      await expect(
+        db.sessionDeliveries().getRelationConsumption(relationKey),
+      ).resolves.toMatchObject({
+        relation_key: relationKey,
+        caller_session_id: "caller-session",
+        consumed_turn_id:
+          `mcp:${testCase.source}:${sessionId}:${revision}`,
+      });
+      lateNotifierChild ??= { sessionId, revision, relationKey };
+    }
+
+    const observed = lateNotifierChild!;
 
     const dispatch = vi.fn(async () => undefined);
     const coordinator = new CompletionDeliveryCoordinator({
@@ -135,8 +172,8 @@ describePostgres("child completion observation PostgreSQL integration", () => {
     }, "late-notifier");
     await coordinator.enqueue({
       targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision,
+      sourceSessionId: observed.sessionId,
+      terminalRevision: String(observed.revision),
       text: "late duplicate child completion",
       callerInfo: {
         source: "agent",
@@ -147,20 +184,87 @@ describePostgres("child completion observation PostgreSQL integration", () => {
 
     expect(dispatch).not.toHaveBeenCalled();
     await expect(
-      db.sessionDeliveries().getByRelation(relationKey),
+      db.sessionDeliveries().getByRelation(observed.relationKey),
     ).resolves.toMatchObject({
       state: "consumed",
-      relation_key: relationKey,
+      relation_key: observed.relationKey,
     });
     expect(await harness.sql`
       SELECT delivery_id
       FROM session_delivery_notification_outbox
       WHERE delivery_id = (
         SELECT delivery_id FROM session_deliveries
-        WHERE relation_key = ${relationKey}
+        WHERE relation_key = ${observed.relationKey}
       )
     `).toHaveLength(0);
   });
+
+  it("fails closed instead of recording a tombstone for a revision that changed after result assembly", async () => {
+    const sessionId = "child-session-revision-race";
+    const observedRevision = await createTerminalChild(
+      sessionId,
+      "revision-race-old",
+    );
+    const newerRevision = await db.appendEvent({
+      sessionId,
+      eventType: "assistant_message",
+      payload: JSON.stringify({ text: "revision-race-new" }),
+      searchableText: "revision-race-new",
+      createdAt: new Date("2026-07-26T00:02:00Z"),
+    });
+    await db.updateSession(sessionId, {
+      last_event_id: newerRevision,
+      status: "completed",
+    });
+    const recorder = new ChildCompletionConsumptionRecorder(
+      db.sessionDeliveries(),
+    );
+
+    await expect(recorder.recordObserved({
+      childSessionId: sessionId,
+      callerSessionId: "caller-session",
+      terminalRevision: observedRevision,
+      source: "revision_race",
+    })).resolves.toBe("revision_mismatch");
+    await expect(
+      db.sessionDeliveries().getRelationConsumption(
+        `child_session:${sessionId}:${observedRevision}`,
+      ),
+    ).resolves.toBeNull();
+
+    await expect(recorder.recordObserved({
+      childSessionId: sessionId,
+      callerSessionId: "caller-session",
+      terminalRevision: newerRevision,
+      source: "revision_race",
+    })).resolves.toBe("recorded");
+  });
+
+  async function createTerminalChild(
+    sessionId: string,
+    text: string,
+  ): Promise<number> {
+    await harness.sql`
+      INSERT INTO sessions (
+        session_id, node_id, session_type, status, agent_id, caller_session_id
+      ) VALUES (
+        ${sessionId}, 'node-test', 'claude', 'running', 'child',
+        'caller-session'
+      )
+    `;
+    const terminalEventId = await db.appendEvent({
+      sessionId,
+      eventType: "assistant_message",
+      payload: JSON.stringify({ text }),
+      searchableText: text,
+      createdAt: new Date("2026-07-26T00:00:00Z"),
+    });
+    await db.updateSession(sessionId, {
+      last_event_id: terminalEventId,
+      status: "completed",
+    });
+    return terminalEventId;
+  }
 });
 
 function hasDockerBinary(): boolean {

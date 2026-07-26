@@ -182,10 +182,9 @@ describe("get_session_summary child completion", () => {
     expect(JSON.stringify(result.content)).toContain("ledger unavailable");
     expect(recordObserved).toHaveBeenCalledWith({
       childSessionId: "child-1",
-      childCallerSessionId: "caller-1",
       callerSessionId: "caller-1",
-      status: "completed",
-      terminalRevision: "42",
+      source: "get_session_summary",
+      terminalRevision: 42,
     });
   });
 });

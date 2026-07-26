@@ -1,4 +1,6 @@
 import type {
+  RecordObservedChildCompletionParams,
+  RecordObservedChildCompletionResult,
   RecordSessionDeliveryRelationConsumptionParams,
   RecordSessionDeliveryRelationConsumptionResult,
   RegisterSessionDeliveryParams,
@@ -8,17 +10,22 @@ import type {
   SqlClient,
 } from "../session_db_types.js";
 import { SessionDeliveryNotificationRepository } from "./session_delivery_notification_repository.js";
+import { SessionDeliveryRecoveryRepository } from
+  "./session_delivery_recovery_repository.js";
 import {
   getSessionDeliveryRelationConsumption,
+  recordObservedChildCompletion,
   recordSessionDeliveryRelationConsumed,
   registerSessionDelivery,
 } from "./session_delivery_relation_repository.js";
 
 export class SessionDeliveryRepository {
   readonly notifications: SessionDeliveryNotificationRepository;
+  readonly recovery: SessionDeliveryRecoveryRepository;
 
   constructor(private readonly sql: SqlClient) {
     this.notifications = new SessionDeliveryNotificationRepository(sql);
+    this.recovery = new SessionDeliveryRecoveryRepository(sql);
   }
 
   async register(
@@ -53,6 +60,12 @@ export class SessionDeliveryRepository {
     params: RecordSessionDeliveryRelationConsumptionParams,
   ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
     return await recordSessionDeliveryRelationConsumed(this.sql, params);
+  }
+
+  async recordObservedChildCompletion(
+    params: RecordObservedChildCompletionParams,
+  ): Promise<RecordObservedChildCompletionResult> {
+    return await recordObservedChildCompletion(this.sql, params);
   }
 
   async claim(
@@ -338,46 +351,6 @@ export class SessionDeliveryRepository {
       WHERE state IN ('claimed', 'dispatching')
         AND lease_expires_at <= NOW()
       RETURNING delivery_id
-    `;
-    return rows.length;
-  }
-
-  /**
-   * `queued` means the previous process durably staged the delivery but had
-   * not yet observed the first engine event (the turn receipt). In-memory
-   * intervention queues never survive a worker restart, so startup may safely
-   * move these rows back to pending before any listener accepts traffic.
-   *
-   * This is deliberately a startup-only transition. Periodic lease expiry
-   * must not replay a legitimately long foreground turn.
-   */
-  async requeueQueuedDeliveriesAfterRestart(nodeId: string): Promise<number> {
-    const rows = await this.sql<Array<{ delivery_id: string }>>`
-      UPDATE session_deliveries AS delivery
-      SET
-        state = 'pending',
-        target_session_id = CASE
-          WHEN supervisor_role IS NULL THEN target_session_id
-          ELSE NULL
-        END,
-        lease_owner = NULL,
-        lease_expires_at = NULL,
-        attempt_count = attempt_count + 1,
-        next_attempt_at = NOW(),
-        last_error = 'worker_restart_before_turn_receipt',
-        updated_at = NOW()
-      WHERE delivery.state = 'queued'
-        AND delivery.intent IN ('completion_notification', 'runtime_followup')
-        AND (
-          delivery.target_session_id IS NULL
-          OR EXISTS (
-            SELECT 1
-            FROM sessions AS target
-            WHERE target.session_id = delivery.target_session_id
-              AND target.node_id = ${nodeId}
-          )
-        )
-      RETURNING delivery.delivery_id
     `;
     return rows.length;
   }

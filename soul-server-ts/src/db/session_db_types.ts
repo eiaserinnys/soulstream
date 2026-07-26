@@ -378,6 +378,20 @@ export interface RecordSessionDeliveryRelationConsumptionResult {
   deliveryConsumed: boolean;
 }
 
+export interface RecordObservedChildCompletionParams
+  extends RecordSessionDeliveryRelationConsumptionParams {
+  childSessionId: string;
+  observedRevision: number;
+}
+
+export type RecordObservedChildCompletionResult =
+  | "recorded"
+  | "not_found"
+  | "not_child_caller"
+  | "not_terminal"
+  | "missing_terminal_revision"
+  | "revision_mismatch";
+
 export interface SessionDeliveryNotificationOutboxRow {
   delivery_id: string;
   target_session_id: string;
