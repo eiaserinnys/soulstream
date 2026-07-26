@@ -282,7 +282,7 @@ describe("apply-schema.mjs", () => {
   });
 
   itWithDocker(
-    "applies promoted runtime migrations once under the shared advisory lock",
+    "applies runtime migrations after the published 044@45 baseline once",
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
@@ -291,6 +291,18 @@ describe("apply-schema.mjs", () => {
       const sql = postgres(url, { max: 2, idle_timeout: 1 });
       try {
         await resetToPreRuntimeMigrationState(sql);
+        const baseline = await sql<Array<{
+          migration_id: string;
+          ordinal: number;
+        }>>`
+          SELECT migration_id, ordinal
+          FROM schema_migrations
+          WHERE ordinal = 45
+        `;
+        expect(baseline).toEqual([{
+          migration_id: "044_session_metadata_search.sql",
+          ordinal: 45,
+        }]);
 
         const [left, right] = await Promise.all([
           runMigrationAsync(cwd, "apply"),
@@ -308,27 +320,22 @@ describe("apply-schema.mjs", () => {
         }>>`
           SELECT migration_id, ordinal, applied_kind
           FROM schema_migrations
-          WHERE ordinal >= 45
+          WHERE ordinal >= 46
           ORDER BY ordinal
         `;
         expect(promoted).toEqual([
           {
-            migration_id: "043_session_deliveries.sql",
-            ordinal: 45,
-            applied_kind: "migration",
-          },
-          {
-            migration_id: "044_session_metadata_search.sql",
+            migration_id: "045_session_deliveries.sql",
             ordinal: 46,
             applied_kind: "migration",
           },
           {
-            migration_id: "045_claude_background_tasks.sql",
+            migration_id: "046_claude_background_tasks.sql",
             ordinal: 47,
             applied_kind: "migration",
           },
           {
-            migration_id: "046_session_delivery_relation_consumptions.sql",
+            migration_id: "047_session_delivery_relation_consumptions.sql",
             ordinal: 48,
             applied_kind: "migration",
           },
@@ -391,7 +398,7 @@ describe("apply-schema.mjs", () => {
           SELECT COUNT(*)::int AS count
           FROM schema_migrations
         `;
-        expect(ledger[0]?.count).toBe(44);
+        expect(ledger[0]?.count).toBe(45);
 
         const startupVerify = runMigration(cwd, "verify");
         expect(startupVerify.status).not.toBe(0);
@@ -583,7 +590,7 @@ async function resetToPreRuntimeMigrationState(
 ): Promise<void> {
   await sql`
     DELETE FROM schema_migrations
-    WHERE ordinal >= 45
+    WHERE ordinal >= 46
   `;
   await sql.unsafe(`
     DROP TABLE IF EXISTS session_delivery_relation_consumptions CASCADE;

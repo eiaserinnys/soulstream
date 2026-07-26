@@ -1,8 +1,8 @@
--- Snapshot of the pre-promotion 043_session_deliveries.sql.
+-- Snapshot of the pre-manifest session deliveries migration.
 -- from origin/main commit 408c36b0. This fixture is the deployed gate-OFF
 -- baseline used to prove the promoted migration remains upgrade-safe.
 
--- 043: async intervention/completion exactly-once delivery ledger
+-- Pre-manifest async intervention/completion exactly-once delivery ledger
 --
 -- Intentionally NOT listed in migration-manifest.json yet. The runtime v2 gate
 -- defaults to legacy/off, and the next operator-approved release must first

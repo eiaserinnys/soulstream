@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { REQUIRED_RUNTIME_MIGRATIONS } from
+  "../../src/db/runtime_schema_preflight.js";
 import { validateBackupArchive } from "../../../packages/db-schema/scripts/backup.mjs";
 import {
   assertLegacyBackupResolved,
@@ -115,7 +117,7 @@ describe("versioned migration contract", () => {
     expect(migrations).toHaveLength(48);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "046_session_delivery_relation_consumptions.sql",
+      "047_session_delivery_relation_consumptions.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -135,6 +137,15 @@ describe("versioned migration contract", () => {
       "previous_release_safe",
       "previous_release_safe",
     ]);
+  });
+
+  it("keeps the worker startup preflight pinned to the published manifest tail", async () => {
+    const migrations = await loadMigrationManifest();
+    expect(migrations.slice(44).map((migration) => ({
+      ordinal: migration.ordinal,
+      migrationId: migration.id,
+      checksum: migration.sha256,
+    }))).toEqual(REQUIRED_RUNTIME_MIGRATIONS);
   });
 
   it("treats only explicit one-release compatibility as data-preserving rollback", () => {
@@ -165,10 +176,10 @@ describe("versioned migration contract", () => {
     expect(plan.state).toBe("current");
     expect(plan.bootstrap).toHaveLength(44);
     expect(plan.pending.map((item) => item.id)).toEqual([
-      "043_session_deliveries.sql",
       "044_session_metadata_search.sql",
-      "045_claude_background_tasks.sql",
-      "046_session_delivery_relation_consumptions.sql",
+      "045_session_deliveries.sql",
+      "046_claude_background_tasks.sql",
+      "047_session_delivery_relation_consumptions.sql",
     ]);
   });
 
@@ -180,10 +191,10 @@ describe("versioned migration contract", () => {
     expect(plan.pending.map((item) => item.id)).toEqual([
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
-      "043_session_deliveries.sql",
       "044_session_metadata_search.sql",
-      "045_claude_background_tasks.sql",
-      "046_session_delivery_relation_consumptions.sql",
+      "045_session_deliveries.sql",
+      "046_claude_background_tasks.sql",
+      "047_session_delivery_relation_consumptions.sql",
     ]);
   });
 

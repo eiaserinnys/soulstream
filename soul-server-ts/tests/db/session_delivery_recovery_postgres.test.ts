@@ -27,7 +27,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     harness = await createFullSchemaPostgresHarness();
     const pendingMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",
@@ -196,20 +196,20 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ]);
   });
 
-  it("upgrades the origin/main 043 ledger to the recovery schema idempotently", async () => {
+  it("upgrades the pre-manifest delivery ledger to the recovery schema idempotently", async () => {
     const upgradeSchema =
       `delivery_upgrade_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const upgradeSql = harness.createPeer();
     const legacyMigration = readFileSync(
       new URL(
-        "./fixtures/043_session_deliveries_origin_main_408c36b0.sql",
+        "./fixtures/session_deliveries_pre_manifest_408c36b0.sql",
         import.meta.url,
       ),
       "utf8",
     );
     const currentMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",

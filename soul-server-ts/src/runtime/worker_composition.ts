@@ -1,5 +1,4 @@
 import type { Logger } from "pino";
-
 import { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
@@ -60,6 +59,7 @@ import {
 } from "./supervisor_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
+import { preflightPersistentRuntimeSchema } from "./worker_schema_preflight.js";
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -84,7 +84,6 @@ export interface WorkerComposition extends SupervisorComposition {
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   createUpstreamAdapter(): UpstreamAdapter;
 }
-
 /** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
@@ -111,6 +110,7 @@ export async function composeWorkerRuntime(
     logger,
   );
   const db = new SessionDB(env.DATABASE_URL);
+  await preflightPersistentRuntimeSchema(db, env.CLAUDE_SESSION_RUNTIME_V2_ENABLED);
   ensureStableSessionOrderIndexInBackground(db, logger);
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const interruptedOnStartup = await db.interruptRunningSessionsForNode(env.SOULSTREAM_NODE_ID);

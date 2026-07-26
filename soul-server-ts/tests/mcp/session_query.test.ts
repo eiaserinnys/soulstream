@@ -153,7 +153,8 @@ describe("list_session_events", () => {
 
 describe("get_session_summary child completion", () => {
   it("fails closed when the durable relation cannot be recorded", async () => {
-    const recordObserved = vi.fn().mockRejectedValue(new Error("ledger unavailable"));
+    const recordObservedBatch =
+      vi.fn().mockRejectedValue(new Error("ledger unavailable"));
     const runtime = makeRuntime({
       db: {
         getSession: vi.fn(async () => ({
@@ -167,7 +168,10 @@ describe("get_session_summary child completion", () => {
         countEvents: vi.fn(async () => 0),
         readEvents: vi.fn(async () => []),
       },
-      childCompletionConsumption: { recordObserved },
+      childCompletionConsumption: {
+        recordObserved: vi.fn(),
+        recordObservedBatch,
+      },
     });
     const client = await createClient(runtime, {
       "x-soulstream-agent-session-id": "caller-1",
@@ -180,12 +184,12 @@ describe("get_session_summary child completion", () => {
 
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("ledger unavailable");
-    expect(recordObserved).toHaveBeenCalledWith({
+    expect(recordObservedBatch).toHaveBeenCalledWith([{
       childSessionId: "child-1",
       callerSessionId: "caller-1",
       source: "get_session_summary",
       terminalRevision: 42,
-    });
+    }]);
   });
 });
 

@@ -195,10 +195,28 @@ describe("worker composition boundary", () => {
     expect(recoveryIndex).toBeGreaterThan(executorIndex);
   });
 
+  it("fails closed on runtime schema before startup cleanup or index work", () => {
+    const workerComposition = source("runtime/worker_composition.ts");
+    const preflightIndex = workerComposition.indexOf(
+      "await preflightPersistentRuntimeSchema(",
+    );
+    const indexEnsureIndex = workerComposition.indexOf(
+      "ensureStableSessionOrderIndexInBackground(db, logger);",
+    );
+    const cleanupIndex = workerComposition.indexOf(
+      "await db.interruptRunningSessionsForNode(",
+    );
+
+    expect(preflightIndex).toBeGreaterThan(-1);
+    expect(indexEnsureIndex).toBeGreaterThan(preflightIndex);
+    expect(cleanupIndex).toBeGreaterThan(preflightIndex);
+  });
+
   it("keeps every production module touched by the extraction below 500 lines", () => {
     const files = [
       "main.ts",
       "runtime/worker_composition.ts",
+      "runtime/worker_schema_preflight.ts",
       "runtime/supervisor_composition.ts",
       "context/context_builder.ts",
       "context/context_builder_helpers.ts",
@@ -225,6 +243,7 @@ describe("worker composition boundary", () => {
       "db/repositories/session_delivery_repository.ts",
       "db/repositories/session_delivery_recovery_repository.ts",
       "db/repositories/session_delivery_relation_repository.ts",
+      "db/runtime_schema_preflight.ts",
       "engine/claude_delivery_transcript_receipt.ts",
     ];
 

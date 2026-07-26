@@ -20,6 +20,7 @@ import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
+import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
 import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
 import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
@@ -80,6 +81,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
   }
   async ping(): Promise<void> {
     await this.sql`SELECT 1`;
+  }
+
+  async assertRuntimeSchemaReady(): Promise<void> {
+    await assertRuntimeSchemaReady(this.sql);
   }
 
   async ensureStableSessionOrderIndex(): Promise<void> {

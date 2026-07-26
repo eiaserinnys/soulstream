@@ -22,7 +22,7 @@ export class SessionQueryConsumptionBoundary {
   constructor(
     private readonly recorder?: Pick<
       ChildCompletionConsumptionRecorder,
-      "recordObserved"
+      "recordObservedBatch"
     >,
   ) {}
 
@@ -52,23 +52,28 @@ export class SessionQueryConsumptionBoundary {
     observations: SessionQueryObservation[],
   ): Promise<T> {
     const seen = new Set<string>();
+    const batch = [];
     for (const observation of observations) {
+      if (observation.session.caller_session_id !== callerSessionId) continue;
       const revision = terminalRevisionReflected(observation);
       if (revision === null) continue;
       const key = `${observation.session.session_id}:${revision}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const outcome = await this.recorder!.recordObserved({
+      batch.push({
         childSessionId: observation.session.session_id,
         callerSessionId,
         terminalRevision: revision,
         source,
       });
-      if (outcome === "revision_mismatch") {
-        throw new Error(
-          `Session ${observation.session.session_id} changed while ${source} assembled its result; retry the query`,
-        );
-      }
+    }
+    if (batch.length === 0) return result;
+    const outcome = await this.recorder!.recordObservedBatch(batch);
+    if (outcome.status !== "recorded") {
+      throw new Error(
+        `Session ${outcome.childSessionId} changed while ${source} assembled its result `
+        + `(${outcome.status}); retry the query`,
+      );
     }
     return result;
   }

@@ -1,5 +1,9 @@
 import type { SessionDeliveryRepository } from
   "../db/repositories/session_delivery_repository.js";
+import type {
+  RecordObservedChildCompletionBatchResult,
+  RecordObservedChildCompletionParams,
+} from "../db/session_db_types.js";
 
 import { buildDeterministicDeliveryIdentity } from "./delivery_identity.js";
 
@@ -20,7 +24,7 @@ export type ChildCompletionObservationResult =
 
 type ChildCompletionRepository = Pick<
   SessionDeliveryRepository,
-  "recordObservedChildCompletion"
+  "recordObservedChildCompletions"
 >;
 
 /**
@@ -36,28 +40,42 @@ export class ChildCompletionConsumptionRecorder {
   async recordObserved(
     observation: ChildCompletionObservation,
   ): Promise<ChildCompletionObservationResult> {
-    const relationKey = [
-      "child_session",
+    const result = await this.recordObservedBatch([observation]);
+    return result.status;
+  }
+
+  async recordObservedBatch(
+    observations: ChildCompletionObservation[],
+  ): Promise<RecordObservedChildCompletionBatchResult> {
+    const params = observations.map(buildObservationParams);
+    return await this.repository.recordObservedChildCompletions(params);
+  }
+}
+
+function buildObservationParams(
+  observation: ChildCompletionObservation,
+): RecordObservedChildCompletionParams {
+  const relationKey = [
+    "child_session",
+    observation.childSessionId,
+    observation.terminalRevision,
+  ].join(":");
+  const identity = buildDeterministicDeliveryIdentity({
+    targetSessionId: observation.callerSessionId,
+    relationKey,
+    intent: "completion_notification",
+  });
+  return {
+    childSessionId: observation.childSessionId,
+    observedRevision: observation.terminalRevision,
+    relationKey,
+    completionId: identity.completionId,
+    callerSessionId: observation.callerSessionId,
+    consumedTurnId: [
+      "mcp",
+      observation.source,
       observation.childSessionId,
       observation.terminalRevision,
-    ].join(":");
-    const identity = buildDeterministicDeliveryIdentity({
-      targetSessionId: observation.callerSessionId,
-      relationKey,
-      intent: "completion_notification",
-    });
-    return await this.repository.recordObservedChildCompletion({
-      childSessionId: observation.childSessionId,
-      observedRevision: observation.terminalRevision,
-      relationKey,
-      completionId: identity.completionId,
-      callerSessionId: observation.callerSessionId,
-      consumedTurnId: [
-        "mcp",
-        observation.source,
-        observation.childSessionId,
-        observation.terminalRevision,
-      ].join(":"),
-    });
-  }
+    ].join(":"),
+  };
 }

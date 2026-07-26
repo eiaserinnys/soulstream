@@ -1,4 +1,5 @@
 import type {
+  RecordObservedChildCompletionBatchResult,
   RecordObservedChildCompletionParams,
   RecordObservedChildCompletionResult,
   RecordSessionDeliveryRelationConsumptionParams,
@@ -131,29 +132,74 @@ export async function recordObservedChildCompletion(
   sql: SqlClient,
   params: RecordObservedChildCompletionParams,
 ): Promise<RecordObservedChildCompletionResult> {
+  const result = await recordObservedChildCompletions(sql, [params]);
+  return result.status;
+}
+
+/**
+ * Validates every child revision before writing any tombstone, then records
+ * the whole observation set in the same transaction. A stale member aborts
+ * the batch without partially consuming another child returned by the same
+ * query.
+ */
+export async function recordObservedChildCompletions(
+  sql: SqlClient,
+  params: RecordObservedChildCompletionParams[],
+): Promise<RecordObservedChildCompletionBatchResult> {
   return await withTransaction(sql, async (transaction) => {
-    const childRows = await transaction<Array<{
-      caller_session_id: string | null;
-      status: string | null;
-      last_event_id: number | null;
-    }>>`
-      SELECT caller_session_id, status, last_event_id
-      FROM sessions
-      WHERE session_id = ${params.childSessionId}
-      FOR SHARE
-    `;
-    const child = childRows[0];
-    if (!child) return "not_found";
-    if (child.caller_session_id !== params.callerSessionId) {
-      return "not_child_caller";
+    const validationOrder = [...params].sort((left, right) =>
+      left.childSessionId.localeCompare(right.childSessionId)
+      || left.relationKey.localeCompare(right.relationKey));
+    for (const observation of validationOrder) {
+      const childRows = await transaction<Array<{
+        caller_session_id: string | null;
+        status: string | null;
+        last_event_id: number | null;
+      }>>`
+        SELECT caller_session_id, status, last_event_id
+        FROM sessions
+        WHERE session_id = ${observation.childSessionId}
+        FOR SHARE
+      `;
+      const child = childRows[0];
+      if (!child) {
+        return {
+          status: "not_found",
+          childSessionId: observation.childSessionId,
+        };
+      }
+      if (child.caller_session_id !== observation.callerSessionId) {
+        return {
+          status: "not_child_caller",
+          childSessionId: observation.childSessionId,
+        };
+      }
+      if (!isTerminalStatus(child.status)) {
+        return {
+          status: "not_terminal",
+          childSessionId: observation.childSessionId,
+        };
+      }
+      if (child.last_event_id === null) {
+        return {
+          status: "missing_terminal_revision",
+          childSessionId: observation.childSessionId,
+        };
+      }
+      if (child.last_event_id !== observation.observedRevision) {
+        return {
+          status: "revision_mismatch",
+          childSessionId: observation.childSessionId,
+        };
+      }
     }
-    if (!isTerminalStatus(child.status)) return "not_terminal";
-    if (child.last_event_id === null) return "missing_terminal_revision";
-    if (child.last_event_id !== params.observedRevision) {
-      return "revision_mismatch";
+
+    const writeOrder = [...params].sort((left, right) =>
+      left.relationKey.localeCompare(right.relationKey));
+    for (const observation of writeOrder) {
+      await recordRelationConsumedInTransaction(transaction, observation);
     }
-    await recordRelationConsumedInTransaction(transaction, params);
-    return "recorded";
+    return { status: "recorded" };
   });
 }
 
@@ -161,54 +207,54 @@ async function recordRelationConsumedInTransaction(
   transaction: SqlClient,
   params: RecordSessionDeliveryRelationConsumptionParams,
 ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
-    await lockRelation(transaction, params.relationKey);
-    const insertedRows =
-      await transaction<SessionDeliveryRelationConsumptionRow[]>`
-        INSERT INTO session_delivery_relation_consumptions (
-          relation_key, completion_id, caller_session_id, consumed_turn_id
-        ) VALUES (
-          ${params.relationKey}, ${params.completionId},
-          ${params.callerSessionId}, ${params.consumedTurnId}
-        )
-        ON CONFLICT (relation_key) DO NOTHING
-        RETURNING *
-      `;
-    const relationRows = insertedRows[0]
-      ? insertedRows
-      : await transaction<SessionDeliveryRelationConsumptionRow[]>`
-          SELECT *
-          FROM session_delivery_relation_consumptions
-          WHERE relation_key = ${params.relationKey}
-        `;
-    const relation = relationRows[0];
-    if (
-      !relation ||
-      relation.completion_id !== params.completionId ||
-      relation.caller_session_id !== params.callerSessionId
-    ) {
-      throw new Error(
-        `Completion relation identity conflict: ${params.relationKey}`,
-      );
-    }
-    const consumedRows = await transaction<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET
-        state = 'consumed',
-        caller_turn_id = ${params.consumedTurnId},
-        consumed_at = ${relation.consumed_at},
-        lease_owner = NULL,
-        lease_expires_at = NULL,
-        updated_at = NOW()
-      WHERE relation_key = ${params.relationKey}
-        AND completion_id = ${params.completionId}
-        AND state IN ('pending', 'claimed')
+  await lockRelation(transaction, params.relationKey);
+  const insertedRows =
+    await transaction<SessionDeliveryRelationConsumptionRow[]>`
+      INSERT INTO session_delivery_relation_consumptions (
+        relation_key, completion_id, caller_session_id, consumed_turn_id
+      ) VALUES (
+        ${params.relationKey}, ${params.completionId},
+        ${params.callerSessionId}, ${params.consumedTurnId}
+      )
+      ON CONFLICT (relation_key) DO NOTHING
       RETURNING *
     `;
-    return {
-      relation,
-      relationInserted: Boolean(insertedRows[0]),
-      deliveryConsumed: Boolean(consumedRows[0]),
-    };
+  const relationRows = insertedRows[0]
+    ? insertedRows
+    : await transaction<SessionDeliveryRelationConsumptionRow[]>`
+        SELECT *
+        FROM session_delivery_relation_consumptions
+        WHERE relation_key = ${params.relationKey}
+      `;
+  const relation = relationRows[0];
+  if (
+    !relation ||
+    relation.completion_id !== params.completionId ||
+    relation.caller_session_id !== params.callerSessionId
+  ) {
+    throw new Error(
+      `Completion relation identity conflict: ${params.relationKey}`,
+    );
+  }
+  const consumedRows = await transaction<SessionDeliveryRow[]>`
+    UPDATE session_deliveries
+    SET
+      state = 'consumed',
+      caller_turn_id = ${params.consumedTurnId},
+      consumed_at = ${relation.consumed_at},
+      lease_owner = NULL,
+      lease_expires_at = NULL,
+      updated_at = NOW()
+    WHERE relation_key = ${params.relationKey}
+      AND completion_id = ${params.completionId}
+      AND state IN ('pending', 'claimed')
+    RETURNING *
+  `;
+  return {
+    relation,
+    relationInserted: Boolean(insertedRows[0]),
+    deliveryConsumed: Boolean(consumedRows[0]),
+  };
 }
 
 function isTerminalStatus(status: string | null): boolean {

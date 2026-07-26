@@ -91,7 +91,7 @@ describe("TaskLifecycleRoute.cancelTask", () => {
 
     await expect(route.cancelTask("s1")).resolves.toBe(true);
 
-    expect(closeSessionRuntime).toHaveBeenCalledWith("s1");
+    expect(closeSessionRuntime).toHaveBeenCalledWith("s1", "explicit_cancel");
     expect(task.status).toBe("completed");
   });
 

@@ -39,7 +39,7 @@ export interface McpRuntime {
   /** Present only behind the persistent-runtime gate. */
   childCompletionConsumption?: Pick<
     ChildCompletionConsumptionRecorder,
-    "recordObserved"
+    "recordObserved" | "recordObservedBatch"
   >;
   agentRegistry: AgentRegistry;
   agentConfigService?: AgentConfigService;

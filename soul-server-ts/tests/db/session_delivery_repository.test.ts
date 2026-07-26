@@ -240,21 +240,21 @@ describe("session_deliveries migration safety", () => {
     );
     const deliveryMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/migrations/043_session_deliveries.sql",
+        "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
         import.meta.url,
       ),
       "utf8",
     );
     const backgroundMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/migrations/045_claude_background_tasks.sql",
+        "../../../packages/db-schema/sql/migrations/046_claude_background_tasks.sql",
         import.meta.url,
       ),
       "utf8",
     );
     const relationConsumptionMigration = readFileSync(
       new URL(
-        "../../../packages/db-schema/sql/migrations/046_session_delivery_relation_consumptions.sql",
+        "../../../packages/db-schema/sql/migrations/047_session_delivery_relation_consumptions.sql",
         import.meta.url,
       ),
       "utf8",
@@ -268,10 +268,10 @@ describe("session_deliveries migration safety", () => {
       import.meta.url,
     );
 
-    expect(manifest).toContain("043_session_deliveries.sql");
-    expect(manifest).toContain("045_claude_background_tasks.sql");
+    expect(manifest).toContain("045_session_deliveries.sql");
+    expect(manifest).toContain("046_claude_background_tasks.sql");
     expect(manifest).toContain(
-      "046_session_delivery_relation_consumptions.sql",
+      "047_session_delivery_relation_consumptions.sql",
     );
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");

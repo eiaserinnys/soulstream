@@ -65,7 +65,7 @@ worker-only 노드 참조 정본은 **`install/haniel-soul-server-ts.example.yam
 
 `CLAUDE_SESSION_RUNTIME_V2_ENABLED`는 미설정 시 `true`다. 전 노드는 같은 코드를 배포하면
 persistent Query·delivery ledger·notification v2를 사용한다. 배포 전에는 versioned migration
-043·045·046을 공유 PostgreSQL에 먼저 적용해야 한다. 긴급 롤백은 각 노드의
+045·046·047을 공유 PostgreSQL에 먼저 적용해야 한다. 긴급 롤백은 각 노드의
 `.env.soul-server-ts`에 `CLAUDE_SESSION_RUNTIME_V2_ENABLED=false`를 명시하고 재기동한다.
 legacy 경로는 이 kill-switch를 위해 계속 검증한다.
 

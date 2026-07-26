@@ -1,6 +1,6 @@
--- 045: persistent Claude background task lifecycle journal
+-- 046: persistent Claude background task lifecycle journal
 --
--- Apply after 043 and before code reads durable background lifecycle state.
+-- Apply after 045 and before code reads durable background lifecycle state.
 
 CREATE TABLE IF NOT EXISTS claude_background_tasks (
     source_node              TEXT NOT NULL,

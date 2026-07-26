@@ -270,7 +270,7 @@ ALTER TABLE sessions ADD CONSTRAINT sessions_review_state_check
     CHECK (review_state IN ('not_required', 'needs_review', 'acknowledged'));
 
 -- Async intervention/completion delivery ledger.
--- Existing installations receive this table through versioned migration 043.
+-- Existing installations receive this table through versioned migration 045.
 CREATE TABLE IF NOT EXISTS session_deliveries (
     delivery_id                TEXT PRIMARY KEY,
     target_session_id          TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -405,7 +405,7 @@ CREATE INDEX IF NOT EXISTS idx_session_delivery_notification_recovery
     );
 
 -- Persistent Claude background task lifecycle journal.
--- Existing installations receive this table through versioned migration 045.
+-- Existing installations receive this table through versioned migration 046.
 CREATE TABLE IF NOT EXISTS claude_background_tasks (
     source_node              TEXT NOT NULL,
     session_id               TEXT NOT NULL,

@@ -1,6 +1,6 @@
--- 046: semantic completion relations consumed before a late notifier arrives
+-- 047: semantic completion relations consumed before a late notifier arrives
 --
--- Apply after 043 so late completion notifiers can converge to consumed.
+-- Apply after 045 so late completion notifiers can converge to consumed.
 
 CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions (
     relation_key       TEXT PRIMARY KEY,

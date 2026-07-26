@@ -1,4 +1,5 @@
 import type {
+  RecordObservedChildCompletionBatchResult,
   RecordObservedChildCompletionParams,
   RecordObservedChildCompletionResult,
   RecordSessionDeliveryRelationConsumptionParams,
@@ -15,6 +16,7 @@ import { SessionDeliveryRecoveryRepository } from
 import {
   getSessionDeliveryRelationConsumption,
   recordObservedChildCompletion,
+  recordObservedChildCompletions,
   recordSessionDeliveryRelationConsumed,
   registerSessionDelivery,
 } from "./session_delivery_relation_repository.js";
@@ -66,6 +68,12 @@ export class SessionDeliveryRepository {
     params: RecordObservedChildCompletionParams,
   ): Promise<RecordObservedChildCompletionResult> {
     return await recordObservedChildCompletion(this.sql, params);
+  }
+
+  async recordObservedChildCompletions(
+    params: RecordObservedChildCompletionParams[],
+  ): Promise<RecordObservedChildCompletionBatchResult> {
+    return await recordObservedChildCompletions(this.sql, params);
   }
 
   async claim(

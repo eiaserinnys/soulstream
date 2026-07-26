@@ -392,6 +392,16 @@ export type RecordObservedChildCompletionResult =
   | "missing_terminal_revision"
   | "revision_mismatch";
 
+export type RecordObservedChildCompletionFailure =
+  Exclude<RecordObservedChildCompletionResult, "recorded">;
+
+export type RecordObservedChildCompletionBatchResult =
+  | { status: "recorded" }
+  | {
+      status: RecordObservedChildCompletionFailure;
+      childSessionId: string;
+    };
+
 export interface SessionDeliveryNotificationOutboxRow {
   delivery_id: string;
   target_session_id: string;

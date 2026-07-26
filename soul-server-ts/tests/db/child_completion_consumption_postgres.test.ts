@@ -31,6 +31,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
   let db: SessionDB;
   let server: Awaited<ReturnType<typeof buildServer>>;
   let client: Client;
+  let consumptionRecorder: ChildCompletionConsumptionRecorder;
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
@@ -42,15 +43,16 @@ describePostgres("child completion observation PostgreSQL integration", () => {
         ('caller-session', 'node-test', 'claude', 'completed', 'caller', NULL)
     `;
 
+    consumptionRecorder = new ChildCompletionConsumptionRecorder(
+      db.sessionDeliveries(),
+    );
     const runtime: McpRuntime = {
       nodeId: "node-test",
       agentsConfigPath: "/tmp/agents.yaml",
       db,
       taskManager: {} as TaskManager,
       taskExecutor: {} as TaskExecutor,
-      childCompletionConsumption: new ChildCompletionConsumptionRecorder(
-        db.sessionDeliveries(),
-      ),
+      childCompletionConsumption: consumptionRecorder,
       agentRegistry: {} as McpRuntime["agentRegistry"],
       catalogService: {} as CatalogService,
       logger,
@@ -238,6 +240,74 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       terminalRevision: newerRevision,
       source: "revision_race",
     })).resolves.toBe("recorded");
+  });
+
+  it("atomically rolls back every child observation when one search result revision changes", async () => {
+    const text = "multi-child-atomic-observation";
+    const childA = "child-session-batch-a";
+    const childB = "child-session-batch-b";
+    const revisionA = await createTerminalChild(childA, text);
+    const revisionB = await createTerminalChild(childB, text);
+    const original = consumptionRecorder.recordObservedBatch.bind(
+      consumptionRecorder,
+    );
+    const recordSpy = vi.spyOn(
+      consumptionRecorder,
+      "recordObservedBatch",
+    ).mockImplementation(async (observations) => {
+      const newerRevision = await db.appendEvent({
+        sessionId: childB,
+        eventType: "assistant_message",
+        payload: JSON.stringify({ text: `${text}-newer` }),
+        searchableText: `${text}-newer`,
+        createdAt: new Date("2026-07-26T00:03:00Z"),
+      });
+      await db.updateSession(childB, {
+        last_event_id: newerRevision,
+        status: "completed",
+      });
+      return await original(observations);
+    });
+
+    const raced = await client.callTool({
+      name: "search_session_history",
+      arguments: {
+        query: text,
+        session_ids: [childA, childB],
+        top_k: 10,
+      },
+    });
+    expect(raced.isError).toBe(true);
+    expect(JSON.stringify(raced.content)).toContain("revision_mismatch");
+    await expect(db.sessionDeliveries().getRelationConsumption(
+      `child_session:${childA}:${revisionA}`,
+    )).resolves.toBeNull();
+    await expect(db.sessionDeliveries().getRelationConsumption(
+      `child_session:${childB}:${revisionB}`,
+    )).resolves.toBeNull();
+
+    recordSpy.mockRestore();
+    const retried = await client.callTool({
+      name: "search_session_history",
+      arguments: {
+        query: text,
+        session_ids: [childA, childB],
+        top_k: 10,
+      },
+    });
+    expect(retried.isError).not.toBe(true);
+    const latestB = await db.getSession(childB);
+    expect(latestB?.last_event_id).not.toBe(revisionB);
+    await expect(db.sessionDeliveries().getRelationConsumption(
+      `child_session:${childA}:${revisionA}`,
+    )).resolves.toMatchObject({
+      caller_session_id: "caller-session",
+    });
+    await expect(db.sessionDeliveries().getRelationConsumption(
+      `child_session:${childB}:${latestB!.last_event_id!}`,
+    )).resolves.toMatchObject({
+      caller_session_id: "caller-session",
+    });
   });
 
   async function createTerminalChild(

@@ -1,4 +1,4 @@
--- 043: async intervention/completion exactly-once delivery ledger
+-- 045: async intervention/completion exactly-once delivery ledger
 --
 -- Versioned additive migration. Apply before code whose persistent runtime is
 -- enabled by default.
