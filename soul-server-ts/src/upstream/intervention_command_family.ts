@@ -37,6 +37,8 @@ interface InterveneCmd extends CommandLike {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
+  supervisor_role?: string;
+  delivery_lease_owner?: string;
 }
 
 interface SupervisorInterveneCmd extends CommandLike {
@@ -155,6 +157,8 @@ async function handleIntervene(
       parentDeliveryId: cmd.parent_delivery_id,
       callerTurnId: cmd.caller_turn_id,
       deliveryCreatedAt: cmd.created_at,
+      supervisorRole: cmd.supervisor_role,
+      deliveryLeaseOwner: cmd.delivery_lease_owner,
     });
   } catch (err) {
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));

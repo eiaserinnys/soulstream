@@ -6,10 +6,15 @@ export const DELIVERY_INTENTS = [
 ] as const;
 
 export type DeliveryIntent = (typeof DELIVERY_INTENTS)[number];
+export type LedgerControlledDeliveryIntent = Exclude<
+  DeliveryIntent,
+  "human_live_steer"
+>;
 
 export const DELIVERY_STATES = [
   "pending",
   "claimed",
+  "dispatching",
   "queued",
   "delivered",
   "consumed",
@@ -34,11 +39,23 @@ export interface DeliveryMetadata {
   parentDeliveryId?: string;
   callerTurnId?: string;
   createdAt?: string;
+  supervisorRole?: string;
+  deliveryLeaseOwner?: string;
 }
 
 export function isDeliveryIntent(value: unknown): value is DeliveryIntent {
   return (
     typeof value === "string" &&
     DELIVERY_INTENTS.includes(value as DeliveryIntent)
+  );
+}
+
+export function isLedgerControlledDeliveryIntent(
+  value: unknown,
+): value is LedgerControlledDeliveryIntent {
+  return (
+    value === "durable_next_turn" ||
+    value === "completion_notification" ||
+    value === "runtime_followup"
   );
 }

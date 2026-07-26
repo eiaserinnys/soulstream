@@ -118,6 +118,7 @@ describe("live execute proxy provider", () => {
       delivery_intent: "runtime_followup",
       source: "execute-proxy",
       relation_key: "runtime_task:task-1:done",
+      delivery_lease_owner: "runtime:node-a",
     });
 
     expect(sent).toHaveLength(1);
@@ -134,6 +135,7 @@ describe("live execute proxy provider", () => {
       delivery_intent: "runtime_followup",
       source: "execute-proxy",
       relation_key: "runtime_task:task-1:done",
+      delivery_lease_owner: "runtime:node-a",
     });
     await expect(resultBody(result)).resolves.toBe(
       'event: init\n' +

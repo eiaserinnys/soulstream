@@ -152,8 +152,61 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
   });
 
-  it("v2는 child terminal revision으로 local/cross-node 공통 delivery identity를 만든다", async () => {
+  it("v2는 supervisor 조회보다 먼저 durable identity를 등록한 뒤 현재 target을 전달한다", async () => {
     const tm = makeTaskManagerStub();
+    let stored: Record<string, unknown> | undefined;
+    const calls: string[] = [];
+    const repository = {
+      register: vi.fn(async (params: Record<string, unknown>) => {
+        calls.push("register");
+        stored = {
+          delivery_id: params.deliveryId,
+          target_session_id: params.targetSessionId,
+          source_session_id: params.sourceSessionId,
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          intent: params.intent,
+          source: params.source,
+          producer_kind: params.producerKind,
+          producer_id: params.producerId,
+          producer_terminal_revision: params.producerTerminalRevision,
+          parent_delivery_id: null,
+          caller_turn_id: null,
+          supervisor_role: params.supervisorRole,
+          payload_hash: params.payloadHash,
+          payload: params.payload,
+          state: "pending",
+          created_at: params.createdAt,
+          updated_at: params.createdAt,
+          claimed_at: null,
+          dispatching_at: null,
+          queued_at: null,
+          delivered_at: null,
+          consumed_at: null,
+        };
+        return { row: stored, inserted: true, conflict: false };
+      }),
+      get: vi.fn(async () => stored),
+      claimForCurrentSupervisor: vi.fn(async (
+        _deliveryId: string,
+        _supervisorRole: string,
+        leaseOwner: string,
+      ) => {
+        calls.push("claim-current");
+        stored = {
+          ...stored,
+          target_session_id: "supervisor-current",
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
+        return stored;
+      }),
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+    };
     const notifier = new TaskCompletionNotifier(
       NODE_ID,
       tm.taskManager,
@@ -162,23 +215,36 @@ describe("TaskCompletionNotifier.notify", () => {
       silentLogger,
       makeOrch(),
       vi.fn(),
-      undefined,
+      {
+        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+      } as never,
       true,
+      repository as never,
     );
 
-    await notifier.notify(makeChild({ lastEventId: 42 }));
+    await notifier.notify(makeChild({
+      lastEventId: 42,
+      callerSessionId: "supervisor-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "ariella-ashwood-codex",
+      },
+    }));
     const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
 
     expect(params).toMatchObject({
+      agentSessionId: "supervisor-current",
       deliveryIntent: "completion_notification",
       source: "completion_notifier",
       producerTerminalRevision: "42",
       relationKey: "child_session:child-sess-1:42",
+      supervisorRole: "ariella-ashwood-codex",
     });
     expect(params.deliveryId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(params.completionId).toMatch(/^completion:/);
+    expect(calls).toEqual(["register", "claim-current"]);
   });
 
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {
@@ -203,14 +269,10 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("1b. stale supervisor caller는 현재 active supervisor session으로 완료통지를 보낸다", async () => {
+  it("1b. gate OFF는 supervisor metadata가 있어도 기존 caller로 그대로 보낸다", async () => {
     const tm = makeTaskManagerStub();
     const registry = makeAgentRegistry();
     const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    const getSupervisorRegistry = vi.fn(async () => ({
-      role: "ariella-ashwood-codex",
-      activeSessionId: "supervisor-current",
-    }));
     const onResume = vi.fn();
 
     const notifier = new TaskCompletionNotifier(
@@ -221,7 +283,6 @@ describe("TaskCompletionNotifier.notify", () => {
       silentLogger,
       makeOrch(),
       fetchImpl,
-      { getSupervisorRegistry } as never,
     );
 
     await notifier.notify(makeChild({
@@ -232,10 +293,100 @@ describe("TaskCompletionNotifier.notify", () => {
       },
     }));
 
-    expect(getSupervisorRegistry).toHaveBeenCalledWith("ariella-ashwood-codex");
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
-    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("supervisor-current");
+    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("supervisor-old");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("v2 target claim 실패는 durable pending을 남기고 같은 identity로 recovery한다", async () => {
+    const tm = makeTaskManagerStub();
+    let stored: Record<string, unknown> | undefined;
+    const claimForCurrentSupervisor = vi.fn()
+      .mockRejectedValueOnce(new Error("temporary registry failure"))
+      .mockImplementation(async (
+        _deliveryId: string,
+        _supervisorRole: string,
+        leaseOwner: string,
+      ) => {
+        stored = {
+          ...stored,
+          target_session_id: "supervisor-current",
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
+        return stored;
+      });
+    const repository = {
+      register: vi.fn(async (params: Record<string, unknown>) => {
+        stored = {
+          delivery_id: params.deliveryId,
+          target_session_id: params.targetSessionId,
+          source_session_id: params.sourceSessionId,
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          intent: params.intent,
+          source: params.source,
+          producer_kind: params.producerKind,
+          producer_id: params.producerId,
+          producer_terminal_revision: params.producerTerminalRevision,
+          parent_delivery_id: null,
+          caller_turn_id: null,
+          supervisor_role: params.supervisorRole,
+          payload_hash: params.payloadHash,
+          payload: params.payload,
+          state: "pending",
+          created_at: params.createdAt,
+          updated_at: params.createdAt,
+          claimed_at: null,
+          dispatching_at: null,
+          queued_at: null,
+          delivered_at: null,
+          consumed_at: null,
+        };
+        return { row: stored, inserted: true, conflict: false };
+      }),
+      get: vi.fn(async () => stored),
+      claimForCurrentSupervisor,
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn(async (leaseOwner: string) => {
+        stored = {
+          ...stored,
+          target_session_id: "supervisor-current",
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
+        return [stored];
+      }),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+    };
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      { getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }) } as never,
+      true,
+      repository as never,
+    );
+
+    await notifier.notify(makeChild({
+      callerSessionId: "supervisor-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "ariella-ashwood-codex",
+      },
+    }));
+
+    expect(tm.addIntervention).not.toHaveBeenCalled();
+    const deliveryId = stored?.delivery_id;
+    await notifier.recoverPending();
+    expect(tm.addIntervention).toHaveBeenCalledTimes(1);
+    expect(tm.addIntervention.mock.calls[0]![0].deliveryId).toBe(deliveryId);
   });
 
   it("2. orch fallback — local throw 시 /api/sessions/{caller}/intervene POST", async () => {

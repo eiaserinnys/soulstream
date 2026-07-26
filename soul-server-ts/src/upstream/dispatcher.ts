@@ -93,6 +93,7 @@ export class CommandDispatcher {
     agentConfigService?: AgentConfigCommandHandler,
     reflectionRuntime?: McpRuntime,
     scheduleCommands?: ClaudeRuntimeScheduleCommands,
+    _deliveryV2Enabled = false,
   ) {
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,

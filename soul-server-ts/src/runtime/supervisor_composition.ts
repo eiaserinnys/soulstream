@@ -13,6 +13,7 @@ import {
   TaskCompletionNotifier,
   type CompletionNotifier,
 } from "../task/completion_notifier.js";
+import { CompletionDeliveryRecoveryWorker } from "../task/completion_delivery_recovery_worker.js";
 import { ClaudeRuntimeTaskFollowupController } from "../task/claude_runtime_task_followup.js";
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
 import { extractCallerInfoFromMetadata } from "../task/task_metadata.js";
@@ -53,6 +54,7 @@ export interface SupervisorCompositionParams {
 export interface SupervisorComposition {
   taskExecutor: TaskExecutor;
   completionNotifier: CompletionNotifier;
+  completionDeliveryRecoveryWorker?: CompletionDeliveryRecoveryWorker;
   onResume: StartExecutionCallback;
   scheduleDispatcher: ScheduleDispatcher;
   supervisorWakeScheduler?: SupervisorWakeScheduler;
@@ -94,6 +96,12 @@ export function composeSupervisorRuntime(
     taskExecutor.startExecution(task, agent);
   };
 
+  const completionDeliveryRepository = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? db.sessionDeliveries()
+    : undefined;
+  const notificationRecoveryLeaseOwner = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? `notification:${env.SOULSTREAM_NODE_ID}:${randomUUID()}`
+    : undefined;
   const completionNotifier = new TaskCompletionNotifier(
     env.SOULSTREAM_NODE_ID,
     taskManager,
@@ -104,7 +112,20 @@ export function composeSupervisorRuntime(
     undefined,
     db,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+    completionDeliveryRepository,
   );
+  const completionDeliveryRecoveryWorker = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+    ? new CompletionDeliveryRecoveryWorker({
+        recoverPending: () => completionNotifier.recoverPending(),
+        recoverNotifications: async () => {
+          await taskManager.recoverDeliveryNotifications(
+            notificationRecoveryLeaseOwner!,
+          );
+        },
+        logger,
+      })
+    : undefined;
+  completionDeliveryRecoveryWorker?.start();
   const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
     taskManager,
     onResume,
@@ -345,6 +366,7 @@ export function composeSupervisorRuntime(
   return {
     taskExecutor,
     completionNotifier,
+    completionDeliveryRecoveryWorker,
     onResume,
     scheduleDispatcher,
     supervisorWakeScheduler,

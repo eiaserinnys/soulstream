@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../src/db/repositories/session_delivery_repository.js";
@@ -26,12 +26,14 @@ function deliveryRow(
     producer_terminal_revision: "42",
     parent_delivery_id: null,
     caller_turn_id: null,
+    supervisor_role: null,
     payload_hash: "hash-1",
     payload: { text: "done" },
     state: "pending",
     created_at: now,
     updated_at: now,
     claimed_at: null,
+    dispatching_at: null,
     queued_at: null,
     delivered_at: null,
     consumed_at: null,
@@ -48,6 +50,8 @@ function createMockSql(results: unknown[][]) {
     json(value: unknown): unknown;
   };
   sql.json = vi.fn((value: unknown) => value);
+  sql.begin = vi.fn(async (callback: (transaction: typeof sql) => unknown) =>
+    await callback(sql)) as never;
   return { sql, calls };
 }
 
@@ -132,6 +136,42 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("state = 'pending'");
   });
 
+  it("resolves and claims the current supervisor in one atomic statement", async () => {
+    const claimed = deliveryRow({
+      target_session_id: "supervisor-current",
+      supervisor_role: "ariella",
+      state: "claimed",
+    });
+    const { sql, calls } = createMockSql([
+      [deliveryRow({ supervisor_role: "ariella" })],
+      [{ active_session_id: "supervisor-current" }],
+      [claimed],
+    ]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.claimForCurrentSupervisor(
+      claimed.delivery_id,
+      "ariella",
+    )).resolves.toEqual(claimed);
+
+    expect(calls[0].query).toContain("FOR UPDATE");
+    expect(calls[1].query).toContain("FROM supervisor_registry AS registry");
+    expect(calls[1].query).toContain("registry.active_session_id");
+    expect(calls[2].query).toContain("state = 'pending'");
+  });
+
+  it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {
+    const dispatching = deliveryRow({ state: "dispatching" });
+    const { sql, calls } = createMockSql([[dispatching]]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.beginDispatch(dispatching.delivery_id))
+      .resolves.toEqual(dispatching);
+
+    expect(calls[0].query).toContain("state = 'dispatching'");
+    expect(calls[0].query).toContain("state = 'claimed'");
+  });
+
   it("keeps the original target once a semantic completion has already been queued", async () => {
     const queued = deliveryRow({
       target_session_id: "caller-original",
@@ -152,6 +192,7 @@ describe("SessionDeliveryRepository", () => {
     const row = deliveryRow();
     const { sql, calls } = createMockSql([
       [{ ...row, state: "claimed" }],
+      [{ ...row, state: "dispatching" }],
       [{ ...row, state: "queued" }],
       [{ ...row, state: "delivered", caller_turn_id: "turn-9" }],
       [{ ...row, state: "consumed", caller_turn_id: "turn-9" }],
@@ -159,14 +200,16 @@ describe("SessionDeliveryRepository", () => {
     const repository = new SessionDeliveryRepository(sql);
 
     await repository.claim(row.delivery_id);
+    await repository.beginDispatch(row.delivery_id);
     await repository.markQueued(row.delivery_id);
     await repository.markDelivered(row.delivery_id, "turn-9");
     await repository.markConsumed(row.delivery_id, "turn-9");
 
     expect(calls[0].query).toContain("state = 'pending'");
-    expect(calls[1].query).toContain("state IN ('claimed', 'pending')");
-    expect(calls[2].query).toContain("state IN ('claimed', 'queued')");
-    expect(calls[3].query).toContain("'consumed'");
+    expect(calls[1].query).toContain("state = 'claimed'");
+    expect(calls[2].query).toContain("'dispatching'");
+    expect(calls[3].query).toContain("'dispatching'");
+    expect(calls[4].query).toContain("'consumed'");
   });
 
   it("marks consumed by relation and completion identity", async () => {
@@ -183,6 +226,9 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("relation_key");
     expect(calls[0].query).toContain("completion_id");
     expect(calls[0].query).toContain("state = 'consumed'");
+    expect(calls[0].query).toContain("'pending', 'claimed'");
+    expect(calls[0].query).not.toContain("'queued'");
+    expect(calls[0].query).not.toContain("'delivered'");
   });
 });
 
@@ -203,9 +249,33 @@ describe("session_deliveries migration safety", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
+    const removedEpochMigration = new URL(
+      "../../../packages/db-schema/sql/pending/044_supervisor_registry_epoch_monotonic.sql",
+      import.meta.url,
+    );
 
     expect(manifest).not.toContain("043_session_deliveries.sql");
+    expect(existsSync(removedEpochMigration)).toBe(false);
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(pending).toContain("ON DELETE SET NULL");
+    expect(pending).toContain("ALTER COLUMN target_session_id DROP NOT NULL");
+    expect(pending).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
+    expect(pending).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
+    expect(pending).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
+    expect(pending).toContain("'dispatching'");
+    expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
+    expect(pending).not.toContain("supervisor_epoch");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(schema).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
+    expect(schema).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
+    expect(schema).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
+    expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
+    expect(schema).not.toContain("supervisor_epoch");
+    const supervisorUpsert = schema.slice(
+      schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_upsert("),
+      schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_get("),
+    );
+    expect(supervisorUpsert).not.toContain("supervisor target change requires epoch increase");
+    expect(supervisorUpsert).not.toContain("pg_advisory_xact_lock");
   });
 });

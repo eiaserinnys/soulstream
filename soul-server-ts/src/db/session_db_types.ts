@@ -303,7 +303,7 @@ export interface AppendEventParams {
 
 export interface SessionDeliveryRow {
   delivery_id: string;
-  target_session_id: string;
+  target_session_id: string | null;
   source_session_id: string | null;
   relation_key: string;
   completion_id: string | null;
@@ -314,12 +314,19 @@ export interface SessionDeliveryRow {
   producer_terminal_revision: string | null;
   parent_delivery_id: string | null;
   caller_turn_id: string | null;
+  supervisor_role: string | null;
   payload_hash: string;
   payload: Record<string, unknown>;
   state: DeliveryState;
   created_at: Date;
   updated_at: Date;
   claimed_at: Date | null;
+  dispatching_at: Date | null;
+  lease_owner: string | null;
+  lease_expires_at: Date | null;
+  attempt_count: number;
+  next_attempt_at: Date;
+  last_error: string | null;
   queued_at: Date | null;
   delivered_at: Date | null;
   consumed_at: Date | null;
@@ -327,7 +334,7 @@ export interface SessionDeliveryRow {
 
 export interface RegisterSessionDeliveryParams {
   deliveryId: string;
-  targetSessionId: string;
+  targetSessionId?: string | null;
   sourceSessionId?: string | null;
   relationKey: string;
   completionId?: string | null;
@@ -338,6 +345,7 @@ export interface RegisterSessionDeliveryParams {
   producerTerminalRevision?: string | null;
   parentDeliveryId?: string | null;
   callerTurnId?: string | null;
+  supervisorRole?: string | null;
   payloadHash: string;
   payload: Record<string, unknown>;
   createdAt?: Date;
@@ -347,6 +355,22 @@ export interface RegisterSessionDeliveryResult {
   row: SessionDeliveryRow;
   inserted: boolean;
   conflict: boolean;
+}
+
+export interface SessionDeliveryNotificationOutboxRow {
+  delivery_id: string;
+  target_session_id: string;
+  payload: Record<string, unknown>;
+  disposition: "queued" | "auto_resume";
+  state: "pending" | "claimed" | "published";
+  lease_owner: string | null;
+  lease_expires_at: Date | null;
+  attempt_count: number;
+  next_attempt_at: Date;
+  last_error: string | null;
+  created_at: Date;
+  updated_at: Date;
+  published_at: Date | null;
 }
 
 export type TaskAssigneeKind = "agent" | "human" | "session";

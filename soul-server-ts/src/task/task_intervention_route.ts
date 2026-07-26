@@ -44,6 +44,8 @@ export interface AddInterventionParams {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
+  supervisorRole?: string;
+  deliveryLeaseOwner?: string;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -78,7 +80,8 @@ export interface TaskInterventionRouteDeps {
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "recheckBeforeDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      | "recordNotificationPublished" | "recordNotificationFailure"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -112,6 +115,8 @@ export class TaskInterventionRoute {
       parentDeliveryId: params.parentDeliveryId,
       callerTurnId: params.callerTurnId,
       deliveryCreatedAt: params.deliveryCreatedAt,
+      supervisorRole: params.supervisorRole,
+      deliveryLeaseOwner: params.deliveryLeaseOwner,
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,
       followupTaskIds: params.followupTaskIds,
@@ -139,7 +144,7 @@ export class TaskInterventionRoute {
         return result;
       }
       if (this.deps.deliveryLedgerGate) {
-        const rechecked = await this.deps.deliveryLedgerGate.recheckBeforeDispatch(
+        const rechecked = await this.deps.deliveryLedgerGate.beginDispatch(
           admission,
         );
         if (rechecked.kind === "suppressed") {
@@ -197,11 +202,21 @@ export class TaskInterventionRoute {
         ledgerResultRecorded = true;
       }
       if (notificationDisposition && this.deps.sessionNotificationPublisher) {
-        await this.deps.sessionNotificationPublisher.publish(
+        const published = await this.deps.sessionNotificationPublisher.publish(
           task,
           message,
           notificationDisposition,
         );
+        if (this.deps.deliveryLedgerGate) {
+          if (published !== false) {
+            await this.deps.deliveryLedgerGate.recordNotificationPublished?.(admission);
+          } else {
+            await this.deps.deliveryLedgerGate.recordNotificationFailure?.(
+              admission,
+              "session_notification persistence failed",
+            );
+          }
+        }
       }
       return result;
     } catch (err) {

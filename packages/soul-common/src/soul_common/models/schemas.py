@@ -93,6 +93,8 @@ class InterveneRequest(BaseModel):
     parent_delivery_id: Optional[str] = None
     caller_turn_id: Optional[str] = None
     created_at: Optional[str] = None
+    supervisor_role: Optional[str] = None
+    delivery_lease_owner: Optional[str] = None
 
 
 class InputResponseRequest(BaseModel):

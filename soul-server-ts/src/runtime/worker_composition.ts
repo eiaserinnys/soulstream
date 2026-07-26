@@ -471,6 +471,7 @@ export async function composeWorkerRuntime(
         agentConfigService,
         reflectionRuntime: mcpRuntime,
         scheduleCommands: scheduleService,
+        deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
       },
     );
     return upstreamAdapter;
