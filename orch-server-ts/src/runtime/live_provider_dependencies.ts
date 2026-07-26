@@ -47,6 +47,9 @@ export type LiveDbCatalogRepositoryBoundary = {
     readonly feedOnly?: boolean;
     readonly folderId?: string;
     readonly sessionType?: string;
+    readonly search?: string;
+    readonly nodeId?: string;
+    readonly statuses?: readonly string[];
     readonly offset: number;
     readonly limit: number;
   }) => Promise<SessionSnapshotListResponse>;

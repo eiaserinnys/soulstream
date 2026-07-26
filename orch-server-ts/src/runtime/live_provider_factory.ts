@@ -372,7 +372,7 @@ export function createLiveOrchestratorProviderBundle(
               sessionIds: resolveSessionSnapshotIds(query.session_ids),
               feedOnly: query.feed_only === true,
               folderId,
-              sessionType: query.session_type,
+              sessionType: query.session_type, search: query.search, nodeId: query.node_id, statuses: query.status,
               offset: resolveSessionSnapshotOffset(query),
               limit: resolveSessionSnapshotLimit(query.limit),
             });

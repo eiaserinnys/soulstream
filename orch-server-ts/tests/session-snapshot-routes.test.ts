@@ -128,6 +128,7 @@ describe("session snapshot route harness", () => {
         agentSessionId: "sess-a",
         title: "Alpha",
         folderId: "folder-a",
+        folderName: "검색 폴더",
         session_type: "agent",
         status: "running",
         last_event_id: 11,
@@ -152,12 +153,22 @@ describe("session snapshot route harness", () => {
       nodeId: "node-a",
       title: "Alpha",
       folderId: "folder-a",
+      folderName: "검색 폴더",
       session_type: "agent",
       status: "running",
       last_event_id: 11,
       connected: true,
       fresh: true,
     });
+    const byFolderName = (
+      await app.inject({
+        method: "GET",
+        url: `/api/sessions?search=${encodeURIComponent("검색 폴더")}`,
+      })
+    ).json();
+    expect(byFolderName.sessions.map(
+      (session: Record<string, unknown>) => session.agentSessionId,
+    )).toEqual(["sess-a"]);
 
     registry.disconnectNode("node-a", { connectionId, reason: "test_disconnect" });
     const disconnected = (await app.inject({ method: "GET", url: "/api/sessions" })).json();
@@ -287,6 +298,90 @@ describe("session snapshot route harness", () => {
       nextCursor: null,
       hasMore: false,
     });
+
+    await app.close();
+  });
+
+  it("forwards metadata search, node, and status filters as one snapshot query", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const app = createApp({
+      config,
+      sessionSnapshotRoutes: {
+        snapshotService: {
+          listSessions(query) {
+            captured = query;
+            return {
+              sessions: [],
+              sessionList: [],
+              total: 0,
+              cursor: null,
+              nextCursor: null,
+              hasMore: false,
+            };
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?search=%20Alpha%20&node_id=node-a&status=running,waiting",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(captured).toMatchObject({
+      search: "Alpha",
+      node_id: "node-a",
+      status: ["running", "waiting"],
+    });
+    await app.close();
+  });
+
+  it("matches cached session metadata across title, folder id, and node id", async () => {
+    const { app, registry } = createHarness(() => 1_700_000_000_000);
+    const nodeAConnectionId = registerNode(registry, "node-alpha");
+    const nodeBConnectionId = registerNode(registry, "node-beta");
+    registry.receiveNodeMessage(
+      { nodeId: "node-alpha", connectionId: nodeAConnectionId },
+      {
+        type: "session_updated",
+        agentSessionId: "sess-title",
+        title: "Release Alpha",
+        folderId: "folder-red",
+        status: "running",
+      },
+    );
+    registry.receiveNodeMessage(
+      { nodeId: "node-beta", connectionId: nodeBConnectionId },
+      {
+        type: "session_updated",
+        agentSessionId: "sess-folder",
+        title: "Unrelated",
+        folderId: "folder-alpha",
+        status: "waiting",
+      },
+    );
+
+    const titles = (
+      await app.inject({ method: "GET", url: "/api/sessions?search=release" })
+    ).json();
+    expect(titles.sessions.map(
+      (session: Record<string, unknown>) => session.agentSessionId,
+    )).toEqual(["sess-title"]);
+
+    const folders = (
+      await app.inject({ method: "GET", url: "/api/sessions?search=folder-alpha" })
+    ).json();
+    expect(folders.sessions.map(
+      (session: Record<string, unknown>) => session.agentSessionId,
+    )).toEqual(["sess-folder"]);
+
+    const nodes = (
+      await app.inject({ method: "GET", url: "/api/sessions?search=node-alpha" })
+    ).json();
+    expect(nodes.sessions.map(
+      (session: Record<string, unknown>) => session.agentSessionId,
+    )).toEqual(["sess-title"]);
 
     await app.close();
   });

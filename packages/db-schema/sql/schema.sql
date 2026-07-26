@@ -1338,6 +1338,18 @@ BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
         q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
     END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'search' THEN
+        q := q || ' AND (' ||
+            'COALESCE(s.display_name, '''') ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ' OR s.session_id ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ' OR COALESCE(s.node_id, '''') ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ' OR COALESCE(f.name, '''') ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ')';
+    END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
         IF jsonb_typeof(p_filters->'status') = 'array' THEN
             q := q || ' AND status IN (' ||
@@ -1381,6 +1393,18 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
         q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'search' THEN
+        q := q || ' AND (' ||
+            'COALESCE(s.display_name, '''') ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ' OR s.session_id ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ' OR COALESCE(s.node_id, '''') ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ' OR COALESCE(f.name, '''') ILIKE ' ||
+                quote_literal('%' || (p_filters->>'search') || '%') ||
+            ')';
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
         IF jsonb_typeof(p_filters->'status') = 'array' THEN
