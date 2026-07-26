@@ -268,7 +268,28 @@ export class SessionDeliveryRepository {
           `;
           targetSessionId = targets[0]?.session_id ?? null;
         }
-        if (!targetSessionId) continue;
+        if (!targetSessionId) {
+          await transaction`
+            UPDATE session_deliveries
+            SET
+              target_session_id = CASE
+                WHEN supervisor_role IS NULL THEN target_session_id
+                ELSE NULL
+              END,
+              attempt_count = attempt_count + 1,
+              next_attempt_at = NOW()
+                + LEAST(
+                    INTERVAL '60 seconds',
+                    INTERVAL '100 milliseconds'
+                      * POWER(2, LEAST(attempt_count, 9))
+                  ),
+              last_error = 'no_current_target',
+              updated_at = NOW()
+            WHERE delivery_id = ${row.delivery_id}
+              AND state = 'pending'
+          `;
+          continue;
+        }
         const updated = await transaction<SessionDeliveryRow[]>`
           UPDATE session_deliveries
           SET

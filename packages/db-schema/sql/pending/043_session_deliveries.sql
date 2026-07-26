@@ -66,11 +66,26 @@ ALTER TABLE session_deliveries
     REFERENCES sessions(session_id)
     ON DELETE SET NULL;
 ALTER TABLE session_deliveries
+    ADD COLUMN IF NOT EXISTS supervisor_role TEXT,
+    ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS lease_owner TEXT,
     ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE session_deliveries
+    DROP CONSTRAINT IF EXISTS session_deliveries_state_check;
+ALTER TABLE session_deliveries
+    ADD CONSTRAINT session_deliveries_state_check
+    CHECK (state IN (
+        'pending',
+        'claimed',
+        'dispatching',
+        'queued',
+        'delivered',
+        'consumed',
+        'uncertain'
+    ));
 
 CREATE INDEX IF NOT EXISTS idx_session_deliveries_target_state
     ON session_deliveries(target_session_id, state, created_at);

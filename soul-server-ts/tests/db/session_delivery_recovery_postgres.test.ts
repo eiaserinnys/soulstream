@@ -115,7 +115,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("uses SKIP LOCKED across workers and does not let poison rows starve a due row", async () => {
+  it("uses SKIP LOCKED across workers", async () => {
     await setSupervisor("supervisor-old");
     await register("delivery-locked", "relation-locked", {
       supervisorRole: "ariella",
@@ -147,36 +147,128 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ]);
     release.resolve();
     await blockingTransaction;
+  });
 
-    await repository.retryLeasedDelivery(
-      "delivery-free",
-      "worker-b",
-      "poison",
-      new Date(Date.now() + 60_000),
-    );
-    for (let index = 0; index < 100; index += 1) {
-      await register(
-        `delivery-poison-${index}`,
-        `relation-poison-${index}`,
-        { supervisorRole: "ariella" },
-      );
-    }
+  it("backs off a due targetless poison row before claiming the healthy row behind it", async () => {
+    await register("delivery-poison", "relation-poison", {
+      supervisorRole: "missing-supervisor",
+    });
+    await register("delivery-healthy", "relation-healthy", {
+      targetSessionId: "supervisor-old",
+    });
     await harness.sql`
       UPDATE session_deliveries
-      SET next_attempt_at = NOW() + INTERVAL '1 hour'
-      WHERE delivery_id LIKE 'delivery-poison-%'
-         OR delivery_id IN ('delivery-locked', 'delivery-free')
+      SET
+        attempt_count = 9,
+        next_attempt_at = NOW() - INTERVAL '2 seconds',
+        created_at = NOW() - INTERVAL '2 seconds'
+      WHERE delivery_id = 'delivery-poison'
     `;
-    await register("delivery-healthy", "relation-healthy", {
-      supervisorRole: "ariella",
+    await harness.sql`
+      UPDATE session_deliveries
+      SET
+        next_attempt_at = NOW() - INTERVAL '1 second',
+        created_at = NOW() - INTERVAL '1 second'
+      WHERE delivery_id = 'delivery-healthy'
+    `;
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "worker-poison",
+      1,
+    )).resolves.toEqual([]);
+    await expect(repository.get("delivery-poison")).resolves.toMatchObject({
+      state: "pending",
+      target_session_id: null,
+      attempt_count: 10,
+      last_error: "no_current_target",
     });
 
     await expect(repository.claimRecoverableCompletionDeliveries(
-      "worker-fair",
+      "worker-healthy",
       1,
     )).resolves.toMatchObject([
-      { delivery_id: "delivery-healthy", lease_owner: "worker-fair" },
+      { delivery_id: "delivery-healthy", lease_owner: "worker-healthy" },
     ]);
+  });
+
+  it("upgrades the origin/main 043 ledger to the recovery schema idempotently", async () => {
+    const upgradeSchema =
+      `delivery_upgrade_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const upgradeSql = harness.createPeer();
+    const legacyMigration = readFileSync(
+      new URL(
+        "./fixtures/043_session_deliveries_origin_main_408c36b0.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const currentMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/pending/043_session_deliveries.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    try {
+      await upgradeSql.unsafe(`CREATE SCHEMA ${upgradeSchema}`);
+      await upgradeSql.unsafe(`SET search_path TO ${upgradeSchema}`);
+      await upgradeSql.unsafe("CREATE TABLE sessions (session_id TEXT PRIMARY KEY)");
+      await upgradeSql.unsafe(legacyMigration);
+      await upgradeSql.unsafe(currentMigration);
+      await upgradeSql.unsafe(currentMigration);
+
+      const columns = await upgradeSql<Array<{ column_name: string }>>`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = ${upgradeSchema}
+          AND table_name = 'session_deliveries'
+          AND column_name IN ('supervisor_role', 'dispatching_at')
+        ORDER BY column_name
+      `;
+      expect(columns.map((row) => row.column_name)).toEqual([
+        "dispatching_at",
+        "supervisor_role",
+      ]);
+
+      await upgradeSql`
+        INSERT INTO sessions (session_id) VALUES ('upgrade-target')
+      `;
+      await upgradeSql`
+        INSERT INTO session_deliveries (
+          delivery_id,
+          target_session_id,
+          relation_key,
+          intent,
+          source,
+          supervisor_role,
+          payload_hash,
+          state,
+          dispatching_at
+        ) VALUES (
+          'upgrade-delivery',
+          'upgrade-target',
+          'upgrade-relation',
+          'completion_notification',
+          'completion_notifier',
+          'ariella',
+          'upgrade-hash',
+          'dispatching',
+          NOW()
+        )
+      `;
+      await expect(upgradeSql`
+        SELECT state, supervisor_role, dispatching_at IS NOT NULL AS has_dispatching_at
+        FROM session_deliveries
+        WHERE delivery_id = 'upgrade-delivery'
+      `).resolves.toMatchObject([{
+        state: "dispatching",
+        supervisor_role: "ariella",
+        has_dispatching_at: true,
+      }]);
+    } finally {
+      await upgradeSql.unsafe(`DROP SCHEMA IF EXISTS ${upgradeSchema} CASCADE`);
+    }
   });
 
   it("recovers an expired crash lease and fences the old worker from dispatch", async () => {

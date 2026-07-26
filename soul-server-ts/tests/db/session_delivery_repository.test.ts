@@ -259,9 +259,16 @@ describe("session_deliveries migration safety", () => {
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(pending).toContain("ON DELETE SET NULL");
     expect(pending).toContain("ALTER COLUMN target_session_id DROP NOT NULL");
+    expect(pending).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
+    expect(pending).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
+    expect(pending).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
+    expect(pending).toContain("'dispatching'");
     expect(pending).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
     expect(pending).not.toContain("supervisor_epoch");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    expect(schema).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
+    expect(schema).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
+    expect(schema).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
     expect(schema).not.toContain("supervisor_epoch");
     const supervisorUpsert = schema.slice(
