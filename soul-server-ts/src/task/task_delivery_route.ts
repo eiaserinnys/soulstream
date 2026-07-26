@@ -115,10 +115,8 @@ export class TaskDeliveryRoute {
       };
     }
 
-    const engine = supportsInputResponse(task.engine)
-      ? task.engine
-      : registryAvailable
-        ? {
+    const engine = registryAvailable
+      ? {
             deliverInputResponse: (
               requestId: string,
               answers: Record<string, unknown>,
@@ -128,6 +126,8 @@ export class TaskDeliveryRoute {
               answers,
             ),
           }
+      : supportsInputResponse(task.engine)
+        ? task.engine
         : undefined;
     if (!supportsInputResponse(engine)) {
       return {

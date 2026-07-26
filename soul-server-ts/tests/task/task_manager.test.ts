@@ -838,7 +838,10 @@ describe("TaskManager.deliverInputResponse", () => {
       "ask-late",
       { choice: "continue" },
     );
-    expect(sessionRuntimeControl.close).toHaveBeenCalledWith(task.agentSessionId);
+    expect(sessionRuntimeControl.close).toHaveBeenCalledWith(
+      task.agentSessionId,
+      "explicit_cancel",
+    );
   });
 });
 

@@ -149,7 +149,7 @@ export class TaskManager {
       broadcaster,
       logger,
       closeSessionRuntime: gatedSessionRuntimeControl
-        ? (sessionId) => gatedSessionRuntimeControl.close(sessionId)
+        ? (sessionId, reason) => gatedSessionRuntimeControl.close(sessionId, reason)
         : undefined,
     });
     const activeTaskRecovery = new ActiveTaskRecovery(logger);
@@ -246,7 +246,7 @@ export class TaskManager {
 
   getDeliveryConsumptionRecorder(): Pick<
     TaskDeliveryLedgerGate,
-    "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
+    "recordConsumed" | "recordTurnStarted"
       | "recordInlineConsumed"
   > | undefined {
     return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;

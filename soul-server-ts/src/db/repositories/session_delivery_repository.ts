@@ -239,8 +239,16 @@ export class SessionDeliveryRepository {
       const due = await transaction<SessionDeliveryRow[]>`
         SELECT delivery.*
         FROM session_deliveries AS delivery
-        WHERE delivery.intent = 'completion_notification'
-          AND delivery.source = 'completion_notifier'
+        WHERE (
+            (
+              delivery.intent = 'completion_notification'
+              AND delivery.source = 'completion_notifier'
+            )
+            OR (
+              delivery.intent = 'runtime_followup'
+              AND delivery.source = 'claude_runtime_task_followup'
+            )
+          )
           AND delivery.state = 'pending'
           AND delivery.next_attempt_at <= NOW()
         ORDER BY delivery.next_attempt_at, delivery.created_at, delivery.delivery_id

@@ -159,4 +159,93 @@ describe("ClaudeSessionClientRegistry", () => {
     expect(stopClaudeRuntimeTask).toHaveBeenCalledWith("bg-1");
     await registry.shutdown();
   });
+
+  it("owns bind-window controls as soon as the session slot is reserved", async () => {
+    const deliverInputResponse = vi.fn().mockReturnValue(true);
+    const backgroundClaudeRuntimeTasks = vi.fn().mockResolvedValue({ status: "ok" });
+    const stopClaudeRuntimeTask = vi.fn().mockResolvedValue({ status: "ok" });
+    const registry = new ClaudeSessionClientRegistry(
+      (): ClaudeClient => ({
+        async *run() {},
+        deliverInputResponse,
+        backgroundClaudeRuntimeTasks,
+        stopClaudeRuntimeTask,
+      }),
+      { idleTtlMs: 60_000, maxEntries: 4, bindTimeoutMs: 1_000 },
+    );
+
+    expect(registry.reserve("session-bind")).toBe(true);
+    const input = registry.deliverInputResponse(
+      "session-bind",
+      "ask-bind",
+      { answer: "yes" },
+    );
+    const background = registry.backgroundClaudeRuntimeTasks(
+      "session-bind",
+      "tool-bind",
+    );
+    const stop = registry.stopClaudeRuntimeTask("session-bind", "task-bind");
+
+    registry.acquire("session-bind");
+    await expect(input).resolves.toEqual({ status: "delivered" });
+    await expect(background).resolves.toEqual({ status: "ok" });
+    await expect(stop).resolves.toEqual({ status: "ok" });
+    expect(deliverInputResponse).toHaveBeenCalledWith("ask-bind", { answer: "yes" });
+    expect(backgroundClaudeRuntimeTasks).toHaveBeenCalledWith("tool-bind");
+    expect(stopClaudeRuntimeTask).toHaveBeenCalledWith("task-bind");
+    await registry.shutdown();
+  });
+
+  it("reclaims an abandoned reservation after the bind window", async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new ClaudeSessionClientRegistry(
+        (): ClaudeClient => ({ async *run() {} }),
+        {
+          idleTtlMs: 1_000,
+          maxEntries: 1,
+          bindTimeoutMs: 10,
+        },
+      );
+      expect(registry.reserve("abandoned")).toBe(true);
+      expect(registry.size()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(registry.has("abandoned")).toBe(false);
+      expect(registry.reserve("replacement")).toBe(true);
+      await registry.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not evict an idle entry while runtime signals are waiting in the hook pump", async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    const activity = {
+      foregroundPhase: "idle" as const,
+      queryLifecycle: "open" as const,
+      backgroundTaskCount: 0,
+      pendingInputRequestCount: 0,
+      pendingRuntimeSignalCount: 1,
+    };
+    const registry = new ClaudeSessionClientRegistry(
+      (): ClaudeClient => ({
+        async *run() {},
+        close,
+        persistentRuntimeActivity: () => activity,
+      }),
+      { idleTtlMs: 60_000, maxEntries: 1 },
+    );
+
+    registry.acquire("session-signals");
+    registry.release("session-signals");
+    expect(() => registry.acquire("session-next")).toThrow("capacity");
+    expect(close).not.toHaveBeenCalled();
+
+    activity.pendingRuntimeSignalCount = 0;
+    registry.acquire("session-next");
+    await vi.waitFor(() => expect(close).toHaveBeenCalledWith("registry_capacity"));
+    await registry.shutdown();
+  });
 });

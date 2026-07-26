@@ -191,6 +191,7 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       copyString(patch, "output_file", runtimeTask, "outputFile");
       copyString(patch, "summary", runtimeTask);
       copyString(patch, "error", runtimeTask);
+      copyString(patch, "close_reason", runtimeTask, "closeReason");
       copyBoolean(patch, "is_backgrounded", runtimeTask, "isBackgrounded");
       copyNumber(patch, "end_time", runtimeTask, "endTime");
       copyNumber(patch, "total_paused_ms", runtimeTask, "totalPausedMs");

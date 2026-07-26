@@ -24,11 +24,21 @@ export class ClaudeRuntimeState {
   private readonly runtimeTasksById = new Map<string, ClaudeRuntimeTaskSnapshot>();
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
 
+  constructor(private readonly terminalMonotonic = false) {}
+
   setSessionState(state: ClaudeRuntimeSessionState): void {
     this.runtimeSessionState = state;
   }
 
   setTaskStatus(taskId: string, status: ClaudeRuntimeTaskStatus): void {
+    const current = this.runtimeTasksById.get(taskId)?.status;
+    if (
+      this.terminalMonotonic &&
+      current &&
+      TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(current)
+    ) {
+      return;
+    }
     this.runtimeTasksById.set(taskId, { status });
   }
 

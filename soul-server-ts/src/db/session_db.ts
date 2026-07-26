@@ -14,6 +14,7 @@ import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
 import { CatalogRepository } from "./repositories/catalog_repository.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
+import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
 import { CustomViewRepository } from "./repositories/custom_view_repository.js";
 import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
@@ -37,6 +38,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private checklistTaskProjectionRepository?: ChecklistTaskProjectionRepository;
   private sessionDeliveryRepository?: SessionDeliveryRepository;
+  private claudeBackgroundTaskRepository?: ClaudeBackgroundTaskRepository;
   private readonly sessionRepository: SessionRepository;
   private readonly boardRepository: BoardRepository;
   private readonly catalogRepository: CatalogRepository;
@@ -111,6 +113,11 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   sessionDeliveries(): SessionDeliveryRepository {
     return this.sessionDeliveryRepository ??= new SessionDeliveryRepository(this.sql);
+  }
+
+  claudeBackgroundTasks(): ClaudeBackgroundTaskRepository {
+    return this.claudeBackgroundTaskRepository ??=
+      new ClaudeBackgroundTaskRepository(this.sql);
   }
 
   async registerSession(params: RegisterSessionParams): Promise<void> {

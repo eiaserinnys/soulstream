@@ -30,7 +30,6 @@ describe("TaskDeliveryConsumption", () => {
     const recorder = {
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -43,14 +42,12 @@ describe("TaskDeliveryConsumption", () => {
 
     expect(recorder.recordConsumed).toHaveBeenCalledWith(message, task);
     expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
-    expect(recorder.recordTurnFailure).not.toHaveBeenCalled();
   });
 
   it("records delivered when the queued message becomes foreground input", async () => {
     const recorder = {
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -65,38 +62,18 @@ describe("TaskDeliveryConsumption", () => {
     expect(recorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("records uncertain instead of consumed when the delivery turn fails", async () => {
-    const recorder = {
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
-    };
-    const subject = new TaskDeliveryConsumption(
-      recorder,
-      { warn: vi.fn() } as unknown as Logger,
-    );
-    const message = makeMessage();
-
-    await subject.recordTurnFailure(message);
-
-    expect(recorder.recordTurnFailure).toHaveBeenCalledWith(message);
-    expect(recorder.recordConsumed).not.toHaveBeenCalled();
-  });
-
   it("isolates ledger persistence failures from the foreground turn", async () => {
     const warn = vi.fn();
     const subject = new TaskDeliveryConsumption(
       {
         recordConsumed: vi.fn().mockRejectedValue(new Error("db unavailable")),
         recordTurnStarted: vi.fn().mockRejectedValue(new Error("db unavailable")),
-        recordTurnFailure: vi.fn().mockRejectedValue(new Error("db unavailable")),
       },
       { warn } as unknown as Logger,
     );
 
     await expect(subject.recordTurnStarted(makeTask(), makeMessage())).resolves.toBeUndefined();
     await expect(subject.recordConsumed(makeTask(), makeMessage())).resolves.toBeUndefined();
-    await expect(subject.recordTurnFailure(makeMessage())).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });

@@ -72,6 +72,15 @@ export interface InterventionMessage {
   /** Runtime task ids used to refresh a replayed follow-up from rehydrated Claude state. */
   followupTaskIds?: string[];
   /**
+   * Exact durable payload identity admitted by the delivery ledger.
+   *
+   * Once a delivery id exists, retries and delayed follow-ups must carry this
+   * read-back value instead of deriving another payload from display text.
+   * Internal only; never copied into public wire events.
+   */
+  storedDeliveryPayload?: Record<string, unknown>;
+  storedDeliveryPayloadHash?: string;
+  /**
    * Phase A context 정본 (Y-10, atom d7a1ad86 정본 둘 안티패턴 차단):
    * intervention_sent 통합 후 wire에 박는 context_items 정본과 정합.
    */
@@ -132,6 +141,7 @@ export interface ClaudeRuntimeTaskState {
   usage?: Record<string, unknown>;
   lastToolName?: string;
   error?: string;
+  closeReason?: string;
   isBackgrounded?: boolean;
   endTime?: number;
   totalPausedMs?: number;

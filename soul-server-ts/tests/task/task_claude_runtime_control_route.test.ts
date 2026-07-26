@@ -85,4 +85,30 @@ describe("TaskClaudeRuntimeControlRoute", () => {
     expect(stopClaudeRuntimeTask).toHaveBeenCalledWith("bg-1");
     expect(backgroundClaudeRuntimeTasks).toHaveBeenCalledWith("tool-1");
   });
+
+  it("routes bind-window controls to the reserved registry instead of the turn engine", async () => {
+    const task = makeTask();
+    const engineStop = vi.fn().mockResolvedValue({ status: "ok" });
+    const engineBackground = vi.fn().mockResolvedValue({ status: "ok" });
+    task.status = "running";
+    task.engine = {
+      stopClaudeRuntimeTask: engineStop,
+      backgroundClaudeRuntimeTasks: engineBackground,
+    } as unknown as SupportsClaudeBackgroundTasks & Task["engine"];
+    const registry = makeRegistryControl();
+    const route = new TaskClaudeRuntimeControlRoute({
+      db: {} as SessionDB,
+      getTask: () => task,
+      sessionRuntimeControl: registry,
+    });
+
+    await route.stopClaudeRuntimeTask("session-1", "bg-1");
+    await route.backgroundClaudeRuntimeTasks("session-1", "tool-1");
+
+    expect(registry.stopClaudeRuntimeTask).toHaveBeenCalledWith("session-1", "bg-1");
+    expect(registry.backgroundClaudeRuntimeTasks)
+      .toHaveBeenCalledWith("session-1", "tool-1");
+    expect(engineStop).not.toHaveBeenCalled();
+    expect(engineBackground).not.toHaveBeenCalled();
+  });
 });

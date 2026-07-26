@@ -2,12 +2,20 @@ import type { Logger } from "pino";
 
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { isPostResultDrainEvent } from "../engine/claude_event_phase.js";
+import {
+  readClaudeBackgroundDeliveryMetadata,
+  type ClaudeBackgroundDeliveryMetadata,
+} from "../engine/claude_background_delivery_metadata.js";
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
-import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
+import {
+  buildClaudeRuntimeFollowupDelivery,
+  buildClaudeRuntimeFollowupFallbackDelivery,
+} from "./claude_runtime_followup_delivery.js";
+import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
   buildClaudeRuntimeTaskFollowupFallbackPrompt,
   buildClaudeRuntimeTaskFollowupPrompt,
@@ -77,6 +85,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   private readonly pendingBySession = new Map<string, Map<string, PendingRuntimeTaskFollowup>>();
   private readonly flushedTaskKeys = new Set<string>();
   private readonly scheduledFallbacks = new Map<string, ScheduledRuntimeTaskFallback>();
+  private readonly durableDeliveryByTaskKey =
+    new Map<string, ClaudeBackgroundDeliveryMetadata>();
   private sequence = 0;
 
   constructor(private readonly deps: ClaudeRuntimeTaskFollowupDeps) {}
@@ -106,6 +116,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       runtimeTask?.isBackgrounded === true ||
       patch.is_backgrounded === true;
     if (!isBackgrounded) return;
+    const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
+    if (durableDelivery) {
+      this.durableDeliveryByTaskKey.set(flushTaskKey, durableDelivery);
+    }
 
     const pending = this.getPendingMap(task.agentSessionId);
     const previous = pending.get(taskId);
@@ -156,18 +170,62 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (!pending || pending.size === 0) return;
 
     const items = Array.from(pending.values()).sort((a, b) => a.firstSeen - b.firstSeen);
-    const delivery = this.deps.deliveryV2Enabled === true
-      ? buildClaudeRuntimeFollowupDelivery(task, items)
-      : {};
+    const durableItems = items.filter((item) =>
+      this.durableDeliveryByTaskKey.has(buildTaskKey(task.agentSessionId, item.taskId))
+    );
+    for (const item of durableItems) {
+      await this.flushItems(task, pending, [item]);
+    }
+    const remaining = items.filter((item) => !durableItems.includes(item));
+    if (remaining.length > 0) {
+      await this.flushItems(task, pending, remaining);
+    }
+    if (pending.size === 0) {
+      this.pendingBySession.delete(task.agentSessionId);
+    }
+  }
+
+  private async flushItems(
+    task: Task,
+    pending: Map<string, PendingRuntimeTaskFollowup>,
+    items: PendingRuntimeTaskFollowup[],
+  ): Promise<void> {
+    const durable =
+      items.length === 1
+        ? this.durableDeliveryByTaskKey.get(
+            buildTaskKey(task.agentSessionId, items[0]!.taskId),
+          )
+        : undefined;
+    const storedMessage = durable
+      ? readCanonicalDeliveryPayload(durable.storedPayload)
+      : undefined;
+    const delivery = durable
+      ? {
+          deliveryId: durable.deliveryId,
+          completionId: durable.completionId,
+          relationKey: durable.relationKey,
+          deliveryIntent: "runtime_followup" as const,
+          producerTerminalRevision: durable.producerTerminalRevision,
+          deliveryCreatedAt: durable.deliveryCreatedAt,
+          storedDeliveryPayload: durable.storedPayload,
+          storedDeliveryPayloadHash: durable.storedPayloadHash,
+        }
+      : this.deps.deliveryV2Enabled === true
+        ? buildClaudeRuntimeFollowupDelivery(task, items)
+        : {};
     const intervention = {
       agentSessionId: task.agentSessionId,
-      text: buildClaudeRuntimeTaskFollowupPrompt(items),
-      user: "system",
-      callerInfo: { source: "system" as const, display_name: "Soulstream" },
-      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      text: storedMessage?.text ?? buildClaudeRuntimeTaskFollowupPrompt(items),
+      user: storedMessage?.user ?? "system",
+      callerInfo: storedMessage?.callerInfo ??
+        { source: "system" as const, display_name: "Soulstream" },
+      attachmentPaths: storedMessage?.attachmentPaths,
+      context: storedMessage?.context,
+      source: durable?.source ?? CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
       followupAttempt: 1,
       followupKey: buildFollowupKey(task.agentSessionId, items),
-      followupTaskIds: items.map((item) => item.taskId),
+      followupTaskIds:
+        storedMessage?.followupTaskIds ?? items.map((item) => item.taskId),
       ...delivery,
     };
     try {
@@ -187,10 +245,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       }
       for (const item of items) {
         pending.delete(item.taskId);
-        this.flushedTaskKeys.add(buildTaskKey(task.agentSessionId, item.taskId));
-      }
-      if (pending.size === 0) {
-        this.pendingBySession.delete(task.agentSessionId);
+        const taskKey = buildTaskKey(task.agentSessionId, item.taskId);
+        this.flushedTaskKeys.add(taskKey);
+        this.durableDeliveryByTaskKey.delete(taskKey);
       }
     } catch (err) {
       this.deps.logger.warn(
@@ -313,20 +370,18 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
     task.pendingClaudeRuntimeFollowupRetry = false;
     const refreshedPrompt = buildRefreshedClaudeRuntimeTaskFollowupPrompt(task, message);
-    try {
-      const result = await this.deps.taskManager.addIntervention(
-        {
-          agentSessionId: task.agentSessionId,
-          text: buildClaudeRuntimeTaskFollowupFallbackPrompt(
-            refreshedPrompt ?? message.text,
-            reason,
-          ),
-          user: "system",
-          callerInfo: message.callerInfo ?? { source: "system", display_name: "Soulstream" },
-          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-          followupAttempt: attempt,
-          followupKey,
+    const fallbackText = buildClaudeRuntimeTaskFollowupFallbackPrompt(
+      refreshedPrompt ?? message.text,
+      reason,
+    );
+    const fallbackDelivery = this.deps.deliveryV2Enabled === true
+      ? buildClaudeRuntimeFollowupFallbackDelivery(task, message, {
+          text: fallbackText,
+          reason,
+          attempt,
           followupTaskIds: message.followupTaskIds,
+        })
+      : {
           deliveryId: message.deliveryId,
           deliveryIntent: message.deliveryIntent,
           completionId: message.completionId,
@@ -335,6 +390,20 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           parentDeliveryId: message.parentDeliveryId,
           callerTurnId: message.callerTurnId,
           deliveryCreatedAt: message.deliveryCreatedAt,
+        };
+    try {
+      const result = await this.deps.taskManager.addIntervention(
+        {
+          agentSessionId: task.agentSessionId,
+          text: fallbackText,
+          user: "system",
+          callerInfo: message.callerInfo ?? { source: "system", display_name: "Soulstream" },
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: attempt,
+          followupKey,
+          followupTaskIds: message.followupTaskIds,
+          ...fallbackDelivery,
+          callerTurnId: message.callerTurnId,
           onlyIfTerminal: this.deps.deliveryV2Enabled !== true,
         },
         this.deps.onResume,

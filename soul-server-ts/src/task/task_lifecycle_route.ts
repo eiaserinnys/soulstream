@@ -5,6 +5,8 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { ExternalFinalizeParams } from "./task_lifecycle_transition.js";
 import type { Task } from "./task_models.js";
+import type { ClaudeRuntimeRegistryCloseReason } from
+  "../engine/claude_session_client_registry.js";
 
 export interface FinalizeTaskParams extends ExternalFinalizeParams {
   agentSessionId: string;
@@ -33,7 +35,10 @@ interface TaskLifecycleRouteDeps {
   db: SessionDB;
   broadcaster: SessionBroadcaster;
   logger: Logger;
-  closeSessionRuntime?: (sessionId: string) => Promise<boolean>;
+  closeSessionRuntime?: (
+    sessionId: string,
+    reason: ClaudeRuntimeRegistryCloseReason,
+  ) => Promise<boolean>;
 }
 
 export class TaskLifecycleRoute {
@@ -44,7 +49,7 @@ export class TaskLifecycleRoute {
     const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
     if (cancelled || !task || task.status === "running") return cancelled;
     if (!this.deps.closeSessionRuntime) return false;
-    return await this.deps.closeSessionRuntime(sessionId);
+    return await this.deps.closeSessionRuntime(sessionId, "explicit_cancel");
   }
 
   async deleteTask(sessionId: string): Promise<void> {
@@ -54,7 +59,7 @@ export class TaskLifecycleRoute {
     await this.deps.lifecycleTransition.interruptAndDrain(task);
     if (this.deps.closeSessionRuntime) {
       try {
-        await this.deps.closeSessionRuntime(sessionId);
+        await this.deps.closeSessionRuntime(sessionId, "session_delete");
       } catch (err) {
         this.deps.logger.warn({ err, sessionId }, "session runtime close failed");
       }

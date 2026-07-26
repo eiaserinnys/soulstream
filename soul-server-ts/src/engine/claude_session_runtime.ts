@@ -7,7 +7,14 @@ export type ClaudeForegroundPhase =
 
 export type ClaudeQueryLifecycle = "open" | "closed" | "fatal";
 
-export type ClaudeRuntimeCloseReason = "explicit_cancel" | "shutdown" | "fatal";
+export type ClaudeRuntimeCloseReason =
+  | "explicit_cancel"
+  | "session_delete"
+  | "registry_ttl"
+  | "registry_capacity"
+  | "shutdown"
+  | "worker_restart"
+  | "fatal";
 
 export type ClaudeInputState =
   | "queued"
@@ -56,6 +63,7 @@ export interface ClaudePersistentRuntimeActivity {
   queryLifecycle: ClaudeQueryLifecycle;
   backgroundTaskCount: number;
   pendingInputRequestCount: number;
+  pendingRuntimeSignalCount?: number;
 }
 
 /**

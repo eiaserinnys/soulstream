@@ -8,6 +8,8 @@
  */
 
 import type { SSEEventPayload } from "./protocol.js";
+import { copyClaudeBackgroundDeliveryMetadata } from
+  "./claude_background_delivery_metadata.js";
 
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
@@ -751,7 +753,10 @@ export function mapClaudeClientEvent(
       ];
     }
   })();
-  return attachInternalDedupeKey(payloads, event);
+  return copyClaudeBackgroundDeliveryMetadata(
+    event,
+    attachInternalDedupeKey(payloads, event),
+  );
 }
 
 function nowEpochSec(): number {
