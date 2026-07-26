@@ -72,11 +72,38 @@ function makeSubject(
   };
 }
 
-function admitted(deliveryId: string): DeliveryLedgerAdmission {
+function admitted(
+  deliveryId: string,
+  intent: "durable_next_turn" | "completion_notification" | "runtime_followup" =
+    "completion_notification",
+): DeliveryLedgerAdmission {
   return {
     kind: "admitted",
     deliveryId,
-    row: { delivery_id: deliveryId } as never,
+    row: {
+      delivery_id: deliveryId,
+      intent,
+      source: intent === "runtime_followup"
+        ? "claude_runtime_task_followup"
+        : "completion_notifier",
+      completion_id: `completion:${deliveryId}`,
+      relation_key: `relation:${deliveryId}`,
+      producer_terminal_revision: null,
+      parent_delivery_id: null,
+      caller_turn_id: null,
+      supervisor_role: null,
+      lease_owner: "test-route",
+      created_at: new Date("2026-07-26T00:00:00.000Z"),
+      payload: {
+        text: "stored delivery text",
+        user: "system",
+        attachment_paths: null,
+        context: null,
+        caller_info: null,
+        followup_task_ids: null,
+      },
+      payload_hash: `hash:${deliveryId}`,
+    } as never,
   };
 }
 
@@ -291,7 +318,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
   it("generating 중 완료는 interrupt 없이 notification+queueOnly로만 전달한다", async () => {
     const deliveryId = "55555555-5555-4555-8555-555555555555";
-    const admission = admitted(deliveryId);
+    const admission = admitted(deliveryId, "runtime_followup");
     const gate = {
       admit: vi.fn().mockResolvedValue(admission),
       recordResult: vi.fn().mockResolvedValue(undefined),
@@ -386,7 +413,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
   it("does not publish completion UI when queueing the delivery fails", async () => {
     const deliveryId = "77777777-7777-4777-8777-777777777777";
     const gate = {
-      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "runtime_followup")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
@@ -458,7 +485,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
   it("durable_next_turn은 notification으로 오인하지 않고 queue-only user delivery를 유지한다", async () => {
     const deliveryId = "66666666-6666-4666-8666-666666666666";
     const gate = {
-      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),

@@ -11,7 +11,10 @@ import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
-import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
+import {
+  buildClaudeRuntimeFollowupDelivery,
+  buildClaudeRuntimeFollowupFallbackDelivery,
+} from "./claude_runtime_followup_delivery.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
   buildClaudeRuntimeTaskFollowupFallbackPrompt,
@@ -367,20 +370,18 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
     task.pendingClaudeRuntimeFollowupRetry = false;
     const refreshedPrompt = buildRefreshedClaudeRuntimeTaskFollowupPrompt(task, message);
-    try {
-      const result = await this.deps.taskManager.addIntervention(
-        {
-          agentSessionId: task.agentSessionId,
-          text: buildClaudeRuntimeTaskFollowupFallbackPrompt(
-            refreshedPrompt ?? message.text,
-            reason,
-          ),
-          user: "system",
-          callerInfo: message.callerInfo ?? { source: "system", display_name: "Soulstream" },
-          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-          followupAttempt: attempt,
-          followupKey,
+    const fallbackText = buildClaudeRuntimeTaskFollowupFallbackPrompt(
+      refreshedPrompt ?? message.text,
+      reason,
+    );
+    const fallbackDelivery = this.deps.deliveryV2Enabled === true
+      ? buildClaudeRuntimeFollowupFallbackDelivery(task, message, {
+          text: fallbackText,
+          reason,
+          attempt,
           followupTaskIds: message.followupTaskIds,
+        })
+      : {
           deliveryId: message.deliveryId,
           deliveryIntent: message.deliveryIntent,
           completionId: message.completionId,
@@ -389,6 +390,20 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           parentDeliveryId: message.parentDeliveryId,
           callerTurnId: message.callerTurnId,
           deliveryCreatedAt: message.deliveryCreatedAt,
+        };
+    try {
+      const result = await this.deps.taskManager.addIntervention(
+        {
+          agentSessionId: task.agentSessionId,
+          text: fallbackText,
+          user: "system",
+          callerInfo: message.callerInfo ?? { source: "system", display_name: "Soulstream" },
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: attempt,
+          followupKey,
+          followupTaskIds: message.followupTaskIds,
+          ...fallbackDelivery,
+          callerTurnId: message.callerTurnId,
           onlyIfTerminal: this.deps.deliveryV2Enabled !== true,
         },
         this.deps.onResume,

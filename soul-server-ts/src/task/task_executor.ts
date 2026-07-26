@@ -100,7 +100,7 @@ export class TaskExecutor {
     >,
     deliveryConsumptionRecorder?: Pick<
       TaskDeliveryLedgerGate,
-      "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
+      "recordConsumed" | "recordTurnStarted"
     >,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
@@ -251,9 +251,6 @@ export class TaskExecutor {
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
-          if (this.deliveryConsumption) {
-            await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
-          }
           await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
         }
@@ -263,11 +260,7 @@ export class TaskExecutor {
           currentTurnIntervention,
           previousAssistantText,
         );
-        if (followupStalled) {
-          if (this.deliveryConsumption) {
-            await this.deliveryConsumption.recordTurnFailure(currentTurnIntervention);
-          }
-        } else if (this.deliveryConsumption) {
+        if (!followupStalled && this.deliveryConsumption) {
           await this.deliveryConsumption.recordConsumed(task, currentTurnIntervention);
         }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정

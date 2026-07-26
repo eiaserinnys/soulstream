@@ -5,7 +5,7 @@ import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
-  "recordConsumed" | "recordTurnStarted" | "recordTurnFailure"
+  "recordConsumed" | "recordTurnStarted"
 >;
 
 export class TaskDeliveryConsumption {
@@ -40,20 +40,6 @@ export class TaskDeliveryConsumption {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger turn-start update failed",
-      );
-    }
-  }
-
-  async recordTurnFailure(
-    intervention: InterventionMessage | undefined,
-  ): Promise<void> {
-    if (!intervention || !this.recorder) return;
-    try {
-      await this.recorder.recordTurnFailure(intervention);
-    } catch (err) {
-      this.logger.warn(
-        { err, deliveryId: intervention.deliveryId },
-        "delivery ledger failure update failed",
       );
     }
   }

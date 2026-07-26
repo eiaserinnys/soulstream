@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   RegisterSessionDeliveryParams,
+  RegisterSessionDeliveryResult,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
@@ -48,13 +49,20 @@ export class TaskDeliveryLedgerGate {
         `Delivery identity required for ${params.deliveryIntent}: delivery_id, relation_key, completion_id`,
       );
     }
-    const registration = buildRegistration({
+    const registrationParams = {
       ...params,
       deliveryId: params.deliveryId,
       relationKey: params.relationKey,
       completionId: params.completionId,
-    });
-    const registered = await repository.register(registration);
+    };
+    const registered = await loadOrRegister(repository, registrationParams);
+    if (registered.kind === "identity_mismatch") {
+      return {
+        kind: "suppressed",
+        deliveryId: params.deliveryId,
+        reason: "delivery_identity_mismatch",
+      };
+    }
     if (registered.conflict) {
       return {
         kind: "suppressed",
@@ -155,12 +163,14 @@ export class TaskDeliveryLedgerGate {
     if (!this.enabled || !isLedgerControlled(params)) return false;
     if (!params.deliveryId || !params.relationKey || !params.completionId) return false;
     const repository = this.requireRepository();
-    const registered = await repository.register(buildRegistration({
+    const registrationParams = {
       ...params,
       deliveryId: params.deliveryId,
       relationKey: params.relationKey,
       completionId: params.completionId,
-    }));
+    };
+    const registered = await loadOrRegister(repository, registrationParams);
+    if (registered.kind === "identity_mismatch") return false;
     if (registered.conflict) return false;
     const consumed = await repository.markConsumedByRelation(
       params.relationKey,
@@ -264,11 +274,6 @@ export class TaskDeliveryLedgerGate {
     );
   }
 
-  async recordTurnFailure(message: InterventionMessage): Promise<void> {
-    if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
-    await this.requireRepository().markUncertain(message.deliveryId);
-  }
-
   private requireRepository(): LedgerRepository {
     if (!this.repository) {
       throw new Error("Delivery ledger repository is required when runtime v2 is enabled");
@@ -277,13 +282,62 @@ export class TaskDeliveryLedgerGate {
   }
 }
 
+type ControlledRegistrationParams = AddInterventionParams & {
+  deliveryId: string;
+  relationKey: string;
+  completionId: string;
+  deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
+};
+
+type LoadOrRegisterResult =
+  | ({ kind: "registered" } & RegisterSessionDeliveryResult)
+  | { kind: "identity_mismatch"; row: SessionDeliveryRow };
+
+/**
+ * A durable delivery id owns one immutable payload.
+ *
+ * Existing ids are read back before registration, so retries cannot re-hash
+ * display text or mutate a settled row to `uncertain`. Repository conflict
+ * detection still owns the absent-id race and relation uniqueness.
+ */
+async function loadOrRegister(
+  repository: LedgerRepository,
+  params: ControlledRegistrationParams,
+): Promise<LoadOrRegisterResult> {
+  const existing = await repository.get(params.deliveryId);
+  if (existing) {
+    if (!matchesImmutableIdentity(existing, params)) {
+      return { kind: "identity_mismatch", row: existing };
+    }
+    return {
+      kind: "registered",
+      row: existing,
+      inserted: false,
+      conflict: false,
+    };
+  }
+  return {
+    kind: "registered",
+    ...await repository.register(buildRegistration(params)),
+  };
+}
+
+function matchesImmutableIdentity(
+  row: SessionDeliveryRow,
+  params: Pick<
+    ControlledRegistrationParams,
+    "relationKey" | "completionId" | "deliveryIntent"
+  >,
+): boolean {
+  return (
+    row.relation_key === params.relationKey &&
+    row.completion_id === params.completionId &&
+    row.intent === params.deliveryIntent
+  );
+}
+
 function buildRegistration(
-  params: AddInterventionParams & {
-    deliveryId: string;
-    relationKey: string;
-    completionId: string;
-    deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
-  },
+  params: ControlledRegistrationParams,
 ): RegisterSessionDeliveryParams {
   const source = params.source ?? "unknown";
   const canonical = storedCanonicalPayload(params) ??

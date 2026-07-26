@@ -121,7 +121,6 @@ describe("TaskExecutor.startExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
-      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
@@ -149,13 +148,12 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
-    expect(deliveryRecorder.recordTurnFailure).not.toHaveBeenCalled();
     expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
       deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
     );
   });
 
-  it("queued delivery turn이 실패하면 consumed 대신 uncertain 경계를 호출한다", async () => {
+  it("queued delivery turn 실패는 이미 성공한 delivery 상태를 되돌리지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -166,7 +164,6 @@ describe("TaskExecutor.startExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
-      recordTurnFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([], { throwAt: 0 }),
@@ -191,7 +188,6 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
-    expect(deliveryRecorder.recordTurnFailure).toHaveBeenCalledWith(message);
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 

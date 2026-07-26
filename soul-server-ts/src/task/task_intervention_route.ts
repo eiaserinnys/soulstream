@@ -1,6 +1,7 @@
 import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { ActiveTaskRecovery } from "./task_active_recovery.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
+import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type {
@@ -12,6 +13,7 @@ import type {
   TaskDeliveryLedgerGate,
 } from "./task_delivery_ledger_gate.js";
 import { decideNotificationDelivery } from "./delivery_policy.js";
+import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 
 /**
@@ -103,7 +105,7 @@ export class TaskInterventionRoute {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    const message: InterventionMessage = {
+    const initialMessage: InterventionMessage = {
       text: params.text,
       user: params.user,
       callerInfo: params.callerInfo,
@@ -123,6 +125,8 @@ export class TaskInterventionRoute {
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,
       followupTaskIds: params.followupTaskIds,
+      storedDeliveryPayload: params.storedDeliveryPayload,
+      storedDeliveryPayloadHash: params.storedDeliveryPayloadHash,
     };
     const admission: DeliveryLedgerAdmission = this.deps.deliveryLedgerGate
       ? await this.deps.deliveryLedgerGate.admit(params)
@@ -134,6 +138,9 @@ export class TaskInterventionRoute {
         reason: admission.reason,
       };
     }
+    const message = admission.kind === "admitted"
+      ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
+      : initialMessage;
 
     let task: Task | undefined;
     let ledgerResultRecorded = false;
@@ -241,6 +248,35 @@ export class TaskInterventionRoute {
     this.deps.rememberTask(loaded);
     return loaded;
   }
+}
+
+function hydrateStoredDeliveryMessage(
+  message: InterventionMessage,
+  row: SessionDeliveryRow,
+): InterventionMessage {
+  const canonical = readCanonicalDeliveryPayload(row.payload);
+  return {
+    ...message,
+    text: canonical.text,
+    user: canonical.user,
+    callerInfo: canonical.callerInfo,
+    attachmentPaths: canonical.attachmentPaths,
+    context: canonical.context,
+    followupTaskIds: canonical.followupTaskIds,
+    source: row.source,
+    deliveryId: row.delivery_id,
+    deliveryIntent: row.intent,
+    completionId: row.completion_id ?? undefined,
+    relationKey: row.relation_key,
+    producerTerminalRevision: row.producer_terminal_revision ?? undefined,
+    parentDeliveryId: row.parent_delivery_id ?? undefined,
+    callerTurnId: row.caller_turn_id ?? undefined,
+    deliveryCreatedAt: row.created_at.toISOString(),
+    supervisorRole: row.supervisor_role ?? undefined,
+    deliveryLeaseOwner: row.lease_owner ?? undefined,
+    storedDeliveryPayload: row.payload,
+    storedDeliveryPayloadHash: row.payload_hash,
+  };
 }
 
 function isNotificationIntent(
