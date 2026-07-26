@@ -85,6 +85,9 @@ export type ListSessionSnapshotsInput = LoadSessionSnapshotInput & {
   readonly sessionIds?: readonly string[];
   readonly folderId?: string;
   readonly sessionType?: string;
+  readonly search?: string;
+  readonly nodeId?: string;
+  readonly statuses?: readonly string[];
   readonly offset: number;
   readonly limit: number;
 };
@@ -148,6 +151,9 @@ export function createLiveDbCatalogRepository(
       readonly sessionIds?: readonly string[];
       readonly folderId?: string;
       readonly sessionType?: string;
+      readonly search?: string;
+      readonly nodeId?: string;
+      readonly statuses?: readonly string[];
     },
     limit: number | null,
     offset: number | null,
@@ -158,6 +164,11 @@ export function createLiveDbCatalogRepository(
       if (sessionIds.length === 0) return { sessions: [], total: 0 };
       const folderId = input.folderId ?? null;
       const sessionType = input.sessionType ?? null;
+      const searchPattern = input.search === undefined
+        ? null
+        : `%${input.search}%`;
+      const nodeId = input.nodeId ?? null;
+      const statuses = input.statuses === undefined ? null : [...input.statuses];
       const feedOnly = input.feedOnly === true;
       const targetedRows = await sql`
         SELECT s.*
@@ -166,6 +177,15 @@ export function createLiveDbCatalogRepository(
         WHERE s.session_id = ANY(${sessionIds}::text[])
           AND (${folderId}::text IS NULL OR s.folder_id = ${folderId})
           AND (${sessionType}::text IS NULL OR s.session_type = ${sessionType})
+          AND (${nodeId}::text IS NULL OR s.node_id = ${nodeId})
+          AND (${statuses}::text[] IS NULL OR s.status = ANY(${statuses}::text[]))
+          AND (
+            ${searchPattern}::text IS NULL
+            OR COALESCE(s.display_name, '') ILIKE ${searchPattern}
+            OR s.session_id ILIKE ${searchPattern}
+            OR COALESCE(s.node_id, '') ILIKE ${searchPattern}
+            OR COALESCE(f.name, '') ILIKE ${searchPattern}
+          )
           AND (
             ${feedOnly}::boolean = FALSE
             OR (
@@ -316,6 +336,9 @@ async function sessionSnapshotFilters(
     readonly sessionIds?: readonly string[];
     readonly folderId?: string;
     readonly sessionType?: string;
+    readonly search?: string;
+    readonly nodeId?: string;
+    readonly statuses?: readonly string[];
   },
   repository: SessionResourceAccessRepository,
 ): Promise<Record<string, unknown> | null> {
@@ -323,6 +346,9 @@ async function sessionSnapshotFilters(
   if (input.feedOnly === true) filters.feed_only = true;
   if (input.folderId !== undefined) filters.folder_id = input.folderId;
   if (input.sessionType !== undefined) filters.session_type = input.sessionType;
+  if (input.search !== undefined) filters.search = input.search;
+  if (input.nodeId !== undefined) filters.node_id = input.nodeId;
+  if (input.statuses !== undefined) filters.status = [...input.statuses];
   if (input.access === undefined || input.folderId !== undefined) return filters;
 
   const access = normalizeBoardAccess(input.access);

@@ -8,6 +8,9 @@ export type SessionSnapshotQuery = {
   folderId?: string;
   folder_id?: string;
   session_type?: string;
+  search?: string;
+  node_id?: string;
+  status?: string[];
   feed_only?: boolean;
   offset?: number;
   limit?: number;
@@ -168,12 +171,46 @@ function matchesQuery(
     return false;
   }
   if (
+    query.node_id !== undefined &&
+    fieldValue(session, "node_id", "nodeId") !== query.node_id
+  ) {
+    return false;
+  }
+  if (
+    query.status !== undefined &&
+    !query.status.includes(String(fieldValue(session, "status", "status") ?? ""))
+  ) {
+    return false;
+  }
+  if (
     query.feed_only === true &&
     fieldValue(session, "session_type", "sessionType") === "llm"
   ) {
     return false;
   }
+  if (query.search !== undefined && !matchesMetadataSearch(session, query.search)) {
+    return false;
+  }
   return true;
+}
+
+function matchesMetadataSearch(
+  session: SessionSnapshotRecord,
+  search: string,
+): boolean {
+  const normalized = search.trim().toLocaleLowerCase();
+  if (normalized.length === 0) return true;
+  return [
+    fieldValue(session, "display_name", "displayName"),
+    session.title,
+    session.agentSessionId,
+    fieldValue(session, "folder_name", "folderName"),
+    fieldValue(session, "folder_id", "folderId"),
+    fieldValue(session, "node_id", "nodeId"),
+  ].some((value) =>
+    typeof value === "string" &&
+    value.toLocaleLowerCase().includes(normalized)
+  );
 }
 
 function fieldValue(

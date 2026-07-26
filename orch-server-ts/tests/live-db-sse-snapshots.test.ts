@@ -219,6 +219,42 @@ describe("live DB SSE replay snapshots", () => {
     ]);
   });
 
+  it("passes metadata search, node, and status filters to both durable queries", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("session_count")) return [{ count: 0 }];
+      if (text.includes("session_get_all")) return [];
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(repository.listSessionSnapshots({
+      search: "Alpha",
+      nodeId: "node-a",
+      statuses: ["running", "waiting"],
+      offset: 0,
+      limit: 20,
+    })).resolves.toMatchObject({
+      sessions: [],
+      total: 0,
+    });
+
+    const filterValues = harness.calls
+      .filter((call) => call.text.includes("session_"))
+      .map((call) => (call.values[0] as { jsonValue: unknown }).jsonValue);
+    expect(filterValues).toEqual([
+      {
+        node_id: "node-a",
+        search: "Alpha",
+        status: ["running", "waiting"],
+      },
+      {
+        node_id: "node-a",
+        search: "Alpha",
+        status: ["running", "waiting"],
+      },
+    ]);
+  });
+
   it("omits inaccessible rows from a targeted session summary batch without failing visible refs", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("FROM sessions s") && text.includes("s.session_id = ANY")) {

@@ -1125,6 +1125,48 @@ async def test_session_feed_only_excludes_hidden_folders_and_llm(test_db):
     assert count == 1
 
 
+async def test_session_metadata_search_matches_title_folder_and_node(test_db):
+    await _create_folder(test_db, "search-folder", "Launch Planning")
+    await _create_session(
+        test_db,
+        "search-title",
+        folder_id="search-folder",
+        node_id="node-red",
+        display_name="Alpha Release",
+    )
+    await _create_session(
+        test_db,
+        "search-node",
+        node_id="node-alpha",
+        display_name="Unrelated",
+    )
+
+    title_filter = json.dumps({"search": "alpha release"})
+    title_rows = await test_db.fetch(
+        "SELECT * FROM session_get_all($1::jsonb, NULL, NULL)",
+        title_filter,
+    )
+    assert [row["session_id"] for row in title_rows] == ["search-title"]
+    assert await test_db.fetchval(
+        "SELECT session_count($1::jsonb)",
+        title_filter,
+    ) == 1
+
+    folder_filter = json.dumps({"search": "launch planning"})
+    folder_rows = await test_db.fetch(
+        "SELECT * FROM session_get_all($1::jsonb, NULL, NULL)",
+        folder_filter,
+    )
+    assert [row["session_id"] for row in folder_rows] == ["search-title"]
+
+    node_filter = json.dumps({"search": "node-alpha"})
+    node_rows = await test_db.fetch(
+        "SELECT * FROM session_get_all($1::jsonb, NULL, NULL)",
+        node_filter,
+    )
+    assert [row["session_id"] for row in node_rows] == ["search-node"]
+
+
 async def test_session_delete(test_db):
     await _create_session(test_db, "s-del")
     await test_db.execute("SELECT session_delete($1)", "s-del")

@@ -49,6 +49,9 @@ function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {
     folderId: stringQuery(query, "folderId"),
     folder_id: stringQuery(query, "folder_id"),
     session_type: stringQuery(query, "session_type"),
+    search: trimmedStringQuery(query, "search"),
+    node_id: stringQuery(query, "node_id"),
+    status: stringArrayQuery(query, "status"),
     feed_only: booleanQuery(query, "feed_only"),
     offset: numberQuery(query, "offset"),
     limit: numberQuery(query, "limit"),
@@ -62,13 +65,22 @@ function stringArrayQuery(query: unknown, key: string): string[] | undefined {
   }
   const raw = (query as Record<string, unknown>)[key];
   const values = (Array.isArray(raw) ? raw : [raw])
-    .filter((value): value is string => typeof value === "string" && value.length > 0);
+    .flatMap((value) => typeof value === "string" ? value.split(",") : [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
   return values.length > 0 ? [...new Set(values)] : undefined;
 }
 
 function stringQuery(query: unknown, key: string): string | undefined {
   const value = queryValue(query, key);
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function trimmedStringQuery(query: unknown, key: string): string | undefined {
+  const value = queryValue(query, key);
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function numberQuery(query: unknown, key: string): number | undefined {
