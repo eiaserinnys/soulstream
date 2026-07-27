@@ -120,6 +120,29 @@ describe("ChatInputRequest", () => {
     });
   });
 
+  it("aligns the direct input and submit button with the banner input-row contract", () => {
+    render();
+
+    const input = container.querySelector<HTMLInputElement>('input[placeholder="직접 입력"]');
+    const submit = findButton(container, "전송");
+    const form = input?.closest("form");
+
+    expect(input).not.toBeNull();
+    expect(form).not.toBeNull();
+    expect(form?.contains(submit)).toBe(true);
+    expect(form?.className).toContain("flex");
+    expect(form?.className).toContain("gap-2");
+    expect(input?.className).toContain("rounded-[13px]");
+    expect(input?.className).toContain("px-3");
+    expect(submit.className).toContain("h-auto");
+    expect(submit.className).toContain("sm:h-auto");
+    expect(submit.className).toContain("self-stretch");
+    expect(submit.className).toContain("rounded-[13px]");
+    expect(submit.className).toContain("px-3");
+    expect(submit.className).not.toContain("sm:h-6");
+    expect(submit.className).not.toContain("rounded-full");
+  });
+
   it("shows a retryable error when AskUserQuestion submission fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });

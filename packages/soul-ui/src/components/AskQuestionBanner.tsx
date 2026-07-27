@@ -18,6 +18,7 @@ import { formatTime } from '../lib/input-request-utils';
 import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion, ToolApprovalNodeDef } from '@shared/types';
 import { LiquidGlassCard } from './LiquidGlassCard';
 import { Button } from './ui/button';
+import { InputRequestAnswerForm } from './InputRequestAnswerForm';
 import { InputRequestOptionContent } from './InputRequestOptionContent';
 
 type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
@@ -188,30 +189,18 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
               </Button>
             ))}
           </div>
-          <form
-            className="flex gap-2"
+          <InputRequestAnswerForm
+            value={customAnswer}
+            onValueChange={setCustomAnswer}
+            inputDisabled={!!selectedAnswer}
+            submitDisabled={!!selectedAnswer || !customAnswer.trim()}
+            inputTextClassName="text-xs"
             onSubmit={(event) => {
               event.preventDefault();
               const answer = customAnswer.trim();
               if (answer) void handleSelect(answer);
             }}
-          >
-            <input
-              value={customAnswer}
-              onChange={(event) => setCustomAnswer(event.target.value)}
-              disabled={!!selectedAnswer}
-              placeholder="직접 입력"
-              className="min-w-0 flex-1 rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2 text-xs outline-none transition-colors focus:border-accent-blue/55"
-            />
-            <Button
-              type="submit"
-              size="xs"
-              disabled={!!selectedAnswer || !customAnswer.trim()}
-              className="h-auto self-stretch rounded-full px-3 text-xs font-semibold"
-            >
-              전송
-            </Button>
-          </form>
+          />
           {submissionFailed && (
             <div role="alert" className="text-xs text-destructive">
               {INPUT_RESPONSE_ERROR_MESSAGE}
