@@ -76,9 +76,10 @@ async function dispatchBackgroundScheduleCommand<
   options: SessionBackgroundScheduleCommandDispatchOptions,
   payload: TPayload,
 ): Promise<NodeCommandResponse> {
-  const routed = options.router.routeExistingSessionPendingCommand(payload, {
-    timeoutMs: options.timeoutMs,
-  });
+  const routed = await options.router.routeExistingSessionPendingCommand(
+    payload,
+    { timeoutMs: options.timeoutMs },
+  );
   return options.bridge.sendPendingCommand(routed);
 }
 

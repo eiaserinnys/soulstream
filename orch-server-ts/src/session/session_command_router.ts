@@ -18,7 +18,12 @@ import {
 
 export type SessionCommandRouterOptions = {
   registry: InMemoryNodeRegistry;
+  findSessionOwnerNodeId?: SessionOwnerNodeIdLookup;
 };
+
+export type SessionOwnerNodeIdLookup = (
+  agentSessionId: string,
+) => Promise<string | null>;
 
 export type RoutedPendingSessionCommand<
   TPayload extends RequestResponseNodeCommandPayload,
@@ -112,9 +117,11 @@ export class SessionRouteNodeUnavailableError extends SessionCommandRouteError {
 
 export class SessionCommandRouter {
   private readonly registry: InMemoryNodeRegistry;
+  private readonly findSessionOwnerNodeId: SessionOwnerNodeIdLookup | undefined;
 
   constructor(options: SessionCommandRouterOptions) {
     this.registry = options.registry;
+    this.findSessionOwnerNodeId = options.findSessionOwnerNodeId;
   }
 
   createSession<
@@ -154,14 +161,16 @@ export class SessionCommandRouter {
     };
   }
 
-  respond<
+  async respond<
     TPayload extends RespondNodeCommandPayload,
     TResponse extends NodeCommandResponse = NodeCommandResponse,
   >(
     payload: TPayload,
     options: { timeoutMs?: number } = {},
-  ): RoutedPendingSessionCommand<TPayload, TResponse> {
-    const node = this.requireNodeForExistingSession(payload.agentSessionId);
+  ): Promise<RoutedPendingSessionCommand<TPayload, TResponse>> {
+    const node = await this.requireNodeForExistingSession(
+      payload.agentSessionId,
+    );
     return {
       node,
       command: this.registry.createCommand<TPayload, TResponse>(
@@ -172,14 +181,16 @@ export class SessionCommandRouter {
     };
   }
 
-  routeExistingSessionPendingCommand<
+  async routeExistingSessionPendingCommand<
     TPayload extends ExistingSessionPendingNodeCommandPayload,
     TResponse extends NodeCommandResponse = NodeCommandResponse,
   >(
     payload: TPayload,
     options: { timeoutMs?: number } = {},
-  ): RoutedPendingSessionCommand<TPayload, TResponse> {
-    const node = this.requireNodeForExistingSession(payload.agentSessionId);
+  ): Promise<RoutedPendingSessionCommand<TPayload, TResponse>> {
+    const node = await this.requireNodeForExistingSession(
+      payload.agentSessionId,
+    );
     return {
       node,
       command: this.registry.createCommand<TPayload, TResponse>(
@@ -190,22 +201,36 @@ export class SessionCommandRouter {
     };
   }
 
-  subscribeEvents<TPayload extends SubscribeEventsNodeCommandPayload>(
+  async subscribeEvents<TPayload extends SubscribeEventsNodeCommandPayload>(
     payload: TPayload,
-  ): RoutedFireAndForgetSessionCommand<TPayload> {
-    const node = this.requireNodeForExistingSession(payload.agentSessionId);
+  ): Promise<RoutedFireAndForgetSessionCommand<TPayload>> {
+    const node = await this.requireNodeForExistingSession(
+      payload.agentSessionId,
+    );
     return {
       node,
       command: this.registry.createFireAndForgetCommand(node.nodeId, payload),
     };
   }
 
-  private requireNodeForExistingSession(
+  private async requireNodeForExistingSession(
     agentSessionId: string,
-  ): NodeConnectionSnapshot {
+  ): Promise<NodeConnectionSnapshot> {
     const owner = this.registry.findSessionOwner(agentSessionId);
     if (owner === undefined) {
-      throw new SessionRouteSessionOwnerMissingError(agentSessionId);
+      const durableNodeId =
+        (await this.findSessionOwnerNodeId?.(agentSessionId)) ?? null;
+      if (durableNodeId === null) {
+        throw new SessionRouteSessionOwnerMissingError(agentSessionId);
+      }
+      const durableNode = this.registry.getConnectedNode(durableNodeId);
+      if (durableNode === undefined) {
+        throw new SessionRouteNodeUnavailableError({
+          agentSessionId,
+          nodeId: durableNodeId,
+        });
+      }
+      return durableNode;
     }
     if (!owner.fresh) {
       throw new SessionRouteSessionOwnerStaleError({

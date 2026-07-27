@@ -7,6 +7,27 @@ import {
 } from "../src/index.js";
 
 describe("live DB SSE replay snapshots", () => {
+  it("loads the durable session owner node used by command routing", async () => {
+    const harness = createSqlHarness((text, values) => {
+      if (text.includes("FROM sessions") && values[0] === "sess-owned") {
+        return [{ node_id: "node-a" }];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.findSessionOwnerNodeId("sess-owned"),
+    ).resolves.toBe("node-a");
+    await expect(
+      repository.findSessionOwnerNodeId("sess-missing"),
+    ).resolves.toBeNull();
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT node_id FROM sessions WHERE session_id = ? LIMIT 1",
+      "SELECT node_id FROM sessions WHERE session_id = ? LIMIT 1",
+    ]);
+  });
+
   it("reuses the durable review transition and returns the serialized DB row", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("session_acknowledge_review")) {

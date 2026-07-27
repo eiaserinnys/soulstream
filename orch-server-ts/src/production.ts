@@ -161,6 +161,7 @@ export async function createLiveProductionApplication(
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
+    findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,
     loadSessionSnapshot: async () => dbCatalogRepository.loadSessionSnapshot(),
