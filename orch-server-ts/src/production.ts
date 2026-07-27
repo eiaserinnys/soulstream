@@ -33,6 +33,7 @@ import { OrchestratorMaintenanceService } from "./runtime/orchestrator_maintenan
 import { createOrchestratorMemoryStatsCollector } from "./runtime/orchestrator_memory_stats.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
+import { deletedBoardItemsDelta } from "./runtime/catalog_delta_broadcaster.js";
 import {
   createLiveDbSqlResolver,
   type LiveDbSqlResolver,
@@ -269,10 +270,16 @@ export async function createLiveProductionApplication(
       if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
       await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
     },
-    onCommitted: async () => {
+    onCommitted: async (delta) => {
       await broadcastCatalogSnapshot(
         providers.folderRoutes.provider,
         runtimeServices.sessionBroadcaster,
+        delta
+          ? {
+              sessionsDelta: delta.sessionsDelta,
+              boardItemsDelta: deletedBoardItemsDelta(delta.deletedBoardItemIds),
+            }
+          : {},
       );
     },
     onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),

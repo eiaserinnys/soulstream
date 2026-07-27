@@ -6,6 +6,11 @@ import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import {
+  boardItemsDelta,
+  serializeCatalogFolders,
+  sessionAssignmentFromRow,
+} from "../catalog/catalog_delta.js";
 
 import type {
   CallerInfo,
@@ -265,7 +270,7 @@ export class TaskCreation {
    *   - folder_id 명시 → 그 폴더에 배정
    *   - 미지정 → sessionType에 대응하는 기본 폴더 id lookup → 배정
    *   - 기본 폴더 미존재 → 폴더 배정 없음(graceful) + broadcast 없음
-   *   - 폴더 배정 후 `getCatalog` + `emitCatalogUpdated` (dashboard 폴더 트리 즉시 갱신)
+   *   - 폴더 배정 후 해당 세션·보드 항목 delta 발행
    *
    * 부가 기능 — 각 단계 실패를 격리 (Python L292-293 "폴더 배정이나 브로드캐스트에 실패해도
    * 호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다").
@@ -329,8 +334,18 @@ export class TaskCreation {
 
     if (assigned !== null) {
       try {
-        const catalog = await this.deps.db.getCatalog();
-        await this.deps.broadcaster.emitCatalogUpdated(catalog);
+        const [folders, session, boardItem] = await Promise.all([
+          this.deps.db.getAllFolders(),
+          this.deps.db.getSession(sessionId),
+          this.deps.db.getPrimarySessionBoardItem(sessionId),
+        ]);
+        await this.deps.broadcaster.emitCatalogUpdated(
+          serializeCatalogFolders(folders),
+          session
+            ? { [sessionId]: sessionAssignmentFromRow(session) }
+            : {},
+          boardItemsDelta(boardItem ? [boardItem] : []),
+        );
       } catch (err) {
         this.deps.logger.warn(
           { err, sessionId },

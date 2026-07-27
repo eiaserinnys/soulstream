@@ -55,6 +55,7 @@ export * from "./runtime/live_admin_users_route_provider.js";
 export * from "./runtime/live_atom_route_provider.js";
 export * from "./runtime/live_attachment_route_provider.js";
 export * from "./runtime/live_config_route_providers.js";
+export * from "./runtime/catalog_delta_broadcaster.js";
 export * from "./runtime/live_dashboard_access_provider.js";
 export * from "./runtime/live_board_asset_mutation_broadcaster.js";
 export * from "./runtime/live_board_asset_route_provider.js";

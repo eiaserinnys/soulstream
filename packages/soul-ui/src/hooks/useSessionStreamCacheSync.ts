@@ -259,10 +259,12 @@ export function useSessionStreamCacheSync(
         ?? (
           Array.isArray(event.folders)
           && event.sessions_delta !== undefined
+          && event.board_items_delta !== undefined
             ? mergeCatalogSessionsDelta(
                 store.catalog,
                 event.folders,
                 event.sessions_delta,
+                event.board_items_delta,
               )
             : undefined
         );

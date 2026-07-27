@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
+import { mergeCatalogSessionsDelta } from "../hooks/session-stream-helpers";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useTaskStore } from "../stores/task-store";
 import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
@@ -549,6 +550,59 @@ describe("BoardWorkspaceView", () => {
       folderId: "other",
       x: 160,
       y: 120,
+    });
+  });
+
+  it("keeps a board_items_delta for another folder while Yjs remains canonical for the selected folder", () => {
+    const deltaCatalog = mergeCatalogSessionsDelta(
+      relationCatalog,
+      relationCatalog.folders,
+      {},
+      {
+        "session:parent": {
+          id: "session:parent",
+          folderId: "root",
+          itemType: "session",
+          itemId: "parent",
+          x: 1,
+          y: 2,
+        },
+        "session:cross-child": {
+          id: "session:cross-child",
+          folderId: "other",
+          itemType: "session",
+          itemId: "cross-child",
+          x: 320,
+          y: 240,
+        },
+      },
+    );
+
+    const result = resolveEffectiveBoardCatalog({
+      catalog: deltaCatalog,
+      selectedFolderId: "root",
+      yjsBoardItemsForSelectedFolder: [{
+        id: "session:parent",
+        folderId: "root",
+        itemType: "session",
+        itemId: "parent",
+        x: 999,
+        y: 888,
+      }],
+      isYjsLoading: false,
+      hasYjsSynced: true,
+      assetSignedUrls: {},
+    });
+
+    expect(result?.boardItems?.find((item) => item.id === "session:parent")).toMatchObject({
+      folderId: "root",
+      x: 999,
+      y: 888,
+    });
+    expect(result?.boardItems?.find((item) => item.id === "session:cross-child")).toMatchObject({
+      folderId: "other",
+      x: 320,
+      y: 240,
     });
   });
 

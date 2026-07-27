@@ -5,7 +5,15 @@ import type {
   BoardYjsContainerScope,
   CatalogBoardItemRow,
   CustomViewRow,
+  FolderRow,
 } from "../db/session_db_types.js";
+import {
+  boardItemsDelta,
+  serializeCatalogFolders,
+  type CatalogBoardItemsDelta,
+  type CatalogFolderRecord,
+  type CatalogSessionsDelta,
+} from "../catalog/catalog_delta.js";
 import type {
   CustomViewRepository,
   CustomViewWithBoardItem,
@@ -21,7 +29,7 @@ export { CustomViewRevisionConflictError };
 export interface CustomViewDbPort {
   customViews(): CustomViewRepository;
   appendEventTx(sql: RepositorySql, params: AppendEventParams): Promise<number>;
-  getCatalog(): Promise<unknown>;
+  getAllFolders(): Promise<FolderRow[]>;
   resolveBoardYjsContainerScope(
     container: BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope | null>;
@@ -44,7 +52,11 @@ export interface CustomViewBoardYjsPort {
 }
 
 export interface CustomViewBroadcasterPort {
-  emitCatalogUpdated?(catalog: unknown): Promise<void>;
+  emitCatalogUpdated?(
+    folders: readonly CatalogFolderRecord[],
+    sessionsDelta: CatalogSessionsDelta,
+    boardItemsDelta: CatalogBoardItemsDelta,
+  ): Promise<void>;
   emitCustomViewUpdated?(
     actorSessionId: string,
     customViewId: string,
@@ -245,7 +257,11 @@ export class CustomViewService {
     result: CustomViewMutationResult,
   ): Promise<void> {
     if (result.idempotent) return;
-    await this.broadcaster?.emitCatalogUpdated?.(await this.db.getCatalog());
+    await this.broadcaster?.emitCatalogUpdated?.(
+      serializeCatalogFolders(await this.db.getAllFolders()),
+      {},
+      boardItemsDelta([result.boardItem]),
+    );
     await this.broadcaster?.emitCustomViewUpdated?.(
       actorSessionId,
       result.customView.id,

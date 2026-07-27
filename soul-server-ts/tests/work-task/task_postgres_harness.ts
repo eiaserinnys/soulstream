@@ -193,6 +193,29 @@ async function createTaskSchema(sql: SqlClient): Promise<void> {
       sort_order INTEGER NOT NULL
     )
   `;
+  await sql.unsafe(`
+    CREATE OR REPLACE FUNCTION folder_get_all()
+    RETURNS TABLE (
+      id TEXT,
+      name TEXT,
+      sort_order INTEGER,
+      settings JSONB,
+      parent_folder_id TEXT,
+      project_page_id TEXT,
+      created_at TIMESTAMPTZ
+    ) LANGUAGE sql STABLE AS $$
+      SELECT
+        f.id,
+        f.name,
+        f.sort_order,
+        '{}'::JSONB,
+        NULL::TEXT,
+        NULL::TEXT,
+        NULL::TIMESTAMPTZ
+      FROM folders f
+      ORDER BY f.sort_order, f.id
+    $$;
+  `);
   await sql`
     CREATE TABLE board_items (
       id TEXT PRIMARY KEY,

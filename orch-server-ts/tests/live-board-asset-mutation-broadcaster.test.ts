@@ -12,13 +12,30 @@ describe("live board asset mutation broadcaster", () => {
       listFolders: vi.fn(async () => []),
       getCatalogSnapshot: vi.fn(async () => ({ boardItems: [] })),
       initFileAsset: vi.fn(async () => ({ assetId: "asset-1" })),
-      commitFileAsset: vi.fn(async () => ({ asset: {}, boardItem: {} })),
+      commitFileAsset: vi.fn(async () => ({
+        asset: {},
+        boardItem: {
+          id: "asset:asset-1",
+          folderId: "folder-a",
+          itemType: "asset",
+          itemId: "asset-1",
+          x: 0,
+          y: 0,
+          metadata: {},
+        },
+      })),
     };
     const folderProvider = {
       listFolders: vi.fn(async () => [{ id: "folder-a" }]),
       listSessionAssignments: vi.fn(async () => ({
         "sess-1": { folderId: "folder-a" },
       })),
+      listSessionAssignmentsByIds: vi.fn(async () => ({})),
+      deleteFolderWithCatalogDelta: vi.fn(async () => ({
+        sessionsDelta: {},
+        deletedBoardItemIds: [],
+      })),
+      listBoardItemIdsForSessionDeletion: vi.fn(async () => []),
       findSessionFolderId: vi.fn(async () => "folder-a"),
       createFolder: vi.fn(),
       updateFolder: vi.fn(),
@@ -42,9 +59,18 @@ describe("live board asset mutation broadcaster", () => {
 
     expect(broadcaster.append).toHaveBeenCalledWith({
       type: "catalog_updated",
-      catalog: {
-        folders: [{ id: "folder-a" }],
-        sessions: { "sess-1": { folderId: "folder-a" } },
+      folders: [{ id: "folder-a" }],
+      sessions_delta: {},
+      board_items_delta: {
+        "asset:asset-1": {
+          id: "asset:asset-1",
+          folderId: "folder-a",
+          itemType: "asset",
+          itemId: "asset-1",
+          x: 0,
+          y: 0,
+          metadata: {},
+        },
       },
     });
   });

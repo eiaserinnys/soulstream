@@ -21,6 +21,7 @@ describePostgres("TaskService PostgreSQL integration", () => {
   let boardYjsService: BoardYjsService | undefined;
   let service: TaskService;
   let emitTaskUpdated: ReturnType<typeof vi.fn>;
+  let emitCatalogUpdated: ReturnType<typeof vi.fn>;
   let notifyHumanHandoff: ReturnType<typeof vi.fn>;
   const observedOperationCounts: number[] = [];
 
@@ -34,6 +35,7 @@ describePostgres("TaskService PostgreSQL integration", () => {
         );
       }
     });
+    emitCatalogUpdated = vi.fn(async () => undefined);
     notifyHumanHandoff = vi.fn();
   }, 45_000);
 
@@ -44,11 +46,12 @@ describePostgres("TaskService PostgreSQL integration", () => {
     boardYjsService = createTestBoardYjsService(db);
     service = new TaskService(
       db,
-      { emitTaskUpdated },
+      { emitTaskUpdated, emitCatalogUpdated },
       boardYjsService,
       { notifyHumanHandoff },
     );
     emitTaskUpdated.mockClear();
+    emitCatalogUpdated.mockClear();
     notifyHumanHandoff.mockClear();
     observedOperationCounts.length = 0;
   }, 15_000);
@@ -97,6 +100,50 @@ describePostgres("TaskService PostgreSQL integration", () => {
     });
     expect(Number(rows[0]?.x)).toBe(120);
     expect(Number(rows[0]?.y)).toBe(240);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "folder-1", name: "Folder" })],
+      {},
+      {
+        "task:rb-1": expect.objectContaining({
+          id: "task:rb-1",
+          itemType: "task",
+          itemId: "rb-1",
+        }),
+      },
+    );
+  });
+
+  it("creator enrollment이 별도 델타를 발행해도 새 업무 카드 델타를 빠뜨리지 않는다", async () => {
+    const creatorBoardItemMover = {
+      moveBoardItemToContainer: vi.fn(async () => ({ enrolled: true })),
+    };
+    const enrolledService = new TaskService(
+      db,
+      { emitTaskUpdated, emitCatalogUpdated },
+      boardYjsService!,
+      { notifyHumanHandoff },
+      creatorBoardItemMover,
+    );
+
+    await enrolledService.createTask({
+      taskId: "rb-enrolled",
+      folderId: "folder-1",
+      title: "Enrolled task",
+      actorSessionId: "sess-actor",
+    });
+
+    expect(creatorBoardItemMover.moveBoardItemToContainer).toHaveBeenCalledTimes(1);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "folder-1", name: "Folder" })],
+      {},
+      {
+        "task:rb-enrolled": expect.objectContaining({
+          id: "task:rb-enrolled",
+          itemType: "task",
+          itemId: "rb-enrolled",
+        }),
+      },
+    );
   });
 
   it("creates browser-owned tasks with user audit and no fabricated session event", async () => {

@@ -83,6 +83,9 @@ export interface CatalogBoardItem {
   updatedAt?: string;
 }
 
+/** catalog_updated 신형 payload의 보드 항목별 변경분. null은 카탈로그 제거를 뜻한다. */
+export type CatalogBoardItemsDelta = Record<string, CatalogBoardItem | null>;
+
 export interface MarkdownDocument {
   id: string;
   title: string;

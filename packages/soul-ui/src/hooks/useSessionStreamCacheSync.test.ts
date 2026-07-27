@@ -190,6 +190,7 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
         updated: { folderId: "folder-b", displayName: "After" },
         removed: null,
       },
+      board_items_delta: {},
       lastEventId: "9",
     });
 
@@ -207,7 +208,7 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     expect(catalog?.sessionList).toBe(sessionList);
   });
 
-  it("does not treat folders without sessions_delta as a delta catalog event", () => {
+  it("requires both delta keys before accepting the new catalog contract", () => {
     const initialCatalog: CatalogState = {
       folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
       sessions: {
@@ -229,7 +230,8 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     streamOptions.onCatalogUpdated?.({
       type: "catalog_updated",
       folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
-      sessions_delta: undefined,
+      sessions_delta: {},
+      board_items_delta: undefined,
     } as never);
 
     expect(useDashboardStore.getState().catalog).toBe(initialCatalog);

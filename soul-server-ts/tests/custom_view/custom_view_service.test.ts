@@ -60,11 +60,13 @@ describe("CustomViewService", () => {
       }),
       removeBoardItem: vi.fn(async () => undefined),
     };
+    const emitCatalogUpdated = vi.fn(async () => undefined);
+    const emitCustomViewUpdated = vi.fn(async () => undefined);
     const service = new CustomViewService(
       {
         customViews: () => repo as unknown as CustomViewRepository,
         appendEventTx: vi.fn(async () => 7),
-        getCatalog: vi.fn(async () => ({ folders: [], sessions: {}, boardItems: [] })),
+        getAllFolders: vi.fn(async () => []),
         resolveBoardYjsContainerScope: vi.fn(async () => ({
           folderId: "folder-1",
           containerKind: "task",
@@ -73,8 +75,8 @@ describe("CustomViewService", () => {
       },
       boardYjs,
       {
-        emitCatalogUpdated: vi.fn(async () => undefined),
-        emitCustomViewUpdated: vi.fn(async () => undefined),
+        emitCatalogUpdated,
+        emitCustomViewUpdated,
       },
     );
 
@@ -97,6 +99,19 @@ describe("CustomViewService", () => {
         html: "<section></section>",
       }),
     );
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      [],
+      {},
+      {
+        [result.boardItem.id]: result.boardItem,
+      },
+    );
+    expect(emitCustomViewUpdated).toHaveBeenCalledWith(
+      "sess-actor",
+      result.customView.id,
+      result.boardItem.id,
+      1,
+    );
   });
 
   it("propagates revision CAS conflicts without updating the Y.Doc board item", async () => {
@@ -118,7 +133,7 @@ describe("CustomViewService", () => {
       {
         customViews: () => repo as unknown as CustomViewRepository,
         appendEventTx: vi.fn(async () => 8),
-        getCatalog: vi.fn(async () => ({ folders: [], sessions: {}, boardItems: [] })),
+        getAllFolders: vi.fn(async () => []),
         resolveBoardYjsContainerScope: vi.fn(async () => ({
           folderId: "folder-1",
           containerKind: "task",

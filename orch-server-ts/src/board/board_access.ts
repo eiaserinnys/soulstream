@@ -23,10 +23,10 @@ export function isBoardFolderAllowed(
 ): boolean {
   if (!access.restricted) return true;
   if (folderId === null) return false;
-  return visibleFolderIds(access, folders).has(folderId);
+  return visibleBoardFolderIds(access, folders).has(folderId);
 }
 
-function visibleFolderIds(
+export function visibleBoardFolderIds(
   access: Required<BoardAccess>,
   folders: readonly BoardAccessFolderRecord[],
 ): Set<string> {

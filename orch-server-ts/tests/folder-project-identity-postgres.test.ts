@@ -45,11 +45,33 @@ describe("Folder project identity PostgreSQL transaction", () => {
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "folder-project:rename:page",
     });
-    await service.mutateFromFolder({
+    await harness.sql`
+      INSERT INTO sessions (session_id, folder_id, display_name)
+      VALUES ('archive-session', ${id}, '아카이브 세션')
+    `;
+    await harness.sql`
+      INSERT INTO board_items (
+        id, folder_id, container_kind, container_id, item_type, item_id, x, y
+      )
+      VALUES (
+        'session:archive-session', ${id}, 'folder', ${id},
+        'session', 'archive-session', 0, 0
+      )
+    `;
+    const archiveResult = await service.mutateFromFolder({
       folderId: id,
       archived: true,
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "folder-project:archive:folder",
+    });
+    expect(archiveResult.catalogDelta).toEqual({
+      sessionsDelta: {
+        "archive-session": {
+          folderId: null,
+          displayName: "아카이브 세션",
+        },
+      },
+      deletedBoardItemIds: ["session:archive-session"],
     });
     await service.mutateFromPage({
       pageId: id,
@@ -81,6 +103,12 @@ describe("Folder project identity PostgreSQL transaction", () => {
       folder_archived: false,
       page_archived: false,
     }]);
+    await expect(harness.sql`
+      SELECT folder_id FROM sessions WHERE session_id = 'archive-session'
+    `).resolves.toEqual([{ folder_id: null }]);
+    await expect(harness.sql`
+      SELECT id FROM board_items WHERE id = 'session:archive-session'
+    `).resolves.toEqual([]);
   });
 
   it("rolls back folder, page, Y.Doc, and operation when provenance insert fails", async () => {

@@ -336,6 +336,12 @@ function createProvider(
     folderProvider: {
       listFolders: async () => [serializeFolderRow(folderRow())],
       listSessionAssignments: async () => ({}),
+      listSessionAssignmentsByIds: async () => ({}),
+      deleteFolderWithCatalogDelta: async () => ({
+        sessionsDelta: {},
+        deletedBoardItemIds: [],
+      }),
+      listBoardItemIdsForSessionDeletion: async () => [],
       findSessionFolderId: async () => undefined,
       createFolder: async () => ({}),
       updateFolder: async () => undefined,

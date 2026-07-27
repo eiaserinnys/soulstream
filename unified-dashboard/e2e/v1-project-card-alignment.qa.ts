@@ -46,10 +46,22 @@ async function verifyTheme(browser: Browser, theme: Theme) {
   });
 
   try {
+    let catalogDeltaApplied = false;
     await page.addInitScript({ content: `
       localStorage.setItem("soul-dashboard-theme", ${JSON.stringify(theme)});
       localStorage.setItem("ls.webglGlass", "0");
       localStorage.setItem("soulstream:folder-workspace:view-mode:v1:folder-amber", "list");
+      localStorage.setItem("soulstream:folder-workspace:view-mode:v1:folder-ops", "list");
+      const nativeEventSource = window.EventSource;
+      const catalogDeltaQaEventSources = [];
+      class CatalogDeltaQaEventSource extends nativeEventSource {
+        constructor(...args) {
+          super(...args);
+          catalogDeltaQaEventSources.push(this);
+        }
+      }
+      window.EventSource = CatalogDeltaQaEventSource;
+      window.__catalogDeltaQaEventSources = catalogDeltaQaEventSources;
       const serviceWorker = navigator.serviceWorker;
       if (serviceWorker) {
         Object.defineProperty(serviceWorker, "register", {
@@ -61,6 +73,9 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     ` });
     await installV3VisualQaRoutes(page, { contextChainPreview: true });
     await page.route("**/api/board-items?**", routeProjectBoardItems);
+    await page.route("**/api/sessions?**", (route) =>
+      routeCatalogDeltaSessions(route, catalogDeltaApplied)
+    );
 
     await page.goto(`${baseUrl}/v1`, { waitUntil: "domcontentloaded" });
     const initial = await openProjectAndMeasure(page);
@@ -74,11 +89,16 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     const afterReentry = await openProjectAndMeasure(page);
     await capture(page, theme, "reentry");
 
+    const catalogDeltaLive = await verifyCatalogDeltaLive(page, () => {
+      catalogDeltaApplied = true;
+    });
+    await capture(page, theme, "catalog-delta-live");
+
     assert(
       browserErrors.length === 0 && httpErrors.length === 0,
       `${theme}: 브라우저 오류: ${browserErrors.join(" | ")} (${httpErrors.join(" | ")})`,
     );
-    return { initial, afterRefresh, afterReentry, browserErrors: 0 };
+    return { initial, afterRefresh, afterReentry, catalogDeltaLive, browserErrors: 0 };
   } finally {
     await context.close();
   }
@@ -101,6 +121,99 @@ async function openProjectAndMeasure(page: Page) {
   assertAligned(childFolder, session, "하위 프로젝트");
   assertAligned(task, session, "업무");
   return { childFolder, task, session };
+}
+
+async function verifyCatalogDeltaLive(page: Page, markApplied: () => void) {
+  await selectProject(page, "소울스트림");
+  const movedSession = page.locator('[data-session-id="run-alpha-1"]');
+  await movedSession.waitFor({ state: "visible", timeout: 15_000 });
+
+  markApplied();
+  await page.evaluate(() => {
+    const eventSources = (
+      window as typeof window & { __catalogDeltaQaEventSources?: EventSource[] }
+    ).__catalogDeltaQaEventSources ?? [];
+    const sessionStream = eventSources.find((source) => (
+      new URL(source.url).pathname === "/api/sessions/stream"
+    ));
+    if (!sessionStream) throw new Error("세션 스트림 EventSource를 찾지 못했습니다.");
+    sessionStream.dispatchEvent(new MessageEvent("catalog_updated", {
+      data: JSON.stringify({
+        type: "catalog_updated",
+        folders: [
+          { id: "folder-amber", name: "소울스트림", sortOrder: 0, parentFolderId: null, projectPageId: "project-amber" },
+          { id: "folder-dashboard", name: "소울 대시보드", sortOrder: 0, parentFolderId: "folder-amber", projectPageId: "project-dashboard" },
+          { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null, projectPageId: "project-ops" },
+        ],
+        sessions_delta: {
+          "run-alpha-1": {
+            folderId: "folder-ops",
+            displayName: "델타 이동·이름 변경 완료",
+          },
+        },
+        board_items_delta: {},
+      }),
+    }));
+  });
+
+  await movedSession.waitFor({ state: "detached", timeout: 15_000 });
+  await selectProject(page, "Soulstream 운영");
+  const movedAndRenamed = page.locator('[data-session-id="run-alpha-1"]');
+  await movedAndRenamed.waitFor({ state: "visible", timeout: 15_000 });
+  await movedAndRenamed.getByText("델타 이동·이름 변경 완료", { exact: true }).waitFor({
+    state: "visible",
+    timeout: 15_000,
+  });
+  return {
+    sessionId: "run-alpha-1",
+    folderId: "folder-ops",
+    displayName: "델타 이동·이름 변경 완료",
+  };
+}
+
+async function routeCatalogDeltaSessions(route: Route, catalogDeltaApplied: boolean) {
+  if (!catalogDeltaApplied) {
+    await route.fallback();
+    return;
+  }
+  const request = route.request();
+  const url = new URL(request.url());
+  if (request.method() !== "GET" || url.pathname !== "/api/sessions") {
+    await route.fallback();
+    return;
+  }
+  const folderId = url.searchParams.get("folder_id");
+  if (folderId !== "folder-amber" && folderId !== "folder-ops") {
+    await route.fallback();
+    return;
+  }
+  const sessions = folderId === "folder-ops"
+    ? [{
+        agentSessionId: "run-alpha-1",
+        folderId: "folder-ops",
+        status: "completed",
+        reviewState: "acknowledged",
+        sessionType: "claude",
+        createdAt: "2026-07-13T09:00:00.000Z",
+        updatedAt: "2026-07-13T11:20:00.000Z",
+        completedAt: "2026-07-13T11:20:00.000Z",
+        displayName: "델타 이동·이름 변경 완료",
+        awaySummary: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
+        lastMessage: {
+          type: "assistant",
+          preview: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
+          timestamp: "2026-07-13T11:20:00.000Z",
+        },
+        nodeId: "eiaserinnys",
+        agentId: "roselin_codex",
+        agentName: "로젤린",
+      }]
+    : [];
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ sessions, total: sessions.length }),
+  });
 }
 
 async function selectProject(page: Page, name: string) {

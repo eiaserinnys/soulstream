@@ -92,6 +92,7 @@ export type {
   CatalogFolderReorderItem,
   CatalogAssignment,
   CatalogSessionsDelta,
+  CatalogBoardItemsDelta,
   BoardContainerRef,
   CatalogBoardItem,
   CatalogBoardItemType,

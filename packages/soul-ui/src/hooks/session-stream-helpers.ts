@@ -22,6 +22,7 @@ import {
 export { normalizeSessionStatus } from "../shared/session-status";
 export {
   applyCatalogDisplayNames,
+  mergeCatalogBoardItemsDelta,
   mergeCatalogSessionsDelta,
   mergeSessionAssignmentsFromSummaries,
   mergeSessionCreatedSummary,

@@ -9,6 +9,7 @@ import { getPageYjsDocumentName } from "../page/page_yjs_model.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type {
   FolderProjectBinding,
+  FolderProjectCatalogDelta,
   FolderProjectIdentityMutationResult,
   FolderProjectIdentityRepository,
   FolderProjectRecord,
@@ -108,9 +109,9 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         WHERE id = ${input.binding.folderId}
           AND project_page_id = ${input.binding.pageId}
       `;
-      if (input.archived && !input.binding.archived) {
-        await cleanupArchivedFolder(transaction, input.binding.folderId);
-      }
+      const catalogDelta = input.archived && !input.binding.archived
+        ? await cleanupArchivedFolder(transaction, input.binding.folderId)
+        : undefined;
       const operationType = input.archived !== input.binding.archived
         ? input.archived ? "archive_folder_project" : "unarchive_folder_project"
         : "update_folder_project";
@@ -128,7 +129,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         },
         reason: input.pageApplication.reason ?? "mutate folder project identity",
       });
-      return await readResult(transaction, operation, false, pageCommit);
+      return await readResult(transaction, operation, false, pageCommit, catalogDelta);
     });
   }
 
@@ -238,11 +239,36 @@ async function assertParent(sql: BoardYjsQuerySql, parentFolderId: string | null
   if (!rows[0]?.exists) throw new Error(`active parent folder not found: ${parentFolderId}`);
 }
 
-async function cleanupArchivedFolder(sql: BoardYjsQuerySql, folderId: string): Promise<void> {
-  await sql`UPDATE sessions SET folder_id = NULL WHERE folder_id = ${folderId}`;
+async function cleanupArchivedFolder(
+  sql: BoardYjsQuerySql,
+  folderId: string,
+): Promise<FolderProjectCatalogDelta> {
+  const sessionRows = await sql<readonly {
+    session_id: string;
+    display_name: string | null;
+  }[]>`
+    UPDATE sessions
+    SET folder_id = NULL
+    WHERE folder_id = ${folderId}
+    RETURNING session_id, display_name
+  `;
   await sql`UPDATE folders SET parent_folder_id = NULL WHERE parent_folder_id = ${folderId}`;
-  await sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
-  await sql`DELETE FROM board_items WHERE item_type = 'subfolder' AND item_id = ${folderId}`;
+  const boardItemRows = await sql<readonly { id: string }[]>`
+    DELETE FROM board_items
+    WHERE folder_id = ${folderId}
+       OR (item_type = 'subfolder' AND item_id = ${folderId})
+    RETURNING id
+  `;
+  return {
+    sessionsDelta: Object.fromEntries(sessionRows.map((row) => [
+      row.session_id,
+      {
+        folderId: null,
+        displayName: row.display_name,
+      },
+    ])),
+    deletedBoardItemIds: boardItemRows.map((row) => row.id),
+  };
 }
 
 async function assertBackfillCandidate(
@@ -394,6 +420,7 @@ async function readResult(
   operation: OperationRow,
   idempotent: boolean,
   pageCommit?: FolderProjectIdentityMutationResult["pageCommit"],
+  catalogDelta?: FolderProjectCatalogDelta,
 ): Promise<FolderProjectIdentityMutationResult> {
   const binding = (await bindingRows(sql, "folder", operation.folder_id))[0];
   if (!binding) throw new Error(`folder project identity not found: ${operation.folder_id}`);
@@ -404,6 +431,7 @@ async function readResult(
     folder: binding,
     operation,
     pageCommit: resolvedCommit,
+    ...(catalogDelta ? { catalogDelta } : {}),
     idempotent,
   };
 }

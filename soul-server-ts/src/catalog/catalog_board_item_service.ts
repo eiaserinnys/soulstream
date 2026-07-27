@@ -7,6 +7,8 @@ import type {
   MarkdownDocumentRow,
   SessionDB,
 } from "../db/session_db.js";
+import { getMarkdownPreview } from "../collaboration/board_yjs_preview.js";
+import type { CatalogMutationDelta } from "./catalog_delta.js";
 
 const BOARD_GRID_SIZE = 20;
 const BOARD_TILE_WIDTH = 280;
@@ -67,7 +69,7 @@ export class CatalogBoardItemService {
   constructor(
     private readonly db: SessionDB,
     private readonly boardYjsService: CatalogBoardYjsPort | undefined,
-    private readonly broadcastCatalog: () => Promise<void>,
+    private readonly broadcastCatalog: (delta?: CatalogMutationDelta) => Promise<void>,
   ) {}
 
   async updateBoardItemPosition(
@@ -89,7 +91,13 @@ export class CatalogBoardItemService {
           snappedX,
           snappedY,
         );
-        await this.broadcastCatalog();
+        await this.broadcastCatalog({
+          boardItems: [{
+            ...boardItem,
+            x: snappedX,
+            y: snappedY,
+          }],
+        });
         return;
       }
     }
@@ -99,7 +107,10 @@ export class CatalogBoardItemService {
       snappedX,
       snappedY,
     );
-    await this.broadcastCatalog();
+    const updated = await this.db.getBoardItemById(boardItemId);
+    await this.broadcastCatalog({
+      boardItems: updated ? [updated] : [],
+    });
   }
 
   async moveBoardItemToContainer(params: {
@@ -133,7 +144,10 @@ export class CatalogBoardItemService {
         position: snappedPosition,
       });
       if (enrolled) {
-        await this.broadcastCatalog();
+        await this.broadcastCatalog({
+          sessionIds: [enrolled.itemId],
+          boardItems: [enrolled],
+        });
         return { boardItem: enrolled, enrolled: true };
       }
       throw new Error(`board item not found: ${params.boardItemId}`);
@@ -180,7 +194,10 @@ export class CatalogBoardItemService {
         ...(snappedPosition ? { position: snappedPosition } : {}),
         idempotencyKey: params.idempotencyKey,
       });
-      await this.broadcastCatalog();
+      await this.broadcastCatalog({
+        sessionIds: moved.itemType === "session" ? [moved.itemId] : [],
+        boardItems: [moved],
+      });
       return { boardItem: moved, enrolled: false };
     } catch (err) {
       if (
@@ -196,7 +213,10 @@ export class CatalogBoardItemService {
             position: snappedPosition,
             sourceTaskItemId: boardItem.sourceTaskItemId ?? null,
           });
-          await this.broadcastCatalog();
+          await this.broadcastCatalog({
+            sessionIds: [enrolled.itemId],
+            boardItems: [enrolled],
+          });
           return { boardItem: enrolled, enrolled: true };
         } catch (fallbackErr) {
           await this.db.assignSessionToFolder(boardItem.itemId, previousSessionFolderId);
@@ -236,7 +256,7 @@ export class CatalogBoardItemService {
         x,
         y,
       });
-      await this.broadcastCatalog();
+      await this.broadcastCatalog({ boardItems: [result.boardItem] });
       return result;
     }
     const result = await this.db.createMarkdownDocument({
@@ -248,7 +268,7 @@ export class CatalogBoardItemService {
       x,
       y,
     });
-    await this.broadcastCatalog();
+    await this.broadcastCatalog({ boardItems: [result.boardItem] });
     return result;
   }
 
@@ -274,12 +294,27 @@ export class CatalogBoardItemService {
           documentId,
           fields,
         );
-        await this.broadcastCatalog();
+        await this.broadcastCatalog({
+          boardItems: document
+            ? [{
+                ...boardItem,
+                metadata: {
+                  ...boardItem.metadata,
+                  title: document.title,
+                  preview: getMarkdownPreview(document.body),
+                  version: document.version,
+                },
+              }]
+            : [],
+        });
         return document;
       }
     }
     const document = await this.db.updateMarkdownDocument(documentId, fields);
-    await this.broadcastCatalog();
+    const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
+    await this.broadcastCatalog({
+      boardItems: boardItem ? [boardItem] : [],
+    });
     return document;
   }
 
@@ -294,12 +329,15 @@ export class CatalogBoardItemService {
           },
           documentId,
         );
-        await this.broadcastCatalog();
+        await this.broadcastCatalog({ deletedBoardItemIds: [boardItem.id] });
         return;
       }
     }
+    const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
     await this.db.deleteMarkdownDocument(documentId);
-    await this.broadcastCatalog();
+    await this.broadcastCatalog({
+      deletedBoardItemIds: boardItem ? [boardItem.id] : [],
+    });
   }
 
   private async nextBoardPosition(

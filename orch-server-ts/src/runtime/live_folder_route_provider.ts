@@ -9,11 +9,19 @@ import {
   type SessionAssignmentRecord,
 } from "../folders/folder_routes.js";
 import type { PublicStatusFolderCountsProvider } from "../public/public_status_routes.js";
-import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
 
 export type LiveFolderProvider = FolderRouteProvider &
   Pick<PublicStatusFolderCountsProvider, "getFolderCounts" | "listFolders"> & {
     findSessionFolderId: (sessionId: string) => Promise<string | null | undefined>;
+    listSessionAssignmentsByIds: (
+      sessionIds: readonly string[],
+    ) => Promise<Record<string, SessionAssignmentRecord>>;
+    deleteFolderWithCatalogDelta: (folderId: string) => Promise<{
+      sessionsDelta: Record<string, SessionAssignmentRecord>;
+      deletedBoardItemIds: string[];
+    }>;
+    listBoardItemIdsForSessionDeletion: (sessionId: string) => Promise<string[]>;
   };
 
 export function createLiveFolderProvider(
@@ -43,6 +51,31 @@ export function createLiveFolderProvider(
       `;
       if (rows.length === 0) return undefined;
       return stringOrNull(rows[0]?.folder_id ?? rows[0]?.folderId);
+    },
+    async listSessionAssignmentsByIds(sessionIds) {
+      if (sessionIds.length === 0) return {};
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT session_id, folder_id, display_name
+        FROM sessions
+        WHERE session_id = ANY(${[...sessionIds]}::text[])
+      `;
+      return Object.fromEntries(rows.flatMap(sessionAssignmentEntry));
+    },
+    async deleteFolderWithCatalogDelta(folderId) {
+      return await deleteFolderAndCollectCatalogDelta(sqlResolver, folderId);
+    },
+    async listBoardItemIdsForSessionDeletion(sessionId) {
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT id
+        FROM board_items
+        WHERE item_type = 'session' AND item_id = ${sessionId}
+      `;
+      return rows.flatMap((row) => {
+        const id = stringOrNull(row.id);
+        return id === null ? [] : [id];
+      });
     },
     async createFolder(name, sortOrder, options) {
       const folderId = randomUUID();
@@ -75,10 +108,7 @@ export function createLiveFolderProvider(
       `;
     },
     async deleteFolder(folderId) {
-      const sql = await sqlResolver.resolveSql();
-      await sql`
-        SELECT folder_delete(${folderId})
-      `;
+      await deleteFolderAndCollectCatalogDelta(sqlResolver, folderId);
     },
     async reorderFolders(items) {
       const parentUpdates = folderReorderParentUpdates(items);
@@ -108,6 +138,69 @@ export function createLiveFolderProvider(
       );
     },
   };
+}
+
+type TransactionCapableLivePostgresSql = LivePostgresSql & {
+  readonly begin: <T>(
+    callback: (sql: LivePostgresSql) => Promise<T>,
+  ) => Promise<T>;
+};
+
+async function deleteFolderAndCollectCatalogDelta(
+  sqlResolver: LiveDbSqlResolver,
+  folderId: string,
+): Promise<{
+  sessionsDelta: Record<string, SessionAssignmentRecord>;
+  deletedBoardItemIds: string[];
+}> {
+  const sql = await sqlResolver.resolveSql();
+  assertTransactionSql(sql);
+  return await sql.begin(async (transaction) => {
+    const sessionRows = await transaction`
+      UPDATE sessions
+      SET folder_id = NULL
+      WHERE folder_id = ${folderId}
+      RETURNING session_id, display_name
+    `;
+    await transaction`
+      UPDATE folders
+      SET parent_folder_id = NULL
+      WHERE parent_folder_id = ${folderId}
+    `;
+    const boardItemRows = await transaction`
+      DELETE FROM board_items
+      WHERE folder_id = ${folderId}
+         OR (item_type = 'subfolder' AND item_id = ${folderId})
+      RETURNING id
+    `;
+    await transaction`
+      UPDATE folders
+      SET archived = TRUE
+      WHERE id = ${folderId}
+    `;
+    return {
+      sessionsDelta: Object.fromEntries(sessionRows.flatMap((row) => {
+        const sessionId = stringOrNull(row.session_id ?? row.sessionId);
+        if (sessionId === null) return [];
+        return [[sessionId, {
+          folderId: null,
+          displayName: stringOrNull(row.display_name ?? row.displayName),
+        }]];
+      })),
+      deletedBoardItemIds: boardItemRows.flatMap((row) => {
+        const id = stringOrNull(row.id);
+        return id === null ? [] : [id];
+      }),
+    };
+  });
+}
+
+function assertTransactionSql(
+  sql: LivePostgresSql,
+): asserts sql is TransactionCapableLivePostgresSql {
+  if (typeof (sql as Partial<TransactionCapableLivePostgresSql>).begin !== "function") {
+    throw new Error("folder deletion requires postgres.js begin()");
+  }
 }
 
 function serializeFolderRow(row: Record<string, unknown>): FolderRecord[] {

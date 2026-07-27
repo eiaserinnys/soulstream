@@ -17,6 +17,17 @@ interface FolderDataRow {
   created_at: Date | string | null;
 }
 
+export interface CatalogSessionAssignmentRow {
+  session_id: string;
+  folder_id: string | null;
+  display_name: string | null;
+}
+
+export interface FolderDeletionCatalogDeltaRows {
+  affectedSessions: CatalogSessionAssignmentRow[];
+  deletedBoardItemIds: string[];
+}
+
 /** folder_get_all() returns SETOF folders, including the filtered archived column. */
 interface FolderGetAllRow extends FolderDataRow {
   archived: boolean;
@@ -111,6 +122,18 @@ export class CatalogRepository {
     return { folders, sessions, boardItems };
   }
 
+  async getSessionAssignmentsByIds(
+    sessionIds: readonly string[],
+  ): Promise<CatalogSessionAssignmentRow[]> {
+    if (sessionIds.length === 0) return [];
+    return await this.sql<CatalogSessionAssignmentRow[]>`
+      SELECT session_id, folder_id, display_name
+      FROM sessions
+      WHERE session_id = ANY(${this.sql.array([...sessionIds])}::text[])
+      ORDER BY session_id
+    `;
+  }
+
   async getAllFolders(): Promise<FolderRow[]> {
     const rows = await this.sql<FolderGetAllRow[]>`
       SELECT * FROM folder_get_all()
@@ -141,7 +164,36 @@ export class CatalogRepository {
     `;
   }
 
-  async deleteFolderById(folderId: string): Promise<void> {
-    await this.sql`SELECT folder_delete(${folderId})`;
+  async deleteFolderWithCatalogDelta(
+    folderId: string,
+  ): Promise<FolderDeletionCatalogDeltaRows> {
+    return await this.sql.begin(async (transaction) => {
+      const affectedSessions = await transaction<CatalogSessionAssignmentRow[]>`
+        UPDATE sessions
+        SET folder_id = NULL
+        WHERE folder_id = ${folderId}
+        RETURNING session_id, folder_id, display_name
+      `;
+      await transaction`
+        UPDATE folders
+        SET parent_folder_id = NULL
+        WHERE parent_folder_id = ${folderId}
+      `;
+      const deletedBoardItems = await transaction<Array<{ id: string }>>`
+        DELETE FROM board_items
+        WHERE folder_id = ${folderId}
+           OR (item_type = 'subfolder' AND item_id = ${folderId})
+        RETURNING id
+      `;
+      await transaction`
+        UPDATE folders
+        SET archived = TRUE
+        WHERE id = ${folderId}
+      `;
+      return {
+        affectedSessions,
+        deletedBoardItemIds: deletedBoardItems.map((row) => row.id),
+      };
+    });
   }
 }

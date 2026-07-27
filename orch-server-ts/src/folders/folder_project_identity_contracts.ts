@@ -34,7 +34,16 @@ export interface FolderProjectIdentityMutationResult {
   folder: FolderProjectRecord;
   operation: Record<string, unknown>;
   pageCommit: PageMutationCommitResult;
+  catalogDelta?: FolderProjectCatalogDelta;
   idempotent?: boolean;
+}
+
+export interface FolderProjectCatalogDelta {
+  sessionsDelta: Record<string, {
+    folderId: null;
+    displayName: string | null;
+  }>;
+  deletedBoardItemIds: string[];
 }
 
 export interface LegacyProjectFolder {
@@ -111,6 +120,6 @@ export interface FolderProjectIdentityServiceConfig {
   createId?: () => string;
   createOperationId?: () => string;
   hydratePage: (pageId: string) => Promise<void>;
-  onCommitted?: () => Promise<void>;
+  onCommitted?: (delta?: FolderProjectCatalogDelta) => Promise<void>;
   onPageUpdated?: PageUpdatedObserver;
 }

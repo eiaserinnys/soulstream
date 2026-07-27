@@ -44,8 +44,8 @@ export async function upsertTaskBoardItem(
     y: number;
     metadata?: Record<string, unknown>;
   },
-): Promise<void> {
-  await boardYjsService.upsertTaskBoardItem(params);
+): Promise<CatalogBoardItemRow> {
+  return await boardYjsService.upsertTaskBoardItem(params);
 }
 
 export async function removeTaskBoardItemIfUnlinked(
@@ -66,10 +66,10 @@ export async function updateTaskBoardItemTitle(
   boardYjsService: TaskBoardYjsPort,
   taskId: string,
   title: string,
-): Promise<void> {
+): Promise<CatalogBoardItemRow> {
   const boardItem = await repo.getTaskBoardItem(taskId);
   if (!boardItem) throw new Error(`task board item not found: ${taskId}`);
-  await boardYjsService.upsertTaskBoardItem({
+  return await boardYjsService.upsertTaskBoardItem({
     folderId: boardItem.folder_id,
     boardItemId: boardItem.id,
     taskId: boardItem.item_id,

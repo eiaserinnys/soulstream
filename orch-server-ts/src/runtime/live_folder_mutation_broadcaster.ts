@@ -1,13 +1,18 @@
-import type { FolderRouteProvider } from "../folders/folder_routes.js";
+import {
+  broadcastCatalogDelta,
+  deletedBoardItemsDelta,
+  type CatalogDelta,
+} from "./catalog_delta_broadcaster.js";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
+import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 
 export function withFolderMutationBroadcasts(
-  provider: FolderRouteProvider,
+  provider: LiveFolderProvider,
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
-): FolderRouteProvider {
+): LiveFolderProvider {
   return {
     ...provider,
     async createFolder(name, sortOrder, options) {
@@ -20,8 +25,11 @@ export function withFolderMutationBroadcasts(
       await broadcastCatalogSnapshot(provider, broadcaster);
     },
     async deleteFolder(folderId) {
-      await provider.deleteFolder(folderId);
-      await broadcastCatalogSnapshot(provider, broadcaster);
+      const delta = await provider.deleteFolderWithCatalogDelta(folderId);
+      await broadcastCatalogSnapshot(provider, broadcaster, {
+        sessionsDelta: delta.sessionsDelta,
+        boardItemsDelta: deletedBoardItemsDelta(delta.deletedBoardItemIds),
+      });
     },
     async reorderFolders(items) {
       await provider.reorderFolders(items);
@@ -31,14 +39,9 @@ export function withFolderMutationBroadcasts(
 }
 
 export async function broadcastCatalogSnapshot(
-  provider: FolderRouteProvider,
+  provider: Pick<LiveFolderProvider, "listFolders">,
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+  delta: CatalogDelta = {},
 ): Promise<void> {
-  broadcaster.append({
-    type: "catalog_updated",
-    catalog: {
-      folders: await provider.listFolders(),
-      sessions: await provider.listSessionAssignments(),
-    },
-  });
+  await broadcastCatalogDelta(provider, broadcaster, delta);
 }

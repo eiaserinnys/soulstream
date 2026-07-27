@@ -12,6 +12,11 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { LastMessageRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task, TaskStatus } from "../task/task_models.js";
+import type {
+  CatalogBoardItemsDelta,
+  CatalogFolderRecord,
+  CatalogSessionsDelta,
+} from "../catalog/catalog_delta.js";
 
 import type { SendFn } from "./dispatcher.js";
 
@@ -124,17 +129,17 @@ export class SessionBroadcaster {
     });
   }
 
-  /**
-   * Catalog 갱신 wire (Python `task_manager.py:312-316` 정본):
-   *   {type: "catalog_updated", catalog: {folders, sessions}}
-   *
-   * 새 세션이 폴더에 배정된 직후 호출하여 dashboard 폴더 트리·세션 목록이 즉시 갱신되게 한다.
-   * orch가 catalog_updated wire를 받아 dashboard SSE에 forward.
-   */
-  async emitCatalogUpdated(catalog: unknown): Promise<void> {
+  /** Catalog 변경분 wire. 두 delta 키는 빈 객체일 때도 항상 존재한다. */
+  async emitCatalogUpdated(
+    folders: readonly CatalogFolderRecord[],
+    sessionsDelta: CatalogSessionsDelta,
+    boardItemsDelta: CatalogBoardItemsDelta,
+  ): Promise<void> {
     await this.send({
       type: "catalog_updated",
-      catalog,
+      folders,
+      sessions_delta: sessionsDelta,
+      board_items_delta: boardItemsDelta,
     });
   }
 

@@ -110,6 +110,18 @@ describe("node inbound session event dispatcher", () => {
           type: "node_session_event",
           nodeId: "node-1",
           data: {
+            type: "catalog_updated",
+            folders: [{ id: "folder-2" }],
+            sessions_delta: {
+              "sess-2": { folderId: "folder-2", displayName: "Renamed" },
+            },
+            board_items_delta: {},
+          },
+        },
+        {
+          type: "node_session_event",
+          nodeId: "node-1",
+          data: {
             type: "event",
             agentSessionId: "sess-1",
             event: {
@@ -152,7 +164,7 @@ describe("node inbound session event dispatcher", () => {
       broadcaster,
     );
 
-    expect(result).toEqual({ appended: 3, skipped: 3, failed: 0 });
+    expect(result).toEqual({ appended: 4, skipped: 3, failed: 0 });
     expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([
       {
         type: "catalog_updated",
@@ -160,6 +172,15 @@ describe("node inbound session event dispatcher", () => {
           folders: [{ id: "folder-1" }],
           sessions: [{ agentSessionId: "sess-1", folderId: "folder-1" }],
         },
+        nodeId: "node-1",
+      },
+      {
+        type: "catalog_updated",
+        folders: [{ id: "folder-2" }],
+        sessions_delta: {
+          "sess-2": { folderId: "folder-2", displayName: "Renamed" },
+        },
+        board_items_delta: {},
         nodeId: "node-1",
       },
       {
