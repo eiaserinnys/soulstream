@@ -15,6 +15,7 @@ import {
   collectSse,
   makeHarness,
   runOptions,
+  sdkInterruptedResult,
   sdkResult,
 } from "./claude_sdk_persistent_test_harness.js";
 
@@ -302,6 +303,44 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
 
     await expect(client.close("shutdown")).resolves.toBeUndefined();
     expect(harness.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("finishes an interrupted turn whose Result lost its user_message_uuid", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        postResultDrainMs: 5,
+        uncorrelatedResultTimeoutMs: 50,
+      },
+      silentLogger,
+    );
+
+    const interrupted = collect(
+      client.runPersistent(runOptions("count to sixty"), abortSignal()),
+    );
+    await harness.nextInput();
+    expect(await client.interruptActiveTurnForSteer()).toBe(true);
+    // SDK 0.3.218 returns the interrupted turn's terminal Result with the
+    // correlation stripped.
+    harness.push(sdkInterruptedResult("sdk-session", undefined));
+
+    const interruptedEvents = await interrupted;
+    expect(interruptedEvents).toContainEqual(
+      expect.objectContaining({ type: "result", success: false }),
+    );
+    expect(interruptedEvents.filter((event) => event.type === "error")).toEqual([]);
+    expect(harness.close).not.toHaveBeenCalled();
+
+    const intervention = collect(
+      client.runPersistent(runOptions("stop and answer"), abortSignal()),
+    );
+    const interventionInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", interventionInput.uuid, "intervened"));
+    await expect(intervention).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "intervened" }),
+    );
   });
 
   it("turns an uncorrelated Result into one bounded fatal recovery event", async () => {

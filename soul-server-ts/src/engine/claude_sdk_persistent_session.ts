@@ -27,6 +27,7 @@ import {
 import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
+  type ClaudePersistentQuery,
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
@@ -91,7 +92,12 @@ export class ClaudeSdkPersistentSession {
       config.uncorrelatedResultTimeoutMs,
       (event) => this.handleUncorrelatedResultTimeout(event),
     );
-    this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
+    this.runtime = new ClaudeSessionRuntime((input) =>
+      // SDK 0.3.218 declares Query.interrupt() as Promise<void>, but the CLI
+      // answers with an interrupt receipt carrying still_queued. The runtime
+      // reads that receipt, so the narrowing lives at this one boundary.
+      config.createQuery(input) as unknown as ClaudePersistentQuery,
+    );
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
   }
@@ -234,7 +240,9 @@ export class ClaudeSdkPersistentSession {
   private async handleResult(message: Record<string, unknown>): Promise<void> {
     const phase = this.runtime.snapshot().foregroundPhase;
     const active = this.activeForeground;
-    const explicitUserMessageUuid = asString(message.user_message_uuid);
+    const explicitUserMessageUuid =
+      asString(message.user_message_uuid)
+      ?? this.interruptedTurnResultOwner(phase, active, message);
     if (!explicitUserMessageUuid) {
       this.logger.warn(
         {
@@ -334,6 +342,33 @@ export class ClaudeSdkPersistentSession {
         "Persistent Claude detached event sink failed",
       );
     }
+  }
+
+  /**
+   * Names the turn that owns a Result arriving without `user_message_uuid`.
+   *
+   * An interrupt makes the SDK end the in-flight turn, and 0.3.218 returns that
+   * terminal Result (`error_during_execution` / `aborted_streaming`) with the
+   * correlation stripped. While the runtime is interrupting there is exactly one
+   * outstanding foreground turn, so the Result belongs to it: correlating
+   * preserves identity rather than guessing, and the interrupted turn finishes
+   * through its normal terminal path instead of surfacing a recovery error the
+   * user never caused.
+   *
+   * Outside that window nothing owns the Result, so the liveness guard stays
+   * responsible for bounding a genuinely unknown one.
+   */
+  private interruptedTurnResultOwner(
+    phase: ClaudeForegroundPhase,
+    active: ActiveForeground | null,
+    message: Record<string, unknown>,
+  ): string | null {
+    if (phase !== "interrupting" || !active) return null;
+    this.logger.info(
+      { activeForegroundUuid: active.uuid, resultUuid: asString(message.uuid) },
+      "Correlating Claude Result without user_message_uuid to the interrupted turn",
+    );
+    return active.uuid;
   }
 
   private async handleUncorrelatedResultTimeout(
