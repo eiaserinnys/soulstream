@@ -30,6 +30,7 @@ import {
   stateVectorsEqual,
   yMapFromRecord,
 } from "./page_mutation_helpers.js";
+import { replacePageMarkdownBlocks } from "./page_markdown_replace.js";
 
 export { PageMutationValidationError } from "./page_mutation_validation.js";
 export {
@@ -245,7 +246,7 @@ export class PageMutationCore {
         setPageStarred(doc, command.starred);
         return applied("set_page_starred");
       case "replace_page_markdown":
-        replaceBlocks(doc, command.blocks);
+        replacePageMarkdownBlocks(doc, command.blocks);
         return applied("replace_page_markdown");
       case "batch_operations":
         return { ...this.applyBatch(doc, command.operations), operationType: "batch_operations" };
@@ -412,21 +413,6 @@ function deleteSubtree(doc: Y.Doc, blockIdValue: string): void {
     for (const block of blocks.values()) if (blockParent(block) === current) pending.push(blockId(block));
   }
   for (const id of deleted) blocks.delete(id);
-}
-
-function replaceBlocks(doc: Y.Doc, inputs: readonly PageYjsBlockInput[]): void {
-  const blocks = doc.getMap<Y.Map<unknown>>(BLOCKS_MAP);
-  blocks.clear();
-  for (const input of inputs) {
-    createBlock(doc, input.id, {
-      blockType: input.type,
-      text: input.text,
-      properties: input.properties,
-      collapsed: input.collapsed,
-    }, input.parentId, null);
-    requireBlock(doc, input.id).set("positionKey", input.positionKey);
-  }
-  readPageYDocReplica(requireString(doc.getMap(PAGE_META_MAP).get("id"), "page id"), doc);
 }
 
 function updateTypeAndProperties(
