@@ -35,17 +35,30 @@ ATOM_NODES = (
     "d3eb3f92-30fb-45e0-ba0f-00569eb50151",
 )
 
-_DOLLAR_QUOTE_START = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+_IDENTIFIER = r'(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)'
+_QUALIFIED_RELATION = rf"{_IDENTIFIER}(?:\s*\.\s*{_IDENTIFIER})?"
+_IDENTIFIER_TOKEN = re.compile(_IDENTIFIER)
 _DML_TARGET = re.compile(
-    r"""
-    (?P<verb>INSERT\s+INTO|UPDATE|DELETE\s+FROM)
+    rf"""
+    (?P<verb>INSERT\s+INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)
     \s+(?:ONLY\s+)?
-    (?:
-        (?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)
-        \s*\.\s*
-    )?
+    (?:{_IDENTIFIER}\s*\.\s*)?
     (?P<table>"blocks"|"pages"|blocks|pages)
     (?=\s|;|\(|$)
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+_TRUNCATE_START = re.compile(r"\bTRUNCATE\s+(?:TABLE\s+)?", re.IGNORECASE)
+_TRUNCATE_ITEM = re.compile(
+    rf"\s*(?:ONLY\s+)?(?P<relation>{_QUALIFIED_RELATION})(?:\s*\*)?\s*",
+    re.IGNORECASE,
+)
+_COPY_TARGET = re.compile(
+    rf"""
+    \bCOPY\s+
+    (?P<relation>{_QUALIFIED_RELATION})
+    \s*(?:\([^)]*\)\s*)?
+    (?P<direction>FROM|TO)\b
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -76,7 +89,7 @@ def _is_escape_string(sql: str, quote_index: int) -> bool:
 
 
 def _mask_comments_and_literals(sql: str) -> str:
-    """Blank comments and string literals while preserving offsets and lines."""
+    """Blank comments and single-quoted literals, preserving offsets and lines."""
 
     masked = list(sql)
     length = len(sql)
@@ -128,15 +141,11 @@ def _mask_comments_and_literals(sql: str) -> str:
             _blank(masked, start, index)
             continue
 
-        if sql[index] == "$":
-            delimiter_match = _DOLLAR_QUOTE_START.match(sql, index)
-            if delimiter_match:
-                start = index
-                delimiter = delimiter_match.group(0)
-                closing = sql.find(delimiter, delimiter_match.end())
-                index = length if closing == -1 else closing + len(delimiter)
-                _blank(masked, start, index)
-                continue
+        # Dollar-quoted regions deliberately remain visible. In migration SQL,
+        # DO $$ ... $$ and CREATE FUNCTION ... AS $$ ... $$ contain executable
+        # code; treating them as inert data would hide the most common
+        # procedural form of projection-table DML. A rare dollar-quoted data
+        # literal can therefore fail conservatively rather than create a bypass.
 
         index += 1
 
@@ -157,6 +166,48 @@ def _compact_statement(statement: str) -> str:
     return " ".join(statement.strip().split())
 
 
+def _relation_basename(relation: str) -> str:
+    tokens = [match.group(0) for match in _IDENTIFIER_TOKEN.finditer(relation)]
+    name = tokens[-1]
+    if name.startswith('"'):
+        name = name[1:-1].replace('""', '"')
+    return name.lower()
+
+
+def _targets_in_statement(masked_statement: str) -> list[tuple[int, str, str]]:
+    targets: list[tuple[int, str, str]] = []
+
+    for match in _DML_TARGET.finditer(masked_statement):
+        targets.append(
+            (
+                match.start(),
+                " ".join(match.group("verb").upper().split()),
+                match.group("table").strip('"').lower(),
+            )
+        )
+
+    for command in _TRUNCATE_START.finditer(masked_statement):
+        position = command.end()
+        while True:
+            item = _TRUNCATE_ITEM.match(masked_statement, position)
+            if item is None:
+                break
+            table = _relation_basename(item.group("relation"))
+            if table in {"blocks", "pages"}:
+                targets.append((item.start("relation"), "TRUNCATE", table))
+            position = item.end()
+            if position >= len(masked_statement) or masked_statement[position] != ",":
+                break
+            position += 1
+
+    for match in _COPY_TARGET.finditer(masked_statement):
+        table = _relation_basename(match.group("relation"))
+        if match.group("direction").upper() == "FROM" and table in {"blocks", "pages"}:
+            targets.append((match.start(), "COPY FROM", table))
+
+    return sorted(targets)
+
+
 def find_projection_dml(sql: str, path: str) -> list[ProjectionDmlViolation]:
     masked_sql = _mask_comments_and_literals(sql)
     violations: list[ProjectionDmlViolation] = []
@@ -164,14 +215,13 @@ def find_projection_dml(sql: str, path: str) -> list[ProjectionDmlViolation]:
     for start, end in _statement_ranges(masked_sql):
         masked_statement = masked_sql[start:end]
         original_statement = _compact_statement(sql[start:end])
-        for match in _DML_TARGET.finditer(masked_statement):
-            absolute_offset = start + match.start()
-            table = match.group("table").strip('"').lower()
+        for offset, verb, table in _targets_in_statement(masked_statement):
+            absolute_offset = start + offset
             violations.append(
                 ProjectionDmlViolation(
                     path=path,
                     line=sql.count("\n", 0, absolute_offset) + 1,
-                    verb=" ".join(match.group("verb").upper().split()),
+                    verb=verb,
                     table=table,
                     statement=original_statement,
                 )
