@@ -41,6 +41,7 @@ import {
   applySessionUpdated,
   buildSessionUpdates,
   findSessionInPages,
+  mergeCatalogSessionsDelta,
   preserveCatalogSessionList,
   reconcileSessionPagesForCatalog,
   removeSessionFromCatalogSessionList,
@@ -254,7 +255,18 @@ export function useSessionStreamCacheSync(
     (event: CatalogUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       const store = useDashboardStore.getState();
-      const incoming = event.catalog as CatalogState;
+      const incoming = event.catalog
+        ?? (
+          Array.isArray(event.folders)
+          && event.sessions_delta !== undefined
+            ? mergeCatalogSessionsDelta(
+                store.catalog,
+                event.folders,
+                event.sessions_delta,
+              )
+            : undefined
+        );
+      if (!incoming) return;
       const catalog = transformCatalogUpdate?.(incoming, store.catalog)
         ?? preserveCatalogSessionList(incoming, store.catalog);
       store.setCatalog(catalog);

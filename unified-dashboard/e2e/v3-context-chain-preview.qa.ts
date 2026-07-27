@@ -164,14 +164,12 @@ async function emitCatalogUpdated(page: Page) {
     source.dispatchEvent(new MessageEvent("catalog_updated", {
       data: JSON.stringify({
         type: "catalog_updated",
-        catalog: {
-          folders: [
-            { id: "folder-amber", name: "소울스트림", sortOrder: 0, parentFolderId: null, projectPageId: "project-amber" },
-            { id: "folder-dashboard", name: "대시보드", sortOrder: 0, parentFolderId: "folder-amber", projectPageId: "project-dashboard" },
-            { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null, projectPageId: "project-ops" },
-          ],
-          sessions: {},
-        },
+        folders: [
+          { id: "folder-amber", name: "소울스트림", sortOrder: 0, parentFolderId: null, projectPageId: "project-amber" },
+          { id: "folder-dashboard", name: "대시보드", sortOrder: 0, parentFolderId: "folder-amber", projectPageId: "project-dashboard" },
+          { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null, projectPageId: "project-ops" },
+        ],
+        sessions_delta: {},
       }),
     }));
   });
