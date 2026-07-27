@@ -24,10 +24,8 @@ export type AdminUserUpdateInput = {
 };
 
 export type AdminUsersRouteProvider = {
-  currentEmail: (
-    request: FastifyRequest,
-  ) => Promise<string | null | undefined> | string | null | undefined;
-  isAdminEmail: (email: string) => Promise<boolean> | boolean;
+  currentEmail: AdminAccessProvider["currentEmail"];
+  isAdminEmail: AdminAccessProvider["isAdminEmail"];
   listUsers: () => Promise<readonly AdminDashboardUser[]> | readonly AdminDashboardUser[];
   listFolders: () => Promise<readonly unknown[]> | readonly unknown[];
   createUser: (input: AdminUserCreateInput) => Promise<AdminDashboardUser>;
@@ -38,6 +36,13 @@ export type AdminUsersRouteProvider = {
   deleteUser: (email: string) => Promise<void>;
   canRemoveAdmin: (email: string) => Promise<boolean> | boolean;
   broadcastAccessChange: () => Promise<void> | void;
+};
+
+export type AdminAccessProvider = {
+  currentEmail: (
+    request: FastifyRequest,
+  ) => Promise<string | null | undefined> | string | null | undefined;
+  isAdminEmail: (email: string) => Promise<boolean> | boolean;
 };
 
 export type AdminUsersRouteOptions = {
@@ -167,10 +172,10 @@ export function registerAdminUsersRoutes(
   );
 }
 
-async function requireAdmin(
+export async function requireAdmin(
   request: FastifyRequest,
   reply: FastifyReply,
-  provider: AdminUsersRouteProvider,
+  provider: AdminAccessProvider,
 ): Promise<string | undefined> {
   const email = normalizeEmail(await provider.currentEmail(request));
   if (!email.ok) {

@@ -112,6 +112,10 @@ import {
   type SystemConfigRouteOptions,
 } from "./system/system_config_routes.js";
 import {
+  registerRuntimeMemoryRoutes,
+  type RuntimeMemoryRouteOptions,
+} from "./system/runtime_memory_routes.js";
+import {
   registerUserBackgroundRoutes,
   type UserBackgroundRouteOptions,
 } from "./user/user_background_routes.js";
@@ -157,6 +161,7 @@ export type CreateAppOptions = {
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
+  runtimeMemoryRoutes?: RuntimeMemoryRouteOptions;
   executeProxyRoutes?: ExecuteProxyRouteOptions;
   pushRoutes?: PushRouteOptions;
   publicStatusRoutes?: PublicStatusRouteOptions;
@@ -236,6 +241,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.systemConfigRoutes !== undefined) {
     registerSystemConfigRoutes(app, options.systemConfigRoutes);
+  }
+  if (options.runtimeMemoryRoutes !== undefined) {
+    registerRuntimeMemoryRoutes(app, options.runtimeMemoryRoutes);
   }
   if (options.executeProxyRoutes !== undefined) {
     registerExecuteProxyRoutes(app, options.executeProxyRoutes);
