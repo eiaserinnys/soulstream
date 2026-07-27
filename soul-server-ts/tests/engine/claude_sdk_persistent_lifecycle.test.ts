@@ -183,6 +183,13 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       "hook-completed",
       { signal: new AbortController().signal },
     );
+    harness.push({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-membership-hook-pump-empty",
+      session_id: "sdk-session",
+      tasks: [],
+    } as unknown as SDKMessage);
     await vi.waitFor(() =>
       expect(client.persistentRuntimeActivity()).toMatchObject({
         foregroundPhase: "idle",
