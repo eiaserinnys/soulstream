@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { attachClaudeBackgroundProvenance } from
+  "../../src/engine/claude_background_provenance.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskEngineEventPublisher } from "../../src/task/task_engine_event_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -712,14 +714,16 @@ describe("TaskEngineEventPublisher", () => {
       team_name: "runtime",
       timestamp: 11.6,
     } as unknown as SSEEventPayload);
-    await publisher.publishEngineEvent(task, {
+    const backgroundNotification = {
       type: "claude_runtime_task_notification",
       task_id: "task-bg-1",
       status: "completed",
       output_file: "/tmp/task.out",
       summary: "done",
       timestamp: 12,
-    } as unknown as SSEEventPayload);
+    } as unknown as SSEEventPayload;
+    attachClaudeBackgroundProvenance(backgroundNotification, "sdk_membership");
+    await publisher.publishEngineEvent(task, backgroundNotification);
     await publisher.publishEngineEvent(task, {
       type: "claude_runtime_mode_state",
       mode: "plan",
@@ -827,5 +831,35 @@ describe("TaskEngineEventPublisher", () => {
     });
     expect(deps.persistEventWithResult).toHaveBeenCalledTimes(10);
     expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(10);
+  });
+
+  it("keeps provenance-less synchronous task notifications out of background state", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_task_started",
+      task_id: "task-sync-1",
+      tool_use_id: "toolu-sync",
+      description: "foreground bash",
+      task_type: "bash",
+      timestamp: 20,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "task-sync-1",
+      status: "completed",
+      summary: "consumed in the foreground turn",
+      timestamp: 21,
+    } as unknown as SSEEventPayload);
+
+    expect(task.claudeRuntime?.tasks["task-sync-1"]).toMatchObject({
+      taskId: "task-sync-1",
+      status: "completed",
+      toolUseId: "toolu-sync",
+      taskType: "bash",
+    });
+    expect(task.claudeRuntime?.tasks["task-sync-1"]?.isBackgrounded).not.toBe(true);
   });
 });

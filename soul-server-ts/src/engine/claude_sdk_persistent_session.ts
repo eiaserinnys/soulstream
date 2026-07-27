@@ -11,9 +11,10 @@ import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import {
-  attachClaudeBackgroundProvenance,
-  readClaudeBackgroundProvenance,
-} from "./claude_background_provenance.js";
+  isTerminalPersistentBackgroundEvent,
+  observePersistentBackgroundEvent,
+  terminalizePersistentBackgroundTasks,
+} from "./claude_persistent_background_lifecycle.js";
 import { createEventQueue, type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
@@ -162,7 +163,12 @@ export class ClaudeSdkPersistentSession {
       this.drainTimer = null;
     }
     this.resultLiveness.clear();
-    await this.terminalizeBackgroundTasks(reason);
+    await terminalizePersistentBackgroundTasks({
+      runtime: this.runtime,
+      reason,
+      routeEvent: (event) => this.routeEvent(event),
+      logger: this.logger,
+    });
     this.runtime.close(reason);
     this.clearForegroundTimers(this.activeForeground);
     this.activeForeground?.output.close();
@@ -287,8 +293,8 @@ export class ClaudeSdkPersistentSession {
   private async routeEvent(event: ClaudeClientEvent): Promise<void> {
     const runtimeEventAccepted =
       !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
-    if (runtimeEventAccepted || isTerminalBackgroundEvent(event)) {
-      this.observeBackgroundEvent(event);
+    if (runtimeEventAccepted || isTerminalPersistentBackgroundEvent(event)) {
+      observePersistentBackgroundEvent(this.runtime, event);
     }
     if (!runtimeEventAccepted) {
       return;
@@ -307,33 +313,6 @@ export class ClaudeSdkPersistentSession {
       return;
     }
     this.activeForeground.output.push(event);
-  }
-
-  private observeBackgroundEvent(event: ClaudeClientEvent): void {
-    if (!hasExplicitBackgroundProvenance(event)) return;
-    switch (event.type) {
-      case "claude_runtime_task_started":
-      case "claude_runtime_task_created":
-      case "claude_runtime_task_progress":
-        this.runtime.observeBackgroundTask(event.taskId, false);
-        return;
-      case "claude_runtime_task_completed":
-      case "claude_runtime_task_notification":
-        this.runtime.observeBackgroundTask(event.taskId, true);
-        return;
-      case "claude_runtime_task_updated": {
-        const status = event.patch.status;
-        const terminal =
-          status === "completed" ||
-          status === "failed" ||
-          status === "stopped" ||
-          status === "killed";
-        this.runtime.observeBackgroundTask(event.taskId, terminal);
-        return;
-      }
-      default:
-        return;
-    }
   }
 
   private async pumpHookEvents(): Promise<void> {
@@ -418,41 +397,6 @@ export class ClaudeSdkPersistentSession {
     }
   }
 
-  private async terminalizeBackgroundTasks(
-    reason: ClaudeRuntimeCloseReason,
-  ): Promise<void> {
-    const taskIds = this.runtime.snapshot().backgroundTaskIds;
-    const status =
-      reason === "explicit_cancel"
-        ? "stopped"
-        : reason === "fatal"
-          ? "failed"
-          : "killed";
-    for (const taskId of taskIds) {
-      try {
-        const event: ClaudeClientEvent = {
-          type: "claude_runtime_task_updated",
-          taskId,
-          patch: {
-            status,
-            is_backgrounded: true,
-            close_reason: reason,
-          },
-        };
-        attachClaudeBackgroundProvenance(event, "runtime_close");
-        await this.routeEvent(event);
-      } catch (err) {
-        // The active journal row is deliberately left recoverable. Query
-        // shutdown must not hang because terminal persistence is temporarily
-        // unavailable; startup recovery will finish the same semantic task.
-        this.logger.warn(
-          { err, taskId, reason },
-          "Claude background terminal persistence deferred to restart recovery",
-        );
-      }
-    }
-  }
-
   private armDrainTimer(): void {
     if (this.drainTimer) clearTimeout(this.drainTimer);
     this.drainTimer = setTimeout(() => {
@@ -472,31 +416,6 @@ function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {
     event.fatal === false &&
     event.errorCode === "error_during_execution"
   );
-}
-
-function isTerminalBackgroundEvent(event: ClaudeClientEvent): boolean {
-  if (!hasExplicitBackgroundProvenance(event)) return false;
-  if (
-    event.type === "claude_runtime_task_completed" ||
-    event.type === "claude_runtime_task_notification"
-  ) {
-    return true;
-  }
-  if (event.type !== "claude_runtime_task_updated") return false;
-  return (
-    event.patch.status === "completed" ||
-    event.patch.status === "failed" ||
-    event.patch.status === "stopped" ||
-    event.patch.status === "killed"
-  );
-}
-
-function hasExplicitBackgroundProvenance(event: ClaudeClientEvent): boolean {
-  return Boolean(readClaudeBackgroundProvenance(event)) ||
-    (
-      event.type === "claude_runtime_task_updated" &&
-      event.patch.is_backgrounded === true
-    );
 }
 
 function hashSdkUserMessage(message: SDKUserMessage): string {
