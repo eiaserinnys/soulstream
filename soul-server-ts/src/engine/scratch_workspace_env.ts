@@ -1,6 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
 export const SCRATCH_WORKSPACE_DIR_ENV = "SCRATCH_WORKSPACE_DIR";
 export const SOULSTREAM_AGENT_ID_ENV = "SOULSTREAM_AGENT_ID";
 export const AGENT_COMMON_FILES_DIR_ENV = "AGENT_COMMON_FILES_DIR";
@@ -20,33 +17,4 @@ export function withScratchWorkspaceEnv(
     out[AGENT_COMMON_FILES_DIR_ENV] = commonFilesDir;
   }
   return out;
-}
-
-export function writeScratchAgentMarker(params: {
-  workspaceDir: string;
-  agentId: string;
-}): void {
-  const workspaceDir = params.workspaceDir;
-  const agentId = params.agentId.trim();
-  if (agentId.length === 0) {
-    throw new Error("writeScratchAgentMarker: agentId must not be empty");
-  }
-  if (!statSync(workspaceDir).isDirectory()) {
-    throw new Error(`writeScratchAgentMarker: workspaceDir is not a directory: ${workspaceDir}`);
-  }
-
-  const localDir = join(workspaceDir, ".local");
-  const markerPath = join(localDir, ".agent_marker");
-  mkdirSync(localDir, { recursive: true });
-
-  if (existsSync(markerPath)) {
-    const existing = readFileSync(markerPath, "utf8").trim();
-    if (existing.length > 0 && existing !== agentId) {
-      throw new Error(
-        `Scratch workspace marker mismatch: ${workspaceDir} belongs to ${existing}, not ${agentId}`,
-      );
-    }
-  }
-
-  writeFileSync(markerPath, `${agentId}\n`, "utf8");
 }
