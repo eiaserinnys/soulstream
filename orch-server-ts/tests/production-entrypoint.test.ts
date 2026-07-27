@@ -80,6 +80,14 @@ describe("production orchestrator entrypoint", () => {
       .toBe(true);
     expect(application.app.hasRoute({ method: "PATCH", url: "/api/pages/:pageId/starred" }))
       .toBe(true);
+    expect(application.app.hasRoute({
+      method: "GET",
+      url: "/api/admin/runtime-memory",
+    })).toBe(true);
+    expect(await application.app.inject({
+      method: "GET",
+      url: "/api/admin/runtime-memory",
+    })).toMatchObject({ statusCode: 401 });
 
     await application.app.close();
     await application.closeResources();

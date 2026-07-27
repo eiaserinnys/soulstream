@@ -30,6 +30,7 @@ import {
 } from "./runtime/composition.js";
 import { resolveLiveBoardAssetStorageFromConfig } from "./runtime/live_board_asset_storage.js";
 import { OrchestratorMaintenanceService } from "./runtime/orchestrator_maintenance_service.js";
+import { createOrchestratorMemoryStatsCollector } from "./runtime/orchestrator_memory_stats.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import {
@@ -210,6 +211,17 @@ export async function createLiveProductionApplication(
       }),
     },
   });
+  const memoryStats = createOrchestratorMemoryStatsCollector({
+    sessionBroadcaster: runtimeServices.sessionBroadcaster,
+    sessionCache: registry.sessionCache,
+    registry,
+    pushNotifier,
+    foregroundObservers,
+    boardYjsDocuments: () =>
+      boardYjsService?.getStats().activeDocuments ?? 0,
+    pageYjsDocuments: () =>
+      pageYjsService?.getPersistenceDiagnostics().activeDocuments ?? 0,
+  });
   taskIdentityService = new TaskIdentityService({
     board: {
       async withTaskBoardApplication(input, persist) {
@@ -241,11 +253,6 @@ export async function createLiveProductionApplication(
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
-  const maintenanceService = new OrchestratorMaintenanceService({
-    sessionCache: registry.sessionCache,
-    pushNotifier,
-  });
-
   try {
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
@@ -277,7 +284,22 @@ export async function createLiveProductionApplication(
     config.cors_allowed_origins,
     taskIdentityService,
     folderProjectIdentityService,
+    memoryStats,
   ));
+  const maintenanceService = new OrchestratorMaintenanceService({
+    sessionCache: registry.sessionCache,
+    pushNotifier,
+    memoryStats,
+    onInfo: (event) => {
+      app.log.info({ runtimeMemory: event }, "Orchestrator runtime memory");
+    },
+    onWarning: (event) => {
+      app.log.warn(
+        { runtimeMemory: event },
+        "Orchestrator runtime memory RSS threshold exceeded",
+      );
+    },
+  });
   let resourcesClosed = false;
   return {
     app,
@@ -312,6 +334,7 @@ export function buildProductionRouteOptions(
   corsAllowedOrigins: readonly string[] = [],
   taskIdentityService?: TaskIdentityService,
   folderProjectIdentityService?: FolderProjectIdentityService,
+  memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
 ): CreateAppOptions {
   return {
     config,
@@ -371,6 +394,14 @@ export function buildProductionRouteOptions(
     sessionSnapshotRoutes: providers.runtime.sessionSnapshotRoutes,
     sseReplayRoutes: providers.runtime.sseReplayRoutes,
     systemConfigRoutes: providers.systemConfigRoutes,
+    ...(memoryStats === undefined
+      ? {}
+      : {
+          runtimeMemoryRoutes: {
+            accessProvider: providers.adminUsersRoutes.provider,
+            stats: memoryStats,
+          },
+        }),
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
     usageSummaryRoutes: providers.usageSummaryRoutes,
