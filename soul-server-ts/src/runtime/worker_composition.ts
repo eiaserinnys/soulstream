@@ -15,8 +15,6 @@ import { CustomViewService } from "../custom_view/custom_view_service.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
-import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
-import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
 import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
 import {
   isPostResultDrainEvent,
@@ -24,10 +22,7 @@ import {
 } from "../engine/claude_event_phase.js";
 import type { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
-import { CodexEngineAdapter } from "../engine/codex_adapter.js";
-import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
-import { writeScratchAgentMarker } from "../engine/scratch_workspace_env.js";
 import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
@@ -48,7 +43,6 @@ import {
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { buildServer, type ServerInstance } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
-import type { EngineFactory } from "../task/task_executor.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -59,6 +53,7 @@ import {
 } from "./supervisor_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
+import { createEngineFactory } from "./engine_factory.js";
 import { preflightPersistentRuntimeSchema } from "./worker_schema_preflight.js";
 export interface WorkerCompositionParams {
   env: Env;
@@ -260,59 +255,15 @@ export async function composeWorkerRuntime(
   );
   const scheduleService =
     new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
-  const engineFactory: EngineFactory = (agent) => {
-    writeScratchAgentMarker({ workspaceDir: agent.workspace_dir, agentId: agent.id });
-    if (agent.backend === "codex") {
-      if (env.CODEX_ADAPTER_MODE === "app-server") {
-        return new CodexAppServerEngineAdapter(
-          {
-            workspaceDir: agent.workspace_dir,
-            agentId: agent.id,
-            apiKey: env.CODEX_API_KEY,
-            codexPathOverride: codexCliPath?.path,
-            processEnv: process.env,
-          },
-          logger,
-        );
-      }
-      return new CodexEngineAdapter(
-        {
-          workspaceDir: agent.workspace_dir,
-          agentId: agent.id,
-          apiKey: env.CODEX_API_KEY,
-          processEnv: process.env,
-          codexPathOverride: codexCliPath?.path,
-        },
-        logger,
-      );
-    }
-    if (agent.backend === "claude") {
-      return new ClaudeEngineAdapter(
-        {
-          workspaceDir: agent.workspace_dir,
-          agentId: agent.id,
-          processEnv: claudeAuth.buildProcessEnv(process.env),
-          sessionStore: claudeSessionStore,
-          // V2 uses the shared transcript as its cross-node receiver receipt.
-          sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED ? "eager" : "batched",
-          loadTimeoutMs: 60_000,
-          ...(claudeSessionClientRegistry
-            ? { persistentSessionRegistry: claudeSessionClientRegistry }
-            : {}),
-        },
-        logger,
-      );
-    }
-    if (agent.backend === "openai-agents") {
-      return new AgentsEngineAdapter(
-        { workspaceDir: agent.workspace_dir, profile: agent },
-        logger,
-      );
-    }
-    throw new Error(
-      `Unsupported backend "${agent.backend}" in soul-server-ts (agent=${agent.id})`,
-    );
-  };
+  const engineFactory = createEngineFactory({
+    env,
+    logger,
+    codexCliPath,
+    codexProcessEnv: process.env,
+    buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
+    claudeSessionStore,
+    ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
+  });
   supervisor = composeSupervisorRuntime({
     env,
     db,
