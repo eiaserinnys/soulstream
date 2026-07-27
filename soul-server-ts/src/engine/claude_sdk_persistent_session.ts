@@ -27,7 +27,6 @@ import {
 import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
-  type ClaudePersistentQuery,
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
@@ -92,12 +91,7 @@ export class ClaudeSdkPersistentSession {
       config.uncorrelatedResultTimeoutMs,
       (event) => this.handleUncorrelatedResultTimeout(event),
     );
-    this.runtime = new ClaudeSessionRuntime((input) =>
-      // SDK 0.3.218 declares Query.interrupt() as Promise<void>, but the CLI
-      // answers with an interrupt receipt carrying still_queued. The runtime
-      // reads that receipt, so the narrowing lives at this one boundary.
-      config.createQuery(input) as unknown as ClaudePersistentQuery,
-    );
+    this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
   }
