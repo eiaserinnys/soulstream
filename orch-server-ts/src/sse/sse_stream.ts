@@ -8,7 +8,7 @@ export type SseStreamOptions = {
   readonly stallTimeoutMs?: number;
 };
 
-export type SseStreamPush = (chunk: string | Uint8Array) => boolean;
+export type SseStreamPush = (chunk: string | Uint8Array) => void;
 
 export function createSseStream(
   options: SseStreamOptions = {},
@@ -34,16 +34,15 @@ export function createSseStream(
   stream.on("close", clearStallTimer);
 
   const push: SseStreamPush = (chunk) => {
-    if (stream.destroyed) return false;
+    if (stream.destroyed) return;
     const accepted = stream.push(chunk);
     if (!accepted && stallTimer === undefined) {
       stallTimer = setTimeout(() => {
         stallTimer = undefined;
-        stream.destroy();
+        stream.destroy(new Error("sse consumer stalled"));
       }, stallTimeoutMs);
       stallTimer.unref();
     }
-    return accepted;
   };
 
   return { stream, push };
