@@ -103,6 +103,7 @@ export * from "./session/session_snapshot_routes.js";
 export * from "./session/session_snapshot_service.js";
 export * from "./sse/replay_broadcaster.js";
 export * from "./sse/sse_replay_routes.js";
+export * from "./sse/sse_stream.js";
 export * from "./system/system_config_routes.js";
 export * from "./user/user_background_routes.js";
 export * from "./user/user_preferences_routes.js";

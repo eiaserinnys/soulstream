@@ -1,7 +1,6 @@
-import { Readable } from "node:stream";
-
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { createSseStream } from "../sse/sse_stream.js";
 import type { NodeRegistryEvent } from "./registry.js";
 import type { NodeSnapshotRecord, NodeSnapshotService } from "./node_snapshot_service.js";
 
@@ -121,16 +120,14 @@ async function sendNodeStream(
     return reply.send(formatNodeStreamFrame(snapshotFrame));
   }
 
-  const stream = new Readable({
-    read() {},
-  });
-  stream.push(formatNodeStreamFrame(snapshotFrame));
+  const { stream, push } = createSseStream();
+  push(formatNodeStreamFrame(snapshotFrame));
 
   const unsubscribe = options.broadcaster.subscribe((frame) => {
-    stream.push(formatNodeStreamFrame(frame));
+    push(formatNodeStreamFrame(frame));
   });
   const keepalive = setInterval(() => {
-    stream.push(": keepalive\n\n");
+    push(": keepalive\n\n");
   }, options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS);
   const cleanup = () => {
     clearInterval(keepalive);
