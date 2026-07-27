@@ -39,7 +39,10 @@ type CompletionDeliveryRepository = Pick<
   | "deferPending"
   | "retryLeasedDelivery"
   | "releaseExpiredDeliveryLeases"
->;
+> & Partial<Pick<
+  SessionDeliveryRepository,
+  "repairInferredSupervisorCompletionTargets"
+>>;
 
 export interface CompletionDeliveryCoordinatorDeps {
   repository: CompletionDeliveryRepository;
@@ -104,6 +107,14 @@ export class CompletionDeliveryCoordinator {
           staleNodeBefore: new Date(now - 120_000),
           queuedBefore: new Date(now - this.queuedRecoveryMaxAgeMs),
         }, limit);
+      }
+      const repaired =
+        await this.deps.repository.repairInferredSupervisorCompletionTargets?.() ?? 0;
+      if (repaired > 0) {
+        this.deps.logger.warn(
+          { count: repaired },
+          "Reclassified inferred supervisor completion deliveries to their direct callers",
+        );
       }
       await this.deps.repository.releaseExpiredDeliveryLeases();
       rows = await this.deps.repository.claimRecoverableCompletionDeliveries(

@@ -1,4 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
+import { readClaudeBackgroundProvenance } from
+  "../engine/claude_background_provenance.js";
 
 import type {
   ClaudeRuntimeNotificationState,
@@ -215,10 +217,12 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       break;
 
     case "claude_runtime_task_notification": {
-      // Claude emits task_notification only for work detached into the background.
-      // Local Agent notifications do not carry is_backgrounded, so the event type
-      // itself is the canonical background signal.
-      runtimeTask.isBackgrounded = true;
+      // task_notification is also emitted for synchronous Bash/Agent work.
+      // Only SDK membership (or another explicit background boundary) can
+      // classify it as detached work.
+      if (readClaudeBackgroundProvenance(payload)) {
+        runtimeTask.isBackgrounded = true;
+      }
       const status = parseTaskStatus(payload.status);
       if (status) runtimeTask.status = status;
       copyString(payload, "output_file", runtimeTask, "outputFile");

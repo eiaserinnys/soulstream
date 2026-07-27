@@ -50,6 +50,29 @@ function makeController(
 }
 
 describe("ClaudeRuntimeTaskFollowupController", () => {
+  it("foreground Bash/Agent task_notification은 follow-up으로 승격하지 않는다", async () => {
+    for (const taskType of ["bash", "agent"]) {
+      const task = makeTask();
+      task.claudeRuntime!.tasks[`foreground-${taskType}`] = {
+        taskId: `foreground-${taskType}`,
+        status: "completed",
+        updatedAt: Date.now(),
+        taskType,
+      };
+      const { controller, addIntervention } = makeController(true);
+
+      controller.collect(task, {
+        type: "claude_runtime_task_notification",
+        task_id: `foreground-${taskType}`,
+        status: "completed",
+        summary: "already consumed synchronously",
+      } as SSEEventPayload);
+      await controller.flush(task);
+
+      expect(addIntervention).not.toHaveBeenCalled();
+    }
+  });
+
   it("background task notification을 TaskManager intervention으로 flush한다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["task-1"] = {
@@ -225,7 +248,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     });
   });
 
-  it("local_agent terminal notification은 is_backgrounded 표식 없이도 follow-up한다", async () => {
+  it("동기 local_agent terminal notification은 background 근거 없이 follow-up하지 않는다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["agent-task"] = {
       taskId: "agent-task",
@@ -245,12 +268,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     } as SSEEventPayload);
     await controller.flush(task);
 
-    expect(addIntervention).toHaveBeenCalledTimes(1);
-    expect(addIntervention.mock.calls[0]![0]).toMatchObject({
-      followupKey: "sess-1:agent-task",
-      followupTaskIds: ["agent-task"],
-    });
-    expect(addIntervention.mock.calls[0]![0].text).toContain("status=stopped");
+    expect(addIntervention).not.toHaveBeenCalled();
   });
 
   it("failed/stopped/killed follow-up prompt는 완료로 오인하지 않도록 상태를 진실하게 설명한다", async () => {

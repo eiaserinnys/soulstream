@@ -3,6 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import { attachClaudeBackgroundProvenance } from
+  "./claude_background_provenance.js";
+import { mapClaudeBackgroundTaskMembership } from
+  "./claude_sdk_background_membership_mapper.js";
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
@@ -97,7 +101,10 @@ export class ClaudeSdkEventMapper {
   }
 
   mapSystemMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
-    return mapClaudeSystemMessage(message, {
+    if (asString(message.subtype) === "background_tasks_changed") {
+      return mapClaudeBackgroundTaskMembership(message, this.runtimeState);
+    }
+    const events = mapClaudeSystemMessage(message, {
       runtimeState: this.runtimeState,
       isBackgroundAgentToolUse: (toolUseId) => this.backgroundAgentToolUseIds.has(toolUseId),
       rememberBackgroundAgentTask: (taskId) => this.backgroundAgentTaskIds.add(taskId),
@@ -108,6 +115,20 @@ export class ClaudeSdkEventMapper {
         this.makeSubagentStartEvents(agentId, agentType),
       makeSubagentStopEvents: (agentId) => this.makeSubagentStopEvents(agentId),
     });
+    for (const event of events) {
+      const taskId = runtimeTaskId(event);
+      if (!taskId) continue;
+      if (
+        event.type === "claude_runtime_task_updated" &&
+        event.patch.is_backgrounded === true
+      ) {
+        this.runtimeState.markBackgroundTask(taskId);
+      }
+      if (this.runtimeState.hasBackgroundProvenance(taskId)) {
+        attachClaudeBackgroundProvenance(event, "sdk_membership");
+      }
+    }
+    return events;
   }
 
   mapAssistantMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -353,22 +374,28 @@ export class ClaudeSdkEventMapper {
     const existing = this.runtimeState.getTaskStatus(background.taskId);
     this.runtimeState.setTaskStatus(background.taskId, existing ?? "running");
 
+    this.runtimeState.markBackgroundTask(background.taskId);
     const updateEvent: ClaudeClientEvent = {
       type: "claude_runtime_task_updated",
       taskId: background.taskId,
       patch,
     };
-    if (existing) return [updateEvent];
-    return [
-      {
-        type: "claude_runtime_task_started",
-        taskId: background.taskId,
-        ...(params.toolUseId ? { toolUseId: params.toolUseId } : {}),
-        taskType: "bash",
-        description: "Background Bash task",
-      },
-      updateEvent,
-    ];
+    const events: ClaudeClientEvent[] = existing
+      ? [updateEvent]
+      : [
+          {
+            type: "claude_runtime_task_started",
+            taskId: background.taskId,
+            ...(params.toolUseId ? { toolUseId: params.toolUseId } : {}),
+            taskType: "bash",
+            description: "Background Bash task",
+          },
+          updateEvent,
+        ];
+    for (const event of events) {
+      attachClaudeBackgroundProvenance(event, "explicit_background_tool_result");
+    }
+    return events;
   }
 
   private isBackgroundAgentIdentifier(agentId: string | undefined): boolean {
@@ -399,6 +426,20 @@ export class ClaudeSdkEventMapper {
       ...event,
       sdkDedupeKey: `claude-sdk:${messageType}:${identity}:${index}`,
     }) as unknown as ClaudeClientEvent);
+  }
+}
+
+function runtimeTaskId(event: ClaudeClientEvent): string | undefined {
+  switch (event.type) {
+    case "claude_runtime_task_started":
+    case "claude_runtime_task_created":
+    case "claude_runtime_task_updated":
+    case "claude_runtime_task_progress":
+    case "claude_runtime_task_completed":
+    case "claude_runtime_task_notification":
+      return event.taskId;
+    default:
+      return undefined;
   }
 }
 

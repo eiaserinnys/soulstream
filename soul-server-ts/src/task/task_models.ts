@@ -255,6 +255,11 @@ export interface Task {
 
   callerSessionId?: string;
   callerInfo?: CallerInfo;
+  /**
+   * Explicit completion control metadata captured when the child is created.
+   * caller_info.source=agent is identity only and must never populate this field.
+   */
+  completionSupervisorRole?: string;
   /** false면 위임 완료 시 caller 세션 completion relay를 발화하지 않는다. 기본 true. */
   notifyCompletion?: boolean;
   /** sessions.metadata JSONB array와 session_created.session.metadata에 싣는 세션 메타데이터. */

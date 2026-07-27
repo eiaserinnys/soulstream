@@ -53,6 +53,13 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       const input = await harness.nextInput();
       harness.push({
         type: "system",
+        subtype: "background_tasks_changed",
+        uuid: "background-membership-retained",
+        session_id: "sdk-session",
+        tasks: [{ task_id: "bg-retained", description: "long task" }],
+      } as unknown as SDKMessage);
+      harness.push({
+        type: "system",
         subtype: "task_started",
         uuid: "task-started-retained",
         session_id: "sdk-session",
@@ -124,6 +131,22 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       prompt: "create hooked task",
     }));
     const input = await harness.nextInput();
+    harness.push({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-membership-hook-pump",
+      session_id: "sdk-session",
+      tasks: [{
+        task_id: "hook-pump-task",
+        description: "Queued hook work",
+        task_type: "agent",
+      }],
+    } as unknown as SDKMessage);
+    await vi.waitFor(() =>
+      expect(client.persistentRuntimeActivity()).toMatchObject({
+        backgroundTaskCount: 1,
+      })
+    );
     const createdHook =
       harness.captured[0]?.options?.hooks?.TaskCreated?.[0]?.hooks[0];
     const completedHook =
@@ -160,6 +183,22 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       "hook-completed",
       { signal: new AbortController().signal },
     );
+    harness.push({
+      type: "system",
+      subtype: "task_notification",
+      uuid: "task-notification-hook-pump",
+      session_id: "sdk-session",
+      task_id: "hook-pump-task",
+      status: "completed",
+      summary: "Queued hook work completed",
+    } as unknown as SDKMessage);
+    harness.push({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-membership-hook-pump-empty",
+      session_id: "sdk-session",
+      tasks: [],
+    } as unknown as SDKMessage);
     await vi.waitFor(() =>
       expect(client.persistentRuntimeActivity()).toMatchObject({
         foregroundPhase: "idle",
@@ -190,6 +229,17 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
 
     const turn = collect(client.runPersistent(runOptions("background"), abortSignal()));
     const input = await harness.nextInput();
+    harness.push({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-membership-close",
+      session_id: "sdk-session",
+      tasks: [{
+        task_id: "bg-close",
+        description: "long task",
+        task_type: "agent",
+      }],
+    } as unknown as SDKMessage);
     harness.push({
       type: "system",
       subtype: "task_started",

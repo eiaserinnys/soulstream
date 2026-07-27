@@ -10,6 +10,8 @@
 import type { SSEEventPayload } from "./protocol.js";
 import { copyClaudeBackgroundDeliveryMetadata } from
   "./claude_background_delivery_metadata.js";
+import { copyClaudeBackgroundProvenance } from
+  "./claude_background_provenance.js";
 
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
@@ -755,7 +757,10 @@ export function mapClaudeClientEvent(
   })();
   return copyClaudeBackgroundDeliveryMetadata(
     event,
-    attachInternalDedupeKey(payloads, event),
+    copyClaudeBackgroundProvenance(
+      event,
+      attachInternalDedupeKey(payloads, event),
+    ),
   );
 }
 

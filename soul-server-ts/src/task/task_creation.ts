@@ -15,6 +15,7 @@ import type {
 import {
   buildCallerInfoMetadataEntry,
   buildClaudePermissionModeMetadataEntry,
+  buildCompletionTargetMetadataEntry,
 } from "./task_metadata.js";
 import {
   appendCreationWarning,
@@ -71,6 +72,7 @@ export interface TaskCreationDeps {
   taskCreationHook?: TaskCreationHook;
   hasTask(sessionId: string): boolean;
   rememberTask(task: Task): void;
+  resolveCompletionSupervisorRole?(callerSessionId: string): Promise<string | undefined>;
 }
 
 /**
@@ -98,16 +100,31 @@ export class TaskCreation {
     }
 
     const now = new Date();
-    const callerMetadata = buildCallerInfoMetadataEntry(params.callerInfo);
-    const permissionModeMetadata = buildClaudePermissionModeMetadataEntry(params.claudePermissionMode);
-    const metadata = [callerMetadata, permissionModeMetadata].filter(
-      (entry): entry is Record<string, unknown> => entry !== undefined,
-    );
     const sessionType = params.sessionType ?? "claude";
     const review = initialSessionReview(params.callerInfo);
     const structuralCallerSessionId = resolveStructuralCallerSessionId(
       params.callerSessionId,
       params.notifyCompletion,
+    );
+    const completionSupervisorRole = structuralCallerSessionId
+      ? await this.resolveCompletionSupervisorRole(structuralCallerSessionId)
+      : undefined;
+    const callerMetadata = buildCallerInfoMetadataEntry(params.callerInfo);
+    const permissionModeMetadata = buildClaudePermissionModeMetadataEntry(params.claudePermissionMode);
+    const completionTargetMetadata = this.deps.resolveCompletionSupervisorRole &&
+        structuralCallerSessionId
+      ? buildCompletionTargetMetadataEntry(
+          completionSupervisorRole
+            ? { kind: "supervisor_role", supervisorRole: completionSupervisorRole }
+            : { kind: "direct_session" },
+        )
+      : undefined;
+    const metadata = [
+      callerMetadata,
+      permissionModeMetadata,
+      completionTargetMetadata,
+    ].filter(
+      (entry): entry is Record<string, unknown> => entry !== undefined,
     );
     const task: Task = {
       agentSessionId: params.agentSessionId,
@@ -122,6 +139,7 @@ export class TaskCreation {
       llmUsage: params.llmUsage ?? null,
       callerSessionId: structuralCallerSessionId ?? undefined,
       callerInfo: params.callerInfo,
+      completionSupervisorRole,
       notifyCompletion: params.notifyCompletion ?? true,
       metadata,
       model: params.model,
@@ -221,6 +239,23 @@ export class TaskCreation {
     }
 
     return task;
+  }
+
+  private async resolveCompletionSupervisorRole(
+    callerSessionId: string,
+  ): Promise<string | undefined> {
+    if (!this.deps.resolveCompletionSupervisorRole) return undefined;
+    try {
+      return await this.deps.resolveCompletionSupervisorRole(
+        callerSessionId,
+      );
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, callerSessionId },
+        "Completion target control lookup failed — preserving direct caller routing",
+      );
+      return undefined;
+    }
   }
 
   /**
