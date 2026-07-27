@@ -1209,7 +1209,88 @@ describe("ClaudeSdkClient", () => {
       expect(captured[0]?.options?.mcpServers).toEqual({
         soulstream: { type: "sse", url: "http://localhost:3105/cogito-mcp/sse" },
       });
+      expect(captured[0]?.options).not.toHaveProperty("strictMcpConfig");
       expect(captured[1]?.options).not.toHaveProperty("mcpServers");
+      expect(captured[1]?.options).not.toHaveProperty("strictMcpConfig");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses only resolved profile MCP servers in strict mode", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-profile-"));
+    try {
+      writeFileSync(
+        join(workspaceDir, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            projectOnly: {
+              type: "http",
+              url: "https://project.example.invalid/mcp",
+            },
+          },
+        }),
+      );
+
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-mcp", "done")]));
+          },
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      await collect(client.run({
+        prompt: "hi",
+        workspaceDir,
+        env: {},
+        agentSessionId: "parent-sess-profile",
+        resolvedMcpServers: [
+          {
+            type: "streamable_http",
+            name: "soulstream",
+            url: "http://127.0.0.1:3105/mcp",
+            headers: { authorization: "Bearer secret" },
+          },
+          {
+            type: "sse",
+            name: "outline",
+            url: "http://127.0.0.1:3103/sse",
+          },
+        ],
+      }, new AbortController().signal));
+      await collect(client.run({
+        prompt: "hi",
+        workspaceDir,
+        env: {},
+        useMcp: false,
+        resolvedMcpServers: [],
+      }, new AbortController().signal));
+
+      expect(captured[0]?.options?.strictMcpConfig).toBe(true);
+      expect(captured[0]?.options?.mcpServers).toEqual({
+        soulstream: {
+          type: "http",
+          url: "http://127.0.0.1:3105/mcp",
+          headers: {
+            authorization: "Bearer secret",
+            "x-soulstream-agent-session-id": "parent-sess-profile",
+          },
+        },
+        outline: {
+          type: "sse",
+          url: "http://127.0.0.1:3103/sse",
+        },
+      });
+      expect(captured[0]?.options?.mcpServers).not.toHaveProperty("projectOnly");
+      expect(captured[1]?.options).toMatchObject({
+        mcpServers: {},
+        strictMcpConfig: true,
+      });
     } finally {
       rmSync(workspaceDir, { recursive: true, force: true });
     }

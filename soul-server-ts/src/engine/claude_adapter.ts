@@ -4,6 +4,7 @@ import type {
   SessionStoreFlush,
 } from "@anthropic-ai/claude-agent-sdk";
 
+import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import type {
   BackendId,
   EngineUserInput,
@@ -59,6 +60,8 @@ export interface ClaudeRunOptions {
   maxTurns?: number;
   /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
   useMcp?: boolean;
+  /** `mcp_profile`에서 resolve한 서버. undefined면 workspace MCP config 폴백. */
+  resolvedMcpServers?: ResolvedMcpServer[];
   /** Claude Agent SDK permissionMode. undefined면 legacy bypassPermissions. */
   claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
@@ -102,6 +105,7 @@ export interface ClaudeAdapterConfig {
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
+  resolvedMcpServers?: ResolvedMcpServer[];
   persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
@@ -127,6 +131,7 @@ export class ClaudeEngineAdapter
   private readonly sessionStore?: SessionStore;
   private readonly sessionStoreFlush?: SessionStoreFlush;
   private readonly loadTimeoutMs?: number;
+  private readonly resolvedMcpServers?: ResolvedMcpServer[];
   private readonly persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
@@ -146,6 +151,7 @@ export class ClaudeEngineAdapter
     this.sessionStore = config.sessionStore;
     this.sessionStoreFlush = config.sessionStoreFlush;
     this.loadTimeoutMs = config.loadTimeoutMs;
+    this.resolvedMcpServers = config.resolvedMcpServers;
     this.persistentSessionRegistry = config.persistentSessionRegistry;
     this.logger = logger;
   }
@@ -372,6 +378,9 @@ export class ClaudeEngineAdapter
       ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
       ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
+      ...(this.resolvedMcpServers !== undefined
+        ? { resolvedMcpServers: this.resolvedMcpServers }
+        : {}),
       ...(params.claudePermissionMode !== undefined
         ? { claudePermissionMode: params.claudePermissionMode }
         : {}),

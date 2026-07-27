@@ -1,6 +1,8 @@
+import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import { resolveCodexModelReasoningEffort } from "../codex_adapter.js";
 import type { EngineExecuteParams } from "../protocol.js";
 import type {
+  JsonObject,
   ThreadResumeParams,
   ThreadStartParams,
   TurnStartParams,
@@ -10,6 +12,7 @@ import { toCodexUserInput } from "./protocol.js";
 export function buildThreadStartParams(
   params: EngineExecuteParams,
   workspaceDir: string,
+  resolvedMcpServers?: ResolvedMcpServer[],
 ): ThreadStartParams {
   const model = normalizedModel(params.model);
   return {
@@ -22,7 +25,7 @@ export function buildThreadStartParams(
     approvalsReviewer: null,
     sandbox: "danger-full-access",
     permissions: null,
-    config: null,
+    config: buildCodexMcpConfig(resolvedMcpServers),
     serviceName: "soul-server-ts",
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
@@ -41,6 +44,7 @@ export function buildThreadStartParams(
 export function buildThreadResumeParams(
   params: EngineExecuteParams,
   workspaceDir: string,
+  resolvedMcpServers?: ResolvedMcpServer[],
 ): ThreadResumeParams {
   return {
     threadId: params.resumeSessionId ?? "",
@@ -55,7 +59,7 @@ export function buildThreadResumeParams(
     approvalsReviewer: null,
     sandbox: "danger-full-access",
     permissions: null,
-    config: null,
+    config: buildCodexMcpConfig(resolvedMcpServers),
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
     personality: null,
@@ -98,4 +102,44 @@ function normalizedModel(model: string | null | undefined): string | null {
   if (!model) return null;
   const trimmed = model.trim();
   return trimmed ? trimmed : null;
+}
+
+function buildCodexMcpConfig(
+  servers: ResolvedMcpServer[] | undefined,
+): JsonObject | null {
+  if (servers === undefined) return null;
+
+  const mcpServers: JsonObject = {};
+  for (const server of servers) {
+    const name = server.name?.trim();
+    if (!name) {
+      throw new Error("Resolved MCP profile server requires a name");
+    }
+    if (mcpServers[name]) {
+      throw new Error(`Codex MCP profile contains duplicate server name: ${name}`);
+    }
+
+    if (server.type === "stdio") {
+      if (!server.command) {
+        throw new Error(
+          `Codex MCP stdio server ${name} requires command; full_command is unsupported`,
+        );
+      }
+      mcpServers[name] = {
+        command: server.command,
+        ...(server.args ? { args: server.args } : {}),
+        ...(server.env ? { env: server.env } : {}),
+        ...(server.cwd ? { cwd: server.cwd } : {}),
+        enabled: true,
+      };
+      continue;
+    }
+
+    mcpServers[name] = {
+      url: server.url,
+      ...(server.headers ? { http_headers: server.headers } : {}),
+      enabled: true,
+    };
+  }
+  return { mcp_servers: mcpServers };
 }

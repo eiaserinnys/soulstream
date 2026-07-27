@@ -91,6 +91,12 @@ export type McpRegistryServer = z.infer<typeof McpRegistryServerSchema>;
 export type McpRegistryConfig = z.infer<typeof McpRegistryConfigSchema>;
 export type McpProfile = z.infer<typeof McpProfileSchema>;
 export type McpProfilesConfig = z.infer<typeof McpProfilesConfigSchema>;
+export type ResolvedMcpServer = AgentsSdkMcpServer;
+
+export interface ResolvedMcpProfile {
+  mcp_servers: ResolvedMcpServer[];
+  hosted_tools: AgentsSdkHostedTool[];
+}
 
 export interface McpConfigServiceOptions {
   agentsConfigPath: string;
@@ -129,13 +135,7 @@ export class McpConfigService {
 
   readProfiles(): McpProfilesConfig {
     const registry = this.readRegistry();
-    const profiles = readOptionalYaml(
-      this.profilesPath,
-      McpProfilesConfigSchema,
-      { profiles: [] },
-    );
-    this.assertProfileServerReferences(profiles, registry);
-    return profiles;
+    return this.readProfilesForRegistry(registry);
   }
 
   listRegistry(): { registry_path: string; servers: Array<Record<string, unknown>> } {
@@ -164,21 +164,30 @@ export class McpConfigService {
     return profiles.map((profile) => this.resolveAgentProfile(profile));
   }
 
-  resolveAgentProfile(profile: AgentProfile): AgentProfile {
-    if (!profile.mcp_profile) return profile;
+  resolveMcpProfile(profile: AgentProfile): ResolvedMcpProfile | undefined {
+    if (!profile.mcp_profile) return undefined;
 
     const registry = this.readRegistry();
-    const profiles = this.readProfiles();
+    const profiles = this.readProfilesForRegistry(registry);
     const mcpProfile = profiles.profiles.find((entry) => entry.id === profile.mcp_profile);
     if (!mcpProfile) {
       throw new Error(`MCP profile not found: ${profile.mcp_profile}`);
     }
+    return {
+      mcp_servers: mcpProfile.mcp_servers.map((serverId) =>
+        this.resolveRegistryServer(serverId, registry)
+      ),
+      hosted_tools: mcpProfile.hosted_tools,
+    };
+  }
+
+  resolveAgentProfile(profile: AgentProfile): AgentProfile {
+    if (!profile.mcp_profile) return profile;
+
+    const resolvedMcpProfile = this.resolveMcpProfile(profile);
+    if (!resolvedMcpProfile) return profile;
     if (!profile.agents_sdk) return profile;
 
-    const profileServers = mcpProfile.mcp_servers.map((serverId) =>
-      this.resolveRegistryServer(serverId, registry)
-    );
-    const profileHostedTools = mcpProfile.hosted_tools;
     return {
       ...profile,
       agents_sdk: {
@@ -186,18 +195,28 @@ export class McpConfigService {
         agents: profile.agents_sdk.agents.map((agent) => ({
           ...agent,
           mcp_servers: mergeByKey(
-            profileServers,
+            resolvedMcpProfile.mcp_servers,
             agent.mcp_servers,
             mcpServerKey,
           ),
           hosted_tools: mergeByKey(
-            profileHostedTools,
+            resolvedMcpProfile.hosted_tools,
             agent.hosted_tools,
             hostedToolKey,
           ),
         })),
       },
     };
+  }
+
+  private readProfilesForRegistry(registry: McpRegistryConfig): McpProfilesConfig {
+    const profiles = readOptionalYaml(
+      this.profilesPath,
+      McpProfilesConfigSchema,
+      { profiles: [] },
+    );
+    this.assertProfileServerReferences(profiles, registry);
+    return profiles;
   }
 
   private resolveRegistryServer(
