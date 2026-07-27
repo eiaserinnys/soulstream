@@ -37,12 +37,14 @@ import type { UserPreferencesRouteOptions } from "../user/user_preferences_route
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
 import {
   createOrchestratorRuntimeServices,
+  type OrchestratorRuntimeCompositionOptions,
   type OrchestratorRuntimeServices,
 } from "./composition.js";
 
 export type ShadowOrchestratorRuntimeProviders = {
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
+  findSessionOwnerNodeId?: OrchestratorRuntimeCompositionOptions["findSessionOwnerNodeId"];
   commandTimeoutMs?: number;
   sessionSseInstanceId?: string;
   sseRingMaxlen?: number;

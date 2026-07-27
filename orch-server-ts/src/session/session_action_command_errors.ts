@@ -169,9 +169,10 @@ async function dispatchActionCommand<
   options: SessionActionCommandDispatchOptions,
   payload: TPayload,
 ): Promise<NodeCommandResponse> {
-  const routed = options.router.routeExistingSessionPendingCommand(payload, {
-    timeoutMs: options.timeoutMs,
-  });
+  const routed = await options.router.routeExistingSessionPendingCommand(
+    payload,
+    { timeoutMs: options.timeoutMs },
+  );
   return await options.bridge.sendPendingCommand(routed);
 }
 

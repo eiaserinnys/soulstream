@@ -100,7 +100,7 @@ export function createLiveExecuteProxyRouteProvider(
         payload.agent_session_id,
       );
       try {
-        const routed = options.router.routeExistingSessionPendingCommand(
+        const routed = await options.router.routeExistingSessionPendingCommand(
           interveneCommandPayload(payload),
           { timeoutMs: options.timeoutMs },
         );

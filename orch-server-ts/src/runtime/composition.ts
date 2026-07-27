@@ -66,6 +66,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   exposeLocalHealthRoute?: boolean;
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
+  findSessionOwnerNodeId?: SessionCommandRouterOptions["findSessionOwnerNodeId"];
   commandTimeoutMs?: number;
   enableSessionActionCommandRoutes?: boolean;
   enableSessionBackgroundScheduleRoutes?: boolean;
@@ -138,6 +139,7 @@ export function createOrchestratorRuntimeServices(
   const transports = new NodeCommandTransportHub();
   const sessionRouter = new SessionCommandRouter({
     registry,
+    findSessionOwnerNodeId: options.findSessionOwnerNodeId,
   } satisfies SessionCommandRouterOptions);
   const sessionBridge = new SessionCommandTransportBridge({
     registry,

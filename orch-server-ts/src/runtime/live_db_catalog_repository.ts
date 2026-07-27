@@ -67,6 +67,9 @@ export type LiveDbCatalogRepository = {
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
   readonly userPreferencesRepository: UserBackgroundRepository;
+  readonly findSessionOwnerNodeId: (
+    sessionId: string,
+  ) => Promise<string | null>;
   readonly loadSessionSnapshot: (
     input?: LoadSessionSnapshotInput,
   ) => Promise<SessionStreamSnapshot>;
@@ -275,6 +278,15 @@ export function createLiveDbCatalogRepository(
         input.offset,
         input.limit,
       );
+    },
+    async findSessionOwnerNodeId(sessionId) {
+      const rows = await (await sqlResolver.resolveSql())`
+        SELECT node_id
+        FROM sessions
+        WHERE session_id = ${sessionId}
+        LIMIT 1
+      `;
+      return stringOrNull(rows[0]?.node_id);
     },
     async close() {
       await sqlResolver.close();

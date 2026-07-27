@@ -112,7 +112,7 @@ describe("Node command transport bridge", () => {
     const router = new SessionCommandRouter({ registry });
     const bridge = new SessionCommandTransportBridge({ registry, transports });
 
-    const routed = router.subscribeEvents({
+    const routed = await router.subscribeEvents({
       type: "subscribe_events",
       agentSessionId: "sess-contract",
       subscribeId: "sub-1",
@@ -338,7 +338,7 @@ describe("Node command transport bridge", () => {
       transports: new NodeCommandTransportHub(),
     });
 
-    const routed = router.subscribeEvents({
+    const routed = await router.subscribeEvents({
       type: "subscribe_events",
       agentSessionId: "sess-contract",
       subscribeId: "sub-1",

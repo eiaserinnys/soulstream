@@ -132,7 +132,7 @@ export function registerSessionCommandRoutes(
       answers: body.answers,
     };
     try {
-      const routed = options.router.respond(payload, {
+      const routed = await options.router.respond(payload, {
         timeoutMs: options.timeoutMs,
       });
       const result = await options.bridge.sendPendingCommand(routed);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemoryNodeRegistry,
@@ -94,7 +94,7 @@ describe("Session command router primitive", () => {
     await createExistingSession(registry, "fake-node");
     const router = new SessionCommandRouter({ registry });
 
-    const routed = router.respond({
+    const routed = await router.respond({
       type: "respond",
       agentSessionId: upstream.outbound.respond.agentSessionId,
       inputRequestId: upstream.outbound.respond.inputRequestId,
@@ -120,7 +120,7 @@ describe("Session command router primitive", () => {
     await createExistingSession(registry, "fake-node");
     const router = new SessionCommandRouter({ registry });
 
-    const routed = router.subscribeEvents({
+    const routed = await router.subscribeEvents({
       type: "subscribe_events",
       agentSessionId: upstream.outbound.subscribeEvents.agentSessionId,
       subscribeId: upstream.outbound.subscribeEvents.subscribeId,
@@ -140,6 +140,34 @@ describe("Session command router primitive", () => {
     });
   });
 
+  it("routes an expired cache entry through the durable session owner", async () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "durable-node");
+    const findSessionOwnerNodeId = vi.fn(async (agentSessionId: string) =>
+      agentSessionId === "expired-session" ? "durable-node" : null
+    );
+    const router = new SessionCommandRouter({
+      registry,
+      findSessionOwnerNodeId,
+    });
+
+    const routed = await router.respond({
+      type: "respond",
+      agentSessionId: "expired-session",
+      inputRequestId: "input-req-contract",
+      answers: { choice: "yes" },
+    });
+
+    expect(findSessionOwnerNodeId).toHaveBeenCalledWith("expired-session");
+    expect(routed.node.nodeId).toBe("durable-node");
+    expect(routed.command.message).toMatchObject({
+      type: "respond",
+      agentSessionId: "expired-session",
+      inputRequestId: "input-req-contract",
+      answers: { choice: "yes" },
+    });
+  });
+
   it("does not route through a stale owner after reconnect until sessions_update refreshes it", async () => {
     const { registry } = createRegistry();
     const firstConnectionId = registerNode(registry, "fake-node");
@@ -152,18 +180,18 @@ describe("Session command router primitive", () => {
     });
     const secondConnectionId = registerNode(registry, "fake-node");
 
-    expect(() =>
+    await expect(
       router.respond({
         type: "respond",
         agentSessionId: "sess-contract",
         inputRequestId: "input-req-contract",
         answers: { choice: "yes" },
       }),
-    ).toThrow(SessionRouteSessionOwnerStaleError);
+    ).rejects.toThrow(SessionRouteSessionOwnerStaleError);
 
     registry.receiveNodeMessage("fake-node", reconnect.sessionsUpdateAfterReconnect);
 
-    const routed = router.respond({
+    const routed = await router.respond({
       type: "respond",
       agentSessionId: "sess-contract",
       inputRequestId: "input-req-contract",
@@ -175,7 +203,11 @@ describe("Session command router primitive", () => {
 
   it("uses explicit error types for no node, missing owner, stale owner, and unavailable owner", async () => {
     const { registry, sessionCache } = createRegistry();
-    const router = new SessionCommandRouter({ registry });
+    const router = new SessionCommandRouter({
+      registry,
+      findSessionOwnerNodeId: async (agentSessionId) =>
+        agentSessionId === "offline-durable-session" ? "offline-node" : null,
+    });
 
     expect(() =>
       router.createSession({
@@ -184,27 +216,35 @@ describe("Session command router primitive", () => {
         prompt: "hello",
       }),
     ).toThrow(SessionRouteNoAvailableNodesError);
-    expect(() =>
+    await expect(
       router.respond({
         type: "respond",
         agentSessionId: "missing-session",
         inputRequestId: "input-req-contract",
         answers: {},
       }),
-    ).toThrow(SessionRouteSessionOwnerMissingError);
+    ).rejects.toThrow(SessionRouteSessionOwnerMissingError);
+    await expect(
+      router.respond({
+        type: "respond",
+        agentSessionId: "offline-durable-session",
+        inputRequestId: "input-req-contract",
+        answers: {},
+      }),
+    ).rejects.toThrow(SessionRouteNodeUnavailableError);
 
     registerNode(registry, "fresh-node");
     await createExistingSession(registry, "fresh-node");
     registry.disconnectNode("fresh-node", "network close");
 
-    expect(() =>
+    await expect(
       router.respond({
         type: "respond",
         agentSessionId: "sess-contract",
         inputRequestId: "input-req-contract",
         answers: {},
       }),
-    ).toThrow(SessionRouteSessionOwnerStaleError);
+    ).rejects.toThrow(SessionRouteSessionOwnerStaleError);
 
     sessionCache.replaceNodeSessions({
       nodeId: "ghost-node",
@@ -219,14 +259,14 @@ describe("Session command router primitive", () => {
       nowMs: 1_700_000_000_000,
     });
 
-    expect(() =>
+    await expect(
       router.respond({
         type: "respond",
         agentSessionId: "ghost-session",
         inputRequestId: "input-req-contract",
         answers: {},
       }),
-    ).toThrow(SessionRouteNodeUnavailableError);
+    ).rejects.toThrow(SessionRouteNodeUnavailableError);
   });
 
   it("does not leave pending entries when command creation rejects an invalid payload", async () => {
@@ -235,7 +275,7 @@ describe("Session command router primitive", () => {
     await createExistingSession(registry, "fake-node");
     const router = new SessionCommandRouter({ registry });
 
-    expect(() =>
+    await expect(
       router.respond({
         type: "respond",
         agentSessionId: "sess-contract",
@@ -243,7 +283,7 @@ describe("Session command router primitive", () => {
         answers: {},
         requestId: "input-req-contract",
       } as unknown as RespondNodeCommandPayload),
-    ).toThrow(
+    ).rejects.toThrow(
       "requestId is reserved for node command correlation; use inputRequestId",
     );
     expect(registry.getConnectedNode("fake-node")).toMatchObject({
