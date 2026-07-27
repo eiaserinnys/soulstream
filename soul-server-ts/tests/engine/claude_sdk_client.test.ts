@@ -208,14 +208,17 @@ describe("ClaudeSdkClient", () => {
 
   it("classifies task notifications as background only after explicit SDK membership", () => {
     const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
-    const foreground = mapper.mapSdkMessage({
+    const foregroundEvents = mapper.mapSdkMessage({
       type: "system",
       subtype: "task_notification",
       task_id: "foreground-agent",
       status: "completed",
       session_id: "claude-sess-provenance",
       uuid: "foreground-notification",
-    } as unknown as SDKMessage)[0]!;
+    } as unknown as SDKMessage);
+    const foreground = foregroundEvents.find(
+      (event) => event.type === "claude_runtime_task_notification",
+    )!;
 
     expect(foreground.type).toBe("claude_runtime_task_notification");
     expect(readClaudeBackgroundProvenance(foreground)).toBeUndefined();
@@ -248,14 +251,17 @@ describe("ClaudeSdkClient", () => {
     ]);
     expect(readClaudeBackgroundProvenance(membership[0]!)).toBe("sdk_membership");
 
-    const background = mapper.mapSdkMessage({
+    const backgroundEvents = mapper.mapSdkMessage({
       type: "system",
       subtype: "task_notification",
       task_id: "background-agent",
       status: "completed",
       session_id: "claude-sess-provenance",
       uuid: "background-notification",
-    } as unknown as SDKMessage)[0]!;
+    } as unknown as SDKMessage);
+    const background = backgroundEvents.find(
+      (event) => event.type === "claude_runtime_task_notification",
+    )!;
     expect(readClaudeBackgroundProvenance(background)).toBe("sdk_membership");
     const [wirePayload] = mapClaudeClientEvent(background);
     expect(readClaudeBackgroundProvenance(wirePayload!)).toBe("sdk_membership");

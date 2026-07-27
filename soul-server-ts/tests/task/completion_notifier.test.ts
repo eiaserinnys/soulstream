@@ -329,6 +329,7 @@ describe("TaskCompletionNotifier.notify", () => {
       expect.any(String),
       "ordinary-agent-caller",
       expect.any(String),
+      expect.any(Number),
     );
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
     expect(tm.addIntervention.mock.calls[0]![0]).toMatchObject({

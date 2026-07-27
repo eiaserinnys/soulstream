@@ -131,6 +131,22 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       prompt: "create hooked task",
     }));
     const input = await harness.nextInput();
+    harness.push({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-membership-hook-pump",
+      session_id: "sdk-session",
+      tasks: [{
+        task_id: "hook-pump-task",
+        description: "Queued hook work",
+        task_type: "agent",
+      }],
+    } as unknown as SDKMessage);
+    await vi.waitFor(() =>
+      expect(client.persistentRuntimeActivity()).toMatchObject({
+        backgroundTaskCount: 1,
+      })
+    );
     const createdHook =
       harness.captured[0]?.options?.hooks?.TaskCreated?.[0]?.hooks[0];
     const completedHook =
@@ -197,6 +213,17 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
 
     const turn = collect(client.runPersistent(runOptions("background"), abortSignal()));
     const input = await harness.nextInput();
+    harness.push({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-membership-close",
+      session_id: "sdk-session",
+      tasks: [{
+        task_id: "bg-close",
+        description: "long task",
+        task_type: "agent",
+      }],
+    } as unknown as SDKMessage);
     harness.push({
       type: "system",
       subtype: "task_started",

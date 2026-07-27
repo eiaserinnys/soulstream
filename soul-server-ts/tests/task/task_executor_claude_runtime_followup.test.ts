@@ -267,7 +267,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
   });
 
   it.each(["before", "after", "same_tick"] as const)(
-    "local_agent notification이 foreground result %s에 도착해도 follow-up을 한 번만 실행한다",
+    "동기 local_agent notification이 foreground result %s에 도착해도 follow-up하지 않는다",
     async (order) => {
       const mocks = makeMocks();
       const task = makeTask();
@@ -356,11 +356,10 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       executor.startExecution(task, claudeAgent);
       await task.executionPromise;
 
-      expect(addInterventionCalls).toBe(1);
-      expect(turnCount).toBe(2);
-      expect(prompts[1]).toContain("task_id=agent-task");
-      expect(prompts[1]).toContain("status=stopped");
-      expect(task.lastAssistantText).toBe("review resumed from terminal notification");
+      expect(addInterventionCalls).toBe(0);
+      expect(turnCount).toBe(1);
+      expect(prompts).toEqual(["hi"]);
+      expect(task.lastAssistantText).toBe("foreground done");
     },
   );
 
