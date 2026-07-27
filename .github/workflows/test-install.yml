@@ -40,6 +40,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Guard page projection SQL
+        shell: pwsh
+        run: |
+          python packages/db-schema/scripts/check_projection_dml.py
+          python -m unittest discover `
+            -s packages/db-schema/tests `
+            -p "test_projection_dml_guard.py" `
+            -v
+
       - name: Install paired Haniel release contract
         shell: pwsh
         run: |
