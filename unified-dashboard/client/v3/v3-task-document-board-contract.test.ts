@@ -22,13 +22,29 @@ describe("v3 task document board unification", () => {
     expect(inlineBoard).toContain("renameMarkdownDocument");
     expect(inlineBoard).toContain("patchBoardMarkdownTitle");
     expect(inlineBoard).toContain("마크다운 이름 변경 취소");
+    expect(inlineBoard).toContain('variant="inline"');
   });
 
-  it("uses the v3 spacing and action-size tokens around inline rename controls", () => {
+  it("sizes inline markdown from content while preserving the long-document cap", () => {
     const css = read("./v3-context-menus.css");
+    const inlineMarkdownRule = css.match(/\.v3-inline-markdown\s*\{([^}]*)\}/)?.[1] ?? "";
 
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*gap:\s*var\(--v3-space-1\)/);
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*padding-inline:\s*var\(--v3-space-1\)/);
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*--v3-inline-rename-action-size:\s*var\(--v3-action-size\)/);
+    expect(inlineMarkdownRule).not.toMatch(/^\s*height\s*:/m);
+    expect(inlineMarkdownRule).toMatch(/max-height:\s*clamp\(420px,\s*65vh,\s*760px\)/);
+    expect(css).toMatch(
+      /\.v3-description-editor\[data-editor-variant="inline"\]\s+textarea\s*\{[\s\S]*?min-height:\s*0;/,
+    );
+    expect(css).toMatch(
+      /\.v3-description-editor\[data-editor-variant="inline"\]\s*\{[\s\S]*?padding:\s*0;/,
+    );
+    expect(css).toMatch(
+      /\.v3-description-editor\[data-editor-variant="inline"\]\s*\{[\s\S]*?transition:\s*none;/,
+    );
+    expect(css).toMatch(
+      /\.v3-description-editor\[data-editor-variant="inline"\]\s*>\s*div\s*\{[\s\S]*?position:\s*absolute;/,
+    );
   });
 });

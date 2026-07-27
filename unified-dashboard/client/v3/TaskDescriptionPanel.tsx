@@ -16,7 +16,7 @@ export function TaskDescriptionPanel({
   onSave(markdown: string): Promise<void>;
   ariaLabel?: string;
   emptyText?: string;
-  variant?: "default" | "compact" | "daily";
+  variant?: "default" | "compact" | "daily" | "inline";
   initialEditing?: boolean;
   onEditingChange?(editing: boolean): void;
   testId?: string;
@@ -37,12 +37,12 @@ export function TaskDescriptionPanel({
 
   useLayoutEffect(() => {
     const element = editorRef.current;
-    if (!editing || variant !== "daily" || !element) return;
+    if (!editing || (variant !== "daily" && variant !== "inline") || !element) return;
     let lastWidth = element.clientWidth;
     const fitHeight = () => {
       element.style.height = "0px";
       const borderHeight = element.offsetHeight - element.clientHeight;
-      element.style.height = `${Math.max(82, element.scrollHeight + borderHeight)}px`;
+      element.style.height = `${Math.max(82, editorMinHeight ?? 0, element.scrollHeight + borderHeight)}px`;
     };
     fitHeight();
     if (typeof ResizeObserver === "function") {
@@ -57,7 +57,7 @@ export function TaskDescriptionPanel({
     }
     window.addEventListener("resize", fitHeight);
     return () => window.removeEventListener("resize", fitHeight);
-  }, [draft, editing, variant]);
+  }, [draft, editing, editorMinHeight, variant]);
 
   const changeEditing = (next: boolean) => {
     if (next && !editing) {

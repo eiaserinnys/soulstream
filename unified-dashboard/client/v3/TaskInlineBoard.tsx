@@ -413,6 +413,7 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
         markdown={document.body}
         ariaLabel={`${document.title} 문서`}
         emptyText="클릭해서 문서 본문을 작성하세요."
+        variant="inline"
         onSave={async (body) => {
           const updated = await saveInlineMarkdown({
             documentId,

@@ -8,13 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 
-describe("TaskDescriptionPanel daily memo interactions", () => {
+describe("TaskDescriptionPanel content-sized editor interactions", () => {
   let container: HTMLDivElement;
   let root: Root;
   let scrollHeight = 82;
   let scrollHeightSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    scrollHeight = 82;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -46,6 +47,39 @@ describe("TaskDescriptionPanel daily memo interactions", () => {
     Object.defineProperties(textarea!, {
       offsetHeight: { configurable: true, value: 84 },
       clientHeight: { configurable: true, value: 82 },
+    });
+    scrollHeight = 164;
+    setTextareaValue(textarea!, "첫 줄\n둘째 줄\n셋째 줄");
+
+    await vi.waitFor(() => {
+      expect(textarea!.style.height).toBe("166px");
+    });
+  });
+
+  it("enters inline editing at the preview height and grows with new content", async () => {
+    flushSync(() => root.render(
+      <TaskDescriptionPanel
+        markdown=""
+        onSave={vi.fn(async () => undefined)}
+        ariaLabel="빈 문서"
+        variant="inline"
+      />,
+    ));
+
+    const preview = container.querySelector<HTMLElement>(".v3-description-preview");
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview!, "offsetHeight", { configurable: true, value: 92 });
+    flushSync(() => preview!.click());
+
+    const shell = container.querySelector<HTMLElement>(".v3-description-shell");
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(shell?.style.minHeight).toBe("92px");
+    expect(textarea).not.toBeNull();
+    expect(textarea!.style.height).toBe("92px");
+
+    Object.defineProperties(textarea!, {
+      offsetHeight: { configurable: true, value: 94 },
+      clientHeight: { configurable: true, value: 92 },
     });
     scrollHeight = 164;
     setTextareaValue(textarea!, "첫 줄\n둘째 줄\n셋째 줄");
