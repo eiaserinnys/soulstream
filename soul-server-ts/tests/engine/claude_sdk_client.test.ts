@@ -12,12 +12,17 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
+import { readClaudeBackgroundProvenance } from
+  "../../src/engine/claude_background_provenance.js";
 import {
   resolveClaudeExecutableFromPath,
   type ClaudeSdkQueryFn,
   type ClaudeSdkQueryParams,
 } from "../../src/engine/claude_sdk_client.js";
-import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import {
+  mapClaudeClientEvent,
+  type ClaudeClientEvent,
+} from "../../src/engine/claude_event_mapper.js";
 import { ClaudeSdkEventMapper } from "../../src/engine/claude_sdk_event_mapper.js";
 import { ClaudeRuntimeState } from "../../src/engine/claude_sdk_runtime_state.js";
 
@@ -199,6 +204,61 @@ describe("ClaudeSdkClient", () => {
       /^claude-sdk:assistant:content:assistant:[a-f0-9]{32}:0$/,
     );
     expect(second.sdkDedupeKey).toBe(first.sdkDedupeKey);
+  });
+
+  it("classifies task notifications as background only after explicit SDK membership", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    const foreground = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "foreground-agent",
+      status: "completed",
+      session_id: "claude-sess-provenance",
+      uuid: "foreground-notification",
+    } as unknown as SDKMessage)[0]!;
+
+    expect(foreground.type).toBe("claude_runtime_task_notification");
+    expect(readClaudeBackgroundProvenance(foreground)).toBeUndefined();
+    expect(
+      readClaudeBackgroundProvenance(mapClaudeClientEvent(foreground)[0]!),
+    ).toBeUndefined();
+
+    const membership = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [
+        {
+          task_id: "background-agent",
+          description: "explicit background work",
+          task_type: "agent",
+        },
+      ],
+      session_id: "claude-sess-provenance",
+      uuid: "background-membership",
+    } as unknown as SDKMessage);
+    expect(membership).toEqual([
+      expect.objectContaining({
+        type: "claude_runtime_task_updated",
+        taskId: "background-agent",
+        patch: expect.objectContaining({
+          is_backgrounded: true,
+          background_provenance: "sdk_membership",
+        }),
+      }),
+    ]);
+    expect(readClaudeBackgroundProvenance(membership[0]!)).toBe("sdk_membership");
+
+    const background = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "background-agent",
+      status: "completed",
+      session_id: "claude-sess-provenance",
+      uuid: "background-notification",
+    } as unknown as SDKMessage)[0]!;
+    expect(readClaudeBackgroundProvenance(background)).toBe("sdk_membership");
+    const [wirePayload] = mapClaudeClientEvent(background);
+    expect(readClaudeBackgroundProvenance(wirePayload!)).toBe("sdk_membership");
   });
 
   it("omits SDK env options when run options omit env so the SDK can default to process.env", async () => {

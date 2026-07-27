@@ -53,6 +53,13 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       const input = await harness.nextInput();
       harness.push({
         type: "system",
+        subtype: "background_tasks_changed",
+        uuid: "background-membership-retained",
+        session_id: "sdk-session",
+        tasks: [{ task_id: "bg-retained", description: "long task" }],
+      } as unknown as SDKMessage);
+      harness.push({
+        type: "system",
         subtype: "task_started",
         uuid: "task-started-retained",
         session_id: "sdk-session",

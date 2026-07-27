@@ -6,6 +6,8 @@ import {
   readClaudeBackgroundDeliveryMetadata,
   type ClaudeBackgroundDeliveryMetadata,
 } from "../engine/claude_background_delivery_metadata.js";
+import { readClaudeBackgroundProvenance } from
+  "../engine/claude_background_provenance.js";
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
@@ -112,7 +114,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const status = asString(payload.status) ?? asString(patch.status) ?? runtimeTask?.status;
     if (!status || !TERMINAL_RUNTIME_TASK_STATUSES.has(status)) return;
     const isBackgrounded =
-      type === "claude_runtime_task_notification" ||
+      Boolean(readClaudeBackgroundProvenance(event)) ||
       runtimeTask?.isBackgrounded === true ||
       patch.is_backgrounded === true;
     if (!isBackgrounded) return;

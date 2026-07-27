@@ -1,4 +1,6 @@
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import { attachClaudeBackgroundProvenance } from
+  "./claude_background_provenance.js";
 
 export type ClaudeRuntimeSessionState = "idle" | "running" | "requires_action";
 export type ClaudeRuntimeTaskStatus =
@@ -22,6 +24,8 @@ const TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
 
 export class ClaudeRuntimeState {
   private readonly runtimeTasksById = new Map<string, ClaudeRuntimeTaskSnapshot>();
+  private activeBackgroundTaskIds = new Set<string>();
+  private readonly provenBackgroundTaskIds = new Set<string>();
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
 
   constructor(private readonly terminalMonotonic = false) {}
@@ -46,6 +50,33 @@ export class ClaudeRuntimeState {
     return this.runtimeTasksById.get(taskId)?.status;
   }
 
+  replaceBackgroundTaskMembership(taskIds: Iterable<string>): {
+    started: string[];
+    finished: string[];
+  } {
+    const replacement = new Set(taskIds);
+    const started = [...replacement].filter(
+      (taskId) => !this.activeBackgroundTaskIds.has(taskId),
+    );
+    const finished = [...this.activeBackgroundTaskIds].filter(
+      (taskId) => !replacement.has(taskId),
+    );
+    for (const taskId of replacement) {
+      this.provenBackgroundTaskIds.add(taskId);
+    }
+    this.activeBackgroundTaskIds = replacement;
+    return { started, finished };
+  }
+
+  markBackgroundTask(taskId: string): void {
+    this.provenBackgroundTaskIds.add(taskId);
+    this.activeBackgroundTaskIds.add(taskId);
+  }
+
+  hasBackgroundProvenance(taskId: string): boolean {
+    return this.provenBackgroundTaskIds.has(taskId);
+  }
+
   hasPendingWork(): boolean {
     if (this.runtimeSessionState && this.runtimeSessionState !== "idle") return true;
     for (const runtimeTask of this.runtimeTasksById.values()) {
@@ -66,12 +97,16 @@ export class ClaudeRuntimeState {
     for (const [taskId, runtimeTask] of this.runtimeTasksById.entries()) {
       if (TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status)) continue;
       this.runtimeTasksById.set(taskId, { status: "failed" });
-      events.push({
+      const event: ClaudeClientEvent = {
         type: "claude_runtime_task_notification",
         taskId,
         status: "failed",
         summary: message,
-      });
+      };
+      if (this.hasBackgroundProvenance(taskId)) {
+        attachClaudeBackgroundProvenance(event, "sdk_membership");
+      }
+      events.push(event);
     }
 
     if (this.runtimeSessionState && this.runtimeSessionState !== "idle") {
@@ -93,6 +128,8 @@ export class ClaudeRuntimeState {
 
   clear(): void {
     this.runtimeTasksById.clear();
+    this.activeBackgroundTaskIds.clear();
+    this.provenBackgroundTaskIds.clear();
     this.runtimeSessionState = undefined;
   }
 }
@@ -101,6 +138,7 @@ export function isRuntimeSystemMessage(message: Record<string, unknown> | undefi
   if (message?.type !== "system") return false;
   return (
     message.subtype === "session_state_changed" ||
+    message.subtype === "background_tasks_changed" ||
     message.subtype === "task_started" ||
     message.subtype === "task_updated" ||
     message.subtype === "task_progress" ||

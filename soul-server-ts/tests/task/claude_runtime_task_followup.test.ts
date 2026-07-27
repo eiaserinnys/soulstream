@@ -50,6 +50,29 @@ function makeController(
 }
 
 describe("ClaudeRuntimeTaskFollowupController", () => {
+  it("foreground Bash/Agent task_notification은 follow-up으로 승격하지 않는다", async () => {
+    for (const taskType of ["bash", "agent"]) {
+      const task = makeTask();
+      task.claudeRuntime!.tasks[`foreground-${taskType}`] = {
+        taskId: `foreground-${taskType}`,
+        status: "completed",
+        updatedAt: Date.now(),
+        taskType,
+      };
+      const { controller, addIntervention } = makeController(true);
+
+      controller.collect(task, {
+        type: "claude_runtime_task_notification",
+        task_id: `foreground-${taskType}`,
+        status: "completed",
+        summary: "already consumed synchronously",
+      } as SSEEventPayload);
+      await controller.flush(task);
+
+      expect(addIntervention).not.toHaveBeenCalled();
+    }
+  });
+
   it("background task notification을 TaskManager intervention으로 flush한다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["task-1"] = {

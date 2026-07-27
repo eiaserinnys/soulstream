@@ -2,12 +2,30 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCallerInfoMetadataEntry,
+  buildCompletionTargetMetadataEntry,
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
+  extractCompletionTargetFromMetadata,
 } from "../../src/task/task_metadata.js";
 
 describe("task metadata helpers", () => {
+  it("round-trips explicit completion target control metadata", () => {
+    const direct = buildCompletionTargetMetadataEntry({ kind: "direct_session" });
+    const supervisor = buildCompletionTargetMetadataEntry({
+      kind: "supervisor_role",
+      supervisorRole: "ariella-ashwood-codex",
+    });
+
+    expect(extractCompletionTargetFromMetadata([direct])).toEqual({
+      kind: "direct_session",
+    });
+    expect(extractCompletionTargetFromMetadata([direct, supervisor])).toEqual({
+      kind: "supervisor_role",
+      supervisorRole: "ariella-ashwood-codex",
+    });
+  });
+
   it("builds caller_info metadata only for non-empty caller info", () => {
     expect(buildCallerInfoMetadataEntry(undefined)).toBeUndefined();
     expect(buildCallerInfoMetadataEntry({})).toBeUndefined();

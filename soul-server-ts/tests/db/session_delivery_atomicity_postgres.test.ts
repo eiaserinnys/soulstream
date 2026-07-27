@@ -166,6 +166,74 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("repairs legacy inferred-supervisor pending rows to the structural caller", async () => {
+    await harness.sql`
+      UPDATE sessions
+      SET caller_session_id = 'supervisor-old'
+      WHERE session_id = 'child-session'
+    `;
+    await repository.register({
+      deliveryId: "delivery-inferred-agent-caller",
+      targetSessionId: null,
+      sourceSessionId: "child-session",
+      relationKey: "child_session:child-session:legacy",
+      completionId: "completion:legacy",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "legacy",
+      supervisorRole: "seosoyoung-opus",
+      payloadHash: "hash-legacy",
+      payload: {
+        text: "done",
+        user: "agent",
+        caller_info: { source: "agent", agent_id: "worker" },
+      },
+    });
+    await harness.sql`
+      UPDATE session_deliveries
+      SET last_error = 'no_current_target'
+      WHERE delivery_id = 'delivery-inferred-agent-caller'
+    `;
+
+    await expect(repository.repairInferredSupervisorCompletionTargets())
+      .resolves.toBe(1);
+    await expect(repository.get("delivery-inferred-agent-caller")).resolves.toMatchObject({
+      state: "pending",
+      target_session_id: "supervisor-old",
+      supervisor_role: null,
+      last_error: "reclassified_direct_agent_caller",
+    });
+
+    let delivered = 0;
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository,
+      dispatch: async (params) => {
+        const dispatching = await repository.beginDispatch(
+          params.deliveryId!,
+          params.deliveryLeaseOwner,
+        );
+        if (!dispatching) throw new Error("dispatch lease lost");
+        delivered += 1;
+        await repository.markQueued(
+          params.deliveryId!,
+          params.deliveryLeaseOwner,
+        );
+      },
+      logger: silentLogger(),
+    });
+    await coordinator.recoverPending();
+    await coordinator.recoverPending();
+
+    expect(delivered).toBe(1);
+    await expect(repository.get("delivery-inferred-agent-caller")).resolves.toMatchObject({
+      state: "queued",
+      target_session_id: "supervisor-old",
+      supervisor_role: null,
+    });
+  });
+
   it("survives consecutive handovers with one durable effect and no stale claim", async () => {
     await insertSupervisor("supervisor-old", 1);
     const dispatchTargets: string[] = [];

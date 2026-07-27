@@ -229,6 +229,7 @@ describe("TaskCompletionNotifier.notify", () => {
         source: "agent",
         agent_id: "ariella-ashwood-codex",
       },
+      completionSupervisorRole: "ariella-ashwood-codex",
     }));
     const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
 
@@ -245,6 +246,96 @@ describe("TaskCompletionNotifier.notify", () => {
     );
     expect(params.completionId).toMatch(/^completion:/);
     expect(calls).toEqual(["register", "claim-current"]);
+  });
+
+  it("v2 일반 agent caller는 supervisor로 추측하지 않고 실제 caller에 1회 전달한다", async () => {
+    const tm = makeTaskManagerStub();
+    let stored: Record<string, unknown> | undefined;
+    const repository = {
+      register: vi.fn(async (params: Record<string, unknown>) => {
+        stored = {
+          delivery_id: params.deliveryId,
+          target_session_id: params.targetSessionId,
+          source_session_id: params.sourceSessionId,
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          intent: params.intent,
+          source: params.source,
+          producer_kind: params.producerKind,
+          producer_id: params.producerId,
+          producer_terminal_revision: params.producerTerminalRevision,
+          parent_delivery_id: null,
+          caller_turn_id: null,
+          supervisor_role: params.supervisorRole,
+          payload_hash: params.payloadHash,
+          payload: params.payload,
+          state: "pending",
+          created_at: params.createdAt,
+          updated_at: params.createdAt,
+          claimed_at: null,
+          dispatching_at: null,
+          queued_at: null,
+          delivered_at: null,
+          consumed_at: null,
+        };
+        return { row: stored, inserted: true, conflict: false };
+      }),
+      get: vi.fn(async () => stored),
+      claimForCurrentSupervisor: vi.fn(),
+      claimForTarget: vi.fn(async (
+        _deliveryId: string,
+        targetSessionId: string,
+        leaseOwner: string,
+      ) => {
+        stored = {
+          ...stored,
+          target_session_id: targetSessionId,
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
+        return stored;
+      }),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+    };
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      {
+        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+      } as never,
+      true,
+      repository as never,
+    );
+
+    await notifier.notify(makeChild({
+      lastEventId: 43,
+      callerSessionId: "ordinary-agent-caller",
+      callerInfo: {
+        source: "agent",
+        agent_id: "seosoyoung-opus",
+      },
+    }));
+
+    expect(repository.claimForCurrentSupervisor).not.toHaveBeenCalled();
+    expect(repository.claimForTarget).toHaveBeenCalledWith(
+      expect.any(String),
+      "ordinary-agent-caller",
+      expect.any(String),
+    );
+    expect(tm.addIntervention).toHaveBeenCalledTimes(1);
+    expect(tm.addIntervention.mock.calls[0]![0]).toMatchObject({
+      agentSessionId: "ordinary-agent-caller",
+      supervisorRole: undefined,
+      deliveryIntent: "completion_notification",
+    });
   });
 
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {
@@ -369,7 +460,9 @@ describe("TaskCompletionNotifier.notify", () => {
       silentLogger,
       makeOrch(),
       vi.fn(),
-      { getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }) } as never,
+      {
+        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+      } as never,
       true,
       repository as never,
     );
@@ -380,6 +473,7 @@ describe("TaskCompletionNotifier.notify", () => {
         source: "agent",
         agent_id: "ariella-ashwood-codex",
       },
+      completionSupervisorRole: "ariella-ashwood-codex",
     }));
 
     expect(tm.addIntervention).not.toHaveBeenCalled();

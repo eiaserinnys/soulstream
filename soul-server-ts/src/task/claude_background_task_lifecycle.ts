@@ -1,4 +1,6 @@
 import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import { readClaudeBackgroundProvenance } from
+  "../engine/claude_background_provenance.js";
 import {
   attachClaudeBackgroundDeliveryMetadata,
   type ClaudeBackgroundDeliveryMetadata,
@@ -160,6 +162,15 @@ interface ParsedBackgroundEvent {
 }
 
 function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent | null {
+  if (
+    !readClaudeBackgroundProvenance(event) &&
+    !(
+      event.type === "claude_runtime_task_updated" &&
+      event.patch.is_backgrounded === true
+    )
+  ) {
+    return null;
+  }
   switch (event.type) {
     case "claude_runtime_task_started":
     case "claude_runtime_task_created":

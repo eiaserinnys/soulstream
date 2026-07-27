@@ -285,6 +285,44 @@ export class SessionDeliveryRepository {
     });
   }
 
+  /**
+   * v2 초기 릴리스는 caller_info.source=agent만으로 supervisor_role을 추론했다.
+   * 실제 registry row가 없는 ordinary delegation만 구조적 caller_session_id로
+   * 되돌려 같은 delivery identity를 복구한다. 명시 supervisor delivery는 건드리지 않는다.
+   */
+  async repairInferredSupervisorCompletionTargets(): Promise<number> {
+    const rows = await this.sql<Array<{ delivery_id: string }>>`
+      UPDATE session_deliveries AS delivery
+      SET
+        target_session_id = source.caller_session_id,
+        supervisor_role = NULL,
+        next_attempt_at = NOW(),
+        last_error = 'reclassified_direct_agent_caller',
+        updated_at = NOW()
+      FROM sessions AS source
+      WHERE delivery.source_session_id = source.session_id
+        AND delivery.intent = 'completion_notification'
+        AND delivery.source = 'completion_notifier'
+        AND delivery.state = 'pending'
+        AND delivery.target_session_id IS NULL
+        AND delivery.supervisor_role IS NOT NULL
+        AND delivery.last_error = 'no_current_target'
+        AND source.caller_session_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM sessions AS target
+          WHERE target.session_id = source.caller_session_id
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM supervisor_registry AS registry
+          WHERE registry.role = delivery.supervisor_role
+        )
+      RETURNING delivery.delivery_id
+    `;
+    return rows.length;
+  }
+
   async deferPending(
     deliveryId: string,
     error: string,

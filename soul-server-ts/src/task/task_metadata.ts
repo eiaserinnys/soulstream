@@ -23,6 +23,11 @@ export interface AgentsRunStateMetadata {
   schemaVersion?: string;
 }
 
+export interface CompletionTargetMetadata {
+  kind: "direct_session" | "supervisor_role";
+  supervisorRole?: string;
+}
+
 /** Python `has_caller_identity` 정본 (`auth/caller_info.py:96-116`). */
 function hasCallerIdentity(callerInfo: CallerInfo): boolean {
   const source = typeof callerInfo.source === "string" ? callerInfo.source : undefined;
@@ -128,6 +133,35 @@ export function extractClaudePermissionModeFromMetadata(
   return undefined;
 }
 
+export function extractCompletionTargetFromMetadata(
+  metadata: unknown,
+): CompletionTargetMetadata | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object") continue;
+    const recordEntry = entry as Record<string, unknown>;
+    if (recordEntry.type !== "completion_target") continue;
+    const value = recordEntry.value;
+    if (!value || typeof value !== "object") continue;
+    const target = value as Record<string, unknown>;
+    if (target.kind === "direct_session") {
+      return { kind: "direct_session" };
+    }
+    if (
+      target.kind === "supervisor_role" &&
+      typeof target.supervisor_role === "string" &&
+      target.supervisor_role.length > 0
+    ) {
+      return {
+        kind: "supervisor_role",
+        supervisorRole: target.supervisor_role,
+      };
+    }
+  }
+  return undefined;
+}
+
 export function buildCallerInfoMetadataEntry(
   callerInfo: CallerInfo | undefined,
 ): Record<string, unknown> | undefined {
@@ -140,6 +174,21 @@ export function buildClaudePermissionModeMetadataEntry(
 ): Record<string, unknown> | undefined {
   if (!mode) return undefined;
   return { type: "claude_permission_mode", value: { mode } };
+}
+
+export function buildCompletionTargetMetadataEntry(
+  target: CompletionTargetMetadata | undefined,
+): Record<string, unknown> | undefined {
+  if (!target) return undefined;
+  return {
+    type: "completion_target",
+    value: target.kind === "supervisor_role"
+      ? {
+          kind: target.kind,
+          supervisor_role: target.supervisorRole,
+        }
+      : { kind: target.kind },
+  };
 }
 
 function isClaudePermissionMode(value: unknown): value is ClaudePermissionMode {

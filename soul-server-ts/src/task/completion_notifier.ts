@@ -115,7 +115,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       await this.durableCoordinator.enqueue({
         targetSessionId: callerSessionId,
         sourceSessionId: childId,
-        supervisorRole: supervisorCallerRole(task),
+        supervisorRole: task.completionSupervisorRole,
         terminalRevision: String(task.lastEventId),
         text,
         callerInfo,
@@ -306,11 +306,4 @@ async function safeReadText(resp: Response): Promise<string> {
   } catch {
     return "";
   }
-}
-
-function supervisorCallerRole(task: Task): string | undefined {
-  const callerInfo = task.callerInfo;
-  if (callerInfo?.source !== "agent") return undefined;
-  const agentId = callerInfo.agent_id;
-  return typeof agentId === "string" && agentId.length > 0 ? agentId : undefined;
 }

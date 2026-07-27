@@ -10,6 +10,10 @@ import type { Logger } from "pino";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import {
+  attachClaudeBackgroundProvenance,
+  readClaudeBackgroundProvenance,
+} from "./claude_background_provenance.js";
 import { createEventQueue, type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
@@ -306,6 +310,7 @@ export class ClaudeSdkPersistentSession {
   }
 
   private observeBackgroundEvent(event: ClaudeClientEvent): void {
+    if (!hasExplicitBackgroundProvenance(event)) return;
     switch (event.type) {
       case "claude_runtime_task_started":
       case "claude_runtime_task_created":
@@ -425,7 +430,7 @@ export class ClaudeSdkPersistentSession {
           : "killed";
     for (const taskId of taskIds) {
       try {
-        await this.routeEvent({
+        const event: ClaudeClientEvent = {
           type: "claude_runtime_task_updated",
           taskId,
           patch: {
@@ -433,7 +438,9 @@ export class ClaudeSdkPersistentSession {
             is_backgrounded: true,
             close_reason: reason,
           },
-        });
+        };
+        attachClaudeBackgroundProvenance(event, "runtime_close");
+        await this.routeEvent(event);
       } catch (err) {
         // The active journal row is deliberately left recoverable. Query
         // shutdown must not hang because terminal persistence is temporarily
@@ -468,6 +475,7 @@ function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {
 }
 
 function isTerminalBackgroundEvent(event: ClaudeClientEvent): boolean {
+  if (!hasExplicitBackgroundProvenance(event)) return false;
   if (
     event.type === "claude_runtime_task_completed" ||
     event.type === "claude_runtime_task_notification"
@@ -481,6 +489,14 @@ function isTerminalBackgroundEvent(event: ClaudeClientEvent): boolean {
     event.patch.status === "stopped" ||
     event.patch.status === "killed"
   );
+}
+
+function hasExplicitBackgroundProvenance(event: ClaudeClientEvent): boolean {
+  return Boolean(readClaudeBackgroundProvenance(event)) ||
+    (
+      event.type === "claude_runtime_task_updated" &&
+      event.patch.is_backgrounded === true
+    );
 }
 
 function hashSdkUserMessage(message: SDKUserMessage): string {

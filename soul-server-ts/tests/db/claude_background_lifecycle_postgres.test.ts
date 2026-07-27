@@ -8,6 +8,8 @@ import { ClaudeBackgroundTaskRepository } from
 import { SessionDeliveryRepository } from
   "../../src/db/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
+import { attachClaudeBackgroundProvenance } from
+  "../../src/engine/claude_background_provenance.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
@@ -327,25 +329,29 @@ function deliveries(sql: SqlClient): SessionDeliveryRepository {
 }
 
 function started(taskId: string): ClaudeClientEvent {
-  return {
+  const event: ClaudeClientEvent = {
     type: "claude_runtime_task_started",
     taskId,
     sessionId: "sdk-session",
     description: "long work",
   };
+  attachClaudeBackgroundProvenance(event, "sdk_membership");
+  return event;
 }
 
 function terminal(
   taskId: string,
   status: "completed" | "failed" | "stopped",
 ): ClaudeClientEvent {
-  return {
+  const event: ClaudeClientEvent = {
     type: "claude_runtime_task_notification",
     taskId,
     sessionId: "sdk-session",
     status,
     summary: `${status} summary`,
   };
+  attachClaudeBackgroundProvenance(event, "sdk_membership");
+  return event;
 }
 
 function updated(
