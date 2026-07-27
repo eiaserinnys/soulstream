@@ -62,7 +62,7 @@ describe("McpConfigService", () => {
 
     expect(service.listRegistry().servers).toEqual([]);
     expect(service.listProfiles().profiles).toEqual([]);
-    expect(service.resolveAgentProfile(profile)).toEqual(profile);
+    expect(service.resolveAgentProfile(profile)).toBe(profile);
   });
 
   it("resolves mcp_profile servers and hosted tools into OpenAI Agents runtime config", () => {
@@ -134,6 +134,57 @@ describe("McpConfigService", () => {
       env: "DOCS_AUTH",
       resolved: true,
     });
+  });
+
+  it("resolves mcp_profile servers independently of the agent backend", () => {
+    fs.writeFileSync(
+      registryPath,
+      [
+        "servers:",
+        "  - id: soulstream",
+        "    type: streamable_http",
+        "    url: http://127.0.0.1:3105/mcp",
+        "    headers:",
+        "      Authorization:",
+        "        env: SOULSTREAM_MCP_AUTH",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      profilesPath,
+      [
+        "profiles:",
+        "  - id: full",
+        "    mcp_servers: [soulstream]",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const service = new McpConfigService({
+      agentsConfigPath,
+      processEnv: { SOULSTREAM_MCP_AUTH: "Bearer secret" },
+    });
+    const profile = AgentProfileSchema.parse({
+      id: "claude-profile",
+      name: "Claude Profile",
+      backend: "claude",
+      workspace_dir: "/tmp/claude",
+      mcp_profile: "full",
+    });
+
+    expect(service.resolveMcpProfile(profile)).toEqual({
+      mcp_servers: [
+        {
+          type: "streamable_http",
+          name: "soulstream",
+          url: "http://127.0.0.1:3105/mcp",
+          headers: { Authorization: "Bearer secret" },
+        },
+      ],
+      hosted_tools: [],
+    });
+    expect(service.resolveAgentProfile(profile)).toBe(profile);
   });
 
   it("redacts hosted MCP authorization and sensitive headers from listProfiles output", () => {

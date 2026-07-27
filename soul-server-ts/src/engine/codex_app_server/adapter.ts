@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import { sanitizeCodexEnv } from "../codex_env.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import type {
@@ -78,6 +79,7 @@ export interface CodexAppServerAdapterConfig {
   codexPathOverride?: string;
   processEnv?: NodeJS.ProcessEnv;
   client?: CodexAppServerClientPort;
+  resolvedMcpServers?: ResolvedMcpServer[];
 }
 
 export class CodexAppServerEngineAdapter
@@ -88,6 +90,7 @@ export class CodexAppServerEngineAdapter
 
   private readonly logger: Logger;
   private readonly client: CodexAppServerClientPort;
+  private readonly resolvedMcpServers?: ResolvedMcpServer[];
   private initialized = false;
   private executing = false;
   private closed = false;
@@ -99,6 +102,7 @@ export class CodexAppServerEngineAdapter
     this.workspaceDir = config.workspaceDir;
     this.logger = logger;
     this.client = config.client ?? this.createClient(config, logger);
+    this.resolvedMcpServers = config.resolvedMcpServers;
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
@@ -246,7 +250,11 @@ export class CodexAppServerEngineAdapter
       let response: ThreadResumeResponse;
       try {
         response = await this.client.resumeThread(
-          buildThreadResumeParams(params, this.workspaceDir),
+          buildThreadResumeParams(
+            params,
+            this.workspaceDir,
+            this.resolvedMcpServers,
+          ),
         );
       } catch (error) {
         if (isNoRolloutFoundResumeError(error)) {
@@ -264,7 +272,11 @@ export class CodexAppServerEngineAdapter
     }
 
     const response = await this.client.startThread(
-      buildThreadStartParams(params, this.workspaceDir),
+      buildThreadStartParams(
+        params,
+        this.workspaceDir,
+        this.resolvedMcpServers,
+      ),
     );
     if (this.closed) return null;
     const threadId = response.thread.id;

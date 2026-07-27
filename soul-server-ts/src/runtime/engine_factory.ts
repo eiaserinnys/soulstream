@@ -9,6 +9,7 @@ import type { ClaudeSessionClientRegistry } from
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { McpConfigService } from "../mcp_config_service.js";
 import type { EngineFactory } from "../task/task_executor.js";
 
 type EngineFactoryEnv = Pick<
@@ -24,6 +25,7 @@ export interface CreateEngineFactoryParams {
   buildClaudeProcessEnv(): Record<string, string | undefined>;
   claudeSessionStore: SessionStore;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
+  mcpConfigService: McpConfigService;
 }
 
 export function createEngineFactory(params: CreateEngineFactoryParams): EngineFactory {
@@ -35,10 +37,13 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     buildClaudeProcessEnv,
     claudeSessionStore,
     claudeSessionClientRegistry,
+    mcpConfigService,
   } = params;
 
   return (agent) => {
     if (agent.backend === "codex") {
+      const resolvedMcpServers =
+        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
       if (env.CODEX_ADAPTER_MODE === "app-server") {
         return new CodexAppServerEngineAdapter(
           {
@@ -47,8 +52,16 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
             apiKey: env.CODEX_API_KEY,
             codexPathOverride: codexCliPath?.path,
             processEnv: codexProcessEnv,
+            ...(resolvedMcpServers !== undefined
+              ? { resolvedMcpServers }
+              : {}),
           },
           logger,
+        );
+      }
+      if (resolvedMcpServers !== undefined) {
+        throw new Error(
+          `Codex agent ${agent.id} with mcp_profile requires CODEX_ADAPTER_MODE=app-server`,
         );
       }
       return new CodexEngineAdapter(
@@ -63,6 +76,8 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
       );
     }
     if (agent.backend === "claude") {
+      const resolvedMcpServers =
+        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
       return new ClaudeEngineAdapter(
         {
           workspaceDir: agent.workspace_dir,
@@ -72,6 +87,9 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           // V2 uses the shared transcript as its cross-node receiver receipt.
           sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED ? "eager" : "batched",
           loadTimeoutMs: 60_000,
+          ...(resolvedMcpServers !== undefined
+            ? { resolvedMcpServers }
+            : {}),
           ...(claudeSessionClientRegistry
             ? { persistentSessionRegistry: claudeSessionClientRegistry }
             : {}),

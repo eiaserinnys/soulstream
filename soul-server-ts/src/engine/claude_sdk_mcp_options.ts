@@ -7,6 +7,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
+import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import {
   asRecord,
@@ -25,15 +26,72 @@ export function buildMcpOptions(
   options: ClaudeRunOptions,
   logger: Logger,
 ): Partial<ClaudeSdkOptions> {
-  if (options.useMcp === false) return {};
-  const mcpServers = loadMcpServers(options.workspaceDir, logger);
+  const strictMcpConfig = options.resolvedMcpServers !== undefined;
+  if (options.useMcp === false) {
+    return strictMcpConfig
+      ? { mcpServers: {}, strictMcpConfig: true }
+      : {};
+  }
+  const mcpServers = strictMcpConfig
+    ? toClaudeMcpServers(options.resolvedMcpServers ?? [])
+    : loadMcpServers(options.workspaceDir, logger);
   if (mcpServers === undefined) return {};
   return {
     mcpServers: injectAgentSessionHeaderIntoMcpServers(
       mcpServers,
       options.agentSessionId,
     ),
+    ...(strictMcpConfig ? { strictMcpConfig: true } : {}),
   };
+}
+
+function toClaudeMcpServers(
+  servers: ResolvedMcpServer[],
+): Record<string, McpServerConfig> {
+  const resolved: Record<string, McpServerConfig> = {};
+  for (const server of servers) {
+    const name = requiredServerName(server);
+    if (resolved[name]) {
+      throw new Error(`Claude MCP profile contains duplicate server name: ${name}`);
+    }
+
+    if (server.type === "stdio") {
+      if (!server.command) {
+        throw new Error(
+          `Claude MCP stdio server ${name} requires command; full_command is unsupported`,
+        );
+      }
+      if (server.cwd || server.headers) {
+        throw new Error(
+          `Claude MCP stdio server ${name} uses unsupported cwd or headers`,
+        );
+      }
+      resolved[name] = {
+        type: "stdio",
+        command: server.command,
+        ...(server.args ? { args: server.args } : {}),
+        ...(server.env ? { env: server.env } : {}),
+        ...(server.timeout ? { timeout: server.timeout } : {}),
+      };
+      continue;
+    }
+
+    resolved[name] = {
+      type: server.type === "streamable_http" ? "http" : "sse",
+      url: server.url,
+      ...(server.headers ? { headers: server.headers } : {}),
+      ...(server.timeout ? { timeout: server.timeout } : {}),
+    };
+  }
+  return resolved;
+}
+
+function requiredServerName(server: ResolvedMcpServer): string {
+  const name = server.name?.trim();
+  if (!name) {
+    throw new Error("Resolved MCP profile server requires a name");
+  }
+  return name;
 }
 
 function loadMcpServers(

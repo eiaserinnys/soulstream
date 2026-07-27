@@ -75,6 +75,52 @@ describe("Codex app-server parameter builders", () => {
     });
   });
 
+  it("injects the same resolved MCP profile into thread start and resume config", () => {
+    const mcpServers = [
+      {
+        type: "stdio" as const,
+        name: "local",
+        command: "node",
+        args: ["server.js"],
+        env: { TOKEN: "secret" },
+        cwd: "/mcp",
+      },
+      {
+        type: "streamable_http" as const,
+        name: "soulstream",
+        url: "http://127.0.0.1:3105/mcp",
+        headers: { Authorization: "Bearer secret" },
+      },
+    ];
+    const expectedConfig = {
+      mcp_servers: {
+        local: {
+          command: "node",
+          args: ["server.js"],
+          env: { TOKEN: "secret" },
+          cwd: "/mcp",
+          enabled: true,
+        },
+        soulstream: {
+          url: "http://127.0.0.1:3105/mcp",
+          http_headers: { Authorization: "Bearer secret" },
+          enabled: true,
+        },
+      },
+    };
+
+    expect(
+      buildThreadStartParams({ prompt: "start" }, "/work", mcpServers).config,
+    ).toEqual(expectedConfig);
+    expect(
+      buildThreadResumeParams(
+        { prompt: "resume", resumeSessionId: "thread-existing" },
+        "/work",
+        mcpServers,
+      ).config,
+    ).toEqual(expectedConfig);
+  });
+
   it("builds turn/start params with input attachments and reasoning effort policy", () => {
     expect(
       buildTurnStartParams(

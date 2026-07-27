@@ -262,6 +262,7 @@ export async function composeWorkerRuntime(
     codexProcessEnv: process.env,
     buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
     claudeSessionStore,
+    mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
   supervisor = composeSupervisorRuntime({
