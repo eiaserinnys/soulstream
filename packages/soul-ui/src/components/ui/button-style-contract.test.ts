@@ -32,7 +32,10 @@ describe("button style contract", () => {
     expect(buttonVariants({ variant: "default" })).toContain("from-accent-blue/90");
     expect(buttonVariants({ variant: "success" })).toContain("var(--success)");
     expect(buttonVariants({ variant: "warning" })).toContain("var(--color-accent-orange)");
-    expect(buttonVariants({ variant: "choice" })).toContain("data-[selected=true]");
+    const choiceClasses = buttonVariants({ variant: "choice" });
+    expect(choiceClasses).toContain("data-[selected=true]");
+    expect(choiceClasses).toContain("h-auto");
+    expect(choiceClasses).toContain("sm:h-auto");
     expect(buttonVariants({ variant: "glass" })).toContain("glass-shadow-xs");
   });
 

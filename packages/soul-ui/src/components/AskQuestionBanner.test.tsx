@@ -41,9 +41,12 @@ function makeInputRequest(): InputRequestNodeDef {
         question: "설정 창처럼 긴 선택지를 읽을 수 있게 충분한 폭으로 보여줄까요?",
         options: [
           {
-            label: "피드와 동일 / (평면 카드)",
-            description: "긴 설명이 여러 줄로 과도하게 꺾이지 않도록 배너 폭을 넓힙니다.",
+            label: "같이 고쳐서 한 번에 배포 (권장)",
+            description:
+              "프론트엔드와 백엔드 변경을 함께 검증하고 한 번에 배포합니다. 설명이 여러 줄이 되어도 선택지 행 안에서 끝까지 읽혀야 합니다.",
           },
+          { label: "백엔드 먼저", description: "짧은 설명" },
+          { label: "설명 없음" },
         ],
       },
     ],
@@ -119,25 +122,49 @@ describe("AskQuestionBanner", () => {
     expect(banner?.className).not.toContain("min-w-80");
   });
 
-  it("keeps option labels in a stable column before the description", () => {
+  it("keeps long, short, and absent descriptions inside auto-height option rows", () => {
     ({ container, root } = renderBanner(makeInputRequest()));
 
-    const optionContent = document.body.querySelector<HTMLElement>(
+    const optionContents = Array.from(document.body.querySelectorAll<HTMLElement>(
       '[data-testid="input-request-option-content"]',
-    );
-    expect(optionContent).not.toBeNull();
-    expect(optionContent?.className).toContain(
+    ));
+    expect(optionContents).toHaveLength(3);
+    expect(optionContents[0]?.className).toContain(
       "grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)]",
     );
-    expect(optionContent?.className).toContain("max-[560px]:grid-cols-1");
-
-    const optionLabel = document.body.querySelector<HTMLElement>(
-      '[data-testid="input-request-option-label"]',
+    expect(optionContents[0]?.className).toContain("max-[560px]:grid-cols-1");
+    expect(optionContents[1]?.className).toContain(
+      "grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)]",
     );
-    expect(optionLabel).not.toBeNull();
-    expect(optionLabel?.textContent).toBe("피드와 동일 / (평면 카드)");
-    expect(optionLabel?.className).toContain("break-keep");
-    expect(optionLabel?.className).toContain("[overflow-wrap:anywhere]");
+    expect(optionContents[2]?.className).toContain("block");
+
+    const optionLabels = Array.from(document.body.querySelectorAll<HTMLElement>(
+      '[data-testid="input-request-option-label"]',
+    ));
+    expect(optionLabels.map((label) => label.textContent)).toEqual([
+      "같이 고쳐서 한 번에 배포 (권장)",
+      "백엔드 먼저",
+      "설명 없음",
+    ]);
+    expect(optionLabels[0]?.className).toContain("break-keep");
+    expect(optionLabels[0]?.className).toContain("[overflow-wrap:anywhere]");
+
+    const descriptions = Array.from(document.body.querySelectorAll<HTMLElement>(
+      '[data-testid="input-request-option-description"]',
+    ));
+    expect(descriptions).toHaveLength(2);
+    expect(descriptions[0]?.textContent).toContain("설명이 여러 줄이 되어도");
+    expect(descriptions[1]?.textContent).toBe("짧은 설명");
+
+    const optionButtons = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button[data-slot="button"]'),
+    ).filter((button) => button.textContent !== "전송");
+    expect(optionButtons).toHaveLength(3);
+    for (const button of optionButtons) {
+      expect(button.className).toContain("h-auto");
+      expect(button.className).toContain("sm:h-auto");
+      expect(button.className).not.toContain("sm:h-8");
+    }
   });
 
   it("uses the same wider layout for tool approval prompts", () => {
@@ -158,7 +185,7 @@ describe("AskQuestionBanner", () => {
 
     const button = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((candidate) => candidate.textContent?.includes("피드와 동일"));
+    ).find((candidate) => candidate.textContent?.includes("같이 고쳐서"));
     expect(button).toBeTruthy();
     flushSync(() => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

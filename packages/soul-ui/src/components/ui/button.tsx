@@ -52,7 +52,7 @@ const buttonVariants = cva(
         warning:
           "border-accent-orange/40 bg-[color-mix(in_srgb,var(--color-accent-orange)_70%,var(--card))] text-white hover:bg-[color-mix(in_srgb,var(--color-accent-orange)_78%,var(--card))] data-pressed:bg-[color-mix(in_srgb,var(--color-accent-orange)_78%,var(--card))]",
         choice:
-          "h-auto justify-start whitespace-normal rounded-[13px] border-[var(--lg-line)] bg-muted/40 text-left text-foreground hover:border-accent-blue/50 data-[selected=true]:border-accent-blue/55 data-[selected=true]:bg-accent-blue/15",
+          "h-auto justify-start whitespace-normal rounded-[13px] border-[var(--lg-line)] bg-muted/40 text-left text-foreground hover:border-accent-blue/50 data-[selected=true]:border-accent-blue/55 data-[selected=true]:bg-accent-blue/15 sm:h-auto",
       },
     },
   },
