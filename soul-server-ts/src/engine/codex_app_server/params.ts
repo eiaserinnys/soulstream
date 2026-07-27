@@ -98,6 +98,31 @@ export function buildTurnStartParams(
   };
 }
 
+export function selectCodexMcpServers(
+  servers: ResolvedMcpServer[] | undefined,
+): {
+  supportedServers: ResolvedMcpServer[] | undefined;
+  skippedSseServers: ResolvedMcpServer[];
+} {
+  if (servers === undefined) {
+    return {
+      supportedServers: undefined,
+      skippedSseServers: [],
+    };
+  }
+
+  const supportedServers: ResolvedMcpServer[] = [];
+  const skippedSseServers: ResolvedMcpServer[] = [];
+  for (const server of servers) {
+    if (server.type === "sse") {
+      skippedSseServers.push(server);
+    } else {
+      supportedServers.push(server);
+    }
+  }
+  return { supportedServers, skippedSseServers };
+}
+
 function normalizedModel(model: string | null | undefined): string | null {
   if (!model) return null;
   const trimmed = model.trim();
@@ -107,10 +132,11 @@ function normalizedModel(model: string | null | undefined): string | null {
 function buildCodexMcpConfig(
   servers: ResolvedMcpServer[] | undefined,
 ): JsonObject | null {
-  if (servers === undefined) return null;
+  const { supportedServers } = selectCodexMcpServers(servers);
+  if (supportedServers === undefined) return null;
 
   const mcpServers: JsonObject = {};
-  for (const server of servers) {
+  for (const server of supportedServers) {
     const name = server.name?.trim();
     if (!name) {
       throw new Error("Resolved MCP profile server requires a name");

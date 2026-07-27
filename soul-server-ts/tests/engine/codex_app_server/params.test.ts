@@ -75,7 +75,7 @@ describe("Codex app-server parameter builders", () => {
     });
   });
 
-  it("injects the same resolved MCP profile into thread start and resume config", () => {
+  it("injects supported resolved MCP servers into thread start and resume config", () => {
     const mcpServers = [
       {
         type: "stdio" as const,
@@ -90,6 +90,11 @@ describe("Codex app-server parameter builders", () => {
         name: "soulstream",
         url: "http://127.0.0.1:3105/mcp",
         headers: { Authorization: "Bearer secret" },
+      },
+      {
+        type: "sse" as const,
+        name: "outline",
+        url: "http://127.0.0.1:3103/sse",
       },
     ];
     const expectedConfig = {
@@ -119,6 +124,29 @@ describe("Codex app-server parameter builders", () => {
         mcpServers,
       ).config,
     ).toEqual(expectedConfig);
+  });
+
+  it("keeps an explicit empty MCP config when every resolved server uses SSE", () => {
+    const sseOnlyServers = [
+      {
+        type: "sse" as const,
+        name: "outline",
+        url: "http://127.0.0.1:3103/sse",
+      },
+      {
+        type: "sse" as const,
+        name: "eb-lore",
+        url: "http://127.0.0.1:3300/sse",
+      },
+    ];
+
+    expect(
+      buildThreadStartParams(
+        { prompt: "start" },
+        "/work",
+        sseOnlyServers,
+      ).config,
+    ).toEqual({ mcp_servers: {} });
   });
 
   it("builds turn/start params with input attachments and reasoning effort policy", () => {
