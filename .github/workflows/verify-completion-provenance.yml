@@ -1,0 +1,48 @@
+name: verify completion provenance
+
+on:
+  pull_request:
+    paths:
+      - "soul-server-ts/**"
+      - ".github/workflows/verify-completion-provenance.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir soul-server-ts typecheck
+      - run: pnpm --dir soul-server-ts typecheck:contracts
+      - name: Targeted runtime tests
+        run: >-
+          pnpm --dir soul-server-ts exec vitest run
+          tests/task/completion_notifier.test.ts
+          tests/task/task_creation.test.ts
+          tests/task/task_metadata.test.ts
+          tests/task/task_evicted_hydration.test.ts
+          tests/task/claude_runtime_task_followup.test.ts
+          tests/task/claude_background_task_lifecycle.test.ts
+          tests/engine/claude_sdk_client.test.ts
+          tests/engine/claude_sdk_persistent_lifecycle.test.ts
+          --maxWorkers=2 --minWorkers=1
+      - name: PostgreSQL delivery and background tests
+        run: >-
+          pnpm --dir soul-server-ts exec vitest run
+          tests/db/session_delivery_atomicity_postgres.test.ts
+          tests/db/claude_background_lifecycle_postgres.test.ts
+          tests/db/claude_background_delivery_postgres.test.ts
+          --maxWorkers=1 --minWorkers=1
+      - run: pnpm --dir soul-server-ts build
