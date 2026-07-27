@@ -27,7 +27,8 @@ describe("v3 live invalidation plane", () => {
     });
     acceptV3SessionStreamEvent({
       type: "catalog_updated",
-      catalog: { folders: [], sessions: {} } as never,
+      folders: [],
+      sessions_delta: {},
     });
     acceptV3SessionStreamEvent({
       type: "custom_view_updated",

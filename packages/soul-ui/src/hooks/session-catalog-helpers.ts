@@ -1,4 +1,40 @@
-import type { CatalogState, SessionSummary } from "../shared/types";
+import type {
+  CatalogFolder,
+  CatalogSessionsDelta,
+  CatalogState,
+  SessionSummary,
+} from "../shared/types";
+
+export function mergeCatalogSessionsDelta(
+  current: CatalogState | null,
+  folders: CatalogFolder[],
+  delta: CatalogSessionsDelta,
+): CatalogState {
+  const currentSessions = current?.sessions ?? {};
+  let sessions = currentSessions;
+
+  for (const [sessionId, assignment] of Object.entries(delta)) {
+    const existing = sessions[sessionId];
+    if (assignment === null) {
+      if (!Object.prototype.hasOwnProperty.call(sessions, sessionId)) continue;
+      if (sessions === currentSessions) sessions = { ...currentSessions };
+      delete sessions[sessionId];
+      continue;
+    }
+    if (
+      existing?.folderId === assignment.folderId
+      && existing.displayName === assignment.displayName
+    ) {
+      continue;
+    }
+    if (sessions === currentSessions) sessions = { ...currentSessions };
+    sessions[sessionId] = assignment;
+  }
+
+  return current
+    ? { ...current, folders, sessions }
+    : { folders, sessions };
+}
 
 export function applyCatalogDisplayNames(
   sessions: SessionSummary[],

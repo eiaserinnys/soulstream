@@ -48,6 +48,9 @@ export interface CatalogAssignment {
   displayName: string | null;
 }
 
+/** catalog_updated 신형 payload의 세션별 변경분. null은 카탈로그 제거를 뜻한다. */
+export type CatalogSessionsDelta = Record<string, CatalogAssignment | null>;
+
 export type CatalogBoardItemType =
   | "session"
   | "markdown"

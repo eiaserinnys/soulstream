@@ -148,6 +148,94 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     ]);
   });
 
+  it("merges a delta catalog event into the current sessions without replacing unrelated catalog data", () => {
+    const sessionList = [{
+      agentSessionId: "unchanged",
+      sessionType: "claude",
+      status: "running",
+    }] as never[];
+    const boardItems = [{
+      id: "board-item",
+      folderId: "folder-a",
+      itemType: "session",
+      itemId: "unchanged",
+      x: 0,
+      y: 0,
+    }] as never[];
+    useDashboardStore.getState().setCatalog({
+      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      sessions: {
+        unchanged: { folderId: "folder-a", displayName: "Unchanged" },
+        updated: { folderId: "folder-a", displayName: "Before" },
+        removed: { folderId: "folder-a", displayName: "Remove me" },
+      },
+      boardItems,
+      sessionList,
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onCatalogUpdated?.({
+      type: "catalog_updated",
+      folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      sessions_delta: {
+        added: { folderId: "folder-b", displayName: "Added" },
+        updated: { folderId: "folder-b", displayName: "After" },
+        removed: null,
+      },
+      lastEventId: "9",
+    });
+
+    const catalog = useDashboardStore.getState().catalog;
+    expect(catalog).toMatchObject({
+      folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      sessions: {
+        unchanged: { folderId: "folder-a", displayName: "Unchanged" },
+        updated: { folderId: "folder-b", displayName: "After" },
+        added: { folderId: "folder-b", displayName: "Added" },
+      },
+    });
+    expect(catalog?.sessions.removed).toBeUndefined();
+    expect(catalog?.boardItems).toBe(boardItems);
+    expect(catalog?.sessionList).toBe(sessionList);
+  });
+
+  it("does not treat folders without sessions_delta as a delta catalog event", () => {
+    const initialCatalog: CatalogState = {
+      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      sessions: {
+        unchanged: { folderId: "folder-a", displayName: "Unchanged" },
+      },
+    };
+    useDashboardStore.getState().setCatalog(initialCatalog);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onCatalogUpdated?.({
+      type: "catalog_updated",
+      folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      sessions_delta: undefined,
+    } as never);
+
+    expect(useDashboardStore.getState().catalog).toBe(initialCatalog);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
   it("advances the replay cursor and forwards page_updated to generic consumers", () => {
     const onEventIdAdvance = vi.fn();
     const onStreamEvent = vi.fn();

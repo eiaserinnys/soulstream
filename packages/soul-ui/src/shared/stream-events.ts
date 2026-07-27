@@ -5,7 +5,11 @@
  * 세션 목록 갱신, 카탈로그 변경, 메타데이터 업데이트의 실시간 전파에 사용.
  */
 
-import type { CatalogState } from "./catalog-types";
+import type {
+  CatalogFolder,
+  CatalogSessionsDelta,
+  CatalogState,
+} from "./catalog-types";
 import type {
   LastMessage,
   MetadataEntry,
@@ -69,13 +73,24 @@ export interface SessionDeletedStreamEvent {
   lastEventId?: string;
 }
 
-/** 카탈로그 업데이트 이벤트 */
-export interface CatalogUpdatedStreamEvent {
-  type: "catalog_updated";
-  catalog: CatalogState;
-  /** broadcaster가 부여한 SSE event_id */
-  lastEventId?: string;
-}
+/** 카탈로그 업데이트 이벤트 — expand 단계 동안 구형 snapshot과 신형 delta를 함께 소비한다. */
+export type CatalogUpdatedStreamEvent =
+  | {
+      type: "catalog_updated";
+      catalog: CatalogState;
+      folders?: never;
+      sessions_delta?: never;
+      /** broadcaster가 부여한 SSE event_id */
+      lastEventId?: string;
+    }
+  | {
+      type: "catalog_updated";
+      catalog?: never;
+      folders: CatalogFolder[];
+      sessions_delta: CatalogSessionsDelta;
+      /** broadcaster가 부여한 SSE event_id */
+      lastEventId?: string;
+    };
 
 /** 메타데이터 업데이트 이벤트 (세션 스트림) */
 export interface MetadataUpdatedStreamEvent {

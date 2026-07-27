@@ -16,6 +16,7 @@ import {
   buildSessionUpdates,
   countLoadedSessionsForQuery,
   filterFeedSessions,
+  mergeCatalogSessionsDelta,
   mergeSessionAssignmentsFromSummaries,
   mergeSessionCreatedSummary,
   normalizeSessionStatus,
@@ -67,6 +68,68 @@ function makeCatalog(sessionList: SessionSummary[] = []): CatalogState {
 }
 
 describe("catalog sessionList helpers", () => {
+  it("merges catalog session additions, updates, and removals without cloning unchanged assignments", () => {
+    const unchanged = { folderId: "folder-a", displayName: "Unchanged" };
+    const sessionList = [makeSession("unchanged")];
+    const boardItems: CatalogState["boardItems"] = [];
+    const current: CatalogState = {
+      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      sessions: {
+        unchanged,
+        updated: { folderId: "folder-a", displayName: "Before" },
+        removed: { folderId: "folder-a", displayName: "Remove me" },
+      },
+      boardItems,
+      sessionList,
+    };
+
+    const result = mergeCatalogSessionsDelta(
+      current,
+      [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      {
+        added: { folderId: "folder-b", displayName: "Added" },
+        updated: { folderId: "folder-b", displayName: "After" },
+        removed: null,
+      },
+    );
+
+    expect(result.sessions).toEqual({
+      unchanged,
+      updated: { folderId: "folder-b", displayName: "After" },
+      added: { folderId: "folder-b", displayName: "Added" },
+    });
+    expect(result.sessions.unchanged).toBe(unchanged);
+    expect(result.boardItems).toBe(boardItems);
+    expect(result.sessionList).toBe(sessionList);
+  });
+
+  it("preserves the sessions map identity for empty and value-equivalent deltas", () => {
+    const current: CatalogState = {
+      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      sessions: {
+        unchanged: { folderId: "folder-a", displayName: "Unchanged" },
+      },
+    };
+
+    const folderOnly = mergeCatalogSessionsDelta(
+      current,
+      [{ id: "folder-a", name: "Renamed A", sortOrder: 0 }],
+      {},
+    );
+    const equivalent = mergeCatalogSessionsDelta(
+      current,
+      current.folders,
+      {
+        unchanged: { folderId: "folder-a", displayName: "Unchanged" },
+        missing: null,
+      },
+    );
+
+    expect(folderOnly.sessions).toBe(current.sessions);
+    expect(folderOnly.folders[0].name).toBe("Renamed A");
+    expect(equivalent.sessions).toBe(current.sessions);
+  });
+
   it("upserts session_created into catalog.sessionList while preserving assignment", () => {
     const created = makeSession("child", { callerSessionId: "parent", prompt: "created" });
     const result = upsertSessionAssignmentInCatalog(makeCatalog(), "child", "folder-a", created);
