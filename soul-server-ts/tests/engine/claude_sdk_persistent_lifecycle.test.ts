@@ -17,6 +17,7 @@ import {
   runOptions,
   sdkInterruptedResult,
   sdkResult,
+  sdkTaskNotificationResult,
 } from "./claude_sdk_persistent_test_harness.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -312,7 +313,6 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
         postResultDrainMs: 5,
-        uncorrelatedResultTimeoutMs: 50,
       },
       silentLogger,
     );
@@ -343,34 +343,66 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     );
   });
 
-  it("turns an uncorrelated Result into one bounded fatal recovery event", async () => {
-    vi.useFakeTimers();
-    try {
-      const harness = makeHarness();
-      const client = new ClaudeSdkClient(
-        {
-          query: harness.queryFn,
-          detachedEventSink: harness.detached,
-          uncorrelatedResultTimeoutMs: 100,
-        },
-        silentLogger,
-      );
+  it("leaves a live turn untouched when a background notification Result arrives", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        postResultDrainMs: 5,
+      },
+      silentLogger,
+    );
 
-      const turn = collect(client.runPersistent(runOptions("bounded"), abortSignal()));
-      await harness.nextInput();
-      harness.push(sdkResult("sdk-session", undefined, "uncorrelated"));
-      await vi.advanceTimersByTimeAsync(100);
+    const turn = collect(client.runPersistent(runOptions("do the work"), abortSignal()));
+    const input = await harness.nextInput();
+    // A finished background task makes the harness run its own turn. Its
+    // terminal Result carries no correlation and belongs to no local turn.
+    harness.push(sdkTaskNotificationResult("sdk-session"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-      await expect(turn).resolves.toEqual([
-        expect.objectContaining({
-          type: "error",
-          fatal: true,
-          errorCode: "claude_uncorrelated_result_timeout",
-        }),
-      ]);
-      expect(harness.close).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
+    // It ends no local turn, and it is no longer a reason to end the session.
+    expect(harness.close).not.toHaveBeenCalled();
+    expect(harness.detached).not.toHaveBeenCalledWith(
+      expect.objectContaining({ output: "background task finished" }),
+    );
+
+    // The live turn still owns the foreground and finishes on its own Result.
+    harness.push(sdkResult("sdk-session", input.uuid, "mine"));
+    await expect(turn).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "mine" }),
+    );
+    expect(
+      (await turn).filter((event) => event.type === "error" && event.fatal),
+    ).toEqual([]);
+  });
+
+  it("keeps a Result naming an unknown turn detached and non-fatal", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        postResultDrainMs: 5,
+      },
+      silentLogger,
+    );
+
+    const turn = collect(client.runPersistent(runOptions("do the work"), abortSignal()));
+    const input = await harness.nextInput();
+    // A resumed Query can replay a Result from before this process. It is loud
+    // in the log, but it ends nothing and kills nothing.
+    harness.push(sdkResult("sdk-session", "00000000-0000-4000-8000-000000000000", "stale"));
+    await vi.waitFor(() =>
+      expect(harness.detached).toHaveBeenCalledWith(
+        expect.objectContaining({ output: "stale" }),
+      ),
+    );
+    expect(harness.close).not.toHaveBeenCalled();
+
+    harness.push(sdkResult("sdk-session", input.uuid, "mine"));
+    await expect(turn).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "mine" }),
+    );
   });
 });

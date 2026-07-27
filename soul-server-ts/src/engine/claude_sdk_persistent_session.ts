@@ -21,10 +21,6 @@ import { asRecord, asString } from "./claude_sdk_helpers.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import {
-  ClaudeResultLivenessGuard,
-  type ClaudeUncorrelatedResultTimeout,
-} from "./claude_result_liveness_guard.js";
-import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
   type ClaudeRuntimeCloseReason,
@@ -44,7 +40,6 @@ export interface ClaudeSdkPersistentSessionConfig {
   runtimeEventSink?: ClaudeRuntimeEventSink;
   logger: Logger;
   postResultDrainMs: number;
-  uncorrelatedResultTimeoutMs: number;
   turnTimeoutMs: number;
   onClosed?(): void;
 }
@@ -75,7 +70,6 @@ export class ClaudeSdkPersistentSession {
   private readonly turnTimeoutMs: number;
   private readonly pump: Promise<void>;
   private readonly hookPump: Promise<void>;
-  private readonly resultLiveness: ClaudeResultLivenessGuard;
   private activeForeground: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -87,10 +81,6 @@ export class ClaudeSdkPersistentSession {
     this.logger = config.logger;
     this.postResultDrainMs = config.postResultDrainMs;
     this.turnTimeoutMs = config.turnTimeoutMs;
-    this.resultLiveness = new ClaudeResultLivenessGuard(
-      config.uncorrelatedResultTimeoutMs,
-      (event) => this.handleUncorrelatedResultTimeout(event),
-    );
     this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
@@ -162,7 +152,6 @@ export class ClaudeSdkPersistentSession {
       clearTimeout(this.drainTimer);
       this.drainTimer = null;
     }
-    this.resultLiveness.clear();
     await terminalizePersistentBackgroundTasks({
       runtime: this.runtime,
       reason,
@@ -236,22 +225,21 @@ export class ClaudeSdkPersistentSession {
     const active = this.activeForeground;
     const explicitUserMessageUuid =
       asString(message.user_message_uuid)
-      ?? this.interruptedTurnResultOwner(phase, active, message);
+      ?? this.provableTurnResultOwner(phase, active, message);
     if (!explicitUserMessageUuid) {
-      this.logger.warn(
+      // The Query runs turns this session never enqueued. A finished background
+      // task makes the harness run its own notification turn, and that turn's
+      // terminal Result carries no correlation. Nothing local owns it, so it
+      // ends no local turn — and it is not a defect worth ending the session
+      // over either.
+      this.logger.info(
         {
           activeForegroundUuid: active?.uuid,
           phase,
-          resultUuid: asString(message.uuid),
+          ...describeResultProvenance(message),
         },
-        "Ignoring uncorrelated Claude Result without user_message_uuid",
+        "Ignoring Claude Result that terminates no local foreground turn",
       );
-      if (active) {
-        this.resultLiveness.observe(
-          active.uuid,
-          asString(message.uuid) ?? null,
-        );
-      }
       return;
     }
     if (
@@ -259,6 +247,23 @@ export class ClaudeSdkPersistentSession {
     ) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
       if (observation === "duplicate") return;
+      if (observation === "unknown") {
+        // The Result names a turn this session never enqueued. Unlike a bare
+        // Result that is a normal harness event, a named one that misses the
+        // ledger is a correlation this session cannot account for. It stays
+        // loud and non-fatal: a resumed Query can replay a Result from before
+        // this process, and killing the session over that would recreate the
+        // defect this path removes.
+        this.logger.warn(
+          {
+            activeForegroundUuid: active?.uuid,
+            phase,
+            userMessageUuid: explicitUserMessageUuid,
+            ...describeResultProvenance(message),
+          },
+          "Claude Result names a turn missing from the persistent input ledger",
+        );
+      }
       for (const event of this.eventMapper.mapResultMessage(message)) {
         markPostResultDrainEvent(event);
         await this.emitDetached(event);
@@ -270,7 +275,6 @@ export class ClaudeSdkPersistentSession {
       userMessageUuid: explicitUserMessageUuid,
       interrupted: phase === "interrupting",
     });
-    this.resultLiveness.settle(explicitUserMessageUuid);
     this.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
     this.armDrainTimer();
@@ -341,18 +345,33 @@ export class ClaudeSdkPersistentSession {
   /**
    * Names the turn that owns a Result arriving without `user_message_uuid`.
    *
-   * An interrupt makes the SDK end the in-flight turn, and 0.3.218 returns that
+   * A bare Result is a normal event, not a defect. `SDKResultSuccess` declares
+   * that field and `SDKResultError` does not, and the Query also runs turns
+   * this session never enqueued: a finished background task makes the harness
+   * run its own notification turn. Measured against SDK 0.3.218, that turn
+   * returns `subtype: "success"` with `origin: { kind: "task-notification" }`
+   * and no correlation.
+   *
+   * An outstanding foreground turn does not make such a Result ours. A turn is
+   * marked generating when its input is enqueued, not when the SDK starts
+   * running it, so an outstanding turn can still be queued while the Query
+   * finishes another turn. Owning the Result then would end a live turn with a
+   * stranger's terminal payload.
+   *
+   * The interrupt window is the one place ownership is provable. This session
+   * asked the SDK to abort the in-flight turn, and 0.3.218 returns that
    * terminal Result (`error_during_execution` / `aborted_streaming`) with the
-   * correlation stripped. While the runtime is interrupting there is exactly one
-   * outstanding foreground turn, so the Result belongs to it: correlating
+   * correlation stripped. There is exactly one outstanding foreground turn and
+   * this session caused the abort, so the Result belongs to it: correlating
    * preserves identity rather than guessing, and the interrupted turn finishes
    * through its normal terminal path instead of surfacing a recovery error the
    * user never caused.
    *
-   * Outside that window nothing owns the Result, so the liveness guard stays
-   * responsible for bounding a genuinely unknown one.
+   * Outside that window nothing local owns the Result, and the caller routes it
+   * detached. A foreground turn that never receives its own Result stays
+   * bounded by the turn deadline.
    */
-  private interruptedTurnResultOwner(
+  private provableTurnResultOwner(
     phase: ClaudeForegroundPhase,
     active: ActiveForeground | null,
     message: Record<string, unknown>,
@@ -363,26 +382,6 @@ export class ClaudeSdkPersistentSession {
       "Correlating Claude Result without user_message_uuid to the interrupted turn",
     );
     return active.uuid;
-  }
-
-  private async handleUncorrelatedResultTimeout(
-    event: ClaudeUncorrelatedResultTimeout,
-  ): Promise<void> {
-    const active = this.activeForeground;
-    if (!active || active.uuid !== event.activeTurnUuid) return;
-    const error: ClaudeClientEvent = {
-      type: "error",
-      fatal: true,
-      errorCode: "claude_uncorrelated_result_timeout",
-      message:
-        `Claude Result ${event.resultUuid ?? "without UUID"} could not be correlated ` +
-        `to active turn ${event.activeTurnUuid}.`,
-    };
-    active.output.push(error);
-    active.output.close();
-    this.clearForegroundTimers(active);
-    this.activeForeground = null;
-    await this.close("fatal");
   }
 
   private async handleTurnTimeout(uuid: string): Promise<void> {
@@ -437,6 +436,27 @@ export class ClaudeSdkPersistentSession {
       }
     }, this.postResultDrainMs);
   }
+}
+
+/**
+ * Names where a Result came from, so a bare one can be told apart in the log.
+ *
+ * `origin` distinguishes a harness turn (`task-notification`) from a
+ * human-authored one, and `subtype` distinguishes an error terminal from a
+ * successful one. Neither is load-bearing for ownership: `origin` is absent on
+ * `SDKResultError`, so absence is not evidence of anything.
+ */
+function describeResultProvenance(
+  message: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    resultUuid: asString(message.uuid),
+    subtype: asString(message.subtype),
+    isError: message.is_error === true,
+    terminalReason: asString(message.terminal_reason) ?? null,
+    originKind: asString(asRecord(message.origin)?.kind) ?? null,
+    numTurns: message.num_turns ?? null,
+  };
 }
 
 function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {

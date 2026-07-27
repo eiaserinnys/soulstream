@@ -129,6 +129,25 @@ export function sdkInterruptedResult(
   } as unknown as SDKMessage;
 }
 
+/**
+ * Terminal Result of a turn the session never enqueued.
+ *
+ * SDK 0.3.218 runs its own notification turn when a background task finishes
+ * and returns that turn's Result with no `user_message_uuid` and an explicit
+ * `task-notification` origin.
+ */
+export function sdkTaskNotificationResult(sessionId: string): SDKMessage {
+  const message = sdkResult(sessionId, undefined, "background task finished") as
+    unknown as Record<string, unknown>;
+  delete message.user_message_uuid;
+  return {
+    ...message,
+    uuid: "result-task-notification",
+    origin: { kind: "task-notification" },
+    num_turns: 1,
+  } as unknown as SDKMessage;
+}
+
 export async function collect(
   iterable: AsyncIterable<ClaudeClientEvent>,
 ): Promise<ClaudeClientEvent[]> {

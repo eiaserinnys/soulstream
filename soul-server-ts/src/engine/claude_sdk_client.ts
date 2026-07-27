@@ -85,7 +85,6 @@ export interface ClaudeSdkClientConfig {
   resolveClaudeExecutablePath?: () => string | undefined;
   detachedEventSink?: ClaudeDetachedEventSink;
   runtimeEventSink?: ClaudeRuntimeEventSink;
-  uncorrelatedResultTimeoutMs?: number;
   /**
    * Persistent runtime foreground deadline. The legacy worker exposed a
    * 30-minute SESSION_TIMEOUT_SECONDS boundary; runtime v2 preserves it
@@ -106,7 +105,6 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly postResultDrainer: ClaudePostResultDrain;
   private readonly detachedEventSink: ClaudeDetachedEventSink;
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
-  private readonly uncorrelatedResultTimeoutMs: number;
   private readonly persistentTurnTimeoutMs: number;
 
   private activeQuery: ClaudeSdkQuery | null = null;
@@ -143,8 +141,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     });
     this.detachedEventSink = config.detachedEventSink ?? (async () => undefined);
     this.runtimeEventSink = config.runtimeEventSink;
-    this.uncorrelatedResultTimeoutMs =
-      config.uncorrelatedResultTimeoutMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
     this.persistentTurnTimeoutMs =
       config.persistentTurnTimeoutMs ?? 1_800_000;
   }
@@ -242,7 +238,6 @@ export class ClaudeSdkClient implements ClaudeClient {
         runtimeEventSink: this.runtimeEventSink,
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,
-        uncorrelatedResultTimeoutMs: this.uncorrelatedResultTimeoutMs,
         turnTimeoutMs: this.persistentTurnTimeoutMs,
         onClosed: () => {
           this.activeQuery = null;
