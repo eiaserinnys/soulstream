@@ -47,6 +47,7 @@ import {
   buildThreadResumeParams,
   buildThreadStartParams,
   buildTurnStartParams,
+  selectCodexMcpServers,
 } from "./params.js";
 import { toCodexUserInput } from "./protocol.js";
 import { AsyncPayloadQueue } from "./async_payload_queue.js";
@@ -102,7 +103,22 @@ export class CodexAppServerEngineAdapter
     this.workspaceDir = config.workspaceDir;
     this.logger = logger;
     this.client = config.client ?? this.createClient(config, logger);
-    this.resolvedMcpServers = config.resolvedMcpServers;
+    const { supportedServers, skippedSseServers } = selectCodexMcpServers(
+      config.resolvedMcpServers,
+    );
+    this.resolvedMcpServers = supportedServers;
+    for (const server of skippedSseServers) {
+      this.logger.warn(
+        {
+          agentId: config.agentId ?? "unknown",
+          serverName: server.name?.trim() || "unknown",
+          transport: server.type,
+          reason:
+            "Codex app-server supports stdio and streamable_http MCP transports only",
+        },
+        "Skipping unsupported MCP server for Codex backend",
+      );
+    }
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {

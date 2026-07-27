@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
+import type { Logger } from "pino";
 
 import {
   AppServerRpcError,
@@ -176,6 +177,44 @@ async function drain(
 }
 
 describe("CodexAppServerEngineAdapter", () => {
+  it("logs each SSE MCP server excluded from the Codex backend", () => {
+    const warn = vi.fn();
+    const logger = { warn } as unknown as Logger;
+
+    new CodexAppServerEngineAdapter(
+      {
+        workspaceDir: "/work",
+        agentId: "writer-seosoyoung-codex",
+        client: new FakeClient(),
+        resolvedMcpServers: [
+          {
+            type: "sse",
+            name: "eb-lore",
+            url: "http://127.0.0.1:3300/sse",
+          },
+          {
+            type: "streamable_http",
+            name: "soulstream",
+            url: "http://127.0.0.1:3105/mcp",
+          },
+        ],
+      },
+      logger,
+    );
+
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      {
+        agentId: "writer-seosoyoung-codex",
+        serverName: "eb-lore",
+        transport: "sse",
+        reason:
+          "Codex app-server supports stdio and streamable_http MCP transports only",
+      },
+      "Skipping unsupported MCP server for Codex backend",
+    );
+  });
+
   it("starts thread and turn, yields mapped events, and stores active turn for live steer", async () => {
     const { adapter, client } = makeAdapter();
     const eventsPromise = drain(adapter.execute({ prompt: "hello", model: "gpt-5.5" }));
