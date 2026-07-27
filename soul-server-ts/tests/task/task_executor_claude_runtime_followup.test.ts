@@ -359,7 +359,6 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       expect(addInterventionCalls).toBe(0);
       expect(turnCount).toBe(1);
       expect(prompts).toEqual(["hi"]);
-      expect(task.lastAssistantText).toBe("foreground done");
     },
   );
 

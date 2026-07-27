@@ -185,6 +185,15 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     );
     harness.push({
       type: "system",
+      subtype: "task_notification",
+      uuid: "task-notification-hook-pump",
+      session_id: "sdk-session",
+      task_id: "hook-pump-task",
+      status: "completed",
+      summary: "Queued hook work completed",
+    } as unknown as SDKMessage);
+    harness.push({
+      type: "system",
       subtype: "background_tasks_changed",
       uuid: "background-membership-hook-pump-empty",
       session_id: "sdk-session",
