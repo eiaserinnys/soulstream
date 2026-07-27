@@ -29,6 +29,7 @@ import {
   type OrchestratorRuntimeServices,
 } from "./runtime/composition.js";
 import { resolveLiveBoardAssetStorageFromConfig } from "./runtime/live_board_asset_storage.js";
+import { OrchestratorMaintenanceService } from "./runtime/orchestrator_maintenance_service.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import {
@@ -240,6 +241,10 @@ export async function createLiveProductionApplication(
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
+  const maintenanceService = new OrchestratorMaintenanceService({
+    sessionCache: registry.sessionCache,
+    pushNotifier,
+  });
 
   try {
     providers = createLiveOrchestratorProviderBundle({
@@ -276,10 +281,14 @@ export async function createLiveProductionApplication(
   let resourcesClosed = false;
   return {
     app,
-    startBackground: async () => usageSummaryService.start(),
+    startBackground: async () => {
+      usageSummaryService.start();
+      maintenanceService.start();
+    },
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
+      maintenanceService.stop();
       await usageSummaryService.stop();
       await pushNotifier.close();
       await dbCatalogRepository.close();

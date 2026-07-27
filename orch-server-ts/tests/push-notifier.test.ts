@@ -245,6 +245,70 @@ describe("PushNotifier", () => {
     await harness.notifier.flush();
     expect(harness.provider.send).toHaveBeenCalledTimes(2);
   });
+
+  it("expires terminal status after ten minutes while preserving dedup inside the grace window", async () => {
+    let nowMs = 1_000;
+    const harness = createHarness({ nowMs: () => nowMs });
+    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+
+    expect(harness.notifier.getStats()).toMatchObject({
+      lastStatuses: 1,
+      toolInputs: 0,
+    });
+    nowMs += 10 * 60_000 - 1;
+    expect(harness.notifier.sweepExpired(nowMs).lastStatuses).toBe(0);
+    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+    expect(harness.provider.send).toHaveBeenCalledTimes(1);
+
+    nowMs += 1;
+    expect(harness.notifier.sweepExpired(nowMs).lastStatuses).toBe(1);
+    expect(harness.notifier.getStats().lastStatuses).toBe(0);
+  });
+
+  it("deletes ExitPlanMode input after signal creation and sweeps orphaned input after one hour", async () => {
+    let nowMs = 1_000;
+    const harness = createHarness({
+      nowMs: () => nowMs,
+      sessions: new Map([["session-a", userSession("browser")]]),
+    });
+    harness.notifier.accept([
+      sessionEvent("node-a", "session-a", {
+        type: "tool_start",
+        tool_name: "ExitPlanMode",
+        tool_use_id: "tool-plan",
+        tool_input: { plan: "Apply the notifier migration." },
+      }),
+    ]);
+    await harness.notifier.flush();
+    expect(harness.notifier.getStats().toolInputs).toBe(1);
+
+    harness.notifier.accept([
+      sessionEvent("node-a", "session-a", {
+        type: "claude_runtime_mode_state",
+        mode: "plan",
+        active: false,
+        tool_name: "ExitPlanMode",
+        tool_use_id: "tool-plan",
+      }),
+    ]);
+    await harness.notifier.flush();
+    expect(harness.notifier.getStats().toolInputs).toBe(0);
+
+    harness.notifier.accept([
+      sessionEvent("node-a", "session-a", {
+        type: "tool_start",
+        tool_name: "ExitPlanMode",
+        tool_use_id: "tool-orphan",
+        tool_input: { plan: "Never completed" },
+      }),
+    ]);
+    await harness.notifier.flush();
+    nowMs += 60 * 60_000;
+    expect(harness.notifier.sweepExpired(nowMs).toolInputs).toBe(1);
+    expect(harness.notifier.getStats().toolInputs).toBe(0);
+  });
 });
 
 function createHarness(options: {
@@ -254,6 +318,7 @@ function createHarness(options: {
   sessions?: Map<string, Record<string, unknown>>;
   observers?: SessionForegroundObserverTracker;
   onWarning?: (message: string, error?: unknown) => void;
+  nowMs?: () => number;
 } = {}) {
   const repository = options.repository ?? createRepository();
   const provider = options.provider ?? createProvider(async () => OK);
@@ -272,6 +337,7 @@ function createHarness(options: {
       resolveNodeEmail: () => "user@example.com",
       foregroundObservers: options.observers ?? new SessionForegroundObserverTracker(),
       onWarning: options.onWarning ?? vi.fn(),
+      nowMs: options.nowMs,
     }),
   };
 }
@@ -294,9 +360,12 @@ function createCatalog(options: {
   assignments?: Record<string, { folderId: string | null }>;
 } = {}) {
   return {
-    async listSessionAssignments() {
+    async findSessionFolderId(sessionId: string) {
       if (options.fail) throw new Error("catalog unavailable");
-      return options.assignments ?? { "session-a": { folderId: "folder-a" } };
+      const assignments = options.assignments ?? {
+        "session-a": { folderId: "folder-a" },
+      };
+      return assignments[sessionId]?.folderId;
     },
     async listFolders() {
       if (options.fail) throw new Error("catalog unavailable");

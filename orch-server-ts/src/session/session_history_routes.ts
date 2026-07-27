@@ -288,7 +288,11 @@ type SessionHistoryInitialState = {
   readonly frames: SessionHistorySseFrame[];
   readonly afterId: number;
   readonly lastStoredId: number;
-  readonly seenEventIds: Set<number>;
+  lastSeenEventId: number;
+};
+
+export type SessionHistoryEventCursor = {
+  lastSeenEventId: number;
 };
 
 async function buildSessionHistoryInitialState(
@@ -303,11 +307,15 @@ async function buildSessionHistoryInitialState(
     },
   ];
   const afterId = resolveSessionHistoryAfterId(request);
-  const seenEventIds = new Set<number>();
 
   if (afterId === 0) {
     const lastEventId = await service.readLastEventId(sessionId);
-    return { frames, afterId, lastStoredId: lastEventId, seenEventIds };
+    return {
+      frames,
+      afterId,
+      lastStoredId: lastEventId,
+      lastSeenEventId: lastEventId,
+    };
   }
 
   let lastStoredId = 0;
@@ -315,7 +323,6 @@ async function buildSessionHistoryInitialState(
   for await (const event of service.streamEventsRaw(sessionId, afterId)) {
     if (event.eventId <= afterId) continue;
     lastStoredId = Math.max(lastStoredId, event.eventId);
-    seenEventIds.add(event.eventId);
     replayEvents.push(event);
   }
 
@@ -326,7 +333,12 @@ async function buildSessionHistoryInitialState(
       data: event.payloadText,
     });
   }
-  return { frames, afterId, lastStoredId, seenEventIds };
+  return {
+    frames,
+    afterId,
+    lastStoredId,
+    lastSeenEventId: Math.max(afterId, lastStoredId),
+  };
 }
 
 function liveSessionEventFrame(
@@ -340,16 +352,22 @@ function liveSessionEventFrame(
       ? envelope.payload
       : envelope;
   const eventId = liveEventId(envelope, payload);
-  if (eventId !== undefined) {
-    if (history.afterId > 0 && eventId <= history.afterId) return null;
-    if (history.seenEventIds.has(eventId)) return null;
-    history.seenEventIds.add(eventId);
-  }
+  if (!shouldEmitSessionHistoryEvent(history, eventId)) return null;
   return {
     event: typeof payload.type === "string" ? payload.type : "message",
     data: JSON.stringify(payload),
     ...(eventId === undefined ? {} : { id: eventId }),
   };
+}
+
+export function shouldEmitSessionHistoryEvent(
+  cursor: SessionHistoryEventCursor,
+  eventId: number | undefined,
+): boolean {
+  if (eventId === undefined) return true;
+  if (eventId <= cursor.lastSeenEventId) return false;
+  cursor.lastSeenEventId = eventId;
+  return true;
 }
 
 function liveEventId(

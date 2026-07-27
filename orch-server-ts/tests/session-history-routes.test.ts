@@ -8,6 +8,7 @@ import {
   parseOrchServerConfig,
   sessionHistoryRouteAuthRequirements,
   SessionResourceAccessError,
+  shouldEmitSessionHistoryEvent,
   type SessionHistoryProvider,
   type SessionHistoryLiveEventSource,
   type SessionHistoryRawEvent,
@@ -433,6 +434,40 @@ describe("session history/read-only route harness", () => {
     expect(provider.readLastEventId).not.toHaveBeenCalled();
 
     await app.close();
+  });
+
+  it("keeps history_sync unchanged when the reconnect cursor has no newer stored events", async () => {
+    const provider = createProvider();
+    const { app } = createHarness(provider);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events?lastEventId=5",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(
+      'event: history_sync\n' +
+        'data: {"type":"history_sync","last_event_id":0,"is_live":false}\n\n',
+    );
+    expect(provider.streamEventsRaw).toHaveBeenCalledWith("sess-1", 5);
+
+    await app.close();
+  });
+
+  it("uses one monotonic cursor to suppress replay and reconnect duplicates while allowing id-less events", () => {
+    const cursor = { lastSeenEventId: 7 };
+
+    expect(shouldEmitSessionHistoryEvent(cursor, 7)).toBe(false);
+    expect(shouldEmitSessionHistoryEvent(cursor, 5)).toBe(false);
+    expect(shouldEmitSessionHistoryEvent(cursor, 8)).toBe(true);
+    expect(shouldEmitSessionHistoryEvent(cursor, undefined)).toBe(true);
+    expect(cursor).toEqual({ lastSeenEventId: 8 });
+
+    for (let eventId = 9; eventId < 10_000; eventId += 1) {
+      expect(shouldEmitSessionHistoryEvent(cursor, eventId)).toBe(true);
+    }
+    expect(Object.keys(cursor)).toEqual(["lastSeenEventId"]);
   });
 
   it("treats an invalid cursor as after_id zero even when the query has a valid cursor", async () => {

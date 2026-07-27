@@ -35,6 +35,9 @@ describe("live DB folder route providers", () => {
           { session_id: "sess-root", folder_id: null, display_name: null },
         ];
       }
+      if (text.includes("SELECT folder_id FROM sessions")) {
+        return [{ folder_id: "folder-a" }];
+      }
       if (text.includes("GROUP BY folder_id")) {
         return [
           { folder_id: "folder-a", count: 3 },
@@ -69,6 +72,8 @@ describe("live DB folder route providers", () => {
       "sess-a": { folderId: "folder-a", displayName: "Named session" },
       "sess-root": { folderId: null, displayName: null },
     });
+    await expect(repository.folderRouteProvider.findSessionFolderId("sess-a"))
+      .resolves.toBe("folder-a");
     await expect(repository.folderCountsProvider.listFolders()).resolves.toMatchObject([
       { id: "folder-a", parentFolderId: null },
       { id: "folder-b", parentFolderId: "folder-a" },
@@ -83,6 +88,7 @@ describe("live DB folder route providers", () => {
     expect(harness.normalizedCalls()).toEqual([
       "SELECT * FROM folder_get_all()",
       "SELECT session_id, folder_id, display_name FROM sessions",
+      "SELECT folder_id FROM sessions WHERE session_id = ? LIMIT 1",
       "SELECT * FROM folder_get_all()",
       expect.stringContaining("GROUP BY folder_id"),
     ]);

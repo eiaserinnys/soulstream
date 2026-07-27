@@ -78,7 +78,7 @@ export function createLiveAttachmentRouteProviders(
   };
 }
 
-export const ATTACHMENT_COMMAND_TIMEOUT_MS = 30_000;
+export const ATTACHMENT_COMMAND_TIMEOUT_MS = 120_000;
 export const ATTACHMENT_ABORT_TIMEOUT_MS = 5_000;
 
 export function createLiveAttachmentTransport(

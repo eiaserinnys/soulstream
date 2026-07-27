@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  ATTACHMENT_COMMAND_TIMEOUT_MS,
   AttachmentTransportConnectionError,
   AttachmentTransportTimeoutError,
   createLiveAttachmentRouteProviders,
@@ -28,6 +29,7 @@ type AnyRoutedPendingCommand = RoutedPendingSessionCommand<
 describe("live attachment WS transport", () => {
   it("sends start, 1MiB chunks, and finish sequentially through the node command bridge", async () => {
     const fixture = createWireFixture();
+    const createCommand = vi.spyOn(fixture.registry, "createCommand");
     const node = await fixture.providers.provider.getNode(nodeId);
     expect(node).not.toBeNull();
 
@@ -72,6 +74,11 @@ describe("live attachment WS transport", () => {
         upload_id: "upload-fixed",
       },
     ]);
+    expect(
+      createCommand.mock.calls.every(
+        (call) => call[2]?.timeoutMs === ATTACHMENT_COMMAND_TIMEOUT_MS,
+      ),
+    ).toBe(true);
   });
 
   it("sends legacy upload, delete, and download through the same WS command boundary", async () => {

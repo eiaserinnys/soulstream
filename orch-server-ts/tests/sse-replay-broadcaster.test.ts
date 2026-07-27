@@ -123,5 +123,9 @@ describe("SSE replay broadcaster primitive", () => {
     broadcaster.append(fixture.sessionStream.events[1] as SessionStreamEvent);
 
     expect(received).toEqual([1]);
+    expect(broadcaster.getStats()).toEqual({
+      bufferedEvents: 2,
+      listeners: 0,
+    });
   });
 });

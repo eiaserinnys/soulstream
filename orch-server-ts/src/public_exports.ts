@@ -81,6 +81,7 @@ export * from "./runtime/live_session_serialization.js";
 export * from "./runtime/live_timeline_serialization.js";
 export * from "./runtime/live_system_config_route_provider.js";
 export * from "./runtime/node_session_event_dispatcher.js";
+export * from "./runtime/orchestrator_maintenance_service.js";
 export * from "./runtime/provider_wiring_inventory.js";
 export * from "./runtime/production_auth_guard.js";
 export * from "./runtime/session_event_hub.js";

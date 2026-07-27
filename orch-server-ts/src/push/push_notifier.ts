@@ -26,9 +26,9 @@ export type PushNotificationProvider = {
 };
 
 export type PushNotificationCatalog = {
-  listSessionAssignments: () =>
-    | Promise<Readonly<Record<string, unknown>>>
-    | Readonly<Record<string, unknown>>;
+  findSessionFolderId: (
+    sessionId: string,
+  ) => Promise<string | null | undefined> | string | null | undefined;
   listFolders: () => Promise<readonly unknown[]> | readonly unknown[];
 };
 
@@ -40,6 +40,7 @@ export type PushNotifierOptions = {
   readonly resolveNodeEmail: (nodeId: string) => string | undefined;
   readonly foregroundObservers: SessionForegroundObserverTracker;
   readonly onWarning?: (message: string, error?: unknown) => void;
+  readonly nowMs?: () => number;
 };
 
 type ResponseWaitSignal = {
@@ -51,6 +52,8 @@ type ResponseWaitSignal = {
 const COMPLETION_SOURCES = new Set(["slack", "browser", "soul-app"]);
 const INPUT_REQUEST_SOURCES = new Set([...COMPLETION_SOURCES, "agent"]);
 const TERMINAL_STATUSES = new Set(["completed", "error"]);
+export const PUSH_TERMINAL_STATUS_TTL_MS = 10 * 60_000;
+export const PUSH_TOOL_INPUT_TTL_MS = 60 * 60_000;
 const PUSH_BODY_MAX = 100;
 const INPUT_EXCERPT_MAX = 50;
 
@@ -72,17 +75,25 @@ export class SessionForegroundObserverTracker {
   count(sessionId: string): number {
     return this.counts.get(sessionId) ?? 0;
   }
+
+  getStats(): { sessions: number; observers: number } {
+    let observers = 0;
+    for (const count of this.counts.values()) observers += count;
+    return { sessions: this.counts.size, observers };
+  }
 }
 
 export class PushNotifier {
-  private readonly lastStatus = new Map<string, string>();
-  private readonly toolInputs = new Map<string, unknown>();
+  private readonly lastStatus = new Map<string, { status: string; atMs: number }>();
+  private readonly toolInputs = new Map<string, { value: unknown; atMs: number }>();
   private readonly pending = new Set<Promise<void>>();
   private readonly warn: (message: string, error?: unknown) => void;
+  private readonly nowMs: () => number;
   private closed = false;
 
   constructor(private readonly options: PushNotifierOptions) {
     this.warn = options.onWarning ?? ((message, error) => console.warn(message, error));
+    this.nowMs = options.nowMs ?? Date.now;
   }
 
   accept(events: readonly NodeRegistryEvent[]): void {
@@ -122,10 +133,13 @@ export class PushNotifier {
     const payload = recordValue(event.data.event) ?? recordValue(event.data.payload);
     if (sessionId === undefined || payload === undefined) return;
     this.cacheToolInput(event.nodeId, sessionId, payload);
+    const toolUseId = stringValue(payload.tool_use_id, payload.toolUseId);
+    const inputKey = toolInputKey(event.nodeId, sessionId, toolUseId);
     const signal = responseWaitSignal(
       payload,
-      this.toolInputs.get(toolInputKey(event.nodeId, sessionId, stringValue(payload.tool_use_id, payload.toolUseId))),
+      this.toolInputs.get(inputKey)?.value,
     );
+    if (signal?.kind === "exit_plan_mode") this.toolInputs.delete(inputKey);
     if (signal !== undefined) {
       await this.handleInputRequest(event.nodeId, sessionId, event.data, signal);
     }
@@ -146,8 +160,9 @@ export class PushNotifier {
 
     const statusKey = sessionStateKey(nodeId, sessionId);
     const previous = this.lastStatus.get(statusKey);
-    this.lastStatus.set(statusKey, status);
-    if (!TERMINAL_STATUSES.has(status) || previous === status) return;
+    if (previous?.status === status) return;
+    this.lastStatus.set(statusKey, { status, atMs: this.nowMs() });
+    if (!TERMINAL_STATUSES.has(status)) return;
     if (await this.folderExcludes(sessionId, payload)) return;
 
     const title = status === "completed" ? "세션 완료" : "세션 오류";
@@ -202,11 +217,10 @@ export class PushNotifier {
     payload: Record<string, unknown>,
   ): Promise<boolean> {
     try {
-      const assignments = await this.options.catalog.listSessionAssignments();
-      const assignment = assignmentFolder(assignments, sessionId);
-      const folderId = assignment.found
-        ? assignment.folderId
-        : nullableString(payload.folder_id, payload.folderId);
+      const storedFolderId = await this.options.catalog.findSessionFolderId(sessionId);
+      const folderId = storedFolderId === undefined
+        ? nullableString(payload.folder_id, payload.folderId)
+        : storedFolderId;
       if (folderId === null) return false;
       const folders = await this.options.catalog.listFolders();
       return folders.some((folder) => {
@@ -264,7 +278,47 @@ export class PushNotifier {
     if (stringValue(event.tool_name, event.toolName) !== "ExitPlanMode") return;
     const toolUseId = stringValue(event.tool_use_id, event.toolUseId);
     if (toolUseId.length === 0) return;
-    this.toolInputs.set(toolInputKey(nodeId, sessionId, toolUseId), event.tool_input ?? event.toolInput);
+    this.toolInputs.set(toolInputKey(nodeId, sessionId, toolUseId), {
+      value: event.tool_input ?? event.toolInput,
+      atMs: this.nowMs(),
+    });
+  }
+
+  getStats(): {
+    lastStatuses: number;
+    toolInputs: number;
+    pendingSends: number;
+  } {
+    return {
+      lastStatuses: this.lastStatus.size,
+      toolInputs: this.toolInputs.size,
+      pendingSends: this.pending.size,
+    };
+  }
+
+  sweepExpired(nowMs = this.nowMs()): {
+    lastStatuses: number;
+    toolInputs: number;
+    total: number;
+  } {
+    let lastStatuses = 0;
+    let toolInputs = 0;
+    for (const [key, entry] of this.lastStatus) {
+      if (
+        TERMINAL_STATUSES.has(entry.status) &&
+        nowMs - entry.atMs >= PUSH_TERMINAL_STATUS_TTL_MS
+      ) {
+        this.lastStatus.delete(key);
+        lastStatuses += 1;
+      }
+    }
+    for (const [key, entry] of this.toolInputs) {
+      if (nowMs - entry.atMs >= PUSH_TOOL_INPUT_TTL_MS) {
+        this.toolInputs.delete(key);
+        toolInputs += 1;
+      }
+    }
+    return { lastStatuses, toolInputs, total: lastStatuses + toolInputs };
   }
 
   private clearNodeState(nodeId: string): void {
@@ -366,21 +420,6 @@ function toolInputExcerpt(value: unknown): string {
     if (values.length === 1) return jsonPreview(values[0]);
   }
   return jsonPreview(value);
-}
-
-function assignmentFolder(
-  assignments: Readonly<Record<string, unknown>>,
-  sessionId: string,
-): { found: boolean; folderId: string | null } {
-  if (!(sessionId in assignments)) return { found: false, folderId: null };
-  const assignment = assignments[sessionId];
-  const record = recordValue(assignment);
-  return {
-    found: true,
-    folderId: record === undefined
-      ? nullableString(assignment)
-      : nullableString(record.folderId, record.folder_id),
-  };
 }
 
 function sessionIdFrom(data: Record<string, unknown>): string | undefined {
