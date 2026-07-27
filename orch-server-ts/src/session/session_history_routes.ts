@@ -1,7 +1,9 @@
-import { Readable } from "node:stream";
-
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import {
+  createSseStream,
+  type SseStreamPush,
+} from "../sse/sse_stream.js";
 import {
   SessionHistoryReadService,
   filterFinalizedAppServerReplayEvents,
@@ -215,7 +217,8 @@ async function sendSessionEventsStream(
   if (!(await ensureSessionAccess(options, request, reply))) return reply;
   const releaseObserver = options.foregroundObservers?.observe(sessionId);
   let pendingLiveEvents: Record<string, unknown>[] = [];
-  let liveStream: Readable | null = null;
+  let liveStream: ReturnType<typeof createSseStream>["stream"] | null = null;
+  let livePush: SseStreamPush | null = null;
   let history: SessionHistoryInitialState | undefined;
   let initialFlushed = false;
   const unsubscribe = options.liveEvents?.subscribe(sessionId, (envelope) => {
@@ -225,7 +228,7 @@ async function sendSessionEventsStream(
     }
     try {
       const frame = liveSessionEventFrame(envelope, history);
-      if (frame !== null) liveStream?.push(formatSessionHistorySseFrame(frame));
+      if (frame !== null) livePush?.(formatSessionHistorySseFrame(frame));
     } catch (error) {
       liveStream?.destroy(error instanceof Error ? error : new Error(String(error)));
     }
@@ -249,21 +252,20 @@ async function sendSessionEventsStream(
       return reply.send(frames.map(formatSessionHistorySseFrame).join(""));
     }
 
-    const stream = new Readable({
-      read() {},
-    });
+    const { stream, push } = createSseStream();
     liveStream = stream;
+    livePush = push;
     for (const frame of frames) {
-      stream.push(formatSessionHistorySseFrame(frame));
+      push(formatSessionHistorySseFrame(frame));
     }
     initialFlushed = true;
     for (const envelope of pendingLiveEvents) {
       const frame = liveSessionEventFrame(envelope, history);
-      if (frame !== null) stream.push(formatSessionHistorySseFrame(frame));
+      if (frame !== null) push(formatSessionHistorySseFrame(frame));
     }
     pendingLiveEvents = [];
     const keepalive = setInterval(() => {
-      stream.push(": keepalive\n\n");
+      push(": keepalive\n\n");
     }, options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS);
     let cleaned = false;
     const cleanup = () => {

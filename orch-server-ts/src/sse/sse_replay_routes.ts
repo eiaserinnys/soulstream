@@ -1,5 +1,3 @@
-import { Readable } from "node:stream";
-
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -9,6 +7,10 @@ import {
   type SseReplayEvent,
   type SseResumeCursor,
 } from "./replay_broadcaster.js";
+import {
+  createSseStream,
+  type SseStreamPush,
+} from "./sse_stream.js";
 
 export type SessionStreamSnapshot = {
   sessions: unknown[];
@@ -97,13 +99,14 @@ async function sendSseReplayStream<TPayload extends object>(
   const replaySeenIds = new Set<number>();
   let pendingLiveEvents: Array<SseReplayEvent<TPayload>> = [];
   let initialFlushed = false;
-  let liveStream: Readable | null = null;
+  let liveStream: ReturnType<typeof createSseStream>["stream"] | null = null;
+  let livePush: SseStreamPush | null = null;
   let livePushChain: Promise<void> = Promise.resolve();
   const pushLiveEvent = async (event: SseReplayEvent<TPayload>) => {
     if (replaySeenIds.has(event.id)) return;
     const frame = await filteredReplayEventFrame(request, options, event);
     if (frame !== null) {
-      liveStream?.push(formatSseFrame(frame));
+      livePush?.(formatSseFrame(frame));
     }
   };
   const destroyLiveStream = (error: unknown) => {
@@ -140,12 +143,11 @@ async function sendSseReplayStream<TPayload extends object>(
       return reply.send(initialFrames.map(formatSseFrame).join(""));
     }
 
-    const stream = new Readable({
-      read() {},
-    });
+    const { stream, push } = createSseStream();
     liveStream = stream;
+    livePush = push;
     for (const frame of initialFrames) {
-      stream.push(formatSseFrame(frame));
+      push(formatSseFrame(frame));
     }
     initialFlushed = true;
     for (const event of pendingLiveEvents) {
@@ -154,7 +156,7 @@ async function sendSseReplayStream<TPayload extends object>(
     pendingLiveEvents = [];
 
     const keepalive = setInterval(() => {
-      stream.push(": keepalive\n\n");
+      push(": keepalive\n\n");
     }, options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS);
     const cleanup = () => {
       clearInterval(keepalive);
