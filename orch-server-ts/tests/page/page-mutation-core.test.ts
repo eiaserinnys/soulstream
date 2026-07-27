@@ -307,6 +307,69 @@ describe("PageMutationCore", () => {
     expect(deleted.replica.page.archived).toBe(false);
   });
 
+  it("preserves primary task_ref and session_ref identity while replacing markdown blocks", () => {
+    const core = createCore();
+    const seeded = core.createPage({
+      page: { id: "page-1", title: "Original", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "session-1" },
+      idempotencyKey: "create_page:session-1:structural-replace-seed",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [
+          createBlock("body"),
+          {
+            ...createBlock("checklist"),
+            blockType: "checklist",
+            properties: { checked: false },
+          },
+          structuralBlock("task", "task_ref", { taskId: "task-1", primary: true }),
+          structuralBlock("runbook", "runbook_ref", { runbookId: "task-legacy", primary: true }),
+          structuralBlock("session", "session_ref", { sessionId: "session-1", primary: true }),
+          structuralBlock("atom", "atom_ref", { instance: "atom", nodeId: "node-1" }),
+          structuralBlock("defaults", "session_defaults", { scope: "page", agentId: "roselin" }),
+          structuralBlock("guidance", "guidance", { enabled: true, scope: "page" }),
+          structuralBlock("view", "custom_view", { customViewId: "view-1" }),
+          structuralBlock("image", "image", { assetId: "asset-1", alt: "증거" }),
+        ],
+      },
+    });
+    const structuralBefore = seeded.replica.blocks.filter((block) => (
+      block.type !== "paragraph" && block.type !== "checklist"
+    ));
+
+    const replaced = core.mutate(seeded.document, mutation(1, {
+      type: "replace_page_markdown",
+      blocks: [{
+        id: "replacement",
+        parentId: null,
+        positionKey: "a0",
+        type: "paragraph",
+        text: "Replacement",
+        properties: {},
+        collapsed: false,
+      }],
+    }, "preserve-structural"));
+
+    expect(replaced.replica.blocks.filter((block) => (
+      block.type !== "paragraph" && block.type !== "checklist"
+    ))).toEqual(structuralBefore);
+    expect(replaced.replica.blocks).toContainEqual(
+      expect.objectContaining({ id: "replacement", type: "paragraph", text: "Replacement" }),
+    );
+    expect(replaced.replica.blocks).toContainEqual(expect.objectContaining({
+      type: "task_ref",
+      properties: { taskId: "task-1", primary: true },
+    }));
+    expect(replaced.replica.blocks).toContainEqual(expect.objectContaining({
+      type: "session_ref",
+      properties: { sessionId: "session-1", primary: true },
+    }));
+    expect(replaced.replica.blocks.some((block) => (
+      block.id === seeded.tempIdMapping.body
+      || block.id === seeded.tempIdMapping.checklist
+    ))).toBe(false);
+  });
+
   it("requires valid actor provenance and idempotency keys", () => {
     const core = createCore();
     expect(() => core.createPage({
@@ -333,6 +396,19 @@ function createBlock(tempId: string) {
     blockType: "paragraph",
     text: tempId,
     properties: {},
+  };
+}
+
+function structuralBlock(
+  tempId: string,
+  blockType: string,
+  properties: Record<string, unknown>,
+) {
+  return {
+    ...createBlock(tempId),
+    blockType,
+    text: "",
+    properties,
   };
 }
 

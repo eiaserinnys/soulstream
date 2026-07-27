@@ -1,6 +1,19 @@
 import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
 
-import type { BlockDto, PageDto } from "./types.js";
+import {
+  PAGE_BLOCK_TYPES,
+  type BlockDto,
+  type PageBlockType,
+  type PageDto,
+} from "./types.js";
+
+export type MarkdownRepresentableBlockType = "paragraph" | "checklist";
+
+const MARKDOWN_REPRESENTABLE_BLOCK_TYPES = new Set<PageBlockType>(
+  PAGE_BLOCK_TYPES.filter((type): type is MarkdownRepresentableBlockType => (
+    type === "paragraph" || type === "checklist"
+  )),
+);
 
 export interface PageMarkdownBlockInput {
   id: string;
@@ -19,6 +32,12 @@ export interface PageToMarkdownOptions {
 export interface MarkdownToPageBlocksOptions {
   title: string;
   createId: () => string;
+}
+
+export function isMarkdownRepresentableBlockType(
+  type: PageBlockType,
+): type is MarkdownRepresentableBlockType {
+  return MARKDOWN_REPRESENTABLE_BLOCK_TYPES.has(type);
 }
 
 export function pageToMarkdown(
@@ -42,6 +61,10 @@ export function pageToMarkdown(
   const render = (block: BlockDto, depth: number): void => {
     if (visited.has(block.id)) return;
     visited.add(block.id);
+    if (!isMarkdownRepresentableBlockType(block.block_type)) {
+      for (const child of children.get(block.id) ?? []) render(child, depth);
+      return;
+    }
     const indent = "  ".repeat(depth);
     if (options.includeBlockIds) lines.push(`${indent}<!-- block:${block.id} -->`);
     lines.push(`${indent}${blockMarkdownText(block)}`);

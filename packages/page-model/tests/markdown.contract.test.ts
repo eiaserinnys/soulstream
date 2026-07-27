@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { markdownToPageBlocks, pageToMarkdown } from "../src/markdown.js";
+import {
+  isMarkdownRepresentableBlockType,
+  markdownToPageBlocks,
+  pageToMarkdown,
+} from "../src/markdown.js";
+import { PAGE_BLOCK_TYPES } from "../src/types.js";
 
 describe("page markdown contract", () => {
   it("renders hierarchy, checklist state, and optional block IDs", () => {
@@ -60,6 +65,30 @@ describe("page markdown contract", () => {
       }),
       expect.objectContaining({ id: "generated-2", parent_id: null, text: "후속" }),
     ]);
+  });
+
+  it("defines the markdown-representable block types in one canonical predicate", () => {
+    expect(PAGE_BLOCK_TYPES.filter(isMarkdownRepresentableBlockType))
+      .toEqual(["paragraph", "checklist"]);
+    expect(isMarkdownRepresentableBlockType("runbook_ref")).toBe(false);
+  });
+
+  it("omits structural blocks while retaining their markdown children", () => {
+    const markdown = pageToMarkdown(
+      { title: "계획" },
+      [
+        block("task", null, "a", "task_ref", "", { taskId: "task-1", primary: true }),
+        block("body", "task", "a", "paragraph", "본문"),
+      ],
+      { includeBlockIds: true },
+    );
+
+    expect(markdown).toBe([
+      "# 계획",
+      "",
+      "<!-- block:body -->",
+      "본문",
+    ].join("\n"));
   });
 });
 
