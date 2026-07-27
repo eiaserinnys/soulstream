@@ -2,6 +2,11 @@ export const DEFAULT_NODE_COMMAND_TIMEOUT_MS = 30_000;
 
 export type NodeCommandClock = () => number;
 
+export type NodeCommandScheduler = {
+  set: (callback: () => void, delayMs: number) => unknown;
+  clear: (handle: unknown) => void;
+};
+
 export type NodeCommandRequestIdContext = {
   readonly sequence: number;
   readonly commandType: string;
@@ -106,6 +111,7 @@ export type PendingNodeCommandsOptions = {
   defaultTimeoutMs?: number;
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
+  scheduler?: NodeCommandScheduler;
 };
 
 type Deferred<TValue> = {
@@ -117,6 +123,7 @@ type Deferred<TValue> = {
 type MutablePendingEntry = PendingNodeCommandEntry & {
   resolve: (response: NodeCommandResponse) => void;
   reject: (reason: unknown) => void;
+  timerHandle: unknown;
 };
 
 export class PendingNodeCommandRejectedError extends Error {
@@ -170,6 +177,7 @@ export class PendingNodeCommands {
 
   private readonly nowMs: NodeCommandClock;
   private readonly requestIdGenerator: NodeCommandRequestIdGenerator;
+  private readonly scheduler: NodeCommandScheduler;
   private readonly pending = new Map<string, MutablePendingEntry>();
   private requestSequence = 0;
 
@@ -186,6 +194,7 @@ export class PendingNodeCommands {
     this.nowMs = options.nowMs ?? Date.now;
     this.requestIdGenerator =
       options.requestIdGenerator ?? defaultNodeCommandRequestIdGenerator;
+    this.scheduler = options.scheduler ?? defaultNodeCommandScheduler;
   }
 
   get pendingCount(): number {
@@ -230,7 +239,7 @@ export class PendingNodeCommands {
     const expiresAtMs = createdAtMs + timeoutMs;
     const deferred = createDeferred<NodeCommandResponse>();
 
-    this.pending.set(requestId, {
+    const entry: MutablePendingEntry = {
       requestId,
       commandType: payload.type,
       createdAtMs,
@@ -238,7 +247,12 @@ export class PendingNodeCommands {
       timeoutMs,
       resolve: deferred.resolve,
       reject: deferred.reject,
-    });
+      timerHandle: undefined,
+    };
+    this.pending.set(requestId, entry);
+    entry.timerHandle = this.scheduler.set(() => {
+      this.timeout(requestId);
+    }, timeoutMs);
 
     return {
       fireAndForget: false,
@@ -267,10 +281,9 @@ export class PendingNodeCommands {
   }
 
   resolve(requestId: string, response: NodeCommandResponse): boolean {
-    const entry = this.pending.get(requestId);
+    const entry = this.take(requestId);
     if (entry === undefined) return false;
 
-    this.pending.delete(requestId);
     entry.resolve(response);
     return true;
   }
@@ -280,10 +293,9 @@ export class PendingNodeCommands {
     message: string,
     response?: NodeCommandResponse,
   ): boolean {
-    const entry = this.pending.get(requestId);
+    const entry = this.take(requestId);
     if (entry === undefined) return false;
 
-    this.pending.delete(requestId);
     entry.reject(
       new PendingNodeCommandRejectedError({
         commandType: entry.commandType,
@@ -350,12 +362,13 @@ export class PendingNodeCommands {
     for (const entry of this.pending.values()) {
       if (nowMs < entry.expiresAtMs) continue;
 
-      this.pending.delete(entry.requestId);
-      entry.reject(
+      const expiredEntry = this.take(entry.requestId);
+      if (expiredEntry === undefined) continue;
+      expiredEntry.reject(
         new PendingNodeCommandTimeoutError({
-          commandType: entry.commandType,
-          requestId: entry.requestId,
-          timeoutMs: entry.timeoutMs,
+          commandType: expiredEntry.commandType,
+          requestId: expiredEntry.requestId,
+          timeoutMs: expiredEntry.timeoutMs,
         }),
       );
       expired.push({
@@ -368,6 +381,27 @@ export class PendingNodeCommands {
     }
 
     return expired;
+  }
+
+  private timeout(requestId: string): void {
+    const entry = this.pending.get(requestId);
+    if (entry === undefined) return;
+    this.pending.delete(requestId);
+    entry.reject(
+      new PendingNodeCommandTimeoutError({
+        commandType: entry.commandType,
+        requestId: entry.requestId,
+        timeoutMs: entry.timeoutMs,
+      }),
+    );
+  }
+
+  private take(requestId: string): MutablePendingEntry | undefined {
+    const entry = this.pending.get(requestId);
+    if (entry === undefined) return undefined;
+    this.pending.delete(requestId);
+    this.scheduler.clear(entry.timerHandle);
+    return entry;
   }
 
   private nextRequestId(commandType: string, nowMs: number): string {
@@ -387,6 +421,15 @@ export class PendingNodeCommands {
     return requestId;
   }
 }
+
+const defaultNodeCommandScheduler: NodeCommandScheduler = {
+  set: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs);
+    handle.unref();
+    return handle;
+  },
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
 
 function createDeferred<TValue>(): Deferred<TValue> {
   let resolve!: (value: TValue) => void;

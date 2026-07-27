@@ -1,5 +1,68 @@
 import type { NodeCommandResponse } from "./pending_commands.js";
 
+export const TERMINAL_SESSION_CACHE_TTL_MS = 10 * 60_000;
+export const DISCONNECTED_SESSION_CACHE_TTL_MS = 24 * 60 * 60_000;
+
+const TERMINAL_SESSION_STATUSES = new Set(["completed", "error"]);
+const SESSION_CACHE_PAYLOAD_KEYS = [
+  "session_id",
+  "agent_session_id",
+  "agentSessionId",
+  "sessionId",
+  "status",
+  "prompt",
+  "created_at",
+  "createdAt",
+  "updated_at",
+  "updatedAt",
+  "session_type",
+  "sessionType",
+  "last_message",
+  "lastMessage",
+  "client_id",
+  "clientId",
+  "metadata",
+  "display_name",
+  "displayName",
+  "node_id",
+  "nodeId",
+  "folder_id",
+  "folderId",
+  "last_event_id",
+  "lastEventId",
+  "last_read_event_id",
+  "lastReadEventId",
+  "caller_session_id",
+  "callerSessionId",
+  "predecessor_session_id",
+  "predecessorSessionId",
+  "agent_id",
+  "agentId",
+  "agent_name",
+  "agentName",
+  "agent_portrait_url",
+  "agentPortraitUrl",
+  "backend",
+  "user_name",
+  "userName",
+  "user_portrait_url",
+  "userPortraitUrl",
+  "review_required",
+  "reviewRequired",
+  "review_state",
+  "reviewState",
+  "binding_warnings",
+  "bindingWarnings",
+  "caller_source",
+  "callerSource",
+  "session_name",
+  "sessionName",
+  "last_assistant_text",
+  "lastAssistantText",
+  "last_progress_text",
+  "lastProgressText",
+] as const;
+
 export type CachedNodeSession = {
   nodeId: string;
   connectionId: string;
@@ -17,6 +80,13 @@ export class PerNodeSessionCache {
 
   getSessionsForNode(nodeId: string): CachedNodeSession[] {
     return [...(this.sessionsByNode.get(nodeId)?.values() ?? [])].map(copySession);
+  }
+
+  getStats(): { nodes: number; sessions: number } {
+    return {
+      nodes: this.sessionsByNode.size,
+      sessions: this.nodeBySession.size,
+    };
   }
 
   listSessions(): CachedNodeSession[] {
@@ -55,7 +125,7 @@ export class PerNodeSessionCache {
       status: sessionStatusFromPayload(params.response) ?? "created",
       lastEventId: lastEventIdFromPayload(params.response),
       fresh: true,
-      payload: { ...params.response },
+      payload: projectSessionPayload(params.response),
       updatedAtMs: params.nowMs,
     });
   }
@@ -79,7 +149,7 @@ export class PerNodeSessionCache {
         lastEventIdFromEventRelay(params.message) ?? previous?.lastEventId,
       fresh: true,
       payload: {
-        ...(previous?.payload ?? {}),
+        ...projectSessionPayload(previous?.payload),
         last_event_id:
           lastEventIdFromEventRelay(params.message) ?? previous?.lastEventId,
       },
@@ -105,13 +175,13 @@ export class PerNodeSessionCache {
       status,
       lastEventId: lastEventIdFromPayload(params.message),
       fresh: true,
-      payload: {
+      payload: projectSessionPayload({
         ...session,
         ...selectedSessionCreateFields(params.message),
         agentSessionId,
         status,
         nodeId: params.nodeId,
-      },
+      }),
       updatedAtMs: params.nowMs,
     });
   }
@@ -133,10 +203,7 @@ export class PerNodeSessionCache {
       status: sessionStatusFromPayload(params.message) ?? previous?.status,
       lastEventId: lastEventIdFromPayload(params.message) ?? previous?.lastEventId,
       fresh: true,
-      payload: {
-        ...(previous?.payload ?? {}),
-        ...params.message,
-      },
+      payload: projectSessionPayload(previous?.payload, params.message),
       updatedAtMs: params.nowMs,
     });
   }
@@ -177,7 +244,7 @@ export class PerNodeSessionCache {
           status: sessionStatusFromPayload(rawSession),
           lastEventId: lastEventIdFromPayload(rawSession),
           fresh: true,
-          payload: { ...rawSession },
+          payload: projectSessionPayload(rawSession),
           updatedAtMs: params.nowMs,
         }),
       );
@@ -197,6 +264,37 @@ export class PerNodeSessionCache {
         updatedAtMs: nowMs,
       });
     }
+  }
+
+  sweepExpired(nowMs = Date.now()): {
+    terminalSessions: number;
+    disconnectedSessions: number;
+    total: number;
+  } {
+    let terminalSessions = 0;
+    let disconnectedSessions = 0;
+    for (const session of this.listSessions()) {
+      const ageMs = nowMs - session.updatedAtMs;
+      if (
+        TERMINAL_SESSION_STATUSES.has(session.status ?? "") &&
+        ageMs >= TERMINAL_SESSION_CACHE_TTL_MS
+      ) {
+        if (this.deleteSession(session.agentSessionId) !== undefined) {
+          terminalSessions += 1;
+        }
+        continue;
+      }
+      if (!session.fresh && ageMs >= DISCONNECTED_SESSION_CACHE_TTL_MS) {
+        if (this.deleteSession(session.agentSessionId) !== undefined) {
+          disconnectedSessions += 1;
+        }
+      }
+    }
+    return {
+      terminalSessions,
+      disconnectedSessions,
+      total: terminalSessions + disconnectedSessions,
+    };
   }
 
   private storeSession(session: CachedNodeSession): CachedNodeSession {
@@ -312,4 +410,20 @@ function selectedSessionCreateFields(
     if (key in payload) selected[key] = payload[key];
   }
   return selected;
+}
+
+function projectSessionPayload(
+  ...sources: Array<Record<string, unknown> | undefined>
+): Record<string, unknown> {
+  const projected: Record<string, unknown> = {};
+  for (const source of sources) {
+    if (source === undefined) continue;
+    const nested = nestedSession(source);
+    for (const candidate of [nested, source]) {
+      for (const key of SESSION_CACHE_PAYLOAD_KEYS) {
+        if (key in candidate) projected[key] = candidate[key];
+      }
+    }
+  }
+  return projected;
 }

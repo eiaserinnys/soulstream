@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   PendingNodeCommands,
   loadContractFixtures,
+  type NodeCommandScheduler,
   type RespondNodeCommandPayload,
   type SubscribeEventsNodeCommandPayload,
 } from "../src/index.js";
@@ -119,6 +120,61 @@ describe("Pending node command primitive", () => {
     expect(pending.pendingCount).toBe(0);
   });
 
+  it("rejects an unresponsive command when its entry timer expires", async () => {
+    const scheduler = createFakeScheduler();
+    const pending = new PendingNodeCommands({
+      nowMs: () => 1_000,
+      requestIdGenerator: ({ sequence }) => `req-${sequence}`,
+      scheduler,
+    });
+    const command = pending.createCommand(respondCommandPayload(), {
+      timeoutMs: 250,
+    });
+
+    expect(scheduler.activeCount()).toBe(1);
+    scheduler.runAll();
+
+    await expect(command.result).rejects.toBeInstanceOf(
+      PendingNodeCommandTimeoutError,
+    );
+    expect(pending.pendingCount).toBe(0);
+    expect(
+      pending.settleFromResponse({
+        ...fixture.inbound.commandAck,
+        requestId: command.requestId,
+      }),
+    ).toEqual({
+      status: "ignored",
+      reason: "unknown_request_id",
+      requestId: command.requestId,
+    });
+  });
+
+  it("clears entry timers when commands settle or rejectAll drains the map", async () => {
+    const scheduler = createFakeScheduler();
+    const pending = new PendingNodeCommands({ scheduler });
+    const resolved = pending.createCommand(respondCommandPayload());
+    const rejected = pending.createCommand(respondCommandPayload());
+
+    pending.resolve(resolved.requestId, {
+      type: "respond_ack",
+      requestId: resolved.requestId,
+    });
+    await expect(resolved.result).resolves.toMatchObject({
+      requestId: resolved.requestId,
+    });
+    expect(scheduler.clear).toHaveBeenCalledTimes(1);
+    expect(scheduler.activeCount()).toBe(1);
+
+    pending.rejectAll("node disconnected");
+    await expect(rejected.result).rejects.toBeInstanceOf(
+      PendingNodeCommandRejectedError,
+    );
+    expect(scheduler.clear).toHaveBeenCalledTimes(2);
+    expect(scheduler.activeCount()).toBe(0);
+    expect(pending.pendingCount).toBe(0);
+  });
+
   it("models subscribe_events as fire-and-forget and creates no pending entry", () => {
     const pending = createPendingCommands();
     const subscribeEvents = fixture.outbound.subscribeEvents;
@@ -174,3 +230,29 @@ describe("Pending node command primitive", () => {
     );
   });
 });
+
+function createFakeScheduler(): NodeCommandScheduler & {
+  readonly clear: ReturnType<typeof vi.fn>;
+  activeCount: () => number;
+  runAll: () => void;
+} {
+  const active = new Set<{ callback: () => void }>();
+  const scheduler = {
+    set(callback: () => void) {
+      const handle = { callback };
+      active.add(handle);
+      return handle;
+    },
+    clear: vi.fn((handle: unknown) => {
+      active.delete(handle as { callback: () => void });
+    }),
+    activeCount: () => active.size,
+    runAll() {
+      for (const handle of [...active]) {
+        active.delete(handle);
+        handle.callback();
+      }
+    },
+  };
+  return scheduler;
+}

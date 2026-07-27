@@ -248,6 +248,24 @@ export class InMemoryNodeRegistry {
     return { ...(this.nodes.get(nodeId)?.userInfo ?? {}) };
   }
 
+  getStats(): {
+    nodes: number;
+    connectedNodes: number;
+    pendingCommands: number;
+  } {
+    let connectedNodes = 0;
+    let pendingCommands = 0;
+    for (const node of this.nodes.values()) {
+      if (node.connected) connectedNodes += 1;
+      pendingCommands += node.pendingCommands.pendingCount;
+    }
+    return {
+      nodes: this.nodes.size,
+      connectedNodes,
+      pendingCommands,
+    };
+  }
+
   createCommand<
     TPayload extends RequestResponseNodeCommandPayload,
     TResponse extends NodeCommandResponse = NodeCommandResponse,

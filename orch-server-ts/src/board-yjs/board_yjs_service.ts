@@ -102,6 +102,10 @@ export class BoardYjsService {
     this.hocuspocus.closeConnections();
   }
 
+  getStats(): { activeDocuments: number } {
+    return { activeDocuments: this.hocuspocus?.getDocumentsCount() ?? 0 };
+  }
+
   async createMarkdownDocument(input: {
     folderId: string;
     container?: BoardYjsContainerRef;

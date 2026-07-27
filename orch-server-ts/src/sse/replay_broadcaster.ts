@@ -110,6 +110,28 @@ export class InMemorySseReplayBroadcaster<
     return [...this.ring];
   }
 
+  getStats(): { bufferedEvents: number; listeners: number } {
+    return {
+      bufferedEvents: this.ring.length,
+      listeners: this.listeners.size,
+    };
+  }
+
+  getTypeCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const event of this.ring) {
+      const type = typeof (event.payload as { type?: unknown }).type === "string"
+        ? String((event.payload as { type: string }).type)
+        : "unknown";
+      counts[type] = (counts[type] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  approxBytes(): number {
+    return Buffer.byteLength(JSON.stringify(this.ring));
+  }
+
   subscribe(listener: SseEventListener<TPayload>): () => void {
     this.listeners.add(listener);
     return () => {

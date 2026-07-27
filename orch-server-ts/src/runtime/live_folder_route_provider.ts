@@ -11,8 +11,10 @@ import {
 import type { PublicStatusFolderCountsProvider } from "../public/public_status_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 
-export type LiveFolderProvider = FolderRouteProvider
-  & Pick<PublicStatusFolderCountsProvider, "getFolderCounts" | "listFolders">;
+export type LiveFolderProvider = FolderRouteProvider &
+  Pick<PublicStatusFolderCountsProvider, "getFolderCounts" | "listFolders"> & {
+    findSessionFolderId: (sessionId: string) => Promise<string | null | undefined>;
+  };
 
 export function createLiveFolderProvider(
   sqlResolver: LiveDbSqlResolver,
@@ -31,6 +33,16 @@ export function createLiveFolderProvider(
         SELECT session_id, folder_id, display_name FROM sessions
       `;
       return Object.fromEntries(rows.flatMap(sessionAssignmentEntry));
+    },
+    async findSessionFolderId(sessionId) {
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT folder_id FROM sessions
+        WHERE session_id = ${sessionId}
+        LIMIT 1
+      `;
+      if (rows.length === 0) return undefined;
+      return stringOrNull(rows[0]?.folder_id ?? rows[0]?.folderId);
     },
     async createFolder(name, sortOrder, options) {
       const folderId = randomUUID();

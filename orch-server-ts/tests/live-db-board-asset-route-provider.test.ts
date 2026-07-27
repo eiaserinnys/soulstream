@@ -336,6 +336,7 @@ function createProvider(
     folderProvider: {
       listFolders: async () => [serializeFolderRow(folderRow())],
       listSessionAssignments: async () => ({}),
+      findSessionFolderId: async () => undefined,
       createFolder: async () => ({}),
       updateFolder: async () => undefined,
       deleteFolder: async () => undefined,

@@ -19,6 +19,7 @@ describe("live board asset mutation broadcaster", () => {
       listSessionAssignments: vi.fn(async () => ({
         "sess-1": { folderId: "folder-a" },
       })),
+      findSessionFolderId: vi.fn(async () => "folder-a"),
       createFolder: vi.fn(),
       updateFolder: vi.fn(),
       deleteFolder: vi.fn(),
