@@ -170,6 +170,7 @@ async function emitCatalogUpdated(page: Page) {
           { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null, projectPageId: "project-ops" },
         ],
         sessions_delta: {},
+        board_items_delta: {},
       }),
     }));
   });

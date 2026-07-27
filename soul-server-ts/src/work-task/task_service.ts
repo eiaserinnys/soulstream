@@ -2,7 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import type { TaskItemStatus, TaskSnapshot, TaskStatus } from "../db/session_db_types.js";
+import type {
+  CatalogBoardItemRow,
+  TaskItemStatus,
+  TaskSnapshot,
+  TaskStatus,
+} from "../db/session_db_types.js";
+import {
+  boardItemsDelta,
+  serializeCatalogFolders,
+} from "../catalog/catalog_delta.js";
 
 import { assigneeToFields, type TaskAssigneeInput } from "./task_models.js";
 import { TaskMutationCore } from "./task_mutation_core.js";
@@ -85,7 +94,7 @@ export class TaskService {
     const y = params.y ?? 0;
     const idempotent = await resolveTaskIdempotent(this.repo, params.idempotencyKey);
     if (idempotent) return idempotent;
-    await upsertTaskBoardItem(this.boardYjsService, {
+    const boardItem = await upsertTaskBoardItem(this.boardYjsService, {
       folderId: params.folderId,
       boardItemId,
       taskId,
@@ -110,13 +119,13 @@ export class TaskService {
       }).catch(() => undefined);
       throw err;
     }
-    const creatorEnrolled = params.enrollCreator === false || params.actorSessionId === null
-      ? false
-      : (await enrollTaskCreatorSession({
-          mover: this.creatorBoardItemMover, logger: this.logger,
-          actorSessionId: params.actorSessionId, taskId,
-        })) ?? false;
-    if (!creatorEnrolled) await this.broadcastCatalog();
+    if (params.enrollCreator !== false && params.actorSessionId !== null) {
+      await enrollTaskCreatorSession({
+        mover: this.creatorBoardItemMover, logger: this.logger,
+        actorSessionId: params.actorSessionId, taskId,
+      });
+    }
+    await this.broadcastCatalog([boardItem]);
     return result;
   }
 
@@ -148,8 +157,9 @@ export class TaskService {
         );
       },
     });
+    let boardItem: CatalogBoardItemRow | undefined;
     if (params.title !== undefined) {
-      await updateTaskBoardItemTitle(
+      boardItem = await updateTaskBoardItemTitle(
         this.repo,
         this.boardYjsService,
         params.taskId,
@@ -157,7 +167,7 @@ export class TaskService {
       );
     }
     if (params.title !== undefined || params.archived !== undefined) {
-      await this.broadcastCatalog();
+      await this.broadcastCatalog(boardItem ? [boardItem] : []);
     }
     return result;
   }
@@ -172,9 +182,15 @@ export class TaskService {
     return await this.core.setTaskStatus(params);
   }
 
-  private async broadcastCatalog(): Promise<void> {
+  private async broadcastCatalog(
+    changedBoardItems: readonly CatalogBoardItemRow[] = [],
+  ): Promise<void> {
     if (!this.broadcaster?.emitCatalogUpdated) return;
-    await this.broadcaster.emitCatalogUpdated(await this.db.getCatalog());
+    await this.broadcaster.emitCatalogUpdated(
+      serializeCatalogFolders(await this.db.getAllFolders()),
+      {},
+      boardItemsDelta(changedBoardItems),
+    );
   }
 
   async createSection(params: TaskActorParams & {

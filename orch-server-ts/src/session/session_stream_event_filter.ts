@@ -3,6 +3,7 @@ import type { FastifyRequest } from "fastify";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
+  visibleBoardFolderIds,
   type BoardAccess,
   type BoardAccessFolderRecord,
 } from "../board/board_access.js";
@@ -59,6 +60,40 @@ async function filterCatalogUpdatedEvent(
   feedOnly: boolean,
   repository: SessionResourceAccessRepository,
 ): Promise<SessionStreamEvent> {
+  if (
+    Array.isArray(event.folders)
+    && isRecord(event.sessions_delta)
+    && isRecord(event.board_items_delta)
+  ) {
+    const folders = event.folders;
+    const folderRecords = folderAccessRecords(folders);
+    const visibleFolderIds = access.restricted
+      ? visibleBoardFolderIds(access, folderRecords)
+      : undefined;
+    const feedExcludedFolderIds = feedOnly
+      ? excludedFromFeedFolderIds(folderRecords)
+      : undefined;
+    const scopedFolders = visibleFolderIds
+      ? filterFoldersByVisibleIds(folders, visibleFolderIds)
+      : folders;
+    return {
+      ...event,
+      folders: scopedFolders,
+      sessions_delta: filterCatalogDeltaEntries(
+        event.sessions_delta,
+        (value) => assignmentFolderId(value),
+        visibleFolderIds,
+        feedExcludedFolderIds,
+      ),
+      board_items_delta: filterCatalogDeltaEntries(
+        event.board_items_delta,
+        (value) => assignmentFolderId(value),
+        visibleFolderIds,
+        feedExcludedFolderIds,
+      ),
+    };
+  }
+
   const catalog = isRecord(event.catalog) ? event.catalog : {};
   const catalogFolders = Array.isArray(catalog.folders)
     ? catalog.folders
@@ -82,6 +117,46 @@ async function filterCatalogUpdatedEvent(
       sessions: scopedSessions,
     },
   };
+}
+
+function filterCatalogDeltaEntries(
+  delta: Record<string, unknown>,
+  resolveFolderId: (value: unknown) => string | null,
+  visibleFolderIds: ReadonlySet<string> | undefined,
+  feedExcludedFolderIds: ReadonlySet<string> | undefined,
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(delta).map(([id, value]) => {
+    if (value === null) return [id, null];
+    const folderId = resolveFolderId(value);
+    if (
+      (visibleFolderIds !== undefined
+        && (folderId === null || !visibleFolderIds.has(folderId)))
+      || (folderId !== null && feedExcludedFolderIds?.has(folderId) === true)
+    ) {
+      return [id, null];
+    }
+    return [id, value];
+  }));
+}
+
+function filterFoldersByVisibleIds<T>(
+  folders: readonly T[],
+  visibleFolderIds: ReadonlySet<string>,
+): T[] {
+  return folders.filter((folder) => {
+    const id = folderId(folder);
+    return id !== null && visibleFolderIds.has(id);
+  });
+}
+
+function excludedFromFeedFolderIds(
+  folders: readonly BoardAccessFolderRecord[],
+): Set<string> {
+  return new Set(folders.flatMap((folder) =>
+    isRecord(folder.settings) && folder.settings.excludeFromFeed === true
+      ? [folder.id]
+      : []
+  ));
 }
 
 async function filterSessionUpsertEvent(

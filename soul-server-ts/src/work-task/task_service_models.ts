@@ -1,4 +1,9 @@
-import type { AppendEventParams } from "../db/session_db.js";
+import type { AppendEventParams, FolderRow } from "../db/session_db.js";
+import type {
+  CatalogBoardItemsDelta,
+  CatalogFolderRecord,
+  CatalogSessionsDelta,
+} from "../catalog/catalog_delta.js";
 import type { RepositorySql } from "../db/repositories/repository_helpers.js";
 import type {
   TaskItemStatus,
@@ -12,7 +17,7 @@ import type { TaskRepository } from "./task_repository.js";
 export interface TaskDbPort {
   tasks(): TaskRepository;
   appendEventTx(sql: RepositorySql, params: AppendEventParams): Promise<number>;
-  getCatalog(): Promise<unknown>;
+  getAllFolders(): Promise<FolderRow[]>;
 }
 
 export interface TaskBroadcasterPort {
@@ -21,7 +26,11 @@ export interface TaskBroadcasterPort {
     taskId: string,
     boardItemId: string,
   ): Promise<void>;
-  emitCatalogUpdated?(catalog: unknown): Promise<void>;
+  emitCatalogUpdated?(
+    folders: readonly CatalogFolderRecord[],
+    sessionsDelta: CatalogSessionsDelta,
+    boardItemsDelta: CatalogBoardItemsDelta,
+  ): Promise<void>;
 }
 
 export interface TaskMutationResult {

@@ -191,6 +191,16 @@ export class BoardRepository {
     return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
   }
 
+  async getBoardItemIdsForSession(sessionId: string): Promise<string[]> {
+    const rows = await this.sql<Array<{ id: string }>>`
+      SELECT id
+      FROM board_items
+      WHERE item_type = 'session' AND item_id = ${sessionId}
+      ORDER BY id
+    `;
+    return rows.map((row) => row.id);
+  }
+
   async listContainerItems(
     params: ListContainerItemsParams,
   ): Promise<ListContainerItemsResult> {

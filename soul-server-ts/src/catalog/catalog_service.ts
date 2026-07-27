@@ -28,6 +28,13 @@ import {
   type CatalogBoardYjsPort,
 } from "./catalog_board_item_service.js";
 import {
+  boardItemsDelta,
+  serializeCatalogFolders,
+  sessionAssignmentFromRow,
+  type CatalogMutationDelta,
+  type CatalogSessionsDelta,
+} from "./catalog_delta.js";
+import {
   ContainerBrowseService,
   type ContainerBrowseResult,
   type ContainerSessionItem,
@@ -109,25 +116,13 @@ export class CatalogService {
     this.boardItems = new CatalogBoardItemService(
       db,
       boardYjsService,
-      () => this.broadcastCatalog(),
+      (delta) => this.broadcastCatalog(delta),
     );
     this.containerBrowser = new ContainerBrowseService(createContainerBrowseStore(db));
   }
 
   async listFolders(): Promise<CatalogFolderDto[]> {
-    const folders = await this.db.getAllFolders();
-    return folders.map((f) => {
-      const createdAt = f.created_at instanceof Date ? f.created_at.toISOString() : f.created_at;
-      return {
-        id: f.id,
-        name: f.name,
-        sortOrder: f.sort_order,
-        settings: f.settings ?? {},
-        parentFolderId: f.parent_folder_id,
-        projectPageId: f.project_page_id ?? null,
-        ...(createdAt ? { createdAt } : {}),
-      };
-    });
+    return serializeCatalogFolders(await this.db.getAllFolders());
   }
 
   async listChildFolders(folderId: string | null): Promise<CatalogFolderDto[]> {
@@ -239,8 +234,18 @@ export class CatalogService {
       });
       return;
     }
-    await this.db.deleteFolderById(folderId);
-    await this.broadcastCatalog();
+    const { affectedSessions, deletedBoardItemIds } =
+      await this.db.deleteFolderWithCatalogDelta(folderId);
+    await this.broadcastCatalog({
+      sessionsDelta: Object.fromEntries(affectedSessions.map((session) => [
+        session.session_id,
+        {
+          folderId: null,
+          displayName: session.display_name,
+        },
+      ])),
+      deletedBoardItemIds,
+    });
   }
 
   /**
@@ -256,7 +261,10 @@ export class CatalogService {
       await this.db.assignSessionToFolder(sessionId, folderId);
     }
     await this.db.ensureBoardItems();
-    await this.broadcastCatalog();
+    const movedBoardItems = (await Promise.all(
+      sessionIds.map((sessionId) => this.db.getPrimarySessionBoardItem(sessionId)),
+    )).filter((item): item is CatalogBoardItemRow => item !== null);
+    await this.broadcastCatalog({ sessionIds, boardItems: movedBoardItems });
   }
 
   /**
@@ -272,7 +280,7 @@ export class CatalogService {
     displayName: string | null,
   ): Promise<void> {
     await this.db.renameSession(sessionId, displayName);
-    await this.broadcastCatalog();
+    await this.broadcastCatalog({ sessionIds: [sessionId] });
   }
 
   /**
@@ -286,8 +294,12 @@ export class CatalogService {
    *   - session_deleted → 세션 목록 행 즉시 제거
    */
   async deleteSession(sessionId: string): Promise<void> {
+    const deletedBoardItemIds = await this.db.getBoardItemIdsForSession(sessionId);
     await this.db.deleteSession(sessionId);
-    await this.broadcastCatalog();
+    await this.broadcastCatalog({
+      sessionsDelta: { [sessionId]: null },
+      deletedBoardItemIds,
+    });
     await this.broadcaster.emitSessionDeleted(sessionId);
   }
 
@@ -348,13 +360,24 @@ export class CatalogService {
     await this.broadcastCatalog();
   }
 
-  /**
-   * 카탈로그 wire 발사 — Python `catalog_service._broadcast_catalog` L39-47 정합.
-   * 폴더 트리·세션 매핑을 한 번에 broadcast하여 대시보드가 일관된 스냅샷으로 갱신.
-   */
-  async broadcastCatalog(): Promise<void> {
-    const catalog = await this.db.getCatalog();
-    await this.broadcaster.emitCatalogUpdated(catalog);
+  /** 폴더 전체와 변경된 세션·보드 항목만 발행한다. */
+  async broadcastCatalog(delta: CatalogMutationDelta = {}): Promise<void> {
+    const sessionsDelta: CatalogSessionsDelta = {
+      ...(delta.sessionsDelta ?? {}),
+    };
+    const sessionIds = (delta.sessionIds ?? []).filter(
+      (sessionId) => !Object.prototype.hasOwnProperty.call(sessionsDelta, sessionId),
+    );
+    if (sessionIds.length > 0) {
+      for (const session of await this.db.getSessionAssignmentsByIds(sessionIds)) {
+        sessionsDelta[session.session_id] = sessionAssignmentFromRow(session);
+      }
+    }
+    await this.broadcaster.emitCatalogUpdated(
+      serializeCatalogFolders(await this.db.getAllFolders()),
+      sessionsDelta,
+      boardItemsDelta(delta.boardItems, delta.deletedBoardItemIds),
+    );
   }
 
   async updateBoardItemPosition(

@@ -12,7 +12,11 @@ import { SessionPageBindingRepository } from "../page/session_page_binding_repos
 import { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
-import { CatalogRepository } from "./repositories/catalog_repository.js";
+import {
+  CatalogRepository,
+  type CatalogSessionAssignmentRow,
+  type FolderDeletionCatalogDeltaRows,
+} from "./repositories/catalog_repository.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
 import { CustomViewRepository } from "./repositories/custom_view_repository.js";
@@ -218,6 +222,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return await this.boardRepository.getBoardItemById(boardItemId);
   }
 
+  async getBoardItemIdsForSession(sessionId: string): Promise<string[]> {
+    return await this.boardRepository.getBoardItemIdsForSession(sessionId);
+  }
+
   async getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null> {
     return await this.boardRepository.getPrimarySessionBoardItem(sessionId);
   }
@@ -359,6 +367,12 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return await this.catalogRepository.getAllFolders();
   }
 
+  async getSessionAssignmentsByIds(
+    sessionIds: readonly string[],
+  ): Promise<CatalogSessionAssignmentRow[]> {
+    return await this.catalogRepository.getSessionAssignmentsByIds(sessionIds);
+  }
+
   async countEvents(sessionId: string): Promise<number> {
     return await this.eventRepository.countEvents(sessionId);
   }
@@ -422,8 +436,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
     await this.catalogRepository.updateFolder(folderId, columns, values);
   }
 
-  async deleteFolderById(folderId: string): Promise<void> {
-    await this.catalogRepository.deleteFolderById(folderId);
+  async deleteFolderWithCatalogDelta(
+    folderId: string,
+  ): Promise<FolderDeletionCatalogDeltaRows> {
+    return await this.catalogRepository.deleteFolderWithCatalogDelta(folderId);
   }
 
   async searchEvents(

@@ -28,7 +28,15 @@ function makeHarness(options: {
       settings: {},
       parent_folder_id: null,
     });
-  const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
+  const getAllFolders = vi.fn().mockResolvedValue([]);
+  const getSession = vi.fn(async (sessionId: string) => ({
+    session_id: sessionId,
+    folder_id:
+      (assignSessionToFolder.mock.calls.at(-1)?.[1] as string | null | undefined)
+        ?? null,
+    display_name: null,
+  }));
+  const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
   const resolveBoardYjsContainerScope = vi.fn().mockResolvedValue({
     folderId: "root",
     containerKind: "task",
@@ -43,7 +51,9 @@ function makeHarness(options: {
     appendMetadata,
     assignSessionToFolder,
     getFolderById,
-    getCatalog,
+    getAllFolders,
+    getSession,
+    getPrimarySessionBoardItem,
     resolveBoardYjsContainerScope,
     loadBoardYjsSeed,
   } as unknown as SessionDB;
@@ -93,7 +103,9 @@ function makeHarness(options: {
     appendMetadata,
     assignSessionToFolder,
     getFolderById,
-    getCatalog,
+    getAllFolders,
+    getSession,
+    getPrimarySessionBoardItem,
     resolveBoardYjsContainerScope,
     loadBoardYjsSeed,
     upsertSessionBoardItem,
@@ -288,7 +300,11 @@ describe("TaskCreation", () => {
     });
     expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-42");
     expect(h.getFolderById).not.toHaveBeenCalled();
-    expect(h.emitCatalogUpdated).toHaveBeenCalledWith({ folders: [], sessions: {} });
+    expect(h.emitCatalogUpdated).toHaveBeenCalledWith(
+      [],
+      { "sess-1": { folderId: "folder-42", displayName: null } },
+      {},
+    );
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-42");
 
     expect(h.appendMetadata.mock.invocationCallOrder[0]).toBeLessThan(
@@ -440,7 +456,7 @@ describe("TaskCreation", () => {
       y: 160,
     });
     expect(h.upsertSessionBoardItem.mock.invocationCallOrder[0]).toBeLessThan(
-      h.getCatalog.mock.invocationCallOrder[0],
+      h.getAllFolders.mock.invocationCallOrder[0],
     );
     expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
       h.emitSessionCreated.mock.invocationCallOrder[0],

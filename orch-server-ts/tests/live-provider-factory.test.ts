@@ -212,10 +212,9 @@ describe("live provider factory boundary", () => {
     await bundle.adminUsersRoutes.provider.broadcastAccessChange();
     expect(runtimeServices.sessionBroadcaster.bufferedEvents.at(-1)?.payload).toEqual({
       type: "catalog_updated",
-      catalog: {
-        folders: [{ id: "folder-a", name: "Folder A" }],
-        sessions: { "session-a": { folderId: "folder-a" } },
-      },
+      folders: [{ id: "folder-a", name: "Folder A" }],
+      sessions_delta: {},
+      board_items_delta: {},
     });
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.attachmentRoutes.accessProvider.resolveAccess).toBe(
@@ -245,10 +244,11 @@ describe("live provider factory boundary", () => {
     ).toHaveBeenCalledWith("session-a", "Renamed", undefined);
     expect(runtimeServices.sessionBroadcaster.bufferedEvents.at(-1)?.payload).toEqual({
       type: "catalog_updated",
-      catalog: {
-        folders: [{ id: "folder-a", name: "Folder A" }],
-        sessions: { "session-a": { folderId: "folder-a" } },
+      folders: [{ id: "folder-a", name: "Folder A" }],
+      sessions_delta: {
+        "session-a": { folderId: "folder-a" },
       },
+      board_items_delta: {},
     });
     expect(bundle.sessionCatalogRoutes.accessProvider).toMatchObject({
       requireSessionAccess: expect.any(Function),
@@ -497,6 +497,16 @@ function createLiveDependencies(): LiveProviderDependencies {
         listSessionAssignments: vi.fn(async () => ({
           "session-a": { folderId: "folder-a" },
         })),
+        listSessionAssignmentsByIds: vi.fn(async (sessionIds: readonly string[]) =>
+          Object.fromEntries(sessionIds.map((sessionId) => [
+            sessionId,
+            { folderId: "folder-a" },
+          ]))),
+        deleteFolderWithCatalogDelta: vi.fn(async () => ({
+          sessionsDelta: {},
+          deletedBoardItemIds: [],
+        })),
+        listBoardItemIdsForSessionDeletion: vi.fn(async () => []),
       } as never,
       folderCountsProvider: {} as never,
       boardAssetRouteProvider: {

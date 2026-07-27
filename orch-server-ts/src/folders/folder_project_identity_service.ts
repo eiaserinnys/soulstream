@@ -160,7 +160,7 @@ export class FolderProjectIdentityService {
       pageApplication,
     });
     await this.config.hydratePage(result.pageId);
-    if (!result.idempotent) await this.config.onCommitted?.();
+    if (!result.idempotent) await this.config.onCommitted?.(result.catalogDelta);
     return toMutationResult(
       pageApplication.replica,
       pageApplication.tempIdMapping,
@@ -270,7 +270,7 @@ export class FolderProjectIdentityService {
   ): Promise<FolderProjectIdentityMutationResult> {
     await this.config.hydratePage(result.pageId);
     this.notifyPageUpdate(result);
-    if (!result.idempotent) await this.config.onCommitted?.();
+    if (!result.idempotent) await this.config.onCommitted?.(result.catalogDelta);
     return result;
   }
 

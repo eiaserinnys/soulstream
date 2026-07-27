@@ -52,7 +52,7 @@ function createBroadcasterMock() {
   };
 }
 
-/** SessionDB.getCatalog 결과를 broadcast로 흘릴 수 있도록 stub. */
+/** 변경 이벤트용 폴더 목록을 반환하는 stub. */
 function setupSqlWithCatalog() {
   return createMockSql((call) => {
     const text = call.fragments.join("|");
@@ -68,6 +68,28 @@ function setupSqlWithCatalog() {
       }];
     if (text.includes("catalog_get_sessions"))
       return [{ session_id: "s1", folder_id: "f1", display_name: "Hi" }];
+    if (text.includes("FROM sessions") && text.includes("session_id = ANY")) {
+      const sessionIds = call.values[0] as string[];
+      return sessionIds.map((sessionId) => ({
+        session_id: sessionId,
+        folder_id: "f1",
+        display_name: `Session ${sessionId}`,
+      }));
+    }
+    if (text.includes("UPDATE sessions") && text.includes("RETURNING"))
+      return [{ session_id: "s1", folder_id: null, display_name: "Hi" }];
+    if (text.includes("DELETE FROM board_items") && text.includes("RETURNING"))
+      return [{ id: "session:s1" }];
+    if (text.includes("FROM sessions") && text.includes("WHERE folder_id"))
+      return [{ session_id: "s1", folder_id: "f1", display_name: "Hi" }];
+    if (text.includes("FROM session_get"))
+      return [{
+        session_id: String(call.values[0]),
+        folder_id: "f1",
+        display_name: `Session ${String(call.values[0])}`,
+      }];
+    if (text.includes("SELECT id") && text.includes("FROM board_items"))
+      return [{ id: "session:s1" }];
     return [];
   });
 }
@@ -440,7 +462,7 @@ describe("CatalogService.renameFolder", () => {
 });
 
 describe("CatalogService.deleteFolder", () => {
-  it("folder_delete + broadcast", async () => {
+  it("broadcasts only rows returned by the atomic folder deletion", async () => {
     const { sql, calls } = setupSqlWithCatalog();
     const db = new SessionDB(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
@@ -448,12 +470,31 @@ describe("CatalogService.deleteFolder", () => {
 
     await svc.deleteFolder("f1");
 
-    const deleteCall = calls.find((c) =>
-      c.fragments.join("|").includes("folder_delete"),
+    const mutationCalls = calls.filter((call) => {
+      const text = call.fragments.join("|");
+      return text.includes("UPDATE sessions")
+        || text.includes("UPDATE folders")
+        || text.includes("DELETE FROM board_items");
+    });
+    expect(mutationCalls.map((call) =>
+      call.fragments.join(" ").replace(/\s+/g, " ").trim()
+    )).toEqual([
+      "UPDATE sessions SET folder_id = NULL WHERE folder_id = RETURNING session_id, folder_id, display_name",
+      "UPDATE folders SET parent_folder_id = NULL WHERE parent_folder_id =",
+      "DELETE FROM board_items WHERE folder_id = OR (item_type = 'subfolder' AND item_id = ) RETURNING id",
+      "UPDATE folders SET archived = TRUE WHERE id =",
+    ]);
+    expect(mutationCalls.every((call) => call.inTransaction)).toBe(true);
+    expect(sql.begin).toHaveBeenCalledTimes(1);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      expect.any(Array),
+      {
+        s1: { folderId: null, displayName: "Hi" },
+      },
+      {
+        "session:s1": null,
+      },
     );
-    expect(deleteCall).toBeDefined();
-    expect(deleteCall!.values).toEqual(["f1"]);
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
   it("시스템 폴더 delete는 DB delete 전에 거부", async () => {
@@ -463,7 +504,8 @@ describe("CatalogService.deleteFolder", () => {
     const svc = new CatalogService(db, broadcaster);
 
     await expect(svc.deleteFolder("llm")).rejects.toThrow(/system folder/i);
-    expect(calls.some((c) => c.fragments.join("|").includes("folder_delete"))).toBe(false);
+    expect(calls.some((c) => c.fragments.join("|").includes("SET archived = TRUE")))
+      .toBe(false);
   });
 });
 
@@ -481,7 +523,20 @@ describe("CatalogService.moveSessionsToFolder", () => {
     );
     expect(assigns).toHaveLength(3);
     expect(assigns.map((c) => c.values[0])).toEqual(["s1", "s2", "s3"]);
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+    const assignmentReads = calls.filter((c) =>
+      c.fragments.join("|").includes("session_id = ANY"),
+    );
+    expect(assignmentReads).toHaveLength(1);
+    expect(assignmentReads[0]?.values[0]).toEqual(["s1", "s2", "s3"]);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      expect.any(Array),
+      {
+        s1: { folderId: "f1", displayName: "Session s1" },
+        s2: { folderId: "f1", displayName: "Session s2" },
+        s3: { folderId: "f1", displayName: "Session s3" },
+      },
+      {},
+    );
   });
 
   it("folderId=null → 폴더 해제 (각 호출에 null 전달)", async () => {
@@ -524,8 +579,11 @@ describe("CatalogService board items", () => {
       }),
       getBoardItemById: vi.fn().mockResolvedValue(null),
       getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "f1" }),
+      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
+        { session_id: "s1", folder_id: "f1", display_name: null },
+      ]),
       assignSessionToFolder,
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const boardYjsService = {
       upsertSessionBoardItem,
@@ -600,6 +658,9 @@ describe("CatalogService board items", () => {
         metadata: {},
       }),
       getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "source-folder" }),
+      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
+        { session_id: "s1", folder_id: "target-folder", display_name: null },
+      ]),
       assignSessionToFolder,
       getBoardItems: vi.fn().mockResolvedValue([
         {
@@ -610,7 +671,7 @@ describe("CatalogService board items", () => {
           y: 0,
         },
       ]),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const boardYjsService = {
       moveBoardItemToContainer,
@@ -668,8 +729,11 @@ describe("CatalogService board items", () => {
       }),
       getBoardItemById: vi.fn().mockResolvedValue(null),
       getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "f1" }),
+      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
+        { session_id: "s1", folder_id: "f1", display_name: null },
+      ]),
       assignSessionToFolder: vi.fn().mockResolvedValue(undefined),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
@@ -701,7 +765,7 @@ describe("CatalogService board items", () => {
       getBoardItemById: vi.fn().mockResolvedValue(null),
       getSession: vi.fn().mockResolvedValue(null),
       assignSessionToFolder,
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
@@ -754,8 +818,11 @@ describe("CatalogService board items", () => {
         metadata: {},
       }),
       getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "source-folder" }),
+      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
+        { session_id: "s1", folder_id: "target-folder", display_name: null },
+      ]),
       assignSessionToFolder,
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(
@@ -807,7 +874,7 @@ describe("CatalogService board items", () => {
         containerId: "target-folder",
       }),
       getBoardItemById: vi.fn().mockResolvedValue(source),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster, { moveBoardItemToContainer } as never);
@@ -835,7 +902,7 @@ describe("CatalogService board items", () => {
         document: { id: "legacy-doc", title: "Legacy", body: "", version: 1 },
         boardItem: { id: "markdown:legacy-doc", folderId: "f1", itemType: "markdown", itemId: "legacy-doc", x: 60, y: 100 },
       }),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const boardYjsService = {
       createMarkdownDocument: vi.fn().mockResolvedValue({
@@ -865,14 +932,25 @@ describe("CatalogService board items", () => {
     });
     expect(db.createMarkdownDocument).not.toHaveBeenCalled();
     expect(result.document.id).toBe("doc-1");
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      [],
+      {},
+      {
+        "markdown:doc-1": expect.objectContaining({
+          id: "markdown:doc-1",
+          itemType: "markdown",
+          itemId: "doc-1",
+        }),
+      },
+    );
   });
 
   it("updateBoardItemPosition은 20px 격자에 스냅한 뒤 broadcast", async () => {
     const db = {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       updateBoardItemPosition: vi.fn().mockResolvedValue(undefined),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getBoardItemById: vi.fn().mockResolvedValue(null),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -896,7 +974,7 @@ describe("CatalogService board items", () => {
       }),
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       updateBoardItemPosition: vi.fn().mockResolvedValue(undefined),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const boardYjsService = {
       updateBoardItemPosition: vi.fn().mockResolvedValue(undefined),
@@ -921,7 +999,7 @@ describe("CatalogService board items", () => {
         document: { id: "doc-1", title: "Note", body: "Body", version: 1 },
         boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 60, y: 100 },
       }),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -957,7 +1035,7 @@ describe("CatalogService board items", () => {
         document: { id: "doc-1", title: "Note", body: "", version: 1 },
         boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 560, y: 0 },
       }),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -983,7 +1061,7 @@ describe("CatalogService board items", () => {
         y: 0,
       }),
       updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "Legacy", body: "", version: 2 }),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const boardYjsService = {
       updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "New", body: "Body", version: 2 }),
@@ -1010,7 +1088,7 @@ describe("CatalogService board items", () => {
     const db = {
       getMarkdownDocumentBoardItem: vi.fn().mockResolvedValue(null),
       updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "New", body: "Body", version: 2 }),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -1032,7 +1110,7 @@ describe("CatalogService board items", () => {
       updateMarkdownDocument: vi.fn().mockRejectedValue(
         new MarkdownDocumentVersionConflictError("doc-1", 1, 2),
       ),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -1058,12 +1136,12 @@ describe("CatalogService board items", () => {
         y: 0,
       }),
       deleteMarkdownDocument: vi.fn().mockResolvedValue(undefined),
-      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
     const boardYjsService = {
       deleteMarkdownDocument: vi.fn().mockResolvedValue(undefined),
     };
-    const { broadcaster } = createBroadcasterMock();
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster, boardYjsService as never);
 
     await svc.deleteMarkdownDocument("doc-1");
@@ -1073,6 +1151,11 @@ describe("CatalogService board items", () => {
       "doc-1",
     );
     expect(db.deleteMarkdownDocument).not.toHaveBeenCalled();
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      [],
+      {},
+      { "markdown:doc-1": null },
+    );
   });
 });
 
@@ -1090,7 +1173,13 @@ describe("CatalogService.renameSession", () => {
     );
     expect(renameCall).toBeDefined();
     expect(renameCall!.values).toEqual(["s1", "새 이름"]);
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      expect.any(Array),
+      {
+        s1: { folderId: "f1", displayName: "Session s1" },
+      },
+      {},
+    );
   });
 });
 
@@ -1109,7 +1198,11 @@ describe("CatalogService.deleteSession", () => {
     );
     expect(deleteCall).toBeDefined();
     expect(deleteCall!.values).toEqual(["s1"]);
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      expect.any(Array),
+      { s1: null },
+      { "session:s1": null },
+    );
     expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
   });
 });
@@ -1216,8 +1309,8 @@ describe("CatalogService.setFolderSystemPrompt", () => {
 });
 
 describe("CatalogService.broadcastCatalog", () => {
-  it("getCatalog 결과를 emitCatalogUpdated에 그대로 전달", async () => {
-    const { sql } = setupSqlWithCatalog();
+  it("emits folder-only changes with both empty delta keys and no catalog-wide scans", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
     const db = new SessionDB(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -1225,11 +1318,13 @@ describe("CatalogService.broadcastCatalog", () => {
     await svc.broadcastCatalog();
 
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-    const arg = emitCatalogUpdated.mock.calls[0][0];
-    expect(arg).toHaveProperty("folders");
-    expect(arg).toHaveProperty("sessions");
-    expect(arg).toMatchObject({
-      folders: [{ id: "f1", projectPageId: "page-f1" }],
-    });
+    expect(emitCatalogUpdated).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "f1", projectPageId: "page-f1" })],
+      {},
+      {},
+    );
+    expect(calls.some((call) =>
+      call.fragments.join("|").includes("catalog_get_sessions")
+    )).toBe(false);
   });
 });

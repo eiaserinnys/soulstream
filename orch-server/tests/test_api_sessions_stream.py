@@ -376,6 +376,53 @@ class TestSessionStreamReplay:
         ]
         assert list(catalog_events[0]["catalog"]["sessions"].keys()) == ["visible-session"]
 
+    async def test_unrestricted_replay_relays_delta_catalog_without_legacy_shape(
+        self, mock_db, node_manager, session_router, mock_catalog_service,
+    ):
+        """Retired Python relay must not rewrite the TypeScript delta contract."""
+        broadcaster = SessionBroadcaster()
+        visible_folder = {
+            "id": "visible",
+            "name": "Visible",
+            "settings": {"excludeFromFeed": False},
+        }
+        await broadcaster.broadcast({
+            "type": "catalog_updated",
+            "folders": [visible_folder],
+            "sessions_delta": {
+                "visible-session": {"folderId": "visible", "displayName": "Visible"},
+            },
+            "board_items_delta": {},
+        })
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_stream_route(router)
+
+        request = _make_request_mock(query={"lastEventId": "0"})
+        request.is_disconnected = self._disconnect_after_n_calls(1)
+        response = await route.endpoint(request=request)
+        events = await _collect_n_events(response.body_iterator, n=3)
+
+        catalog_events = [
+            json.loads(e["data"])
+            for e in events
+            if e.get("event") == "catalog_updated"
+        ]
+        assert catalog_events[0] == {
+            "type": "catalog_updated",
+            "folders": [visible_folder],
+            "sessions_delta": {
+                "visible-session": {"folderId": "visible", "displayName": "Visible"},
+            },
+            "board_items_delta": {},
+        }
+
     async def test_reconnect_with_last_event_id_yields_replay(
         self, mock_db, node_manager, session_router, mock_catalog_service,
     ):

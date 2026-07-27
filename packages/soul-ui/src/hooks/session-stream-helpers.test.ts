@@ -16,6 +16,7 @@ import {
   buildSessionUpdates,
   countLoadedSessionsForQuery,
   filterFeedSessions,
+  mergeCatalogBoardItemsDelta,
   mergeCatalogSessionsDelta,
   mergeSessionAssignmentsFromSummaries,
   mergeSessionCreatedSummary,
@@ -128,6 +129,49 @@ describe("catalog sessionList helpers", () => {
     expect(folderOnly.sessions).toBe(current.sessions);
     expect(folderOnly.folders[0].name).toBe("Renamed A");
     expect(equivalent.sessions).toBe(current.sessions);
+  });
+
+  it("merges board item upserts and removals with copy-on-write identity", () => {
+    const unchanged = {
+      id: "asset:a",
+      folderId: "folder-a",
+      itemType: "asset" as const,
+      itemId: "a",
+      x: 0,
+      y: 0,
+      metadata: { title: "A" },
+    };
+    const removed = {
+      id: "asset:removed",
+      folderId: "folder-a",
+      itemType: "asset" as const,
+      itemId: "removed",
+      x: 20,
+      y: 0,
+    };
+    const current = [unchanged, removed];
+
+    const equivalent = mergeCatalogBoardItemsDelta(current, {
+      "asset:a": { ...unchanged, metadata: { title: "A" } },
+      missing: null,
+    });
+    const changed = mergeCatalogBoardItemsDelta(current, {
+      "asset:a": { ...unchanged, x: 40 },
+      "asset:removed": null,
+      "asset:new": {
+        id: "asset:new",
+        folderId: "folder-b",
+        itemType: "asset",
+        itemId: "new",
+        x: 0,
+        y: 20,
+      },
+    });
+
+    expect(equivalent).toBe(current);
+    expect(changed).not.toBe(current);
+    expect(changed.map((item) => item.id)).toEqual(["asset:a", "asset:new"]);
+    expect(changed[0]).toMatchObject({ id: "asset:a", x: 40 });
   });
 
   it("upserts session_created into catalog.sessionList while preserving assignment", () => {

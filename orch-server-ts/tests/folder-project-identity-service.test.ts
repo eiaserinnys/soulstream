@@ -93,6 +93,55 @@ describe("FolderProjectIdentityService", () => {
     expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 2 });
   });
 
+  it("forwards the targeted archive catalog delta to the commit observer", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findByFolderId).mockResolvedValue({
+      id: identityId,
+      folderId: identityId,
+      pageId: identityId,
+      projectPageId: identityId,
+      name: "프로젝트",
+      sortOrder: 0,
+      settings: {},
+      parentFolderId: null,
+      archived: false,
+      pageVersion: 1,
+    });
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    const catalogDelta = {
+      sessionsDelta: {
+        "session-a": { folderId: null, displayName: "세션 A" },
+      },
+      deletedBoardItemIds: ["session:session-a"],
+    };
+    vi.mocked(repository.mutate).mockResolvedValueOnce({
+      ...mutationResult({
+        id: identityId,
+        pageId: identityId,
+        name: "프로젝트",
+        version: 2,
+      }),
+      catalogDelta,
+    });
+    const onCommitted = vi.fn();
+    const service = new FolderProjectIdentityService({
+      repository,
+      createOperationId: () => "operation-af",
+      hydratePage: vi.fn(),
+      onCommitted,
+    });
+
+    await service.mutateFromFolder({
+      folderId: identityId,
+      archived: true,
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "archive-af",
+    });
+
+    expect(onCommitted).toHaveBeenCalledOnce();
+    expect(onCommitted).toHaveBeenCalledWith(catalogDelta);
+  });
+
   it("notifies for both legacy project page commit paths", async () => {
     const repository = createRepository();
     vi.mocked(repository.listLegacyFolders).mockResolvedValue([{

@@ -299,23 +299,22 @@ describe("emitTaskUpdated", () => {
 });
 
 describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
-  it("catalog_updated wire envelope 정합 (Python `task_manager.py:312-316` 정본)", async () => {
+  it("always emits both delta keys, including folder-only changes", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
-    const catalog = {
-      folders: [{
-        id: "f1",
-        name: "F1",
-        sortOrder: 0,
-        settings: {},
-        projectPageId: "page-f1",
-      }],
-      sessions: { "s1": { folderId: "f1", displayName: null } },
-    };
-    await b.emitCatalogUpdated(catalog);
+    const folders = [{
+      id: "f1",
+      name: "F1",
+      sortOrder: 0,
+      settings: {},
+      projectPageId: "page-f1",
+    }];
+    await b.emitCatalogUpdated(folders, {}, {});
     expect(send).toHaveBeenCalledWith({
       type: "catalog_updated",
-      catalog,
+      folders,
+      sessions_delta: {},
+      board_items_delta: {},
     });
   });
 });

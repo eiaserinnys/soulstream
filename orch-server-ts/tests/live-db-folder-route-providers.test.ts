@@ -9,6 +9,7 @@ import {
 type SqlCall = {
   text: string;
   values: unknown[];
+  inTransaction: boolean;
 };
 
 describe("live DB folder route providers", () => {
@@ -94,7 +95,7 @@ describe("live DB folder route providers", () => {
     ]);
   });
 
-  it("creates, updates, and deletes folders through DB functions", async () => {
+  it("creates, updates, and deletes folders through DB mutations", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("SELECT id, parent_folder_id FROM folders")) {
         return [
@@ -141,8 +142,64 @@ describe("live DB folder route providers", () => {
     });
     expect(harness.calls).toHaveLength(beforeNoop);
 
+    const deleteStart = harness.calls.length;
     await repository.folderRouteProvider.deleteFolder("folder-a");
-    expect(harness.normalizedCalls()).toContain("SELECT folder_delete(?)");
+    expect(harness.normalizedCalls().slice(deleteStart)).toEqual([
+      "UPDATE sessions SET folder_id = NULL WHERE folder_id = ? RETURNING session_id, display_name",
+      "UPDATE folders SET parent_folder_id = NULL WHERE parent_folder_id = ?",
+      "DELETE FROM board_items WHERE folder_id = ? OR (item_type = 'subfolder' AND item_id = ?) RETURNING id",
+      "UPDATE folders SET archived = TRUE WHERE id = ?",
+    ]);
+    expect(harness.calls.slice(deleteStart).every((call) => call.inTransaction)).toBe(true);
+  });
+
+  it("returns the rows actually changed by the atomic folder deletion", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("session_id = ANY")) {
+        return [
+          { session_id: "sess-a", folder_id: "folder-a", display_name: "A" },
+          { session_id: "sess-b", folder_id: null, display_name: null },
+        ];
+      }
+      if (text.includes("UPDATE sessions") && text.includes("RETURNING")) {
+        return [
+          { session_id: "sess-a", display_name: "A" },
+        ];
+      }
+      if (text.includes("DELETE FROM board_items") && text.includes("RETURNING")) {
+        return [{ id: "task:rb-a" }, { id: "subfolder:folder-a" }];
+      }
+      if (text.includes("item_type = 'session'")) {
+        return [{ id: "session:sess-a" }];
+      }
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql }).folderRouteProvider;
+
+    await expect(provider.listSessionAssignmentsByIds(["sess-a", "sess-b"])).resolves.toEqual({
+      "sess-a": { folderId: "folder-a", displayName: "A" },
+      "sess-b": { folderId: null, displayName: null },
+    });
+    await expect(provider.deleteFolderWithCatalogDelta("folder-a")).resolves.toEqual({
+      sessionsDelta: {
+        "sess-a": { folderId: null, displayName: "A" },
+      },
+      deletedBoardItemIds: ["task:rb-a", "subfolder:folder-a"],
+    });
+    await expect(provider.listBoardItemIdsForSessionDeletion("sess-a"))
+      .resolves.toEqual(["session:sess-a"]);
+
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT session_id, folder_id, display_name FROM sessions WHERE session_id = ANY(?::text[])",
+      "UPDATE sessions SET folder_id = NULL WHERE folder_id = ? RETURNING session_id, display_name",
+      "UPDATE folders SET parent_folder_id = NULL WHERE parent_folder_id = ?",
+      "DELETE FROM board_items WHERE folder_id = ? OR (item_type = 'subfolder' AND item_id = ?) RETURNING id",
+      "UPDATE folders SET archived = TRUE WHERE id = ?",
+      "SELECT id FROM board_items WHERE item_type = 'session' AND item_id = ?",
+    ]);
+    expect(harness.calls[0]?.values[0]).toEqual(["sess-a", "sess-b"]);
+    expect(harness.calls.slice(1, 5).every((call) => call.inTransaction)).toBe(true);
+    expect(harness.begin).toHaveBeenCalledTimes(1);
   });
 
   it("validates reorder parent changes before writing", async () => {
@@ -202,15 +259,30 @@ function createSqlHarness(
   rowsFor: (text: string, values: unknown[]) => readonly Record<string, unknown>[] = () => [],
 ) {
   const calls: SqlCall[] = [];
+  let inTransaction = false;
   const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
-    calls.push({ text, values });
+    calls.push({ text, values, inTransaction });
     return rowsFor(text, values);
-  }) as unknown as LivePostgresSql;
+  }) as unknown as LivePostgresSql & {
+    begin: <T>(callback: (sql: LivePostgresSql) => Promise<T>) => Promise<T>;
+  };
+  const begin = vi.fn(async (
+    callback: (transaction: LivePostgresSql) => Promise<unknown>,
+  ): Promise<unknown> => {
+    inTransaction = true;
+    try {
+      return await callback(sql);
+    } finally {
+      inTransaction = false;
+    }
+  });
+  sql.begin = begin as typeof sql.begin;
 
   return {
     sql,
     calls,
+    begin,
     normalizedCalls: () =>
       calls.map((call) => call.text.replace(/\s+/g, " ").trim()),
   };

@@ -6,6 +6,7 @@
  */
 
 import type {
+  CatalogBoardItemsDelta,
   CatalogFolder,
   CatalogSessionsDelta,
   CatalogState,
@@ -80,6 +81,7 @@ export type CatalogUpdatedStreamEvent =
       catalog: CatalogState;
       folders?: never;
       sessions_delta?: never;
+      board_items_delta?: never;
       /** broadcaster가 부여한 SSE event_id */
       lastEventId?: string;
     }
@@ -88,6 +90,7 @@ export type CatalogUpdatedStreamEvent =
       catalog?: never;
       folders: CatalogFolder[];
       sessions_delta: CatalogSessionsDelta;
+      board_items_delta: CatalogBoardItemsDelta;
       /** broadcaster가 부여한 SSE event_id */
       lastEventId?: string;
     };

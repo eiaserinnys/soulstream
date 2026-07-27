@@ -29,9 +29,8 @@ function makeMocks() {
       settings: {},
       parent_folder_id: null,
     });
-  const getCatalog = vi
-    .fn()
-    .mockResolvedValue({ folders: [], sessions: {} });
+  const getAllFolders = vi.fn().mockResolvedValue([]);
+  const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
   // PR #56: hydration mock (Python load_evicted_task 정합)
   const getSession = vi.fn().mockResolvedValue(null);
   const db = {
@@ -42,7 +41,8 @@ function makeMocks() {
     acknowledgeSessionReview,
     assignSessionToFolder,
     getFolderById,
-    getCatalog,
+    getAllFolders,
+    getPrimarySessionBoardItem,
     getSession,
   } as unknown as SessionDB;
 
@@ -69,7 +69,8 @@ function makeMocks() {
     acknowledgeSessionReview,
     assignSessionToFolder,
     getFolderById,
-    getCatalog,
+    getAllFolders,
+    getPrimarySessionBoardItem,
     getSession,
     emitSessionCreated,
     emitSessionDeleted,
@@ -1505,9 +1506,9 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     expect(emitCatalogUpdated).not.toHaveBeenCalled();
   });
 
-  it("getCatalog throw → 격리 (Python L317-321 정합), task·session_created 정상 진행", async () => {
-    const { db, broadcaster, getCatalog, emitSessionCreated, emitCatalogUpdated } = makeMocks();
-    getCatalog.mockRejectedValueOnce(new Error("catalog query down"));
+  it("getAllFolders throw → 격리 (Python L317-321 정합), task·session_created 정상 진행", async () => {
+    const { db, broadcaster, getAllFolders, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    getAllFolders.mockRejectedValueOnce(new Error("catalog query down"));
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({
       agentSessionId: "s5",
@@ -2034,6 +2035,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
     await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     expect(tm.getTask("s1")).toBeDefined();
+    mocks.getSession.mockClear();
     await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),

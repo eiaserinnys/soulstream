@@ -145,6 +145,55 @@ describe("session stream event access filter", () => {
       },
     });
   });
+
+  it("turns newly restricted and feed-excluded delta entries into tombstones", async () => {
+    const { filter } = createFilterHarness({
+      access: { restricted: true, allowedFolderIds: ["root"] },
+      folders: [],
+    });
+    const event: SessionStreamEvent = {
+      type: "catalog_updated",
+      folders: [
+        { id: "root", parentFolderId: null },
+        { id: "child", parentFolderId: "root" },
+        { id: "hidden", parentFolderId: "root", settings: { excludeFromFeed: true } },
+        { id: "denied", parentFolderId: null },
+      ],
+      sessions_delta: {
+        allowed: { folderId: "child", displayName: "Allowed" },
+        hidden: { folderId: "hidden", displayName: "Hidden" },
+        movedFromAllowedToDenied: { folderId: "denied", displayName: "Moved" },
+        removed: null,
+      },
+      board_items_delta: {
+        "asset:allowed": { id: "asset:allowed", folderId: "child" },
+        "asset:hidden": { id: "asset:hidden", folderId: "hidden" },
+        "asset:denied": { id: "asset:denied", folderId: "denied" },
+        "asset:removed": null,
+      },
+    };
+
+    await expect(filter(request, event, { feedOnly: true })).resolves.toEqual({
+      type: "catalog_updated",
+      folders: [
+        { id: "root", parentFolderId: null },
+        { id: "child", parentFolderId: "root" },
+        { id: "hidden", parentFolderId: "root", settings: { excludeFromFeed: true } },
+      ],
+      sessions_delta: {
+        allowed: { folderId: "child", displayName: "Allowed" },
+        hidden: null,
+        movedFromAllowedToDenied: null,
+        removed: null,
+      },
+      board_items_delta: {
+        "asset:allowed": { id: "asset:allowed", folderId: "child" },
+        "asset:hidden": null,
+        "asset:denied": null,
+        "asset:removed": null,
+      },
+    });
+  });
 });
 
 function createFilterHarness(options: {

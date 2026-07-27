@@ -1,14 +1,18 @@
 import type {
+  CatalogBoardItem,
+  CatalogBoardItemsDelta,
   CatalogFolder,
   CatalogSessionsDelta,
   CatalogState,
   SessionSummary,
 } from "../shared/types";
+import { retainEqualValue } from "../lib/structural-sharing";
 
 export function mergeCatalogSessionsDelta(
   current: CatalogState | null,
   folders: CatalogFolder[],
   delta: CatalogSessionsDelta,
+  boardItemsDelta: CatalogBoardItemsDelta = {},
 ): CatalogState {
   const currentSessions = current?.sessions ?? {};
   let sessions = currentSessions;
@@ -31,9 +35,45 @@ export function mergeCatalogSessionsDelta(
     sessions[sessionId] = assignment;
   }
 
+  const boardItems = mergeCatalogBoardItemsDelta(
+    current?.boardItems ?? [],
+    boardItemsDelta,
+  );
+
   return current
-    ? { ...current, folders, sessions }
-    : { folders, sessions };
+    ? { ...current, folders, sessions, boardItems }
+    : { folders, sessions, boardItems };
+}
+
+export function mergeCatalogBoardItemsDelta(
+  current: CatalogBoardItem[],
+  delta: CatalogBoardItemsDelta,
+): CatalogBoardItem[] {
+  const entries = Object.entries(delta);
+  if (entries.length === 0) return current;
+
+  const seen = new Set<string>();
+  let changed = false;
+  const boardItems = current.flatMap((item) => {
+    if (!Object.prototype.hasOwnProperty.call(delta, item.id)) return [item];
+    seen.add(item.id);
+    const incoming = delta[item.id];
+    if (incoming === null) {
+      changed = true;
+      return [];
+    }
+    const retained = retainEqualValue(item, incoming);
+    if (retained !== item) changed = true;
+    return [retained];
+  });
+
+  for (const [boardItemId, incoming] of entries) {
+    if (seen.has(boardItemId) || incoming === null) continue;
+    boardItems.push(incoming);
+    changed = true;
+  }
+
+  return changed ? boardItems : current;
 }
 
 export function applyCatalogDisplayNames(
