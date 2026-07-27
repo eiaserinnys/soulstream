@@ -131,15 +131,9 @@ BEGIN
             operation_type = replace(operation_type, 'runbook', 'task')
         WHERE target_kind = 'runbook' OR operation_type LIKE '%runbook%';
     END IF;
-    IF to_regclass('blocks') IS NOT NULL THEN
-        UPDATE blocks
-        SET block_type = 'task_ref',
-            properties = (properties - 'runbookId')
-              || CASE WHEN properties ? 'runbookId'
-                   THEN jsonb_build_object('taskId', properties -> 'runbookId')
-                   ELSE '{}'::jsonb END
-        WHERE block_type = 'runbook_ref' OR properties ? 'runbookId';
-    END IF;
+    -- Do not mirror 042's blocks rewrite here. Page/block canonical state lives
+    -- in Y.Doc; direct SQL changes only the relational projection and is reverted
+    -- when the live document is loaded. Use the page mutation API instead.
     IF to_regclass('folders') IS NOT NULL THEN
         UPDATE folders SET name = '📋 업무' WHERE name = '📒 런북';
     END IF;
