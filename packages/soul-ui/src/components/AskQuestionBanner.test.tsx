@@ -167,6 +167,32 @@ describe("AskQuestionBanner", () => {
     }
   });
 
+  it("aligns the direct input and submit button as one responsive input row", () => {
+    ({ container, root } = renderBanner(makeInputRequest()));
+
+    const input = document.body.querySelector<HTMLInputElement>('input[placeholder="직접 입력"]');
+    const submit = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button[data-slot="button"]'),
+    ).find((button) => button.textContent === "전송");
+    const form = input?.closest("form");
+
+    expect(input).not.toBeNull();
+    expect(submit).toBeTruthy();
+    expect(form).not.toBeNull();
+    expect(form?.contains(submit ?? null)).toBe(true);
+    expect(form?.className).toContain("flex");
+    expect(form?.className).toContain("gap-2");
+    expect(input?.className).toContain("rounded-[13px]");
+    expect(input?.className).toContain("px-3");
+    expect(submit?.className).toContain("h-auto");
+    expect(submit?.className).toContain("sm:h-auto");
+    expect(submit?.className).toContain("self-stretch");
+    expect(submit?.className).toContain("rounded-[13px]");
+    expect(submit?.className).toContain("px-3");
+    expect(submit?.className).not.toContain("sm:h-6");
+    expect(submit?.className).not.toContain("rounded-full");
+  });
+
   it("uses the same wider layout for tool approval prompts", () => {
     ({ container, root } = renderBanner(makeToolApproval()));
 
