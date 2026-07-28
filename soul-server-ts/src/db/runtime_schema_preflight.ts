@@ -42,7 +42,7 @@ export const REQUIRED_RUNTIME_MIGRATIONS: readonly RequiredRuntimeMigration[] = 
   {
     ordinal: 50,
     migrationId: "049_external_llm_actor.sql",
-    checksum: "7f21c09fa0130e081c3412fd518ca6aeaa166d71eca67e84b150e3d4f2dcec5e",
+    checksum: "6aa4f32d61d71bea2b445a99c1e55fdea748af81f62bbbe3910221b7a82b9b90",
   },
 ] as const;
 
