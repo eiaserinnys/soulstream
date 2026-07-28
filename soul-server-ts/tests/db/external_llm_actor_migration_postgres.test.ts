@@ -142,10 +142,14 @@ describePostgres("049 external LLM actor migration PostgreSQL", () => {
     `).resolves.toBeDefined();
   });
 
-  it("fails explicitly when a differently named legacy CHECK still rejects llm", async () => {
+  it("drops a differently named legacy CHECK instead of failing on it", async () => {
+    // 042 renamed runbook_* to task_* and PostgreSQL kept the original
+    // constraint names, so live carries runbooks_completed_kind_check on
+    // tasks. The name-keyed DROP in the migration never matched it and the
+    // survivor kept rejecting llm — this reproduces that exact shape.
     await harness.sql.unsafe(`
       ALTER TABLE tasks
-        ADD CONSTRAINT tasks_completed_kind_legacy_check
+        ADD CONSTRAINT runbooks_completed_kind_check
         CHECK (completed_kind IN ('agent','user'))
     `);
 
@@ -158,9 +162,47 @@ describePostgres("049 external LLM actor migration PostgreSQL", () => {
       ),
       "utf8",
     );
-    await expect(harness.sql.unsafe(migrationSql)).rejects.toThrow(
-      "left a legacy CHECK on tasks.completed_kind that rejects llm",
-    );
+    await expect(harness.sql.unsafe(migrationSql)).resolves.toBeDefined();
+
+    const survivors = await harness.sql`
+      SELECT con.conname
+      FROM pg_constraint con
+      WHERE con.conrelid = to_regclass('tasks')
+        AND con.contype = 'c'
+        AND pg_get_constraintdef(con.oid) LIKE '%completed_kind%'
+        AND pg_get_constraintdef(con.oid) NOT LIKE '%''llm''%'
+    `;
+    expect(survivors).toHaveLength(0);
+
+    await expect(harness.sql`
+      INSERT INTO tasks (id, title, status, completed_kind)
+      VALUES ('task-legacy-swept', 'legacy swept', 'completed', 'llm')
+    `).resolves.toBeDefined();
+  });
+
+  it("still fails explicitly when an llm-hostile CHECK is unreachable by the sweep", async () => {
+    // The sweep and the guard share one predicate, so the guard is normally
+    // unreachable. It stays as the backstop for shapes the sweep cannot see —
+    // here a constraint added *after* the sweep would have run.
+    await harness.sql.unsafe(`
+      ALTER TABLE tasks
+        ADD CONSTRAINT tasks_completed_kind_legacy_check
+        CHECK (completed_kind = ANY (ARRAY['agent','user']))
+    `);
+
+    const guardOnly = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../packages/db-schema/sql/migrations/049_external_llm_actor.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    ).split("-- Fail the migration if a differently named legacy CHECK survived a")[1];
+
+    await expect(
+      harness.sql.unsafe(`-- guard\n${guardOnly}`),
+    ).rejects.toThrow("left a legacy CHECK on tasks.completed_kind that rejects llm");
 
     await harness.sql.unsafe(`
       ALTER TABLE tasks

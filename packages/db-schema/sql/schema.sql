@@ -3978,3 +3978,59 @@ SELECT id, task_id,
        actor_session_id, actor_event_id, actor_user_id, idempotency_key,
        payload_json, reason, created_at
 FROM task_operations WHERE FALSE;
+
+-- Sweep pre-llm CHECK constraints that survived under their original names.
+--
+-- 042 renamed runbook_* tables to task_*, but PostgreSQL keeps constraint names
+-- across a rename, so a database bootstrapped before 042 still carries
+-- runbooks_completed_kind_check, runbook_items_completed_kind_check,
+-- runbook_operations_actor_kind_check and checklist_runbook_projection_outbox_*.
+-- The name-keyed ALTER statements above are no-ops for those, and PostgreSQL
+-- ANDs CHECK constraints together — one survivor keeps rejecting 'llm' even
+-- though every llm-aware constraint was installed.
+--
+-- Unlike migration 049 this file has no verification block, so a survivor here
+-- would fail silently and only surface as a rejected write at runtime. Runs
+-- last so it only ever removes constraints the statements above did not
+-- replace; anything already mentioning 'llm' is left alone.
+DO $$
+DECLARE
+    target RECORD;
+    legacy RECORD;
+BEGIN
+    FOR target IN
+        SELECT *
+        FROM (
+            VALUES
+              ('tasks', 'completed_kind'),
+              ('task_items', 'completed_kind'),
+              ('task_operations', 'actor_kind'),
+              ('folder_project_operations', 'actor_kind'),
+              ('checklist_task_projection_outbox', 'actor_kind'),
+              ('block_operations', 'actor_kind'),
+              ('board_custom_views', 'created_actor_kind'),
+              ('board_custom_views', 'updated_actor_kind')
+        ) AS targets(table_name, column_name)
+    LOOP
+        FOR legacy IN
+            SELECT constraint_row.conname
+            FROM pg_constraint constraint_row
+            WHERE constraint_row.conrelid = to_regclass(target.table_name)
+              AND constraint_row.contype = 'c'
+              AND pg_get_constraintdef(constraint_row.oid) LIKE
+                  '%' || target.column_name || '%'
+              AND pg_get_constraintdef(constraint_row.oid) NOT LIKE '%''llm''%'
+              AND (
+                  target.table_name = 'checklist_task_projection_outbox'
+                  OR pg_get_constraintdef(constraint_row.oid) LIKE '%ANY (ARRAY%'
+              )
+        LOOP
+            EXECUTE format(
+                'ALTER TABLE %I DROP CONSTRAINT %I',
+                target.table_name,
+                legacy.conname
+            );
+        END LOOP;
+    END LOOP;
+END;
+$$;
