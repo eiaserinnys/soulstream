@@ -79,11 +79,12 @@ export class TaskEngineTurnRunner {
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
     const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
     const effectiveModel = task.model ?? agent.model;
+    const hasResolvedPreset = task.modelPresetBackend !== undefined;
     const extraEnv = engine.backendId === "claude"
       ? buildClaudeExtraEnv({
-          profileEnv: task.modelPresetEnv ?? agent.env,
+          profileEnv: hasResolvedPreset ? (task.modelPresetEnv ?? {}) : agent.env,
           oauthToken: task.oauthToken,
-          sourceLabel: task.modelPresetEnv ? "model preset" : "agents.yaml",
+          sourceLabel: hasResolvedPreset ? "model preset" : "agents.yaml",
         })
       : undefined;
 

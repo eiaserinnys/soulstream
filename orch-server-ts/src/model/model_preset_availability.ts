@@ -236,13 +236,8 @@ function isQuotaApplicable(
 }
 
 function quotaReasonLabel(quota: UsageSummaryQuota): string {
-  if (quota.model === null) {
-    return `${quota.window === "7d" ? "7일" : quota.window ?? quota.label} 사용량 제한`;
-  }
-  const scopeLabel = quota.label.includes("7일")
-    ? quota.label
-    : `${quota.window === "7d" ? "7일" : quota.window ?? "모델"} (${quota.label})`;
-  return `${scopeLabel} 사용량 제한`;
+  const label = quota.label.trim() || quota.window || "모델";
+  return `${label} 사용량 제한`;
 }
 
 function normalizeModelIdentity(value: string): string {

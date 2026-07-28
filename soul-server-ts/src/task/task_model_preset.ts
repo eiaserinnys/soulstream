@@ -1,5 +1,9 @@
 import type { AgentProfile } from "../agent_registry.js";
-import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
+import {
+  UnknownModelPresetError,
+  type ModelCatalog,
+  type ModelPreset,
+} from "../model_catalog.js";
 
 import type { CreateTaskParams } from "./task_creation.js";
 import type { Task } from "./task_models.js";
@@ -34,15 +38,24 @@ export function applyModelPresetRuntime(
   task: Task,
   agent: AgentProfile,
   modelCatalog?: ModelPresetResolver,
-): void {
-  if (task.modelPresetBackend) return;
-  const preset = resolveModelPresetSelection(task, agent, modelCatalog);
-  if (!preset) return;
+): "applied" | "not_selected" | "preset_unavailable" {
+  if (task.modelPresetBackend) return "applied";
+  let preset: ModelPreset | undefined;
+  try {
+    preset = resolveModelPresetSelection(task, agent, modelCatalog);
+  } catch (error) {
+    if (error instanceof UnknownModelPresetError && task.modelPreset) {
+      return "preset_unavailable";
+    }
+    throw error;
+  }
+  if (!preset) return "not_selected";
 
   task.modelPreset = preset.id;
   task.model ??= preset.model;
   task.modelPresetBackend = preset.backend;
   task.modelPresetEnv = preset.env;
+  return "applied";
 }
 
 export function effectiveTaskBackend(

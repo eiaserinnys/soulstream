@@ -107,8 +107,50 @@ describe("resolvePresetAvailability", () => {
     )).toMatchObject({
       available: false,
       reason: "quota_exhausted",
-      reason_label: "7일 (Fable) 사용량 제한",
+      reason_label: "Fable 사용량 제한",
       resets_at: "2026-07-28T04:00:00.000Z",
+    });
+  });
+
+  it("uses the collector quota label instead of exposing raw window identities", () => {
+    const resetAt = Math.floor(Date.parse("2026-07-28T04:00:00.000Z") / 1_000);
+    expect(resolvePresetAvailability(
+      "node-a",
+      {
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        available: true,
+        usage_provider: "codex",
+        usage_model_id: "gpt-5.6-sol",
+      },
+      {
+        ...summary(null),
+        nodes: [{
+          nodeId: "node-a",
+          fetchedAt: now.toISOString(),
+          stale: false,
+          staleSince: null,
+          providers: {
+            claude: null,
+            codex: provider({
+              quotas: [{
+                id: "codex:weekly",
+                label: "7일",
+                window: "168h",
+                model: null,
+                remainingPercent: 0,
+                resetAt,
+              }],
+            }),
+            gemini: null,
+          },
+        }],
+      },
+      now,
+    )).toMatchObject({
+      available: false,
+      reason_label: "7일 사용량 제한",
     });
   });
 

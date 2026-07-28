@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
-import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -13,6 +13,7 @@ import type {
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
+import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
@@ -142,7 +143,11 @@ export class TaskRuntimeCommands {
 
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
     const agent = this.requireAgent(params.profileId);
-    const preset = this.resolvePreset(params, agent);
+    const preset = resolveModelPresetSelection(
+      params,
+      agent,
+      this.deps.modelCatalog,
+    );
     const prompt = appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
@@ -213,21 +218,6 @@ export class TaskRuntimeCommands {
       throw new UnknownAgentProfileError(profileId);
     }
     return agent;
-  }
-
-  private resolvePreset(
-    params: CreateSessionRuntimeParams,
-    agent: AgentProfile,
-  ): ModelPreset | undefined {
-    const presetId = normalizeOptionalString(params.modelPreset)
-      ?? (normalizeOptionalString(params.model) ? undefined : agent.default_preset);
-    if (!presetId) return undefined;
-    if (!this.deps.modelCatalog) {
-      throw new Error(
-        `Model catalog is not configured; cannot resolve preset: ${presetId}`,
-      );
-    }
-    return this.deps.modelCatalog.resolve(presetId);
   }
 
   private startResumedTask(task: Task): void {

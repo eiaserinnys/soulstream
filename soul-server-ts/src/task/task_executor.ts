@@ -173,7 +173,17 @@ export class TaskExecutor {
         `Task ${task.agentSessionId} already has an engine — concurrent execute not supported`,
       );
     }
-    applyModelPresetRuntime(task, agent, this.modelCatalog);
+    const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
+    if (presetRuntime === "preset_unavailable") {
+      this.logger.warn(
+        {
+          sessionId: task.agentSessionId,
+          modelPreset: task.modelPreset,
+          fallbackBackend: agent.backend,
+        },
+        "Persisted model preset is unavailable; using the profile backend",
+      );
+    }
     const backend = effectiveTaskBackend(task, agent);
     const engine = task.modelPresetBackend
       ? this.engineFactory(agent, backend)

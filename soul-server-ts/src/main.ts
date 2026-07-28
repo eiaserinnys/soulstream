@@ -6,6 +6,7 @@ import { parseEnv } from "./config.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
+import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { startServer } from "./server.js";
 import {
@@ -40,6 +41,19 @@ async function main(): Promise<void> {
   }
 
   const logger = createLogger(env.LOG_LEVEL);
+  let modelCatalog: ReturnType<typeof loadModelCatalog>;
+  try {
+    modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `Failed to load model catalog from "${env.MODEL_CATALOG_PATH}": ${message}`,
+    );
+    console.error(
+      "Hint: MODEL_CATALOG_PATH must point to a valid model catalog YAML file.",
+    );
+    process.exit(1);
+  }
   const mcpConfigService = new McpConfigService({
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     processEnv: process.env,
@@ -64,10 +78,10 @@ async function main(): Promise<void> {
         "agent.model is deprecated; move the model to model-catalog.yaml and use default_preset",
       );
     }
-    if (profile.default_preset) {
+    if (!profile.default_preset) {
       logger.warn(
-        { agentId: profile.id, defaultPreset: profile.default_preset },
-        "agent.backend is retained only as the fallback for sessions without a model preset",
+        { agentId: profile.id, backend: profile.backend },
+        "agent.backend still selects the default model path; configure default_preset",
       );
     }
   }
@@ -130,6 +144,7 @@ async function main(): Promise<void> {
     agentRegistry,
     mcpConfigService,
     codexCliPath,
+    modelCatalog,
   });
   await startServer(runtime.server, env.HOST, env.PORT);
   logger.info(

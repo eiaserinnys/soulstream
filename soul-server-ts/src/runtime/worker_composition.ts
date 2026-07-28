@@ -62,6 +62,7 @@ export interface WorkerCompositionParams {
   agentRegistry: AgentRegistry;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
+  modelCatalog?: ModelCatalog;
 }
 export interface WorkerComposition extends SupervisorComposition {
   db: SessionDB;
@@ -85,7 +86,7 @@ export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath } = params;
-  const modelCatalog = new ModelCatalog(env.MODEL_CATALOG_PATH);
+  const modelCatalog = params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH);
   let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
@@ -133,6 +134,7 @@ export async function composeWorkerRuntime(
     broadcaster,
     logger,
     processEnv: process.env,
+    modelCatalog,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
   const boardYjsAuth = {

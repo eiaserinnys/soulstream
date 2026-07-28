@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
 import {
+  loadModelCatalog,
   ModelCatalog,
   ModelCatalogSchema,
 } from "../src/model_catalog.js";
@@ -113,6 +114,24 @@ presets:
         expect(catalog.resolve("claude-fable").model).toBe("claude-fable-5[1m]");
       },
     );
+  });
+
+  it("degrades a missing catalog file to an empty additive catalog", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "model-catalog-missing-"));
+    try {
+      const catalog = loadModelCatalog(path.join(directory, "model-catalog.yaml"));
+
+      expect(catalog.list()).toEqual([]);
+      expect(catalog.advertise({})).toEqual([]);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps malformed catalog content as an explicit startup failure", () => {
+    withTempCatalog("presets: not-a-list\n", (catalogPath) => {
+      expect(() => loadModelCatalog(catalogPath)).toThrow(ZodError);
+    });
   });
 
   it("advertises unresolved env without exposing values and excludes API-key presets from usage", () => {

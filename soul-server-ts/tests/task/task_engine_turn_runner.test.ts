@@ -265,6 +265,7 @@ describe("TaskEngineTurnRunner", () => {
     process.env.SOULSTREAM_TEST_KIMI_API_KEY = "preset-kimi-secret";
     const task = makeTask({
       oauthToken: "oauth-token",
+      modelPresetBackend: "claude",
       modelPresetEnv: {
         ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_KIMI_API_KEY}",
         ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
@@ -294,6 +295,36 @@ describe("TaskEngineTurnRunner", () => {
       ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
     });
     expect(captured?.extraEnv).not.toHaveProperty(CLAUDE_OAUTH_TOKEN_ENV);
+  });
+
+  it("uses native OAuth without inheriting legacy profile env when a preset has no env bundle", async () => {
+    const task = makeTask({
+      modelPreset: "claude-opus",
+      modelPresetBackend: "claude",
+      oauthToken: "oauth-token",
+    });
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: {
+        ...agent,
+        env: {
+          ANTHROPIC_API_KEY: "legacy-kimi-secret",
+          ANTHROPIC_BASE_URL: "https://legacy.example/anthropic",
+        },
+      } as AgentProfile,
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
+    expect(captured?.extraEnv).toEqual({
+      [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token",
+    });
   });
 
   it("applies profile env on resumed turns", async () => {
@@ -353,6 +384,7 @@ describe("TaskEngineTurnRunner", () => {
 
   it("labels unresolved preset env separately from legacy agents.yaml env", () => {
     const task = makeTask({
+      modelPresetBackend: "claude",
       modelPresetEnv: {
         ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_MISSING_PRESET_API_KEY}",
         ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",

@@ -52,6 +52,13 @@ export interface AdvertisedModelPreset {
   usage_model_id?: string;
 }
 
+export class UnknownModelPresetError extends Error {
+  constructor(readonly presetId: string) {
+    super(`Unknown model preset: ${presetId}`);
+    this.name = "UnknownModelPresetError";
+  }
+}
+
 export class ModelCatalog {
   constructor(private readonly catalogPath: string) {}
 
@@ -62,7 +69,7 @@ export class ModelCatalog {
   resolve(presetId: string): ModelPreset {
     const preset = this.list().find((entry) => entry.id === presetId);
     if (!preset) {
-      throw new Error(`Unknown model preset: ${presetId}`);
+      throw new UnknownModelPresetError(presetId);
     }
     return preset;
   }
@@ -93,8 +100,32 @@ export class ModelCatalog {
   }
 
   private read(): ModelCatalogConfig {
-    const raw = fs.readFileSync(this.catalogPath, "utf-8");
+    let raw: string;
+    try {
+      raw = fs.readFileSync(this.catalogPath, "utf-8");
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return { presets: [] };
+      }
+      throw error;
+    }
     const parsed: unknown = parseYaml(raw) ?? {};
     return ModelCatalogSchema.parse(parsed);
   }
+}
+
+/**
+ * Startup preflight. A missing file is the additive empty-catalog state, while
+ * malformed or unreadable configured files remain explicit startup failures.
+ */
+export function loadModelCatalog(catalogPath: string): ModelCatalog {
+  const catalog = new ModelCatalog(catalogPath);
+  catalog.list();
+  return catalog;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error
+    && "code" in error
+    && (error as NodeJS.ErrnoException).code === "ENOENT";
 }

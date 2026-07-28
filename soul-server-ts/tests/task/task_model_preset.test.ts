@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import type { ModelPreset } from "../../src/model_catalog.js";
+import {
+  UnknownModelPresetError,
+  type ModelPreset,
+} from "../../src/model_catalog.js";
 import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
@@ -82,5 +85,25 @@ describe("task model preset runtime", () => {
     expect(legacyTask.modelPreset).toBeUndefined();
     expect(effectiveTaskBackend(legacyTask, agent)).toBe("codex");
     expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the persisted model and degrades to the profile backend when the preset was removed", () => {
+    const task = makeTask({
+      modelPreset: "removed-preset",
+      model: "persisted-model",
+    });
+    const resolve = vi.fn(() => {
+      throw new UnknownModelPresetError("removed-preset");
+    });
+
+    expect(applyModelPresetRuntime(task, agent, { resolve })).toBe(
+      "preset_unavailable",
+    );
+    expect(task).toMatchObject({
+      modelPreset: "removed-preset",
+      model: "persisted-model",
+    });
+    expect(task.modelPresetBackend).toBeUndefined();
+    expect(effectiveTaskBackend(task, agent)).toBe("codex");
   });
 });

@@ -68,20 +68,31 @@ function createBroker(opts: {
   row?: SessionRow | null;
   fetch?: any;
   env?: NodeJS.ProcessEnv;
+  profile?: AgentProfile;
+  modelCatalog?: {
+    resolve(presetId: string): {
+      id: string;
+      label: string;
+      backend: "claude" | "codex" | "openai-agents";
+      model: string;
+    };
+  };
 } = {}) {
   const row = opts.row === undefined ? sessionRow() : opts.row;
+  const selectedProfile = opts.profile ?? profile;
   const getSession = vi.fn(async () => row);
   const persistEvent = vi.fn(async () => 7);
   const handleSideEffects = vi.fn(async () => undefined);
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broker = new RealtimeBroker({
-    agentRegistry: new AgentRegistry([profile]),
+    agentRegistry: new AgentRegistry([selectedProfile]),
     db: { getSession } as unknown as SessionDB,
     persistence: { persistEvent, handleSideEffects } as unknown as EventPersistence,
     broadcaster: { emitEventEnvelope } as unknown as SessionBroadcaster,
     logger,
     processEnv: opts.env ?? { OPENAI_REALTIME_TEST_KEY: "sk-test" },
     fetch: opts.fetch,
+    modelCatalog: opts.modelCatalog,
   });
   return { broker, getSession, persistEvent, handleSideEffects, emitEventEnvelope };
 }
@@ -161,6 +172,60 @@ describe("RealtimeBroker.createCall", () => {
     await expect(
       broker.createCall({ agentSessionId: "sess-rt", offerSdp: "offer" }),
     ).rejects.toThrow(/Realtime requires codex backend/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("allows a Claude profile session whose persisted preset backend is Codex", async () => {
+    const claudeProfile: AgentProfile = {
+      ...profile,
+      backend: "claude",
+    };
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: { get: () => "/v1/realtime/calls/call_preset" },
+      text: async () => "answer-sdp",
+    }));
+    const { broker } = createBroker({
+      row: sessionRow({ model_preset: "codex-5.6-sol" }),
+      profile: claudeProfile,
+      fetch,
+      modelCatalog: {
+        resolve: () => ({
+          id: "codex-5.6-sol",
+          label: "Codex - 5.6 Sol",
+          backend: "codex",
+          model: "gpt-5.6-sol",
+        }),
+      },
+    });
+
+    await expect(broker.createCall({
+      agentSessionId: "sess-rt",
+      offerSdp: "offer",
+    })).resolves.toMatchObject({ callId: "call_preset" });
+  });
+
+  it("rejects a Codex profile session whose persisted preset backend is Claude", async () => {
+    const fetch = vi.fn();
+    const { broker } = createBroker({
+      row: sessionRow({ model_preset: "claude-opus" }),
+      fetch,
+      modelCatalog: {
+        resolve: () => ({
+          id: "claude-opus",
+          label: "Claude - Opus",
+          backend: "claude",
+          model: "opus",
+        }),
+      },
+    });
+
+    await expect(broker.createCall({
+      agentSessionId: "sess-rt",
+      offerSdp: "offer",
+    })).rejects.toThrow(/Realtime requires codex backend.*claude/);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

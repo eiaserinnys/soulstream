@@ -11,6 +11,7 @@ import type {
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
+import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
@@ -177,6 +178,54 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(factory).toHaveBeenCalledWith(agent, "claude");
     expect(task.model).toBe("persisted-kimi-model");
+  });
+
+  it("warns and resumes with the profile backend when a persisted preset was removed", async () => {
+    const mocks = makeMocks();
+    const warningLogger = pino({ level: "silent" });
+    const warn = vi.spyOn(warningLogger, "warn");
+    const factory = vi.fn(() => makeFakeEngine([
+      { type: "assistant_message", content: "degraded", timestamp: 1 },
+    ] as SSEEventPayload[]));
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      warningLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        resolve: () => {
+          throw new UnknownModelPresetError("removed-preset");
+        },
+      },
+    );
+    const task = {
+      ...makeTask(),
+      modelPreset: "removed-preset",
+      model: "persisted-model",
+    };
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(factory.mock.calls[0]).toEqual([agent]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-1",
+        modelPreset: "removed-preset",
+        fallbackBackend: "codex",
+      }),
+      "Persisted model preset is unavailable; using the profile backend",
+    );
   });
 
   it("gate OFF executor never enters the delivery receipt async boundary", async () => {
