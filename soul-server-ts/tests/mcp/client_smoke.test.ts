@@ -417,7 +417,7 @@ describe("MCP SDK client smoke", () => {
         "servers:",
         "  - id: docs",
         "    type: streamable_http",
-        "    url: https://docs.example.com/mcp",
+        "    url: https://docs.example.com/mcp?exaApiKey=fake-docs-key&tools=search,fetch",
         "",
       ].join("\n"),
       "utf-8",
@@ -930,7 +930,7 @@ describe("MCP SDK client smoke", () => {
       expect.objectContaining({
         id: "docs",
         type: "streamable_http",
-        url: "https://docs.example.com/mcp",
+        url: "https://docs.example.com/mcp?exaApiKey=<redacted>&tools=search,fetch",
       }),
     ]);
 
