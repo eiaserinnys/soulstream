@@ -450,6 +450,40 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("llm origin은 부모 링크 없이 local session을 만들고 llm caller_info를 보존한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime, {
+      "x-soulstream-caller-origin": "llm",
+    });
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "external delegation",
+        caller_session_id: "spoofed-session",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerSessionId: null,
+        callerInfo: {
+          source: "llm",
+          agent_node: "node-test",
+          display_name: "External LLM",
+          user_id: null,
+          avatar_url: null,
+        },
+      }),
+    );
+  });
+
   it("create_agent_session은 caller의 task primary membership을 로컬 task container로 상속한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -959,6 +993,47 @@ describe("create_remote_agent_session", () => {
       await capture.close();
     }
   });
+
+  it("llm origin은 부모 세션 없이 remote session을 만들고 명시 session 가장을 버린다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime, {
+        "x-soulstream-caller-origin": "llm",
+      });
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "external remote delegation",
+          caller_session_id: "spoofed-session",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body).not.toHaveProperty("caller_session_id");
+      expect(body.caller_info).toEqual({
+        source: "llm",
+        agent_node: "node-test",
+        display_name: "External LLM",
+        user_id: null,
+        avatar_url: null,
+      });
+    } finally {
+      await capture.close();
+    }
+  });
 });
 
 describe("reflect_cluster_brief", () => {
@@ -1300,6 +1375,32 @@ describe("send_message_to_session", () => {
       detail: { delivered: true },
     });
     expect(runtime.addIntervention).toHaveBeenCalledTimes(1);
+  });
+
+  it("llm origin은 명시 session 가장 없이 llm caller_info로 메시지를 보낸다", async () => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const client = await createClient(runtime, {
+      "x-soulstream-caller-origin": "llm",
+    });
+
+    const result = await client.callTool({
+      name: "send_message_to_session",
+      arguments: {
+        target_session_id: "target-sess-1",
+        message: "external steer",
+        caller_session_id: "spoofed-session",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const params = runtime.addIntervention.mock.calls[0]![0] as AddInterventionParams;
+    expect(params.callerInfo).toEqual({
+      source: "llm",
+      agent_node: "node-test",
+      display_name: "External LLM",
+      user_id: null,
+      avatar_url: null,
+    });
   });
 
   it("local failure falls back to orch /intervene with snake_case caller_info", async () => {

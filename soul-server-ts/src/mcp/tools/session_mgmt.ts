@@ -6,14 +6,13 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { sendMessageToSession } from "../../task/session_message_sender.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { resolveEffectiveCallerSessionId } from "./caller_session.js";
+import { resolveMcpCallerAttribution } from "./caller_session.js";
 
 const delegatedContainerSchema = z.object({
   kind: boardContainerKindInputSchema,
@@ -77,12 +76,9 @@ export function registerSessionMgmtTools(
       }
 
       // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
-      const effectiveCallerSessionId = resolveEffectiveCallerSessionId(caller_session_id);
-      const callerInfo = effectiveCallerSessionId
-        ? buildCallerInfoFromCallerSession(runtime, effectiveCallerSessionId)
-        : undefined;
+      const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
       const resolvedContainer = await resolveDelegatedContainer(runtime, {
-        callerSessionId: effectiveCallerSessionId,
+        callerSessionId: attribution.callerSessionId,
         ...(folder_id !== undefined ? { folderId: folder_id } : {}),
         container: container ?? null,
       });
@@ -95,11 +91,11 @@ export function registerSessionMgmtTools(
           profileId: resolvedAgentId,
           modelPreset: model_preset,
           callerSessionId: resolveStructuralCallerSessionId(
-            effectiveCallerSessionId,
+            attribution.callerSessionId,
             notify_completion,
           ),
           predecessorSessionId: predecessor_session_id ?? null,
-          callerInfo,
+          callerInfo: attribution.callerInfo,
           notifyCompletion: notify_completion,
           folderId: resolvedContainer.folderId,
           container: resolvedContainer.container,
@@ -130,10 +126,7 @@ export function registerSessionMgmtTools(
       },
     },
     async ({ target_session_id, message, caller_session_id }) => {
-      const effectiveCallerSessionId = resolveEffectiveCallerSessionId(caller_session_id);
-      const callerInfo = effectiveCallerSessionId
-        ? buildCallerInfoFromCallerSession(runtime, effectiveCallerSessionId)
-        : undefined;
+      const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
 
       const result = await sendMessageToSession(
         {
@@ -150,7 +143,11 @@ export function registerSessionMgmtTools(
             runtime.taskExecutor.startExecution(task, agent);
           },
         },
-        { targetSessionId: target_session_id, message, callerInfo },
+        {
+          targetSessionId: target_session_id,
+          message,
+          callerInfo: attribution.callerInfo,
+        },
       );
       return jsonResult(result);
     },

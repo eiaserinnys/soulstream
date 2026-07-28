@@ -10,12 +10,11 @@ import { z } from "zod";
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 
 import { AgentProfileSchema } from "../../agent_registry.js";
-import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { requireRemoteCallerSessionId } from "./caller_session.js";
+import { requireRemoteCallerAttribution } from "./caller_session.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
 const delegatedContainerSchema = z.object({
@@ -254,13 +253,8 @@ export function registerMultiNodeTools(
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
-      const callerSession = requireRemoteCallerSessionId(caller_session_id);
-      if (!callerSession.ok) return errorResult(callerSession.error);
-
-      const callerInfo = buildCallerInfoFromCallerSession(
-        runtime,
-        callerSession.callerSessionId,
-      );
+      const caller = requireRemoteCallerAttribution(runtime, caller_session_id);
+      if (!caller.ok) return errorResult(caller.error);
 
       if (agent_id !== undefined) {
         const validation = await validateRemoteAgentId(orch, node_id, agent_id);
@@ -274,7 +268,7 @@ export function registerMultiNodeTools(
       if (agent_id !== undefined) body.profile = agent_id;
       if (model_preset !== undefined) body.model_preset = model_preset;
       const resolvedContainer = await resolveDelegatedContainer(runtime, {
-        callerSessionId: callerSession.callerSessionId,
+        callerSessionId: caller.callerSessionId,
         ...(Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined
           ? { folderId: folder_id }
           : {}),
@@ -294,13 +288,13 @@ export function registerMultiNodeTools(
         body.notify_completion = notify_completion;
       }
       const structuralCallerSessionId = resolveStructuralCallerSessionId(
-        callerSession.callerSessionId,
+        caller.callerSessionId,
         notify_completion,
       );
       if (structuralCallerSessionId !== null) {
         body.caller_session_id = structuralCallerSessionId;
       }
-      body.caller_info = callerInfo;
+      body.caller_info = caller.callerInfo;
 
       try {
         const data = await fetchOrch(orch, "POST", "/api/sessions", body);
