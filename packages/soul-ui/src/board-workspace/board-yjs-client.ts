@@ -4,25 +4,41 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import type { BoardContainerRef, CatalogBoardItem, CatalogState, MarkdownDocument } from "../shared/types";
+import {
+  BOARD_ITEMS_MAP,
+  MARKDOWN_BODIES_MAP,
+  catalogBoardItemsFromYDoc,
+  createMarkdownYjsDocument,
+  deleteBoardYjsItem,
+  getMarkdownYjsText,
+  seedBoardYDocFromCatalog,
+  updateBoardYjsItemPosition,
+  updateMarkdownYjsBody,
+  updateMarkdownYjsTitle,
+  upsertBoardYjsItem,
+  type BoardYjsItemValue,
+} from "./board-yjs-document";
+
+export {
+  BOARD_ITEMS_MAP,
+  MARKDOWN_BODIES_MAP,
+  catalogBoardItemsFromYDoc,
+  createMarkdownYjsDocument,
+  deleteBoardYjsItem,
+  getMarkdownPreview,
+  getMarkdownYjsText,
+  getOrCreateMarkdownText,
+  seedBoardYDocFromCatalog,
+  updateBoardYjsItemPosition,
+  updateMarkdownYjsBody,
+  updateMarkdownYjsTitle,
+  upsertBoardYjsItem,
+} from "./board-yjs-document";
+export type { BoardYjsItemValue } from "./board-yjs-document";
 
 export const BOARD_YJS_LEGACY_FOLDER_PREFIX = "board-folder:";
 export const BOARD_YJS_CONTAINER_PREFIX = "board:";
 export const BOARD_YJS_PREFIX = BOARD_YJS_LEGACY_FOLDER_PREFIX;
-export const BOARD_ITEMS_MAP = "boardItems";
-export const MARKDOWN_BODIES_MAP = "markdownBodies";
-
-export interface BoardYjsItemValue {
-  item_type: CatalogBoardItem["itemType"];
-  item_id: string;
-  x: number;
-  y: number;
-  membership_kind?: CatalogBoardItem["membershipKind"];
-  source_task_item_id?: string | null;
-  metadata?: Record<string, unknown>;
-  created_at?: string;
-  updated_at?: string;
-}
-
 export interface RemoteBoardSelection {
   clientId: number;
   itemId: string;
@@ -54,6 +70,8 @@ export interface BoardYjsRuntime {
     x: number;
     y: number;
   }) => { document: MarkdownDocument; boardItem: CatalogBoardItem };
+  hasInitialSync?: () => boolean;
+  findMarkdownText?: (documentId: string) => Y.Text | null;
   getMarkdownText: (documentId: string) => Y.Text;
   updateMarkdownTitle: (documentId: string, title: string) => void;
   updateMarkdownBody: (documentId: string, body: string) => void;
@@ -103,160 +121,6 @@ export function isBoardYjsBrowserConnectionAvailable(locationLike: Location = wi
     !isJsdom &&
     (locationLike.protocol === "http:" || locationLike.protocol === "https:")
   );
-}
-
-export function catalogBoardItemsFromYDoc(
-  containerInput: BoardContainerInput,
-  doc: Y.Doc,
-  resolvedFolderId?: string | null,
-): CatalogBoardItem[] {
-  const container = normalizeBoardContainer(containerInput);
-  const folderId = resolveFolderIdForContainer(container, resolvedFolderId);
-  const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  return Array.from(map.entries())
-    .map(([id, value]) => ({
-      id,
-      folderId,
-      containerKind: container.kind,
-      containerId: container.id,
-      membershipKind: value.membership_kind ?? "primary",
-      sourceTaskItemId: value.source_task_item_id ?? null,
-      itemType: value.item_type,
-      itemId: value.item_id,
-      x: value.x,
-      y: value.y,
-      metadata: value.metadata ?? {},
-      ...(value.created_at ? { createdAt: value.created_at } : {}),
-      ...(value.updated_at ? { updatedAt: value.updated_at } : {}),
-    }))
-    .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
-}
-
-export function seedBoardYDocFromCatalog(
-  doc: Y.Doc,
-  containerInput: BoardContainerInput,
-  catalog: CatalogState | null,
-): void {
-  const container = normalizeBoardContainer(containerInput);
-  const items = catalog?.boardItems?.filter((item) => boardItemBelongsToContainer(item, container)) ?? [];
-  const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  doc.transact(() => {
-    for (const item of items) {
-      map.set(item.id, toYjsItemValue(item));
-      if (item.itemType === "markdown") {
-        getOrCreateMarkdownText(doc, item.itemId);
-      }
-    }
-  });
-}
-
-export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItem): void {
-  doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).set(boardItem.id, toYjsItemValue(boardItem));
-}
-
-export function updateBoardYjsItemPosition(
-  doc: Y.Doc,
-  boardItemId: string,
-  x: number,
-  y: number,
-  options: { preserveUpdatedAt?: boolean } = {},
-): void {
-  const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  const current = map.get(boardItemId);
-  if (!current) return;
-  map.set(boardItemId, {
-    ...current,
-    x,
-    y,
-    ...(!options.preserveUpdatedAt ? { updated_at: new Date().toISOString() } : {}),
-  });
-}
-
-export function deleteBoardYjsItem(doc: Y.Doc, boardItemId: string): void {
-  doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).delete(boardItemId);
-}
-
-export function createMarkdownYjsDocument(
-  doc: Y.Doc,
-  containerInput: BoardContainerInput,
-  input: { title: string; body: string; x: number; y: number; documentId?: string },
-  resolvedFolderId?: string | null,
-): { document: MarkdownDocument; boardItem: CatalogBoardItem } {
-  const container = normalizeBoardContainer(containerInput);
-  const folderId = resolveFolderIdForContainer(container, resolvedFolderId);
-  const documentId = input.documentId ?? createDocumentId();
-  const title = input.title.trim() || "Untitled document";
-  const body = input.body;
-  const text = getOrCreateMarkdownText(doc, documentId);
-  text.delete(0, text.length);
-  text.insert(0, body);
-  const boardItem: CatalogBoardItem = {
-    id: `markdown:${documentId}`,
-    folderId,
-    containerKind: container.kind,
-    containerId: container.id,
-    membershipKind: "primary",
-    sourceTaskItemId: null,
-    itemType: "markdown",
-    itemId: documentId,
-    x: input.x,
-    y: input.y,
-    metadata: {
-      title,
-      preview: getMarkdownPreview(body),
-      version: 1,
-    },
-  };
-  upsertBoardYjsItem(doc, boardItem);
-  return {
-    document: { id: documentId, title, body, version: 1 },
-    boardItem,
-  };
-}
-
-export function getOrCreateMarkdownText(doc: Y.Doc, documentId: string): Y.Text {
-  const map = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
-  let text = map.get(documentId);
-  if (!text) {
-    text = new Y.Text();
-    map.set(documentId, text);
-  }
-  return text;
-}
-
-export function updateMarkdownYjsTitle(doc: Y.Doc, documentId: string, title: string): void {
-  const boardItemId = `markdown:${documentId}`;
-  const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  const current = map.get(boardItemId);
-  if (!current) return;
-  map.set(boardItemId, {
-    ...current,
-    metadata: {
-      ...(current.metadata ?? {}),
-      title: title.trim() || "Untitled document",
-      version: nextMarkdownVersion(current.metadata),
-    },
-    updated_at: new Date().toISOString(),
-  });
-}
-
-export function updateMarkdownYjsBody(doc: Y.Doc, documentId: string, body: string): void {
-  const text = getOrCreateMarkdownText(doc, documentId);
-  text.delete(0, text.length);
-  text.insert(0, body);
-  const boardItemId = `markdown:${documentId}`;
-  const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  const current = map.get(boardItemId);
-  if (!current) return;
-  map.set(boardItemId, {
-    ...current,
-    metadata: {
-      ...(current.metadata ?? {}),
-      preview: getMarkdownPreview(body),
-      version: nextMarkdownVersion(current.metadata),
-    },
-    updated_at: new Date().toISOString(),
-  });
 }
 
 export function setBoardAwarenessSelection(
@@ -387,11 +251,20 @@ export function useBoardYjsRuntime(params: {
       ? null
       : "Board sync websocket is unavailable in this browser environment.";
     let hasConnected = false;
+    let hasInitialSync = false;
     let provider: HocuspocusProvider | null = null;
     if (!canConnect) {
       seedBoardYDocFromCatalog(doc, container, latestCatalogRef.current);
     }
-    const runtime = createRuntime(container, runtimeFolderId, doc, awareness, listeners, canConnect);
+    const runtime = createRuntime(
+      container,
+      runtimeFolderId,
+      doc,
+      awareness,
+      listeners,
+      canConnect,
+      () => hasInitialSync,
+    );
     const unsubscribeRuntime = registerBoardYjsRuntime(runtime);
     const boardItemsMap = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
     const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
@@ -414,7 +287,13 @@ export function useBoardYjsRuntime(params: {
         document: doc,
         awareness,
         token: "cookie",
-        onSynced: refresh,
+        onSynced: ({ state: isSynced }) => {
+          if (isSynced) hasInitialSync = true;
+          refresh();
+          for (const listener of listeners) {
+            if (listener !== refresh) listener();
+          }
+        },
         onAuthenticationFailed: ({ reason }) => {
           connectionStatus = "disconnected";
           connectionError = reason || "Authentication failed";
@@ -477,6 +356,7 @@ function createRuntime(
   awareness: Awareness,
   listeners: Set<() => void>,
   isProviderBacked: boolean,
+  hasInitialSync: () => boolean,
 ): BoardYjsRuntime {
   const notify = () => {
     for (const listener of listeners) listener();
@@ -488,6 +368,8 @@ function createRuntime(
     doc,
     awareness,
     isProviderBacked,
+    hasInitialSync,
+    findMarkdownText: (documentId) => getMarkdownYjsText(doc, documentId),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -510,7 +392,13 @@ function createRuntime(
       notify();
       return created;
     },
-    getMarkdownText: (documentId) => getOrCreateMarkdownText(doc, documentId),
+    getMarkdownText: (documentId) => {
+      const text = getMarkdownYjsText(doc, documentId);
+      if (!text) {
+        throw new Error(`Markdown body is not loaded: ${documentId}`);
+      }
+      return text;
+    },
     updateMarkdownTitle: (documentId, title) => {
       updateMarkdownYjsTitle(doc, documentId, title);
       notify();
@@ -532,54 +420,6 @@ function createRuntime(
   };
 }
 
-function toYjsItemValue(item: CatalogBoardItem): BoardYjsItemValue {
-  return {
-    item_type: item.itemType,
-    item_id: item.itemId,
-    x: item.x,
-    y: item.y,
-    ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-    ...(item.sourceTaskItemId !== undefined
-      ? { source_task_item_id: item.sourceTaskItemId }
-      : {}),
-    metadata: sanitizeBoardItemMetadata(item.metadata),
-    ...(item.createdAt ? { created_at: item.createdAt } : {}),
-    ...(item.updatedAt ? { updated_at: item.updatedAt } : {}),
-  };
-}
-
-function nextMarkdownVersion(metadata: Record<string, unknown> | undefined): number {
-  const value = metadata?.version;
-  if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
-    return Math.trunc(value) + 1;
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed >= 1) return Math.trunc(parsed) + 1;
-  }
-  return 2;
-}
-
-function sanitizeBoardItemMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
-  const cleaned = { ...(metadata ?? {}) };
-  delete cleaned.signedUrl;
-  delete cleaned.uploadUrl;
-  delete cleaned.uploadUrls;
-  delete cleaned.uploadProgress;
-  return cleaned;
-}
-
-function createDocumentId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export function getMarkdownPreview(body: string): string {
-  return body.replace(/\s+/g, " ").trim().slice(0, 180);
-}
-
 function emitRegistryChange(): void {
   for (const listener of registryListeners) listener();
 }
@@ -595,15 +435,6 @@ function resolveFolderIdForContainer(
 ): string {
   if (container.kind === "folder") return container.id;
   return resolvedFolderId || container.id;
-}
-
-function boardItemBelongsToContainer(
-  item: CatalogBoardItem,
-  container: BoardContainerRef,
-): boolean {
-  const itemContainerKind = item.containerKind ?? "folder";
-  const itemContainerId = item.containerId ?? item.folderId;
-  return itemContainerKind === container.kind && itemContainerId === container.id;
 }
 
 function selectionColorForContainer(container: BoardContainerRef): string {
