@@ -27,6 +27,8 @@ presets:
   - id: kimi-2
     label: Kimi - 2
     backend: claude
+    # 실측(260728): "kimi-for-coding"의 display_name은 "K2.7 Coding".
+    # 같은 계열의 "kimi-for-coding-highspeed"는 목록에 노출하지 않는다.
     model: kimi-for-coding
     env:
       ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
@@ -35,7 +37,10 @@ presets:
   - id: kimi-3
     label: Kimi - 3
     backend: claude
-    model: kimi-3-for-coding
+    # 실측(260728, GET https://api.kimi.com/coding/v1/models): K3 = "k3".
+    # 같은 엔드포인트의 "k3-256k"는 context_length가 262144로 동일하고
+    # 비디오 입력만 빠진 부분집합이라 "k3"를 정본으로 둔다.
+    model: k3
     env:
       ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
