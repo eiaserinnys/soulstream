@@ -20,6 +20,7 @@ import {
 } from "../lib/markdown-document-operations";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "conflict";
+
 const DEFAULT_DOCUMENT_TITLE = "Untitled document";
 
 /** 기본/placeholder 제목(빈 값 또는 "Untitled document")인지 판정한다. 대소문자 무시. */
@@ -32,6 +33,7 @@ const MarkdownCodeMirrorEditor = lazy(async () => {
   const module = await import("./MarkdownCodeMirrorEditor");
   return { default: module.MarkdownCodeMirrorEditor };
 });
+
 export function MarkdownDocumentPanel() {
   const documentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
@@ -45,7 +47,9 @@ export function MarkdownDocumentPanel() {
     [activeBoardContainer, selectedFolderId],
   );
   const runtime = useBoardRuntime(boardContainer);
-  const runtimeReady = runtime ? (runtime.hasInitialSync?.() ?? !runtime.isProviderBacked) : false;
+  const runtimeReady = runtime
+    ? (runtime.hasInitialSync?.() ?? !runtime.isProviderBacked)
+    : false;
   const yText = documentId && runtime && runtimeReady
     ? runtime.findMarkdownText
       ? runtime.findMarkdownText(documentId)
@@ -63,11 +67,13 @@ export function MarkdownDocumentPanel() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedDocumentIdRef = useRef<string | null>(null);
-  const canDeleteDocument = loadedDocumentIdRef.current === documentId
-    && (!runtime?.isProviderBacked || runtimeReady);
+  const canDeleteDocument = loadedDocumentIdRef.current === documentId && (!runtime?.isProviderBacked || runtimeReady);
   const editBodySnapshotRef = useRef("");
   const skipNextBlurSaveRef = useRef(false);
+  // 제목 입력이 포커스된 동안에는 런타임 스냅샷이 입력값을 덮어써 공백을 지우지
+  // 않도록 가드한다(🔴 9 근본 원인: Yjs observer 피드백 루프).
   const titleEditingRef = useRef(false);
+
   const clearSaveTimer = useCallback(() => {
     if (!saveTimerRef.current) return;
     clearTimeout(saveTimerRef.current);
@@ -259,12 +265,14 @@ export function MarkdownDocumentPanel() {
     setIsEditingBody(true);
   };
 
-  // 요청 문서가 실제 로드된 뒤에만 pending 편집 요청을 소비한다.
+  // 🔴25: "편집" 요청(requestBoardDocumentEdit)으로 열린 문서는 로드된 뒤 자동으로 편집
+  // 모드에 진입한다. 요청 문서가 실제 로드된 문서와 일치할 때만 소비하고 즉시 clear한다.
   useEffect(() => {
     if (!pendingEditId || pendingEditId !== documentId) return;
     if (!document || document.id !== documentId) return;
     if (!isEditingBody) enterEditMode();
     clearPendingBoardDocumentEdit();
+    // enterEditMode는 클로저(안정 동작); 소비 후 pendingEditId가 null이 되어 재실행돼도 무해.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingEditId, documentId, document, isEditingBody, clearPendingBoardDocumentEdit]);
 
@@ -303,7 +311,10 @@ export function MarkdownDocumentPanel() {
     const target = event.target as HTMLElement | null;
     if (!target) return;
     if (isScrollbarMouseDown(target, event.nativeEvent.offsetX, event.nativeEvent.offsetY)) {
-      // 스크롤바 거터 press가 편집기를 blur하지 않게 한다.
+      // 스크롤바 거터 press는 편집기 blur를 유발해 편집 모드를 종료시킨다.
+      // 포커스 이동을 취소해 편집을 유지한다. 네이티브 스크롤바 드래그 스크롤은
+      // UA가 별도로 처리하므로 영향받지 않는다. 거터 밖 클릭에는 개입하지 않아
+      // 정당한 외부 클릭에 의한 편집 종료는 그대로 보존된다.
       event.preventDefault();
     }
   }, [isEditingBody]);
@@ -324,6 +335,7 @@ export function MarkdownDocumentPanel() {
     setIsEditingBody(false);
   }, [clearSaveTimer, collaborativeRuntime, documentId, savedBody, savedTitle]);
 
+  // 편집완료(체크) — 기존 자동 저장/동기화 흐름을 그대로 사용해 저장 후 읽기로 전환한다.
   const finishEditing = useCallback(() => {
     void saveNow();
     setIsEditingBody(false);
@@ -386,21 +398,9 @@ export function MarkdownDocumentPanel() {
             </DashboardIconCap>
           )
         ) : null}
-        <span
-          className="inline-flex"
-          title={canDeleteDocument ? undefined : "문서 동기화 준비 중"}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!canDeleteDocument}
-            onClick={remove}
-            title={canDeleteDocument ? "Delete document" : undefined}
-            aria-label={canDeleteDocument ? "문서 삭제" : "문서 동기화 준비 중"}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </span>
+        <span className="inline-flex" title={canDeleteDocument ? undefined : "문서 동기화 준비 중"}><Button variant="ghost" size="icon" disabled={!canDeleteDocument} onClick={remove} title={canDeleteDocument ? "Delete document" : undefined} aria-label={canDeleteDocument ? "문서 삭제" : "문서 동기화 준비 중"}>
+          <Trash2 className="h-4 w-4" />
+        </Button></span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-3" onMouseDown={handleEditScrollMouseDown}>
