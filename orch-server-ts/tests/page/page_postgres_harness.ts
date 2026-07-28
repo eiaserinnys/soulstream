@@ -227,7 +227,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
       target_block_id TEXT REFERENCES blocks(id) ON DELETE SET NULL,
       operation_type TEXT NOT NULL,
-      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system','llm')),
       actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
       actor_event_id INTEGER,
       actor_user_id TEXT,
@@ -248,7 +248,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       source_hash TEXT NOT NULL,
       processed_hash TEXT,
       actor_kind TEXT NOT NULL DEFAULT 'system'
-        CHECK (actor_kind IN ('agent','user','system')),
+        CHECK (actor_kind IN ('agent','user','system','llm')),
       actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
       actor_user_id TEXT,
       routing_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -263,6 +263,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
         (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
         OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
         OR (actor_kind = 'system' AND actor_user_id IS NULL)
+        OR (actor_kind = 'llm' AND actor_session_id IS NULL AND actor_user_id IS NULL)
       )
     );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
@@ -392,7 +393,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       id TEXT PRIMARY KEY,
       folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
       operation_type TEXT NOT NULL,
-      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system','llm')),
       actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
       actor_user_id TEXT,
       idempotency_key TEXT NOT NULL UNIQUE,

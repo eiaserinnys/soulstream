@@ -113,6 +113,30 @@ describePostgres("TaskService PostgreSQL integration", () => {
     );
   });
 
+  it("preserves a sessionless llm create_task actor without coercing it to user", async () => {
+    const result = await service.createTask({
+      taskId: "task-llm",
+      folderId: "folder-1",
+      title: "LLM task",
+      actorKind: "llm",
+      actorSessionId: null,
+      enrollCreator: false,
+    });
+
+    expect(result.operation).toMatchObject({
+      operation_type: "create_task",
+      actor_kind: "llm",
+      actor_session_id: null,
+      actor_event_id: null,
+    });
+    expect(result.eventId).toBe(0);
+    expect(emitTaskUpdated).not.toHaveBeenCalled();
+    const events = await harness!.sql<Array<{ count: string | number }>>`
+      SELECT COUNT(*)::int AS count FROM events
+    `;
+    expect(Number(events[0]?.count ?? -1)).toBe(0);
+  });
+
   it("creator enrollment이 별도 델타를 발행해도 새 업무 카드 델타를 빠뜨리지 않는다", async () => {
     const creatorBoardItemMover = {
       moveBoardItemToContainer: vi.fn(async () => ({ enrolled: true })),

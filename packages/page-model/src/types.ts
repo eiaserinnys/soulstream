@@ -91,7 +91,7 @@ export type PageBlockProperties<T extends PageBlockType = PageBlockType> =
     ? PageBlockPropertiesByType[T]
     : Record<string, unknown>;
 
-export type PageActorKind = "agent" | "user" | "system";
+export type PageActorKind = "agent" | "user" | "system" | "llm";
 export type PageLinkKind = "mount" | "inline_page" | "block_ref";
 
 export type PageOperationType =

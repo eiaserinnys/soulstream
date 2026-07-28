@@ -9,10 +9,13 @@ import {
 import { z } from "zod";
 
 import { PageYjsHostClient } from "../../page/page_host_client.js";
-import { SOULSTREAM_AGENT_SESSION_HEADER } from "../request_context.js";
+import { getCurrentMcpCallerOrigin } from "../request_context.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { resolveEffectiveCallerSessionId } from "./caller_session.js";
+import {
+  requireMcpMutationActor,
+  type McpMutationActor,
+} from "./caller_session.js";
 
 const id = z.string().trim().min(1);
 const callerSessionId = id.optional();
@@ -29,7 +32,7 @@ const placement = {
   after_block_id: id.nullable().default(null),
   after_temp_id: id.nullable().optional(),
 };
-const batchOperation = z.discriminatedUnion("op", [
+const nonDestructiveBatchOperations = [
   z.object({ op: z.literal("rename_page"), title: id }),
   z.object({ op: z.literal("set_page_archived"), archived: z.boolean() }),
   z.object({
@@ -50,27 +53,39 @@ const batchOperation = z.discriminatedUnion("op", [
     properties: jsonObject,
   }),
   z.object({ op: z.literal("set_check_state"), block_id: id, checked: z.boolean() }),
+] as const;
+const nonDestructiveBatchOperation = z.discriminatedUnion(
+  "op",
+  nonDestructiveBatchOperations,
+);
+const batchOperation = z.discriminatedUnion("op", [
+  ...nonDestructiveBatchOperations,
   z.object({ op: z.literal("delete_block_subtree"), block_id: id }),
 ]);
 
-const batchInput = z.object({
+function buildBatchInput(operation: z.ZodType) {
+  return z.object({
   page: pageForCreate.optional(),
   page_id: id.optional(),
   expected_version: z.number().int().positive().optional(),
-  operations: z.array(batchOperation).min(1),
+  operations: z.array(operation).min(1),
   idempotency_key: id,
   caller_session_id: callerSessionId,
-}).superRefine((value, context) => {
-  if ((value.page ? 1 : 0) + (value.page_id ? 1 : 0) !== 1) {
-    context.addIssue({ code: "custom", message: "page and page_id are mutually exclusive" });
-  }
-  if (value.page && value.expected_version !== undefined) {
-    context.addIssue({ code: "custom", message: "new page must not include expected_version" });
-  }
-  if (value.page_id && value.expected_version === undefined) {
-    context.addIssue({ code: "custom", message: "existing page requires expected_version" });
-  }
-});
+  }).superRefine((value, context) => {
+    if ((value.page ? 1 : 0) + (value.page_id ? 1 : 0) !== 1) {
+      context.addIssue({ code: "custom", message: "page and page_id are mutually exclusive" });
+    }
+    if (value.page && value.expected_version !== undefined) {
+      context.addIssue({ code: "custom", message: "new page must not include expected_version" });
+    }
+    if (value.page_id && value.expected_version === undefined) {
+      context.addIssue({ code: "custom", message: "existing page requires expected_version" });
+    }
+  });
+}
+
+const batchInput = buildBatchInput(batchOperation);
+const nonDestructiveBatchInput = buildBatchInput(nonDestructiveBatchOperation);
 
 const upsertInput = z.object({
   page_id: id.optional(),
@@ -166,7 +181,8 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
         title: input.title,
         daily_date: input.daily_date ?? null,
       },
-      actorSessionId: actor,
+      actorKind: actor.actorKind,
+      actorSessionId: actor.actorSessionId,
       idempotencyKey: input.idempotency_key,
     });
     return { page: result.page, created: true, operation: result.operation };
@@ -174,7 +190,10 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
 
   server.registerTool("batch_page_operations", {
     description: mutationDescription("페이지 변경 묶음을 하나의 CAS transaction으로 실행한다."),
-    inputSchema: batchInput.shape,
+    inputSchema:
+      getCurrentMcpCallerOrigin() === "llm"
+        ? nonDestructiveBatchInput.shape
+        : batchInput.shape,
   }, async (raw) => {
     const parsed = batchInput.safeParse(raw);
     if (!parsed.success) return errorResult(parsed.error.message);
@@ -191,7 +210,8 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
             }
           : { page_id: data.page_id!, expected_version: data.expected_version! }),
         operations: data.operations,
-        actor_session_id: actor,
+        actor_kind: actor.actorKind,
+        actor_session_id: actor.actorSessionId,
         idempotency_key: data.idempotency_key,
       });
       return { ...result, idempotent: result.idempotent === true };
@@ -214,7 +234,8 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
         const result = await client.createPage({
           page: { id: randomUUID(), title: data.title, daily_date: null },
           blocks,
-          actorSessionId: actor,
+          actorKind: actor.actorKind,
+          actorSessionId: actor.actorSessionId,
           idempotencyKey: data.idempotency_key,
         });
         return { ...result, created: true };
@@ -228,7 +249,8 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
         pageId: data.page_id!,
         expectedVersion: data.expected_version!,
         blocks,
-        actorSessionId: actor,
+        actorKind: actor.actorKind,
+        actorSessionId: actor.actorSessionId,
         idempotencyKey: data.idempotency_key,
       });
       return { ...result, created: false };
@@ -239,7 +261,11 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
     description: mutationDescription("Asia/Seoul 기준 데일리 페이지를 멱등 get-or-create한다."),
     inputSchema: { date: date.optional(), caller_session_id: callerSessionId },
   }, async (input) => mutation(runtime, input.caller_session_id, async (client, actor) =>
-    await client.getDailyPage({ date: input.date, actorSessionId: actor })));
+    await client.getDailyPage({
+      date: input.date,
+      actorKind: actor.actorKind,
+      actorSessionId: actor.actorSessionId,
+    })));
 }
 
 async function handle(
@@ -256,11 +282,14 @@ async function handle(
 async function mutation(
   runtime: McpRuntime,
   explicitCallerSessionId: string | undefined,
-  fn: (client: PageYjsHostClient, actorSessionId: string) => Promise<unknown>,
+  fn: (client: PageYjsHostClient, actor: McpMutationActor) => Promise<unknown>,
 ) {
   try {
-    const actorSessionId = requireCallerSessionId(explicitCallerSessionId);
-    return jsonResult(await fn(getPageHostClient(runtime), actorSessionId));
+    const actor = requireMcpMutationActor(
+      explicitCallerSessionId,
+      "page mutation tools",
+    );
+    return jsonResult(await fn(getPageHostClient(runtime), actor));
   } catch (error) {
     return errorResult(errorMessage(error));
   }
@@ -270,16 +299,6 @@ function getPageHostClient(runtime: McpRuntime): PageYjsHostClient {
   if (runtime.pageHostClient) return runtime.pageHostClient;
   if (!runtime.orch) throw new Error("orchestrator proxy is not configured");
   return new PageYjsHostClient({ orch: runtime.orch, logger: runtime.logger });
-}
-
-function requireCallerSessionId(explicit: string | undefined): string {
-  const resolved = resolveEffectiveCallerSessionId(explicit);
-  if (!resolved) {
-    throw new Error(
-      `caller session id is required for page mutation tools. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
-    );
-  }
-  return resolved;
 }
 
 function mutationDescription(description: string): string {

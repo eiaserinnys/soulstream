@@ -170,6 +170,32 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       .toBe(2);
   }, 30_000);
 
+  it("persists llm page provenance without a fabricated session or event", async () => {
+    const result = await service.createPage({
+      page: { id: "page-llm", title: "LLM Page", dailyDate: null, metadata: {} },
+      actor: { actorKind: "llm" },
+      idempotencyKey: "create_page:llm:create-1",
+    });
+
+    expect(result.operation).toMatchObject({
+      actor_kind: "llm",
+      actor_session_id: null,
+      actor_event_id: null,
+    });
+    const rows = await harness.sql<Array<{
+      created_session_id: string | null;
+      created_event_id: number | null;
+    }>>`
+      SELECT created_session_id, created_event_id
+      FROM pages
+      WHERE id = 'page-llm'
+    `;
+    expect(rows[0]).toEqual({
+      created_session_id: null,
+      created_event_id: null,
+    });
+  }, 30_000);
+
   it("moves a mixed block forest and its primary session binding in one transaction", async () => {
     await harness.sql`INSERT INTO sessions (session_id) VALUES ('moved-session')`;
     await harness.sql`

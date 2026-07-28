@@ -44,8 +44,10 @@ export class CustomViewRepository {
         cv.html AS cv_html,
         cv.revision AS cv_revision,
         cv.archived AS cv_archived,
+        cv.created_actor_kind AS cv_created_actor_kind,
         cv.created_session_id AS cv_created_session_id,
         cv.created_event_id AS cv_created_event_id,
+        cv.updated_actor_kind AS cv_updated_actor_kind,
         cv.updated_session_id AS cv_updated_session_id,
         cv.updated_event_id AS cv_updated_event_id,
         cv.created_at AS cv_created_at,
@@ -85,8 +87,10 @@ export class CustomViewRepository {
         cv.html AS cv_html,
         cv.revision AS cv_revision,
         cv.archived AS cv_archived,
+        cv.created_actor_kind AS cv_created_actor_kind,
         cv.created_session_id AS cv_created_session_id,
         cv.created_event_id AS cv_created_event_id,
+        cv.updated_actor_kind AS cv_updated_actor_kind,
         cv.updated_session_id AS cv_updated_session_id,
         cv.updated_event_id AS cv_updated_event_id,
         cv.created_at AS cv_created_at,
@@ -122,8 +126,9 @@ export class CustomViewRepository {
       boardItemId: string;
       title: string | null;
       html: string;
-      actorSessionId: string;
-      eventId: number;
+      actorKind: CustomViewRow["createdActorKind"];
+      actorSessionId: string | null;
+      eventId: number | null;
     },
   ): Promise<CustomViewRow> {
     const rows = await sql<CustomViewDbRow[]>`
@@ -134,8 +139,10 @@ export class CustomViewRepository {
         html,
         revision,
         archived,
+        created_actor_kind,
         created_session_id,
         created_event_id,
+        updated_actor_kind,
         updated_session_id,
         updated_event_id
       )
@@ -146,8 +153,10 @@ export class CustomViewRepository {
         ${params.html},
         1,
         FALSE,
+        ${params.actorKind},
         ${params.actorSessionId},
         ${params.eventId},
+        ${params.actorKind},
         ${params.actorSessionId},
         ${params.eventId}
       )
@@ -163,8 +172,9 @@ export class CustomViewRepository {
       expectedRevision: number;
       html: string;
       title?: string | null;
-      actorSessionId: string;
-      eventId: number;
+      actorKind: CustomViewRow["updatedActorKind"];
+      actorSessionId: string | null;
+      eventId: number | null;
     },
   ): Promise<CustomViewRow> {
     const currentRows = await sql<CustomViewDbRow[]>`
@@ -189,6 +199,7 @@ export class CustomViewRepository {
       SET title = ${nextTitle},
           html = ${params.html},
           revision = revision + 1,
+          updated_actor_kind = ${params.actorKind},
           updated_session_id = ${params.actorSessionId},
           updated_event_id = ${params.eventId},
           updated_at = NOW()
@@ -219,8 +230,10 @@ function normalizeCustomViewJoin(row: CustomViewJoinRow): CustomViewWithBoardIte
       html: row.cv_html,
       revision: row.cv_revision,
       archived: row.cv_archived,
+      created_actor_kind: row.cv_created_actor_kind,
       created_session_id: row.cv_created_session_id,
       created_event_id: row.cv_created_event_id,
+      updated_actor_kind: row.cv_updated_actor_kind,
       updated_session_id: row.cv_updated_session_id,
       updated_event_id: row.cv_updated_event_id,
       created_at: row.cv_created_at,
@@ -252,8 +265,10 @@ function normalizeCustomViewRow(row: CustomViewDbRow): CustomViewRow {
     html: row.html,
     revision: Number(row.revision),
     archived: Boolean(row.archived),
+    createdActorKind: row.created_actor_kind,
     createdSessionId: row.created_session_id,
     createdEventId: row.created_event_id === null ? null : Number(row.created_event_id),
+    updatedActorKind: row.updated_actor_kind,
     updatedSessionId: row.updated_session_id,
     updatedEventId: row.updated_event_id === null ? null : Number(row.updated_event_id),
     ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
@@ -274,8 +289,10 @@ interface CustomViewDbRow {
   html: string;
   revision: string | number;
   archived: boolean;
+  created_actor_kind: CustomViewRow["createdActorKind"];
   created_session_id: string | null;
   created_event_id: string | number | null;
+  updated_actor_kind: CustomViewRow["updatedActorKind"];
   updated_session_id: string | null;
   updated_event_id: string | number | null;
   created_at: Date | string | null;
@@ -305,8 +322,10 @@ interface CustomViewJoinRow {
   cv_html: string;
   cv_revision: string | number;
   cv_archived: boolean;
+  cv_created_actor_kind: CustomViewRow["createdActorKind"];
   cv_created_session_id: string | null;
   cv_created_event_id: string | number | null;
+  cv_updated_actor_kind: CustomViewRow["updatedActorKind"];
   cv_updated_session_id: string | null;
   cv_updated_event_id: string | number | null;
   cv_created_at: Date | string | null;

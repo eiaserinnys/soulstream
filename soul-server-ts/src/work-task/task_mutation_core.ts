@@ -31,7 +31,7 @@ export interface TaskMutateParams {
   actor: TaskActorParams;
   payload: Record<string, unknown>;
   preflight?: (sql: RepositorySql) => Promise<void>;
-  apply: (sql: RepositorySql, eventId: number) => Promise<void>;
+  apply: (sql: RepositorySql, eventId: number | null) => Promise<void>;
   reason?: string | null;
   idempotencyKey?: string | null;
 }
@@ -42,7 +42,7 @@ export interface SessionlessTaskMutateParams {
   targetId: string;
   operationType: string;
   actor: {
-    actorKind: Extract<TaskOperationActorKind, "user" | "system">;
+    actorKind: Extract<TaskOperationActorKind, "user" | "system" | "llm">;
     actorSessionId: null;
     actorUserId?: string | null;
   };
@@ -69,11 +69,14 @@ export class TaskMutationCore {
     if (idempotent) return idempotent;
 
     let operation!: TaskOperationRow;
-    let eventId = 0;
+    let eventId: number | null = null;
     await this.repo.transaction(async (sql) => {
       await params.preflight?.(sql);
       const opId = randomUUID();
-      eventId = await this.appendTaskEvent(sql, { ...params, operationId: opId });
+      eventId = await this.appendTaskEventIfPresent(
+        sql,
+        { ...params, operationId: opId },
+      );
       await params.apply(sql, eventId);
       operation = await this.repo.appendOperationTx(sql, {
         id: opId,
@@ -94,7 +97,7 @@ export class TaskMutationCore {
     const result = {
       snapshot: await this.requireSnapshot(params.taskId),
       operation,
-      eventId,
+      eventId: eventId ?? 0,
     };
     await this.broadcastMutation(params.actor.actorSessionId, result);
     return result;
@@ -144,7 +147,7 @@ export class TaskMutationCore {
 
     let taskId = "";
     let operation!: TaskOperationRow;
-    let eventId = 0;
+    let eventId: number | null = null;
     let shouldNotifyHandoff = false;
     await this.repo.transaction(async (sql) => {
       taskId = await this.repo.getTaskIdForItemTx(sql, params.itemId);
@@ -163,7 +166,7 @@ export class TaskMutationCore {
         isTerminalHandoffStatus(params.status) &&
         item.status !== params.status;
       const opId = randomUUID();
-      eventId = await this.appendTaskEvent(sql, {
+      eventId = await this.appendTaskEventIfPresent(sql, {
         operationId: opId,
         taskId,
         operationType: "set_item_status",
@@ -202,7 +205,7 @@ export class TaskMutationCore {
     const result = {
       snapshot: await this.requireSnapshot(taskId),
       operation,
-      eventId,
+      eventId: eventId ?? 0,
     };
     await this.broadcastMutation(params.actorSessionId, result);
     if (shouldNotifyHandoff) {
@@ -222,7 +225,7 @@ export class TaskMutationCore {
     if (idempotent) return idempotent;
 
     let operation!: TaskOperationRow;
-    let eventId = 0;
+    let eventId: number | null = null;
     await this.repo.transaction(async (sql) => {
       const task = await this.repo.getTaskForUpdateTx(sql, params.taskId);
       const actualVersion = Number(task.version);
@@ -235,7 +238,7 @@ export class TaskMutationCore {
         );
       }
       const opId = randomUUID();
-      eventId = await this.appendTaskEvent(sql, {
+      eventId = await this.appendTaskEventIfPresent(sql, {
         operationId: opId,
         taskId: params.taskId,
         operationType: "set_task_status",
@@ -274,7 +277,7 @@ export class TaskMutationCore {
     const result = {
       snapshot: await this.requireSnapshot(params.taskId),
       operation,
-      eventId,
+      eventId: eventId ?? 0,
     };
     await this.broadcastMutation(params.actorSessionId, result);
     return result;
@@ -353,9 +356,10 @@ export class TaskMutationCore {
   private async appendTaskEvent(
     sql: RepositorySql,
     params: TaskEventParams,
+    actorSessionId: string,
   ): Promise<number> {
     return await this.db.appendEventTx(sql, {
-      sessionId: params.actor.actorSessionId,
+      sessionId: actorSessionId,
       eventType: "task_operation",
       payload: JSON.stringify({
         operation_id: params.operationId,
@@ -372,6 +376,15 @@ export class TaskMutationCore {
     });
   }
 
+  private async appendTaskEventIfPresent(
+    sql: RepositorySql,
+    params: TaskEventParams,
+  ): Promise<number | null> {
+    const actorSessionId = params.actor.actorSessionId;
+    if (actorSessionId === null) return null;
+    return await this.appendTaskEvent(sql, params, actorSessionId);
+  }
+
   private async requireSnapshot(taskId: string): Promise<TaskSnapshot> {
     const snapshot = await this.repo.getSnapshot(taskId);
     if (!snapshot) throw new Error(`task not found: ${taskId}`);
@@ -379,10 +392,10 @@ export class TaskMutationCore {
   }
 
   private async broadcastMutation(
-    actorSessionId: string,
+    actorSessionId: string | null,
     result: TaskMutationResult,
   ): Promise<void> {
-    if (result.idempotent || !this.broadcaster) return;
+    if (result.idempotent || !this.broadcaster || actorSessionId === null) return;
     await this.broadcaster.emitTaskUpdated(
       actorSessionId,
       result.snapshot.task.id,

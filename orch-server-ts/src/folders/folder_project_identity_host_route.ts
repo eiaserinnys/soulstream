@@ -15,7 +15,7 @@ export interface FolderProjectIdentityHostRouteOptions {
 
 const id = z.string().trim().min(1);
 const actorFields = {
-  actor_kind: z.enum(["agent", "user", "system"]),
+  actor_kind: z.enum(["agent", "user", "system", "llm"]),
   actor_session_id: id.nullable().optional(),
   actor_user_id: id.nullable().optional(),
   idempotency_key: id,

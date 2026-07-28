@@ -58,7 +58,7 @@ export interface PageOperationRecord extends Record<string, unknown> {
   page_id: string;
   target_block_id: string | null;
   operation_type: string;
-  actor_kind: "agent" | "user" | "system";
+  actor_kind: "agent" | "user" | "system" | "llm";
   actor_session_id: string | null;
   actor_event_id: number | null;
   actor_user_id: string | null;

@@ -21,7 +21,7 @@ export interface PageYjsHostOperationOptions {
 const id = z.string().trim().min(1);
 const jsonObject = z.record(z.string(), z.unknown());
 const actorFields = {
-  actor_kind: z.enum(["agent", "user", "system"]),
+  actor_kind: z.enum(["agent", "user", "system", "llm"]),
   actor_session_id: id.nullable().optional(),
   actor_user_id: id.nullable().optional(),
 };
@@ -290,7 +290,7 @@ function toOperationDto(
     page_id: string;
     target_block_id: string | null;
     operation_type: string;
-    actor_kind: "agent" | "user" | "system";
+    actor_kind: "agent" | "user" | "system" | "llm";
     actor_session_id: string | null;
     actor_user_id: string | null;
     expected_version: number;

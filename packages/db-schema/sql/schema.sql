@@ -668,8 +668,12 @@ CREATE TABLE IF NOT EXISTS board_custom_views (
     html               TEXT NOT NULL DEFAULT '',
     revision           INTEGER NOT NULL DEFAULT 1,
     archived           BOOLEAN NOT NULL DEFAULT FALSE,
+    created_actor_kind TEXT NOT NULL DEFAULT 'agent'
+                       CHECK (created_actor_kind IN ('agent','user','system','llm')),
     created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     created_event_id   INTEGER,
+    updated_actor_kind TEXT NOT NULL DEFAULT 'agent'
+                       CHECK (updated_actor_kind IN ('agent','user','system','llm')),
     updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     updated_event_id   INTEGER,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -684,8 +688,10 @@ ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS html TEXT NOT NULL DEFAULT '';
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_actor_kind TEXT NOT NULL DEFAULT 'agent';
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_session_id TEXT;
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_event_id INTEGER;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS updated_actor_kind TEXT NOT NULL DEFAULT 'agent';
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS updated_session_id TEXT;
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS updated_event_id INTEGER;
 ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -705,6 +711,12 @@ ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_upda
 ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_updated_session_id_updated_event_id_fkey
     FOREIGN KEY (updated_session_id, updated_event_id)
     REFERENCES events(session_id, id) ON DELETE SET NULL;
+ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_created_actor_kind_check;
+ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_created_actor_kind_check
+    CHECK (created_actor_kind IN ('agent','user','system','llm'));
+ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_updated_actor_kind_check;
+ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_updated_actor_kind_check
+    CHECK (updated_actor_kind IN ('agent','user','system','llm'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_board_custom_views_board_item
     ON board_custom_views(board_item_id);
@@ -3311,7 +3323,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     CONSTRAINT tasks_status_check
         CHECK (status IN ('open','completed')),
     CONSTRAINT tasks_completed_kind_check
-        CHECK (completed_kind IN ('agent','user')),
+        CHECK (completed_kind IN ('agent','user','llm')),
     FOREIGN KEY (created_session_id, created_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL,
     CONSTRAINT tasks_completed_session_id_fkey
@@ -3336,7 +3348,7 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
 
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_kind_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_completed_kind_check
-    CHECK (completed_kind IN ('agent','user'));
+    CHECK (completed_kind IN ('agent','user','llm'));
 
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_session_id_fkey;
 ALTER TABLE tasks ADD CONSTRAINT tasks_completed_session_id_fkey
@@ -3393,7 +3405,7 @@ CREATE TABLE IF NOT EXISTS task_items (
     created_event_id     INTEGER,
     updated_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     updated_event_id     INTEGER,
-    completed_kind       TEXT CHECK (completed_kind IN ('agent','user')),
+    completed_kind       TEXT CHECK (completed_kind IN ('agent','user','llm')),
     completed_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     completed_event_id   INTEGER,
     completed_user_id    TEXT,
@@ -3433,7 +3445,7 @@ CREATE TABLE IF NOT EXISTS task_operations (
     target_kind      TEXT NOT NULL CHECK (target_kind IN ('task','section','item')),
     target_id        TEXT NOT NULL,
     operation_type   TEXT NOT NULL,
-    actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system')),
+    actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system','llm')),
     actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     actor_event_id   INTEGER,
     actor_user_id    TEXT,
@@ -3517,7 +3529,7 @@ CREATE TABLE IF NOT EXISTS folder_project_operations (
     id               TEXT PRIMARY KEY,
     folder_id        TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
     operation_type   TEXT NOT NULL,
-    actor_kind       TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+    actor_kind       TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system','llm')),
     actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     actor_user_id    TEXT,
     idempotency_key  TEXT NOT NULL,
@@ -3675,13 +3687,14 @@ ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_proje
     FOREIGN KEY (routing_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
 ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_kind_check;
 ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_kind_check
-    CHECK (actor_kind IN ('agent','user','system'));
+    CHECK (actor_kind IN ('agent','user','system','llm'));
 ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_shape_check;
 ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_shape_check
     CHECK (
       (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
       OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
       OR (actor_kind = 'system' AND actor_user_id IS NULL)
+      OR (actor_kind = 'llm' AND actor_session_id IS NULL AND actor_user_id IS NULL)
     );
 ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_attempts_check;
 ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_attempts_check
@@ -3761,7 +3774,7 @@ CREATE TABLE IF NOT EXISTS block_operations (
     page_id          TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
     target_block_id  TEXT REFERENCES blocks(id) ON DELETE SET NULL,
     operation_type   TEXT NOT NULL,
-    actor_kind       TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+    actor_kind       TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system','llm')),
     actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     actor_event_id   INTEGER,
     actor_user_id    TEXT,
@@ -3807,7 +3820,7 @@ ALTER TABLE block_operations ADD CONSTRAINT block_operations_actor_session_id_fk
     FOREIGN KEY (actor_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
 ALTER TABLE block_operations DROP CONSTRAINT IF EXISTS block_operations_actor_kind_check;
 ALTER TABLE block_operations ADD CONSTRAINT block_operations_actor_kind_check
-    CHECK (actor_kind IN ('agent','user','system'));
+    CHECK (actor_kind IN ('agent','user','system','llm'));
 ALTER TABLE block_operations DROP CONSTRAINT IF EXISTS block_operations_actor_event_fkey;
 ALTER TABLE block_operations ADD CONSTRAINT block_operations_actor_event_fkey
     FOREIGN KEY (actor_session_id, actor_event_id)

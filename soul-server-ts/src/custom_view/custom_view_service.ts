@@ -68,8 +68,13 @@ export interface CustomViewBroadcasterPort {
 export interface CustomViewMutationResult {
   customView: CustomViewRow;
   boardItem: CatalogBoardItemRow;
-  eventId?: number;
+  eventId?: number | null;
   idempotent?: boolean;
+}
+
+export interface CustomViewActor {
+  actorKind: "agent" | "user" | "system" | "llm";
+  actorSessionId: string | null;
 }
 
 export class CustomViewService {
@@ -83,8 +88,7 @@ export class CustomViewService {
     this.repo = db.customViews();
   }
 
-  async createCustomView(params: {
-    actorSessionId: string;
+  async createCustomView(params: CustomViewActor & {
     container: BoardYjsContainerRef;
     title: string;
     html: string;
@@ -115,22 +119,25 @@ export class CustomViewService {
     });
     try {
       let customView!: CustomViewRow;
-      let eventId = 0;
+      let eventId: number | null = null;
       await this.repo.transaction(async (sql) => {
-        eventId = await this.appendEvent(sql, {
-          actorSessionId: params.actorSessionId,
-          eventType: "custom_view_created",
-          customViewId,
-          boardItemId,
-          revision: 1,
-          idempotencyKey: params.idempotencyKey,
-          searchableText: `custom view created ${title}`,
-        });
+        eventId = params.actorSessionId
+          ? await this.appendEvent(sql, {
+              actorSessionId: params.actorSessionId,
+              eventType: "custom_view_created",
+              customViewId,
+              boardItemId,
+              revision: 1,
+              idempotencyKey: params.idempotencyKey,
+              searchableText: `custom view created ${title}`,
+            })
+          : null;
         customView = await this.repo.createCustomViewTx(sql, {
           id: customViewId,
           boardItemId,
           title,
           html,
+          actorKind: params.actorKind,
           actorSessionId: params.actorSessionId,
           eventId,
         });
@@ -145,8 +152,7 @@ export class CustomViewService {
     }
   }
 
-  async patchCustomView(params: {
-    actorSessionId: string;
+  async patchCustomView(params: CustomViewActor & {
     customViewId: string;
     expectedRevision: number;
     html: string;
@@ -160,17 +166,19 @@ export class CustomViewService {
     }
 
     let customView!: CustomViewRow;
-    let eventId = 0;
+    let eventId: number | null = null;
     await this.repo.transaction(async (sql) => {
-      eventId = await this.appendEvent(sql, {
-        actorSessionId: params.actorSessionId,
-        eventType: "custom_view_updated",
-        customViewId: params.customViewId,
-        boardItemId: existing.boardItem.id,
-        revision: params.expectedRevision + 1,
-        idempotencyKey: params.idempotencyKey,
-        searchableText: `custom view updated ${params.customViewId}`,
-      });
+      eventId = params.actorSessionId
+        ? await this.appendEvent(sql, {
+            actorSessionId: params.actorSessionId,
+            eventType: "custom_view_updated",
+            customViewId: params.customViewId,
+            boardItemId: existing.boardItem.id,
+            revision: params.expectedRevision + 1,
+            idempotencyKey: params.idempotencyKey,
+            searchableText: `custom view updated ${params.customViewId}`,
+          })
+        : null;
       customView = await this.repo.patchCustomViewTx(sql, {
         customViewId: params.customViewId,
         expectedRevision: params.expectedRevision,
@@ -178,6 +186,7 @@ export class CustomViewService {
         ...(Object.prototype.hasOwnProperty.call(params, "title")
           ? { title: params.title ?? null }
           : {}),
+        actorKind: params.actorKind,
         actorSessionId: params.actorSessionId,
         eventId,
       });
@@ -253,7 +262,7 @@ export class CustomViewService {
   }
 
   private async broadcast(
-    actorSessionId: string,
+    actorSessionId: string | null,
     result: CustomViewMutationResult,
   ): Promise<void> {
     if (result.idempotent) return;
@@ -262,12 +271,14 @@ export class CustomViewService {
       {},
       boardItemsDelta([result.boardItem]),
     );
-    await this.broadcaster?.emitCustomViewUpdated?.(
-      actorSessionId,
-      result.customView.id,
-      result.boardItem.id,
-      result.customView.revision,
-    );
+    if (actorSessionId) {
+      await this.broadcaster?.emitCustomViewUpdated?.(
+        actorSessionId,
+        result.customView.id,
+        result.boardItem.id,
+        result.customView.revision,
+      );
+    }
   }
 }
 

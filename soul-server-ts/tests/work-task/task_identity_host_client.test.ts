@@ -72,4 +72,37 @@ describe("TaskIdentityHostClient", () => {
       }),
     );
   });
+
+  it("forwards sessionless llm provenance on the task identity wire", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: "task-llm",
+      pageId: "task-llm",
+      taskId: "task-llm",
+      snapshot: {},
+      operation: {},
+      pageOperation: {},
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new TaskIdentityHostClient({
+      orch: { baseUrl: "http://orch.local", headers: { authorization: "Bearer test" } },
+      logger: { warn: vi.fn() } as never,
+    });
+
+    await client.create({
+      actorKind: "llm",
+      actorSessionId: null,
+      title: "LLM 업무",
+      folderId: "folder-a",
+      idempotencyKey: "create:llm:task",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://orch.local/api/task-identities/host/create",
+      expect.objectContaining({
+        body: expect.stringContaining(
+          '"actor_kind":"llm","actor_session_id":null',
+        ),
+      }),
+    );
+  });
 });

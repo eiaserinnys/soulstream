@@ -393,7 +393,7 @@ export class TaskRepository {
       actorKind: TaskOperationActorKind;
       actorSessionId: string | null;
       actorUserId: string | null;
-      eventId: number;
+      eventId: number | null;
     },
   ): Promise<TaskRow> {
     await this.assertVersionTx(sql, "task", params.taskId, params.expectedVersion);
@@ -426,7 +426,7 @@ export class TaskRepository {
       positionKey: string;
       assignee: TaskAssigneeFields;
       actorSessionId: string | null;
-      eventId: number;
+      eventId: number | null;
     },
   ): Promise<TaskSectionRow> {
     const rows = await sql<TaskSectionRow[]>`
@@ -452,7 +452,7 @@ export class TaskRepository {
     fields: SectionPatch,
     expectedVersion: number,
     actorSessionId: string | null,
-    eventId: number,
+    eventId: number | null,
   ): Promise<TaskSectionRow> {
     await this.assertVersionTx(sql, "section", sectionId, expectedVersion);
     const clean = cleanPatch(fields);
@@ -481,7 +481,7 @@ export class TaskRepository {
       actorKind: TaskOperationActorKind;
       actorSessionId: string | null;
       actorUserId: string | null;
-      eventId: number;
+      eventId: number | null;
     },
   ): Promise<TaskItemRow> {
     const rows = await sql<TaskItemRow[]>`
@@ -507,7 +507,7 @@ export class TaskRepository {
     fields: ItemPatch,
     expectedVersion: number,
     actorSessionId: string | null,
-    eventId: number,
+    eventId: number | null,
   ): Promise<TaskItemRow> {
     await this.assertVersionTx(sql, "item", itemId, expectedVersion);
     const clean = cleanPatch(fields);
@@ -533,7 +533,7 @@ export class TaskRepository {
       actorKind: TaskOperationActorKind;
       actorSessionId: string | null;
       actorUserId: string | null;
-      eventId: number;
+      eventId: number | null;
     },
   ): Promise<TaskItemRow> {
     await this.assertVersionTx(sql, "item", params.itemId, params.expectedVersion);

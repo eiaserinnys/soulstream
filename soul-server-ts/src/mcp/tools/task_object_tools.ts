@@ -4,8 +4,10 @@ import { z } from "zod";
 import type { TaskStatus } from "../../db/session_db_types.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { SOULSTREAM_AGENT_SESSION_HEADER } from "../request_context.js";
-import { resolveEffectiveCallerSessionId } from "./caller_session.js";
+import {
+  requireMcpMutationActor,
+  type McpMutationActor,
+} from "./caller_session.js";
 
 import {
   callerSessionIdSchema,
@@ -51,10 +53,9 @@ export function registerTaskObjectTools(
         runtime,
         input.caller_session_id,
         input.include_snapshot,
-        (client, actorSessionId) =>
+        (client, actor) =>
           client.create({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             folderId: input.folder_id,
             title: input.title,
             x: input.x,
@@ -111,10 +112,9 @@ export function registerTaskObjectTools(
         runtime,
         input.caller_session_id,
         input.include_snapshot,
-        (client, actorSessionId) =>
+        (client, actor) =>
           client.update({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             expectedVersion: input.expected_version,
             title: input.title,
@@ -157,10 +157,9 @@ export function registerTaskObjectTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.setTaskStatus({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             status: input.status as TaskStatus,
             expectedVersion: input.expected_version,
@@ -264,10 +263,9 @@ function registerTaskArchiveTool(
         runtime,
         input.caller_session_id,
         input.include_snapshot,
-        (client, actorSessionId) =>
+        (client, actor) =>
           client.update({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             expectedVersion: input.expected_version,
             archived: config.archived,
@@ -284,24 +282,20 @@ async function taskIdentityMutation(
   includeSnapshot: boolean,
   mutateIdentity: (
     client: NonNullable<McpRuntime["taskIdentityHostClient"]>,
-    actorSessionId: string,
+    actor: McpMutationActor,
   ) => Promise<unknown>,
 ) {
   try {
-    const actorSessionId = resolveEffectiveCallerSessionId(
+    const actor = requireMcpMutationActor(
       explicitCallerSessionId,
+      "task mutation tools",
     );
-    if (!actorSessionId) {
-      throw new Error(
-        `caller session id is required for task mutation tools. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
-      );
-    }
     if (!runtime.taskIdentityHostClient) {
       throw new Error("task identity host client is not configured");
     }
     const result = await mutateIdentity(
       runtime.taskIdentityHostClient,
-      actorSessionId,
+      actor,
     );
     return jsonResult(
       formatTaskMutationResponse(
