@@ -211,6 +211,22 @@ export const AgentBackendSchema = z.enum([
 
 export type AgentBackend = z.infer<typeof AgentBackendSchema>;
 
+const AgentAliasSchema = z.union([
+  z
+    .string()
+    .trim()
+    .min(1, "agent.aliases id must not be empty")
+    .transform((id) => ({ id })),
+  z.object({
+    id: z.string().trim().min(1, "agent.aliases id must not be empty"),
+    default_preset: z
+      .string()
+      .trim()
+      .min(1, "agent.aliases default_preset must not be empty")
+      .optional(),
+  }),
+]);
+
 /**
  * yaml의 단일 agent 엔트리 schema. Python `AgentProfile` dataclass와 키 호환.
  */
@@ -218,6 +234,7 @@ export const AgentProfileSchema = z.object({
   id: z.string().min(1, "agent.id required"),
   name: z.string().min(1, "agent.name required"),
   backend: AgentBackendSchema,
+  aliases: z.array(AgentAliasSchema).optional(),
   default_preset: z
     .string()
     .trim()
@@ -256,16 +273,38 @@ export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 export const AgentsConfigSchema = z.object({
   agents: z.array(AgentProfileSchema).default([]),
 }).superRefine((config, ctx) => {
-  const seen = new Set<string>();
+  const profileIds = new Set<string>();
   for (const [index, agent] of config.agents.entries()) {
-    if (seen.has(agent.id)) {
+    if (profileIds.has(agent.id)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["agents", index, "id"],
         message: `Duplicate agent id in registry: ${agent.id}`,
       });
     }
-    seen.add(agent.id);
+    profileIds.add(agent.id);
+  }
+
+  const aliasOwners = new Map<string, string>();
+  for (const [agentIndex, agent] of config.agents.entries()) {
+    for (const [aliasIndex, alias] of (agent.aliases ?? []).entries()) {
+      if (profileIds.has(alias.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["agents", agentIndex, "aliases", aliasIndex, "id"],
+          message: `Agent alias conflicts with profile id: ${alias.id}`,
+        });
+      }
+      if (aliasOwners.has(alias.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["agents", agentIndex, "aliases", aliasIndex, "id"],
+          message: `Duplicate agent alias in registry: ${alias.id}`,
+        });
+      } else {
+        aliasOwners.set(alias.id, agent.id);
+      }
+    }
   }
 });
 
@@ -283,19 +322,16 @@ export interface LoadAgentRegistryOptions {
  */
 export class AgentRegistry {
   private readonly profiles: Map<string, AgentProfile>;
+  private readonly aliases: Map<string, AgentProfile>;
 
   constructor(profiles: AgentProfile[]) {
-    this.profiles = new Map();
-    for (const p of profiles) {
-      if (this.profiles.has(p.id)) {
-        throw new Error(`Duplicate agent id in registry: ${p.id}`);
-      }
-      this.profiles.set(p.id, p);
-    }
+    const maps = buildRegistryMaps(profiles);
+    this.profiles = maps.profiles;
+    this.aliases = maps.aliases;
   }
 
   get(id: string): AgentProfile | undefined {
-    return this.profiles.get(id);
+    return this.profiles.get(id) ?? this.aliases.get(id);
   }
 
   list(): AgentProfile[] {
@@ -303,19 +339,15 @@ export class AgentRegistry {
   }
 
   has(id: string): boolean {
-    return this.profiles.has(id);
+    return this.get(id) !== undefined;
   }
 
   replace(profiles: AgentProfile[]): void {
-    const next = new Map<string, AgentProfile>();
-    for (const p of profiles) {
-      if (next.has(p.id)) {
-        throw new Error(`Duplicate agent id in registry: ${p.id}`);
-      }
-      next.set(p.id, p);
-    }
+    const next = buildRegistryMaps(profiles);
     this.profiles.clear();
-    for (const [id, profile] of next) this.profiles.set(id, profile);
+    for (const [id, profile] of next.profiles) this.profiles.set(id, profile);
+    this.aliases.clear();
+    for (const [id, profile] of next.aliases) this.aliases.set(id, profile);
   }
 
   /** 등록된 backend 목록 (중복 제거, registration.supported_backends 산출용). */
@@ -325,6 +357,40 @@ export class AgentRegistry {
     for (const p of profiles) set.add(p.backend);
     return Array.from(set);
   }
+}
+
+function buildRegistryMaps(profiles: AgentProfile[]): {
+  profiles: Map<string, AgentProfile>;
+  aliases: Map<string, AgentProfile>;
+} {
+  const canonical = new Map<string, AgentProfile>();
+  for (const profile of profiles) {
+    if (canonical.has(profile.id)) {
+      throw new Error(`Duplicate agent id in registry: ${profile.id}`);
+    }
+    canonical.set(profile.id, profile);
+  }
+
+  const aliases = new Map<string, AgentProfile>();
+  for (const profile of profiles) {
+    for (const alias of profile.aliases ?? []) {
+      const defaultPreset =
+        "default_preset" in alias ? alias.default_preset : undefined;
+      if (canonical.has(alias.id)) {
+        throw new Error(`Agent alias conflicts with profile id: ${alias.id}`);
+      }
+      if (aliases.has(alias.id)) {
+        throw new Error(`Duplicate agent alias in registry: ${alias.id}`);
+      }
+      aliases.set(
+        alias.id,
+        defaultPreset === undefined
+          ? profile
+          : { ...profile, default_preset: defaultPreset },
+      );
+    }
+  }
+  return { profiles: canonical, aliases };
 }
 
 export function readAgentsConfig(configPath: string): AgentsConfig {

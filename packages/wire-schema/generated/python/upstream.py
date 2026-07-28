@@ -21,10 +21,16 @@ class ModelPreset(TypedDict, closed=True):
     usage_model_id: NotRequired[str]
 
 
+class Alias(TypedDict, closed=True):
+    id: str
+    default_preset: NotRequired[str]
+
+
 class Agent(TypedDict):
     id: NotRequired[str]
     name: NotRequired[str]
     backend: NotRequired[str]
+    aliases: NotRequired[list[Alias]]
     default_preset: NotRequired[str]
     portrait_url: NotRequired[str]
     max_turns: NotRequired[int | None]

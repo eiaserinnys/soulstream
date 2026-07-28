@@ -25,6 +25,7 @@ describe("live node agent profile route provider", () => {
           portrait_url: "/api/agents/agent-a/portrait",
           max_turns: 8,
           backend: "codex",
+          aliases: [{ id: "agent-a-opus", default_preset: "claude-opus" }],
         },
         { id: 123, name: "Invalid" },
         { id: "agent-b", name: "Agent B" },

@@ -21,6 +21,11 @@ import {
   PageListCursorError,
   type PageSessionDefaultsDto,
 } from "./page_repository_reads.js";
+import {
+  canonicalizeSessionDefaults,
+  canonicalizeSessionDefaultsOperation,
+  type AgentIdResolver,
+} from "./page_session_defaults_alias.js";
 import type { PageYjsService } from "./page_service.js";
 import { PageYjsPageNotFoundError } from "./page_yjs_persistence.js";
 import { registerPageBlockTransferRoute } from "./page_block_transfer_route.js";
@@ -60,6 +65,7 @@ export interface PageBrowserRouteOptions {
   >;
   reads: PageBrowserReads;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
+  resolveAgentId?: AgentIdResolver;
 }
 
 export interface PageBrowserReads {
@@ -214,7 +220,8 @@ export function registerPageBrowserRoutes(
       const pageId = id.safeParse(request.params.pageId);
       if (!pageId.success) return invalid(reply, pageId.error.message);
       try {
-        return reply.send(await options.reads.resolvePageSessionDefaults(pageId.data));
+        const defaults = await options.reads.resolvePageSessionDefaults(pageId.data);
+        return reply.send(canonicalizeSessionDefaults(defaults, options.resolveAgentId));
       } catch (error) {
         return routeError(request, reply, error, "session-defaults");
       }
@@ -298,7 +305,12 @@ export function registerPageBrowserRoutes(
           expectedStateVector,
           command: {
             type: "batch_operations",
-            operations: parsed.data.operations.map(toBatchOperation),
+            operations: parsed.data.operations.map((operation) =>
+              canonicalizeSessionDefaultsOperation(
+                toBatchOperation(operation),
+                options.resolveAgentId,
+              ),
+            ),
           },
           actor: userActor(userId),
           idempotencyKey: browserIdempotencyKey(

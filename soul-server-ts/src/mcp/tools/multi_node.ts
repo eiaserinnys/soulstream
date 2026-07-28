@@ -306,12 +306,6 @@ export function registerMultiNodeTools(
   );
 }
 
-interface RemoteAgent {
-  id: string;
-  name?: string;
-  backend?: string;
-}
-
 type AgentIdValidation =
   | { ok: true }
   | { ok: false; message: string };
@@ -319,11 +313,10 @@ type AgentIdValidation =
 async function validateRemoteAgentId(
   orch: { baseUrl: string; headers: Record<string, string> },
   nodeId: string,
-  agentId: string,
+  _agentId: string,
 ): Promise<AgentIdValidation> {
-  let data: unknown;
   try {
-    data = await fetchOrch(
+    await fetchOrch(
       orch,
       "GET",
       `/api/nodes/${encodeURIComponent(nodeId)}/agents`,
@@ -336,45 +329,9 @@ async function validateRemoteAgentId(
     };
   }
 
-  const agents = parseRemoteAgents(data);
-  if (agents.length === 0 || agents.some((agent) => agent.id === agentId)) {
-    return { ok: true };
-  }
-
-  return {
-    ok: false,
-    message: [
-      `agent_id를 찾을 수 없습니다: ${agentId}`,
-      "정확한 id를 사용하세요.",
-      `available: ${formatRemoteAgents(agents)}`,
-    ].join(" "),
-  };
-}
-
-function parseRemoteAgents(data: unknown): RemoteAgent[] {
-  if (!isRecord(data) || !Array.isArray(data.agents)) return [];
-  const agents: RemoteAgent[] = [];
-  for (const raw of data.agents) {
-    if (!isRecord(raw) || typeof raw.id !== "string") continue;
-    agents.push({
-      id: raw.id,
-      ...(typeof raw.name === "string" ? { name: raw.name } : {}),
-      ...(typeof raw.backend === "string" ? { backend: raw.backend } : {}),
-    });
-  }
-  return agents;
-}
-
-function formatRemoteAgents(agents: RemoteAgent[]): string {
-  return agents
-    .map((agent) => {
-      const detail = [
-        agent.name ? `name=${agent.name}` : null,
-        agent.backend ? `backend=${agent.backend}` : null,
-      ].filter(Boolean).join(", ");
-      return detail ? `${agent.id} (${detail})` : agent.id;
-    })
-    .join(", ");
+  // Alias는 프로필 목록에 광고하지 않는다. 목록 조회 성공만 확인하고,
+  // canonical/alias 유효성의 정본 판정은 POST /api/sessions에 맡긴다.
+  return { ok: true };
 }
 
 async function fetchOrch(

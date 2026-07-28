@@ -121,7 +121,11 @@ export function buildCallerInfoFromCallerSession(deps: {
     } | undefined;
   };
   agentRegistry: {
-    get(id: string): { name?: string | null; portrait_path?: string | null } | undefined;
+    get(id: string): {
+      id?: string | null;
+      name?: string | null;
+      portrait_path?: string | null;
+    } | undefined;
   };
 }, callerSessionId: string): AgentCallerInfo {
   const callerTask = deps.taskManager.getTask(callerSessionId);
@@ -130,7 +134,7 @@ export function buildCallerInfoFromCallerSession(deps: {
     : undefined;
   return buildAgentCallerInfo({
     agentNode: deps.nodeId,
-    agentId: callerTask?.profileId ?? null,
+    agentId: callerProfile?.id ?? callerTask?.profileId ?? null,
     agentName: callerProfile?.name ?? null,
     portraitPath: callerProfile?.portrait_path ?? null,
     email: extractEmail(callerTask?.callerInfo),

@@ -2,6 +2,7 @@ import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
 } from "../node/registry.js";
+import { findNodeAgentProfile } from "../node/agent_profile_lookup.js";
 
 export type SessionCreateNodeSelectionRequest = {
   readonly nodeId?: string;
@@ -243,7 +244,16 @@ function findProfile(
   node: NodeConnectionSnapshot,
   profileId: string,
 ): AgentProfile | undefined {
-  return profiles(node).find((profile) => profile.id === profileId);
+  const profile = findNodeAgentProfile(node, profileId);
+  return profile
+    ? {
+        id: profile.id,
+        backend: profile.backend,
+        ...(profile.defaultPreset
+          ? { defaultPreset: profile.defaultPreset }
+          : {}),
+      }
+    : undefined;
 }
 
 function profiles(node: NodeConnectionSnapshot): AgentProfile[] {

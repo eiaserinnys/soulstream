@@ -22,6 +22,7 @@ export interface PageYjsRouteOptions {
   authBearerToken: string;
   resolveBrowserUser?: PageBrowserRouteOptions["resolveUser"];
   browserReads?: PageBrowserRouteOptions["reads"];
+  resolveAgentId?: PageBrowserRouteOptions["resolveAgentId"];
   plannerReads?: PlannerRouteOptions["provider"];
 }
 
@@ -43,6 +44,7 @@ export function registerPageYjsRoutes(
       service,
       reads: options.browserReads,
       resolveUser: options.resolveBrowserUser,
+      resolveAgentId: options.resolveAgentId,
     });
     if (options.plannerReads) {
       registerPlannerRoutes(app, {

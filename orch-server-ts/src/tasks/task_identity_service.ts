@@ -33,6 +33,7 @@ import {
 } from "./task_identity_page.js";
 import { backfillLegacyTaskIdentity } from "./task_identity_legacy.js";
 import { promoteTaskPage } from "./task_identity_promotion.js";
+import { canonicalizeInitialTaskContext } from "./task_initial_context_alias.js";
 import {
   hydrateAndNotifyTaskMounts,
   moveTaskIdentity,
@@ -90,6 +91,10 @@ export class TaskIdentityService {
     }
     if (input.taskId) assertUuid(input.taskId);
     const title = requireNonEmpty(input.title, "title");
+    const initialContext = canonicalizeInitialTaskContext(
+      input.initialContext,
+      this.config.resolveAgentId,
+    );
     const existingTitle = await this.resolveTitleOrRace(input, title);
     if (existingTitle) return existingTitle;
     const id = input.taskId ?? this.createId();
@@ -107,7 +112,7 @@ export class TaskIdentityService {
           input.description ?? "",
           id,
           this.createBlockId,
-          input.initialContext,
+          initialContext,
         ),
       },
     });
@@ -164,7 +169,7 @@ export class TaskIdentityService {
     if (result.projectPageId) {
       await this.config.hydratePage(result.projectPageId);
     }
-    this.notifyPageUpdate(result);
+    notifyPageUpdates([result], this.config.onPageUpdated);
     return result;
   }
 
@@ -273,7 +278,7 @@ export class TaskIdentityService {
       ensureProjectMount: true,
       initialContext: input.initialContext,
     });
-    this.notifyPageUpdate(result);
+    notifyPageUpdates([result], this.config.onPageUpdated);
     return result;
   }
 
@@ -294,7 +299,7 @@ export class TaskIdentityService {
       ensureProjectMount: false,
       ...input,
     });
-    this.notifyPageUpdate(result);
+    notifyPageUpdates([result], this.config.onPageUpdated);
     return result;
   }
 
@@ -393,7 +398,7 @@ export class TaskIdentityService {
       idempotencyKey: input.idempotencyKey,
       expectedTaskVersion: input.expectedVersion,
     });
-    this.notifyPageUpdate(result);
+    notifyPageUpdates([result], this.config.onPageUpdated);
     return result;
   }
 
@@ -484,12 +489,6 @@ export class TaskIdentityService {
     await this.config.hydratePage(result.pageId);
     await hydrateAndNotifyTaskMounts(this.config, mountPageApplications);
     return result;
-  }
-
-  private notifyPageUpdate(
-    result: TaskIdentityMutationResult | LegacyTaskBackfillResult,
-  ): void {
-    notifyPageUpdates([result], this.config.onPageUpdated);
   }
 
 }

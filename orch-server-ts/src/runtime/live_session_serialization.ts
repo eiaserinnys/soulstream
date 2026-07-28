@@ -1,4 +1,5 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
+import { findRegisteredAgentProfile } from "../node/agent_profile_lookup.js";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 
 export type SessionSerializationOptions = {
@@ -170,35 +171,17 @@ function enrichAgent(
     return;
   }
   const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : undefined;
-  const profile = findAgentProfile(registry, agentId, nodeId);
+  const profile = findRegisteredAgentProfile(registry, agentId, nodeId);
   if (profile === undefined) return;
+  payload.agentId = profile.id;
   if (typeof profile.agent.name === "string" && profile.agent.name.length > 0) {
     payload.agentName = profile.agent.name;
   }
-  payload.backend =
-    typeof profile.agent.backend === "string" && profile.agent.backend.length > 0
-      ? profile.agent.backend
-      : "claude";
+  payload.backend = profile.backend;
   if (typeof profile.agent.portrait_url === "string" && profile.agent.portrait_url) {
     payload.agentPortraitUrl =
-      `/api/nodes/${profile.nodeId}/agents/${agentId}/portrait`;
+      `/api/nodes/${profile.nodeId}/agents/${profile.id}/portrait`;
   }
-}
-
-function findAgentProfile(
-  registry: InMemoryNodeRegistry,
-  agentId: string,
-  preferredNodeId: string | undefined,
-): { nodeId: string; agent: Record<string, unknown> } | undefined {
-  const matches = registry.listConnectedNodes().flatMap((node) =>
-    node.agents.flatMap((agent) => {
-      const record = asRecord(agent);
-      return record?.id === agentId ? [{ nodeId: node.nodeId, agent: record }] : [];
-    }),
-  );
-  return (
-    matches.find((match) => match.nodeId === preferredNodeId) ?? matches[0]
-  );
 }
 
 function extractCallerInfo(metadata: unknown): Record<string, unknown> | null {

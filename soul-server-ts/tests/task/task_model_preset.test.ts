@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import {
+  AgentRegistry,
+  type AgentProfile,
+} from "../../src/agent_registry.js";
 import {
   UnknownModelPresetError,
   type ModelPreset,
@@ -85,6 +88,31 @@ describe("task model preset runtime", () => {
     expect(legacyTask.modelPreset).toBeUndefined();
     expect(effectiveTaskBackend(legacyTask, agent)).toBe("codex");
     expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores an alias-specific preset for a legacy session without model_preset", () => {
+    const aliasAgent = new AgentRegistry([{
+      ...agent,
+      aliases: [{ id: "roselin-opus", default_preset: "claude-opus" }],
+    }]).get("roselin-opus");
+    expect(aliasAgent).toBeDefined();
+    const task = makeTask({ profileId: "roselin-opus", modelPreset: null });
+    const resolve = vi.fn().mockReturnValue({
+      id: "claude-opus",
+      label: "Claude Opus",
+      backend: "claude",
+      model: "claude-opus-4-6",
+    } satisfies ModelPreset);
+
+    applyModelPresetRuntime(task, aliasAgent!, { resolve });
+
+    expect(resolve).toHaveBeenCalledWith("claude-opus");
+    expect(task).toMatchObject({
+      profileId: "roselin-opus",
+      modelPreset: "claude-opus",
+      model: "claude-opus-4-6",
+      modelPresetBackend: "claude",
+    });
   });
 
   it("keeps the persisted model and degrades to the profile backend when the preset was removed", () => {

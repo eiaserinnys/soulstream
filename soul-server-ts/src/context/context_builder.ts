@@ -421,7 +421,7 @@ export class ExecutionContextBuilder {
       workspaceDir: effectiveWorkspaceDir,
       folderName: args.folderName,
       nodeId: this.cfg.nodeId,
-      agentId: args.task.profileId,
+      agentId: args.agent.id,
       callerInfo: args.task.callerInfo,
       container: args.primaryContainer?.container ?? null,
       sourceTaskItemId: args.primaryContainer?.sourceTaskItemId ?? null,

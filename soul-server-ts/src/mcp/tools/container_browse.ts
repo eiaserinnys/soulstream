@@ -122,7 +122,9 @@ function serializeItem(item: ContainerBrowseItem, runtime: McpRuntime) {
       agent_session_id: item.agentSessionId,
       display_name: item.displayName,
       status: item.status,
-      agent: item.agentId ? { id: item.agentId, name: agent?.name ?? item.agentId } : null,
+      agent: item.agentId
+        ? { id: agent?.id ?? item.agentId, name: agent?.name ?? item.agentId }
+        : null,
       session_type: item.sessionType,
       created_at: item.createdAt,
       event_count: item.eventCount,

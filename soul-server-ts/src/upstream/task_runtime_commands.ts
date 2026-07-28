@@ -152,7 +152,7 @@ export class TaskRuntimeCommands {
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
       prompt,
-      profileId: params.profileId,
+      profileId: agent.id,
       callerSessionId: params.callerSessionId ?? null,
       predecessorSessionId: params.predecessorSessionId ?? null,
       callerInfo: params.callerInfo,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import {
   TaskRuntimeCommands,
   UnknownAgentProfileError,
@@ -52,6 +52,7 @@ function makeTask(params: Partial<Task> = {}): Task {
 
 function createRuntime(opts: {
   agents?: AgentProfile[];
+  agentRegistry?: Pick<AgentRegistry, "get">;
   createTask?: TaskManager["createTask"];
   addIntervention?: TaskManager["addIntervention"];
   startExecution?: TaskExecutor["startExecution"];
@@ -69,7 +70,7 @@ function createRuntime(opts: {
   } as Pick<TaskExecutor, "startExecution">;
 
   const runtime = new TaskRuntimeCommands({
-    agentRegistry: {
+    agentRegistry: opts.agentRegistry ?? {
       get: vi.fn((profileId: string) => agents.get(profileId)),
     },
     taskManager,
@@ -162,6 +163,46 @@ describe("TaskRuntimeCommands.createSession", () => {
       expect.objectContaining({ profileId: "writer-seosoyoung-opus" }),
     );
     expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, writerOpusAgent);
+  });
+
+  it("resolves an alias to canonical storage while preserving its historical preset", async () => {
+    const registry = new AgentRegistry([{
+      id: "seosoyoung",
+      name: "서소영",
+      backend: "codex",
+      workspace_dir: "/tmp/seosoyoung",
+      default_preset: "codex-sol",
+      aliases: [{ id: "seosoyoung-opus", default_preset: "claude-opus" }],
+    }]);
+    const { runtime, taskManager, taskExecutor } = createRuntime({
+      agentRegistry: registry,
+      presets: [{
+        id: "claude-opus",
+        label: "Claude - Opus",
+        backend: "claude",
+        model: "claude-opus-4-1",
+        env: {},
+      }],
+    });
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-alias",
+      prompt: "resume old identity",
+      profileId: "seosoyoung-opus",
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      profileId: "seosoyoung",
+      modelPreset: "claude-opus",
+      model: "claude-opus-4-1",
+    }));
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({
+        id: "seosoyoung",
+        default_preset: "claude-opus",
+      }),
+    );
   });
 
   it("appends attachment path notes without duplicating attached-files context", async () => {

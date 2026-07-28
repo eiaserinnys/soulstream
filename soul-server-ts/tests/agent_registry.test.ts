@@ -56,6 +56,30 @@ describe("AgentProfileSchema", () => {
     expect(parsed.allowed_tools).toBeUndefined();
   });
 
+  it("aliases는 문자열 축약형과 alias별 default_preset 객체형을 파싱한다", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "seosoyoung",
+      name: "서소영",
+      backend: "codex",
+      workspace_dir: "/tmp/seosoyoung",
+      aliases: [
+        "seosoyoung_codex",
+        {
+          id: "seosoyoung-opus",
+          default_preset: "claude-opus",
+        },
+      ],
+    });
+
+    expect(parsed.aliases).toEqual([
+      { id: "seosoyoung_codex" },
+      {
+        id: "seosoyoung-opus",
+        default_preset: "claude-opus",
+      },
+    ]);
+  });
+
   it("model은 optional agent-level Codex 모델 override로 파싱한다", () => {
     const parsed = AgentProfileSchema.parse({
       id: "zombie-labyrinth-bot",
@@ -322,10 +346,59 @@ describe("AgentRegistry", () => {
     expect(r.list()).toHaveLength(2);
   });
 
+  it("alias 조회는 canonical profile을 반환하고 alias별 default_preset을 적용한다", () => {
+    const canonical = {
+      ...profile("seosoyoung"),
+      default_preset: "codex-5.6-sol",
+      aliases: [
+        { id: "seosoyoung_codex" },
+        { id: "seosoyoung-opus", default_preset: "claude-opus" },
+      ],
+    };
+    const r = new AgentRegistry([canonical]);
+
+    expect(r.get("seosoyoung")).toBe(canonical);
+    expect(r.get("seosoyoung_codex")).toBe(canonical);
+    expect(r.get("seosoyoung-opus")).toEqual({
+      ...canonical,
+      default_preset: "claude-opus",
+    });
+    expect(r.get("seosoyoung-opus")?.id).toBe("seosoyoung");
+    expect(r.has("seosoyoung-opus")).toBe(true);
+    expect(r.list()).toEqual([canonical]);
+  });
+
   it("중복 id throw", () => {
     expect(() => new AgentRegistry([profile("a"), profile("a")])).toThrow(
       /Duplicate agent id/,
     );
+  });
+
+  it("alias가 실재 profile id와 겹치면 throw", () => {
+    expect(() =>
+      new AgentRegistry([
+        {
+          ...profile("seosoyoung"),
+          aliases: [{ id: "roselin" }],
+        },
+        profile("roselin"),
+      ]),
+    ).toThrow(/Agent alias conflicts with profile id: roselin/);
+  });
+
+  it("둘 이상의 profile이 같은 alias를 주장하면 throw", () => {
+    expect(() =>
+      new AgentRegistry([
+        {
+          ...profile("seosoyoung"),
+          aliases: [{ id: "legacy-agent" }],
+        },
+        {
+          ...profile("roselin"),
+          aliases: [{ id: "legacy-agent" }],
+        },
+      ]),
+    ).toThrow(/Duplicate agent alias in registry: legacy-agent/);
   });
 
   it("supportedBackends 중복 제거", () => {
@@ -410,6 +483,30 @@ agents:
 `;
     withTempYaml(yaml, (p) => {
       expect(() => loadAgentRegistry(p)).toThrow(/Duplicate agent id/);
+    });
+  });
+
+  it("alias 충돌은 yaml 로드 시점에 명시적으로 거부", () => {
+    const yaml = `
+agents:
+  - id: seosoyoung
+    name: 서소영
+    backend: codex
+    workspace_dir: /tmp/seosoyoung
+    aliases:
+      - id: seosoyoung-opus
+        default_preset: claude-opus
+  - id: roselin
+    name: 로젤린
+    backend: codex
+    workspace_dir: /tmp/roselin
+    aliases:
+      - seosoyoung-opus
+`;
+    withTempYaml(yaml, (p) => {
+      expect(() => loadAgentRegistry(p)).toThrow(
+        /Duplicate agent alias in registry: seosoyoung-opus/,
+      );
     });
   });
 
