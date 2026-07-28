@@ -24,6 +24,17 @@ export const REASONING_EFFORT_OPTIONS: readonly {
   { value: "xhigh", label: "X High" },
 ];
 
+export interface ModelPresetAvailability {
+  id: string;
+  label: string;
+  backend: string;
+  available: boolean;
+  reason: string | null;
+  reason_label: string | null;
+  resets_at: string | null;
+  usage_warning: boolean;
+}
+
 // === JSONL Record ===
 
 /** EventStore JSONL 레코드 형식 (파일의 한 줄) */

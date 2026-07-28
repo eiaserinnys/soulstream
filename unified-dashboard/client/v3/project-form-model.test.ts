@@ -30,12 +30,17 @@ describe("project form model", () => {
         scope: "project",
         agentId: "roselin_codex",
         nodeId: "eiaserinnys",
+        modelPreset: "preset-a",
       }],
     })).toMatchObject({
       title: "기존 프로젝트",
       guidance: [{ blockId: "g-1", text: "지침" }],
       atomReferences: [{ blockId: "a-1", nodeId: "node-1" }],
-      sessionDefaults: { blockId: "d-1", agentId: "roselin_codex" },
+      sessionDefaults: {
+        blockId: "d-1",
+        agentId: "roselin_codex",
+        modelPreset: "preset-a",
+      },
     });
   });
 

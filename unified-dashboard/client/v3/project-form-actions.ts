@@ -45,7 +45,10 @@ export async function saveProjectFormContext(
     }
   }
 
-  if (next.sessionDefaults && (next.sessionDefaults.agentId || next.sessionDefaults.nodeId)) {
+  if (
+    next.sessionDefaults
+    && (next.sessionDefaults.agentId || next.sessionDefaults.nodeId)
+  ) {
     const prior = next.sessionDefaults.blockId
       ? previous.sessionDefaults.find((item) => item.blockId === next.sessionDefaults?.blockId)
       : undefined;
@@ -53,11 +56,13 @@ export async function saveProjectFormContext(
       !prior
       || (prior.agentId ?? "") !== next.sessionDefaults.agentId
       || (prior.nodeId ?? "") !== next.sessionDefaults.nodeId
+      || (prior.modelPreset ?? "") !== next.sessionDefaults.modelPreset
     ) {
       await saveProjectSessionDefaults(api, pageId, {
         blockId: next.sessionDefaults.blockId,
         agentId: next.sessionDefaults.agentId || null,
         nodeId: next.sessionDefaults.nodeId || null,
+        modelPreset: next.sessionDefaults.modelPreset || null,
       });
     }
   }

@@ -9,13 +9,19 @@ const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
   process.env.PR_AI_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-succession-picker"),
 );
+const requestedTheme = process.env.PR_AI_QA_THEME === "dark"
+  || process.env.PR_AI_QA_THEME === "light"
+  ? process.env.PR_AI_QA_THEME
+  : null;
 const result = await runPlaywrightLifecycle({
   lockName: "pr-ai-v3-succession-picker",
   timeoutMs: 180_000,
-}, async ({ browser }) => ({
-  dark: await verifyTheme(browser, "dark"),
-  light: await verifyTheme(browser, "light"),
-}));
+}, async ({ browser }) => requestedTheme
+  ? { [requestedTheme]: await verifyTheme(browser, requestedTheme) }
+  : {
+      dark: await verifyTheme(browser, "dark"),
+      light: await verifyTheme(browser, "light"),
+    });
 
 console.log(JSON.stringify({ ok: true, residualProcesses: 0, ...result }, null, 2));
 
@@ -23,6 +29,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   const context = await browser.newContext({
     colorScheme: theme,
     reducedMotion: "reduce",
+    timezoneId: "Asia/Seoul",
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
@@ -95,7 +102,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     const modalText = await modal.textContent() ?? "";
     for (const required of [
-      "노드 / 에이전트",
+      "노드 / 에이전트 / 모델",
       "컨텍스트",
       "플래너 UX 원칙",
       "대비와 잘림을 실제 픽셀로 확인",
@@ -114,6 +121,20 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "승계 링크로 기록됨",
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
     assert(!modalText.includes("추가 지침"), "삭제한 추가 지침 입력이 새 세션 창에 남았습니다.");
+
+    const modelPreset = modal.getByRole("combobox", { name: "모델 선택" });
+    await modelPreset.locator('option[value="qa-standard"]').waitFor({ state: "attached" });
+    const limitedOption = modelPreset.locator('option[value="qa-limited"]');
+    assert(
+      await limitedOption.evaluate((option) => (option as HTMLOptionElement).disabled),
+      "사용량 제한 모델이 선택 가능 상태입니다.",
+    );
+    assert(
+      (await limitedOption.textContent() ?? "").includes("QA 제한 모델 (주간 사용량 제한) · 18:20 해제"),
+      "서버 사유 라벨과 로컬 해제 시각이 표시되지 않았습니다.",
+    );
+    await modelPreset.selectOption("qa-warning");
+    await modal.getByText("(사용량 확인 지연)", { exact: true }).waitFor({ state: "visible" });
 
     await modal.getByRole("checkbox", { name: "PR-O 결정 로그" }).check();
     await modal.locator("label").filter({ hasText: "atom 노드" }).locator("button").click();
@@ -168,6 +189,34 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     );
     assert(!Object.prototype.hasOwnProperty.call(createPayload, "prompt"), "클라이언트가 서버 prompt 정본을 우회했습니다.");
     assert(typeof createPayload?.pageAnchor === "object", "선택한 보드 문서용 page anchor가 없습니다.");
+    assert(createPayload?.model_preset === "qa-warning", "선택한 모델 프리셋이 생성 요청에 없습니다.");
+
+    await page.goto(`${baseUrl}/v1`, { waitUntil: "domcontentloaded" });
+    await page.getByTitle("New session").first().click();
+    const boardDialog = page.getByRole("dialog", { name: "New Session", exact: true });
+    await boardDialog.waitFor({ state: "visible" });
+    await boardDialog.getByText("Select a node...", { exact: true }).click();
+    await page.locator('[data-slot="select-item"]').filter({ hasText: "eiaserinnys" }).click();
+    await boardDialog.getByText("Select an agent...", { exact: true }).click();
+    await page.locator('[data-slot="select-item"]').filter({ hasText: "로젤린" }).click();
+    const boardModelPreset = boardDialog.getByRole("combobox", { name: "Model 선택" });
+    await boardModelPreset.locator('option[value="qa-standard"]').waitFor({ state: "attached" });
+    assert(
+      await boardModelPreset.locator('option[value="qa-limited"]')
+        .evaluate((option) => (option as HTMLOptionElement).disabled),
+      "보드 새 세션 창에서 사용량 제한 모델이 선택 가능 상태입니다.",
+    );
+    await boardModelPreset.selectOption("qa-warning");
+    await boardDialog.getByText("Reasoning Effort", { exact: true }).waitFor({ state: "visible" });
+    await boardDialog.getByPlaceholder("What would you like to work on?").fill("보드 세션 모델 선택 확인");
+    await capture(page, theme, "02-board-model-preset");
+    await boardDialog.getByRole("button", { name: "Start", exact: true }).click();
+    await boardDialog.waitFor({ state: "detached" });
+    const boardCreatePayload = createPayloads.at(-1);
+    assert(
+      boardCreatePayload?.model_preset === "qa-warning",
+      "보드 새 세션 창에서 선택한 모델 프리셋이 생성 요청에 없습니다.",
+    );
 
     return {
       options: optionLabels.length,
@@ -179,6 +228,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       predecessorRoundtrip: createPayload?.predecessor_session_id,
       contextItemKeys: extraContextItems.map((item) => item.key),
       nodeChangeAgentRefresh: agentRequests.at(-1),
+      modelPresetRoundtrip: createPayload?.model_preset,
+      boardModelPresetRoundtrip: boardCreatePayload?.model_preset,
     };
   } finally {
     await context.close();

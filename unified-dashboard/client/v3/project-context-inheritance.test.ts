@@ -107,5 +107,5 @@ function atom(blockId: string, nodeId: string, depth: number) {
 }
 
 function defaults(blockId: string, scope: string, agentId: string, nodeId: string) {
-  return { blockId, scope, agentId, nodeId };
+  return { blockId, scope, agentId, nodeId, modelPreset: null };
 }

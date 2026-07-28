@@ -54,6 +54,7 @@ export interface NewSessionDefaults {
   sourceTaskItemId?: string | null;
   nodeId?: string;
   agentId?: string | null;
+  modelPreset?: string | null;
   boardPosition?: { x: number; y: number };
 }
 

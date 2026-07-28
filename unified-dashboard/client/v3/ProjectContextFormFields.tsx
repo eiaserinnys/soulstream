@@ -68,16 +68,22 @@ export function ProjectAtomFields({
 export function ProjectSessionDefaultsFields({
   agentId,
   nodeId,
+  modelPreset,
   disabled,
   onAgentIdChange,
   onNodeIdChange,
+  onModelPresetChange,
+  onModelPresetValidityChange,
   onError,
 }: {
   agentId: string;
   nodeId: string;
+  modelPreset: string;
   disabled: boolean;
   onAgentIdChange(agentId: string): void;
   onNodeIdChange(nodeId: string): void;
+  onModelPresetChange(modelPreset: string): void;
+  onModelPresetValidityChange?(valid: boolean): void;
   onError(message: string): void;
 }) {
   return (
@@ -85,9 +91,12 @@ export function ProjectSessionDefaultsFields({
       <AgentNodeAssignmentFields
         agentId={agentId}
         nodeId={nodeId}
+        modelPreset={modelPreset}
         disabled={disabled}
         onAgentIdChange={onAgentIdChange}
         onNodeIdChange={onNodeIdChange}
+        onModelPresetChange={onModelPresetChange}
+        onModelPresetValidityChange={onModelPresetValidityChange}
         onError={onError}
       />
     </div>

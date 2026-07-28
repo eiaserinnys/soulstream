@@ -41,15 +41,21 @@ export function resolveRunAssignmentDefaults({
 }: {
   pageDefaults: PageSessionDefaults | null;
   currentSession: SessionSummary | null;
-}): { agentId: string | null; nodeId: string | null; source: "page-defaults" | "current-session" | "none" } {
+}): {
+  agentId: string | null;
+  nodeId: string | null;
+  modelPreset: string | null;
+  source: "page-defaults" | "current-session" | "none";
+} {
   const agentId = pageDefaults?.agentId ?? currentSession?.agentId ?? null;
   const nodeId = pageDefaults?.nodeId ?? currentSession?.nodeId ?? null;
-  const source = pageDefaults && (pageDefaults.agentId || pageDefaults.nodeId)
+  const modelPreset = pageDefaults?.modelPreset ?? currentSession?.modelPreset ?? null;
+  const source = pageDefaults && (pageDefaults.agentId || pageDefaults.nodeId || pageDefaults.modelPreset)
     ? "page-defaults"
-    : currentSession && (currentSession.agentId || currentSession.nodeId)
+    : currentSession && (currentSession.agentId || currentSession.nodeId || currentSession.modelPreset)
       ? "current-session"
       : "none";
-  return { agentId, nodeId, source };
+  return { agentId, nodeId, modelPreset, source };
 }
 
 export function latestTaskRun(

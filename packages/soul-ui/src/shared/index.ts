@@ -73,6 +73,7 @@ export type {
   CreateSessionRequest,
   CreateSessionResponse,
   SessionCreationWarning,
+  ModelPresetAvailability,
   ReasoningEffort,
   SendMessageRequest,
   InterveneResponse,

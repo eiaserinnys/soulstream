@@ -14,6 +14,7 @@ import type { SessionPageAnchor } from "./session-succession-model";
 export interface PageSessionDefaults {
   agentId: string | null;
   nodeId: string | null;
+  modelPreset?: string | null;
   sourcePageId: string;
   sourceBlockId: string;
 }
@@ -55,12 +56,18 @@ export async function fetchPageSessionDefaults(
 export async function saveTaskSessionDefaults(
   api: PageApiClient,
   pageId: string,
-  input: { blockId: string | null; agentId: string | null; nodeId: string | null },
+  input: {
+    blockId: string | null;
+    agentId: string | null;
+    nodeId: string | null;
+    modelPreset: string | null;
+  },
   idFactory: TaskSessionDefaultsIdFactory = (prefix) => `${prefix}-${crypto.randomUUID()}`,
 ): Promise<{ blocks: Awaited<ReturnType<PageApiClient["getPage"]>>["blocks"] }> {
   const properties = {
     agentId: input.agentId?.trim() || null,
     nodeId: input.nodeId?.trim() || null,
+    modelPreset: input.modelPreset?.trim() || null,
     scope: "session",
   };
   if (!properties.agentId && !properties.nodeId) {

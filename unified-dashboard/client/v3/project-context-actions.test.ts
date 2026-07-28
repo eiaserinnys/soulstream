@@ -94,6 +94,7 @@ describe("project context page mutations", () => {
       blockId: null,
       agentId: "roselin_codex",
       nodeId: "eiaserinnys",
+      modelPreset: "preset-a",
     }, () => "request-5");
 
     expect(api.applyOperations).toHaveBeenCalledWith("project", expect.objectContaining({
@@ -103,6 +104,7 @@ describe("project context page mutations", () => {
         properties: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "preset-a",
           scope: "project",
         },
       })],

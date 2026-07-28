@@ -51,6 +51,7 @@ describe("new task inheritance preview", () => {
               scope: "project",
               agentId: "roselin_codex",
               nodeId: "eiaserinnys",
+              modelPreset: null,
             }],
             },
           }]),

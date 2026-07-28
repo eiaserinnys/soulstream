@@ -257,6 +257,28 @@ describe("createDashboardSession", () => {
     });
   });
 
+  it("forwards an explicitly selected model preset without changing omitted callers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "session-preset",
+      status: "running",
+      nodeId: "node-a",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      prompt: "hello",
+      nodeId: "node-a",
+      agentId: "agent-a",
+      modelPreset: "preset-a",
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      model_preset: "preset-a",
+    });
+  });
+
   it("forwards explicit page context sources for the first task session", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({
       agentSessionId: "session-context",

@@ -14,7 +14,12 @@ describe("project page details", () => {
         depth: 3,
         titlesOnly: false,
       }),
-      block("session_defaults", "", { scope: "project", agentId: "roselin_codex", nodeId: "eiaserinnys" }),
+      block("session_defaults", "", {
+        scope: "project",
+        agentId: "roselin_codex",
+        nodeId: "eiaserinnys",
+        modelPreset: "preset-a",
+      }),
     ])).toEqual({
       guidance: [{ blockId: "guidance-프로젝트 지침", text: "프로젝트 지침", scope: "project" }],
       atomReferences: [{
@@ -30,6 +35,7 @@ describe("project page details", () => {
         scope: "project",
         agentId: "roselin_codex",
         nodeId: "eiaserinnys",
+        modelPreset: "preset-a",
       }],
     });
   });

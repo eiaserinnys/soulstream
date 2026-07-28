@@ -681,13 +681,51 @@ export async function installV3VisualQaRoutes(
           id: "qa-agent",
           name: "QA 에이전트",
           backend: "codex",
+          default_preset: "qa-standard",
           portraitUrl: null,
         }] : [{
           id: "roselin_codex",
           name: "로젤린",
           backend: "codex",
+          default_preset: "qa-standard",
           portraitUrl: "/api/nodes/eiaserinnys/agents/roselin_codex/portrait",
         }],
+      });
+    }
+    if (/^\/api\/nodes\/[^/]+\/model-presets$/.test(path)) {
+      return fulfillJson(route, {
+        model_presets: [
+          {
+            id: "qa-standard",
+            label: "QA 표준 모델",
+            backend: "codex",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            usage_warning: false,
+          },
+          {
+            id: "qa-warning",
+            label: "QA 사용량 확인 모델",
+            backend: "codex",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            usage_warning: true,
+          },
+          {
+            id: "qa-limited",
+            label: "QA 제한 모델",
+            backend: "codex",
+            available: false,
+            reason: "quota_exhausted",
+            reason_label: "주간 사용량 제한",
+            resets_at: "2026-07-28T18:20:00+09:00",
+            usage_warning: false,
+          },
+        ],
       });
     }
     if (/^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/.test(path)) {

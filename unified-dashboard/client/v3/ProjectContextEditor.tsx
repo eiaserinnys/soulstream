@@ -37,7 +37,13 @@ import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 
 type EditorState =
   | { kind: "atom"; blockId: string | null; instance: "atom" | "atom-nl"; nodeId: string; nodeTitle: string; depth: number; titlesOnly: boolean }
-  | { kind: "defaults"; blockId: string | null; agentId: string; nodeId: string }
+  | {
+      kind: "defaults";
+      blockId: string | null;
+      agentId: string;
+      nodeId: string;
+      modelPreset: string;
+    }
   | null;
 type AtomEditorState = Extract<NonNullable<EditorState>, { kind: "atom" }>;
 type DefaultsEditorState = Extract<NonNullable<EditorState>, { kind: "defaults" }>;
@@ -54,6 +60,7 @@ export function ProjectContextEditor({
   const [editor, setEditor] = useState<EditorState>(null);
   const [addingGuidance, setAddingGuidance] = useState(false);
   const [pending, setPending] = useState(false);
+  const [modelPresetValid, setModelPresetValid] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const api = useMemo(() => createPageApiClient(), []);
   const changeDefaultAgent = useCallback((agentId: string) => {
@@ -61,6 +68,11 @@ export function ProjectContextEditor({
   }, []);
   const changeDefaultNode = useCallback((nodeId: string) => {
     setEditor((current) => current?.kind === "defaults" ? { ...current, nodeId } : current);
+  }, []);
+  const changeDefaultModelPreset = useCallback((modelPreset: string) => {
+    setEditor((current) => current?.kind === "defaults"
+      ? { ...current, modelPreset }
+      : current);
   }, []);
   const empty = snapshot.guidance.length + snapshot.atomReferences.length + snapshot.sessionDefaults.length === 0;
 
@@ -81,7 +93,7 @@ export function ProjectContextEditor({
   };
 
   const commit = async () => {
-    if (!editor || pending) return;
+    if (!editor || pending || (editor.kind === "defaults" && !modelPresetValid)) return;
     setPending(true);
     setMessage(null);
     try {
@@ -92,6 +104,7 @@ export function ProjectContextEditor({
           blockId: editor.blockId,
           agentId: editor.agentId || null,
           nodeId: editor.nodeId || null,
+          modelPreset: editor.modelPreset || null,
         });
       }
       await onChanged();
@@ -150,7 +163,10 @@ export function ProjectContextEditor({
           <Popover
             key={defaults.blockId}
             open={editor?.kind === "defaults" && editor.blockId === defaults.blockId}
-            onOpenChange={(open) => setEditor(open ? defaultsEditor(defaults) : null)}
+            onOpenChange={(open) => {
+              setModelPresetValid(true);
+              setEditor(open ? defaultsEditor(defaults) : null);
+            }}
           >
             <PopoverTrigger
               type="button"
@@ -163,7 +179,7 @@ export function ProjectContextEditor({
             </PopoverTrigger>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === defaults.blockId ? (
-                <DefaultsEditorFields editor={editor} pending={pending} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
+                <DefaultsEditorFields editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
               ) : null}
             </ContextPopover>
           </Popover>
@@ -212,12 +228,15 @@ export function ProjectContextEditor({
         {snapshot.sessionDefaults.length === 0 ? (
           <Popover
             open={editor?.kind === "defaults" && editor.blockId === null}
-            onOpenChange={(open) => setEditor(open ? emptyDefaultsEditor() : null)}
+            onOpenChange={(open) => {
+              setModelPresetValid(true);
+              setEditor(open ? emptyDefaultsEditor() : null);
+            }}
           >
             <PopoverTrigger type="button" aria-haspopup="dialog" disabled={pending}>＋ 기본 에이전트</PopoverTrigger>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === null ? (
-                <DefaultsEditorFields editor={editor} pending={pending} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
+                <DefaultsEditorFields editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
               ) : null}
             </ContextPopover>
           </Popover>
@@ -268,22 +287,38 @@ function DefaultsEditorFields({
   pending,
   onAgentIdChange,
   onNodeIdChange,
+  onModelPresetChange,
+  onModelPresetValidityChange,
+  modelPresetValid,
   onError,
   onCancel,
   onSave,
 }: {
   editor: DefaultsEditorState;
   pending: boolean;
+  modelPresetValid: boolean;
   onAgentIdChange(agentId: string): void;
   onNodeIdChange(nodeId: string): void;
+  onModelPresetChange(modelPreset: string): void;
+  onModelPresetValidityChange(valid: boolean): void;
   onError(message: string | null): void;
   onCancel(): void;
   onSave(): void;
 }) {
   return (
     <div className="v3-project-context-editor" data-editor-presentation="popover">
-      <ProjectSessionDefaultsFields agentId={editor.agentId} nodeId={editor.nodeId} disabled={pending} onAgentIdChange={onAgentIdChange} onNodeIdChange={onNodeIdChange} onError={(message) => onError(message)} />
-      <EditorActions pending={pending} onCancel={onCancel} onSave={onSave} />
+      <ProjectSessionDefaultsFields
+        agentId={editor.agentId}
+        nodeId={editor.nodeId}
+        modelPreset={editor.modelPreset}
+        disabled={pending}
+        onAgentIdChange={onAgentIdChange}
+        onNodeIdChange={onNodeIdChange}
+        onModelPresetChange={onModelPresetChange}
+        onModelPresetValidityChange={onModelPresetValidityChange}
+        onError={(message) => onError(message)}
+      />
+      <EditorActions pending={pending || !modelPresetValid} onCancel={onCancel} onSave={onSave} />
     </div>
   );
 }
@@ -318,11 +353,18 @@ function defaultsEditor(defaults: ProjectSessionDefault): DefaultsEditorState {
     blockId: defaults.blockId,
     agentId: defaults.agentId ?? "",
     nodeId: defaults.nodeId ?? "",
+    modelPreset: defaults.modelPreset ?? "",
   };
 }
 
 function emptyDefaultsEditor(): DefaultsEditorState {
-  return { kind: "defaults", blockId: null, agentId: "", nodeId: "" };
+  return {
+    kind: "defaults",
+    blockId: null,
+    agentId: "",
+    nodeId: "",
+    modelPreset: "",
+  };
 }
 
 function EditorActions({ pending, onCancel, onSave, onDelete }: { pending: boolean; onCancel(): void; onSave(): void; onDelete?: () => void }) {

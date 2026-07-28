@@ -192,6 +192,7 @@ export function TaskDetailPane({
   const effectiveSessionDefaults = sourcedDefaults ? {
     agentId: sourcedDefaults.agentId,
     nodeId: sourcedDefaults.nodeId,
+    modelPreset: sourcedDefaults.modelPreset,
     sourcePageId: sourcedDefaults.source.pageId,
     sourceBlockId: sourcedDefaults.blockId,
   } : sessionDefaults;
@@ -222,11 +223,16 @@ export function TaskDetailPane({
       && runSessionLoadStates.get(focusRequest.sessionId) === "ready"
   );
   const taskStarLabel = `별표 ${taskStar.starred ? "해제" : "추가"}`;
-  const saveDefaultAssignment = async (value: { agentId: string; nodeId: string }) => {
+  const saveDefaultAssignment = async (value: {
+    agentId: string;
+    nodeId: string;
+    modelPreset: string;
+  }) => {
     const result = await saveTaskSessionDefaults(api, task.page.id, {
       blockId: directDefaults?.blockId ?? null,
       agentId: value.agentId || null,
       nodeId: value.nodeId || null,
+      modelPreset: value.modelPreset || null,
     });
     setContextBlocks(result.blocks);
     onTaskBlocksChanged(result.blocks);
@@ -361,6 +367,7 @@ export function TaskDetailPane({
               <TaskDefaultAssignment
                 agentId={effectiveSessionDefaults?.agentId ?? null}
                 nodeId={effectiveSessionDefaults?.nodeId ?? null}
+                modelPreset={effectiveSessionDefaults?.modelPreset ?? null}
                 sourceLabel={assignmentSourceLabel}
                 onSave={saveDefaultAssignment}
               />
