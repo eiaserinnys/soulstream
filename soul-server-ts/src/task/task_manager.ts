@@ -28,11 +28,7 @@ import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_clien
 import type { Task, TaskStatus } from "./task_models.js";
 import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
-import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
-import {
-  TaskHydrationFailedError,
-  TaskOwnedByAnotherNodeError,
-} from "./task_hydration_errors.js";
+import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import {
   TaskLifecycleRoute,
@@ -97,6 +93,7 @@ export class TaskManager {
   private readonly deliveryNotificationRecovery?: SessionDeliveryNotificationRecovery;
   private readonly sessionNotificationPublisher: SessionNotificationPublisher;
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
+  private readonly loadEvictedTask: (sessionId: string) => Promise<Task | null>;
 
   constructor(
     private readonly nodeId: string,
@@ -121,6 +118,7 @@ export class TaskManager {
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
   ) {
+    this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
     const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
       ? sessionRuntimeControl
       : undefined;
@@ -260,16 +258,19 @@ export class TaskManager {
     const agent = params.profileId
       ? this.agentRegistry?.get(params.profileId)
       : undefined;
+    const canonicalParams = agent && params.profileId !== agent.id
+      ? { ...params, profileId: agent.id }
+      : params;
     if (!agent || params.modelPresetBackend) {
-      return await this.taskCreation.createTask(params);
+      return await this.taskCreation.createTask(canonicalParams);
     }
 
     const preset = resolveModelPresetSelection(params, agent, this.modelCatalog);
     if (!preset) {
-      return await this.taskCreation.createTask(params);
+      return await this.taskCreation.createTask(canonicalParams);
     }
     return await this.taskCreation.createTask({
-      ...params,
+      ...canonicalParams,
       model: preset.model,
       modelPreset: preset.id,
       modelPresetBackend: preset.backend,
@@ -476,44 +477,4 @@ export class TaskManager {
     return loaded;
   }
 
-  /**
-   * DB에서 퇴거된(또는 서버 재기동으로 메모리 손실된) task를 lazy hydration.
-   *
-   * Python `service/session_eviction_manager.py:106-178 load_evicted_task` 정본의 codex 적응판.
-   * sessions 테이블의 SessionRow를 Task 인스턴스로 재구성. codex thread id는 PR #48 F-3B로
-   * `sessions.claude_session_id` 컬럼에 영속화되어 있어, hydrate 시 task.codexThreadId로
-   * 복원되고 codex SDK `resumeThread(threadId)`가 thread 자체를 복원한다.
-   *
-   * DB에 세션이 없으면 null 반환 — 호출자(addIntervention)가 throw하여 graceful.
-   *
-   * 본 메서드는 *메모리에 task를 추가하지 않는다* — 호출자가 결정. addIntervention의
-   * auto-resume 분기가 task를 직접 mutate하므로 메모리 추가가 필요.
-   *
-   * 미복원 필드 (별건 카드 권고):
-   *   - lastAssistantText·lastProgressText: events 테이블에서 재계산 필요 — 본 PR 범위 외.
-   */
-  private async loadEvictedTask(sessionId: string): Promise<Task | null> {
-    let row;
-    try {
-      row = await this.db.getSession(sessionId);
-    } catch (err) {
-      this.logger.warn({ err, sessionId }, "loadEvictedTask: getSession failed");
-      throw new TaskHydrationFailedError(sessionId, err);
-    }
-    if (!row) return null;
-    // Legacy rows can lack node_id; block only when DB has an authoritative owner.
-    if (row.node_id && row.node_id !== this.nodeId) {
-      this.logger.info(
-        {
-          sessionId,
-          ownerNodeId: row.node_id,
-          currentNodeId: this.nodeId,
-        },
-        "loadEvictedTask: session belongs to another node",
-      );
-      throw new TaskOwnedByAnotherNodeError(sessionId, row.node_id, this.nodeId);
-    }
-
-    return hydrateEvictedTaskFromSessionRow(row, this.logger);
-  }
 }

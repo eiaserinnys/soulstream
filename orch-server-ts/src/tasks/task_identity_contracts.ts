@@ -231,4 +231,5 @@ export interface TaskIdentityServiceConfig {
   createBlockId?: () => string;
   hydratePage: (pageId: string) => Promise<void>;
   onPageUpdated?: PageUpdatedObserver;
+  resolveAgentId?: (nodeId: string, agentId: string) => string;
 }

@@ -238,7 +238,7 @@ export class SessionBroadcaster {
     // - default "claude"는 Python `_session_to_response` (session_serializer.py:131)와 같은 정책.
     if (task.profileId) {
       const agent = this.agentRegistry.get(task.profileId);
-      info.agentId = task.profileId;
+      info.agentId = agent?.id ?? task.profileId;
       info.agentName = agent?.name ?? null;
       info.agentPortraitUrl =
         agent?.portrait_path ? `/api/agents/${agent.id}/portrait` : null;

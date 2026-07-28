@@ -138,6 +138,33 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     });
   });
 
+  it("canonical profile 한 건에 alias 조회 메타데이터만 싣는다", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([
+        {
+          ...codexAgent,
+          aliases: [
+            { id: "codex-default-opus", default_preset: "claude-opus" },
+            { id: "codex-default-legacy" },
+          ],
+        },
+      ]),
+    });
+
+    expect(msg.agents).toHaveLength(1);
+    expect(msg.agents?.[0]).toMatchObject({
+      id: "codex-default",
+      aliases: [
+        { id: "codex-default-opus", default_preset: "claude-opus" },
+        { id: "codex-default-legacy" },
+      ],
+    });
+  });
+
   it("board Yjs host capability를 단일 host node id 기준으로 광고", () => {
     const host = buildRegistrationMsg({
       nodeId: "eiaserinnys",

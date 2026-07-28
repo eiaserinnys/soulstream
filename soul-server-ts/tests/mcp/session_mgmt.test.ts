@@ -643,7 +643,7 @@ describe("agent profile backend boundary", () => {
 });
 
 describe("create_remote_agent_session", () => {
-  it("agent_id는 대상 노드의 정확한 id와 일치해야 하며 표시명/접두어 휴리스틱으로 해석하지 않는다", async () => {
+  it("목록에 없는 agent_id의 판정은 alias를 아는 세션 생성 정본에 맡긴다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
         return {
@@ -658,7 +658,13 @@ describe("create_remote_agent_session", () => {
           },
         };
       }
-      return { body: { agentSessionId: "should-not-create" } };
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return {
+          status: 400,
+          body: { error: "agent_id를 찾을 수 없습니다: roselin" },
+        };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
     });
     try {
       const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
@@ -677,10 +683,49 @@ describe("create_remote_agent_session", () => {
       expect(result.isError).toBe(true);
       const structured = result.structuredContent as { error?: string };
       expect(structured.error).toContain("agent_id를 찾을 수 없습니다: roselin");
-      expect(structured.error).toContain("roselin_codex");
       expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
         "GET /api/nodes/node-remote/agents",
+        "POST /api/sessions",
       ]);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("프로필 목록에 광고되지 않은 alias도 /api/sessions에 그대로 전달한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return {
+          body: {
+            agents: [{ id: "roselin", name: "로젤린", backend: "codex" }],
+          },
+        };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "GET /api/nodes/node-remote/agents",
+        "POST /api/sessions",
+      ]);
+      expect(JSON.parse(capture.requests[1]!.body).profile).toBe("roselin_codex");
     } finally {
       await capture.close();
     }

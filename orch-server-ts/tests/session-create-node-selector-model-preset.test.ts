@@ -16,6 +16,12 @@ function registryWithPreset(): InMemoryNodeRegistry {
         id: "roselin",
         backend: "claude",
         default_preset: "codex-sol",
+        aliases: [
+          {
+            id: "roselin-opus",
+            default_preset: "claude-opus",
+          },
+        ],
       },
     ],
     supported_backends: ["claude", "codex"],
@@ -27,6 +33,14 @@ function registryWithPreset(): InMemoryNodeRegistry {
         available: true,
         usage_provider: "codex",
         usage_model_id: "gpt-5.6-sol",
+      },
+      {
+        id: "claude-opus",
+        label: "Claude - Opus",
+        backend: "claude",
+        available: true,
+        usage_provider: "claude",
+        usage_model_id: "claude-opus-4-1",
       },
     ],
   });
@@ -59,6 +73,17 @@ describe("session create node selection with model presets", () => {
       profileId: "roselin",
       legacyModelSpecified: true,
     }).backend).toBe("claude");
+  });
+
+  it("alias 조회는 canonical profile id와 alias별 default preset을 선택한다", () => {
+    expect(selectNodeForSessionCreate(registryWithPreset(), {
+      nodeId: "node-a",
+      profileId: "roselin-opus",
+    })).toMatchObject({
+      profileId: "roselin",
+      backend: "claude",
+      modelPresetId: "claude-opus",
+    });
   });
 
   it("rejects an unadvertised preset with a 400 contract error", () => {

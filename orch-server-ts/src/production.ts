@@ -19,6 +19,7 @@ import {
 } from "./config.js";
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
 import { InMemoryNodeRegistry } from "./node/registry.js";
+import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
   PushNotifier,
@@ -193,6 +194,8 @@ export async function createLiveProductionApplication(
       authBearerToken: config.auth_bearer_token,
       browserReads: pageRepository,
       plannerReads: plannerRepository,
+      resolveAgentId: (nodeId, agentId) =>
+        resolveRegisteredAgentId(registry, nodeId, agentId),
       resolveBrowserUser: async (request) =>
         await providers.authenticatedUserResolvers.resolveUser(request),
       createService: (logger) => pageYjsService ??= new PageYjsService({
@@ -240,6 +243,8 @@ export async function createLiveProductionApplication(
       if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
       await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
     },
+    resolveAgentId: (nodeId, agentId) =>
+      resolveRegisteredAgentId(registry, nodeId, agentId),
     onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
   });
   const dependencies: LiveProviderDependencies = {

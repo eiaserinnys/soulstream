@@ -1,6 +1,10 @@
 import type { Logger } from "pino";
 
-import type { SessionRow } from "../db/session_db.js";
+import type { SessionDB, SessionRow } from "../db/session_db.js";
+import {
+  TaskHydrationFailedError,
+  TaskOwnedByAnotherNodeError,
+} from "./task_hydration_errors.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
   extractAgentsRunStateFromMetadata,
@@ -31,8 +35,8 @@ function completedAtFromRow(row: SessionRow, status: TaskStatus): Date | undefin
 /**
  * Reconstructs a runtime Task from the persisted sessions row used by lazy hydration.
  *
- * TaskManager owns DB lookup and caller routing; this mapper owns SessionRow shape,
- * status validation, metadata restoration, and Task field defaults.
+ * This mapper owns SessionRow shape, status validation, metadata restoration,
+ * and Task field defaults.
  */
 export function hydrateEvictedTaskFromSessionRow(
   row: SessionRow,
@@ -85,5 +89,34 @@ export function hydrateEvictedTaskFromSessionRow(
     lastEventId: row.last_event_id ?? 0,
     lastReadEventId: row.last_read_event_id ?? 0,
     interventionQueue: [],
+  };
+}
+
+export function createEvictedTaskLoader(input: {
+  db: SessionDB;
+  logger: Logger;
+  nodeId: string;
+}): (sessionId: string) => Promise<Task | null> {
+  return async (sessionId) => {
+    let row: SessionRow | null;
+    try {
+      row = await input.db.getSession(sessionId);
+    } catch (err) {
+      input.logger.warn({ err, sessionId }, "loadEvictedTask: getSession failed");
+      throw new TaskHydrationFailedError(sessionId, err);
+    }
+    if (!row) return null;
+    if (row.node_id && row.node_id !== input.nodeId) {
+      input.logger.info(
+        {
+          sessionId,
+          ownerNodeId: row.node_id,
+          currentNodeId: input.nodeId,
+        },
+        "loadEvictedTask: session belongs to another node",
+      );
+      throw new TaskOwnedByAnotherNodeError(sessionId, row.node_id, input.nodeId);
+    }
+    return hydrateEvictedTaskFromSessionRow(row, input.logger);
   };
 }

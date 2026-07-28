@@ -98,6 +98,13 @@ export interface NodeRegister {
     id?: string;
     name?: string;
     backend?: string;
+    /**
+     * Canonical profile의 조회 전용 별칭. profile 목록에는 별도 항목으로 투영하지 않는다.
+     */
+    aliases?: {
+      id: string;
+      default_preset?: string;
+    }[];
     default_preset?: string;
     portrait_url?: string;
     max_turns?: number | null;

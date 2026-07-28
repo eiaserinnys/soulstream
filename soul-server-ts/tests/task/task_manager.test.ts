@@ -134,6 +134,64 @@ describe("TaskManager model preset defaults", () => {
       }),
     );
   });
+
+  it("persists the canonical profile while preserving an alias-specific default preset", async () => {
+    const mocks = makeMocks();
+    const agentRegistry = {
+      get: vi.fn((id: string) =>
+        id === "roselin-opus"
+          ? {
+              id: "roselin",
+              name: "로젤린",
+              backend: "claude",
+              default_preset: "claude-opus",
+              workspace_dir: "/tmp/roselin",
+            }
+          : undefined,
+      ),
+    } as unknown as AgentRegistry;
+    const modelCatalog = {
+      resolve: vi.fn(() => ({
+        id: "claude-opus",
+        label: "Claude Opus",
+        backend: "claude" as const,
+        model: "claude-opus-4-6",
+      })),
+    };
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      agentRegistry,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      modelCatalog,
+    );
+
+    const task = await tm.createTask({
+      agentSessionId: "sess-alias-preset",
+      prompt: "inspect",
+      profileId: "roselin-opus",
+    });
+
+    expect(task).toMatchObject({
+      profileId: "roselin",
+      modelPreset: "claude-opus",
+      model: "claude-opus-4-6",
+      modelPresetBackend: "claude",
+    });
+    expect(mocks.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "roselin",
+        modelPreset: "claude-opus",
+      }),
+    );
+  });
 });
 
 describe("TaskManager.acknowledgeReview", () => {

@@ -150,6 +150,95 @@ describe("browser page routes", () => {
     }
   });
 
+  it("returns canonical agent id for a stored legacy session default", async () => {
+    const service = serviceDouble();
+    vi.mocked(service.resolvePageSessionDefaults).mockResolvedValueOnce({
+      agentId: "seosoyoung-opus",
+      nodeId: "node-a",
+      modelPreset: null,
+      sourcePageId: "project-page",
+      sourceBlockId: "defaults-1",
+    });
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, {
+      service,
+      reads: service,
+      resolveUser: cookieUserResolver(),
+      resolveAgentId: (nodeId, agentId) =>
+        nodeId === "node-a" && agentId === "seosoyoung-opus"
+          ? "seosoyoung"
+          : agentId,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/pages/work-page/session-defaults",
+        headers: { cookie: browserCookie },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        agentId: "seosoyoung",
+        nodeId: "node-a",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("canonicalizes a legacy agent id before saving session defaults", async () => {
+    const service = serviceDouble();
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, {
+      service,
+      reads: service,
+      resolveUser: cookieUserResolver(),
+      resolveAgentId: (_nodeId, agentId) =>
+        agentId === "seosoyoung-opus" ? "seosoyoung" : agentId,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/pages/page-1/operations",
+        headers: { cookie: browserCookie },
+        payload: {
+          expected_version: 4,
+          expected_state_vector: "AAEC",
+          idempotency_key: "canonicalize-agent-alias",
+          operations: [{
+            op: "create_block",
+            temp_id: "defaults",
+            parent_id: null,
+            after_block_id: null,
+            block_type: "session_defaults",
+            text: "",
+            properties: {
+              scope: "session",
+              agentId: "seosoyoung-opus",
+              nodeId: "node-a",
+            },
+          }],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(service.mutatePage).toHaveBeenCalledWith(expect.objectContaining({
+        command: {
+          type: "batch_operations",
+          operations: [expect.objectContaining({
+            blockType: "session_defaults",
+            properties: expect.objectContaining({
+              agentId: "seosoyoung",
+              nodeId: "node-a",
+            }),
+          })],
+        },
+      }));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("requires state-vector CAS for structural batch and exposes explicit star mutation", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });

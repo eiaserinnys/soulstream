@@ -23,6 +23,10 @@ describe("TaskIdentityService", () => {
       createOperationId: () => "operation-ae",
       hydratePage: vi.fn(),
       onPageUpdated,
+      resolveAgentId: (nodeId, agentId) =>
+        nodeId === "eiaserinnys" && agentId === "roselin_codex"
+          ? "roselin"
+          : agentId,
     });
 
     await expect(service.create({
@@ -79,7 +83,7 @@ describe("TaskIdentityService", () => {
       expect.objectContaining({
         type: "session_defaults",
         properties: {
-          agentId: "roselin_codex",
+          agentId: "roselin",
           nodeId: "eiaserinnys",
           modelPreset: "codex-5.6-sol",
           scope: "session",

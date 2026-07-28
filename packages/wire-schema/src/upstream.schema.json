@@ -65,6 +65,19 @@
               "id": { "type": "string" },
               "name": { "type": "string" },
               "backend": { "type": "string", "default": "claude" },
+              "aliases": {
+                "type": "array",
+                "description": "Canonical profile의 조회 전용 별칭. profile 목록에는 별도 항목으로 투영하지 않는다.",
+                "items": {
+                  "type": "object",
+                  "required": ["id"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string" },
+                    "default_preset": { "type": "string" }
+                  }
+                }
+              },
               "default_preset": { "type": "string" },
               "portrait_url": { "type": "string" },
               "max_turns": { "type": ["integer", "null"] },

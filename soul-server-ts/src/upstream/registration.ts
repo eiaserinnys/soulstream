@@ -121,6 +121,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
         name: a.name,
         backend: a.backend,
         portrait_url: a.portrait_path ? `/api/agents/${a.id}/portrait` : "",
+        ...(a.aliases?.length ? { aliases: a.aliases } : {}),
         ...(a.default_preset ? { default_preset: a.default_preset } : {}),
       };
       if (a.portrait_path) {
