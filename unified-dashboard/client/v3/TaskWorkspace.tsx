@@ -3,6 +3,7 @@ import {
   ChatView,
   DashboardIconCap,
   MarkdownDocumentPanel,
+  SessionModelPresetBadge,
   useDashboardStore,
   useGlassSurface,
   type CatalogFolder,
@@ -207,6 +208,7 @@ export function TaskWorkspace({
           >
             <header className="v3-chat-header">
               <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "세션"}</strong></div>
+              <SessionModelPresetBadge session={activeSession} />
               <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
               <DashboardIconCap label="채팅 닫기" onClick={onCloseWorkspace}>
                 <X className="h-4 w-4" aria-hidden="true" />
@@ -308,6 +310,7 @@ export function TaskWorkspace({
                 ) : (
                   <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong></div>
                 )}
+                {inspectorKind !== "document" ? <SessionModelPresetBadge session={activeSession} /> : null}
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
               </header>
               {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}

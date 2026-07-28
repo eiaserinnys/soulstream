@@ -16,6 +16,7 @@ export {
 } from "./constants";
 export type { SystemFolderKey, SystemFolderId } from "./constants";
 export { DEFAULT_REASONING_EFFORT, REASONING_EFFORT_OPTIONS } from "./api-types";
+export { fetchNodeModelPresets } from "./model-presets";
 
 // === Types (types.ts is itself a barrel) ===
 export type {

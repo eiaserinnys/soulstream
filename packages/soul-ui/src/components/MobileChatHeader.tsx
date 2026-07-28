@@ -12,6 +12,7 @@ import { ProfileAvatar } from "./ProfileAvatar";
 import { STATUS_CONFIG } from "./SessionItem";
 import { cn } from "../lib/cn";
 import { useGlassSurface } from "./LiquidGlassProvider";
+import { SessionModelPresetBadge } from "./SessionModelPresetBadge";
 
 export function MobileChatHeader({
   onBack,
@@ -57,15 +58,16 @@ export function MobileChatHeader({
           <div className="truncate text-sm font-medium">
             {displayText}
           </div>
-          <div className={cn("mt-0.5 flex items-center gap-1 text-xs font-semibold", statusConfig.chipClass)}>
+          <div className={cn("mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-xs font-semibold", statusConfig.chipClass)}>
             <span
               className={cn(
-                "h-1.5 w-1.5 rounded-full",
+                "h-1.5 w-1.5 shrink-0 rounded-full",
                 statusConfig.dotClass,
                 statusConfig.animate && "animate-[lg-pulse_1.6s_infinite]",
               )}
             />
-            {statusConfig.label}
+            <span className="shrink-0">{statusConfig.label}</span>
+            <SessionModelPresetBadge className="ml-1" session={activeSession} />
           </div>
         </div>
       </div>

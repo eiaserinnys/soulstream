@@ -67,6 +67,7 @@ export type { AtomNodeSelectorProps } from "./AtomNodeSelector";
 export { SessionsTopBar } from "./SessionsTopBar";
 export { VerticalSplitPane } from "./VerticalSplitPane";
 export { MobileChatHeader } from "./MobileChatHeader";
+export { SessionModelPresetBadge } from "./SessionModelPresetBadge";
 export { ThemeToggle } from "./ThemeToggle";
 export { DashboardIconCap } from "./DashboardIconCap";
 export type { DashboardIconCapProps } from "./DashboardIconCap";
