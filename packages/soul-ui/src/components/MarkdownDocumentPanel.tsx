@@ -47,10 +47,15 @@ export function MarkdownDocumentPanel() {
     [activeBoardContainer, selectedFolderId],
   );
   const runtime = useBoardRuntime(boardContainer);
-  const yText = useMemo(
-    () => (documentId && runtime ? runtime.getMarkdownText(documentId) : null),
-    [documentId, runtime],
-  );
+  const runtimeReady = runtime
+    ? (runtime.hasInitialSync?.() ?? !runtime.isProviderBacked)
+    : false;
+  const yText = documentId && runtime && runtimeReady
+    ? runtime.findMarkdownText
+      ? runtime.findMarkdownText(documentId)
+      : runtime.getMarkdownText(documentId)
+    : null;
+  const collaborativeRuntime = runtimeReady && yText ? runtime : null;
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [isEditingBody, setIsEditingBody] = useState(false);
   const [title, setTitle] = useState("");
@@ -61,6 +66,7 @@ export function MarkdownDocumentPanel() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedDocumentIdRef = useRef<string | null>(null);
   const editBodySnapshotRef = useRef("");
   const skipNextBlurSaveRef = useRef(false);
   // 제목 입력이 포커스된 동안에는 런타임 스냅샷이 입력값을 덮어써 공백을 지우지
@@ -74,12 +80,15 @@ export function MarkdownDocumentPanel() {
   }, []);
 
   const applyRuntimeSnapshot = useCallback(() => {
-    if (!documentId || !runtime) return;
-    const item = runtime.getBoardItems().find((candidate) => candidate.id === `markdown:${documentId}`);
+    if (!documentId || !collaborativeRuntime || !yText) return;
+    const item = collaborativeRuntime
+      .getBoardItems()
+      .find((candidate) => candidate.id === `markdown:${documentId}`);
     const nextTitle = getMetadataText(item?.metadata, "title") || "Untitled document";
-    const nextBody = runtime.getMarkdownText(documentId).toString();
+    const nextBody = yText.toString();
     const nextVersion = getMetadataNumber(item?.metadata, "version") ?? 1;
     const nextDocument = { id: documentId, title: nextTitle, body: nextBody, version: nextVersion };
+    loadedDocumentIdRef.current = documentId;
     setDocument(nextDocument);
     // 제목을 편집 중이면 입력값을 보존한다. 편집 중 트리밍된 런타임 제목을 다시
     // 써넣으면 방금 입력한 공백이 사라져 스페이스가 먹지 않는 것처럼 보인다.
@@ -92,16 +101,16 @@ export function MarkdownDocumentPanel() {
     setSavedVersion(nextVersion);
     setSaveError(null);
     setSaveStatus("saved");
-  }, [documentId, runtime]);
+  }, [collaborativeRuntime, documentId, yText]);
 
   const saveNow = useCallback(async () => {
-    if (!documentId) return;
+    if (!documentId || loadedDocumentIdRef.current !== documentId) return;
     clearSaveTimer();
     const currentTitle = title.trim() || "Untitled document";
-    if (runtime) {
-      runtime.updateMarkdownTitle(documentId, currentTitle);
+    if (collaborativeRuntime) {
+      collaborativeRuntime.updateMarkdownTitle(documentId, currentTitle);
       if (!yText || yText.toString() !== body) {
-        runtime.updateMarkdownBody(documentId, body);
+        collaborativeRuntime.updateMarkdownBody(documentId, body);
       }
       setSavedTitle(currentTitle);
       setSavedBody(body);
@@ -138,25 +147,38 @@ export function MarkdownDocumentPanel() {
         console.error("Markdown document save failed:", err);
       }
     }
-  }, [body, clearSaveTimer, documentId, runtime, savedBody, savedTitle, savedVersion, title, yText]);
+  }, [
+    body,
+    clearSaveTimer,
+    collaborativeRuntime,
+    documentId,
+    savedBody,
+    savedTitle,
+    savedVersion,
+    title,
+    yText,
+  ]);
 
   useEffect(() => {
     clearSaveTimer();
     skipNextBlurSaveRef.current = false;
+    loadedDocumentIdRef.current = null;
     if (!documentId) return;
     setDocument(null);
     setIsEditingBody(false);
     setSaveError(null);
     setSaveStatus("idle");
-    if (runtime) {
+    if (collaborativeRuntime) {
       applyRuntimeSnapshot();
       return;
     }
+    if (runtime?.isProviderBacked && !runtimeReady) return;
 
     let cancelled = false;
     fetchMarkdownDocument(documentId)
       .then((next) => {
         if (cancelled) return;
+        loadedDocumentIdRef.current = documentId;
         setDocument(next);
         setTitle(next.title);
         setBody(next.body);
@@ -171,21 +193,29 @@ export function MarkdownDocumentPanel() {
     return () => {
       cancelled = true;
     };
-  }, [applyRuntimeSnapshot, clearSaveTimer, documentId, runtime, setActiveBoardDocument]);
+  }, [
+    applyRuntimeSnapshot,
+    clearSaveTimer,
+    collaborativeRuntime,
+    documentId,
+    runtime,
+    runtimeReady,
+    setActiveBoardDocument,
+  ]);
 
   useEffect(() => {
-    if (!runtime || !yText) return;
+    if (!collaborativeRuntime || !yText) return;
     const refresh = () => applyRuntimeSnapshot();
     yText.observe(refresh);
-    const unsubscribe = runtime.subscribe(refresh);
+    const unsubscribe = collaborativeRuntime.subscribe(refresh);
     return () => {
       yText.unobserve(refresh);
       unsubscribe();
     };
-  }, [applyRuntimeSnapshot, runtime, yText]);
+  }, [applyRuntimeSnapshot, collaborativeRuntime, yText]);
 
   useEffect(() => {
-    if (!documentId || !document || runtime) return;
+    if (!documentId || !document || collaborativeRuntime) return;
     if (title.trim() === savedTitle && body === savedBody) {
       setSaveStatus("saved");
       clearSaveTimer();
@@ -197,7 +227,17 @@ export function MarkdownDocumentPanel() {
       void saveNow();
     }, 300);
     return clearSaveTimer;
-  }, [body, clearSaveTimer, document, documentId, runtime, saveNow, savedBody, savedTitle, title]);
+  }, [
+    body,
+    clearSaveTimer,
+    collaborativeRuntime,
+    document,
+    documentId,
+    saveNow,
+    savedBody,
+    savedTitle,
+    title,
+  ]);
 
   useEffect(() => () => {
     clearSaveTimer();
@@ -207,8 +247,8 @@ export function MarkdownDocumentPanel() {
 
   const remove = async () => {
     try {
-      if (runtime) {
-        runtime.deleteMarkdownDocument(documentId);
+      if (collaborativeRuntime) {
+        collaborativeRuntime.deleteMarkdownDocument(documentId);
       } else {
         await deleteMarkdownDocument(documentId);
       }
@@ -239,20 +279,20 @@ export function MarkdownDocumentPanel() {
   const updateBody = (value: string) => {
     setBody(value);
     setSaveError(null);
-    setSaveStatus(runtime ? "saved" : "dirty");
-    if (runtime && documentId) {
+    setSaveStatus(collaborativeRuntime ? "saved" : "dirty");
+    if (collaborativeRuntime && documentId) {
       setSavedBody(value);
-      refreshRuntimeMarkdownPreview(runtime, documentId, value);
+      refreshRuntimeMarkdownPreview(collaborativeRuntime, documentId, value);
     }
   };
 
   const updateTitle = (value: string) => {
     setTitle(value);
     setSaveError(null);
-    setSaveStatus(runtime ? "saved" : "dirty");
-    if (runtime && documentId) {
+    setSaveStatus(collaborativeRuntime ? "saved" : "dirty");
+    if (collaborativeRuntime && documentId) {
       const normalized = value.trim() || "Untitled document";
-      runtime.updateMarkdownTitle(documentId, normalized);
+      collaborativeRuntime.updateMarkdownTitle(documentId, normalized);
       setSavedTitle(normalized);
     }
   };
@@ -283,8 +323,8 @@ export function MarkdownDocumentPanel() {
     skipNextBlurSaveRef.current = true;
     clearSaveTimer();
     const reverted = editBodySnapshotRef.current;
-    if (runtime && documentId) {
-      runtime.updateMarkdownBody(documentId, reverted);
+    if (collaborativeRuntime && documentId) {
+      collaborativeRuntime.updateMarkdownBody(documentId, reverted);
       setBody(reverted);
       setSavedBody(reverted);
     } else {
@@ -293,7 +333,7 @@ export function MarkdownDocumentPanel() {
     }
     setSaveStatus("saved");
     setIsEditingBody(false);
-  }, [clearSaveTimer, documentId, runtime, savedBody, savedTitle]);
+  }, [clearSaveTimer, collaborativeRuntime, documentId, savedBody, savedTitle]);
 
   // 편집완료(체크) — 기존 자동 저장/동기화 흐름을 그대로 사용해 저장 후 읽기로 전환한다.
   const finishEditing = useCallback(() => {
@@ -334,7 +374,7 @@ export function MarkdownDocumentPanel() {
               : saveStatus === "conflict"
                 ? "충돌: 새로고침 필요"
                 : saveStatus === "saved"
-                  ? (runtime ? "동기화됨" : "저장됨")
+                  ? (collaborativeRuntime ? "동기화됨" : "저장됨")
                   : ""}
         </span>
         {document ? (
@@ -370,7 +410,7 @@ export function MarkdownDocumentPanel() {
             <MarkdownCodeMirrorEditor
               value={body}
               yText={yText}
-              awareness={runtime?.awareness ?? null}
+              awareness={collaborativeRuntime?.awareness ?? null}
               onChange={updateBody}
               onBlur={handleEditorBlur}
               onEscape={handleEditorEscape}
@@ -412,12 +452,19 @@ export function isScrollbarMouseDown(
 
 function useBoardRuntime(container: BoardContainerRef | null): BoardYjsRuntime | null {
   const [runtime, setRuntime] = useState(() => getBoardYjsRuntime(container));
+  const [, setRuntimeRevision] = useState(0);
   useEffect(() => {
     setRuntime(getBoardYjsRuntime(container));
     return subscribeBoardYjsRuntime(() => {
       setRuntime(getBoardYjsRuntime(container));
     });
   }, [container]);
+  useEffect(() => {
+    if (!runtime) return;
+    return runtime.subscribe(() => {
+      setRuntimeRevision((revision) => revision + 1);
+    });
+  }, [runtime]);
   return runtime;
 }
 

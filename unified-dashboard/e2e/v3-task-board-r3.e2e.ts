@@ -85,11 +85,12 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
   const overlay = page.getByTestId("v3-task-board-document-overlay");
   await expect(overlay).toBeVisible();
+  await expect(overlay.getByTestId("markdown-read-body")).toBeVisible();
   const titleInput = overlay.getByRole("textbox", { name: "Document title" });
   await expect(titleInput).toHaveValue("PR-O 결정 로그");
   await titleInput.fill("PR-O 결정 로그 · r3");
   await titleInput.blur();
-  await expect(overlay.getByTestId("markdown-save-status")).toHaveText("동기화됨");
+  await expect(overlay.getByTestId("markdown-save-status")).toHaveText("저장됨");
   await overlay.getByTestId("markdown-read-body").click();
   const bodyEditor = overlay.getByRole("textbox", { name: "Document body" });
   await bodyEditor.fill("# r3 검증\n\n문서 저장 흐름까지 연결됨");
@@ -101,6 +102,18 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   expect(wideOverlay.x + wideOverlay.width).toBeLessThanOrEqual(wideRegions.chat.x);
   await captureEvidence(page, "wide");
 
+  await overlay.getByTestId("v3-task-board-document-overlay-close").click();
+  await expect(overlay).toBeHidden();
+  await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
+  await expect(overlay).toBeVisible();
+  await expect(overlay.getByTestId("markdown-read-body")).toBeVisible();
+  await expect(overlay.getByRole("textbox", { name: "Document title" })).toHaveValue("PR-O 결정 로그 · r3");
+  await expect(overlay.getByTestId("markdown-read-body")).toContainText("문서 저장 흐름까지 연결됨");
+  await overlay.getByTestId("markdown-read-body").click();
+  await expect(overlay.locator(".cm-content")).toContainText("문서 저장 흐름까지 연결됨");
+  await overlay.getByTestId("markdown-edit-done").click();
+  await captureEvidence(page, "wide-restored");
+
   await page.setViewportSize({ width: 1024, height: 900 });
   const narrowRegions = await regionBounds(resources, canvas, chat);
   const narrowOverlay = await requiredBounds(overlay);
@@ -108,7 +121,7 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   expect(narrowOverlay.x + narrowOverlay.width).toBeLessThanOrEqual(narrowRegions.chat.x);
   await captureEvidence(page, "narrow");
 
-  await overlay.getByRole("button", { name: "문서 편집기 접기" }).click();
+  await overlay.getByTestId("v3-task-board-document-overlay-close").click();
   await expect(overlay).toBeHidden();
   await expect(canvas).toBeVisible();
 });
