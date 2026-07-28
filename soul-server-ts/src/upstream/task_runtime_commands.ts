@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -12,12 +13,14 @@ import type {
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
+import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
   taskManager: Pick<TaskManager, "createTask" | "addIntervention">;
   taskExecutor: Pick<TaskExecutor, "startExecution">;
   logger: Logger;
+  modelCatalog?: Pick<ModelCatalog, "resolve">;
 }
 
 export interface CreateSessionRuntimeParams {
@@ -31,6 +34,7 @@ export interface CreateSessionRuntimeParams {
   attachmentPaths?: string[];
   extraContextItems?: ContextItem[];
   model?: string | null;
+  modelPreset?: string | null;
   oauthToken?: string | null;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -139,6 +143,11 @@ export class TaskRuntimeCommands {
 
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
     const agent = this.requireAgent(params.profileId);
+    const preset = resolveModelPresetSelection(
+      params,
+      agent,
+      this.deps.modelCatalog,
+    );
     const prompt = appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
@@ -148,9 +157,16 @@ export class TaskRuntimeCommands {
       predecessorSessionId: params.predecessorSessionId ?? null,
       callerInfo: params.callerInfo,
       notifyCompletion: params.notifyCompletion,
-      model: params.model,
+      model: preset?.model ?? params.model,
+      ...(preset
+        ? {
+            modelPreset: preset.id,
+            modelPresetBackend: preset.backend,
+            modelPresetEnv: preset.env,
+          }
+        : {}),
       oauthToken:
-        agent.backend === "claude"
+        (preset?.backend ?? agent.backend) === "claude"
           ? normalizeOptionalString(params.oauthToken)
           : undefined,
       reasoningEffort: params.reasoningEffort,

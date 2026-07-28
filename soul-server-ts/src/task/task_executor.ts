@@ -17,7 +17,9 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type {
+  BackendId,
   EnginePort,
   ScheduleToolUseHandler,
   SSEEventPayload,
@@ -53,11 +55,18 @@ import {
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
+import {
+  applyModelPresetRuntime,
+  effectiveTaskBackend,
+} from "./task_model_preset.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
-export type EngineFactory = (agent: AgentProfile) => EnginePort;
+export type EngineFactory = (
+  agent: AgentProfile,
+  backendOverride?: BackendId,
+) => EnginePort;
 
 export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
@@ -101,6 +110,7 @@ export class TaskExecutor {
       TaskDeliveryLedgerGate,
       "recordConsumed" | "recordTurnStarted"
     >,
+    private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
@@ -163,7 +173,22 @@ export class TaskExecutor {
         `Task ${task.agentSessionId} already has an engine — concurrent execute not supported`,
       );
     }
-    const engine = this.engineFactory(agent);
+    const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
+    if (presetRuntime === "preset_unavailable") {
+      this.logger.warn(
+        {
+          sessionId: task.agentSessionId,
+          modelPreset: task.modelPreset,
+          fallbackBackend: agent.backend,
+          profileEnvFallback: agent.env !== undefined,
+        },
+        "Persisted model preset is unavailable; using the profile backend",
+      );
+    }
+    const backend = effectiveTaskBackend(task, agent);
+    const engine = task.modelPresetBackend
+      ? this.engineFactory(agent, backend)
+      : this.engineFactory(agent);
     if (
       "prepareSessionRuntime" in engine &&
       typeof engine.prepareSessionRuntime === "function"

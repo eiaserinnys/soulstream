@@ -1,10 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type {
+  ModelPresetAvailability,
+  ModelPresetAvailabilityService,
+} from "../model/model_preset_availability.js";
 
 export type RawNodeAgentProfile = {
   name?: unknown;
   portrait_url?: unknown;
   max_turns?: unknown;
   backend?: unknown;
+  default_preset?: unknown;
 };
 
 export type NodeAgentProfiles = Record<string, RawNodeAgentProfile>;
@@ -70,6 +75,7 @@ export type NodeAgentProfileProvider = {
 
 export type NodeAgentProfileRouteOptions = {
   provider: NodeAgentProfileProvider;
+  modelPresetProvider?: Pick<ModelPresetAvailabilityService, "listForNode">;
 };
 
 export class NodeAgentProfileRouteError extends Error {
@@ -98,6 +104,7 @@ type Validation<T> =
 
 export const nodeAgentProfileRouteAuthRequirements = {
   "GET /api/nodes/:node_id/agents": true,
+  "GET /api/nodes/:node_id/model-presets": true,
   "GET /api/nodes/:node_id/agents/:agent_id/portrait": true,
   "POST /api/nodes/:node_id/agents/config/plan-profile-update": true,
   "POST /api/nodes/:node_id/agents/config/apply-profile-update": true,
@@ -123,6 +130,21 @@ export function registerNodeAgentProfileRoutes(
       ),
     });
   });
+
+  if (options.modelPresetProvider) {
+    app.get<{ Params: NodeParams }>(
+      "/api/nodes/:node_id/model-presets",
+      async (request, reply) => {
+        const nodeId = nodeParams(request).node_id;
+        const presets: ModelPresetAvailability[] | undefined =
+          options.modelPresetProvider?.listForNode(nodeId);
+        if (!presets) {
+          return reply.code(404).send({ detail: `Node ${nodeId} not connected` });
+        }
+        return reply.send({ model_presets: presets });
+      },
+    );
+  }
 
   app.post<{ Params: NodeParams }>(
     "/api/nodes/:node_id/agents/config/plan-profile-update",
@@ -249,6 +271,9 @@ function projectAgentProfile(
       : "",
     max_turns: profile.max_turns ?? null,
     backend: profile.backend ?? "claude",
+    ...(typeof profile.default_preset === "string"
+      ? { default_preset: profile.default_preset }
+      : {}),
   };
 }
 

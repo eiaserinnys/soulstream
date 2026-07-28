@@ -28,6 +28,7 @@ import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { McpConfigService } from "../mcp_config_service.js";
+import { ModelCatalog } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { TaskHandoffNotifier } from "../work-task/task_handoff_notifier.js";
 import { TaskService } from "../work-task/task_service.js";
@@ -61,6 +62,7 @@ export interface WorkerCompositionParams {
   agentRegistry: AgentRegistry;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
+  modelCatalog?: ModelCatalog;
 }
 export interface WorkerComposition extends SupervisorComposition {
   db: SessionDB;
@@ -84,6 +86,8 @@ export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath } = params;
+  const modelCatalog =
+    params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger);
   let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
@@ -131,6 +135,7 @@ export async function composeWorkerRuntime(
     broadcaster,
     logger,
     processEnv: process.env,
+    modelCatalog,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
   const boardYjsAuth = {
@@ -216,6 +221,7 @@ export async function composeWorkerRuntime(
         enabled: true,
         db,
         agentRegistry,
+        modelCatalog,
         sessionStore: claudeSessionStore,
         sourceNode: env.SOULSTREAM_NODE_ID,
         idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
@@ -252,6 +258,7 @@ export async function composeWorkerRuntime(
     sessionPageBindingService,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     claudeSessionClientRegistry,
+    modelCatalog,
   );
   const scheduleService =
     new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
@@ -272,6 +279,7 @@ export async function composeWorkerRuntime(
     agentRegistry,
     taskManager,
     engineFactory,
+    modelCatalog,
     contextBuilder,
     persistence,
     broadcaster,
@@ -425,6 +433,7 @@ export async function composeWorkerRuntime(
         reflectionRuntime: mcpRuntime,
         scheduleCommands: scheduleService,
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+        modelCatalog,
       },
     );
     return upstreamAdapter;

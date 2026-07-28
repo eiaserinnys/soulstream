@@ -78,6 +78,8 @@ export function hydrateEvictedTaskFromSessionRow(
     agentsConversationId: agentsRunState?.conversationId,
     agentsSessionItems,
     claudePermissionMode,
+    modelPreset: row.model_preset,
+    model: row.model,
     createdAt: row.created_at,
     completedAt: completedAtFromRow(row, status),
     lastEventId: row.last_event_id ?? 0,

@@ -6,6 +6,7 @@ import { appendAttachmentPathNotes } from "./attachment_path_note.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import type { Task, InterventionMessage } from "./task_models.js";
+import { effectiveTaskBackend } from "./task_model_preset.js";
 
 export type TurnLoopTransitionDecision =
   | { kind: "stop" }
@@ -25,7 +26,10 @@ export function resolveTurnLoopTransition(
   if (task.status !== "running") {
     return { kind: "stop" };
   }
-  if (agent.backend === "openai-agents" && isOpenAiAgentsApprovalPending(task)) {
+  if (
+    effectiveTaskBackend(task, agent) === "openai-agents"
+    && isOpenAiAgentsApprovalPending(task)
+  ) {
     return { kind: "awaiting_approval" };
   }
   if (hasPendingClaudeRuntimeWork(task) && !hasDetachedClaudeRuntime(task)) {

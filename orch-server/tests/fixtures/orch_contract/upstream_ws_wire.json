@@ -32,6 +32,24 @@
         "claude",
         "codex"
       ],
+      "model_presets": [
+        {
+          "id": "claude-fable",
+          "label": "Claude - Fable",
+          "backend": "claude",
+          "available": true,
+          "usage_provider": "claude",
+          "usage_model_id": "fable"
+        }
+      ],
+      "agents": [
+        {
+          "id": "claude-roselin",
+          "name": "로젤린",
+          "backend": "claude",
+          "default_preset": "claude-fable"
+        }
+      ],
       "sessions": [
         {
           "agentSessionId": "sess-contract",

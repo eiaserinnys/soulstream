@@ -4,6 +4,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { Env } from "../config.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB, SupervisorEventRow } from "../db/session_db.js";
@@ -46,6 +47,7 @@ export interface SupervisorCompositionParams {
   agentRegistry: AgentRegistry;
   taskManager: TaskManager;
   engineFactory: EngineFactory;
+  modelCatalog: Pick<ModelCatalog, "resolve">;
   contextBuilder: ExecutionContextBuilder;
   persistence: EventPersistence;
   broadcaster: SessionBroadcaster;
@@ -79,6 +81,7 @@ export function composeSupervisorRuntime(
     agentRegistry,
     taskManager,
     engineFactory,
+    modelCatalog,
     contextBuilder,
     persistence,
     broadcaster,
@@ -342,6 +345,7 @@ export function composeSupervisorRuntime(
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
       ? taskManager.getDeliveryConsumptionRecorder()
       : undefined,
+    modelCatalog,
   );
   // Startup recovery may auto-resume a hydrated caller immediately. Start it
   // only after the executor closure is fully bound so the resumed turn can

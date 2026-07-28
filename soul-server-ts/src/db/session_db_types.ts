@@ -216,6 +216,8 @@ export interface SessionRow {
   created_at: Date;
   updated_at: Date;
   agent_id: string | null;
+  model_preset?: string | null;
+  model?: string | null;
   caller_session_id: string | null;
   predecessor_session_id: string | null;
   notify_completion?: boolean | null;
@@ -249,6 +251,8 @@ export interface ListSessionSummaryRow {
   last_event_id: number | null;
   last_read_event_id: number | null;
   node_id: string | null;
+  model_preset: string | null;
+  model: string | null;
   review_required?: boolean;
   review_state?: ReviewState;
 }
@@ -279,6 +283,8 @@ export interface RegisterSessionParams {
   updatedAt: Date;
   callerSessionId: string | null;
   predecessorSessionId: string | null;
+  modelPreset?: string | null;
+  model?: string | null;
   notifyCompletion?: boolean | null;
   reviewRequired?: boolean;
   reviewState?: ReviewState;

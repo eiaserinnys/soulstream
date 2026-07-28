@@ -37,6 +37,22 @@ describe("worker composition boundary", () => {
     expect(supervisorComposition).toContain("new TaskExecutor");
   });
 
+  it("loads the model catalog at startup and warns only profiles missing default_preset", () => {
+    const main = source("main.ts");
+
+    expect(main).toContain("loadModelCatalog(env.MODEL_CATALOG_PATH, logger)");
+    expect(main).toContain("Failed to load model catalog");
+    expect(main).toContain("if (!profile.default_preset)");
+    expect(main).not.toContain("if (profile.default_preset) {");
+  });
+
+  it("reuses the task model preset fallback resolver at the upstream boundary", () => {
+    const runtimeCommands = source("upstream/task_runtime_commands.ts");
+
+    expect(runtimeCommands).toContain("resolveModelPresetSelection(");
+    expect(runtimeCommands).not.toContain("private resolvePreset(");
+  });
+
   it("wires durable page ancestry through the existing orch host client", () => {
     const workerComposition = source("runtime/worker_composition.ts");
 

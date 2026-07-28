@@ -23,6 +23,9 @@ export interface ClaudeDeliveryTranscriptReceiptDeps {
   sessionStore: SessionStore;
   getSession(sessionId: string): Promise<SessionRow | null>;
   getAgent(agentId: string): AgentProfile | undefined;
+  getModelPresetBackend?(
+    presetId: string,
+  ): AgentProfile["backend"] | undefined;
   loadMessages?: typeof getSessionMessages;
 }
 
@@ -60,7 +63,17 @@ export class ClaudeDeliveryTranscriptReceiptReader {
         reason: "target_agent_profile_unavailable",
       };
     }
-    if (profile.backend !== "claude") {
+    const backend = session.model_preset
+      ? this.deps.getModelPresetBackend?.(session.model_preset)
+      : profile.backend;
+    if (!backend) {
+      return {
+        kind: "unavailable",
+        inputUuid,
+        reason: "target_model_preset_unavailable",
+      };
+    }
+    if (backend !== "claude") {
       return { kind: "absent", inputUuid };
     }
 

@@ -116,6 +116,7 @@
     {"order": 112, "methods": ["POST"], "path": "/api/pages/daily", "name": "get_or_create_browser_daily_page", "authRequired": true},
     {"order": 113, "methods": ["GET"], "path": "/api/pages/{pageId}", "name": "get_browser_page", "authRequired": true},
     {"order": 114, "methods": ["POST"], "path": "/api/pages/{pageId}/operations", "name": "batch_browser_page_operations", "authRequired": true},
-    {"order": 115, "methods": ["PATCH"], "path": "/api/pages/{pageId}/starred", "name": "set_browser_page_starred", "authRequired": true}
+    {"order": 115, "methods": ["PATCH"], "path": "/api/pages/{pageId}/starred", "name": "set_browser_page_starred", "authRequired": true},
+    {"order": 116, "methods": ["GET"], "path": "/api/nodes/{node_id}/model-presets", "name": "list_node_model_presets", "authRequired": true}
   ]
 }

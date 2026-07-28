@@ -49,6 +49,7 @@ export interface AgentInfo {
   portraitUrl?: string | null;
   max_turns?: number | null;
   backend?: string | null;
+  default_preset?: string | null;
 }
 
 /** 에이전트 프로필 (SessionSummary에 포함되는 필드) */
@@ -108,6 +109,10 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   nodeId?: string;
   /** 세션을 처리하는 백엔드 (claude / codex 등). agent_profiles에서 derived. */
   backend?: string;
+  /** 사용자가 선택한 모델 프리셋 ID. */
+  modelPreset?: string | null;
+  /** 세션 생성 시 프리셋에서 해석해 영속한 실제 모델 문자열. */
+  model?: string | null;
   /** 이 세션을 띄운 발신 세션 ID (위임 세션이면 존재, 직접이면 undefined) */
   callerSessionId?: string;
 }

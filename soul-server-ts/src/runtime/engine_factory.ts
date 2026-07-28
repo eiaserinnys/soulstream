@@ -40,8 +40,9 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     mcpConfigService,
   } = params;
 
-  return (agent) => {
-    if (agent.backend === "codex") {
+  return (agent, backendOverride) => {
+    const backend = backendOverride ?? agent.backend;
+    if (backend === "codex") {
       const resolvedMcpServers =
         mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
       if (env.CODEX_ADAPTER_MODE === "app-server") {
@@ -75,7 +76,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
         logger,
       );
     }
-    if (agent.backend === "claude") {
+    if (backend === "claude") {
       const resolvedMcpServers =
         mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
       return new ClaudeEngineAdapter(
@@ -97,14 +98,14 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
         logger,
       );
     }
-    if (agent.backend === "openai-agents") {
+    if (backend === "openai-agents") {
       return new AgentsEngineAdapter(
         { workspaceDir: agent.workspace_dir, profile: agent },
         logger,
       );
     }
     throw new Error(
-      `Unsupported backend "${agent.backend}" in soul-server-ts (agent=${agent.id})`,
+      `Unsupported backend "${backend}" in soul-server-ts (agent=${agent.id})`,
     );
   };
 }

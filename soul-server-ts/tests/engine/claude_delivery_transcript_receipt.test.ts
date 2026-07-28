@@ -105,4 +105,71 @@ describe("Claude delivery transcript receipt", () => {
     expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");
     expect(loadMessages.mock.calls[1]?.[1]).not.toHaveProperty("sessionStore");
   });
+
+  it("uses the persisted preset backend instead of the profile fallback", async () => {
+    const deliveryId = "delivery-preset-backend";
+    const inputUuid = buildDeliveryInputUuid(deliveryId);
+    const loadMessages = vi.fn().mockResolvedValue([
+      message("user", inputUuid),
+      message("assistant", "assistant-from-kimi"),
+    ]);
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a",
+      sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target",
+        node_id: "node-a",
+        agent_id: "codex-profile",
+        claude_session_id: "claude-session",
+        model_preset: "kimi-2",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "codex-profile",
+        name: "Codex profile",
+        backend: "codex",
+        workspace_dir: "/workspace",
+      }),
+      getModelPresetBackend: () => "claude",
+      loadMessages,
+    });
+
+    await expect(reader.inspect({
+      delivery_id: deliveryId,
+      target_session_id: "target",
+    } as SessionDeliveryRow)).resolves.toEqual({
+      kind: "completed",
+      inputUuid,
+      assistantMessageUuid: "assistant-from-kimi",
+    });
+    expect(loadMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips Claude transcript reads for a Codex preset on a Claude profile", async () => {
+    const loadMessages = vi.fn();
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a",
+      sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target",
+        node_id: "node-a",
+        agent_id: "claude-profile",
+        claude_session_id: "codex-thread",
+        model_preset: "codex-5.6-sol",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-profile",
+        name: "Claude profile",
+        backend: "claude",
+        workspace_dir: "/workspace",
+      }),
+      getModelPresetBackend: () => "codex",
+      loadMessages,
+    });
+
+    await expect(reader.inspect({
+      delivery_id: "delivery-codex",
+      target_session_id: "target",
+    } as SessionDeliveryRow)).resolves.toMatchObject({ kind: "absent" });
+    expect(loadMessages).not.toHaveBeenCalled();
+  });
 });

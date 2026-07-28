@@ -6,6 +6,7 @@ import { describe, expect, it, beforeEach, afterAll, beforeAll } from "vitest";
 import type { NodeRegister } from "@soulstream/wire-schema";
 
 import { AgentRegistry } from "../src/agent_registry.js";
+import { ModelCatalog } from "../src/model_catalog.js";
 import {
   buildRegistrationMsg,
   encodePortrait,
@@ -82,6 +83,59 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
     });
     expect(msg.supported_backends).toEqual([]);
+  });
+
+  it("실파일 catalog가 없어도 빈 광고로 등록 메시지를 만든다", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+      modelCatalog: new ModelCatalog("/definitely/missing/model-catalog.yaml"),
+    });
+
+    expect(msg.model_presets).toEqual([]);
+    expect(msg.supported_backends).toEqual(["codex"]);
+  });
+
+  it("advertises static model presets and agent defaults without env values", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([
+        { ...codexAgent, default_preset: "codex-5.6-sol" },
+      ]),
+      modelCatalog: {
+        advertise: () => [
+          {
+            id: "kimi-2",
+            label: "Kimi - 2",
+            backend: "claude",
+            available: false,
+            reason: "env_unresolved",
+            usage_provider: null,
+          },
+        ],
+      },
+    });
+
+    expect(msg.model_presets).toEqual([
+      {
+        id: "kimi-2",
+        label: "Kimi - 2",
+        backend: "claude",
+        available: false,
+        reason: "env_unresolved",
+        usage_provider: null,
+      },
+    ]);
+    expect(msg.agents?.[0]).toMatchObject({
+      id: "codex-default",
+      default_preset: "codex-5.6-sol",
+    });
   });
 
   it("board Yjs host capability를 단일 host node id 기준으로 광고", () => {

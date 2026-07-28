@@ -62,6 +62,38 @@ describe("createEngineFactory", () => {
     }
   });
 
+  it("uses a preset backend override without mutating the agent profile", () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "preset-backend-workspace-"));
+    const factory = createEngineFactory({
+      env: {
+        CODEX_ADAPTER_MODE: "sdk",
+        CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
+      },
+      logger,
+      codexProcessEnv: {},
+      buildClaudeProcessEnv: () => ({}),
+      claudeSessionStore: sessionStore,
+      mcpConfigService: new McpConfigService({
+        agentsConfigPath: join(workspaceDir, "agents.yaml"),
+      }),
+    });
+    const profile: AgentProfile = {
+      id: "roselin",
+      name: "로젤린",
+      backend: "codex",
+      workspace_dir: workspaceDir,
+    };
+
+    try {
+      const engine = factory(profile, "claude");
+
+      expect(engine.backendId).toBe("claude");
+      expect(profile.backend).toBe("codex");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails explicitly when a Codex MCP profile is used with the legacy SDK adapter", () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "codex-mcp-profile-"));
     writeFileSync(

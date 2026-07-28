@@ -72,6 +72,8 @@ describe("PerNodeSessionCache retention", () => {
           status: "running",
           display_name: `Session ${index}`,
           caller_source: "browser",
+          model_preset: "codex-5.6-sol",
+          model: "gpt-5.6-sol",
           [`unknown_${index}`]: "x".repeat(1_000),
         },
         nowMs: index,
@@ -84,10 +86,12 @@ describe("PerNodeSessionCache retention", () => {
       status: "running",
       display_name: "Session 99",
       caller_source: "browser",
+      model_preset: "codex-5.6-sol",
+      model: "gpt-5.6-sol",
     });
     expect(Object.keys(session?.payload ?? {}).some((key) => key.startsWith("unknown_")))
       .toBe(false);
-    expect(JSON.stringify(session?.payload).length).toBeLessThan(300);
+    expect(JSON.stringify(session?.payload).length).toBeLessThan(400);
     expect(cache.getStats()).toEqual({ nodes: 1, sessions: 1 });
   });
 });

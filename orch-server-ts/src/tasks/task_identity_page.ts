@@ -92,6 +92,9 @@ export function initialTaskContextOperations({
       properties: {
         agentId: context.sessionDefaults.agentId,
         nodeId: context.sessionDefaults.nodeId,
+        ...(context.sessionDefaults.modelPreset
+          ? { modelPreset: context.sessionDefaults.modelPreset }
+          : {}),
         scope: "session" as const,
       },
     }] : []),

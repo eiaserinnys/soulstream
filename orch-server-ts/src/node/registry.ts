@@ -102,6 +102,9 @@ export class InMemoryNodeRegistry {
       host: typeof registration.host === "string" ? registration.host : "",
       port: typeof registration.port === "number" ? registration.port : 0,
       agents: Array.isArray(registration.agents) ? registration.agents : [],
+      ...(Array.isArray(registration.model_presets)
+        ? { modelPresets: [...registration.model_presets] }
+        : {}),
       capabilities: isRecord(registration.capabilities)
         ? { ...registration.capabilities }
         : {},
@@ -192,6 +195,11 @@ export class InMemoryNodeRegistry {
     }
     if ("agents" in registration) {
       node.agents = Array.isArray(registration.agents) ? [...registration.agents] : [];
+    }
+    if ("model_presets" in registration) {
+      node.modelPresets = Array.isArray(registration.model_presets)
+        ? [...registration.model_presets]
+        : [];
     }
     if (isRecord(registration.user) && Object.keys(registration.user).length > 0) {
       node.userInfo = { ...registration.user };

@@ -4,7 +4,12 @@ import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { SessionDB, SessionRow } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
+import {
+  UnknownModelPresetError,
+  type ModelCatalog,
+} from "../model_catalog.js";
 import type { Task, TaskStatus } from "../task/task_models.js";
+import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 type FetchLike = (
@@ -79,6 +84,7 @@ export class RealtimeBroker {
       logger: Logger;
       processEnv: NodeJS.ProcessEnv;
       fetch?: FetchLike;
+      modelCatalog?: Pick<ModelCatalog, "resolve">;
     },
   ) {}
 
@@ -219,9 +225,29 @@ export class RealtimeBroker {
     if (!profile) {
       throw new Error(`Realtime session ${agentSessionId} profile not registered: ${row.agent_id}`);
     }
-    if (profile.backend !== "codex") {
+    let backend = profile.backend;
+    if (row.model_preset) {
+      try {
+        backend = resolveModelPresetSelection(
+          { modelPreset: row.model_preset, model: row.model },
+          profile,
+          this.deps.modelCatalog,
+        )?.backend ?? profile.backend;
+      } catch (error) {
+        if (!(error instanceof UnknownModelPresetError)) throw error;
+        this.deps.logger.warn(
+          {
+            sessionId: agentSessionId,
+            modelPreset: row.model_preset,
+            fallbackBackend: profile.backend,
+          },
+          "Persisted model preset is unavailable for Realtime; using the profile backend",
+        );
+      }
+    }
+    if (backend !== "codex") {
       throw new Error(
-        `Realtime requires codex backend; session ${agentSessionId} uses ${profile.backend}`,
+        `Realtime requires codex backend; session ${agentSessionId} uses ${backend}`,
       );
     }
     return { row, profile };

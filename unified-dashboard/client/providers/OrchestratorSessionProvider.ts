@@ -154,6 +154,8 @@ function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSumm
     agentName: summary.agentName ?? undefined,
     agentPortraitUrl: summary.agentPortraitUrl ?? undefined,
     backend: summary.backend ?? undefined,
+    modelPreset: summary.modelPreset ?? undefined,
+    model: summary.model ?? undefined,
     userName: summary.userName ?? undefined,
     userPortraitUrl: summary.userPortraitUrl ?? undefined,
     callerSessionId: summary.callerSessionId ?? undefined,

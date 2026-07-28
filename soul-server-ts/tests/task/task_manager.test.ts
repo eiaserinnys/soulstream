@@ -1,6 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
+import type { AgentRegistry } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
   EnginePort,
@@ -79,6 +80,61 @@ function makeMocks() {
     emitSessionUpdated,
   };
 }
+
+describe("TaskManager model preset defaults", () => {
+  it("resolves a profile default before persisting a task created outside upstream commands", async () => {
+    const mocks = makeMocks();
+    const agentRegistry = {
+      get: vi.fn(() => ({
+        id: "roselin",
+        name: "로젤린",
+        backend: "claude",
+        default_preset: "codex-5.6-sol",
+        workspace_dir: "/tmp/roselin",
+      })),
+    } as unknown as AgentRegistry;
+    const modelCatalog = {
+      resolve: vi.fn(() => ({
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex" as const,
+        model: "gpt-5.6-sol",
+      })),
+    };
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      agentRegistry,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      modelCatalog,
+    );
+
+    const task = await tm.createTask({
+      agentSessionId: "sess-default-preset",
+      prompt: "inspect",
+      profileId: "roselin",
+    });
+
+    expect(task).toMatchObject({
+      modelPreset: "codex-5.6-sol",
+      model: "gpt-5.6-sol",
+      modelPresetBackend: "codex",
+    });
+    expect(mocks.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelPreset: "codex-5.6-sol",
+        model: "gpt-5.6-sol",
+      }),
+    );
+  });
+});
 
 describe("TaskManager.acknowledgeReview", () => {
   it("applies the atomic DB outcome to memory and broadcasts the acknowledged state", async () => {

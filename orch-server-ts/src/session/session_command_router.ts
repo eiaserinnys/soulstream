@@ -14,6 +14,7 @@ import { InMemoryNodeRegistry } from "../node/registry.js";
 import {
   SessionCreateNodeSelectionError,
   selectNodeForSessionCreate,
+  type SessionCreateNodeSelection,
 } from "./session_create_node_selector.js";
 
 export type SessionCommandRouterOptions = {
@@ -31,6 +32,7 @@ export type RoutedPendingSessionCommand<
 > = {
   node: NodeConnectionSnapshot;
   command: PendingNodeCommand<TPayload, TResponse>;
+  modelPresetId?: string;
 };
 
 export type ExistingSessionPendingNodeCommandPayload =
@@ -129,13 +131,18 @@ export class SessionCommandRouter {
     TResponse extends NodeCommandResponse = NodeCommandResponse,
   >(
     payload: TPayload,
-    options: { timeoutMs?: number } = {},
+    options: {
+      timeoutMs?: number;
+      beforeCreateCommand?: (selection: SessionCreateNodeSelection) => void;
+    } = {},
   ): RoutedPendingSessionCommand<TPayload, TResponse> {
     let selection;
     try {
       selection = selectNodeForSessionCreate(this.registry, {
         nodeId: optionalNonEmptyString(payload.nodeId),
         profileId: optionalNonEmptyString(payload.profile),
+        modelPresetId: optionalNonEmptyString(payload.model_preset),
+        legacyModelSpecified: optionalNonEmptyString(payload.model) !== undefined,
       });
     } catch (error) {
       if (
@@ -146,18 +153,25 @@ export class SessionCommandRouter {
       }
       throw error;
     }
+    options.beforeCreateCommand?.(selection);
     const { nodeId: _nodeId, ...commandPayload } = payload;
     const selectedPayload = {
       ...commandPayload,
       profile: selection.profileId,
+      ...(selection.modelPresetId
+        ? { model_preset: selection.modelPresetId }
+        : {}),
     } as unknown as TPayload;
     return {
       node: selection.node,
       command: this.registry.createCommand<TPayload, TResponse>(
         selection.node.nodeId,
         selectedPayload,
-        options,
+        { timeoutMs: options.timeoutMs },
       ),
+      ...(selection.modelPresetId
+        ? { modelPresetId: selection.modelPresetId }
+        : {}),
     };
   }
 

@@ -6,30 +6,34 @@ import type {
 export type SessionCreateNodeSelectionRequest = {
   readonly nodeId?: string;
   readonly profileId?: string;
+  readonly modelPresetId?: string;
+  readonly legacyModelSpecified?: boolean;
 };
 
 export type SessionCreateNodeSelection = {
   readonly node: NodeConnectionSnapshot;
   readonly profileId: string;
   readonly backend: string;
+  readonly modelPresetId?: string;
 };
 
 export type SessionCreateNodeSelectionErrorCode =
   | "NO_AVAILABLE_NODE"
   | "NODE_NOT_FOUND"
   | "PROFILE_NOT_FOUND"
+  | "MODEL_PRESET_NOT_FOUND"
   | "BACKEND_INCOMPATIBLE"
   | "NO_COMPATIBLE_PROFILE";
 
 export class SessionCreateNodeSelectionError extends Error {
-  readonly statusCode: 404 | 409 | 503;
+  readonly statusCode: 400 | 404 | 409 | 503;
   readonly code: SessionCreateNodeSelectionErrorCode;
   readonly nodeId: string | undefined;
   readonly profileId: string | undefined;
   readonly backend: string | undefined;
 
   constructor(params: {
-    statusCode: 404 | 409 | 503;
+    statusCode: 400 | 404 | 409 | 503;
     code: SessionCreateNodeSelectionErrorCode;
     message: string;
     nodeId?: string;
@@ -57,16 +61,16 @@ export function selectNodeForSessionCreate(
 
   if (request.nodeId !== undefined) {
     return selectRequestedNode(registry, {
+      ...request,
       nodeId: request.nodeId,
-      profileId: request.profileId,
     });
   }
-  return selectAutomaticNode(registry, nodes, request.profileId);
+  return selectAutomaticNode(registry, nodes, request);
 }
 
 function selectRequestedNode(
   registry: InMemoryNodeRegistry,
-  request: { readonly nodeId: string; readonly profileId?: string },
+  request: SessionCreateNodeSelectionRequest & { readonly nodeId: string },
 ): SessionCreateNodeSelection {
   const nodeId = request.nodeId;
   const node = registry.getConnectedNode(nodeId);
@@ -77,7 +81,7 @@ function selectRequestedNode(
   }
 
   const profile = request.profileId === undefined
-    ? compatibleProfiles(node)[0]
+    ? compatibleProfiles(node, request)[0]?.profile
     : findProfile(node, request.profileId);
   if (profile === undefined) {
     if (request.profileId !== undefined) {
@@ -95,63 +99,95 @@ function selectRequestedNode(
       { nodeId },
     );
   }
-  assertBackendCompatibility(node, profile);
-  return { node, profileId: profile.id, backend: profile.backend };
+
+  const backend = backendForProfile(node, profile, request);
+  if (!backend) {
+    throw modelPresetNotFound(nodeId, request.modelPresetId ?? profile.defaultPreset);
+  }
+  assertBackendCompatibility(node, profile, backend);
+  const modelPresetId = selectedPresetId(profile, request);
+  return {
+    node,
+    profileId: profile.id,
+    backend,
+    ...(modelPresetId ? { modelPresetId } : {}),
+  };
 }
 
 function selectAutomaticNode(
   registry: InMemoryNodeRegistry,
   nodes: NodeConnectionSnapshot[],
-  profileId: string | undefined,
+  request: SessionCreateNodeSelectionRequest,
 ): SessionCreateNodeSelection {
-  if (profileId !== undefined) {
+  if (request.profileId !== undefined) {
     const eligible = nodes.flatMap((node) => {
-      const profile = findProfile(node, profileId);
+      const profile = findProfile(node, request.profileId!);
       return profile === undefined ? [] : [{ node, profile }];
     });
     if (eligible.length === 0) {
       throw selectionError(
         404,
         "PROFILE_NOT_FOUND",
-        `Agent profile '${profileId}' is not registered on any connected node`,
-        { profileId },
+        `Agent profile '${request.profileId}' is not registered on any connected node`,
+        { profileId: request.profileId },
       );
     }
-    const compatible = eligible.filter(({ node, profile }) =>
-      node.supportedBackends.includes(profile.backend),
+    const resolved = eligible.flatMap(({ node, profile }) => {
+      const backend = backendForProfile(node, profile, request);
+      const modelPresetId = selectedPresetId(profile, request);
+      return backend
+        ? [{
+            node,
+            profile,
+            backend,
+            ...(modelPresetId ? { modelPresetId } : {}),
+          }]
+        : [];
+    });
+    if (resolved.length === 0 && request.modelPresetId) {
+      throw modelPresetNotFound(undefined, request.modelPresetId);
+    }
+    const compatible = resolved.filter(({ node, backend }) =>
+      node.supportedBackends.includes(backend),
     );
     if (compatible.length === 0) {
       throw selectionError(
         409,
         "BACKEND_INCOMPATIBLE",
-        `Agent profile '${profileId}' is registered on connected nodes but none supports its configured backend`,
-        { profileId },
+        `Agent profile '${request.profileId}' is registered on connected nodes but none supports the selected backend`,
+        { profileId: request.profileId },
       );
     }
     return toSelection(leastLoaded(registry, compatible));
   }
 
-  const compatibleDefaults = nodes.flatMap((node) =>
-    compatibleProfiles(node).map((profile) => ({ node, profile })),
+  const resolvedDefaults = nodes.flatMap((node) =>
+    compatibleProfiles(node, request),
   );
-  if (compatibleDefaults.length === 0) {
+  if (resolvedDefaults.length === 0 && request.modelPresetId) {
+    throw modelPresetNotFound(undefined, request.modelPresetId);
+  }
+  if (resolvedDefaults.length === 0) {
     throw selectionError(
       503,
       "NO_COMPATIBLE_PROFILE",
       "No compatible agent profiles available on connected nodes",
     );
   }
-  return toSelection(leastLoaded(registry, compatibleDefaults));
+  return toSelection(leastLoaded(registry, resolvedDefaults));
 }
 
 type NodeProfileCandidate = {
   readonly node: NodeConnectionSnapshot;
   readonly profile: AgentProfile;
+  readonly backend: string;
+  readonly modelPresetId?: string;
 };
 
 type AgentProfile = {
   readonly id: string;
   readonly backend: string;
+  readonly defaultPreset?: string;
 };
 
 function leastLoaded(
@@ -178,14 +214,29 @@ function toSelection(candidate: NodeProfileCandidate): SessionCreateNodeSelectio
   return {
     node: candidate.node,
     profileId: candidate.profile.id,
-    backend: candidate.profile.backend,
+    backend: candidate.backend,
+    ...(candidate.modelPresetId
+      ? { modelPresetId: candidate.modelPresetId }
+      : {}),
   };
 }
 
-function compatibleProfiles(node: NodeConnectionSnapshot): AgentProfile[] {
-  return profiles(node).filter((profile) =>
-    node.supportedBackends.includes(profile.backend),
-  );
+function compatibleProfiles(
+  node: NodeConnectionSnapshot,
+  request: SessionCreateNodeSelectionRequest,
+): NodeProfileCandidate[] {
+  return profiles(node).flatMap((profile) => {
+    const backend = backendForProfile(node, profile, request);
+    const modelPresetId = selectedPresetId(profile, request);
+    return backend && node.supportedBackends.includes(backend)
+      ? [{
+          node,
+          profile,
+          backend,
+          ...(modelPresetId ? { modelPresetId } : {}),
+        }]
+      : [];
+  });
 }
 
 function findProfile(
@@ -206,25 +257,76 @@ function profiles(node: NodeConnectionSnapshot): AgentProfile[] {
         typeof candidate.backend === "string" && candidate.backend.length > 0
           ? candidate.backend
           : "claude",
+      ...(typeof candidate.default_preset === "string" && candidate.default_preset.length > 0
+        ? { defaultPreset: candidate.default_preset }
+        : {}),
     }];
+  });
+}
+
+function backendForProfile(
+  node: NodeConnectionSnapshot,
+  profile: AgentProfile,
+  request: SessionCreateNodeSelectionRequest,
+): string | undefined {
+  const presetId = selectedPresetId(profile, request);
+  if (!presetId) return profile.backend;
+  return modelPresets(node).find((preset) => preset.id === presetId)?.backend;
+}
+
+function selectedPresetId(
+  profile: AgentProfile,
+  request: SessionCreateNodeSelectionRequest,
+): string | undefined {
+  return request.modelPresetId
+    ?? (request.legacyModelSpecified ? undefined : profile.defaultPreset);
+}
+
+function modelPresets(
+  node: NodeConnectionSnapshot,
+): Array<{ id: string; backend: string }> {
+  return (node.modelPresets ?? []).flatMap((candidate) => {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.id !== "string"
+      || typeof candidate.backend !== "string"
+    ) {
+      return [];
+    }
+    return [{ id: candidate.id, backend: candidate.backend }];
   });
 }
 
 function assertBackendCompatibility(
   node: NodeConnectionSnapshot,
   profile: AgentProfile,
+  backend: string,
 ): void {
-  if (node.supportedBackends.includes(profile.backend)) return;
+  if (node.supportedBackends.includes(backend)) return;
   throw selectionError(
     409,
     "BACKEND_INCOMPATIBLE",
-    `Node ${node.nodeId} does not support backend '${profile.backend}' (supports: ${node.supportedBackends.join(",")})`,
-    { nodeId: node.nodeId, profileId: profile.id, backend: profile.backend },
+    `Node ${node.nodeId} does not support backend '${backend}' (supports: ${node.supportedBackends.join(",")})`,
+    { nodeId: node.nodeId, profileId: profile.id, backend },
+  );
+}
+
+function modelPresetNotFound(
+  nodeId: string | undefined,
+  presetId: string | undefined,
+): SessionCreateNodeSelectionError {
+  return selectionError(
+    400,
+    "MODEL_PRESET_NOT_FOUND",
+    nodeId
+      ? `Model preset '${presetId ?? ""}' is not advertised by node ${nodeId}`
+      : `Model preset '${presetId ?? ""}' is not advertised by any compatible node`,
+    { nodeId },
   );
 }
 
 function selectionError(
-  statusCode: 404 | 409 | 503,
+  statusCode: 400 | 404 | 409 | 503,
   code: SessionCreateNodeSelectionErrorCode,
   message: string,
   metadata: { nodeId?: string; profileId?: string; backend?: string } = {},

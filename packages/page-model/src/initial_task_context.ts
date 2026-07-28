@@ -9,6 +9,7 @@ export interface InitialTaskAtomReference {
 export interface InitialTaskSessionDefaults {
   agentId: string;
   nodeId: string;
+  modelPreset?: string;
 }
 
 export interface InitialTaskContext {
@@ -29,6 +30,7 @@ export interface InitialTaskContextWire {
   session_defaults?: {
     agent_id: string;
     node_id: string;
+    model_preset?: string;
   };
 }
 
@@ -52,13 +54,24 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
     }
     const agentId = trimmedString(value.session_defaults.agent_id);
     const nodeId = trimmedString(value.session_defaults.node_id);
+    const modelPreset = trimmedString(value.session_defaults.model_preset);
     if (!agentId) {
       return { ok: false, error: "initial_context.session_defaults.agent_id must be a non-empty string" };
     }
     if (!nodeId) {
       return { ok: false, error: "initial_context.session_defaults.node_id must be a non-empty string" };
     }
-    sessionDefaults = { agentId, nodeId };
+    if (value.session_defaults.model_preset !== undefined && !modelPreset) {
+      return {
+        ok: false,
+        error: "initial_context.session_defaults.model_preset must be a non-empty string",
+      };
+    }
+    sessionDefaults = {
+      agentId,
+      nodeId,
+      ...(modelPreset ? { modelPreset } : {}),
+    };
   }
 
   const atomReferences: InitialTaskAtomReference[] = [];
@@ -122,6 +135,14 @@ export function serializeInitialTaskContext(
     ? {
         agent_id: requireTrimmedString(context.sessionDefaults.agentId, "sessionDefaults.agentId"),
         node_id: requireTrimmedString(context.sessionDefaults.nodeId, "sessionDefaults.nodeId"),
+        ...(context.sessionDefaults.modelPreset
+          ? {
+              model_preset: requireTrimmedString(
+                context.sessionDefaults.modelPreset,
+                "sessionDefaults.modelPreset",
+              ),
+            }
+          : {}),
       }
     : undefined;
   if (!guidance && atomReferences.length === 0 && !sessionDefaults) return undefined;

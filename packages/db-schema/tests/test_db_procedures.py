@@ -163,6 +163,73 @@ async def test_session_predecessor_migration_contract_is_mirrored_in_schema_sql(
         assert required in schema_sql
 
 
+async def test_session_model_preset_migration_contract_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("048_session_model_preset.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model_preset TEXT",
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model TEXT",
+        "CREATE OR REPLACE FUNCTION session_register_with_model_preset(",
+        "p_model_preset           TEXT",
+        "s.model_preset, s.model",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
+async def test_session_model_preset_registration_and_summary_round_trip(test_db):
+    now = _utc_now()
+    await test_db.execute(
+        """
+        SELECT session_register_with_model_preset(
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        )
+        """,
+        "sess-model-preset",
+        "node-1",
+        "roselin",
+        None,
+        "claude",
+        "prompt",
+        None,
+        "running",
+        now,
+        now,
+        None,
+        True,
+        False,
+        "not_required",
+        None,
+        "codex-5.6-sol",
+        "gpt-5.6-sol",
+    )
+
+    row = await test_db.fetchrow(
+        """
+        SELECT model_preset, model
+        FROM sessions
+        WHERE session_id = 'sess-model-preset'
+        """
+    )
+    assert dict(row) == {
+        "model_preset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
+    }
+
+    summary = await test_db.fetchrow(
+        """
+        SELECT model_preset, model
+        FROM session_list_summary(NULL, NULL, 20, 0, NULL, NULL)
+        WHERE session_id = 'sess-model-preset'
+        """
+    )
+    assert dict(summary) == {
+        "model_preset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
+    }
+
+
 async def test_session_predecessor_schema_reapply_is_idempotent(test_db):
     schema_sql = _schema_sql()
     await test_db.execute(schema_sql)

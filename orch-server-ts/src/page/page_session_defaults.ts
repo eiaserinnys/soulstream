@@ -3,6 +3,7 @@ import type { PageReadQuerySql } from "./page_repository_reads.js";
 export interface PageSessionDefaultsDto {
   agentId: string | null;
   nodeId: string | null;
+  modelPreset: string | null;
   sourcePageId: string;
   sourceBlockId: string;
 }
@@ -113,10 +114,12 @@ function sessionDefaultsDto(row: SessionDefaultsRow): PageSessionDefaultsDto | n
   const scope = optionalTrimmedString(row.properties.scope);
   const agentId = optionalTrimmedString(row.properties.agentId);
   const nodeId = optionalTrimmedString(row.properties.nodeId);
+  const modelPreset = optionalTrimmedString(row.properties.modelPreset);
   if (!scope || (!agentId && !nodeId)) return null;
   return {
     agentId,
     nodeId,
+    modelPreset,
     sourcePageId: row.page_id,
     sourceBlockId: row.id,
   };

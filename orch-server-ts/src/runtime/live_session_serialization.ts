@@ -47,6 +47,9 @@ export function serializeSessionRow(
     predecessorSessionId:
       firstDefined(row, "predecessor_session_id", "predecessorSessionId") ?? null,
     agentId: firstDefined(row, "agent_id", "agentId") ?? null,
+    modelPreset:
+      firstDefined(row, "model_preset", "modelPreset") ?? null,
+    model: row.model ?? null,
     agentName: firstDefined(row, "agent_name", "agentName") ?? null,
     agentPortraitUrl:
       firstDefined(row, "agent_portrait_url", "agentPortraitUrl") ?? null,
@@ -65,6 +68,7 @@ export function serializeSessionRow(
   };
 
   enrichAgent(payload, options.registry);
+  enrichModelPreset(payload, options.registry);
   const callerInfo = extractCallerInfo(row.metadata);
   if (callerInfo !== null) {
     const displayName = callerInfo.display_name;
@@ -78,6 +82,35 @@ export function serializeSessionRow(
   }
   applyUserProfileFallback(payload, callerInfo, options.registry);
   return payload;
+}
+
+function enrichModelPreset(
+  payload: Record<string, unknown>,
+  registry: InMemoryNodeRegistry | undefined,
+): void {
+  const modelPreset = payload.modelPreset;
+  const nodeId = payload.nodeId;
+  if (
+    typeof modelPreset !== "string"
+    || modelPreset.length === 0
+    || typeof nodeId !== "string"
+    || nodeId.length === 0
+    || registry === undefined
+  ) {
+    return;
+  }
+  const node = registry.getConnectedNode(nodeId);
+  for (const candidate of node?.modelPresets ?? []) {
+    const preset = asRecord(candidate);
+    if (
+      preset?.id === modelPreset
+      && typeof preset.backend === "string"
+      && preset.backend.length > 0
+    ) {
+      payload.backend = preset.backend;
+      return;
+    }
+  }
 }
 
 function normalizeReviewState(value: unknown): string {

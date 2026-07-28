@@ -88,7 +88,7 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
-        migration_count: 48,
+        migration_count: 49,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -339,6 +339,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 48,
             applied_kind: "migration",
           },
+          {
+            migration_id: "048_session_model_preset.sql",
+            ordinal: 49,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -365,7 +370,7 @@ describe("apply-schema.mjs", () => {
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":48');
+        expect(verified.stdout).toContain('"ledger_count":49');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });

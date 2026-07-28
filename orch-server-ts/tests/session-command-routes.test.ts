@@ -13,6 +13,8 @@ import {
   type CreateSessionNodeCommandPayload,
   type NodeRegistrationPayload,
 } from "../src/index.js";
+import { ModelPresetAvailabilityError } from
+  "../src/model/model_preset_availability.js";
 
 describe("session command HTTP route harness", () => {
   const fixtures = loadContractFixtures();
@@ -198,6 +200,68 @@ describe("session command HTTP route harness", () => {
       })).statusCode).toBe(400);
     }
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 with the server availability reason before dispatching a blocked preset", async () => {
+    const { registry, router, bridge } = createHarness();
+    registry.registerNode({
+      type: "node_register",
+      node_id: "preset-node",
+      agents: [{
+        id: "roselin",
+        backend: "claude",
+        default_preset: "claude-fable",
+      }],
+      supported_backends: ["claude"],
+      model_presets: [
+        {
+          id: "claude-fable",
+          label: "Claude - Fable",
+          backend: "claude",
+          available: true,
+          usage_provider: "claude",
+          usage_model_id: "fable",
+        },
+      ],
+    });
+    const requireAvailable = vi.fn(() => {
+      throw new ModelPresetAvailabilityError(
+        "MODEL_PRESET_UNAVAILABLE",
+        "Model preset 'claude-fable' is unavailable on node preset-node: 5h 사용량 제한",
+      );
+    });
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        modelPresetAvailability: { requireAvailable },
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: {
+        prompt: "hello",
+        nodeId: "preset-node",
+        profile: "roselin",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "MODEL_PRESET_UNAVAILABLE",
+        message:
+          "Model preset 'claude-fable' is unavailable on node preset-node: 5h 사용량 제한",
+      },
+    });
+    expect(requireAvailable).toHaveBeenCalledWith(
+      "preset-node",
+      "claude-fable",
+    );
+    expect(registry.getStats().pendingCommands).toBe(0);
   });
 
   it("converts POST /api/sessions body into a create_session node command and returns the Python response shape", async () => {

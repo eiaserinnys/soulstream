@@ -59,7 +59,7 @@ export class SessionRepository {
   /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */
   async registerSession(params: RegisterSessionParams): Promise<void> {
     await this.sql`
-      SELECT session_register_with_predecessor(
+      SELECT session_register_with_model_preset(
         ${params.sessionId},
         ${params.nodeId},
         ${params.agentId},
@@ -74,7 +74,9 @@ export class SessionRepository {
         ${params.notifyCompletion ?? true},
         ${params.reviewRequired ?? false},
         ${params.reviewState ?? "not_required"},
-        ${params.predecessorSessionId ?? null}
+        ${params.predecessorSessionId ?? null},
+        ${params.modelPreset ?? null},
+        ${params.model ?? null}
       )
     `;
   }
@@ -230,6 +232,8 @@ export class SessionRepository {
         last_event_id: string | number | null;
         last_read_event_id: string | number | null;
         node_id: string | null;
+        model_preset: string | null;
+        model: string | null;
         total_count: string | number;
       }>
     >`
@@ -261,6 +265,8 @@ export class SessionRepository {
       last_read_event_id:
         r.last_read_event_id == null ? null : Number(r.last_read_event_id),
       node_id: r.node_id,
+      model_preset: r.model_preset,
+      model: r.model,
     }));
     return { sessions, total };
   }
@@ -291,6 +297,8 @@ export class SessionRepository {
         s.last_read_event_id,
         s.node_id,
         s.agent_id,
+        s.model_preset,
+        s.model,
         s.prompt,
         s.folder_id,
         s.metadata,

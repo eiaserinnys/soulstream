@@ -5,6 +5,7 @@ import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import { ClaudeSdkClient } from "../engine/claude_adapter.js";
 import { ClaudeDeliveryTranscriptReceiptReader } from
   "../engine/claude_delivery_transcript_receipt.js";
@@ -22,6 +23,7 @@ interface ComposeClaudeRuntimeParams {
   enabled: boolean;
   db: SessionDB;
   agentRegistry: AgentRegistry;
+  modelCatalog: Pick<ModelCatalog, "resolve">;
   sessionStore: SessionStore;
   sourceNode: string;
   idleTtlMs: number;
@@ -52,6 +54,13 @@ export async function composeClaudeRuntime(
     sessionStore: params.sessionStore,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
+    getModelPresetBackend: (presetId) => {
+      try {
+        return params.modelCatalog.resolve(presetId).backend;
+      } catch {
+        return undefined;
+      }
+    },
   });
   const queuedDeliveryRecovery = new QueuedDeliveryTranscriptRecovery(
     {

@@ -11,6 +11,7 @@ import type {
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
+import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
@@ -112,6 +113,132 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("keeps the legacy factory call exact when no preset is selected", async () => {
+    const mocks = makeMocks();
+    const factory = vi.fn(() => makeFakeEngine([
+      { type: "assistant_message", content: "legacy", timestamp: 1 },
+    ] as SSEEventPayload[]));
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(factory.mock.calls[0]).toEqual([agent]);
+  });
+
+  it("uses the preset backend while retaining the persisted resolved model", async () => {
+    const mocks = makeMocks();
+    const presetEngine: EnginePort = {
+      ...makeFakeEngine([
+        { type: "assistant_message", content: "preset", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      backendId: "claude",
+    };
+    const factory = vi.fn(() => presetEngine);
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        resolve: () => ({
+          id: "kimi-2",
+          label: "Kimi - 2",
+          backend: "claude",
+          model: "new-catalog-model",
+        }),
+      },
+    );
+    const task = {
+      ...makeTask(),
+      modelPreset: "kimi-2",
+      model: "persisted-kimi-model",
+    };
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(factory).toHaveBeenCalledWith(agent, "claude");
+    expect(task.model).toBe("persisted-kimi-model");
+  });
+
+  it("warns and resumes with the profile backend when a persisted preset was removed", async () => {
+    const mocks = makeMocks();
+    const warningLogger = pino({ level: "silent" });
+    const warn = vi.spyOn(warningLogger, "warn");
+    const fallbackAgent: AgentProfile = {
+      ...claudeAgent,
+      env: {
+        ANTHROPIC_API_KEY: "legacy-profile-key",
+        ANTHROPIC_BASE_URL: "https://legacy.example/anthropic",
+      },
+    };
+    const factory = vi.fn(() => ({
+      ...makeFakeEngine([
+        { type: "assistant_message", content: "degraded", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      backendId: "claude" as const,
+    }));
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      warningLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        resolve: () => {
+          throw new UnknownModelPresetError("removed-preset");
+        },
+      },
+    );
+    const task = {
+      ...makeTask(),
+      modelPreset: "removed-preset",
+      model: "persisted-model",
+    };
+
+    executor.startExecution(task, fallbackAgent);
+    await task.executionPromise;
+
+    expect(factory.mock.calls[0]).toEqual([fallbackAgent]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-1",
+        modelPreset: "removed-preset",
+        fallbackBackend: "claude",
+        profileEnvFallback: true,
+      }),
+      "Persisted model preset is unavailable; using the profile backend",
+    );
+  });
+
   it("gate OFF executor never enters the delivery receipt async boundary", async () => {
     const mocks = makeMocks();
     const observe = vi.spyOn(TaskDeliveryTurnReceipt.prototype, "observe");

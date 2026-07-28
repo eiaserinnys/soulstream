@@ -150,6 +150,8 @@ def _session_to_response(
         # 정본은 sessions.caller_session_id 컬럼 (snake_case → camelCase 변환).
         "callerSessionId": s.get("caller_session_id"),
         "agentId": s.get("agent_id"),
+        "modelPreset": s.get("model_preset"),
+        "model": s.get("model"),
         "agentName": None,
         "agentPortraitUrl": None,
         # 옵션 D Phase A: agent backend를 wire에 운반. profile lookup 성공 시 채움.

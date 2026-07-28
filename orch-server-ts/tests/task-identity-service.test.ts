@@ -41,6 +41,7 @@ describe("TaskIdentityService", () => {
         sessionDefaults: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "codex-5.6-sol",
         },
       },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
@@ -80,6 +81,7 @@ describe("TaskIdentityService", () => {
         properties: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "codex-5.6-sol",
           scope: "session",
         },
       }),
@@ -119,6 +121,7 @@ describe("TaskIdentityService", () => {
         sessionDefaults: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "codex-5.6-sol",
         },
       },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
@@ -137,6 +140,7 @@ describe("TaskIdentityService", () => {
         properties: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "codex-5.6-sol",
           scope: "session",
         },
       }),

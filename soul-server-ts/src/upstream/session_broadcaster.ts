@@ -12,6 +12,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { LastMessageRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task, TaskStatus } from "../task/task_models.js";
+import { effectiveTaskBackend } from "../task/task_model_preset.js";
 import type {
   CatalogBoardItemsDelta,
   CatalogFolderRecord,
@@ -221,6 +222,8 @@ export class SessionBroadcaster {
       review_required: task.reviewRequired === true,
       review_state: task.reviewState ?? "not_required",
       binding_warnings: task.creationWarnings ?? [],
+      model_preset: task.modelPreset ?? null,
+      model: task.model ?? null,
     };
     if (sessionType !== "claude") {
       info.llm_provider = task.llmProvider ?? null;
@@ -239,7 +242,7 @@ export class SessionBroadcaster {
       info.agentName = agent?.name ?? null;
       info.agentPortraitUrl =
         agent?.portrait_path ? `/api/agents/${agent.id}/portrait` : null;
-      info.backend = agent?.backend ?? "claude";
+      info.backend = agent ? effectiveTaskBackend(task, agent) : "claude";
     } else if (sessionType === "claude") {
       info.agentId = null;
       info.agentName = null;

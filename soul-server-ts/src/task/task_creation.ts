@@ -45,6 +45,9 @@ export interface CreateTaskParams {
   callerInfo?: CallerInfo;
   notifyCompletion?: boolean;
   model?: string | null;
+  modelPreset?: string | null;
+  modelPresetBackend?: Task["modelPresetBackend"];
+  modelPresetEnv?: Record<string, string>;
   oauthToken?: string;
   reasoningEffort?: ReasoningEffort;
   /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools 사용. */
@@ -148,6 +151,9 @@ export class TaskCreation {
       notifyCompletion: params.notifyCompletion ?? true,
       metadata,
       model: params.model,
+      modelPreset: params.modelPreset,
+      modelPresetBackend: params.modelPresetBackend,
+      modelPresetEnv: params.modelPresetEnv,
       oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,
       allowedTools: params.allowedTools,
@@ -178,6 +184,8 @@ export class TaskCreation {
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,
       predecessorSessionId: params.predecessorSessionId ?? null,
+      modelPreset: task.modelPreset ?? null,
+      model: task.model ?? null,
       notifyCompletion: task.notifyCompletion ?? true,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",

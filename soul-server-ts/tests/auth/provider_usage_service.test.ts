@@ -71,6 +71,50 @@ describe("ProviderUsageService", () => {
     );
   });
 
+  it("uses dynamic and catalog labels for model-scoped Claude quotas without hardcoded model names", () => {
+    const limits = claudeLimitsFromUsageResponse(
+      {
+        five_hour: { utilization: 10, resets_at: 1784951000 },
+        seven_day: { utilization: 20, resets_at: 1784952000 },
+        seven_day_sonnet: { utilization: 21, resets_at: 1784952100 },
+        seven_day_opus: { utilization: 22, resets_at: 1784952200 },
+        seven_day_fable: {
+          utilization: 30,
+          resets_at: 1784953000,
+        },
+        seven_day_nova: {
+          display_name: "Nova",
+          utilization: 40,
+          resets_at: 1784954000,
+        },
+        seven_day_unknown: {
+          utilization: 50,
+          resets_at: 1784955000,
+        },
+      },
+      "test",
+      [
+        {
+          id: "claude-fable",
+          label: "Claude - Fable",
+          backend: "claude",
+          model: "claude-fable-5[1m]",
+          usage_model_id: "fable",
+        },
+      ],
+    );
+
+    expect(limits.quotas.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "claude:five_hour", label: "5시간" },
+      { id: "claude:seven_day", label: "7일" },
+      { id: "claude:seven_day_sonnet", label: "7일 (Sonnet)" },
+      { id: "claude:seven_day_opus", label: "7일 (Opus)" },
+      { id: "claude:seven_day_fable", label: "7일 (Fable)" },
+      { id: "claude:seven_day_nova", label: "7일 (Nova)" },
+      { id: "claude:seven_day_unknown", label: "seven_day_unknown" },
+    ]);
+  });
+
   it("classifies a single Codex primary window by its seven-day duration", () => {
     const limits = codexLimitsFromUsageResponse({
       plan_type: "pro",
