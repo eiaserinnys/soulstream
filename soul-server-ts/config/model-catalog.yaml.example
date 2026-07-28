@@ -50,6 +50,10 @@ presets:
     label: Codex - 5.6 Terra
     backend: codex
     model: gpt-5.6-terra
+  - id: codex-5.3-spark
+    label: Codex - 5.3 Spark
+    backend: codex
+    model: gpt-5.3-codex-spark
   - id: kimi-2
     label: Kimi - 2
     backend: claude
