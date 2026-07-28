@@ -29,4 +29,21 @@ describe("SessionMetadata", () => {
     expect(html).toContain("abcdef1");
     expect(html).toContain("abcdef1234567890");
   });
+
+  it("llm caller_info를 실제 source 뱃지와 표시명으로 렌더링한다", () => {
+    const html = render([{
+      type: "caller_info",
+      value: {
+        source: "llm",
+        agent_node: "node-llm",
+        display_name: "External LLM",
+        user_id: null,
+        avatar_url: null,
+      },
+    }]);
+
+    expect(html).toContain("🧠 source");
+    expect(html).toContain("External LLM");
+    expect(html).toContain("llm");
+  });
 });
