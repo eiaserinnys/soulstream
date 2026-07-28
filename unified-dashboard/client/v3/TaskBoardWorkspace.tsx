@@ -5,6 +5,7 @@ import {
   DragHandle,
   MarkdownDocumentPanel,
   SessionContextMenu,
+  SessionModelPresetBadge,
   useDashboardStore,
   useGlassSurface,
   type CatalogBoardItem,
@@ -505,6 +506,7 @@ export function TaskBoardWorkspace({
             <div className="v3-chat-session-title">
               <strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong>
             </div>
+            <SessionModelPresetBadge session={activeSession} />
             <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
               {activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}
             </span>

@@ -1,29 +1,12 @@
-import type { ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import {
+  fetchNodeModelPresets,
+  type ModelPresetAvailability,
+} from "@seosoyoung/soul-ui";
+
+export { fetchNodeModelPresets };
 
 const UNAVAILABLE_SELECTION_MESSAGE =
   "선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.";
-
-export async function fetchNodeModelPresets(
-  nodeId: string,
-  fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
-  signal?: AbortSignal,
-): Promise<ModelPresetAvailability[]> {
-  const response = await fetchImplementation(
-    `/api/nodes/${encodeURIComponent(nodeId)}/model-presets`,
-    {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-      ...(signal ? { signal } : {}),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`모델 목록을 불러오지 못했습니다 (${response.status})`);
-  }
-  const payload = await response.json() as {
-    model_presets?: ModelPresetAvailability[];
-  };
-  return payload.model_presets ?? [];
-}
 
 export function modelPresetOptionLabel(
   preset: ModelPresetAvailability,

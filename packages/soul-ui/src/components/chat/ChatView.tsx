@@ -42,6 +42,7 @@ import { ProfileAvatar } from "../ProfileAvatar";
 import { CHAT_STATUS_TONE_CONFIG } from "./chat-tone-config";
 import { useGlassSurface } from "../LiquidGlassProvider";
 import { resolveChatTypography } from "../../lib/chat-typography";
+import { SessionModelPresetBadge } from "../SessionModelPresetBadge";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -316,15 +317,16 @@ export function ChatView({
             <div className="truncate text-sm font-semibold text-foreground">
               {chatTitle}
             </div>
-            <div className={cn("mt-0.5 flex items-center gap-1 text-xs font-semibold", chatStatusConfig.chipClass)}>
+            <div className={cn("mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-xs font-semibold", chatStatusConfig.chipClass)}>
               <span
                 className={cn(
-                  "h-1.5 w-1.5 rounded-full",
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
                   chatStatusConfig.dotClass,
                   chatStatusConfig.animate && "animate-[lg-pulse_1.6s_infinite]",
                 )}
               />
-              {chatStatusConfig.label}
+              <span className="shrink-0">{chatStatusConfig.label}</span>
+              <SessionModelPresetBadge className="ml-1" session={activeSessionSummary} />
             </div>
           </div>
         </div>

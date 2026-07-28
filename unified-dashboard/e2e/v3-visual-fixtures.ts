@@ -31,6 +31,7 @@ export interface V3VisualQaRouteOptions {
   taskContextEditing?: boolean;
   legacyAtomContext?: boolean;
   outsideTaskSession?: boolean;
+  sessionModelPresets?: Readonly<Record<string, string | null>>;
   emptyPlannerProjectsWhen?: () => boolean;
   emptyProjectPlannerWhen?: () => boolean;
   excludeSessionIdsFromInitialStream?: readonly string[];
@@ -527,7 +528,16 @@ export async function installV3VisualQaRoutes(
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
   let plannerTodayRequests = 0;
-  const qaSessions = options.outsideTaskSession ? [...sessions, outsideTaskSession] : sessions;
+  const baseQaSessions = options.outsideTaskSession ? [...sessions, outsideTaskSession] : sessions;
+  const qaSessions = baseQaSessions.map((session) => {
+    if (!Object.hasOwn(options.sessionModelPresets ?? {}, session.agentSessionId)) {
+      return session;
+    }
+    return {
+      ...session,
+      modelPreset: options.sessionModelPresets?.[session.agentSessionId] ?? null,
+    };
+  });
   let plannerProjectRequests = 0;
   let runHistoryRequests = 0;
   const visiblePages = () => options.includeCreatedTaskWhen?.() === true
