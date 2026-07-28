@@ -106,7 +106,9 @@ export function SessionSuccessionModal({
   const [selectedModelPresetInfo, setSelectedModelPresetInfo] =
     useState<ModelPresetAvailability | null>(null);
   const [modelPresetValid, setModelPresetValid] = useState(true);
-  const modelPresetSource = useRef<"inherited" | "agent" | "explicit" | null>(
+  const modelPresetSource = useRef<
+    "automatic" | "inherited" | "agent" | "explicit" | null
+  >(
     resolvedDefaults.modelPreset ? "inherited" : null,
   );
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
@@ -146,6 +148,13 @@ export function SessionSuccessionModal({
   const handleModelPresetChange = useCallback((value: string) => {
     modelPresetSource.current = "explicit";
     setSelectedModelPreset(value);
+  }, []);
+  const handleNodeIdChange = useCallback((value: string) => {
+    setSelectedNodeId(value);
+    setSelectedModelPreset("");
+    setSelectedModelPresetInfo(null);
+    setModelPresetValid(true);
+    modelPresetSource.current = "automatic";
   }, []);
 
   const start = async () => {
@@ -241,7 +250,7 @@ export function SessionSuccessionModal({
                 preferredNodeId={resolvedDefaults.nodeId}
                 fallbackToAvailable
                 onAgentIdChange={setSelectedAgentId}
-                onNodeIdChange={setSelectedNodeId}
+                onNodeIdChange={handleNodeIdChange}
                 onModelPresetChange={handleModelPresetChange}
                 onAgentInfoChange={handleAgentInfoChange}
                 onModelPresetInfoChange={setSelectedModelPresetInfo}

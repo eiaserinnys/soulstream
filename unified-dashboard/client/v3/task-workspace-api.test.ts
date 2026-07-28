@@ -116,11 +116,14 @@ describe("saveTaskSessionDefaults", () => {
         properties: {
           agentId: "new-agent",
           nodeId: null,
-          modelPreset: null,
           scope: "session",
         },
       }],
     }));
+    const updateProperties = (
+      api.applyOperations as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[1]?.operations?.[0]?.properties;
+    expect(updateProperties).not.toHaveProperty("modelPreset");
 
     await expect(saveTaskSessionDefaults(api, taskPage.id, {
       blockId: defaults.id,

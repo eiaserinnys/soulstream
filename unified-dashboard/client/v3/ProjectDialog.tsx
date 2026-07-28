@@ -215,7 +215,15 @@ function ProjectFormFields({
               modelPreset={value.sessionDefaults.modelPreset}
               disabled={disabled}
               onAgentIdChange={(agentId) => onChange({ ...value, sessionDefaults: value.sessionDefaults ? { ...value.sessionDefaults, agentId } : null })}
-              onNodeIdChange={(nodeId) => onChange({ ...value, sessionDefaults: value.sessionDefaults ? { ...value.sessionDefaults, nodeId } : null })}
+              onNodeIdChange={(nodeId) => {
+                onAssignmentValidityChange(true);
+                onChange({
+                  ...value,
+                  sessionDefaults: value.sessionDefaults
+                    ? { ...value.sessionDefaults, nodeId, modelPreset: "" }
+                    : null,
+                });
+              }}
               onModelPresetChange={(modelPreset) => onChange({ ...value, sessionDefaults: value.sessionDefaults ? { ...value.sessionDefaults, modelPreset } : null })}
               onModelPresetValidityChange={onAssignmentValidityChange}
               onError={(message) => onError(message)}

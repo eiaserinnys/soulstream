@@ -6,10 +6,15 @@ const UNAVAILABLE_SELECTION_MESSAGE =
 export async function fetchNodeModelPresets(
   nodeId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
+  signal?: AbortSignal,
 ): Promise<ModelPresetAvailability[]> {
   const response = await fetchImplementation(
     `/api/nodes/${encodeURIComponent(nodeId)}/model-presets`,
-    { credentials: "same-origin", headers: { Accept: "application/json" } },
+    {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      ...(signal ? { signal } : {}),
+    },
   );
   if (!response.ok) {
     throw new Error(`모델 목록을 불러오지 못했습니다 (${response.status})`);
@@ -23,8 +28,13 @@ export async function fetchNodeModelPresets(
 export function modelPresetOptionLabel(
   preset: ModelPresetAvailability,
   formatResetTime: (value: string) => string | null = localResetTime,
+  includeUsageWarning = true,
 ): string {
-  if (preset.available) return preset.label;
+  if (preset.available) {
+    return `${preset.label}${
+      preset.usage_warning && includeUsageWarning ? " (사용량 확인 지연)" : ""
+    }`;
+  }
   const reason = preset.reason_label ? ` (${preset.reason_label})` : "";
   const resetTime = preset.resets_at ? formatResetTime(preset.resets_at) : null;
   return `${preset.label}${reason}${resetTime ? ` · ${resetTime} 해제` : ""}`;

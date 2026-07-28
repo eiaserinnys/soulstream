@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Badge,
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
   type ModelPresetAvailability,
 } from "@seosoyoung/soul-ui";
 
@@ -10,12 +14,16 @@ import {
   modelPresetSelectionState,
 } from "../lib/model-presets";
 
+const MODEL_PRESET_FETCH_TIMEOUT_MS = 10_000;
+const MODEL_PRESET_FETCH_ERROR = "모델 목록을 불러오지 못했습니다";
+
 export function NodeModelPresetSelect({
   nodeId,
   value,
   label,
   disabled = false,
   className,
+  triggerClassName,
   onValueChange,
   onPresetChange,
   onValidityChange,
@@ -26,6 +34,7 @@ export function NodeModelPresetSelect({
   label: string;
   disabled?: boolean;
   className?: string;
+  triggerClassName?: string;
   onValueChange(value: string): void;
   onPresetChange?(preset: ModelPresetAvailability | null): void;
   onValidityChange?(valid: boolean): void;
@@ -34,6 +43,8 @@ export function NodeModelPresetSelect({
   const [presets, setPresets] = useState<ModelPresetAvailability[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const selectId = useId();
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -42,23 +53,38 @@ export function NodeModelPresetSelect({
       setPresets([]);
       setLoadedNodeId(null);
       setLoading(false);
+      setLoadError(false);
       return;
     }
     let active = true;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      MODEL_PRESET_FETCH_TIMEOUT_MS,
+    );
+    setPresets([]);
+    setLoadedNodeId(null);
     setLoading(true);
-    void fetchNodeModelPresets(nodeId).then((next) => {
+    setLoadError(false);
+    void fetchNodeModelPresets(nodeId, globalThis.fetch, controller.signal).then((next) => {
       if (!active) return;
       setPresets(next);
       setLoadedNodeId(nodeId);
-    }).catch((caught: unknown) => {
+    }).catch(() => {
       if (!active) return;
       setPresets([]);
       setLoadedNodeId(null);
-      onErrorRef.current?.(caught instanceof Error ? caught.message : String(caught));
+      setLoadError(true);
+      onErrorRef.current?.(MODEL_PRESET_FETCH_ERROR);
     }).finally(() => {
+      window.clearTimeout(timeoutId);
       if (active) setLoading(false);
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [nodeId]);
 
   const selection = useMemo(
@@ -72,36 +98,51 @@ export function NodeModelPresetSelect({
   const selectedPresetMissing = Boolean(
     value && !presets.some((preset) => preset.id === value),
   );
+  const triggerLabel = loadError
+    ? MODEL_PRESET_FETCH_ERROR
+    : selection.preset
+      ? modelPresetOptionLabel(selection.preset, undefined, false)
+      : loading
+        ? value ? "선택한 모델 확인 중…" : "불러오는 중…"
+        : value ? "선택한 모델" : "미지정";
 
   return (
-    <label className={className}>
-      <span>{label}</span>
-      <span className="flex min-w-0 items-center gap-2">
-        <select
-          className="min-h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/24 disabled:cursor-not-allowed disabled:opacity-64 sm:min-h-8"
+    <div className={className}>
+      <label htmlFor={selectId}>{label}</label>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Select
+          id={selectId}
           value={value}
-          aria-label={`${label} 선택`}
-          aria-invalid={selection.warning ? true : undefined}
-          disabled={disabled || !nodeId || loading}
-          onChange={(event) => onValueChange(event.target.value)}
+          disabled={disabled || !nodeId}
+          modal={false}
+          onValueChange={(next) => onValueChange(next ?? "")}
         >
-          <option value="">{loading ? "불러오는 중…" : "미지정"}</option>
-          {selectedPresetMissing ? (
-            <option value={value} disabled={loadedNodeId === nodeId}>
-              {loading ? "선택한 모델 확인 중…" : "선택한 모델"}
-            </option>
-          ) : null}
-          {presets.map((preset) => (
-            <option key={preset.id} value={preset.id} disabled={!preset.available}>
-              {modelPresetOptionLabel(preset)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            className={triggerClassName}
+            aria-label="모델 선택"
+            aria-invalid={selection.warning ? true : undefined}
+          >
+            <span className="flex-1 truncate">{triggerLabel}</span>
+          </SelectTrigger>
+          <SelectPopup>
+            <SelectItem value="">미지정</SelectItem>
+            {selectedPresetMissing ? (
+              <SelectItem value={value} disabled={loadedNodeId === nodeId}>
+                {loading ? "선택한 모델 확인 중…" : "선택한 모델"}
+              </SelectItem>
+            ) : null}
+            {presets.map((preset) => (
+              <SelectItem key={preset.id} value={preset.id} disabled={!preset.available}>
+                {modelPresetOptionLabel(preset)}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
         {selection.preset?.usage_warning ? (
-          <Badge variant="warning" size="sm">(사용량 확인 지연)</Badge>
+          <Badge variant="warning">사용량 확인 지연</Badge>
         ) : null}
-      </span>
+      </div>
       {selection.warning ? <small role="alert">{selection.warning}</small> : null}
-    </label>
+    </div>
   );
 }

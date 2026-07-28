@@ -685,12 +685,14 @@ describe("dashboard-store", () => {
         folderId: "folder-parent",
         nodeId: "node-parent",
         agentId: "agent-parent",
+        modelPreset: "preset-parent",
       });
 
       expect(useDashboardStore.getState().newSessionDefaults).toEqual({
         folderId: "folder-parent",
         nodeId: "node-parent",
         agentId: "agent-parent",
+        modelPreset: "preset-parent",
       });
 
       useDashboardStore.getState().closeNewSessionModal();

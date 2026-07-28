@@ -77,6 +77,8 @@ export function NewTaskForm({
   const updateDefaultNodeId = useCallback((value: string) => {
     setDefaultNodeId(value);
     setDefaultAgentId("");
+    setDefaultModelPreset("");
+    setModelPresetValid(true);
   }, []);
   const submit = async () => {
     const normalized = title.trim();

@@ -71,6 +71,16 @@ describe("TaskDefaultAssignment", () => {
     expect(input("에이전트 선택").value).toBe("failed-agent");
   });
 
+  it("resets the model preset when its node changes", () => {
+    render(vi.fn(async () => undefined));
+    click("기본 담당 수정");
+    expect(input("모델 선택").value).toBe("preset-inherited");
+
+    setInput(input("노드 선택"), "other-node");
+
+    expect(input("모델 선택").value).toBe("");
+  });
+
   it("allows a task with no inherited defaults to set its first explicit assignment", async () => {
     const onSave = vi.fn(async () => undefined);
     render(onSave, {

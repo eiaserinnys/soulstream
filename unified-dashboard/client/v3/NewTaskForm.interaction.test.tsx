@@ -113,6 +113,16 @@ describe("NewTaskForm submission feedback", () => {
     ));
   });
 
+  it("clears the model preset when the assignment node changes", () => {
+    render(vi.fn(async () => null));
+
+    setInputValue(input("노드 선택"), "node-a");
+    setInputValue(input("모델 선택"), "preset-a");
+    setInputValue(input("노드 선택"), "node-b");
+
+    expect(input("모델 선택").value).toBe("");
+  });
+
   function render(onCreate: (...args: never[]) => Promise<string | null>) {
     flushSync(() => root.render(
       <NewTaskForm

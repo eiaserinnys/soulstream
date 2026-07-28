@@ -126,7 +126,7 @@ function SelectPopup({
         alignItemWithTrigger={alignItemWithTrigger}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-50 select-none"
+        className="z-[calc(var(--v3-layer-modal,50)+1)] select-none"
         data-slot="select-positioner"
         side={side}
         sideOffset={sideOffset}

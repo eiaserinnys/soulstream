@@ -82,7 +82,9 @@ export async function saveProjectSessionDefaults(
   const properties = {
     agentId: input.agentId?.trim() || null,
     nodeId: input.nodeId?.trim() || null,
-    modelPreset: input.modelPreset?.trim() || null,
+    ...(input.modelPreset?.trim()
+      ? { modelPreset: input.modelPreset.trim() }
+      : {}),
     scope: "project",
   };
   return await mutate(api, pageId, idFactory, "v3 project session defaults save", (blocks) => (

@@ -67,7 +67,9 @@ export async function saveTaskSessionDefaults(
   const properties = {
     agentId: input.agentId?.trim() || null,
     nodeId: input.nodeId?.trim() || null,
-    modelPreset: input.modelPreset?.trim() || null,
+    ...(input.modelPreset?.trim()
+      ? { modelPreset: input.modelPreset.trim() }
+      : {}),
     scope: "session",
   };
   if (!properties.agentId && !properties.nodeId) {

@@ -81,7 +81,11 @@ export function TaskDefaultAssignment({
             presentation="session"
             disabled={pending}
             onAgentIdChange={setDraftAgentId}
-            onNodeIdChange={setDraftNodeId}
+            onNodeIdChange={(value) => {
+              setDraftNodeId(value);
+              setDraftModelPreset("");
+              setModelPresetValid(true);
+            }}
             onModelPresetChange={setDraftModelPreset}
             onModelPresetValidityChange={setModelPresetValid}
             onError={setError}

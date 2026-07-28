@@ -35,11 +35,14 @@ describe("model preset presentation", () => {
   });
 
   it("keeps a usage-warning preset selectable", () => {
-    expect(modelPresetSelectionState("preset-warning", [{
+    const warningPreset = {
       ...availablePreset,
       id: "preset-warning",
       usage_warning: true,
-    }], true)).toEqual({
+    };
+    expect(modelPresetOptionLabel(warningPreset))
+      .toBe("프리셋 A (사용량 확인 지연)");
+    expect(modelPresetSelectionState("preset-warning", [warningPreset], true)).toEqual({
       preset: expect.objectContaining({ id: "preset-warning", usage_warning: true }),
       valid: true,
       warning: null,

@@ -74,6 +74,9 @@ describe("createDashboardSession", () => {
       "codex",
       null,
     );
+    expect(
+      JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string),
+    ).not.toHaveProperty("model_preset");
   });
 
   it("sends raw initial_instruction and uses the server-assembled prompt for the optimistic session", async () => {

@@ -64,7 +64,8 @@ export function OrchestratorNewSessionModal() {
   const [selectedModelPresetInfo, setSelectedModelPresetInfo] =
     useState<ModelPresetAvailability | null>(null);
   const [modelPresetValid, setModelPresetValid] = useState(true);
-  const modelPresetSource = useRef<"explicit" | "agent" | null>(null);
+  const [modelPresetError, setModelPresetError] = useState<string | null>(null);
+  const modelPresetSource = useRef<"automatic" | "explicit" | "agent" | null>(null);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
     DEFAULT_REASONING_EFFORT,
   );
@@ -177,7 +178,10 @@ export function OrchestratorNewSessionModal() {
         setAgents(nextAgents);
         if (defaultAgentId && nextAgents.some((agent) => agent.id === defaultAgentId)) {
           setSelectedAgentId(defaultAgentId);
-          if (modelPresetSource.current !== "explicit") {
+          if (
+            modelPresetSource.current === null
+            || modelPresetSource.current === "agent"
+          ) {
             const defaultAgent = nextAgents.find((agent) => agent.id === defaultAgentId);
             modelPresetSource.current = "agent";
             setSelectedModelPreset(defaultAgent?.default_preset ?? "");
@@ -235,6 +239,7 @@ export function OrchestratorNewSessionModal() {
       setSelectedModelPreset("");
       setSelectedModelPresetInfo(null);
       setModelPresetValid(true);
+      setModelPresetError(null);
       modelPresetSource.current = null;
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       setSelectedOAuthProfile(null);
@@ -253,7 +258,17 @@ export function OrchestratorNewSessionModal() {
   const nodeSelector = (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Node</label>
-      <Select value={selectedNodeId} onValueChange={(v) => setSelectedNodeId(v ?? "")}>
+      <Select
+        value={selectedNodeId}
+        onValueChange={(value) => {
+          setSelectedNodeId(value ?? "");
+          setSelectedModelPreset("");
+          setSelectedModelPresetInfo(null);
+          setModelPresetValid(true);
+          setModelPresetError(null);
+          modelPresetSource.current = "automatic";
+        }}
+      >
         <SelectTrigger>
           <span className={cn("flex-1 truncate", !selectedNodeId && "text-muted-foreground/72")}>
             {selectedNodeId
@@ -307,7 +322,10 @@ export function OrchestratorNewSessionModal() {
         onValueChange={(value) => {
           const agentId = value ?? "";
           setSelectedAgentId(agentId);
-          if (modelPresetSource.current !== "explicit") {
+          if (
+            modelPresetSource.current === null
+            || modelPresetSource.current === "agent"
+          ) {
             modelPresetSource.current = "agent";
             setSelectedModelPreset(
               agents.find((agent) => agent.id === agentId)?.default_preset ?? "",
@@ -360,7 +378,13 @@ export function OrchestratorNewSessionModal() {
         }}
         onPresetChange={setSelectedModelPresetInfo}
         onValidityChange={setModelPresetValid}
+        onError={setModelPresetError}
       />
+      {modelPresetError ? (
+        <small className="text-xs font-medium text-destructive" role="alert">
+          {modelPresetError}
+        </small>
+      ) : null}
       {submitReasoningEffort ? (
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
@@ -398,6 +422,7 @@ export function OrchestratorNewSessionModal() {
           setSelectedModelPreset("");
           setSelectedModelPresetInfo(null);
           setModelPresetValid(true);
+          setModelPresetError(null);
           modelPresetSource.current = null;
           setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
           setSelectedOAuthProfile(null);

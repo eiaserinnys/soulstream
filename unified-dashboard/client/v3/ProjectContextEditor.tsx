@@ -67,7 +67,10 @@ export function ProjectContextEditor({
     setEditor((current) => current?.kind === "defaults" ? { ...current, agentId } : current);
   }, []);
   const changeDefaultNode = useCallback((nodeId: string) => {
-    setEditor((current) => current?.kind === "defaults" ? { ...current, nodeId } : current);
+    setEditor((current) => current?.kind === "defaults"
+      ? { ...current, nodeId, modelPreset: "" }
+      : current);
+    setModelPresetValid(true);
   }, []);
   const changeDefaultModelPreset = useCallback((modelPreset: string) => {
     setEditor((current) => current?.kind === "defaults"
