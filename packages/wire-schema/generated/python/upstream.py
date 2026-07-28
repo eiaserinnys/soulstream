@@ -11,10 +11,21 @@ from typing import Any, Literal, NotRequired, TypeAlias
 from typing_extensions import TypedDict
 
 
+class ModelPreset(TypedDict, closed=True):
+    id: str
+    label: str
+    backend: Literal['claude', 'codex', 'openai-agents']
+    available: bool
+    reason: NotRequired[Literal['env_unresolved']]
+    usage_provider: Literal['claude', 'codex'] | None
+    usage_model_id: NotRequired[str]
+
+
 class Agent(TypedDict):
     id: NotRequired[str]
     name: NotRequired[str]
     backend: NotRequired[str]
+    default_preset: NotRequired[str]
     portrait_url: NotRequired[str]
     max_turns: NotRequired[int | None]
     portrait_b64: NotRequired[str]
@@ -31,6 +42,7 @@ class NodeRegister(TypedDict):
     port: NotRequired[int]
     capabilities: NotRequired[dict[str, Any]]
     supported_backends: NotRequired[list[str]]
+    model_presets: NotRequired[list[ModelPreset]]
     agents: NotRequired[list[Agent]]
     user: NotRequired[dict[str, Any]]
 
@@ -378,6 +390,8 @@ class CreateSession(TypedDict):
     type: Literal['create_session']
     prompt: str
     profile: NotRequired[str]
+    model: NotRequired[str | None]
+    model_preset: NotRequired[str | None]
     request_id: NotRequired[str]
     requestId: NotRequired[str]
     folderId: NotRequired[str | None]
@@ -682,6 +696,15 @@ class SemanticChange1(TypedDict):
     after: NotRequired[Any]
 
 
+class Agent1(TypedDict):
+    id: NotRequired[str]
+    name: NotRequired[str]
+    backend: NotRequired[str]
+    portrait_url: NotRequired[str]
+    max_turns: NotRequired[int | None]
+    portrait_b64: NotRequired[str]
+
+
 class ApplyAgentProfileUpdate(TypedDict):
     """
     orch→노드: agents.yaml 단일 agent profile 교체를 대상 노드에서 실제 적용. expected_config_checksum이 있으면 현재 raw config sha256과 일치해야 한다.
@@ -711,7 +734,7 @@ class ApplyAgentProfileUpdate(TypedDict):
     snapshot_root: NotRequired[str]
     comment_preservation: NotRequired[Literal['not_preserved']]
     agent_count: NotRequired[int]
-    agents: NotRequired[list[Agent]]
+    agents: NotRequired[list[Agent1]]
     supported_backends: NotRequired[list[str]]
     capabilities: NotRequired[dict[str, Any]]
 
@@ -769,7 +792,7 @@ class RollbackAgentsConfig(TypedDict):
     snapshot_root: NotRequired[str]
     comment_preservation: NotRequired[Literal['not_preserved']]
     agent_count: NotRequired[int]
-    agents: NotRequired[list[Agent]]
+    agents: NotRequired[list[Agent1]]
     supported_backends: NotRequired[list[str]]
     capabilities: NotRequired[dict[str, Any]]
 

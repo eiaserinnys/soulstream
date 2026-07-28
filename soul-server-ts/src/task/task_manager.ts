@@ -18,6 +18,7 @@
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
@@ -66,6 +67,7 @@ import {
   type ClaudeRuntimeTaskStopResult,
 } from "./claude_runtime_control.js";
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
+import { resolveModelPresetSelection } from "./task_model_preset.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {
@@ -117,6 +119,7 @@ export class TaskManager {
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
+    private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
   ) {
     const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
       ? sessionRuntimeControl
@@ -254,7 +257,24 @@ export class TaskManager {
    * TaskCreation이 소유하고, TaskManager는 public collection API를 유지한다.
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
-    return await this.taskCreation.createTask(params);
+    const agent = params.profileId
+      ? this.agentRegistry?.get(params.profileId)
+      : undefined;
+    if (!agent || params.modelPresetBackend) {
+      return await this.taskCreation.createTask(params);
+    }
+
+    const preset = resolveModelPresetSelection(params, agent, this.modelCatalog);
+    if (!preset) {
+      return await this.taskCreation.createTask(params);
+    }
+    return await this.taskCreation.createTask({
+      ...params,
+      model: preset.model,
+      modelPreset: preset.id,
+      modelPresetBackend: preset.backend,
+      modelPresetEnv: preset.env,
+    });
   }
 
   getTask(sessionId: string): Task | undefined {

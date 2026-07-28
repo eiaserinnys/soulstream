@@ -14,6 +14,7 @@ import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
@@ -94,12 +95,14 @@ export class CommandDispatcher {
     reflectionRuntime?: McpRuntime,
     scheduleCommands?: ClaudeRuntimeScheduleCommands,
     _deliveryV2Enabled = false,
+    modelCatalog?: Pick<ModelCatalog, "resolve" | "list">,
   ) {
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
       taskManager,
       taskExecutor,
       logger,
+      modelCatalog,
     });
     const supervisorDirectTargetGuard = sessionDb
       ? new SupervisorDirectTargetGuard({ db: sessionDb, taskManager })
@@ -108,7 +111,9 @@ export class CommandDispatcher {
     const sessionListCommands = new SessionListCommands(sessionDb, nodeId);
     const claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
     const providerUsageCommands = new ProviderUsageCommands({
-      providerUsage: providerUsage ?? new ProviderUsageService({ claudeAuth }),
+      providerUsage:
+        providerUsage
+        ?? new ProviderUsageService({ claudeAuth, modelCatalog }),
     });
     const deliveryCommands = new DeliveryCommands({
       agentRegistry,

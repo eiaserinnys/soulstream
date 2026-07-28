@@ -296,6 +296,7 @@ describe("agent profile backend boundary", () => {
       arguments: {
         agent_id: "claude-roselin",
         prompt: "hi",
+        model_preset: "claude-fable",
       },
     });
 
@@ -304,6 +305,9 @@ describe("agent profile backend boundary", () => {
       status: "running",
     });
     expect(runtime.createTask).toHaveBeenCalledTimes(1);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ modelPreset: "claude-fable" }),
+    );
     expect(runtime.startExecution).toHaveBeenCalledWith(
       expect.objectContaining({ agentSessionId: expect.any(String) }),
       claudeAgent,
@@ -681,6 +685,7 @@ describe("create_remote_agent_session", () => {
           caller_session_id: "caller-sess-1",
           folder_id: "folder-1",
           notify_completion: false,
+          model_preset: "codex-5.6-sol",
         },
       });
 
@@ -697,6 +702,7 @@ describe("create_remote_agent_session", () => {
       expect(body.profile).toBe("roselin_codex");
       expect(body.nodeId).toBe("node-remote");
       expect(body.folderId).toBe("folder-1");
+      expect(body.model_preset).toBe("codex-5.6-sol");
       expect(body).not.toHaveProperty("caller_session_id");
       expect(body.notify_completion).toBe(false);
       expect(body.caller_info.agent_id).toBe("codex-default");

@@ -13,6 +13,7 @@ import { splitAttachmentPaths } from "./attachment_context.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
+import { effectiveTaskBackend } from "./task_model_preset.js";
 
 export interface TaskTurnInput {
   prompt: string;
@@ -75,7 +76,7 @@ export class TaskTurnInputBuilder {
     const composed = composeInterventionTurnPrompt(intervention);
     const prompt = appendContextBlock(composed.prompt, ctx?.contextItems ?? []);
     const systemPrompt =
-      agent.backend === "claude" && includeFullContext
+      effectiveTaskBackend(task, agent) === "claude" && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
     return {
@@ -121,7 +122,7 @@ export class TaskTurnInputBuilder {
       };
     }
 
-    if (agent.backend === "claude") {
+    if (effectiveTaskBackend(task, agent) === "claude") {
       return {
         prompt: composeFirstTurnPrompt({
           effectiveSystemPrompt: undefined,

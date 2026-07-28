@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
+import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -18,6 +19,7 @@ interface TaskRuntimeCommandsDeps {
   taskManager: Pick<TaskManager, "createTask" | "addIntervention">;
   taskExecutor: Pick<TaskExecutor, "startExecution">;
   logger: Logger;
+  modelCatalog?: Pick<ModelCatalog, "resolve">;
 }
 
 export interface CreateSessionRuntimeParams {
@@ -31,6 +33,7 @@ export interface CreateSessionRuntimeParams {
   attachmentPaths?: string[];
   extraContextItems?: ContextItem[];
   model?: string | null;
+  modelPreset?: string | null;
   oauthToken?: string | null;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -139,6 +142,7 @@ export class TaskRuntimeCommands {
 
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
     const agent = this.requireAgent(params.profileId);
+    const preset = this.resolvePreset(params, agent);
     const prompt = appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
@@ -148,9 +152,16 @@ export class TaskRuntimeCommands {
       predecessorSessionId: params.predecessorSessionId ?? null,
       callerInfo: params.callerInfo,
       notifyCompletion: params.notifyCompletion,
-      model: params.model,
+      model: preset?.model ?? params.model,
+      ...(preset
+        ? {
+            modelPreset: preset.id,
+            modelPresetBackend: preset.backend,
+            modelPresetEnv: preset.env,
+          }
+        : {}),
       oauthToken:
-        agent.backend === "claude"
+        (preset?.backend ?? agent.backend) === "claude"
           ? normalizeOptionalString(params.oauthToken)
           : undefined,
       reasoningEffort: params.reasoningEffort,
@@ -202,6 +213,21 @@ export class TaskRuntimeCommands {
       throw new UnknownAgentProfileError(profileId);
     }
     return agent;
+  }
+
+  private resolvePreset(
+    params: CreateSessionRuntimeParams,
+    agent: AgentProfile,
+  ): ModelPreset | undefined {
+    const presetId = normalizeOptionalString(params.modelPreset)
+      ?? (normalizeOptionalString(params.model) ? undefined : agent.default_preset);
+    if (!presetId) return undefined;
+    if (!this.deps.modelCatalog) {
+      throw new Error(
+        `Model catalog is not configured; cannot resolve preset: ${presetId}`,
+      );
+    }
+    return this.deps.modelCatalog.resolve(presetId);
   }
 
   private startResumedTask(task: Task): void {

@@ -50,7 +50,9 @@
         "last_event_id": 12,
         "last_read_event_id": 7,
         "caller_session_id": "sess-parent-1",
-        "agent_id": "codex-contract"
+        "agent_id": "codex-contract",
+        "model_preset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol"
       },
       "nodeTask": {
         "agentSessionId": "sess-contract-1",
@@ -62,6 +64,8 @@
         "lastEventId": 12,
         "lastReadEventId": 7,
         "profileId": "codex-contract",
+        "modelPreset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
         "callerSessionId": "sess-parent-1",
         "metadata": [
           {
@@ -123,6 +127,8 @@
         "agentName": "Codex Contract",
         "agentPortraitUrl": null,
         "backend": "codex",
+        "modelPreset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
         "userName": "서소영",
         "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait"
       },
@@ -162,6 +168,8 @@
         "agentName": "Codex Contract",
         "agentPortraitUrl": null,
         "backend": "codex",
+        "model_preset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
         "userName": "서소영",
         "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
         "folder_id": "folder-contract",
@@ -198,6 +206,8 @@
         "agentName": "Codex Contract",
         "agentPortraitUrl": null,
         "backend": "codex",
+        "modelPreset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
         "userName": "서소영",
         "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
         "callerSessionId": "sess-parent-1"
@@ -241,6 +251,8 @@
         "agentName": "Codex Contract",
         "agentPortraitUrl": null,
         "backend": "codex",
+        "modelPreset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
         "userName": "서소영",
         "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
         "callerSessionId": "sess-parent-1"
@@ -268,6 +280,8 @@
         "agentId": "codex-contract",
         "agentName": "Codex Contract",
         "backend": "codex",
+        "modelPreset": "codex-5.6-sol",
+        "model": "gpt-5.6-sol",
         "userName": "서소영",
         "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
         "callerSessionId": "sess-parent-1"

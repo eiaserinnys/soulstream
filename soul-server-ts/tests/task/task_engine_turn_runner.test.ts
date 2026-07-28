@@ -261,6 +261,41 @@ describe("TaskEngineTurnRunner", () => {
     expect(captured?.extraEnv).not.toHaveProperty(CLAUDE_OAUTH_TOKEN_ENV);
   });
 
+  it("prefers the model preset env bundle over the legacy profile env bundle", async () => {
+    process.env.SOULSTREAM_TEST_KIMI_API_KEY = "preset-kimi-secret";
+    const task = makeTask({
+      oauthToken: "oauth-token",
+      modelPresetEnv: {
+        ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_KIMI_API_KEY}",
+        ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+      },
+    });
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: {
+        ...agent,
+        env: {
+          ANTHROPIC_API_KEY: "legacy-profile-secret",
+          ANTHROPIC_BASE_URL: "https://legacy.example/anthropic",
+        },
+      } as AgentProfile,
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
+    expect(captured?.extraEnv).toEqual({
+      ANTHROPIC_API_KEY: "preset-kimi-secret",
+      ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+    });
+    expect(captured?.extraEnv).not.toHaveProperty(CLAUDE_OAUTH_TOKEN_ENV);
+  });
+
   it("applies profile env on resumed turns", async () => {
     process.env.SOULSTREAM_TEST_RESUME_API_KEY = "resume-kimi-secret";
     const task = makeTask({
@@ -311,7 +346,31 @@ describe("TaskEngineTurnRunner", () => {
         engine,
         input: { prompt: "turn prompt" },
       }),
-    ).toThrow(/SOULSTREAM_TEST_MISSING_API_KEY/);
+    ).toThrow(
+      /agents\.yaml env 'ANTHROPIC_API_KEY' references missing environment variable 'SOULSTREAM_TEST_MISSING_API_KEY'/,
+    );
+  });
+
+  it("labels unresolved preset env separately from legacy agents.yaml env", () => {
+    const task = makeTask({
+      modelPresetEnv: {
+        ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_MISSING_PRESET_API_KEY}",
+        ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+      },
+    });
+    const engine = makeEngine(() => undefined);
+    const { runner } = makeSubject();
+
+    expect(() =>
+      runner.executeTurn({
+        task,
+        agent,
+        engine,
+        input: { prompt: "turn prompt" },
+      }),
+    ).toThrow(
+      /model preset env 'ANTHROPIC_API_KEY' references missing environment variable 'SOULSTREAM_TEST_MISSING_PRESET_API_KEY'/,
+    );
   });
 
   it("rejects Anthropic API key without matching base URL", () => {

@@ -19,6 +19,7 @@ describe("initial task context wire", () => {
       sessionDefaults: {
         agentId: "roselin_codex",
         nodeId: "eiaserinnys",
+        modelPreset: "codex-5.6-sol",
       },
     };
     const wire = serializeInitialTaskContext(context);
@@ -35,6 +36,7 @@ describe("initial task context wire", () => {
       session_defaults: {
         agent_id: "roselin_codex",
         node_id: "eiaserinnys",
+        model_preset: "codex-5.6-sol",
       },
     });
     expect(parseInitialTaskContextWire(wire)).toEqual({
@@ -60,6 +62,7 @@ describe("initial task context wire", () => {
       session_defaults: {
         agent_id: " roselin_codex ",
         node_id: " eiaserinnys ",
+        model_preset: " codex-5.6-sol ",
       },
     })).toEqual({
       ok: true,
@@ -69,9 +72,20 @@ describe("initial task context wire", () => {
         sessionDefaults: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "codex-5.6-sol",
         },
       },
     });
+  });
+
+  it("rejects a blank model preset when it is present", () => {
+    expect(parseInitialTaskContextWire({
+      session_defaults: {
+        agent_id: "roselin_codex",
+        node_id: "eiaserinnys",
+        model_preset: " ",
+      },
+    })).toMatchObject({ ok: false });
   });
 
   it.each([

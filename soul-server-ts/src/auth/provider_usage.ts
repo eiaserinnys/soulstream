@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import type { ClaudeAuthCommandHandler } from "./claude_auth.js";
+import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
 
 export type ProviderUsageName = "claude" | "codex" | "gemini";
 
@@ -65,6 +66,7 @@ export interface ProviderUsageCommandHandler {
 
 export interface ProviderUsageServiceConfig {
   claudeAuth?: ClaudeAuthCommandHandler;
+  modelCatalog?: Pick<ModelCatalog, "list">;
   homeDir?: string;
   fetchImpl?: typeof fetch;
 }
@@ -149,7 +151,11 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         ? emptyLimits()
         : emptyLimits("error", result.error ?? "Claude usage request failed");
     }
-    return claudeLimitsFromUsageResponse(result.data ?? {});
+    return claudeLimitsFromUsageResponse(
+      result.data ?? {},
+      undefined,
+      this.config.modelCatalog?.list(),
+    );
   }
 
   private async fetchCodexLimits(): Promise<ProviderLimits> {
@@ -349,6 +355,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
 export function claudeLimitsFromUsageResponse(
   payload: Record<string, unknown>,
   source = "https://api.anthropic.com/api/oauth/usage",
+  modelPresets: ModelPreset[] = [],
 ): ProviderLimits {
   const limits = emptyLimits("auto");
   limits.source = source;
@@ -364,7 +371,10 @@ export function claudeLimitsFromUsageResponse(
       const currency = optionalString(entry.currency) ?? "credits";
       if (limit !== null && limit > 0) {
         quotas.push(
-          quotaEntry(claudeQuotaId(key), claudeQuotaLabel(key), {
+          quotaEntry(
+            claudeQuotaId(key),
+            claudeQuotaLabel(key, entry, modelPresets),
+            {
             usedPercent: clampPercent((used / limit) * 100),
             used,
             remaining: Math.max(limit - used, 0),
@@ -373,7 +383,8 @@ export function claudeLimitsFromUsageResponse(
             window: "monthly",
             model: claudeQuotaModel(key),
             source,
-          }),
+            },
+          ),
         );
       }
       continue;
@@ -382,13 +393,17 @@ export function claudeLimitsFromUsageResponse(
     const used = floatPercent(firstPresent(entry.utilization, entry.used_percentage));
     if (used === null) continue;
 
-    const quota = quotaEntry(claudeQuotaId(key), claudeQuotaLabel(key), {
+    const quota = quotaEntry(
+      claudeQuotaId(key),
+      claudeQuotaLabel(key, entry, modelPresets),
+      {
       usedPercent: used,
       resetAt: entry.resets_at,
       window: key === "five_hour" ? "5h" : key.startsWith("seven_day") ? "7d" : null,
-      model: claudeQuotaModel(key),
+      model: claudeQuotaModel(key, entry, modelPresets),
       source,
-    });
+      },
+    );
     quotas.push(quota);
     if (key === "five_hour") {
       limits.shortUsedPercent = quota.usedPercent;
@@ -862,18 +877,32 @@ function geminiDisplayName(model: string): string {
   return names[model] ?? model ?? "Gemini";
 }
 
-function claudeQuotaLabel(key: string): string {
+function claudeQuotaLabel(
+  key: string,
+  entry: Record<string, unknown>,
+  modelPresets: ModelPreset[],
+): string {
   const labels: Record<string, string> = {
     five_hour: "5시간",
     seven_day: "7일",
-    seven_day_sonnet: "7일 (Sonnet)",
-    seven_day_opus: "7일 (Opus)",
     seven_day_oauth_apps: "7일 (OAuth Apps)",
     seven_day_cowork: "7일 (협업)",
     extra_usage: "월간 추가 사용량",
     iguana_necktie: "기타",
   };
-  return labels[key] ?? key;
+  const fixed = labels[key];
+  if (fixed) return fixed;
+  if (!key.startsWith("seven_day_")) return key;
+
+  const modelKey = key.slice("seven_day_".length);
+  const dynamicLabel = optionalString(entry.display_name);
+  const catalogLabel = findClaudePresetLabel(modelKey, modelPresets);
+  const legacyLabel: Record<string, string> = {
+    sonnet: "Sonnet",
+    opus: "Opus",
+  };
+  const modelLabel = dynamicLabel ?? catalogLabel ?? legacyLabel[modelKey];
+  return modelLabel ? `7일 (${modelLabel})` : key;
 }
 
 function claudeQuotaId(key: string): string {
@@ -883,14 +912,21 @@ function claudeQuotaId(key: string): string {
   return `claude:${key}`;
 }
 
-function claudeQuotaModel(key: string): string | null {
-  if (key.includes("sonnet")) return "sonnet";
-  if (key.includes("opus")) return "opus";
-  return null;
+function claudeQuotaModel(
+  key: string,
+  entry: Record<string, unknown> = {},
+  modelPresets: ModelPreset[] = [],
+): string | null {
+  if (!key.startsWith("seven_day_")) return null;
+  const modelKey = key.slice("seven_day_".length);
+  if (modelKey === "oauth_apps" || modelKey === "cowork") return null;
+  return optionalString(entry.model)
+    ?? findClaudePresetUsageModel(modelKey, modelPresets)
+    ?? modelKey;
 }
 
 function claudeQuotaSortKey(quota: ProviderQuota): string {
-  const order: Record<string, string> = {
+  const existingOrder: Record<string, string> = {
     "claude:five_hour": "00",
     "claude:seven_day": "01",
     "claude:seven_day_sonnet": "02",
@@ -899,7 +935,56 @@ function claudeQuotaSortKey(quota: ProviderQuota): string {
     "claude:seven_day_cowork": "05",
     "claude:monthly_extra": "90",
   };
-  return `${order[quota.id] ?? "99"}:${quota.id}`;
+  const fixed = existingOrder[quota.id];
+  if (fixed) return `${fixed}:${quota.id}`;
+  if (quota.id.startsWith("claude:seven_day_")) {
+    return `06:${quota.label.toLocaleLowerCase()}:${quota.id}`;
+  }
+  return `99:${quota.id}`;
+}
+
+function findClaudePresetLabel(
+  modelKey: string,
+  modelPresets: ModelPreset[],
+): string | null {
+  const preset = findClaudePreset(modelKey, modelPresets);
+  if (!preset) return null;
+  const providerPrefix = "Claude - ";
+  return preset.label.startsWith(providerPrefix)
+    ? preset.label.slice(providerPrefix.length)
+    : preset.label;
+}
+
+function findClaudePresetUsageModel(
+  modelKey: string,
+  modelPresets: ModelPreset[],
+): string | null {
+  const preset = findClaudePreset(modelKey, modelPresets);
+  return preset?.usage_model_id ?? preset?.model ?? null;
+}
+
+function findClaudePreset(
+  modelKey: string,
+  modelPresets: ModelPreset[],
+): ModelPreset | undefined {
+  const normalizedKey = normalizeClaudeUsageModel(modelKey);
+  return modelPresets.find((preset) => {
+    if (preset.backend !== "claude" || preset.env?.ANTHROPIC_API_KEY) return false;
+    const candidate = preset.usage_model_id ?? preset.model;
+    return modelIdentityMatches(normalizeClaudeUsageModel(candidate), normalizedKey);
+  });
+}
+
+function normalizeClaudeUsageModel(value: string): string {
+  return value
+    .toLocaleLowerCase()
+    .replace(/\[[^\]]+\]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function modelIdentityMatches(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}-`) || right.startsWith(`${left}-`);
 }
 
 function quotaEntry(

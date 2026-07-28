@@ -11,6 +11,7 @@ import {
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
+import type { ModelPreset } from "../../src/model_catalog.js";
 
 const logger = pino({ level: "silent" });
 
@@ -54,6 +55,7 @@ function createRuntime(opts: {
   createTask?: TaskManager["createTask"];
   addIntervention?: TaskManager["addIntervention"];
   startExecution?: TaskExecutor["startExecution"];
+  presets?: ModelPreset[];
 } = {}) {
   const agents = new Map(
     (opts.agents ?? [codexAgent]).map((agent) => [agent.id, agent]),
@@ -73,6 +75,17 @@ function createRuntime(opts: {
     taskManager,
     taskExecutor,
     logger,
+    ...(opts.presets
+      ? {
+          modelCatalog: {
+            resolve: vi.fn((presetId: string) => {
+              const preset = opts.presets?.find((entry) => entry.id === presetId);
+              if (!preset) throw new Error(`Unknown model preset: ${presetId}`);
+              return preset;
+            }),
+          },
+        }
+      : {}),
   });
 
   return { runtime, taskManager, taskExecutor };
@@ -199,6 +212,119 @@ describe("TaskRuntimeCommands.createSession", () => {
       2,
       expect.objectContaining({ oauthToken: undefined }),
     );
+  });
+
+  it("resolves an explicit preset into the persisted model, backend, and env bundle", async () => {
+    const { runtime, taskManager } = createRuntime({
+      presets: [{
+        id: "kimi-2",
+        label: "Kimi - 2",
+        backend: "claude",
+        model: "kimi-for-coding",
+        env: {
+          ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
+          ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
+        },
+      }],
+    });
+
+    await runtime.createSession({
+      agentSessionId: "sess-kimi",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      modelPreset: "kimi-2",
+      oauthToken: "claude-token",
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelPreset: "kimi-2",
+        modelPresetBackend: "claude",
+        modelPresetEnv: {
+          ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
+          ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
+        },
+        model: "kimi-for-coding",
+        oauthToken: "claude-token",
+      }),
+    );
+  });
+
+  it("does not forward a Claude OAuth token when the selected preset backend is Codex", async () => {
+    const claudeAgent: AgentProfile = {
+      id: "one-profile",
+      name: "One profile",
+      backend: "claude",
+      workspace_dir: "/tmp/one-profile",
+    };
+    const { runtime, taskManager } = createRuntime({
+      agents: [claudeAgent],
+      presets: [{
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        model: "gpt-5.6-sol",
+      }],
+    });
+
+    await runtime.createSession({
+      agentSessionId: "sess-codex-preset",
+      prompt: "inspect",
+      profileId: claudeAgent.id,
+      modelPreset: "codex-5.6-sol",
+      oauthToken: "claude-token",
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelPreset: "codex-5.6-sol",
+        modelPresetBackend: "codex",
+        oauthToken: undefined,
+      }),
+    );
+  });
+
+  it("uses agent.default_preset only when neither preset nor legacy model is explicit", async () => {
+    const defaultedAgent: AgentProfile = {
+      ...codexAgent,
+      default_preset: "codex-5.6-sol",
+    };
+    const { runtime, taskManager } = createRuntime({
+      agents: [defaultedAgent],
+      presets: [{
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        model: "gpt-5.6-sol",
+      }],
+    });
+
+    await runtime.createSession({
+      agentSessionId: "sess-default",
+      prompt: "default",
+      profileId: defaultedAgent.id,
+    });
+    await runtime.createSession({
+      agentSessionId: "sess-legacy",
+      prompt: "legacy",
+      profileId: defaultedAgent.id,
+      model: "gpt-legacy-explicit",
+    });
+
+    expect(taskManager.createTask).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        modelPreset: "codex-5.6-sol",
+        model: "gpt-5.6-sol",
+      }),
+    );
+    expect(taskManager.createTask).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        model: "gpt-legacy-explicit",
+      }),
+    );
+    expect(taskManager.createTask.mock.calls[1]?.[0]).not.toHaveProperty("modelPreset");
   });
 
   it("fails before task creation when profile id is unknown", async () => {

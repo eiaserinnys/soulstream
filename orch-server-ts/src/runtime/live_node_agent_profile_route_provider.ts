@@ -33,6 +33,7 @@ type AgentSnapshot = {
   readonly portrait_url?: unknown;
   readonly max_turns?: unknown;
   readonly backend?: unknown;
+  readonly default_preset?: unknown;
   readonly portrait_b64?: unknown;
 };
 
@@ -97,6 +98,7 @@ function createLiveNodeAgentProfileProvider(
             portrait_url: agent.portrait_url,
             max_turns: agent.max_turns,
             backend: agent.backend,
+            default_preset: agent.default_preset,
           } satisfies RawNodeAgentProfile,
         ]),
       );

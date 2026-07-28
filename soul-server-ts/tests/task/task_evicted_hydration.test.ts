@@ -123,6 +123,19 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.notifyCompletion).toBe(false);
   });
 
+  it("restores the persisted model preset and resolved model", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        model_preset: "codex-5.6-sol",
+        model: "gpt-5.6-sol",
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.modelPreset).toBe("codex-5.6-sol");
+    expect(task?.model).toBe("gpt-5.6-sol");
+  });
+
   it("falls back to claude session type for non-llm values", () => {
     expect(hydrateEvictedTaskFromSessionRow(
       makeRow({ session_type: null }),

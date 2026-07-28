@@ -14,6 +14,7 @@ export type NodeRegistrationPayload = {
   host?: string;
   port?: number;
   agents?: unknown[];
+  model_presets?: unknown[];
   capabilities?: Record<string, unknown>;
   supported_backends?: string[];
   sessions?: unknown[];
@@ -25,6 +26,8 @@ export type CreateSessionNodeCommandPayload =
     agentSessionId: string;
     prompt: string;
     profile?: string;
+    model?: string | null;
+    model_preset?: string | null;
   };
 
 export type SessionOwner = CachedNodeSession & {
@@ -44,6 +47,7 @@ export type NodeConnectionSnapshot = {
   host: string;
   port: number;
   agents: unknown[];
+  modelPresets?: unknown[];
   capabilities: Record<string, unknown>;
   supportedBackends: string[];
   connected: boolean;
@@ -202,6 +206,7 @@ export type MutableNodeConnection = {
   host: string;
   port: number;
   agents: unknown[];
+  modelPresets?: unknown[];
   capabilities: Record<string, unknown>;
   supportedBackends: string[];
   userInfo: Record<string, unknown>;

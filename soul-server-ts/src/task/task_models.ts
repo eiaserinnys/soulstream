@@ -17,6 +17,7 @@
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
+  BackendId,
   ClaudePermissionMode,
   EnginePort,
   QueuedToolApprovalDecision,
@@ -278,6 +279,12 @@ export interface Task {
 
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string | null;
+  /** Stable node-local preset id selected for this session. */
+  modelPreset?: string | null;
+  /** Runtime backend resolved from modelPreset. Not persisted independently. */
+  modelPresetBackend?: BackendId;
+  /** Runtime env bundle resolved from modelPreset. Values never cross the wire. */
+  modelPresetEnv?: Record<string, string>;
   /** Legacy per-task Claude OAuth token. Claude Code now resolves auth from its own config. */
   oauthToken?: string;
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */

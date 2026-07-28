@@ -57,6 +57,20 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  for (const profile of agentRegistry.list()) {
+    if (profile.model) {
+      logger.warn(
+        { agentId: profile.id },
+        "agent.model is deprecated; move the model to model-catalog.yaml and use default_preset",
+      );
+    }
+    if (profile.default_preset) {
+      logger.warn(
+        { agentId: profile.id, defaultPreset: profile.default_preset },
+        "agent.backend is retained only as the fallback for sessions without a model preset",
+      );
+    }
+  }
 
   logger.info(
     {

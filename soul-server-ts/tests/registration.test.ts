@@ -84,6 +84,45 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.supported_backends).toEqual([]);
   });
 
+  it("advertises static model presets and agent defaults without env values", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([
+        { ...codexAgent, default_preset: "codex-5.6-sol" },
+      ]),
+      modelCatalog: {
+        advertise: () => [
+          {
+            id: "kimi-2",
+            label: "Kimi - 2",
+            backend: "claude",
+            available: false,
+            reason: "env_unresolved",
+            usage_provider: null,
+          },
+        ],
+      },
+    });
+
+    expect(msg.model_presets).toEqual([
+      {
+        id: "kimi-2",
+        label: "Kimi - 2",
+        backend: "claude",
+        available: false,
+        reason: "env_unresolved",
+        usage_provider: null,
+      },
+    ]);
+    expect(msg.agents?.[0]).toMatchObject({
+      id: "codex-default",
+      default_preset: "codex-5.6-sol",
+    });
+  });
+
   it("board Yjs host capability를 단일 host node id 기준으로 광고", () => {
     const host = buildRegistrationMsg({
       nodeId: "eiaserinnys",

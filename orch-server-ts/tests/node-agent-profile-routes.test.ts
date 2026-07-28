@@ -126,9 +126,10 @@ describe("node agent/profile route harness", () => {
     await app.close();
   });
 
-  it("registers Python auth contract rows for route inventory order 36-43", () => {
+  it("registers node profile and model preset auth contract rows", () => {
     expect(nodeAgentProfileRouteAuthRequirements).toEqual({
       "GET /api/nodes/:node_id/agents": true,
+      "GET /api/nodes/:node_id/model-presets": true,
       "GET /api/nodes/:node_id/agents/:agent_id/portrait": true,
       "POST /api/nodes/:node_id/agents/config/plan-profile-update": true,
       "POST /api/nodes/:node_id/agents/config/apply-profile-update": true,
@@ -149,6 +150,7 @@ describe("node agent/profile route harness", () => {
           "rollback_agents_config",
           "deprecated_node_oauth_profiles",
           "proxy_user_portrait",
+          "list_node_model_presets",
         ].includes(route.name),
       )
       .map((route) => [route.order, route.methods[0], route.path, route.authRequired]);
@@ -162,6 +164,7 @@ describe("node agent/profile route harness", () => {
       [41, "POST", "/api/nodes/{node_id}/agents/config/rollback", true],
       [42, "GET", "/api/nodes/{node_id}/oauth-profiles", true],
       [43, "GET", "/api/nodes/{node_id}/user/portrait", true],
+      [116, "GET", "/api/nodes/{node_id}/model-presets", true],
     ]);
   });
 
@@ -202,6 +205,59 @@ describe("node agent/profile route harness", () => {
       ["listAgents", "node-a"],
       ["listAgents", "missing-node"],
     ]);
+
+    await app.close();
+  });
+
+  it("exposes resolved model preset availability without internal join fields", async () => {
+    const { provider } = createProvider();
+    const app = createApp({
+      config,
+      nodeAgentProfileRoutes: {
+        provider,
+        modelPresetProvider: {
+          listForNode: (nodeId) =>
+            nodeId === "missing-node"
+              ? undefined
+              : [
+                  {
+                    id: "claude-fable",
+                    label: "Claude - Fable",
+                    backend: "claude",
+                    available: false,
+                    reason: "quota_exhausted",
+                    reason_label: "5h 사용량 제한",
+                    resets_at: "2026-07-28T04:00:00.000Z",
+                    usage_warning: false,
+                  },
+                ],
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/nodes/node-a/model-presets",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      model_presets: [
+        {
+          id: "claude-fable",
+          label: "Claude - Fable",
+          backend: "claude",
+          available: false,
+          reason: "quota_exhausted",
+          reason_label: "5h 사용량 제한",
+          resets_at: "2026-07-28T04:00:00.000Z",
+          usage_warning: false,
+        },
+      ],
+    });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/nodes/missing-node/model-presets",
+    })).statusCode).toBe(404);
 
     await app.close();
   });

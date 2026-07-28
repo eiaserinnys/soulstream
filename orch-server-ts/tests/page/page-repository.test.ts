@@ -383,7 +383,12 @@ describe("orch PageRepository", () => {
           id: "defaults-parent",
           page_id: "project-page",
           position_key: "a",
-          properties: { scope: "run", agentId: "roselin", nodeId: "node-a" },
+          properties: {
+            scope: "run",
+            agentId: "roselin",
+            nodeId: "node-a",
+            modelPreset: "claude-fable",
+          },
         }];
       }
       if (call.query.includes("SELECT source.page_id")) {
@@ -401,6 +406,7 @@ describe("orch PageRepository", () => {
     await expect(repository.resolvePageSessionDefaults("work-page")).resolves.toEqual({
       agentId: "roselin",
       nodeId: "node-a",
+      modelPreset: "claude-fable",
       sourcePageId: "project-page",
       sourceBlockId: "defaults-parent",
     });

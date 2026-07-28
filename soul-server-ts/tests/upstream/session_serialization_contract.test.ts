@@ -30,6 +30,8 @@ function taskFromFixture(raw: Record<string, any>): Task {
     lastEventId: raw.lastEventId,
     lastReadEventId: raw.lastReadEventId,
     profileId: raw.profileId,
+    modelPreset: raw.modelPreset,
+    model: raw.model,
     callerSessionId: raw.callerSessionId,
     metadata: raw.metadata,
     callerInfo: raw.callerInfo,

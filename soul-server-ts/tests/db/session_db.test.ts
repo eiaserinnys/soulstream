@@ -101,7 +101,7 @@ describe("SessionDB.ensureStableSessionOrderIndex", () => {
 });
 
 describe("SessionDB.registerSession", () => {
-  it("review와 predecessor 필드를 포함한 additive stored proc에 15개 인자를 순서대로 전달", async () => {
+  it("review, predecessor, model preset을 additive stored proc에 순서대로 전달", async () => {
     const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
 
@@ -122,6 +122,8 @@ describe("SessionDB.registerSession", () => {
       reviewRequired: true,
       reviewState: "not_required",
       predecessorSessionId: "sess-previous",
+      modelPreset: "codex-5.6-sol",
+      model: "gpt-5.6-sol",
     });
 
     expect(calls).toHaveLength(1);
@@ -142,8 +144,10 @@ describe("SessionDB.registerSession", () => {
       true,
       "not_required",
       "sess-previous",
+      "codex-5.6-sol",
+      "gpt-5.6-sol",
     ]);
-    expect(call.fragments.join("?")).toContain("session_register_with_predecessor");
+    expect(call.fragments.join("?")).toContain("session_register_with_model_preset");
   });
 });
 

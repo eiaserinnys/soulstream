@@ -76,10 +76,29 @@ export interface NodeRegister {
    * 이 노드가 지원하는 백엔드 식별자. 옵션 D — Codex/Claude 라우팅 분기.
    */
   supported_backends?: string[];
+  /**
+   * 노드 로컬 모델 preset 정적 광고. 동적 인증·쿼터 상태는 orch 사용량 오버레이가 합성한다.
+   */
+  model_presets?: {
+    id: string;
+    label: string;
+    backend: "claude" | "codex" | "openai-agents";
+    available: boolean;
+    reason?: "env_unresolved";
+    /**
+     * orch 사용량 오버레이용 내부 조인 키. API-key endpoint preset은 null.
+     */
+    usage_provider: "claude" | "codex" | null;
+    /**
+     * 모델 범위 쿼터 조인용 내부 식별자.
+     */
+    usage_model_id?: string;
+  }[];
   agents?: {
     id?: string;
     name?: string;
     backend?: string;
+    default_preset?: string;
     portrait_url?: string;
     max_turns?: number | null;
     portrait_b64?: string;
@@ -1072,6 +1091,8 @@ export interface CreateSession {
   type: "create_session";
   prompt: string;
   profile?: string;
+  model?: string | null;
+  model_preset?: string | null;
   request_id?: string;
   requestId?: string;
   folderId?: string | null;

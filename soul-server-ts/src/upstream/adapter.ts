@@ -6,6 +6,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
@@ -50,6 +51,7 @@ export interface UpstreamDependencies {
   reflectionRuntime?: McpRuntime;
   scheduleCommands?: ClaudeRuntimeScheduleCommands;
   deliveryV2Enabled?: boolean;
+  modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
 }
 
 /**
@@ -93,6 +95,7 @@ export class UpstreamAdapter {
       deps.reflectionRuntime,
       deps.scheduleCommands,
       deps.deliveryV2Enabled,
+      deps.modelCatalog,
     );
   }
 
@@ -160,6 +163,7 @@ export class UpstreamAdapter {
       userName: this.config.userName,
       userPortraitPath: this.config.userPortraitPath,
       agentRegistry: this.deps.agentRegistry,
+      modelCatalog: this.deps.modelCatalog,
       logger: this.logger,
     });
 
@@ -279,6 +283,7 @@ export class UpstreamAdapter {
           userName: this.config.userName,
           userPortraitPath: this.config.userPortraitPath,
           agentRegistry: this.deps.agentRegistry,
+          modelCatalog: this.deps.modelCatalog,
           logger: this.logger,
         }),
       );

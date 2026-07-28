@@ -240,6 +240,7 @@ export function registerMultiNodeTools(
       inputSchema: {
         node_id: z.string().min(1),
         agent_id: z.string().optional(),
+        model_preset: z.string().min(1).optional(),
         prompt: z.string(),
         caller_session_id: z.string().optional(),
         notify_completion: z.boolean().optional(),
@@ -249,7 +250,7 @@ export function registerMultiNodeTools(
       },
     },
     async (input) => {
-      const { node_id, agent_id, prompt, caller_session_id, notify_completion, folder_id, container, source_task_item_id } = input;
+      const { node_id, agent_id, model_preset, prompt, caller_session_id, notify_completion, folder_id, container, source_task_item_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -271,6 +272,7 @@ export function registerMultiNodeTools(
         nodeId: node_id,
       };
       if (agent_id !== undefined) body.profile = agent_id;
+      if (model_preset !== undefined) body.model_preset = model_preset;
       const resolvedContainer = await resolveDelegatedContainer(runtime, {
         callerSessionId: callerSession.callerSessionId,
         ...(Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined

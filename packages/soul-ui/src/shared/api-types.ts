@@ -55,6 +55,8 @@ export interface CreateSessionRequest {
   profile?: string;
   /** soul-app 호환 별칭. 서버 경계에서 profile로 정규화된다. */
   agentId?: string;
+  /** 노드 모델 카탈로그의 프리셋 ID. */
+  model_preset?: string;
   /** 세션 생성 전에 업로드한 첨부 파일 경로. */
   attachmentPaths?: string[];
   /** 추론 backend(codex/claude)용 reasoning effort. 생략 시 서버 기본값 xhigh. */

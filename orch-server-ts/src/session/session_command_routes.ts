@@ -9,6 +9,10 @@ import {
   type RespondNodeCommandPayload,
 } from "../node/pending_commands.js";
 import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js";
+import {
+  ModelPresetAvailabilityError,
+  type ModelPresetAvailabilityService,
+} from "../model/model_preset_availability.js";
 import { NodeCommandTransportError } from "./session_command_transport.js";
 import {
   SessionCommandRouteError,
@@ -27,6 +31,7 @@ export type SessionCommandRouteOptions = {
   bridge: SessionCommandTransportBridge;
   timeoutMs?: number;
   createSessionLifecycle?: SessionCreateLifecycle;
+  modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
 };
 
 export const sessionCommandRouteAuthRequirements = {
@@ -76,12 +81,30 @@ export function registerSessionCommandRoutes(
     ) {
       return badRequest(reply, "predecessor_session_id must be a non-empty string or null");
     }
+    if (
+      body.model_preset !== undefined
+      && body.model_preset !== null
+      && (
+        typeof body.model_preset !== "string"
+        || body.model_preset.trim().length === 0
+      )
+    ) {
+      return badRequest(reply, "model_preset must be a non-empty string or null");
+    }
 
     try {
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
       const payload = createSessionPayload(prepared.payload, prompt);
       const routed = options.router.createSession(payload, {
         timeoutMs: options.timeoutMs,
+        beforeCreateCommand: (selection) => {
+          if (selection.modelPresetId && options.modelPresetAvailability) {
+            options.modelPresetAvailability.requireAvailable(
+              selection.node.nodeId,
+              selection.modelPresetId,
+            );
+          }
+        },
       });
       const result = await options.bridge.sendPendingCommand(routed);
       if (isErrorAck(result)) {
@@ -273,6 +296,14 @@ function serviceUnavailable(
 }
 
 function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof ModelPresetAvailabilityError) {
+    return reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
   if (error instanceof SessionCreateNodeSelectionError) {
     return reply.code(error.statusCode).send({
       error: {

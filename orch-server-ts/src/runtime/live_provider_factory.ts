@@ -30,6 +30,8 @@ import type { UserPreferencesRouteOptions } from "../user/user_preferences_route
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { TaskRouteOptions } from "../tasks/task_route_types.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
+import { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
+import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
@@ -39,7 +41,6 @@ import {
 } from "./live_node_claude_auth_route_provider.js";
 import {
   createLiveNodeAgentProfileRouteProviders,
-  type LiveNodeAgentProfileRouteProviderBundle,
 } from "./live_node_agent_profile_route_provider.js";
 import {
   createLiveTaskRouteProviders,
@@ -169,7 +170,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
-  readonly nodeAgentProfileRoutes: LiveNodeAgentProfileRouteProviderBundle["nodeAgentProfileRoutes"];
+  readonly nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly taskRoutes:
     & LiveTaskRouteProviderBundle["taskRoutes"]
@@ -230,6 +231,10 @@ export function createLiveOrchestratorProviderBundle(
     bridge: options.runtimeServices.sessionBridge,
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
+  const modelPresetAvailability = new ModelPresetAvailabilityService(
+    options.runtimeServices.registry,
+    options.usageSummaryRoutes.service,
+  );
   const authJwt = createLiveAuthJwtHelper({
     configProvider: options.dependencies.configProvider,
   });
@@ -356,6 +361,7 @@ export function createLiveOrchestratorProviderBundle(
       authenticatedUserResolvers.resolveCallerInfo,
       sessionCreateLifecycle,
       options.dependencies.dbCatalogRepository.sessionReviewRepository,
+      modelPresetAvailability,
       {
         snapshotService: {
           async listSessions(query, request) {
@@ -397,7 +403,10 @@ export function createLiveOrchestratorProviderBundle(
         sessionEventHub: options.runtimeServices.sessionEventHub,
       }),
     },
-    nodeAgentProfileRoutes: nodeAgentProfileProviders.nodeAgentProfileRoutes,
+    nodeAgentProfileRoutes: {
+      ...nodeAgentProfileProviders.nodeAgentProfileRoutes,
+      modelPresetProvider: modelPresetAvailability,
+    },
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
     taskRoutes: {
       ...taskProviders.taskRoutes,
@@ -439,6 +448,7 @@ function buildLiveRuntimeProviderBundle(
   resolveCallerInfo: LiveCallerInfoResolver,
   sessionCreateLifecycle: SessionCreateLifecycle,
   sessionReviewRepository: SessionReviewAcknowledgeRepository,
+  modelPresetAvailability: ModelPresetAvailabilityService,
   sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"],
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
 ): LiveRuntimeProviderBundle {
@@ -476,6 +486,7 @@ function buildLiveRuntimeProviderBundle(
     sessionCommandRoutes: {
       ...services.routeOptions.sessionCommandRoutes,
       createSessionLifecycle: sessionCreateLifecycle,
+      modelPresetAvailability,
     },
     sessionHistoryRoutes: { ...sessionHistoryRoutes, accessProvider },
     sessionSnapshotRoutes,

@@ -7,11 +7,12 @@ import type {
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
+import {
+  ANTHROPIC_API_KEY_ENV,
+  resolveModelPresetEnv,
+} from "../model_preset_env.js";
 
 import type { Task } from "./task_models.js";
-
-const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
-const ANTHROPIC_BASE_URL_ENV = "ANTHROPIC_BASE_URL";
 
 export interface TaskEngineTurnInput {
   prompt: string;
@@ -37,68 +38,18 @@ export interface TaskEngineTurnRunnerParams {
   input: TaskEngineTurnInput;
 }
 
-type ProcessEnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
-
-function resolveProfileEnvValue(
-  envKey: string,
-  rawValue: string,
-  processEnv: ProcessEnvLike,
-): string {
-  if (rawValue.startsWith("${") && rawValue.endsWith("}")) {
-    const sourceKey = rawValue.slice(2, -1);
-    if (sourceKey.length === 0) {
-      throw new Error(`agents.yaml env '${envKey}' has an empty variable reference`);
-    }
-    const resolved = processEnv[sourceKey];
-    if (resolved === undefined || resolved === "") {
-      throw new Error(
-        `agents.yaml env '${envKey}' references missing environment variable '${sourceKey}'`,
-      );
-    }
-    return resolved;
-  }
-  return rawValue;
-}
-
-function validateProfileEnvAuthBundle(env: Record<string, string>): void {
-  const hasApiKey = ANTHROPIC_API_KEY_ENV in env;
-  const hasBaseUrl = ANTHROPIC_BASE_URL_ENV in env;
-  if (hasApiKey !== hasBaseUrl) {
-    throw new Error(
-      "agents.yaml env must set ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL together",
-    );
-  }
-  if (hasApiKey && CLAUDE_OAUTH_TOKEN_ENV in env) {
-    throw new Error(
-      "agents.yaml env cannot mix ANTHROPIC_API_KEY with CLAUDE_CODE_OAUTH_TOKEN",
-    );
-  }
-}
-
-function resolveProfileEnv(
-  rawEnv: Record<string, string> | undefined,
-  processEnv: ProcessEnvLike,
-): Record<string, string> | undefined {
-  if (rawEnv === undefined || Object.keys(rawEnv).length === 0) {
-    return undefined;
-  }
-  const env = Object.fromEntries(
-    Object.entries(rawEnv).map(([key, value]) => [
-      key,
-      resolveProfileEnvValue(key, value, processEnv),
-    ]),
-  );
-  validateProfileEnvAuthBundle(env);
-  return env;
-}
-
 function buildClaudeExtraEnv(params: {
   profileEnv?: Record<string, string>;
   oauthToken?: string;
-  processEnv?: ProcessEnvLike;
+  processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  sourceLabel?: string;
 }): Record<string, string> | undefined {
   const extraEnv: Record<string, string> = {
-    ...(resolveProfileEnv(params.profileEnv, params.processEnv ?? process.env) ?? {}),
+    ...(resolveModelPresetEnv(
+      params.profileEnv,
+      params.processEnv ?? process.env,
+      params.sourceLabel,
+    ) ?? {}),
   };
   if (params.oauthToken && !(ANTHROPIC_API_KEY_ENV in extraEnv)) {
     extraEnv[CLAUDE_OAUTH_TOKEN_ENV] = params.oauthToken;
@@ -129,7 +80,11 @@ export class TaskEngineTurnRunner {
     const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
     const effectiveModel = task.model ?? agent.model;
     const extraEnv = engine.backendId === "claude"
-      ? buildClaudeExtraEnv({ profileEnv: agent.env, oauthToken: task.oauthToken })
+      ? buildClaudeExtraEnv({
+          profileEnv: task.modelPresetEnv ?? agent.env,
+          oauthToken: task.oauthToken,
+          sourceLabel: task.modelPresetEnv ? "model preset" : "agents.yaml",
+        })
       : undefined;
 
     return engine.execute({

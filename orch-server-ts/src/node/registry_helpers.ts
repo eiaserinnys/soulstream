@@ -18,6 +18,7 @@ export function snapshotNode(
     host: node.host,
     port: node.port,
     agents: [...node.agents],
+    ...(node.modelPresets ? { modelPresets: [...node.modelPresets] } : {}),
     capabilities: { ...node.capabilities },
     supportedBackends: [...node.supportedBackends],
     connected: node.connected,

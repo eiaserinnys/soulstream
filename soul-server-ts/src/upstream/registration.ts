@@ -6,6 +6,7 @@ import type { NodeRegister } from "@soulstream/wire-schema";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import { isBoardYjsHostNode } from "../board_yjs_host_mode.js";
+import type { ModelCatalog } from "../model_catalog.js";
 
 export interface RegistrationParams {
   nodeId: string;
@@ -15,6 +16,7 @@ export interface RegistrationParams {
   userName: string;
   userPortraitPath?: string;
   agentRegistry: AgentRegistry;
+  modelCatalog?: Pick<ModelCatalog, "advertise">;
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
    * 실패는 silent (테스트·legacy 호환).
@@ -90,6 +92,11 @@ export function _resetPortraitCacheForTest(): void {
  */
 export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
   const agents = params.agentRegistry.list();
+  const modelPresets = params.modelCatalog?.advertise();
+  const supportedBackends = Array.from(new Set([
+    ...params.agentRegistry.supportedBackends(),
+    ...(modelPresets?.map((preset) => preset.backend) ?? []),
+  ]));
   const msg: NodeRegister = {
     type: "node_register",
     node_id: params.nodeId,
@@ -106,13 +113,15 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
           }
         : {}),
     },
-    supported_backends: params.agentRegistry.supportedBackends(),
+    supported_backends: supportedBackends,
+    ...(modelPresets ? { model_presets: modelPresets } : {}),
     agents: agents.map((a) => {
       const entry: NonNullable<NodeRegister["agents"]>[number] = {
         id: a.id,
         name: a.name,
         backend: a.backend,
         portrait_url: a.portrait_path ? `/api/agents/${a.id}/portrait` : "",
+        ...(a.default_preset ? { default_preset: a.default_preset } : {}),
       };
       if (a.portrait_path) {
         const b64 = encodePortrait(a.portrait_path, params.logger);

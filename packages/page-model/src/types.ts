@@ -37,6 +37,7 @@ export interface GuidanceBlockProperties {
 export interface SessionDefaultsBlockProperties {
   agentId?: string;
   nodeId?: string;
+  modelPreset?: string;
   scope: string;
   [key: string]: unknown;
 }

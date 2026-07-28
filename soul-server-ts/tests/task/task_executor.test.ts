@@ -112,6 +112,73 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("keeps the legacy factory call exact when no preset is selected", async () => {
+    const mocks = makeMocks();
+    const factory = vi.fn(() => makeFakeEngine([
+      { type: "assistant_message", content: "legacy", timestamp: 1 },
+    ] as SSEEventPayload[]));
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(factory.mock.calls[0]).toEqual([agent]);
+  });
+
+  it("uses the preset backend while retaining the persisted resolved model", async () => {
+    const mocks = makeMocks();
+    const presetEngine: EnginePort = {
+      ...makeFakeEngine([
+        { type: "assistant_message", content: "preset", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      backendId: "claude",
+    };
+    const factory = vi.fn(() => presetEngine);
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        resolve: () => ({
+          id: "kimi-2",
+          label: "Kimi - 2",
+          backend: "claude",
+          model: "new-catalog-model",
+        }),
+      },
+    );
+    const task = {
+      ...makeTask(),
+      modelPreset: "kimi-2",
+      model: "persisted-kimi-model",
+    };
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(factory).toHaveBeenCalledWith(agent, "claude");
+    expect(task.model).toBe("persisted-kimi-model");
+  });
+
   it("gate OFF executor never enters the delivery receipt async boundary", async () => {
     const mocks = makeMocks();
     const observe = vi.spyOn(TaskDeliveryTurnReceipt.prototype, "observe");

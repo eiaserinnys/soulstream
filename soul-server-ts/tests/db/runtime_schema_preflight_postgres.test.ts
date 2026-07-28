@@ -49,10 +49,10 @@ describePostgres("persistent runtime schema preflight PostgreSQL", () => {
     await harness.sql`
       UPDATE schema_migrations
       SET checksum = ${"0".repeat(64)}
-      WHERE ordinal = 48
+      WHERE ordinal = 49
     `;
     await expect(assertRuntimeSchemaReady(harness.sql)).rejects.toThrow(
-      "required migration 047_session_delivery_relation_consumptions.sql@48",
+      "required migration 048_session_model_preset.sql@49",
     );
   });
 
