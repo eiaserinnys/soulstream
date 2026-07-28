@@ -180,6 +180,7 @@ export class TaskExecutor {
           sessionId: task.agentSessionId,
           modelPreset: task.modelPreset,
           fallbackBackend: agent.backend,
+          profileEnvFallback: agent.env !== undefined,
         },
         "Persisted model preset is unavailable; using the profile backend",
       );

@@ -52,6 +52,11 @@ export interface AdvertisedModelPreset {
   usage_model_id?: string;
 }
 
+export interface ModelCatalogLogger {
+  error(bindings: Record<string, unknown>, message: string): void;
+  warn?(bindings: Record<string, unknown>, message: string): void;
+}
+
 export class UnknownModelPresetError extends Error {
   constructor(readonly presetId: string) {
     super(`Unknown model preset: ${presetId}`);
@@ -60,7 +65,12 @@ export class UnknownModelPresetError extends Error {
 }
 
 export class ModelCatalog {
-  constructor(private readonly catalogPath: string) {}
+  private lastSuccessfulConfig: ModelCatalogConfig | undefined;
+
+  constructor(
+    private readonly catalogPath: string,
+    private readonly logger?: ModelCatalogLogger,
+  ) {}
 
   list(): ModelPreset[] {
     return this.read().presets;
@@ -105,12 +115,29 @@ export class ModelCatalog {
       raw = fs.readFileSync(this.catalogPath, "utf-8");
     } catch (error) {
       if (isMissingFileError(error)) {
-        return { presets: [] };
+        const empty = { presets: [] };
+        this.lastSuccessfulConfig ??= empty;
+        return empty;
       }
-      throw error;
+      return this.lastSuccessfulOrThrow(error);
     }
-    const parsed: unknown = parseYaml(raw) ?? {};
-    return ModelCatalogSchema.parse(parsed);
+    try {
+      const parsed: unknown = parseYaml(raw) ?? {};
+      const config = ModelCatalogSchema.parse(parsed);
+      this.lastSuccessfulConfig = config;
+      return config;
+    } catch (error) {
+      return this.lastSuccessfulOrThrow(error);
+    }
+  }
+
+  private lastSuccessfulOrThrow(error: unknown): ModelCatalogConfig {
+    if (!this.lastSuccessfulConfig) throw error;
+    this.logger?.error(
+      { err: error, catalogPath: this.catalogPath },
+      "Model catalog reload failed; using the last successful catalog",
+    );
+    return this.lastSuccessfulConfig;
   }
 }
 
@@ -118,9 +145,19 @@ export class ModelCatalog {
  * Startup preflight. A missing file is the additive empty-catalog state, while
  * malformed or unreadable configured files remain explicit startup failures.
  */
-export function loadModelCatalog(catalogPath: string): ModelCatalog {
-  const catalog = new ModelCatalog(catalogPath);
+export function loadModelCatalog(
+  catalogPath: string,
+  logger?: ModelCatalogLogger,
+): ModelCatalog {
+  const missingAtStartup = !fs.existsSync(catalogPath);
+  const catalog = new ModelCatalog(catalogPath, logger);
   catalog.list();
+  if (missingAtStartup) {
+    logger?.warn?.(
+      { path: catalogPath },
+      "model catalog not found; advertising no presets",
+    );
+  }
   return catalog;
 }
 

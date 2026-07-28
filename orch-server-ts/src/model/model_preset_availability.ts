@@ -237,7 +237,27 @@ function isQuotaApplicable(
 
 function quotaReasonLabel(quota: UsageSummaryQuota): string {
   const label = quota.label.trim() || quota.window || "모델";
+  const windowLabel = normalizedQuotaWindow(quota.window);
+  if (windowLabel && !hasWindowLabel(label)) {
+    return `${windowLabel} (${label}) 사용량 제한`;
+  }
   return `${label} 사용량 제한`;
+}
+
+function normalizedQuotaWindow(window: string | null): string | null {
+  switch (window?.trim().toLowerCase()) {
+    case "5h":
+      return "5시간";
+    case "7d":
+    case "168h":
+      return "7일";
+    default:
+      return null;
+  }
+}
+
+function hasWindowLabel(label: string): boolean {
+  return label.includes("5시간") || label.includes("7일");
 }
 
 function normalizeModelIdentity(value: string): string {

@@ -184,9 +184,19 @@ describe("TaskExecutor.startExecution", () => {
     const mocks = makeMocks();
     const warningLogger = pino({ level: "silent" });
     const warn = vi.spyOn(warningLogger, "warn");
-    const factory = vi.fn(() => makeFakeEngine([
-      { type: "assistant_message", content: "degraded", timestamp: 1 },
-    ] as SSEEventPayload[]));
+    const fallbackAgent: AgentProfile = {
+      ...claudeAgent,
+      env: {
+        ANTHROPIC_API_KEY: "legacy-profile-key",
+        ANTHROPIC_BASE_URL: "https://legacy.example/anthropic",
+      },
+    };
+    const factory = vi.fn(() => ({
+      ...makeFakeEngine([
+        { type: "assistant_message", content: "degraded", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      backendId: "claude" as const,
+    }));
     const executor = new TaskExecutor(
       factory,
       mocks.db,
@@ -214,15 +224,16 @@ describe("TaskExecutor.startExecution", () => {
       model: "persisted-model",
     };
 
-    executor.startExecution(task, agent);
+    executor.startExecution(task, fallbackAgent);
     await task.executionPromise;
 
-    expect(factory.mock.calls[0]).toEqual([agent]);
+    expect(factory.mock.calls[0]).toEqual([fallbackAgent]);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "sess-1",
         modelPreset: "removed-preset",
-        fallbackBackend: "codex",
+        fallbackBackend: "claude",
+        profileEnvFallback: true,
       }),
       "Persisted model preset is unavailable; using the profile backend",
     );

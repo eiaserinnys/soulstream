@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
 import {
@@ -119,10 +119,19 @@ presets:
   it("degrades a missing catalog file to an empty additive catalog", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "model-catalog-missing-"));
     try {
-      const catalog = loadModelCatalog(path.join(directory, "model-catalog.yaml"));
+      const catalogPath = path.join(directory, "model-catalog.yaml");
+      const warn = vi.fn();
+      const catalog = loadModelCatalog(catalogPath, {
+        error: vi.fn(),
+        warn,
+      });
 
       expect(catalog.list()).toEqual([]);
       expect(catalog.advertise({})).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        { path: catalogPath },
+        "model catalog not found; advertising no presets",
+      );
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
@@ -132,6 +141,43 @@ presets:
     withTempCatalog("presets: not-a-list\n", (catalogPath) => {
       expect(() => loadModelCatalog(catalogPath)).toThrow(ZodError);
     });
+  });
+
+  it("keeps the last successful catalog and logs when a runtime reload is malformed", () => {
+    withTempCatalog(
+      `
+presets:
+  - id: claude-opus
+    label: Claude - Opus
+    backend: claude
+    model: opus
+`,
+      (catalogPath) => {
+        const error = vi.fn();
+        const catalog = loadModelCatalog(catalogPath, { error });
+        expect(catalog.resolve("claude-opus").model).toBe("opus");
+
+        fs.writeFileSync(catalogPath, "presets: not-a-list\n", "utf-8");
+
+        expect(catalog.list()).toEqual([{
+          id: "claude-opus",
+          label: "Claude - Opus",
+          backend: "claude",
+          model: "opus",
+        }]);
+        expect(catalog.advertise({})).toMatchObject([{
+          id: "claude-opus",
+          available: true,
+        }]);
+        expect(error).toHaveBeenCalledWith(
+          expect.objectContaining({
+            catalogPath,
+            err: expect.any(ZodError),
+          }),
+          "Model catalog reload failed; using the last successful catalog",
+        );
+      },
+    );
   });
 
   it("advertises unresolved env without exposing values and excludes API-key presets from usage", () => {

@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   const logger = createLogger(env.LOG_LEVEL);
   let modelCatalog: ReturnType<typeof loadModelCatalog>;
   try {
-    modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH);
+    modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH, logger);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(

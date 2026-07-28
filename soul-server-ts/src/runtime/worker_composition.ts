@@ -86,7 +86,8 @@ export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath } = params;
-  const modelCatalog = params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH);
+  const modelCatalog =
+    params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger);
   let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
