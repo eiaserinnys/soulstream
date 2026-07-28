@@ -29,6 +29,7 @@ interface SyncAwareTestRuntime extends BoardYjsRuntime {
   mutations: {
     title: ReturnType<typeof vi.fn>;
     body: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -41,6 +42,7 @@ function createInitiallyUnsyncedRuntime(folderId: string): SyncAwareTestRuntime 
   const mutations = {
     title: vi.fn(),
     body: vi.fn(),
+    delete: vi.fn(),
   };
   const notify = () => {
     for (const listener of listeners) listener();
@@ -99,6 +101,7 @@ function createInitiallyUnsyncedRuntime(folderId: string): SyncAwareTestRuntime 
       notify();
     },
     deleteMarkdownDocument: (documentId) => {
+      mutations.delete(documentId);
       deleteBoardYjsItem(doc, `markdown:${documentId}`);
       doc.getMap<Y.Text>("markdownBodies").delete(documentId);
       notify();
@@ -183,5 +186,47 @@ describe("MarkdownDocumentPanel restore safety", () => {
 
     expect(runtime.mutations.title).not.toHaveBeenCalled();
     expect(runtime.mutations.body).not.toHaveBeenCalled();
+  });
+
+  it("blocks REST deletion before sync, then deletes through Y.Doc after sync", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+    const deleteButton = container
+      ?.querySelector<HTMLSpanElement>('span[title="문서 동기화 준비 중"]')
+      ?.querySelector<HTMLButtonElement>("button");
+
+    expect(deleteButton).not.toBeNull();
+    expect(deleteButton?.disabled).toBe(true);
+
+    // DOM의 disabled 방어를 우회해도 remove 경계 자체가 미동기 삭제를 막아야 한다.
+    if (deleteButton) {
+      deleteButton.disabled = false;
+      flushSync(() => deleteButton.click());
+    }
+    await settle();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runtime.mutations.delete).not.toHaveBeenCalled();
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+
+    flushSync(() => runtime.completeInitialSync());
+    await waitFor(
+      () => container?.querySelector<HTMLButtonElement>(
+        'button[title="Delete document"]',
+      )?.disabled === false,
+      "the synchronized delete action",
+    );
+
+    const synchronizedDeleteButton = container?.querySelector<HTMLButtonElement>(
+      'button[title="Delete document"]',
+    );
+    flushSync(() => synchronizedDeleteButton?.click());
+    await settle();
+
+    expect(runtime.mutations.delete).toHaveBeenCalledOnce();
+    expect(runtime.mutations.delete).toHaveBeenCalledWith("doc-a");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
   });
 });
