@@ -36,13 +36,13 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   return { sql: fn as unknown as SqlClient, calls };
 }
 
-function createSilentLogger() {
+function createSilentLogger(warn: (...args: unknown[]) => void = () => {}) {
   // pino-compat 최소 표면. 실 logger.warn/error만 호출됨.
   const noop = () => {};
   return {
     fatal: noop,
     error: noop,
-    warn: noop,
+    warn,
     info: noop,
     debug: noop,
     trace: noop,
@@ -52,7 +52,7 @@ function createSilentLogger() {
   } as unknown as McpRuntime["logger"];
 }
 
-function makeRuntime(): McpRuntime {
+function makeRuntime(warn: (...args: unknown[]) => void = () => {}): McpRuntime {
   const { sql } = createMockSql();
   const db = new SessionDB(sql);
   const broadcaster = {
@@ -81,13 +81,14 @@ function makeRuntime(): McpRuntime {
     taskExecutor,
     agentRegistry,
     catalogService,
-    logger: createSilentLogger(),
+    logger: createSilentLogger(warn),
   };
 }
 
 describe("MCP transport lifecycle (raw HTTP)", () => {
   let server: Awaited<ReturnType<typeof buildServer>>;
   let baseUrl: string;
+  const warning = vi.fn();
 
   beforeAll(async () => {
     server = await buildServer({
@@ -96,7 +97,7 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
       nodeId: "test-node",
       logger: createSilentLogger(),
       mcp: {
-        runtime: makeRuntime(),
+        runtime: makeRuntime(warning),
         path: "/mcp",
         auth: {
           requireAuth: false,
@@ -181,6 +182,159 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
     expect(sessionId).toBeTruthy();
     // body stream을 끝까지 drain하여 transport가 cleanup하도록.
     await res.text();
+  });
+
+  it("rejects unknown caller origin on initialize", async () => {
+    const res = await initialize(baseUrl, "unknown");
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("unsupported caller origin");
+  });
+
+  it("pins llm origin when later requests omit the origin header", async () => {
+    const initialized = await initialize(baseUrl, "llm");
+    expect(initialized.status).toBe(200);
+    const sessionId = initialized.headers.get("mcp-session-id");
+    expect(sessionId).toBeTruthy();
+    await initialized.text();
+
+    const listed = await mcpPost(baseUrl, sessionId!, {
+      jsonrpc: "2.0",
+      method: "tools/list",
+      params: {},
+      id: 2,
+    });
+    const payload = await rpcPayload(listed);
+    const tools = payload.result.tools as Array<{
+      name: string;
+      inputSchema: unknown;
+    }>;
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "create_agent_session",
+        "create_remote_agent_session",
+        "create_task",
+        "archive_task",
+        "batch_page_operations",
+      ]),
+    );
+    expect(tools.map((tool) => tool.name)).not.toEqual(
+      expect.arrayContaining([
+        "delete_folder",
+        "delete_markdown_document",
+        "delete_session",
+      ]),
+    );
+    const batch = tools.find((tool) => tool.name === "batch_page_operations");
+    expect(JSON.stringify(batch?.inputSchema)).not.toContain(
+      "delete_block_subtree",
+    );
+
+    const directDelete = await mcpPost(baseUrl, sessionId!, {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "delete_session",
+        arguments: { session_id: "sess-do-not-delete" },
+      },
+      id: 5,
+    });
+    const deletePayload = await rpcPayload(directDelete);
+    expect(deletePayload.result.isError).toBe(true);
+    expect(JSON.stringify(deletePayload.result)).toContain("delete_session");
+    expect(warning).toHaveBeenCalledWith(
+      { callerOrigin: "llm", toolName: "delete_session" },
+      "Blocked destructive MCP tool for external LLM caller",
+    );
+
+    const nestedDelete = await mcpPost(baseUrl, sessionId!, {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "batch_page_operations",
+        arguments: {
+          page_id: "page-do-not-delete",
+          operations: [
+            { op: "delete_block_subtree", block_id: "block-do-not-delete" },
+          ],
+        },
+      },
+      id: 6,
+    });
+    const nestedDeletePayload = await rpcPayload(nestedDelete);
+    expect(nestedDeletePayload.result.isError).toBe(true);
+    expect(JSON.stringify(nestedDeletePayload.result)).toContain(
+      "batch_page_operations",
+    );
+    expect(warning).toHaveBeenCalledWith(
+      { callerOrigin: "llm", toolName: "batch_page_operations" },
+      "Blocked destructive MCP tool for external LLM caller",
+    );
+  });
+
+  it("does not upgrade an existing internal session when llm is added later", async () => {
+    const initialized = await initialize(baseUrl);
+    const sessionId = initialized.headers.get("mcp-session-id");
+    expect(sessionId).toBeTruthy();
+    await initialized.text();
+
+    const listed = await mcpPost(
+      baseUrl,
+      sessionId!,
+      {
+        jsonrpc: "2.0",
+        method: "tools/list",
+        params: {},
+        id: 3,
+      },
+      "llm",
+    );
+    const payload = await rpcPayload(listed);
+    expect(
+      (payload.result.tools as Array<{ name: string }>).map((tool) => tool.name),
+    ).toContain("delete_session");
+  });
+
+  it("rejects unknown origin on an existing session follow-up", async () => {
+    const initialized = await initialize(baseUrl);
+    const sessionId = initialized.headers.get("mcp-session-id");
+    expect(sessionId).toBeTruthy();
+    await initialized.text();
+
+    const res = await mcpPost(
+      baseUrl,
+      sessionId!,
+      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 4 },
+      "unknown",
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("unsupported caller origin");
+  });
+
+  it("rejects unknown origin on existing-session GET and DELETE follow-ups", async () => {
+    const initialized = await initialize(baseUrl, "llm");
+    const sessionId = initialized.headers.get("mcp-session-id");
+    expect(sessionId).toBeTruthy();
+    await initialized.text();
+
+    for (const method of ["GET", "DELETE"]) {
+      const response = await fetch(`${baseUrl}/mcp`, {
+        method,
+        headers: {
+          "mcp-session-id": sessionId!,
+          "x-soulstream-caller-origin": "unknown",
+        },
+      });
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain("unsupported caller origin");
+    }
+
+    const stillOpen = await mcpPost(baseUrl, sessionId!, {
+      jsonrpc: "2.0",
+      method: "tools/list",
+      params: {},
+      id: 7,
+    });
+    expect((await rpcPayload(stillOpen)).result.tools).toBeDefined();
   });
 });
 
@@ -290,3 +444,52 @@ describe("MCP bearer auth guard", () => {
     await res.text();
   });
 });
+
+function initialize(baseUrl: string, origin?: string): Promise<Response> {
+  return fetch(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      ...(origin ? { "x-soulstream-caller-origin": origin } : {}),
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "origin-test", version: "0.0.0" },
+      },
+      id: 1,
+    }),
+  });
+}
+
+function mcpPost(
+  baseUrl: string,
+  sessionId: string,
+  body: Record<string, unknown>,
+  origin?: string,
+): Promise<Response> {
+  return fetch(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-session-id": sessionId,
+      ...(origin ? { "x-soulstream-caller-origin": origin } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function rpcPayload(response: Response): Promise<Record<string, any>> {
+  expect(response.status).toBe(200);
+  const text = await response.text();
+  const data = text
+    .split("\n")
+    .find((line) => line.startsWith("data: "))
+    ?.slice("data: ".length);
+  return JSON.parse(data ?? text) as Record<string, any>;
+}
