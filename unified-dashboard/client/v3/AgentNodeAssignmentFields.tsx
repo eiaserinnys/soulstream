@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentInfo } from "@seosoyoung/soul-ui";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type {
+  AgentInfo,
+  ModelPresetAvailability,
+} from "@seosoyoung/soul-ui";
 
+import { NodeModelPresetSelect } from "../components/NodeModelPresetSelect";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
 export function AgentNodeAssignmentFields({
   agentId,
   nodeId,
+  modelPreset,
   preferredAgentId,
   preferredNodeId,
   presentation = "execution-defaults",
@@ -13,11 +18,15 @@ export function AgentNodeAssignmentFields({
   disabled = false,
   onAgentIdChange,
   onNodeIdChange,
+  onModelPresetChange,
   onAgentInfoChange,
+  onModelPresetInfoChange,
+  onModelPresetValidityChange,
   onError,
 }: {
   agentId: string;
   nodeId: string;
+  modelPreset: string;
   preferredAgentId?: string | null;
   preferredNodeId?: string | null;
   presentation?: "execution-defaults" | "session";
@@ -25,7 +34,10 @@ export function AgentNodeAssignmentFields({
   disabled?: boolean;
   onAgentIdChange(value: string): void;
   onNodeIdChange(value: string): void;
+  onModelPresetChange(value: string): void;
   onAgentInfoChange?(value: AgentInfo | null): void;
+  onModelPresetInfoChange?(value: ModelPresetAvailability | null): void;
+  onModelPresetValidityChange?(valid: boolean): void;
   onError?(message: string): void;
 }) {
   const nodes = useOrchestratorStore((state) => state.nodes);
@@ -35,6 +47,8 @@ export function AgentNodeAssignmentFields({
   );
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
+  const agentSelectId = useId();
+  const nodeSelectId = useId();
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -93,9 +107,12 @@ export function AgentNodeAssignmentFields({
     : agents;
 
   const agentField = (
-    <label>
-      {presentation === "session" ? "에이전트" : "실행 에이전트"}
+    <div className="v3-assignment-field">
+      <label htmlFor={agentSelectId}>
+        {presentation === "session" ? "에이전트" : "실행 에이전트"}
+      </label>
       <select
+        id={agentSelectId}
         value={agentId}
         aria-label={presentation === "session" ? "에이전트 선택" : "기본 실행 에이전트"}
         disabled={disabled || !nodeId}
@@ -107,21 +124,39 @@ export function AgentNodeAssignmentFields({
         <option value="">미지정</option>
         {agentOptions.map((agent) => <option key={agent.id} value={agent.id}>{agent.name ?? agent.id}</option>)}
       </select>
-    </label>
+    </div>
   );
   const nodeField = (
-    <label>
-      {presentation === "session" ? "노드" : "실행 노드"}
-      <select value={nodeId} aria-label={presentation === "session" ? "노드 선택" : "기본 실행 노드"} disabled={disabled} onChange={(event) => onNodeIdChange(event.target.value)}>
+    <div className="v3-assignment-field">
+      <label htmlFor={nodeSelectId}>
+        {presentation === "session" ? "노드" : "실행 노드"}
+      </label>
+      <select id={nodeSelectId} value={nodeId} aria-label={presentation === "session" ? "노드 선택" : "기본 실행 노드"} disabled={disabled} onChange={(event) => onNodeIdChange(event.target.value)}>
         <option value="">미지정</option>
         {nodeOptions.map((node) => <option key={node.nodeId} value={node.nodeId}>{node.nodeId}</option>)}
       </select>
-    </label>
+    </div>
+  );
+  const modelField = (
+    <NodeModelPresetSelect
+      className="v3-model-preset-field"
+      nodeId={nodeId}
+      value={modelPreset}
+      label={presentation === "session" ? "모델" : "실행 모델"}
+      disabled={disabled}
+      triggerClassName="v3-model-preset-trigger"
+      onValueChange={onModelPresetChange}
+      onPresetChange={onModelPresetInfoChange}
+      onValidityChange={onModelPresetValidityChange}
+      onError={onError}
+    />
   );
 
   return (
     <div className="v3-succession-assignment">
-      {presentation === "session" ? <>{nodeField}{agentField}</> : <>{agentField}{nodeField}</>}
+      {presentation === "session"
+        ? <>{nodeField}{agentField}{modelField}</>
+        : <>{agentField}{nodeField}{modelField}</>}
     </div>
   );
 }

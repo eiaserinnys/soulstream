@@ -1,4 +1,4 @@
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
@@ -9,13 +9,20 @@ const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
   process.env.PR_AI_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-succession-picker"),
 );
+const requestedTheme = process.env.PR_AI_QA_THEME === "dark"
+  || process.env.PR_AI_QA_THEME === "light"
+  ? process.env.PR_AI_QA_THEME
+  : null;
+const observationMs = Number(process.env.V3_QA_OBSERVE_MS ?? 31_000);
 const result = await runPlaywrightLifecycle({
   lockName: "pr-ai-v3-succession-picker",
   timeoutMs: 180_000,
-}, async ({ browser }) => ({
-  dark: await verifyTheme(browser, "dark"),
-  light: await verifyTheme(browser, "light"),
-}));
+}, async ({ browser }) => requestedTheme
+  ? { [requestedTheme]: await verifyTheme(browser, requestedTheme) }
+  : {
+      dark: await verifyTheme(browser, "dark"),
+      light: await verifyTheme(browser, "light"),
+    });
 
 console.log(JSON.stringify({ ok: true, residualProcesses: 0, ...result }, null, 2));
 
@@ -23,6 +30,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   const context = await browser.newContext({
     colorScheme: theme,
     reducedMotion: "reduce",
+    timezoneId: "Asia/Seoul",
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
@@ -95,7 +103,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     const modalText = await modal.textContent() ?? "";
     for (const required of [
-      "노드 / 에이전트",
+      "노드 / 에이전트 / 모델",
       "컨텍스트",
       "플래너 UX 원칙",
       "대비와 잘림을 실제 픽셀로 확인",
@@ -115,6 +123,32 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
     assert(!modalText.includes("추가 지침"), "삭제한 추가 지침 입력이 새 세션 창에 남았습니다.");
 
+    const modelPreset = modal.getByRole("combobox", { name: "모델 선택" });
+    await modelPreset.click();
+    const limitedOption = page.locator('[data-slot="select-item"]')
+      .filter({ hasText: "QA 제한 모델 (주간 사용량 제한) · 18:20 해제" });
+    await limitedOption.waitFor({ state: "visible" });
+    assert(
+      await limitedOption.getAttribute("data-disabled") !== null,
+      "사용량 제한 모델이 선택 가능 상태입니다.",
+    );
+    assert(
+      (await limitedOption.textContent() ?? "").includes("QA 제한 모델 (주간 사용량 제한) · 18:20 해제"),
+      "서버 사유 라벨과 로컬 해제 시각이 표시되지 않았습니다.",
+    );
+    await page.locator('[data-slot="select-item"]')
+      .filter({ hasText: "QA 사용량 확인 모델 (사용량 확인 지연)" })
+      .click();
+    await modal.getByText("사용량 확인 지연", { exact: true }).waitFor({ state: "visible" });
+    await modal.getByRole("textbox", { name: "초기 지시" }).focus();
+    const assignmentMetrics = await measureControls([
+      modal.getByRole("combobox", { name: "노드 선택" }),
+      modal.getByRole("combobox", { name: "에이전트 선택" }),
+      modelPreset,
+    ]);
+    assertAlignedControls(assignmentMetrics, "v3 노드·에이전트·모델");
+    assertAlignedLabels(assignmentMetrics, "v3 노드·에이전트·모델");
+
     await modal.getByRole("checkbox", { name: "PR-O 결정 로그" }).check();
     await modal.locator("label").filter({ hasText: "atom 노드" }).locator("button").click();
     await page.getByRole("button", { name: "QA atom 컨텍스트", exact: true }).click();
@@ -127,7 +161,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await installMutationCounters(page);
     const agentRequestsBeforeObservation = agentRequests.length;
     const sessionRequestsBeforeObservation = sessionListRequests;
-    await page.waitForTimeout(31_000);
+    await page.waitForTimeout(observationMs);
     const mutations = await readMutationCounters(page);
     const agentRefetchesDuringObservation = agentRequests.length - agentRequestsBeforeObservation;
     assert(mutations.agent === 0, `에이전트 콤보 DOM 변이 ${mutations.agent}회`);
@@ -137,6 +171,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByRole("combobox", { name: "노드 선택" }).selectOption("qa-node");
     await page.getByRole("combobox", { name: "에이전트 선택" }).selectOption("qa-agent");
     assert(agentRequests.at(-1) === "qa-node", "노드 변경 후 에이전트 목록을 갱신하지 않았습니다.");
+    await expectTriggerText(modelPreset, "미지정");
+    await chooseSelectItem(page, modelPreset, "QA 사용량 확인 모델 (사용량 확인 지연)");
 
     const previousIndex = optionLabels.findIndex((label) => label.includes("밀도 기준 정리"));
     assert(previousIndex >= 0, "비직전 predecessor index를 찾지 못했습니다.");
@@ -168,10 +204,59 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     );
     assert(!Object.prototype.hasOwnProperty.call(createPayload, "prompt"), "클라이언트가 서버 prompt 정본을 우회했습니다.");
     assert(typeof createPayload?.pageAnchor === "object", "선택한 보드 문서용 page anchor가 없습니다.");
+    assert(createPayload?.model_preset === "qa-warning", "선택한 모델 프리셋이 생성 요청에 없습니다.");
+
+    await page.goto(`${baseUrl}/v1`, { waitUntil: "domcontentloaded" });
+    await page.getByTitle("New session").first().click();
+    const boardDialog = page.getByRole("dialog", { name: "New Session", exact: true });
+    await boardDialog.waitFor({ state: "visible" });
+    await boardDialog.getByText("Select a node...", { exact: true }).click();
+    await page.locator('[data-slot="select-item"]').filter({ hasText: "eiaserinnys" }).click();
+    await boardDialog.getByText("Select an agent...", { exact: true }).click();
+    await page.locator('[data-slot="select-item"]').filter({ hasText: "로젤린" }).click();
+    const boardModelPreset = boardDialog.getByRole("combobox", { name: "모델 선택" });
+    await boardModelPreset.click();
+    const boardLimitedOption = page.locator('[data-slot="select-item"]')
+      .filter({ hasText: "QA 제한 모델 (주간 사용량 제한) · 18:20 해제" });
+    await boardLimitedOption.waitFor({ state: "visible" });
+    assert(
+      await boardLimitedOption.getAttribute("data-disabled") !== null,
+      "보드 새 세션 창에서 사용량 제한 모델이 선택 가능 상태입니다.",
+    );
+    await page.locator('[data-slot="select-item"]')
+      .filter({ hasText: "QA 사용량 확인 모델 (사용량 확인 지연)" })
+      .click();
+    await boardDialog.getByText("Reasoning Effort", { exact: true }).waitFor({ state: "visible" });
+    await boardDialog.getByText("eiaserinnys (localhost:3105)", { exact: true }).click();
+    await page.locator('[data-slot="select-item"]').filter({ hasText: "qa-node" }).click();
+    await expectTriggerText(boardModelPreset, "미지정");
+    await boardDialog.getByText("Select an agent...", { exact: true }).click();
+    await page.locator('[data-slot="select-item"]').filter({ hasText: "QA 에이전트" }).click();
+    await chooseSelectItem(
+      page,
+      boardModelPreset,
+      "QA 사용량 확인 모델 (사용량 확인 지연)",
+    );
+    await boardDialog.getByPlaceholder("What would you like to work on?").fill("보드 세션 모델 선택 확인");
+    const boardControls = await boardDialog.locator('[data-slot="select-trigger"]').all();
+    const boardControlMetrics = await waitForAlignedControls(
+      page,
+      boardControls,
+      "보드 새 세션 셀렉트",
+    );
+    assert(boardControlMetrics.length === 5, "보드 새 세션 창의 5개 셀렉트 필드를 모두 찾지 못했습니다.");
+    await capture(page, theme, "02-board-model-preset");
+    await boardDialog.getByRole("button", { name: "Start", exact: true }).click();
+    await boardDialog.waitFor({ state: "detached" });
+    const boardCreatePayload = createPayloads.at(-1);
+    assert(
+      boardCreatePayload?.model_preset === "qa-warning",
+      "보드 새 세션 창에서 선택한 모델 프리셋이 생성 요청에 없습니다.",
+    );
 
     return {
       options: optionLabels.length,
-      observedMs: 31_000,
+      observedMs: observationMs,
       agentMutations: mutations.agent,
       runMutations: mutations.runs,
       agentRefetchesDuringObservation,
@@ -179,10 +264,103 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       predecessorRoundtrip: createPayload?.predecessor_session_id,
       contextItemKeys: extraContextItems.map((item) => item.key),
       nodeChangeAgentRefresh: agentRequests.at(-1),
+      modelPresetRoundtrip: createPayload?.model_preset,
+      boardModelPresetRoundtrip: boardCreatePayload?.model_preset,
+      assignmentControlHeights: assignmentMetrics.map((metric) => metric.height),
+      boardControlHeights: boardControlMetrics.map((metric) => metric.height),
     };
   } finally {
     await context.close();
   }
+}
+
+interface ControlMetric {
+  name: string;
+  height: number;
+  boxShadow: string;
+  labelTop: number | null;
+  ariaInvalid: string | null;
+  disabled: boolean;
+  pressed: boolean;
+  focused: boolean;
+  focusVisible: boolean;
+  className: string;
+}
+
+async function measureControls(controls: Locator[]): Promise<ControlMetric[]> {
+  return await Promise.all(controls.map(async (control) => await control.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const field = element.closest(".v3-assignment-field, .v3-model-preset-field");
+    const label = field?.querySelector("label");
+    return {
+      name: element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "unnamed",
+      height: rect.height,
+      boxShadow: getComputedStyle(element).boxShadow,
+      labelTop: label?.getBoundingClientRect().top ?? null,
+      ariaInvalid: element.getAttribute("aria-invalid"),
+      disabled: element.hasAttribute("data-disabled"),
+      pressed: element.hasAttribute("data-pressed"),
+      focused: element === document.activeElement,
+      focusVisible: element.matches(":focus-visible"),
+      className: element.className,
+    };
+  })));
+}
+
+function assertAlignedControls(metrics: ControlMetric[], label: string) {
+  const heights = metrics.map((metric) => metric.height);
+  assert(
+    Math.max(...heights) - Math.min(...heights) <= 1,
+    `${label} 높이가 어긋났습니다: ${heights.join(", ")}`,
+  );
+  const shadows = new Set(metrics.map((metric) => metric.boxShadow));
+  assert(
+    shadows.size === 1,
+    `${label} 그림자가 어긋났습니다: ${metrics.map((metric) =>
+      `${metric.name}=${metric.boxShadow} invalid:${metric.ariaInvalid} disabled:${metric.disabled} pressed:${metric.pressed} focused:${metric.focused} focusVisible:${metric.focusVisible} class:${metric.className}`
+    ).join(" / ")}`,
+  );
+}
+
+async function waitForAlignedControls(
+  page: Page,
+  controls: Locator[],
+  label: string,
+): Promise<ControlMetric[]> {
+  let metrics = await measureControls(controls);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const heights = metrics.map((metric) => metric.height);
+    const aligned = Math.max(...heights) - Math.min(...heights) <= 1
+      && new Set(metrics.map((metric) => metric.boxShadow)).size === 1;
+    if (aligned) return metrics;
+    await page.waitForTimeout(100);
+    metrics = await measureControls(controls);
+  }
+  assertAlignedControls(metrics, label);
+  return metrics;
+}
+
+function assertAlignedLabels(metrics: ControlMetric[], label: string) {
+  const labelTops = metrics
+    .map((metric) => metric.labelTop)
+    .filter((top): top is number => top !== null);
+  assert(
+    labelTops.length === metrics.length
+      && Math.max(...labelTops) - Math.min(...labelTops) <= 1,
+    `${label} 라벨이 어긋났습니다: ${labelTops.join(", ")}`,
+  );
+}
+
+async function chooseSelectItem(page: Page, trigger: Locator, text: string) {
+  await trigger.click();
+  await page.locator('[data-slot="select-item"]').filter({ hasText: text }).click();
+}
+
+async function expectTriggerText(
+  trigger: Locator,
+  expected: string,
+) {
+  await trigger.filter({ hasText: expected }).waitFor({ state: "visible" });
 }
 
 async function installMutationCounters(page: Page) {

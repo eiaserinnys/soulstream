@@ -23,7 +23,10 @@ import {
   placeBoardSessionInYjs,
   type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
-import type { AgentInfo } from "@seosoyoung/soul-ui";
+import type {
+  AgentInfo,
+  ModelPresetAvailability,
+} from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useAppConfig } from "../config/AppConfigContext";
 import {
@@ -31,6 +34,7 @@ import {
   selectedAgentBackend,
 } from "../utils/reasoningEffort";
 import { createDashboardSession } from "client/lib/session-create";
+import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
 
 interface OAuthProfile {
   name: string;
@@ -56,6 +60,12 @@ export function OrchestratorNewSessionModal() {
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedModelPreset, setSelectedModelPreset] = useState("");
+  const [selectedModelPresetInfo, setSelectedModelPresetInfo] =
+    useState<ModelPresetAvailability | null>(null);
+  const [modelPresetValid, setModelPresetValid] = useState(true);
+  const [modelPresetError, setModelPresetError] = useState<string | null>(null);
+  const modelPresetSource = useRef<"automatic" | "explicit" | "agent" | null>(null);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
     DEFAULT_REASONING_EFFORT,
   );
@@ -72,7 +82,8 @@ export function OrchestratorNewSessionModal() {
   const initialDraft = useMemo(() => {
     return useDashboardStore.getState().drafts[draftKey] ?? "";
   }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  const selectedBackend = selectedAgentBackend(agents, selectedAgentId);
+  const selectedBackend = selectedModelPresetInfo?.backend
+    ?? selectedAgentBackend(agents, selectedAgentId);
   const submitReasoningEffort = reasoningEffortForSubmit(
     selectedBackend,
     selectedReasoningEffort,
@@ -87,6 +98,18 @@ export function OrchestratorNewSessionModal() {
 
   // 폴더 초기화 1회 제한 — catalog 갱신 시 사용자 선택을 덮어쓰지 않도록
   const folderInitialized = useRef(false);
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      modelPresetSource.current = null;
+      return;
+    }
+    if (modelPresetSource.current !== null) return;
+    const initialModelPreset = newSessionDefaults?.modelPreset?.trim() ?? "";
+    if (!initialModelPreset) return;
+    modelPresetSource.current = "explicit";
+    setSelectedModelPreset(initialModelPreset);
+  }, [isModalOpen, newSessionDefaults?.modelPreset]);
 
   // 모달이 열릴 때 진입 경로에 따라 초기 폴더 설정
   useEffect(() => {
@@ -133,6 +156,11 @@ export function OrchestratorNewSessionModal() {
   useEffect(() => {
     setSelectedAgentId("");
     setAgents([]);
+    if (modelPresetSource.current === "agent") {
+      modelPresetSource.current = null;
+      setSelectedModelPreset("");
+      setSelectedModelPresetInfo(null);
+    }
     setSelectedOAuthProfile(null);
     setOauthProfiles([]);
     if (!selectedNodeId) return;
@@ -150,6 +178,14 @@ export function OrchestratorNewSessionModal() {
         setAgents(nextAgents);
         if (defaultAgentId && nextAgents.some((agent) => agent.id === defaultAgentId)) {
           setSelectedAgentId(defaultAgentId);
+          if (
+            modelPresetSource.current === null
+            || modelPresetSource.current === "agent"
+          ) {
+            const defaultAgent = nextAgents.find((agent) => agent.id === defaultAgentId);
+            modelPresetSource.current = "agent";
+            setSelectedModelPreset(defaultAgent?.default_preset ?? "");
+          }
         }
       })
       .catch(() => {
@@ -186,6 +222,7 @@ export function OrchestratorNewSessionModal() {
         sourceTaskItemId: newSessionDefaults?.sourceTaskItemId ?? null,
         agentId: selectedAgentId || null,
         agent: selectedAgent ?? null,
+        modelPreset: selectedModelPreset || null,
         reasoningEffort: submitReasoningEffort,
         oauthProfileName: selectedOAuthProfile,
         boardPosition,
@@ -199,10 +236,15 @@ export function OrchestratorNewSessionModal() {
       setSelectedNodeId("");
       setSelectedModalFolderId(null);
       setSelectedAgentId("");
+      setSelectedModelPreset("");
+      setSelectedModelPresetInfo(null);
+      setModelPresetValid(true);
+      setModelPresetError(null);
+      modelPresetSource.current = null;
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
 
   const folderSelector = (
@@ -216,7 +258,17 @@ export function OrchestratorNewSessionModal() {
   const nodeSelector = (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Node</label>
-      <Select value={selectedNodeId} onValueChange={(v) => setSelectedNodeId(v ?? "")}>
+      <Select
+        value={selectedNodeId}
+        onValueChange={(value) => {
+          setSelectedNodeId(value ?? "");
+          setSelectedModelPreset("");
+          setSelectedModelPresetInfo(null);
+          setModelPresetValid(true);
+          setModelPresetError(null);
+          modelPresetSource.current = "automatic";
+        }}
+      >
         <SelectTrigger>
           <span className={cn("flex-1 truncate", !selectedNodeId && "text-muted-foreground/72")}>
             {selectedNodeId
@@ -265,7 +317,22 @@ export function OrchestratorNewSessionModal() {
   const agentSelector = agents.length > 0 ? (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Agent</label>
-      <Select value={selectedAgentId} onValueChange={(v) => setSelectedAgentId(v ?? "")}>
+      <Select
+        value={selectedAgentId}
+        onValueChange={(value) => {
+          const agentId = value ?? "";
+          setSelectedAgentId(agentId);
+          if (
+            modelPresetSource.current === null
+            || modelPresetSource.current === "agent"
+          ) {
+            modelPresetSource.current = "agent";
+            setSelectedModelPreset(
+              agents.find((agent) => agent.id === agentId)?.default_preset ?? "",
+            );
+          }
+        }}
+      >
         <SelectTrigger>
           {(() => {
             const agent = selectedAgentId ? agents.find(a => a.id === selectedAgentId) : null;
@@ -298,28 +365,50 @@ export function OrchestratorNewSessionModal() {
     </div>
   ) : undefined;
 
-  const optionsSlot = submitReasoningEffort ? (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
-      <Select
-        value={selectedReasoningEffort}
-        onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
-      >
-        <SelectTrigger>
-          <span className="flex-1 truncate">
-            {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
-          </span>
-        </SelectTrigger>
-        <SelectPopup>
-          {REASONING_EFFORT_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
+  const optionsSlot = (
+    <div className="flex flex-col gap-3">
+      <NodeModelPresetSelect
+        className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground"
+        nodeId={selectedNodeId}
+        value={selectedModelPreset}
+        label="Model"
+        onValueChange={(value) => {
+          modelPresetSource.current = "explicit";
+          setSelectedModelPreset(value);
+        }}
+        onPresetChange={setSelectedModelPresetInfo}
+        onValidityChange={setModelPresetValid}
+        onError={setModelPresetError}
+      />
+      {modelPresetError ? (
+        <small className="text-xs font-medium text-destructive" role="alert">
+          {modelPresetError}
+        </small>
+      ) : null}
+      {submitReasoningEffort ? (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
+          <Select
+            value={selectedReasoningEffort}
+            onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
+          >
+            <SelectTrigger>
+              <span className="flex-1 truncate">
+                {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
+              </span>
+            </SelectTrigger>
+            <SelectPopup>
+              {REASONING_EFFORT_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
+      ) : null}
     </div>
-  ) : undefined;
+  );
 
   return (
     <BaseNewSessionDialog
@@ -330,6 +419,11 @@ export function OrchestratorNewSessionModal() {
           setSelectedNodeId("");
           setSelectedModalFolderId(null);
           setSelectedAgentId("");
+          setSelectedModelPreset("");
+          setSelectedModelPresetInfo(null);
+          setModelPresetValid(true);
+          setModelPresetError(null);
+          modelPresetSource.current = null;
           setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
           setSelectedOAuthProfile(null);
         }
@@ -340,7 +434,7 @@ export function OrchestratorNewSessionModal() {
       agentSelector={agentSelector}
       oauthProfileSelector={oauthProfileSelector}
       optionsSlot={optionsSlot}
-      submitDisabled={!selectedNodeId}
+      submitDisabled={!selectedNodeId || !modelPresetValid}
       title="New Session"
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}

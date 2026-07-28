@@ -20,6 +20,7 @@ export interface ProjectSessionDefault {
   scope: string;
   agentId: string | null;
   nodeId: string | null;
+  modelPreset: string | null;
 }
 
 export interface ProjectPageDetails {
@@ -65,7 +66,10 @@ export function parseProjectPageDetails(blocks: readonly BlockDto[]): ProjectPag
       const scope = stringProperty(block.properties, "scope");
       const agentId = stringProperty(block.properties, "agentId");
       const nodeId = stringProperty(block.properties, "nodeId");
-      return scope && (agentId || nodeId) ? [{ blockId: block.id, scope, agentId, nodeId }] : [];
+      const modelPreset = stringProperty(block.properties, "modelPreset");
+      return scope && (agentId || nodeId)
+        ? [{ blockId: block.id, scope, agentId, nodeId, modelPreset }]
+        : [];
     }),
   };
 }

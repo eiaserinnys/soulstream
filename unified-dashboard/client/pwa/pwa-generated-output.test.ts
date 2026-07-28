@@ -31,9 +31,11 @@ describe("generated dashboard service worker", () => {
     expect(sw).toContain("self.skipWaiting()");
     expect(sw).toContain("clientsClaim()");
     expect(sw).toContain("NetworkFirst");
-    expect(sw).toContain('cacheName:"soulstream-navigation-v1"');
-    expect(sw).not.toContain('url:"index.html"');
-    expect(sw).not.toContain('url:"registerSW.js"');
-    expect(sw).not.toContain('url:"sw-update-migration.js"');
+    expect(sw).toMatch(
+      /\b["']?cacheName["']?\s*:\s*["']soulstream-navigation-v1["']/,
+    );
+    expect(sw).not.toMatch(/\b["']?url["']?\s*:\s*["']index\.html["']/);
+    expect(sw).not.toMatch(/\b["']?url["']?\s*:\s*["']registerSW\.js["']/);
+    expect(sw).not.toMatch(/\b["']?url["']?\s*:\s*["']sw-update-migration\.js["']/);
   }, 120_000);
 });

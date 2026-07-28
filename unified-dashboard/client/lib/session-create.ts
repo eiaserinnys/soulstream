@@ -38,6 +38,7 @@ export interface CreateDashboardSessionInput {
   nodeId?: string;
   agentId?: string | null;
   agent?: SessionAgentMetadata | null;
+  modelPreset?: string | null;
   reasoningEffort?: ReasoningEffort | null;
   oauthProfileName?: string | null;
   container?: BoardContainerRef | null;
@@ -74,6 +75,7 @@ export async function createDashboardSession(
       ? { sourceTaskItemId: input.sourceTaskItemId }
       : {}),
     ...(input.agentId ? { profile: input.agentId } : {}),
+    ...(input.modelPreset ? { model_preset: input.modelPreset } : {}),
     ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     ...(input.oauthProfileName ? { oauth_profile_name: input.oauthProfileName } : {}),
   };

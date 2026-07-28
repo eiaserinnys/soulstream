@@ -22,10 +22,15 @@ export function ProjectSessionDefaultChip({
   defaults,
   onClick,
 }: {
-  defaults: Pick<ProjectSessionDefault, "agentId" | "nodeId">;
+  defaults: Pick<ProjectSessionDefault, "agentId" | "nodeId" | "modelPreset">;
   onClick?: () => void;
 }) {
-  const content = <>👤 {defaults.agentId ?? "agent 미지정"}@{defaults.nodeId ?? "node 미지정"}</>;
+  const content = (
+    <>
+      👤 {defaults.agentId ?? "agent 미지정"}@{defaults.nodeId ?? "node 미지정"}
+      {defaults.modelPreset ? " · 모델 지정" : ""}
+    </>
+  );
   return onClick ? (
     <button type="button" className="v3-project-context-chip" onClick={onClick}>{content}</button>
   ) : (

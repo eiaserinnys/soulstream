@@ -20,6 +20,7 @@ export interface ProjectFormSessionDefaults {
   blockId: string | null;
   agentId: string;
   nodeId: string;
+  modelPreset: string;
 }
 
 export interface ProjectFormValue {
@@ -61,6 +62,7 @@ export function projectFormValueFromDetails(
           blockId: details.sessionDefaults[0].blockId,
           agentId: details.sessionDefaults[0].agentId ?? "",
           nodeId: details.sessionDefaults[0].nodeId ?? "",
+          modelPreset: details.sessionDefaults[0].modelPreset ?? "",
         }
       : null,
   };

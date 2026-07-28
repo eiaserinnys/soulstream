@@ -55,6 +55,8 @@ export function NewTaskForm({
   });
   const [defaultAgentId, setDefaultAgentId] = useState("");
   const [defaultNodeId, setDefaultNodeId] = useState("");
+  const [defaultModelPreset, setDefaultModelPreset] = useState("");
+  const [modelPresetValid, setModelPresetValid] = useState(true);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,16 +77,31 @@ export function NewTaskForm({
   const updateDefaultNodeId = useCallback((value: string) => {
     setDefaultNodeId(value);
     setDefaultAgentId("");
+    setDefaultModelPreset("");
+    setModelPresetValid(true);
   }, []);
   const submit = async () => {
     const normalized = title.trim();
-    if (!normalized || !folderId || partialDefaultAssignment || busy || submissionInFlight.current) return;
+    if (
+      !normalized
+      || !folderId
+      || partialDefaultAssignment
+      || !modelPresetValid
+      || busy
+      || submissionInFlight.current
+    ) return;
     submissionInFlight.current = true;
     setSubmitting(true);
     setError(null);
     try {
       const sessionDefaults = defaultAgentId.trim() && defaultNodeId.trim()
-        ? { agentId: defaultAgentId.trim(), nodeId: defaultNodeId.trim() }
+        ? {
+            agentId: defaultAgentId.trim(),
+            nodeId: defaultNodeId.trim(),
+            ...(defaultModelPreset.trim()
+              ? { modelPreset: defaultModelPreset.trim() }
+              : {}),
+          }
         : undefined;
       setError(await onCreate(normalized, folderId, description, {
         ...initialContext,
@@ -155,16 +172,19 @@ export function NewTaskForm({
               <div className="v3-new-task-context-head">
                 <span>
                   <strong>이 업무의 기본 담당</strong>
-                  <small>새 세션을 만들 때 사용할 노드와 에이전트 · 선택 사항</small>
+                  <small>새 세션을 만들 때 사용할 노드, 에이전트, 모델 · 선택 사항</small>
                 </span>
               </div>
               <AgentNodeAssignmentFields
                 agentId={defaultAgentId}
                 nodeId={defaultNodeId}
+                modelPreset={defaultModelPreset}
                 presentation="session"
                 disabled={busy}
                 onAgentIdChange={setDefaultAgentId}
                 onNodeIdChange={updateDefaultNodeId}
+                onModelPresetChange={setDefaultModelPreset}
+                onModelPresetValidityChange={setModelPresetValid}
                 onError={setAssignmentError}
               />
               {assignmentError ? <small role="alert">{assignmentError}</small> : null}
@@ -180,7 +200,16 @@ export function NewTaskForm({
         </DialogPanel>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={busy}>취소</Button>
-          <Button onClick={() => { void submit(); }} disabled={busy || !title.trim() || !folderId || partialDefaultAssignment}>
+          <Button
+            onClick={() => { void submit(); }}
+            disabled={
+              busy
+              || !title.trim()
+              || !folderId
+              || partialDefaultAssignment
+              || !modelPresetValid
+            }
+          >
             {busy ? "만드는 중…" : "업무 만들기"}
           </Button>
         </DialogFooter>

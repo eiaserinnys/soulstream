@@ -92,6 +92,7 @@ export function useTaskSessionContext({
   const effectiveSessionDefaults = sourcedDefaults ? {
     agentId: sourcedDefaults.agentId,
     nodeId: sourcedDefaults.nodeId,
+    modelPreset: sourcedDefaults.modelPreset,
     sourcePageId: sourcedDefaults.source.pageId,
     sourceBlockId: sourcedDefaults.blockId,
   } : sessionDefaults;

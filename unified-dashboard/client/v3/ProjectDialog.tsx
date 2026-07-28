@@ -56,6 +56,7 @@ export function ProjectDialog({
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
+  const [assignmentValid, setAssignmentValid] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const effectiveFolder = target?.mode === "edit" ? target.folder : createdFolder;
 
@@ -63,6 +64,7 @@ export function ProjectDialog({
     setCreatedFolder(null);
     setError(null);
     setLoadFailed(false);
+    setAssignmentValid(true);
     if (!target) return;
     if (target.mode === "create") {
       setPrevious(EMPTY_DETAILS);
@@ -93,6 +95,7 @@ export function ProjectDialog({
     ? `${target.parentName} 아래에 만듭니다.`
     : "이름과 프로젝트 컨텍스트를 한곳에서 관리합니다.";
   const canSubmit = !loadFailed && value.title.trim().length > 0
+    && assignmentValid
     && value.guidance.every((item) => item.text.trim().length > 0)
     && value.atomReferences.every((item) => item.nodeId.trim().length > 0 && item.depth >= 1 && item.depth <= 5);
 
@@ -128,7 +131,13 @@ export function ProjectDialog({
         </DialogHeader>
         <DialogPanel>
           {loading ? <p aria-busy="true">프로젝트 설정을 불러오는 중…</p> : loadFailed ? null : (
-            <ProjectFormFields value={value} disabled={pending} onChange={setValue} onError={setError} />
+            <ProjectFormFields
+              value={value}
+              disabled={pending}
+              onChange={setValue}
+              onAssignmentValidityChange={setAssignmentValid}
+              onError={setError}
+            />
           )}
           {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
         </DialogPanel>
@@ -147,11 +156,13 @@ function ProjectFormFields({
   value,
   disabled,
   onChange,
+  onAssignmentValidityChange,
   onError,
 }: {
   value: ProjectFormValue;
   disabled: boolean;
   onChange(value: ProjectFormValue): void;
+  onAssignmentValidityChange(valid: boolean): void;
   onError(message: string | null): void;
 }) {
   const emptyAtom = useMemo(() => ({
@@ -201,15 +212,51 @@ function ProjectFormFields({
             <ProjectSessionDefaultsFields
               agentId={value.sessionDefaults.agentId}
               nodeId={value.sessionDefaults.nodeId}
+              modelPreset={value.sessionDefaults.modelPreset}
               disabled={disabled}
               onAgentIdChange={(agentId) => onChange({ ...value, sessionDefaults: value.sessionDefaults ? { ...value.sessionDefaults, agentId } : null })}
-              onNodeIdChange={(nodeId) => onChange({ ...value, sessionDefaults: value.sessionDefaults ? { ...value.sessionDefaults, nodeId } : null })}
+              onNodeIdChange={(nodeId) => {
+                onAssignmentValidityChange(true);
+                onChange({
+                  ...value,
+                  sessionDefaults: value.sessionDefaults
+                    ? { ...value.sessionDefaults, nodeId, modelPreset: "" }
+                    : null,
+                });
+              }}
+              onModelPresetChange={(modelPreset) => onChange({ ...value, sessionDefaults: value.sessionDefaults ? { ...value.sessionDefaults, modelPreset } : null })}
+              onModelPresetValidityChange={onAssignmentValidityChange}
               onError={(message) => onError(message)}
             />
-            <Button type="button" variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, sessionDefaults: null })}>제거</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                onAssignmentValidityChange(true);
+                onChange({ ...value, sessionDefaults: null });
+              }}
+            >
+              제거
+            </Button>
           </div>
         ) : (
-          <Button type="button" variant="outline" disabled={disabled} onClick={() => onChange({ ...value, sessionDefaults: { blockId: null, agentId: "", nodeId: "" } })}>＋ 기본 에이전트</Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => onChange({
+              ...value,
+              sessionDefaults: {
+                blockId: null,
+                agentId: "",
+                nodeId: "",
+                modelPreset: "",
+              },
+            })}
+          >
+            ＋ 기본 에이전트
+          </Button>
         )}
       </fieldset>
     </div>

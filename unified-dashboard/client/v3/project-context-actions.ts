@@ -71,12 +71,20 @@ export const saveProjectAtomReference = savePageAtomReference;
 export async function saveProjectSessionDefaults(
   api: PageApiClient,
   pageId: string,
-  input: { blockId: string | null; agentId: string | null; nodeId: string | null },
+  input: {
+    blockId: string | null;
+    agentId: string | null;
+    nodeId: string | null;
+    modelPreset: string | null;
+  },
   idFactory: ContextOperationIdFactory = operationId,
 ): Promise<PageMutationResponse> {
   const properties = {
     agentId: input.agentId?.trim() || null,
     nodeId: input.nodeId?.trim() || null,
+    ...(input.modelPreset?.trim()
+      ? { modelPreset: input.modelPreset.trim() }
+      : {}),
     scope: "project",
   };
   return await mutate(api, pageId, idFactory, "v3 project session defaults save", (blocks) => (

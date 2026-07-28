@@ -57,6 +57,7 @@ describe("saveTaskSessionDefaults", () => {
     const saved = [...blocks, block("defaults-created", "session_defaults", {
       agentId: "roselin_codex",
       nodeId: "eiaserinnys",
+      modelPreset: "preset-a",
       scope: "session",
     })];
     const api = pageApi(taskPage, blocks, saved);
@@ -65,6 +66,7 @@ describe("saveTaskSessionDefaults", () => {
       blockId: null,
       agentId: " roselin_codex ",
       nodeId: " eiaserinnys ",
+      modelPreset: " preset-a ",
     }, (prefix) => `${prefix}-1`)).resolves.toEqual({ blocks: saved });
 
     expect(api.applyOperations).toHaveBeenCalledWith(taskPage.id, {
@@ -82,6 +84,7 @@ describe("saveTaskSessionDefaults", () => {
         properties: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "preset-a",
           scope: "session",
         },
         collapsed: false,
@@ -102,6 +105,7 @@ describe("saveTaskSessionDefaults", () => {
       blockId: defaults.id,
       agentId: "new-agent",
       nodeId: null,
+      modelPreset: null,
     }, (prefix) => `${prefix}-2`);
 
     expect(api.applyOperations).toHaveBeenCalledWith(taskPage.id, expect.objectContaining({
@@ -109,14 +113,23 @@ describe("saveTaskSessionDefaults", () => {
         op: "update_block_type_and_properties",
         block_id: defaults.id,
         block_type: "session_defaults",
-        properties: { agentId: "new-agent", nodeId: null, scope: "session" },
+        properties: {
+          agentId: "new-agent",
+          nodeId: null,
+          scope: "session",
+        },
       }],
     }));
+    const updateProperties = (
+      api.applyOperations as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[1]?.operations?.[0]?.properties;
+    expect(updateProperties).not.toHaveProperty("modelPreset");
 
     await expect(saveTaskSessionDefaults(api, taskPage.id, {
       blockId: defaults.id,
       agentId: " ",
       nodeId: null,
+      modelPreset: null,
     })).rejects.toThrow("에이전트 또는 노드를 선택해야 합니다");
   });
 });

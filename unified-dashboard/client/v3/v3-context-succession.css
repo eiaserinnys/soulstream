@@ -566,7 +566,8 @@
   gap: 9px;
 }
 
-.v3-succession-assignment label {
+.v3-succession-assignment .v3-assignment-field,
+.v3-succession-assignment .v3-model-preset-field {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -574,6 +575,48 @@
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
   font-weight: 750;
+}
+
+.v3-succession-assignment label {
+  color: inherit;
+  font: inherit;
+}
+
+.v3-succession-assignment .v3-model-preset-trigger {
+  min-height: 0;
+  border-color: var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--foreground);
+  background: var(--background);
+  box-shadow: none;
+  font: inherit;
+  font-size: var(--font-size-xs);
+}
+
+.v3-succession-assignment .v3-model-preset-trigger:focus-visible {
+  border-color: var(--info);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+.v3-succession-assignment .v3-model-preset-field {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 601px) {
+  .v3-succession-modal .v3-succession-assignment {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.35fr);
+  }
+
+  .v3-succession-modal .v3-succession-assignment .v3-model-preset-field {
+    grid-column: auto;
+  }
+}
+
+.v3-model-preset-field > small[role="alert"] {
+  color: var(--destructive);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
 }
 
 .v3-succession-footer {

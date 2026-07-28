@@ -9,15 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskDefaultAssignment } from "./TaskDefaultAssignment";
 
 vi.mock("./AgentNodeAssignmentFields", () => ({
-  AgentNodeAssignmentFields: ({ agentId, nodeId, onAgentIdChange, onNodeIdChange }: {
+  AgentNodeAssignmentFields: ({ agentId, nodeId, modelPreset, onAgentIdChange, onNodeIdChange, onModelPresetChange }: {
     agentId: string;
     nodeId: string;
+    modelPreset: string;
     onAgentIdChange(value: string): void;
     onNodeIdChange(value: string): void;
+    onModelPresetChange(value: string): void;
   }) => (
     <>
       <input aria-label="에이전트 선택" value={agentId} onChange={(event) => onAgentIdChange(event.target.value)} />
       <input aria-label="노드 선택" value={nodeId} onChange={(event) => onNodeIdChange(event.target.value)} />
+      <input aria-label="모델 선택" value={modelPreset} onChange={(event) => onModelPresetChange(event.target.value)} />
     </>
   ),
 }));
@@ -46,11 +49,13 @@ describe("TaskDefaultAssignment", () => {
     click("기본 담당 수정");
     setInput(input("에이전트 선택"), "roselin_codex");
     setInput(input("노드 선택"), "eias-linegames-wsl");
+    setInput(input("모델 선택"), "preset-a");
     click("직접 지정");
 
     await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith({
       agentId: "roselin_codex",
       nodeId: "eias-linegames-wsl",
+      modelPreset: "preset-a",
     }));
     await vi.waitFor(() => expect(document.body.querySelector('input[aria-label="에이전트 선택"]')).toBeNull());
   });
@@ -66,28 +71,51 @@ describe("TaskDefaultAssignment", () => {
     expect(input("에이전트 선택").value).toBe("failed-agent");
   });
 
+  it("resets the model preset when its node changes", () => {
+    render(vi.fn(async () => undefined));
+    click("기본 담당 수정");
+    expect(input("모델 선택").value).toBe("preset-inherited");
+
+    setInput(input("노드 선택"), "other-node");
+
+    expect(input("모델 선택").value).toBe("");
+  });
+
   it("allows a task with no inherited defaults to set its first explicit assignment", async () => {
     const onSave = vi.fn(async () => undefined);
-    render(onSave, { agentId: null, nodeId: null, sourceLabel: "미지정" });
+    render(onSave, {
+      agentId: null,
+      nodeId: null,
+      modelPreset: null,
+      sourceLabel: "미지정",
+    });
 
     expect(button("기본 담당 수정").textContent).toContain("agent 미지정@node 미지정");
     expect(button("기본 담당 수정").textContent).toContain("미지정");
     click("기본 담당 수정");
     setInput(input("노드 선택"), "eiaserinnys");
     setInput(input("에이전트 선택"), "roselin_codex");
+    setInput(input("모델 선택"), "preset-a");
     click("직접 지정");
 
     await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith({
       agentId: "roselin_codex",
       nodeId: "eiaserinnys",
+      modelPreset: "preset-a",
     }));
   });
 
   function render(
-    onSave: (value: { agentId: string; nodeId: string }) => Promise<void>,
-    value: { agentId: string | null; nodeId: string | null; sourceLabel: string } = {
+    onSave: (value: { agentId: string; nodeId: string; modelPreset: string }) => Promise<void>,
+    value: {
+      agentId: string | null;
+      nodeId: string | null;
+      modelPreset: string | null;
+      sourceLabel: string;
+    } = {
       agentId: "seosoyoung",
       nodeId: "eiaserinnys",
+      modelPreset: "preset-inherited",
       sourceLabel: "소울스트림에서 상속",
     },
   ) {
@@ -95,6 +123,7 @@ describe("TaskDefaultAssignment", () => {
       <TaskDefaultAssignment
         agentId={value.agentId}
         nodeId={value.nodeId}
+        modelPreset={value.modelPreset}
         sourceLabel={value.sourceLabel}
         onSave={onSave}
       />,

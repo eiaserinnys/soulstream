@@ -74,6 +74,9 @@ describe("createDashboardSession", () => {
       "codex",
       null,
     );
+    expect(
+      JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string),
+    ).not.toHaveProperty("model_preset");
   });
 
   it("sends raw initial_instruction and uses the server-assembled prompt for the optimistic session", async () => {
@@ -254,6 +257,28 @@ describe("createDashboardSession", () => {
 
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
       predecessor_session_id: "session-predecessor",
+    });
+  });
+
+  it("forwards an explicitly selected model preset without changing omitted callers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "session-preset",
+      status: "running",
+      nodeId: "node-a",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      prompt: "hello",
+      nodeId: "node-a",
+      agentId: "agent-a",
+      modelPreset: "preset-a",
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      model_preset: "preset-a",
     });
   });
 

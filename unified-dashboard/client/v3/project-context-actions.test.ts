@@ -94,6 +94,7 @@ describe("project context page mutations", () => {
       blockId: null,
       agentId: "roselin_codex",
       nodeId: "eiaserinnys",
+      modelPreset: "preset-a",
     }, () => "request-5");
 
     expect(api.applyOperations).toHaveBeenCalledWith("project", expect.objectContaining({
@@ -103,10 +104,32 @@ describe("project context page mutations", () => {
         properties: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "preset-a",
           scope: "project",
         },
       })],
     }));
+  });
+
+  it("omits an untouched model preset from project block properties", async () => {
+    const api = pageApi([]);
+
+    await saveProjectSessionDefaults(api, "project", {
+      blockId: null,
+      agentId: "roselin_codex",
+      nodeId: "eiaserinnys",
+      modelPreset: null,
+    }, () => "request-6");
+
+    const properties = (
+      api.applyOperations as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[1]?.operations?.[0]?.properties;
+    expect(properties).toEqual({
+      agentId: "roselin_codex",
+      nodeId: "eiaserinnys",
+      scope: "project",
+    });
+    expect(properties).not.toHaveProperty("modelPreset");
   });
 });
 

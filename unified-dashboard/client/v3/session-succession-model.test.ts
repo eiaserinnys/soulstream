@@ -33,6 +33,7 @@ describe("run assignment defaults", () => {
     eventCount: 1,
     agentId: "current-agent",
     nodeId: "current-node",
+    modelPreset: "current-preset",
   };
 
   it("uses resolved page defaults before the current session", () => {
@@ -40,11 +41,17 @@ describe("run assignment defaults", () => {
       pageDefaults: {
         agentId: "project-agent",
         nodeId: "project-node",
+        modelPreset: "project-preset",
         sourcePageId: "project-page",
         sourceBlockId: "defaults-block",
       },
       currentSession,
-    })).toEqual({ agentId: "project-agent", nodeId: "project-node", source: "page-defaults" });
+    })).toEqual({
+      agentId: "project-agent",
+      nodeId: "project-node",
+      modelPreset: "project-preset",
+      source: "page-defaults",
+    });
   });
 
   it("falls back field-by-field to the current session", () => {
@@ -52,13 +59,24 @@ describe("run assignment defaults", () => {
       pageDefaults: {
         agentId: null,
         nodeId: "project-node",
+        modelPreset: null,
         sourcePageId: "project-page",
         sourceBlockId: "defaults-block",
       },
       currentSession,
-    })).toEqual({ agentId: "current-agent", nodeId: "project-node", source: "page-defaults" });
+    })).toEqual({
+      agentId: "current-agent",
+      nodeId: "project-node",
+      modelPreset: "current-preset",
+      source: "page-defaults",
+    });
     expect(resolveRunAssignmentDefaults({ pageDefaults: null, currentSession }))
-      .toEqual({ agentId: "current-agent", nodeId: "current-node", source: "current-session" });
+      .toEqual({
+        agentId: "current-agent",
+        nodeId: "current-node",
+        modelPreset: "current-preset",
+        source: "current-session",
+      });
   });
 });
 

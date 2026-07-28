@@ -18,15 +18,34 @@ vi.mock("./use-project-context-inheritance", () => ({
 }));
 
 vi.mock("./AgentNodeAssignmentFields", () => ({
-  AgentNodeAssignmentFields: ({ agentId, nodeId, onAgentIdChange, onNodeIdChange }: {
+  AgentNodeAssignmentFields: ({
+    agentId,
+    nodeId,
+    modelPreset,
+    onAgentIdChange,
+    onNodeIdChange,
+    onModelPresetChange,
+    onModelPresetValidityChange,
+  }: {
     agentId: string;
     nodeId: string;
+    modelPreset: string;
     onAgentIdChange(value: string): void;
     onNodeIdChange(value: string): void;
+    onModelPresetChange(value: string): void;
+    onModelPresetValidityChange(value: boolean): void;
   }) => (
     <>
       <input aria-label="노드 선택" value={nodeId} onChange={(event) => onNodeIdChange(event.target.value)} />
       <input aria-label="에이전트 선택" value={agentId} onChange={(event) => onAgentIdChange(event.target.value)} />
+      <input
+        aria-label="모델 선택"
+        value={modelPreset}
+        onChange={(event) => {
+          onModelPresetChange(event.target.value);
+          onModelPresetValidityChange(true);
+        }}
+      />
     </>
   ),
 }));
@@ -75,6 +94,7 @@ describe("NewTaskForm submission feedback", () => {
     setInputValue(input("노드 선택"), "eiaserinnys");
     expect(button("업무 만들기").disabled).toBe(true);
     setInputValue(input("에이전트 선택"), "roselin_codex");
+    setInputValue(input("모델 선택"), "preset-a");
     button("업무 만들기").click();
 
     await vi.waitFor(() => expect(onCreate).toHaveBeenCalledWith(
@@ -87,9 +107,20 @@ describe("NewTaskForm submission feedback", () => {
         sessionDefaults: {
           agentId: "roselin_codex",
           nodeId: "eiaserinnys",
+          modelPreset: "preset-a",
         },
       },
     ));
+  });
+
+  it("clears the model preset when the assignment node changes", () => {
+    render(vi.fn(async () => null));
+
+    setInputValue(input("노드 선택"), "node-a");
+    setInputValue(input("모델 선택"), "preset-a");
+    setInputValue(input("노드 선택"), "node-b");
+
+    expect(input("모델 선택").value).toBe("");
   });
 
   function render(onCreate: (...args: never[]) => Promise<string | null>) {

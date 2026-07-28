@@ -14,6 +14,7 @@ import {
   useFileUpload,
   useDashboardStore,
   type AgentInfo,
+  type ModelPresetAvailability,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
@@ -99,6 +100,17 @@ export function SessionSuccessionModal({
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
+  const [selectedModelPreset, setSelectedModelPreset] = useState(
+    resolvedDefaults.modelPreset ?? "",
+  );
+  const [selectedModelPresetInfo, setSelectedModelPresetInfo] =
+    useState<ModelPresetAvailability | null>(null);
+  const [modelPresetValid, setModelPresetValid] = useState(true);
+  const modelPresetSource = useRef<
+    "automatic" | "inherited" | "agent" | "explicit" | null
+  >(
+    resolvedDefaults.modelPreset ? "inherited" : null,
+  );
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,9 +139,26 @@ export function SessionSuccessionModal({
     console.error("[v3/session-succession] 실행 대상 조회 실패", message);
     setError(message);
   }, []);
+  const handleAgentInfoChange = useCallback((agent: AgentInfo | null) => {
+    setSelectedAgent(agent);
+    if (modelPresetSource.current !== null && modelPresetSource.current !== "agent") return;
+    modelPresetSource.current = agent ? "agent" : null;
+    setSelectedModelPreset(agent?.default_preset ?? "");
+  }, []);
+  const handleModelPresetChange = useCallback((value: string) => {
+    modelPresetSource.current = "explicit";
+    setSelectedModelPreset(value);
+  }, []);
+  const handleNodeIdChange = useCallback((value: string) => {
+    setSelectedNodeId(value);
+    setSelectedModelPreset("");
+    setSelectedModelPresetInfo(null);
+    setModelPresetValid(true);
+    modelPresetSource.current = "automatic";
+  }, []);
 
   const start = async () => {
-    if (!selectedNodeId || !selectedAgentId) return;
+    if (!selectedNodeId || !selectedAgentId || !modelPresetValid) return;
     setPending(true);
     setError(null);
     try {
@@ -152,6 +181,7 @@ export function SessionSuccessionModal({
         nodeId: selectedNodeId,
         agentId: selectedAgentId,
         agent: selectedAgent,
+        modelPreset: selectedModelPreset || null,
         container: { kind: "task", id: taskId },
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems
@@ -171,7 +201,8 @@ export function SessionSuccessionModal({
         agentId: selectedAgentId,
         agentName: selectedAgent?.name ?? selectedAgentId,
         agentPortraitUrl: selectedAgent?.portraitUrl ?? undefined,
-        backend: selectedAgent?.backend ?? undefined,
+        backend: selectedModelPresetInfo?.backend ?? selectedAgent?.backend ?? undefined,
+        modelPreset: selectedModelPreset || null,
       });
       onClose();
     } catch (caught) {
@@ -209,8 +240,23 @@ export function SessionSuccessionModal({
           ) : null}
           <div className="v3-succession-context-editor">
             <section>
-              <strong>노드 / 에이전트</strong>
-              <AgentNodeAssignmentFields presentation="session" agentId={selectedAgentId} nodeId={selectedNodeId} preferredAgentId={resolvedDefaults.agentId} preferredNodeId={resolvedDefaults.nodeId} fallbackToAvailable onAgentIdChange={setSelectedAgentId} onNodeIdChange={setSelectedNodeId} onAgentInfoChange={setSelectedAgent} onError={handleAssignmentError} />
+              <strong>노드 / 에이전트 / 모델</strong>
+              <AgentNodeAssignmentFields
+                presentation="session"
+                agentId={selectedAgentId}
+                nodeId={selectedNodeId}
+                modelPreset={selectedModelPreset}
+                preferredAgentId={resolvedDefaults.agentId}
+                preferredNodeId={resolvedDefaults.nodeId}
+                fallbackToAvailable
+                onAgentIdChange={setSelectedAgentId}
+                onNodeIdChange={handleNodeIdChange}
+                onModelPresetChange={handleModelPresetChange}
+                onAgentInfoChange={handleAgentInfoChange}
+                onModelPresetInfoChange={setSelectedModelPresetInfo}
+                onModelPresetValidityChange={setModelPresetValid}
+                onError={handleAssignmentError}
+              />
             </section>
             <section>
               <strong>컨텍스트</strong>
@@ -347,7 +393,20 @@ export function SessionSuccessionModal({
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">
           <Button variant="ghost" disabled={pending} onClick={() => { void close(); }}>취소</Button>
-          <Button disabled={pending || isUploading || contextPending || !selectedNodeId || !selectedAgentId || selectedAgent?.id !== selectedAgentId} onClick={() => { void start(); }}>{pending ? "시작 중…" : isUploading ? "첨부 중…" : contextPending ? "컨텍스트 확인 중…" : "시작"}</Button>
+          <Button
+            disabled={
+              pending
+              || isUploading
+              || contextPending
+              || !selectedNodeId
+              || !selectedAgentId
+              || selectedAgent?.id !== selectedAgentId
+              || !modelPresetValid
+            }
+            onClick={() => { void start(); }}
+          >
+            {pending ? "시작 중…" : isUploading ? "첨부 중…" : contextPending ? "컨텍스트 확인 중…" : "시작"}
+          </Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>
