@@ -14,8 +14,10 @@ const customView: CustomViewRow = {
   html: "<section></section>",
   revision: 1,
   archived: false,
+  createdActorKind: "agent",
   createdSessionId: "sess-actor",
   createdEventId: 1,
+  updatedActorKind: "agent",
   updatedSessionId: "sess-actor",
   updatedEventId: 1,
 };
@@ -81,6 +83,7 @@ describe("CustomViewService", () => {
     );
 
     const result = await service.createCustomView({
+      actorKind: "agent",
       actorSessionId: "sess-actor",
       container: { containerKind: "task", containerId: "rb-1" },
       title: "Progress panel",
@@ -144,6 +147,7 @@ describe("CustomViewService", () => {
     );
 
     await expect(service.patchCustomView({
+      actorKind: "agent",
       actorSessionId: "sess-actor",
       customViewId: "cv-1",
       expectedRevision: 3,
@@ -153,5 +157,69 @@ describe("CustomViewService", () => {
     })).rejects.toBeInstanceOf(CustomViewRevisionConflictError);
 
     expect(boardYjs.upsertCustomViewBoardItem).not.toHaveBeenCalled();
+  });
+
+  it("외부 llm 변경은 이벤트 없이 llm provenance를 저장하고 catalog만 갱신한다", async () => {
+    const appendEventTx = vi.fn(async () => 99);
+    const createCustomViewTx = vi.fn(async (_sql: unknown, params: {
+      actorKind: "llm";
+      actorSessionId: null;
+      eventId: null;
+    }) => ({
+      ...customView,
+      createdActorKind: params.actorKind,
+      createdSessionId: params.actorSessionId,
+      createdEventId: params.eventId,
+      updatedActorKind: params.actorKind,
+      updatedSessionId: params.actorSessionId,
+      updatedEventId: params.eventId,
+    }));
+    const repo = {
+      getCustomView: vi.fn(async () => null),
+      transaction: vi.fn(async (fn: (sql: unknown) => Promise<void>) => fn({})),
+      createCustomViewTx,
+    };
+    const boardYjs = {
+      upsertCustomViewBoardItem: vi.fn(async () => boardItem),
+      removeBoardItem: vi.fn(async () => undefined),
+    };
+    const emitCatalogUpdated = vi.fn(async () => undefined);
+    const emitCustomViewUpdated = vi.fn(async () => undefined);
+    const service = new CustomViewService(
+      {
+        customViews: () => repo as unknown as CustomViewRepository,
+        appendEventTx,
+        getAllFolders: vi.fn(async () => []),
+        resolveBoardYjsContainerScope: vi.fn(async () => ({
+          folderId: "folder-1",
+          containerKind: "task",
+          containerId: "rb-1",
+        })),
+      },
+      boardYjs,
+      { emitCatalogUpdated, emitCustomViewUpdated },
+    );
+
+    const result = await service.createCustomView({
+      actorKind: "llm",
+      actorSessionId: null,
+      container: { containerKind: "task", containerId: "rb-1" },
+      title: "LLM panel",
+      html: "<section></section>",
+      idempotencyKey: "idem-llm-custom-view",
+    });
+
+    expect(appendEventTx).not.toHaveBeenCalled();
+    expect(createCustomViewTx).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorKind: "llm",
+        actorSessionId: null,
+        eventId: null,
+      }),
+    );
+    expect(result.eventId).toBeNull();
+    expect(emitCatalogUpdated).toHaveBeenCalledOnce();
+    expect(emitCustomViewUpdated).not.toHaveBeenCalled();
   });
 });

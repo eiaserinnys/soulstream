@@ -209,6 +209,17 @@ def build_agent_caller_info(
     }
 
 
+def build_llm_caller_info(*, node_id: str) -> dict[str, Any]:
+    """외부 LLM MCP 발신자를 부모 세션 없는 1급 caller_info로 조립한다."""
+    return {
+        "source": "llm",
+        "agent_node": node_id,
+        "display_name": "External LLM",
+        "user_id": None,
+        "avatar_url": None,
+    }
+
+
 SYSTEM_PORTRAIT_BASE = "/api/system/portraits"
 """orch-server 시스템 portrait 라우트 base path. agent portrait `/api/nodes/.../portrait`와
 §9 대칭. 클라이언트(unified-dashboard / soul-app)는 server-relative URL을 그대로 사용 —

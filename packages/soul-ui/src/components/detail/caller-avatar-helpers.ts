@@ -27,6 +27,7 @@ export const CALLER_SOURCE_CONFIG: Record<string, CallerSourceConfig> = {
   browser: { badge: "🌐", fallbackIcon: "👤" },
   "soul-app": { badge: "📱", fallbackIcon: "👤" },
   agent: { badge: "🤖", fallbackIcon: "🤖" },
+  llm: { badge: "🧠", fallbackIcon: "🧠" },
   api: { badge: "⚙️", fallbackIcon: "⚙️" },
   system: { badge: "⚙️", fallbackIcon: "⚙️" },
 };

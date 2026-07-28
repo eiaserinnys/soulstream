@@ -43,6 +43,7 @@ describe("PushNotifier", () => {
   it.each([
     ["llm", "browser", 0],
     ["claude", "agent", 0],
+    ["claude", "llm", 0],
     ["claude", "channel_observer", 0],
     ["claude", "slack", 1],
     ["claude", "browser", 1],
@@ -61,6 +62,30 @@ describe("PushNotifier", () => {
       expect(harness.provider.send).toHaveBeenCalledTimes(expected);
     },
   );
+
+  it("skips input requests from an external llm caller", async () => {
+    const sessions = new Map<string, Record<string, unknown>>([
+      [
+        "session-a",
+        {
+          session_type: "claude",
+          caller_source: "llm",
+          prompt: "External delegation",
+        },
+      ],
+    ]);
+    const harness = createHarness({ sessions });
+
+    harness.notifier.accept([
+      inputRequest("node-a", "session-a", {
+        request_id: "request-llm",
+        questions: [{ question: "Continue?", options: [] }],
+      }),
+    ]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).not.toHaveBeenCalled();
+  });
 
   it("normalizes input request envelopes with cached session metadata", async () => {
     const sessions = new Map<string, Record<string, unknown>>([

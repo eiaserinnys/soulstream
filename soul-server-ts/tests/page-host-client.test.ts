@@ -49,6 +49,34 @@ describe("PageYjsHostClient", () => {
     });
   });
 
+  it("forwards sessionless llm provenance without fabricating an actor session", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(mutationResult()))
+      .mockResolvedValueOnce(jsonResponse({ page: page(), created: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeClient();
+
+    await client.createPage({
+      page: { id: "page-llm", title: "LLM Page", daily_date: null },
+      actorKind: "llm",
+      actorSessionId: null,
+      idempotencyKey: "create_page:llm:req",
+    });
+    await client.getDailyPage({
+      actorKind: "llm",
+      actorSessionId: null,
+    });
+
+    expect(requestBody(fetchMock, 0)).toMatchObject({
+      actor_kind: "llm",
+      actor_session_id: null,
+    });
+    expect(requestBody(fetchMock, 1)).toEqual({
+      actor_kind: "llm",
+      actor_session_id: null,
+    });
+  });
+
   it("surfaces the orch structured error without a local fallback", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       detail: { error: { message: "page not found: missing" } },

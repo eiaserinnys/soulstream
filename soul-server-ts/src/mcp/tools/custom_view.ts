@@ -5,11 +5,13 @@ import { boardContainerKindInputSchema } from "../../collaboration/board_contain
 
 import type { BoardYjsContainerRef } from "../../db/session_db_types.js";
 import type { CustomViewService } from "../../custom_view/custom_view_service.js";
-import { SOULSTREAM_AGENT_SESSION_HEADER } from "../request_context.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
-import { resolveEffectiveCallerSessionId } from "./caller_session.js";
+import {
+  requireMcpMutationActor,
+  type McpMutationActor,
+} from "./caller_session.js";
 import {
   callerSessionIdSchema,
   errorMessage,
@@ -31,7 +33,7 @@ export function registerCustomViewTools(
     "create_custom_view",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 sandboxed HTML custom view board item을 생성한다.",
+        "현재 MCP caller origin을 감사 actor로 하여 sandboxed HTML custom view board item을 생성한다.",
       ),
       inputSchema: {
         container: containerSchema,
@@ -44,9 +46,9 @@ export function registerCustomViewTools(
       },
     },
     async (input) =>
-      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actor) =>
         service.createCustomView({
-          actorSessionId,
+          ...actor,
           container: toBoardYjsContainer(input.container),
           title: input.title,
           html: input.html,
@@ -73,9 +75,9 @@ export function registerCustomViewTools(
       },
     },
     async (input) =>
-      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actor) =>
         service.patchCustomView({
-          actorSessionId,
+          ...actor,
           customViewId: input.custom_view_id,
           expectedRevision: input.expected_revision,
           html: input.html,
@@ -135,12 +137,15 @@ function toBoardYjsContainer(input: z.infer<typeof containerSchema>): BoardYjsCo
 async function mutation(
   runtime: McpRuntime,
   explicitCallerSessionId: string | null | undefined,
-  fn: (service: CustomViewService, actorSessionId: string) => Promise<unknown>,
+  fn: (service: CustomViewService, actor: McpMutationActor) => Promise<unknown>,
 ) {
   try {
     return jsonResult(await fn(
       getCustomViewService(runtime),
-      requireCallerSessionId(explicitCallerSessionId),
+      requireMcpMutationActor(
+        explicitCallerSessionId,
+        "custom view mutation tools",
+      ),
     ));
   } catch (err) {
     return errorResult(errorMessage(err));
@@ -152,16 +157,4 @@ function getCustomViewService(runtime: McpRuntime): CustomViewService {
     throw new Error("custom view service is not configured");
   }
   return runtime.customViewService;
-}
-
-function requireCallerSessionId(
-  explicitCallerSessionId: string | null | undefined,
-): string {
-  const callerSessionId = resolveEffectiveCallerSessionId(explicitCallerSessionId);
-  if (!callerSessionId) {
-    throw new Error(
-      `caller session id is required for custom view mutation tools. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
-    );
-  }
-  return callerSessionId;
 }

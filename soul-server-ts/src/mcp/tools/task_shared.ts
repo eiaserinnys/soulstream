@@ -3,11 +3,13 @@ import { z } from "zod";
 import type { TaskAssigneeInput } from "../../work-task/task_models.js";
 import type { TaskService } from "../../work-task/task_service.js";
 import type { TaskOperationTargetKind } from "../../db/session_db_types.js";
-import { SOULSTREAM_AGENT_SESSION_HEADER } from "../request_context.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
-import { resolveEffectiveCallerSessionId } from "./caller_session.js";
+import {
+  requireMcpMutationActor,
+  type McpMutationActor,
+} from "./caller_session.js";
 import {
   formatTaskMutationResponse,
   type TaskMutationEnvelope,
@@ -53,7 +55,7 @@ export async function mutation(
   explicitCallerSessionId: string | null | undefined,
   fn: (
     service: TaskService,
-    actorSessionId: string,
+    actor: McpMutationActor,
   ) => Promise<TaskMutationEnvelope>,
   options: {
     targetKind: TaskOperationTargetKind;
@@ -63,7 +65,10 @@ export async function mutation(
   try {
     const result = await fn(
       getTaskService(runtime),
-      requireCallerSessionId(explicitCallerSessionId),
+      requireMcpMutationActor(
+        explicitCallerSessionId,
+        "task mutation tools",
+      ),
     );
     return jsonResult(
       formatTaskMutationResponse(
@@ -93,20 +98,6 @@ export function assigneePatch(input: {
 
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function requireCallerSessionId(
-  explicitCallerSessionId: string | null | undefined,
-): string {
-  const callerSessionId = resolveEffectiveCallerSessionId(
-    explicitCallerSessionId,
-  );
-  if (!callerSessionId) {
-    throw new Error(
-      `caller session id is required for task mutation tools. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
-    );
-  }
-  return callerSessionId;
 }
 
 function toAssignee(input: AssigneeToolInput): TaskAssigneeInput | null {

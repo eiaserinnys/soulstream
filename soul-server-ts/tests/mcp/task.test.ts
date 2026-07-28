@@ -826,6 +826,7 @@ describe("custom view MCP tools", () => {
 
     expect(result.isError).not.toBe(true);
     expect(service.createCustomView).toHaveBeenCalledWith({
+      actorKind: "agent",
       actorSessionId: "sess-caller",
       container: { containerKind: "task", containerId: "rb-1" },
       title: "Progress panel",
@@ -856,6 +857,7 @@ describe("custom view MCP tools", () => {
 
     expect(result.isError).not.toBe(true);
     expect(service.patchCustomView).toHaveBeenCalledWith({
+      actorKind: "agent",
       actorSessionId: "sess-caller",
       customViewId: "cv-1",
       expectedRevision: 3,
@@ -886,6 +888,7 @@ describe("custom view MCP tools", () => {
 
     expect(result.isError).not.toBe(true);
     expect(service.createCustomView).toHaveBeenCalledWith({
+      actorKind: "agent",
       actorSessionId: "sess-explicit",
       container: { containerKind: "task", containerId: "rb-1" },
       title: "Progress panel",
@@ -917,6 +920,7 @@ describe("custom view MCP tools", () => {
 
     expect(result.isError).not.toBe(true);
     expect(service.patchCustomView).toHaveBeenCalledWith({
+      actorKind: "agent",
       actorSessionId: "sess-explicit",
       customViewId: "cv-1",
       expectedRevision: 3,

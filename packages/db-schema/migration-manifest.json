@@ -49,6 +49,7 @@
     { "id": "045_session_deliveries.sql", "sha256": "f914ac0c167a4b2a14476bf211f94994c77f8dade3a05702bb86c62642d5e4cf", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "046_claude_background_tasks.sql", "sha256": "e2546369b90060baaabaddb25e7cb04ecd6c4e164e8c26e7ff041cbed80ba68d", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "047_session_delivery_relation_consumptions.sql", "sha256": "0f48af08fee35aa57d1609bde856d60578cdb7e77b62a141b6f639b25adbff19", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "048_session_model_preset.sql", "sha256": "f58e2795bd31bc56b5f16e9b841f6b46f58fbb987b897be1dd4ccf756ac00cf4", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "048_session_model_preset.sql", "sha256": "f58e2795bd31bc56b5f16e9b841f6b46f58fbb987b897be1dd4ccf756ac00cf4", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "049_external_llm_actor.sql", "sha256": "7f21c09fa0130e081c3412fd518ca6aeaa166d71eca67e84b150e3d4f2dcec5e", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }

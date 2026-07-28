@@ -1,6 +1,6 @@
 import type { SqlClient } from "../db/session_db.js";
 
-export type ChecklistProjectionActorKind = "agent" | "user" | "system";
+export type ChecklistProjectionActorKind = "agent" | "user" | "system" | "llm";
 
 export interface ChecklistProjectionOutboxRow {
   block_id: string;

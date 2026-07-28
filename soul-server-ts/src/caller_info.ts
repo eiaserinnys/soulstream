@@ -51,6 +51,24 @@ export interface BuildAgentCallerInfoParams {
   email?: string | null;
 }
 
+export interface LlmCallerInfo extends CallerInfo {
+  source: "llm";
+  agent_node: string;
+  display_name: "External LLM";
+  user_id: null;
+  avatar_url: null;
+}
+
+export function buildLlmCallerInfo(nodeId: string): LlmCallerInfo {
+  return {
+    source: "llm",
+    agent_node: nodeId,
+    display_name: "External LLM",
+    user_id: null,
+    avatar_url: null,
+  };
+}
+
 /**
  * Agent origin caller_info v1 dict 조립.
  *

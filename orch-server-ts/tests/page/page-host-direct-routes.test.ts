@@ -100,6 +100,24 @@ describe("orch-local Page Yjs host operation routes", () => {
         command: { type: "rename_page", title: "Again" },
         actor: { actorKind: "user", actorSessionId: null, actorUserId: "user-1" },
       }));
+
+      const llm = await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/batch-page-operations",
+        headers: { authorization: "Bearer service-token" },
+        payload: {
+          page_id: "page-1",
+          expected_version: 3,
+          operations: [{ op: "rename_page", title: "From LLM" }],
+          actor_kind: "llm",
+          actor_session_id: null,
+          idempotency_key: "batch_page_operations:llm:req-4",
+        },
+      });
+      expect(llm.statusCode).toBe(200);
+      expect(service.mutatePage).toHaveBeenCalledWith(expect.objectContaining({
+        actor: { actorKind: "llm", actorSessionId: null, actorUserId: null },
+      }));
     } finally {
       await app.close();
     }

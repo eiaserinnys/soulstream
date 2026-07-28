@@ -42,7 +42,7 @@ export interface TaskMutationResult {
 
 export interface TaskActorParams {
   actorKind?: TaskOperationActorKind;
-  actorSessionId: string;
+  actorSessionId: string | null;
   actorUserId?: string | null;
 }
 

@@ -77,7 +77,7 @@ describe("ChecklistTaskReconciler", () => {
       },
       actor: {
         actorKind: "user",
-        actorSessionId: "sess-route",
+        actorSessionId: null,
         actorUserId: "operator@example.com",
       },
     });
@@ -109,7 +109,7 @@ describe("ChecklistTaskReconciler", () => {
       blockId: "block-1",
       actor: {
         actorKind: "user",
-        actorSessionId: "sess-route",
+        actorSessionId: null,
         actorUserId: "operator@example.com",
       },
     });
@@ -128,5 +128,32 @@ describe("ChecklistTaskReconciler", () => {
       "temporary task failure",
     );
     expect(h.repository.markSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps routing_session_id out of llm audit provenance", async () => {
+    const h = harness();
+    h.repository.claimDue.mockResolvedValueOnce([{
+      ...row,
+      actor_kind: "llm",
+      actor_session_id: null,
+      actor_user_id: null,
+      routing_session_id: "sess-route",
+    }]);
+
+    await h.reconciler.reconcileDue();
+
+    expect(h.adapter.reconcile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: {
+          actorKind: "llm",
+          actorSessionId: null,
+        },
+      }),
+    );
+    expect(h.pageHost.batchPageOperations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor_session_id: "sess-route",
+      }),
+    );
   });
 });

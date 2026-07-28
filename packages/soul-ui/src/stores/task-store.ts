@@ -21,6 +21,7 @@ export type TaskItemStatus =
   | "completed"
   | "cancelled";
 export type TaskStatus = "open" | "completed";
+export type TaskCompletionKind = "agent" | "user" | "llm";
 
 export interface TaskAssigneeFields {
   assignee_kind: TaskAssigneeKind | null;
@@ -40,7 +41,7 @@ export interface TaskRow {
   version: number;
   created_session_id: string | null;
   created_event_id: number | null;
-  completed_kind?: "agent" | "user" | null;
+  completed_kind?: TaskCompletionKind | null;
   completed_session_id?: string | null;
   completed_event_id?: number | null;
   completed_user_id?: string | null;
@@ -77,7 +78,7 @@ export interface TaskItemRow extends TaskAssigneeFields {
   created_event_id: number | null;
   updated_session_id: string | null;
   updated_event_id: number | null;
-  completed_kind: "agent" | "user" | null;
+  completed_kind: TaskCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -122,7 +123,7 @@ export interface TaskOverviewGroup {
   folder_id: string | null;
   task_status: TaskStatus | null;
   task_version?: number | null;
-  completed_kind?: "agent" | "user" | null;
+  completed_kind?: TaskCompletionKind | null;
   completed_session_id?: string | null;
   completed_event_id?: number | null;
   completed_user_id?: string | null;

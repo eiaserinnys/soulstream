@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAgentCallerInfo,
   buildCallerInfoFromCallerSession,
+  buildLlmCallerInfo,
 } from "../src/caller_info.js";
 import type { CallerInfo } from "../src/task/task_models.js";
 
@@ -173,5 +174,17 @@ describe("buildCallerInfoFromCallerSession (code-reviewer P2-1 정정)", () => {
       "sess-1",
     );
     expect(info.email).toBe("owner@example.com");
+  });
+});
+
+describe("buildLlmCallerInfo", () => {
+  it("외부 LLM 발신자를 별도 source와 nullable 신원으로 합성한다", () => {
+    expect(buildLlmCallerInfo("node-llm")).toEqual({
+      source: "llm",
+      agent_node: "node-llm",
+      display_name: "External LLM",
+      user_id: null,
+      avatar_url: null,
+    });
   });
 });

@@ -7,7 +7,7 @@ import {
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 export interface TaskIdentityActor {
-  actorKind: "agent" | "user" | "system";
+  actorKind: "agent" | "user" | "system" | "llm";
   actorSessionId?: string | null;
   actorUserId?: string | null;
 }

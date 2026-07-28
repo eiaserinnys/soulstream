@@ -37,7 +37,10 @@ export async function mutateTaskCreation(
       targetId: params.taskId,
       operationType: "create_task",
       actor: {
-        actorKind: params.actorKind === "system" ? "system" : "user",
+        actorKind:
+          params.actorKind === "system" || params.actorKind === "llm"
+            ? params.actorKind
+            : "user",
         actorSessionId: null,
         actorUserId: params.actorUserId,
       },

@@ -22,10 +22,13 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { checkMcpAuth, type McpAuthConfig } from "./auth.js";
 import {
   SOULSTREAM_AGENT_SESSION_HEADER,
+  SOULSTREAM_CALLER_ORIGIN_HEADER,
+  type McpCallerOrigin,
   withMcpRequestContext,
 } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 import { buildMcpServer } from "./server.js";
+import { guardMcpToolCallRequest } from "./tool_access.js";
 
 export interface McpRouteConfig {
   path: string;
@@ -34,6 +37,7 @@ export interface McpRouteConfig {
 
 interface SessionEntry {
   transport: StreamableHTTPServerTransport;
+  callerOrigin?: McpCallerOrigin;
 }
 
 /**
@@ -129,36 +133,49 @@ async function dispatchPost(
   sessions: Map<string, SessionEntry>,
   runtime: McpRuntime,
 ): Promise<void> {
-  return withMcpRequestContext(
-    {
-      callerSessionId: headerValue(req.headers[SOULSTREAM_AGENT_SESSION_HEADER]),
-    },
-    async () => dispatchPostWithContext(req, reply, sessions, runtime),
-  );
-}
-
-async function dispatchPostWithContext(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  sessions: Map<string, SessionEntry>,
-  runtime: McpRuntime,
-): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   const body = req.body;
 
   if (sessionId && sessions.has(sessionId)) {
-    // 기존 세션 — 그대로 위임
+    const requestedOrigin = parseCallerOriginHeader(req);
+    if (!requestedOrigin.ok) {
+      writeJsonRpcError(reply, 400, requestedOrigin.error);
+      return;
+    }
     const entry = sessions.get(sessionId)!;
-    await entry.transport.handleRequest(req.raw, reply.raw, body);
+    await withMcpRequestContext(
+      {
+        callerSessionId: headerValue(
+          req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
+        ),
+        callerOrigin: entry.callerOrigin,
+      },
+      async () => {
+        const blocked = guardMcpToolCallRequest(runtime, body);
+        if (blocked) {
+          writeJsonRpcResult(reply, requestId(body), blocked);
+          return;
+        }
+        await entry.transport.handleRequest(req.raw, reply.raw, body);
+      },
+    );
     return;
   }
 
   if (!sessionId && isInitializeRequest(body)) {
-    // 새 세션 생성 — onsessioninitialized에서 map에 박는다
+    const requestedOrigin = parseCallerOriginHeader(req);
+    if (!requestedOrigin.ok) {
+      writeJsonRpcError(reply, 400, requestedOrigin.error);
+      return;
+    }
+    const callerOrigin = requestedOrigin.origin;
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId: string) => {
-        sessions.set(newId, { transport });
+        sessions.set(newId, {
+          transport,
+          ...(callerOrigin ? { callerOrigin } : {}),
+        });
       },
     });
     transport.onclose = () => {
@@ -167,9 +184,19 @@ async function dispatchPostWithContext(
         sessions.delete(sid);
       }
     };
-    const server = buildMcpServer(runtime);
-    await server.connect(transport);
-    await transport.handleRequest(req.raw, reply.raw, body);
+    await withMcpRequestContext(
+      {
+        callerSessionId: headerValue(
+          req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
+        ),
+        ...(callerOrigin ? { callerOrigin } : {}),
+      },
+      async () => {
+        const server = buildMcpServer(runtime);
+        await server.connect(transport);
+        await transport.handleRequest(req.raw, reply.raw, body);
+      },
+    );
     return;
   }
 
@@ -181,11 +208,30 @@ async function dispatchPostWithContext(
   writeJsonRpcError(reply, 400, "missing session id and not an initialize request");
 }
 
+function parseCallerOriginHeader(
+  req: FastifyRequest,
+):
+  | { ok: true; origin?: McpCallerOrigin }
+  | { ok: false; error: string } {
+  const raw = headerValue(req.headers[SOULSTREAM_CALLER_ORIGIN_HEADER])?.trim();
+  if (!raw) return { ok: true };
+  if (raw === "llm") return { ok: true, origin: "llm" };
+  return {
+    ok: false,
+    error: `unsupported caller origin: ${raw}`,
+  };
+}
+
 async function dispatchGet(
   req: FastifyRequest,
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
 ): Promise<void> {
+  const requestedOrigin = parseCallerOriginHeader(req);
+  if (!requestedOrigin.ok) {
+    writeJsonRpcError(reply, 400, requestedOrigin.error);
+    return;
+  }
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   if (!sessionId) {
     writeJsonRpcError(reply, 400, "missing session id");
@@ -204,6 +250,11 @@ async function dispatchDelete(
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
 ): Promise<void> {
+  const requestedOrigin = parseCallerOriginHeader(req);
+  if (!requestedOrigin.ok) {
+    writeJsonRpcError(reply, 400, requestedOrigin.error);
+    return;
+  }
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   if (!sessionId) {
     writeJsonRpcError(reply, 400, "missing session id");
@@ -238,4 +289,32 @@ function writeJsonRpcError(
       id: null,
     }),
   );
+}
+
+function writeJsonRpcResult(
+  reply: FastifyReply,
+  id: string | number | null,
+  result: unknown,
+): void {
+  const raw = reply.raw;
+  if (raw.headersSent) return;
+  raw.statusCode = 200;
+  raw.setHeader("content-type", "application/json");
+  raw.end(JSON.stringify({ jsonrpc: "2.0", result, id }));
+}
+
+function requestId(body: unknown): string | number | null {
+  if (
+    typeof body === "object"
+    && body !== null
+    && "id" in body
+    && (
+      typeof body.id === "string"
+      || typeof body.id === "number"
+      || body.id === null
+    )
+  ) {
+    return body.id;
+  }
+  return null;
 }

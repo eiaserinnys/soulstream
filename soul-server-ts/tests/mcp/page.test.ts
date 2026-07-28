@@ -62,6 +62,7 @@ describe("page MCP tools", () => {
       await call("get_daily_page", { date: "2026-07-12" }));
     expect(client.getDailyPage).toHaveBeenCalledWith({
       date: "2026-07-12",
+      actorKind: "agent",
       actorSessionId: "header-session",
     });
   });

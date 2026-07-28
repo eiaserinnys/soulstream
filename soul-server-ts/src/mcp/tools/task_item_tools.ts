@@ -46,10 +46,9 @@ export function registerTaskItemTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.createItem({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             sectionId: input.section_id,
             title: input.title,
@@ -86,10 +85,9 @@ export function registerTaskItemTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.patchItem({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
@@ -123,10 +121,9 @@ export function registerTaskItemTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.setItemAssignee({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
@@ -174,10 +171,9 @@ export function registerTaskItemTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.moveItem({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
@@ -211,10 +207,9 @@ export function registerTaskItemTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.setItemStatus({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             itemId: input.item_id,
             status: input.status as TaskItemStatus,
             expectedVersion: input.expected_version,
@@ -253,10 +248,9 @@ function registerItemArchiveTool(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.patchItem({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,

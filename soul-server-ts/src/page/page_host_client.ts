@@ -4,6 +4,7 @@ import type {
   BlockDto,
   BlockOperationDto,
   PageDto,
+  PageActorKind,
   PageLinkKind,
   PageMarkdownBlockInput,
 } from "@soulstream/page-model";
@@ -21,6 +22,11 @@ export interface PageMutationResult {
   temp_id_mapping: Record<string, string>;
   operation: BlockOperationDto;
   idempotent?: boolean;
+}
+
+export interface PageClientActor {
+  actorKind?: PageActorKind;
+  actorSessionId: string | null;
 }
 
 export class PageYjsHostClient {
@@ -53,23 +59,25 @@ export class PageYjsHostClient {
   async createPage(input: {
     page: { id: string; title: string; daily_date: string | null; metadata?: Record<string, unknown> };
     blocks?: PageMarkdownBlockInput[];
-    actorSessionId: string;
+    actorKind?: PageActorKind;
+    actorSessionId: string | null;
     idempotencyKey: string;
   }): Promise<PageMutationResult> {
     return await this.request("create-page", {
       page: input.page,
       ...(input.blocks ? { blocks: input.blocks } : {}),
-      ...actor(input.actorSessionId, input.idempotencyKey),
+      ...actor(input, input.idempotencyKey),
     });
   }
 
   async batchPageOperations(input: Record<string, unknown> & {
-    actor_session_id: string;
+    actor_kind?: PageActorKind;
+    actor_session_id: string | null;
     idempotency_key: string;
   }): Promise<PageMutationResult> {
     return await this.request("batch-page-operations", {
       ...input,
-      actor_kind: "agent",
+      actor_kind: input.actor_kind ?? "agent",
     });
   }
 
@@ -77,24 +85,26 @@ export class PageYjsHostClient {
     pageId: string;
     expectedVersion: number;
     blocks: PageMarkdownBlockInput[];
-    actorSessionId: string;
+    actorKind?: PageActorKind;
+    actorSessionId: string | null;
     idempotencyKey: string;
   }): Promise<PageMutationResult> {
     return await this.request("replace-page-markdown", {
       page_id: input.pageId,
       expected_version: input.expectedVersion,
       blocks: input.blocks,
-      ...actor(input.actorSessionId, input.idempotencyKey),
+      ...actor(input, input.idempotencyKey),
     });
   }
 
   async getDailyPage(input: {
     date?: string;
-    actorSessionId: string;
+    actorKind?: PageActorKind;
+    actorSessionId: string | null;
   }): Promise<{ page: PageDto; created: boolean; operation?: BlockOperationDto }> {
     return await this.request("get-daily-page", {
       ...(input.date ? { date: input.date } : {}),
-      actor_kind: "agent",
+      actor_kind: input.actorKind ?? "agent",
       actor_session_id: input.actorSessionId,
     });
   }
@@ -120,10 +130,10 @@ export class PageYjsHostClient {
   }
 }
 
-function actor(actorSessionId: string, idempotencyKey: string) {
+function actor(input: PageClientActor, idempotencyKey: string) {
   return {
-    actor_kind: "agent" as const,
-    actor_session_id: actorSessionId,
+    actor_kind: input.actorKind ?? "agent",
+    actor_session_id: input.actorSessionId,
     idempotency_key: idempotencyKey,
   };
 }

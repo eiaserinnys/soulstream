@@ -452,6 +452,46 @@ describe("task route harness", () => {
     await app.close();
   });
 
+  it("accepts a service-authenticated sessionless llm task identity actor", async () => {
+    const taskIdentityService = {
+      create: vi.fn(async () => createTaskIdentityResult()),
+      promoteExistingPage: vi.fn(),
+      mutateFromTask: vi.fn(),
+      backfillLegacyTask: vi.fn(),
+    };
+    const { app } = createAppWithTasks(
+      { restricted: false },
+      {},
+      undefined,
+      taskIdentityService,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/task-identities/host/create",
+      headers: { authorization: "Bearer service-token" },
+      payload: {
+        title: "LLM 업무",
+        folder_id: "folder-a",
+        actor_kind: "llm",
+        actor_session_id: null,
+        idempotency_key: "llm:create:one",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(taskIdentityService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: {
+          actorKind: "llm",
+          actorSessionId: null,
+          actorUserId: undefined,
+        },
+      }),
+    );
+    await app.close();
+  });
+
   it("keeps my-turn ahead of the dynamic task id route", async () => {
     const { app, calls } = createAppWithTasks({ restricted: false });
 

@@ -122,7 +122,7 @@ export class ChecklistTaskReconciler {
 function projectionActor(row: ChecklistProjectionOutboxRow) {
   return {
     actorKind: row.actor_kind,
-    actorSessionId: row.routing_session_id,
+    actorSessionId: row.actor_session_id,
     ...(row.actor_kind === "user" ? { actorUserId: row.actor_user_id } : {}),
   };
 }

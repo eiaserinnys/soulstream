@@ -109,8 +109,10 @@ export interface CustomViewRow {
   html: string;
   revision: number;
   archived: boolean;
+  createdActorKind: "agent" | "user" | "system" | "llm";
   createdSessionId: string | null;
   createdEventId: number | null;
+  updatedActorKind: "agent" | "user" | "system" | "llm";
   updatedSessionId: string | null;
   updatedEventId: number | null;
   createdAt?: string;
@@ -433,7 +435,7 @@ export type TaskItemStatus =
   | "cancelled";
 export type TaskStatus = "open" | "completed";
 export type TaskOperationTargetKind = "task" | "section" | "item";
-export type TaskOperationActorKind = "agent" | "user" | "system";
+export type TaskOperationActorKind = "agent" | "user" | "system" | "llm";
 export type TaskCompletionKind = Exclude<TaskOperationActorKind, "system">;
 
 export interface TaskAssigneeFields {
@@ -489,7 +491,7 @@ export interface TaskItemRow extends TaskAssigneeFields {
   created_event_id: number | null;
   updated_session_id: string | null;
   updated_event_id: number | null;
-  completed_kind: "agent" | "user" | null;
+  completed_kind: TaskCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;

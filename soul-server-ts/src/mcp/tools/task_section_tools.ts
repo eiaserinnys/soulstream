@@ -42,10 +42,9 @@ export function registerTaskSectionTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.createSection({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             title: input.title,
             sectionId: input.section_id,
@@ -79,10 +78,9 @@ export function registerTaskSectionTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.patchSection({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
@@ -115,10 +113,9 @@ export function registerTaskSectionTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.setSectionAssignee({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
@@ -165,10 +162,9 @@ export function registerTaskSectionTools(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.moveSection({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
@@ -209,10 +205,9 @@ function registerSectionArchiveTool(
       mutation(
         runtime,
         input.caller_session_id,
-        (service, actorSessionId) =>
+        (service, actor) =>
           service.patchSection({
-            actorKind: "agent",
-            actorSessionId,
+            ...actor,
             taskId: input.task_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
