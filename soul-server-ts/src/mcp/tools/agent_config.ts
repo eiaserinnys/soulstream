@@ -59,7 +59,7 @@ export function registerAgentConfigTools(
     "list_mcp_registry",
     {
       description:
-        "mcp-registry.yaml의 MCP 서버 정본 목록을 조회한다. 민감 header/env 값은 노출하지 않는다.",
+        "mcp-registry.yaml의 MCP 서버 정본 목록을 조회한다. 민감 URL query/header/env 값은 노출하지 않는다.",
       inputSchema: {},
     },
     async () => {

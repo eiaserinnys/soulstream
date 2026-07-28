@@ -65,6 +65,95 @@ describe("McpConfigService", () => {
     expect(service.resolveAgentProfile(profile)).toBe(profile);
   });
 
+  it("redacts sensitive URL query values from registry listings without changing runtime URLs", () => {
+    const runtimeUrl =
+      "https://mcp.example.test/mcp?exaApiKey=fake-exa-key&tools=web_search_exa,get_code_context_exa";
+    fs.writeFileSync(
+      registryPath,
+      [
+        "servers:",
+        "  - id: exa",
+        "    type: streamable_http",
+        `    url: ${runtimeUrl}`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      profilesPath,
+      [
+        "profiles:",
+        "  - id: research",
+        "    mcp_servers: [exa]",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const service = new McpConfigService({ agentsConfigPath });
+    const profile = AgentProfileSchema.parse({
+      id: "agents-research",
+      name: "Agents Research",
+      backend: "claude",
+      workspace_dir: "/tmp/agents",
+      mcp_profile: "research",
+    });
+
+    expect(service.listRegistry().servers[0]?.url).toBe(
+      "https://mcp.example.test/mcp?exaApiKey=<redacted>&tools=web_search_exa,get_code_context_exa",
+    );
+    expect(service.resolveMcpProfile(profile)?.mcp_servers[0]?.url).toBe(runtimeUrl);
+  });
+
+  it("leaves queryless registry URLs unchanged in listings", () => {
+    fs.writeFileSync(
+      registryPath,
+      [
+        "servers:",
+        "  - id: docs",
+        "    type: streamable_http",
+        "    url: https://docs.example.test/mcp",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const service = new McpConfigService({ agentsConfigPath });
+
+    expect(service.listRegistry().servers[0]?.url).toBe(
+      "https://docs.example.test/mcp",
+    );
+  });
+
+  it("keeps existing registry header and env sanitization behavior", () => {
+    fs.writeFileSync(
+      registryPath,
+      [
+        "servers:",
+        "  - id: local",
+        "    type: stdio",
+        "    command: node",
+        "    args: [server.js]",
+        "    env:",
+        "      API_TOKEN: fake-env-value",
+        "      LOG_LEVEL: info",
+        "    headers:",
+        "      Authorization: Bearer fake-header-value",
+        "      X-Trace-Id: trace-123",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const service = new McpConfigService({ agentsConfigPath });
+
+    expect(service.listRegistry().servers[0]?.env).toEqual({
+      API_TOKEN: { redacted: true },
+      LOG_LEVEL: "info",
+    });
+    expect(service.listRegistry().servers[0]?.headers).toEqual({
+      Authorization: { redacted: true },
+      "X-Trace-Id": "trace-123",
+    });
+  });
+
   it("resolves mcp_profile servers and hosted tools into OpenAI Agents runtime config", () => {
     fs.writeFileSync(
       registryPath,
@@ -196,7 +285,7 @@ describe("McpConfigService", () => {
         "    hosted_tools:",
         "      - type: hosted_mcp",
         "        server_label: hosted-docs",
-        "        server_url: https://hosted.example.com/mcp",
+        "        server_url: https://hosted.example.com/mcp?authToken=fake-hosted-url&mode=readonly",
         "        authorization: Bearer hosted-secret",
         "        headers:",
         "          Authorization: Bearer header-secret",
@@ -211,12 +300,16 @@ describe("McpConfigService", () => {
     const [profile] = service.listProfiles().profiles;
     const [hostedTool] = profile?.hosted_tools as Array<Record<string, unknown>>;
 
+    expect(hostedTool.server_url).toBe(
+      "https://hosted.example.com/mcp?authToken=<redacted>&mode=readonly",
+    );
     expect(hostedTool.authorization).toEqual({ redacted: true });
     expect(hostedTool.headers).toEqual({
       Authorization: { redacted: true },
       "X-API-Key": { redacted: true },
       "X-Trace-Id": "trace-id",
     });
+    expect(JSON.stringify(profile)).not.toContain("fake-hosted-url");
     expect(JSON.stringify(profile)).not.toContain("hosted-secret");
     expect(JSON.stringify(profile)).not.toContain("header-secret");
     expect(JSON.stringify(profile)).not.toContain("api-key-secret");
