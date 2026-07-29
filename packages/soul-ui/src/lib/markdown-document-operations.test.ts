@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   deleteMarkdownDocument,
+  publishMarkdownDocumentUpdate,
   renameMarkdownDocument,
+  subscribeMarkdownDocumentUpdates,
   updateMarkdownDocument,
 } from "./markdown-document-operations";
 
@@ -92,6 +94,24 @@ describe("updateMarkdownDocument", () => {
       body: "# 수정",
       expectedVersion: 2,
     }, fetchMock as typeof globalThis.fetch)).rejects.toThrow("서버 재조회");
+  });
+
+  it("notifies only the saved document subscribers and releases them on unsubscribe", () => {
+    const documentOneListener = vi.fn();
+    const documentTwoListener = vi.fn();
+    const unsubscribe = subscribeMarkdownDocumentUpdates("doc-1", documentOneListener);
+    const unsubscribeTwo = subscribeMarkdownDocumentUpdates("doc-2", documentTwoListener);
+    const saved = { id: "doc-1", title: "결정", body: "# 수정", version: 3 };
+
+    publishMarkdownDocumentUpdate(saved);
+
+    expect(documentOneListener).toHaveBeenCalledWith(saved);
+    expect(documentTwoListener).not.toHaveBeenCalled();
+
+    unsubscribe();
+    unsubscribeTwo();
+    publishMarkdownDocumentUpdate({ ...saved, version: 4 });
+    expect(documentOneListener).toHaveBeenCalledTimes(1);
   });
 });
 

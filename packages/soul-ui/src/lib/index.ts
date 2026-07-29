@@ -37,7 +37,9 @@ export {
   deleteMarkdownDocument,
   fetchMarkdownDocument,
   MarkdownDocumentConflictError,
+  publishMarkdownDocumentUpdate,
   renameMarkdownDocument,
+  subscribeMarkdownDocumentUpdates,
   updateMarkdownDocument,
 } from "./markdown-document-operations";
 export type {

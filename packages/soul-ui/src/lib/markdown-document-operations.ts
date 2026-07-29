@@ -1,5 +1,9 @@
 import type { MarkdownDocument } from "../shared/types";
 
+type MarkdownDocumentUpdateListener = (document: MarkdownDocument) => void;
+
+const updateListenersByDocumentId = new Map<string, Set<MarkdownDocumentUpdateListener>>();
+
 export interface RenameMarkdownDocumentInput {
   documentId: string;
   title: string;
@@ -15,6 +19,29 @@ export class MarkdownDocumentConflictError extends Error {
     super("문서가 다른 곳에서 변경되었습니다. 다시 불러온 뒤 재시도하세요.");
     this.name = "MarkdownDocumentConflictError";
   }
+}
+
+/**
+ * 저장이 확정된 문서 스냅샷만 같은 문서 ID의 열린 표면에 전달한다.
+ * 값을 보관하거나 목록을 무효화하지 않으므로 서버/Y.Doc 정본을 대체하지 않는다.
+ */
+export function subscribeMarkdownDocumentUpdates(
+  documentId: string,
+  listener: MarkdownDocumentUpdateListener,
+): () => void {
+  const listeners = updateListenersByDocumentId.get(documentId) ?? new Set();
+  listeners.add(listener);
+  updateListenersByDocumentId.set(documentId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) updateListenersByDocumentId.delete(documentId);
+  };
+}
+
+export function publishMarkdownDocumentUpdate(document: MarkdownDocument): void {
+  const listeners = updateListenersByDocumentId.get(document.id);
+  if (!listeners) return;
+  for (const listener of listeners) listener(document);
 }
 
 export async function fetchMarkdownDocument(
@@ -91,5 +118,6 @@ export async function updateMarkdownDocument(
   if (!titleMatches || !bodyMatches || confirmed.version <= input.expectedVersion) {
     throw new Error("마크다운 문서 저장을 서버 재조회에서 확인하지 못했습니다.");
   }
+  publishMarkdownDocumentUpdate(confirmed);
   return confirmed;
 }

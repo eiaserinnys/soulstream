@@ -4,6 +4,7 @@ import {
   DashboardIconCap,
   DisclosureActionIcon,
   MarkdownContent,
+  subscribeMarkdownDocumentUpdates,
   TaskCard,
   retainEqualValue,
   type CatalogBoardItem,
@@ -57,9 +58,29 @@ export function TaskBoardResourcePane({
   onNewSession?: () => void;
   onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
-  const tabs = useMemo(
+  const baseTabs = useMemo(
     () => buildTaskBoardResourceTabs(boardItems, openedResources),
     [boardItems, openedResources],
+  );
+  const baseActiveTab = baseTabs.find((tab) => tab.id === activeTabId) ?? baseTabs[0];
+  const activeDocumentId = baseActiveTab.kind === "document" ? baseActiveTab.documentId : null;
+  const [savedDocument, setSavedDocument] = useState<MarkdownDocument | null>(null);
+  useEffect(() => {
+    setSavedDocument(null);
+    if (!activeDocumentId) return;
+    return subscribeMarkdownDocumentUpdates(activeDocumentId, (next) => {
+      setSavedDocument((current) => retainEqualValue(current ?? undefined, next));
+    });
+  }, [activeDocumentId]);
+  const tabs = useMemo(
+    () => savedDocument?.id === activeDocumentId
+      ? baseTabs.map((tab) => (
+          tab.kind === "document" && tab.documentId === activeDocumentId
+            ? { ...tab, title: savedDocument.title }
+            : tab
+        ))
+      : baseTabs,
+    [activeDocumentId, baseTabs, savedDocument],
   );
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
@@ -99,6 +120,7 @@ export function TaskBoardResourcePane({
         ) : (
           <TaskBoardDocumentReader
             tab={activeTab}
+            savedDocument={savedDocument?.id === activeTab.documentId ? savedDocument : null}
             onOpenDocument={() => onOpenDocument(activeTab.documentId)}
           />
         )}
@@ -303,13 +325,17 @@ function TaskBoardSessionNode({
 
 function TaskBoardDocumentReader({
   tab,
+  savedDocument,
   onOpenDocument,
 }: {
   tab: Extract<TaskBoardResourceTab, { kind: "document" }>;
+  savedDocument: MarkdownDocument | null;
   onOpenDocument(): void;
 }) {
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const savedDocumentRef = useRef(savedDocument);
+  savedDocumentRef.current = savedDocument;
   useEffect(() => {
     const controller = new AbortController();
     setDocument(null);
@@ -318,7 +344,11 @@ function TaskBoardDocumentReader({
       tab.documentId,
       (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }),
     ).then((next) => {
-      setDocument((current) => retainEqualValue(current ?? undefined, next));
+      const liveDocument = savedDocumentRef.current;
+      setDocument((current) => retainEqualValue(
+        current ?? undefined,
+        liveDocument?.id === tab.documentId ? liveDocument : next,
+      ));
     }).catch((cause: unknown) => {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -326,12 +356,17 @@ function TaskBoardDocumentReader({
     });
     return () => controller.abort();
   }, [tab.documentId]);
+  useEffect(() => {
+    if (savedDocument?.id === tab.documentId) {
+      setDocument((current) => retainEqualValue(current ?? undefined, savedDocument));
+    }
+  }, [savedDocument, tab.documentId]);
 
   return (
     <div className="v3-task-board-document-reader">
       <div className="v3-task-board-document-reader-head">
         <strong>{document?.title ?? tab.title}</strong>
-        <DashboardIconCap label={`${tab.title} 편집기 열기`} onClick={onOpenDocument}>
+        <DashboardIconCap label={`${document?.title ?? tab.title} 편집기 열기`} onClick={onOpenDocument}>
           <SquarePen className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>

@@ -6,10 +6,23 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import {
+  updateMarkdownDocument,
+  type CatalogBoardItem,
+  type SessionSummary,
+} from "@seosoyoung/soul-ui";
 
 import { TaskBoardResourcePane } from "./TaskBoardResourcePane";
 import type { RunSessionLoadState } from "./task-workspace-model";
+
+async function waitForContent(container: ParentNode, selector: string, content: string) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (container.querySelector(selector)?.textContent?.includes(content)) return;
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for ${selector} to contain ${content}`);
+}
 
 describe("TaskBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
   let container: HTMLDivElement;
@@ -80,5 +93,93 @@ describe("TaskBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
     expect(capturedClientX).toBe(120);
     // 전달된 이벤트로 preventDefault가 실제 DOM 이벤트에 반영된다(취소 가능한 실 이벤트 forwarding).
     expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+describe("TaskBoardResourcePane 마크다운 동기화", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let originalFetch: typeof globalThis.fetch;
+  let storedDocument: { id: string; title: string; body: string; version: number };
+
+  const markdownItem: CatalogBoardItem = {
+    id: "markdown:doc-a",
+    folderId: "folder-a",
+    containerKind: "task",
+    containerId: "rb-1",
+    itemType: "markdown",
+    itemId: "doc-a",
+    x: 0,
+    y: 0,
+    metadata: { title: "결정 로그", version: 1 },
+  };
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    originalFetch = globalThis.fetch;
+    storedDocument = {
+      id: "doc-a",
+      title: "결정 로그",
+      body: "저장 전 본문",
+      version: 1,
+    };
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.endsWith("/api/markdown-documents/doc-a")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as { title: string; body?: string };
+        storedDocument = {
+          ...storedDocument,
+          title: body.title,
+          body: body.body ?? storedDocument.body,
+          version: storedDocument.version + 1,
+        };
+      }
+      return new Response(JSON.stringify(storedDocument), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
+  afterEach(() => {
+    flushSync(() => root.unmount());
+    document.body.replaceChildren();
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("다른 표면의 저장 성공 문서를 재조회 없이 즉시 반영한다", async () => {
+    flushSync(() => root.render(
+      <TaskBoardResourcePane
+        taskId="rb-1"
+        taskTitle="보드뷰 개선"
+        sessionIds={[]}
+        sessions={[]}
+        runSessionLoadStates={new Map()}
+        activeSessionId={null}
+        boardItems={[markdownItem]}
+        openedResources={[{ kind: "document", resourceId: "doc-a" }]}
+        activeTabId="document:doc-a"
+        onOpenSession={vi.fn()}
+        onOpenDocument={vi.fn()}
+        onActiveTabChange={vi.fn()}
+      />,
+    ));
+    await waitForContent(container, ".v3-task-board-document-copy", "저장 전 본문");
+
+    await updateMarkdownDocument({
+      documentId: "doc-a",
+      title: "결정 로그",
+      body: "중앙 편집기에서 저장한 본문",
+      expectedVersion: 1,
+    });
+
+    await waitForContent(container, ".v3-task-board-document-copy", "중앙 편집기에서 저장한 본문");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
 });
