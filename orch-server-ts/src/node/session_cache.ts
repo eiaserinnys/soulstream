@@ -77,9 +77,15 @@ export type CachedNodeSession = {
   updatedAtMs: number;
 };
 
+type SessionWaiter = {
+  nodeId: string;
+  finish: (observed: boolean) => void;
+};
+
 export class PerNodeSessionCache {
   private readonly sessionsByNode = new Map<string, Map<string, CachedNodeSession>>();
   private readonly nodeBySession = new Map<string, string>();
+  private readonly waitersBySession = new Map<string, Set<SessionWaiter>>();
 
   getSessionsForNode(nodeId: string): CachedNodeSession[] {
     return [...(this.sessionsByNode.get(nodeId)?.values() ?? [])].map(copySession);
@@ -110,6 +116,50 @@ export class PerNodeSessionCache {
   ): CachedNodeSession | undefined {
     const session = this.sessionsByNode.get(nodeId)?.get(agentSessionId);
     return session === undefined ? undefined : copySession(session);
+  }
+
+  waitForSession(params: {
+    nodeId: string;
+    agentSessionId: string;
+    timeoutMs: number;
+  }): Promise<boolean> {
+    if (!Number.isInteger(params.timeoutMs) || params.timeoutMs < 0) {
+      throw new Error(
+        `session cache wait timeoutMs must be a non-negative integer: ${params.timeoutMs}`,
+      );
+    }
+
+    const existing = this.findSession(params.agentSessionId);
+    if (existing !== undefined) {
+      return Promise.resolve(
+        existing.nodeId === params.nodeId && existing.fresh,
+      );
+    }
+    if (params.timeoutMs === 0) return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const waiter: SessionWaiter = {
+        nodeId: params.nodeId,
+        finish: (observed) => {
+          if (timer !== undefined) clearTimeout(timer);
+          const waiters = this.waitersBySession.get(params.agentSessionId);
+          waiters?.delete(waiter);
+          if (waiters?.size === 0) {
+            this.waitersBySession.delete(params.agentSessionId);
+          }
+          resolve(observed);
+        },
+      };
+
+      let waiters = this.waitersBySession.get(params.agentSessionId);
+      if (waiters === undefined) {
+        waiters = new Set();
+        this.waitersBySession.set(params.agentSessionId, waiters);
+      }
+      waiters.add(waiter);
+      timer = setTimeout(() => waiter.finish(false), params.timeoutMs);
+    });
   }
 
   upsertFromCommandAck(params: {
@@ -317,7 +367,17 @@ export class PerNodeSessionCache {
     const stored = copySession(session);
     sessions.set(session.agentSessionId, stored);
     this.nodeBySession.set(session.agentSessionId, session.nodeId);
+    this.notifySessionWaiters(stored);
     return copySession(stored);
+  }
+
+  private notifySessionWaiters(session: CachedNodeSession): void {
+    const waiters = this.waitersBySession.get(session.agentSessionId);
+    if (waiters === undefined) return;
+
+    for (const waiter of [...waiters]) {
+      waiter.finish(session.nodeId === waiter.nodeId && session.fresh);
+    }
   }
 
   private deleteSession(agentSessionId: string): CachedNodeSession | undefined {

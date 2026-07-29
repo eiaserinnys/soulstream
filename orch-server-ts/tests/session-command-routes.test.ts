@@ -410,6 +410,92 @@ describe("session command HTTP route harness", () => {
     });
   });
 
+  it("reconciles a create_session timeout when the node session event appears", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          setTimeout(() => {
+            registry.receiveNodeMessage(
+              { nodeId: "fake-node", connectionId },
+              {
+                type: "session_created",
+                session: {
+                  agent_session_id: message.agentSessionId,
+                  status: "running",
+                },
+              },
+            );
+          }, 5);
+        },
+      },
+    });
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        timeoutMs: 1,
+        createSessionReconcileTimeoutMs: 50,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      agentSessionId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
+      nodeId: "fake-node",
+      prompt: "hello",
+    });
+  });
+
+  it("keeps NODE_COMMAND_TIMEOUT when the node session event is absent", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: () => {
+          // Keep the command pending until its timeout.
+        },
+      },
+    });
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        timeoutMs: 1,
+        createSessionReconcileTimeoutMs: 0,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "NODE_COMMAND_TIMEOUT",
+      },
+    });
+  });
+
   it.each([
     {
       label: "canonical request_id",
