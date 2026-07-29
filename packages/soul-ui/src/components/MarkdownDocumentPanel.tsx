@@ -3,19 +3,21 @@ import { Check, Pencil, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import {
-  getMarkdownPreview,
-  getBoardYjsRuntime,
-  subscribeBoardYjsRuntime,
-  type BoardYjsRuntime,
-} from "../board-workspace";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";
+import {
+  getMetadataNumber,
+  getMetadataText,
+  refreshRuntimeMarkdownPreview,
+  useBoardRuntime,
+} from "./markdown-document-runtime";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   deleteMarkdownDocument,
   fetchMarkdownDocument,
   MarkdownDocumentConflictError,
+  publishMarkdownDocumentUpdate,
+  subscribeMarkdownDocumentUpdates,
   updateMarkdownDocument,
 } from "../lib/markdown-document-operations";
 
@@ -102,6 +104,7 @@ export function MarkdownDocumentPanel() {
     setSavedVersion(nextVersion);
     setSaveError(null);
     setSaveStatus("saved");
+    publishMarkdownDocumentUpdate(nextDocument);
   }, [collaborativeRuntime, documentId, yText]);
 
   const saveNow = useCallback(async () => {
@@ -214,6 +217,43 @@ export function MarkdownDocumentPanel() {
       unsubscribe();
     };
   }, [applyRuntimeSnapshot, collaborativeRuntime, yText]);
+
+  useEffect(() => {
+    if (!documentId) return;
+    return subscribeMarkdownDocumentUpdates(documentId, (next) => {
+      if (loadedDocumentIdRef.current !== documentId) return;
+      if (
+        titleEditingRef.current
+        || isEditingBody
+        || saveStatus === "dirty"
+        || saveStatus === "saving"
+        || saveStatus === "conflict"
+      ) {
+        return;
+      }
+      if (collaborativeRuntime && yText) {
+        const item = collaborativeRuntime
+          .getBoardItems()
+          .find((candidate) => candidate.id === `markdown:${documentId}`);
+        const runtimeTitle = getMetadataText(item?.metadata, "title") || "Untitled document";
+        if (runtimeTitle !== next.title) {
+          collaborativeRuntime.updateMarkdownTitle(documentId, next.title);
+        }
+        if (yText.toString() !== next.body) {
+          collaborativeRuntime.updateMarkdownBody(documentId, next.body);
+        }
+        return;
+      }
+      setDocument(next);
+      setTitle(next.title);
+      setBody(next.body);
+      setSavedTitle(next.title);
+      setSavedBody(next.body);
+      setSavedVersion(next.version);
+      setSaveError(null);
+      setSaveStatus("saved");
+    });
+  }, [collaborativeRuntime, documentId, isEditingBody, saveStatus, yText]);
 
   useEffect(() => {
     if (!documentId || !document || collaborativeRuntime) return;
@@ -449,52 +489,4 @@ export function isScrollbarMouseDown(
   if (hasVerticalScrollbar && offsetX > target.clientWidth) return true;
   if (hasHorizontalScrollbar && offsetY > target.clientHeight) return true;
   return false;
-}
-
-function useBoardRuntime(container: BoardContainerRef | null): BoardYjsRuntime | null {
-  const [runtime, setRuntime] = useState(() => getBoardYjsRuntime(container));
-  const [, setRuntimeRevision] = useState(0);
-  useEffect(() => {
-    setRuntime(getBoardYjsRuntime(container));
-    return subscribeBoardYjsRuntime(() => {
-      setRuntime(getBoardYjsRuntime(container));
-    });
-  }, [container]);
-  useEffect(() => {
-    if (!runtime) return;
-    return runtime.subscribe(() => {
-      setRuntimeRevision((revision) => revision + 1);
-    });
-  }, [runtime]);
-  return runtime;
-}
-
-function getMetadataText(metadata: Record<string, unknown> | undefined, key: string): string {
-  const value = metadata?.[key];
-  return typeof value === "string" ? value : "";
-}
-
-function getMetadataNumber(metadata: Record<string, unknown> | undefined, key: string): number | undefined {
-  const value = metadata?.[key];
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-function refreshRuntimeMarkdownPreview(runtime: BoardYjsRuntime, documentId: string, body: string) {
-  const boardItemId = `markdown:${documentId}`;
-  const item = runtime.getBoardItems().find((candidate) => candidate.id === boardItemId);
-  if (!item) return;
-  runtime.upsertBoardItem({
-    ...item,
-    metadata: {
-      ...(item.metadata ?? {}),
-      preview: getMarkdownPreview(body),
-      version: (getMetadataNumber(item.metadata, "version") ?? 1) + 1,
-    },
-    updatedAt: new Date().toISOString(),
-  });
 }

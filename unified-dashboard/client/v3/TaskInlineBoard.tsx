@@ -6,6 +6,7 @@ import {
   deleteMarkdownDocument,
   renameMarkdownDocument,
   retainEqualValue,
+  subscribeMarkdownDocumentUpdates,
   useBoardYjsRuntime,
   useCustomViewBindings,
   useDashboardStore,
@@ -397,13 +398,24 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
+    let savedDocument: MarkdownDocument | null = null;
+    const unsubscribe = subscribeMarkdownDocumentUpdates(documentId, (next) => {
+      savedDocument = next;
+      setDocument((current) => retainEqualValue(current ?? undefined, next));
+    });
     setError(false);
     void fetchInlineMarkdown(documentId, (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }))
-      .then((next) => setDocument((current) => retainEqualValue(current ?? undefined, next)))
+      .then((next) => setDocument((current) => retainEqualValue(
+        current ?? undefined,
+        savedDocument ?? next,
+      )))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(true);
       });
-    return () => controller.abort();
+    return () => {
+      unsubscribe();
+      controller.abort();
+    };
   }, [documentId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">문서 본문을 불러오지 못했습니다.</p>;
   if (!document) return <p className="v3-detail-empty">본문을 불러오는 중…</p>;
