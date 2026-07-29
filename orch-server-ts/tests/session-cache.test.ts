@@ -7,6 +7,40 @@ import {
 } from "../src/index.js";
 
 describe("PerNodeSessionCache retention", () => {
+  it("waits for the existing session cache to observe a node session", async () => {
+    const cache = new PerNodeSessionCache();
+    const observed = cache.waitForSession({
+      nodeId: "node-a",
+      agentSessionId: "session-a",
+      timeoutMs: 50,
+    });
+
+    cache.upsertFromSessionCreated({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      message: {
+        type: "session_created",
+        session: {
+          agent_session_id: "session-a",
+          status: "running",
+        },
+      },
+      nowMs: 1_000,
+    });
+
+    await expect(observed).resolves.toBe(true);
+  });
+
+  it("does not create a second lookup path when the session cache has no match", async () => {
+    const cache = new PerNodeSessionCache();
+
+    await expect(cache.waitForSession({
+      nodeId: "node-a",
+      agentSessionId: "session-a",
+      timeoutMs: 0,
+    })).resolves.toBe(false);
+  });
+
   it("keeps terminal enrichment during the grace window then removes both indexes", () => {
     const cache = new PerNodeSessionCache();
     cache.upsertFromSessionUpdated({

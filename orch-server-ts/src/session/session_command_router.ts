@@ -26,6 +26,8 @@ export type SessionOwnerNodeIdLookup = (
   agentSessionId: string,
 ) => Promise<string | null>;
 
+const DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS = 5_000;
+
 export type RoutedPendingSessionCommand<
   TPayload extends RequestResponseNodeCommandPayload,
   TResponse extends NodeCommandResponse = NodeCommandResponse,
@@ -173,6 +175,20 @@ export class SessionCommandRouter {
         ? { modelPresetId: selection.modelPresetId }
         : {}),
     };
+  }
+
+  waitForCreatedSession(
+    agentSessionId: string,
+    expectedNodeId: string,
+    options: { timeoutMs?: number } = {},
+  ): Promise<boolean> {
+    const timeoutMs =
+      options.timeoutMs ?? DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS;
+    return this.registry.sessionCache.waitForSession({
+      nodeId: expectedNodeId,
+      agentSessionId,
+      timeoutMs,
+    });
   }
 
   async respond<

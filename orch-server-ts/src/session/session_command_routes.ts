@@ -30,6 +30,7 @@ export type SessionCommandRouteOptions = {
   router: SessionCommandRouter;
   bridge: SessionCommandTransportBridge;
   timeoutMs?: number;
+  createSessionReconcileTimeoutMs?: number;
   createSessionLifecycle?: SessionCreateLifecycle;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
 };
@@ -106,7 +107,46 @@ export function registerSessionCommandRoutes(
           }
         },
       });
-      const result = await options.bridge.sendPendingCommand(routed);
+      let result: NodeCommandResponse;
+      try {
+        result = await options.bridge.sendPendingCommand(routed);
+      } catch (error) {
+        if (error instanceof PendingNodeCommandTimeoutError) {
+          try {
+            const reconciled = await options.router.waitForCreatedSession(
+              payload.agentSessionId,
+              routed.node.nodeId,
+              { timeoutMs: options.createSessionReconcileTimeoutMs },
+            );
+            if (reconciled) {
+              request.log.warn(
+                {
+                  requestId: error.requestId,
+                  agentSessionId: payload.agentSessionId,
+                  nodeId: routed.node.nodeId,
+                },
+                "create_session command timed out but the node session event was observed",
+              );
+              return reply.code(201).send({
+                agentSessionId: payload.agentSessionId,
+                nodeId: routed.node.nodeId,
+                prompt,
+              });
+            }
+          } catch (reconcileError) {
+            request.log.warn(
+              {
+                err: reconcileError,
+                requestId: error.requestId,
+                agentSessionId: payload.agentSessionId,
+                nodeId: routed.node.nodeId,
+              },
+              "create_session timeout reconciliation failed",
+            );
+          }
+        }
+        throw error;
+      }
       if (isErrorAck(result)) {
         return serviceUnavailable(reply, result);
       }
