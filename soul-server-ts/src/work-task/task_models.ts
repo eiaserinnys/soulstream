@@ -22,6 +22,24 @@ export class TaskVersionConflict extends Error {
   }
 }
 
+export class EmptyTaskPatchError extends Error {
+  readonly statusCode = 422;
+
+  constructor(public readonly targetKind: TaskOperationTargetKind) {
+    super(`task ${targetKind} patch requires at least one field to update`);
+    this.name = "EmptyTaskPatchError";
+  }
+}
+
+export function assertTaskPatchHasFields(
+  targetKind: TaskOperationTargetKind,
+  fields: Record<string, unknown>,
+): void {
+  if (Object.values(fields).every((value) => value === undefined)) {
+    throw new EmptyTaskPatchError(targetKind);
+  }
+}
+
 export interface TaskAssigneeInput {
   kind: TaskAssigneeFields["assignee_kind"];
   agentId?: string | null;

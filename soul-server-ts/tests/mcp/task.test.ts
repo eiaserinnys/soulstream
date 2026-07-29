@@ -9,6 +9,7 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
+import { EmptyTaskPatchError } from "../../src/work-task/task_models.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
@@ -298,6 +299,30 @@ describe("task MCP tools", () => {
       expectedVersion: 3,
       reason: "done",
       idempotencyKey: "idem-status-1",
+    });
+  });
+
+  it("returns a caller-readable error for an empty item patch", async () => {
+    const service = fakeTaskService();
+    service.patchItem.mockRejectedValueOnce(new EmptyTaskPatchError("item"));
+    const client = await createClient(
+      makeRuntime({ taskService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const result = await client.callTool({
+      name: "update_task_item",
+      arguments: {
+        task_id: "rb-1",
+        item_id: "item-1",
+        expected_version: 3,
+        idempotency_key: "idem-empty-patch-1",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual({
+      error: "task item patch requires at least one field to update",
     });
   });
 

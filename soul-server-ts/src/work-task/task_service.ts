@@ -13,7 +13,7 @@ import {
   serializeCatalogFolders,
 } from "../catalog/catalog_delta.js";
 
-import { assigneeToFields, type TaskAssigneeInput } from "./task_models.js";
+import { assertTaskPatchHasFields, assigneeToFields, type TaskAssigneeInput } from "./task_models.js";
 import { TaskMutationCore } from "./task_mutation_core.js";
 import { enrollTaskCreatorSession, type TaskCreatorBoardItemMoverPort, type TaskCreatorEnrollmentLoggerPort } from "./task_creator_enrollment.js";
 import { itemPatchOperationType, taskPatchOperationType, sectionPatchOperationType } from "./task_operation_types.js";
@@ -57,11 +57,9 @@ export class TaskService {
     this.repo = db.tasks();
     this.core = new TaskMutationCore(db, this.repo, broadcaster, handoffNotifier);
   }
-
   async getTask(taskId: string): Promise<TaskSnapshot | null> {
     return await this.repo.getSnapshot(taskId);
   }
-
   async listTasks(params: {
     folderId: string;
     includeArchived?: boolean;
@@ -137,6 +135,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
+    assertTaskPatchHasFields("task", { title: params.title, archived: params.archived });
     const result = await this.core.mutate({
       taskId: params.taskId,
       targetKind: "task",
@@ -245,6 +244,7 @@ export class TaskService {
       Object.prototype.hasOwnProperty.call(params, "assignee")
         ? assigneeToFields(params.assignee)
         : {};
+    assertTaskPatchHasFields("section", { title: params.title, archived: params.archived, ...assigneeFields });
     return await this.core.mutate({
       taskId: params.taskId,
       targetKind: "section",
@@ -408,6 +408,7 @@ export class TaskService {
       Object.prototype.hasOwnProperty.call(params, "assignee")
         ? assigneeToFields(params.assignee)
         : {};
+    assertTaskPatchHasFields("item", { title: params.title, howTo: params.howTo, archived: params.archived, ...assigneeFields });
     return await this.core.mutate({
       taskId: params.taskId,
       targetKind: "item",
