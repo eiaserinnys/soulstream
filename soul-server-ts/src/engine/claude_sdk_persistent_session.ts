@@ -6,7 +6,6 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
-
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
@@ -18,6 +17,7 @@ import {
 import { createEventQueue, type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
+import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import {
@@ -50,6 +50,7 @@ type ActiveForeground = {
   deadlineTimer: ReturnType<typeof setTimeout>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
+  rateLimitTerminationState: rateLimit.RateLimitTerminationState;
 };
 
 /**
@@ -124,6 +125,7 @@ export class ClaudeSdkPersistentSession {
       deadlineTimer,
       interruptResultTimer: null,
       timedOut: false,
+      rateLimitTerminationState: "none",
     };
     this.runtime.beginForegroundTurn(uuid);
     return output;
@@ -303,6 +305,22 @@ export class ClaudeSdkPersistentSession {
       observePersistentBackgroundEvent(this.runtime, event);
     }
     if (!runtimeEventAccepted) {
+      return;
+    }
+    const active = this.activeForeground;
+    if (active) {
+      active.rateLimitTerminationState =
+        rateLimit.observeTerminationSignal(active.rateLimitTerminationState, event);
+    }
+    if (active?.rateLimitTerminationState === "terminal") {
+      active.output.push(event);
+      this.runtime.observeResult({ userMessageUuid: active.uuid, interrupted: false });
+      this.clearForegroundTimers(active);
+      this.runtime.finishForegroundResult();
+      this.armDrainTimer();
+      active.output.push(rateLimit.makeStopFailureError());
+      active.output.close();
+      if (this.activeForeground === active) this.activeForeground = null;
       return;
     }
     const phase = this.runtime.snapshot().foregroundPhase;

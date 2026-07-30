@@ -248,6 +248,111 @@ describe("ClaudeSdkClient persistent runtime", () => {
     }
   });
 
+  it("finalizes a rejected rate-limit StopFailure without waiting for the foreground timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnTimeoutMs: 30 * 60_000,
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+      const turn = collect(client.runPersistent(
+        runOptions("rate-limited turn"),
+        abortSignal(),
+      ));
+      await harness.nextInput();
+
+      harness.push({
+        type: "rate_limit_event",
+        uuid: "rate-limit-rejected",
+        session_id: "sdk-session",
+        rate_limit_info: {
+          status: "rejected",
+          rateLimitType: "five_hour",
+          utilization: 1,
+        },
+      } as unknown as SDKMessage);
+      harness.push({
+        type: "assistant",
+        uuid: "assistant-rate-limit",
+        session_id: "sdk-session",
+        error: "rate_limit",
+        message: {
+          id: "assistant-rate-limit",
+          model: "claude",
+          role: "assistant",
+          content: [{ type: "text", text: "You've hit your usage limit." }],
+        },
+      } as unknown as SDKMessage);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const stopFailureHook =
+        harness.captured[0]?.options?.hooks?.StopFailure?.[0]?.hooks[0];
+      await stopFailureHook?.(
+        {
+          hook_event_name: "StopFailure",
+          session_id: "sdk-session",
+          error: "rate_limit",
+        } as never,
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      await expect(turn).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "rate_limit",
+            status: "rejected",
+            rateLimitType: "five_hour",
+          }),
+          expect.objectContaining({
+            type: "assistant_error",
+            errorType: "rate_limit",
+          }),
+          expect.objectContaining({
+            type: "text",
+            text: "You've hit your usage limit.",
+          }),
+          expect.objectContaining({
+            type: "claude_runtime_hook_event",
+            hookEventName: "StopFailure",
+          }),
+          expect.objectContaining({
+            type: "error",
+            fatal: true,
+            errorCode: "claude_rate_limit_stop_failure",
+          }),
+        ]),
+      );
+
+      // Only the ordinary post-terminal drain remains. The 30-minute
+      // foreground watchdog must be gone.
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(11);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      expect(harness.interrupt).not.toHaveBeenCalled();
+
+      const resumed = collect(client.runPersistent(
+        runOptions("after rate limit"),
+        abortSignal(),
+      ));
+      const resumedInput = await harness.nextInput();
+      harness.push(sdkResult("sdk-session", resumedInput.uuid, "resumed"));
+      await expect(resumed).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "resumed" }),
+      );
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps one Query open across Results and queues a drain-phase input without interrupt", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
