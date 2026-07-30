@@ -207,7 +207,14 @@ describe("TurnSummaryPipeline", () => {
       "turn_summary:10:19",
     );
     expect(summarizer.summarize).toHaveBeenCalledWith(
-      expect.any(Object),
+      expect.objectContaining({
+        speaker: {
+          kind: "user",
+          displayName: "Jubok Kim",
+          source: "browser",
+          userId: "eiaserinnys@gmail.com",
+        },
+      }),
       expect.objectContaining({
         model: "gpt-5.6-luna",
         storyModel: "gpt-5.6-terra",
@@ -477,6 +484,12 @@ function fakeRepository() {
         finalResponseEventId: completeEventId - 1,
         userText: "요청",
         assistantText: "응답",
+        speaker: {
+          kind: "user",
+          displayName: "Jubok Kim",
+          source: "browser",
+          userId: "eiaserinnys@gmail.com",
+        },
       }),
     ),
     hasSummary: vi.fn().mockResolvedValue(false),

@@ -81,6 +81,61 @@ describe("turn reconstruction", () => {
     ], 12)?.userText).toBe(text);
   });
 
+  it.each([
+    [
+      {
+        source: "browser",
+        display_name: "Jubok Kim",
+        user_id: "eiaserinnys@gmail.com",
+      },
+      {
+        kind: "user",
+        displayName: "Jubok Kim",
+        source: "browser",
+        userId: "eiaserinnys@gmail.com",
+      },
+    ],
+    [
+      {
+        source: "agent",
+        agent_name: "로젤린",
+        agent_id: "roselin",
+      },
+      {
+        kind: "agent",
+        agentName: "로젤린",
+      },
+    ],
+    [
+      {
+        source: "completion_notifier",
+      },
+      {
+        kind: "system",
+      },
+    ],
+  ])("preserves the turn-start speaker from caller_info", (
+    callerInfo,
+    expectedSpeaker,
+  ) => {
+    expect(reconstructTurnFromEvents([
+      event(10, "user_message", {
+        text: "요청",
+        caller_info: callerInfo,
+      }),
+      event(11, "assistant_message", { content: "응답" }),
+      event(12, "complete", {}),
+    ], 12)?.speaker).toEqual(expectedSpeaker);
+  });
+
+  it("keeps legacy turns without caller_info unlabeled", () => {
+    expect(reconstructTurnFromEvents([
+      event(10, "user_message", { text: "레거시 요청" }),
+      event(11, "assistant_message", { content: "응답" }),
+      event(12, "complete", {}),
+    ], 12)).not.toHaveProperty("speaker");
+  });
+
   it("skips a turn with a fatal error or missing anchors", () => {
     expect(reconstructTurnFromEvents([
       event(1, "user_message", { text: "요청" }),

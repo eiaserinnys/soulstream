@@ -145,6 +145,7 @@ export class TurnSummaryPipeline {
       userText: turn.userText,
       assistantText: turn.assistantText,
       previousSummaries,
+      ...(turn.speaker === undefined ? {} : { speaker: turn.speaker }),
     }, config);
     if (!await this.deps.repository.isSessionSummarizable(job.sessionId)) {
       this.debugSkip(job, "session_not_summarizable", {

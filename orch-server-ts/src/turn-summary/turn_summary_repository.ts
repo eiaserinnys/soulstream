@@ -2,6 +2,10 @@ import type {
   LiveDbSqlResolver,
   LivePostgresSql,
 } from "../runtime/live_db_sql.js";
+import {
+  resolveTurnSummarySpeaker,
+  type TurnSummarySpeaker,
+} from "./turn_summary_speaker.js";
 
 const TURN_EVENT_TYPES = [
   "user_message",
@@ -33,6 +37,7 @@ export interface TurnSummaryTurn {
   readonly finalResponseEventId: number;
   readonly userText: string;
   readonly assistantText: string;
+  readonly speaker?: TurnSummarySpeaker;
 }
 
 export interface TurnSummaryAppendResult {
@@ -324,11 +329,13 @@ export function reconstructTurnFromEvents(
   const userText = stringValue(start.payload.text)?.trim();
   const assistantText = stringValue(finalResponse?.payload.content)?.trim();
   if (!userText || !assistantText || finalResponse === undefined) return null;
+  const speaker = resolveTurnSummarySpeaker(start.payload);
   return {
     turnStartEventId: start.id,
     finalResponseEventId: finalResponse.id,
     userText,
     assistantText,
+    ...(speaker === undefined ? {} : { speaker }),
   };
 }
 

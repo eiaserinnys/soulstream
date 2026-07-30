@@ -1,9 +1,14 @@
 import type { TurnSummaryConfig } from "./turn_summary_config.js";
+import {
+  formatTurnSummarySpeakerLabel,
+  type TurnSummarySpeaker,
+} from "./turn_summary_speaker.js";
 
 export interface TurnSummaryInput {
   readonly userText: string;
   readonly assistantText: string;
   readonly previousSummaries: readonly string[];
+  readonly speaker?: TurnSummarySpeaker;
 }
 
 export interface TurnSummaryUsage {
@@ -49,6 +54,18 @@ export function buildTurnSummaryPrompt(
     : previous
       .map((summary, index) => `${index + 1}. ${summary}`)
       .join("\n");
+  const turnStartBlock = input.speaker === undefined
+    ? [
+      "[사용자 메시지]",
+      truncateCodepoints(input.userText, config.codepointLimit) ||
+        "(텍스트 없음)",
+    ]
+    : [
+      "[턴 시작 발화]",
+      formatTurnSummarySpeakerLabel(input.speaker),
+      truncateCodepoints(input.userText, config.codepointLimit) ||
+        "(텍스트 없음)",
+    ];
 
   return [
     config.instruction,
@@ -57,8 +74,7 @@ export function buildTurnSummaryPrompt(
     "[같은 세션의 직전 턴 요약]",
     historyBlock,
     "",
-    "[사용자 메시지]",
-    truncateCodepoints(input.userText, config.codepointLimit) || "(텍스트 없음)",
+    ...turnStartBlock,
     "",
     "[에이전트 최종 응답]",
     truncateCodepoints(input.assistantText, config.codepointLimit),
