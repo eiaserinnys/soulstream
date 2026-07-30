@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 112개 $defs (wire 53 + SSE event 59). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 113개 $defs (wire 53 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -202,6 +202,7 @@ export interface SessionEventEnvelope {
     | SSEEventSessionNotification
     | SSEEventUserMessage
     | SSEEventAssistantMessage
+    | SSEEventTurnSummary
     | SSEEventInputRequest
     | SSEEventInputRequestExpired
     | SSEEventInputRequestResponded
@@ -323,6 +324,27 @@ export interface SSEEventUserMessage {
  */
 export interface SSEEventAssistantMessage {
   type: "assistant_message";
+  [k: string]: unknown;
+}
+/**
+ * SSE: 완료된 채팅 턴의 비동기 요약.
+ */
+export interface SSEEventTurnSummary {
+  type: "turn_summary";
+  content: string;
+  turn_start_event_id: number;
+  final_response_event_id: number;
+  parent_event_id: number;
+  model: string;
+  latency_ms: number;
+  attempts: number;
+  usage?: {
+    input_tokens?: number;
+    cached_input_tokens?: number;
+    output_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+  timestamp: number;
   [k: string]: unknown;
 }
 /**

@@ -31,6 +31,8 @@ const REDACTED_LOG_PATHS = [
   "jwt_secret",
   "databaseUrl",
   "database_url",
+  "TURN_SUMMARY_OPENAI_KEY",
+  "turn_summary_openai_key",
   "*.authorization",
   "*.cookie",
   "*.token",
@@ -40,6 +42,8 @@ const REDACTED_LOG_PATHS = [
   "*.jwt_secret",
   "*.databaseUrl",
   "*.database_url",
+  "*.TURN_SUMMARY_OPENAI_KEY",
+  "*.turn_summary_openai_key",
 ] as const;
 
 export function createOperationalFastifyOptions(

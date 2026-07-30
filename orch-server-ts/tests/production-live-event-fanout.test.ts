@@ -20,6 +20,56 @@ type SseFrame = {
 };
 
 describe("production live event fanout", () => {
+  it("routes durable remote-node complete events into the central turn-summary pipeline", async () => {
+    const database = createFakeSql();
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => database.sql),
+      close: vi.fn(async () => undefined),
+    };
+    const accept = vi.fn();
+    const drain = vi.fn(async () => undefined);
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment(minimalEnvironment()),
+      { warn: vi.fn() },
+      { sqlResolver, turnSummaryPipeline: { accept, drain } },
+    );
+    await application.app.listen({ host: "127.0.0.1", port: 0 });
+    let ws: TestWebSocket | undefined;
+    try {
+      ws = await (application.app as typeof application.app & {
+        injectWS: (
+          path: string,
+          options: { headers: Record<string, string> },
+        ) => Promise<TestWebSocket>;
+      }).injectWS("/ws/node", {
+        headers: { authorization: "Bearer production-service-token" },
+      });
+      ws.send(JSON.stringify({ type: "node_register", node_id: "remote-node" }));
+      ws.send(JSON.stringify({
+        type: "event",
+        agentSessionId: "remote-session",
+        event: { type: "complete", _event_id: 44 },
+      }));
+
+      await waitForCondition(() => accept.mock.calls.length > 0);
+      expect(accept).toHaveBeenCalledWith([
+        expect.objectContaining({
+          type: "node_session_event",
+          nodeId: "remote-node",
+          data: expect.objectContaining({
+            type: "event",
+            agentSessionId: "remote-session",
+          }),
+        }),
+      ]);
+    } finally {
+      ws?.terminate();
+      await application.app.close();
+      await application.closeResources();
+    }
+    expect(drain).toHaveBeenCalledTimes(1);
+  });
+
   it("forwards last-message updates for sessions restored from a node dump", async () => {
     const database = createFakeSql();
     const sqlResolver: LiveDbSqlResolver = {

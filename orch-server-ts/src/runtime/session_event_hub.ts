@@ -34,17 +34,20 @@ export class RuntimeSessionEventHub {
   dispatchNodeRegistryEvents(events: readonly NodeRegistryEvent[]): void {
     for (const event of events) {
       if (event.type !== "node_session_event") continue;
-      const agentSessionId = sessionIdFromEnvelope(event.data);
-      if (agentSessionId === undefined) continue;
-      const listeners = this.listenersBySession.get(agentSessionId);
-      if (listeners === undefined) continue;
-      const runtimeEvent = {
+      this.publish({
         nodeId: event.nodeId,
         data: event.data,
-      };
-      for (const listener of listeners) {
-        listener(runtimeEvent);
-      }
+      });
+    }
+  }
+
+  publish(event: RuntimeSessionEvent): void {
+    const agentSessionId = sessionIdFromEnvelope(event.data);
+    if (agentSessionId === undefined) return;
+    const listeners = this.listenersBySession.get(agentSessionId);
+    if (listeners === undefined) return;
+    for (const listener of listeners) {
+      listener(event);
     }
   }
 }

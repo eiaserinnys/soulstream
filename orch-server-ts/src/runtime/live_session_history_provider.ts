@@ -27,6 +27,7 @@ const TIMELINE_EVENT_TYPES = [
   "tool_start",
   "tool_result",
   "error",
+  "turn_summary",
 ];
 const LEGACY_TIMELINE_EVENT_TYPES = [
   ...TIMELINE_EVENT_TYPES,

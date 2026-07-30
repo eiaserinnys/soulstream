@@ -57,6 +57,7 @@ export type OrchServerEnvironmentConfig = {
   readonly environment: string;
   readonly claude_oauth_client_id: string;
   readonly claude_oauth_callback_url: string;
+  readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
 };
 
@@ -113,6 +114,7 @@ export function loadOrchServerEnvironment(
     environment,
     claude_oauth_client_id: requiredString(env, "CLAUDE_OAUTH_CLIENT_ID"),
     claude_oauth_callback_url: requiredString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
+    turn_summary_openai_key: env.TURN_SUMMARY_OPENAI_KEY ?? "",
     usage_summary_poll_interval_seconds: parsePositiveInteger(
       env.USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
       "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
