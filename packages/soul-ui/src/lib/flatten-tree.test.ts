@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { flattenTree, clearFlattenTreeCache, extractEventId, type ChatMessage } from "./flatten-tree";
-import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, SessionNotificationNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
+import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, SessionNotificationNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode, TokenUsage } from "@shared/types";
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
   return { type: "session", id: "session-root", content: "", completed: false, children };
@@ -36,7 +36,7 @@ function makeTool(id: string, name: string, opts?: { completed?: boolean; isErro
   };
 }
 
-function makeResult(id: string, opts?: { usage?: { input_tokens: number; output_tokens: number }; totalCostUsd?: number }): ResultNode {
+function makeResult(id: string, opts?: { usage?: TokenUsage; totalCostUsd?: number }): ResultNode {
   return {
     type: "result", id, content: "done", completed: true, children: [],
     usage: opts?.usage, totalCostUsd: opts?.totalCostUsd,
@@ -55,12 +55,7 @@ function makeComplete(
   id: string,
   message: string,
   opts?: {
-    usage?: {
-      input_tokens: number;
-      output_tokens: number;
-      cached_input_tokens?: number;
-      reasoning_output_tokens?: number;
-    };
+    usage?: TokenUsage;
     totalCostUsd?: number;
   },
 ): CompleteNode {
@@ -215,22 +210,54 @@ describe("flattenTree", () => {
     expect(msgs[2].toolName).toBe("Bash");
   });
 
-  it("result 노드의 usage/cost 매핑", () => {
+  it("intervention 경로처럼 result만 오면 비용 캡션을 표시하지 않는다", () => {
     const tree = makeSession([
-      makeUserMessage("u1", "hi", [
-        makeResult("r1", {
-          usage: { input_tokens: 1000, output_tokens: 500 },
-          totalCostUsd: 0.0234,
-        }),
-      ]),
+      makeResult("r1", {
+        usage: { input_tokens: 1000, output_tokens: 500 },
+        totalCostUsd: 0.0234,
+      }),
+    ]);
+
+    expect(flattenTree(tree)).toEqual([]);
+  });
+
+  it("정상 종료의 complete+result 두 이벤트를 Turn Complete 한 줄로 통합한다", () => {
+    const tree = makeSession([
+      makeResult("result-10", { totalCostUsd: 0.1 }),
+      makeComplete("complete-11", "Turn done", { totalCostUsd: 0.1 }),
+      makeUserMessage("user-12", "second"),
+      makeResult("result-20", { totalCostUsd: 0.135 }),
+      makeComplete("complete-21", "Turn done", {
+        totalCostUsd: 0.135,
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          cached_input_tokens: 300,
+        },
+      }),
     ]);
 
     const msgs = flattenTree(tree);
-    const result = msgs.find((m) => m.treeNodeType === "result")!;
-    expect(result.role).toBe("system");
-    expect(result.usage).toEqual({ input_tokens: 1000, output_tokens: 500 });
-    expect(result.totalCostUsd).toBe(0.0234);
-    expect(result.content).toContain("$0.0234");
+    const completionCaptions = msgs.filter((message) =>
+      message.treeNodeType === "complete" || message.treeNodeType === "result"
+    );
+    expect(completionCaptions).toHaveLength(2);
+    expect(completionCaptions[0].content).toBe(
+      "Turn Complete · 누적 $0.1000",
+    );
+    expect(completionCaptions[1].content).toBe(
+      "Turn Complete · 이번 턴 $0.0350 · 누적 $0.1350 · 1,000 in (300 cache) / 500 out tokens",
+    );
+  });
+
+  it("Turn Complete 비용 차분을 계산할 수 없으면 누적값으로 명시한다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done", { totalCostUsd: 35.14 }),
+    ]);
+
+    expect(flattenTree(tree)[0].content).toBe(
+      "Turn Complete · 누적 $35.1400",
+    );
   });
 
   it("error 노드", () => {
@@ -355,7 +382,7 @@ describe("flattenTree", () => {
 
     const msgs = flattenTree(tree);
     expect(msgs[0].role).toBe("system");
-    expect(msgs[0].content).toBe("Turn done");
+    expect(msgs[0].content).toBe("Turn Complete");
   });
 
   it("complete 노드의 usage/cost를 완료 줄에 표시한다", () => {
@@ -374,7 +401,7 @@ describe("flattenTree", () => {
     const msgs = flattenTree(tree);
     expect(msgs[0].role).toBe("system");
     expect(msgs[0].content).toBe(
-      "Turn Complete  $0.0123  1,500 tokens (1,000 in / 500 out / 300 cached / 50 reasoning)",
+      "Turn Complete · 누적 $0.0123 · 1,000 in (300 cache) / 500 out tokens",
     );
     expect(msgs[0].usage).toEqual({
       input_tokens: 1000,
@@ -383,6 +410,23 @@ describe("flattenTree", () => {
       reasoning_output_tokens: 50,
     });
     expect(msgs[0].totalCostUsd).toBe(0.0123);
+  });
+
+  it("Claude 캐시 읽기와 생성을 포함한 실제 입력 토큰을 표시한다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done", {
+        usage: {
+          input_tokens: 8,
+          output_tokens: 5300,
+          cache_read_input_tokens: 2_838_895,
+          cache_creation_input_tokens: 7_387,
+        },
+      }),
+    ]);
+
+    expect(flattenTree(tree)[0].content).toBe(
+      "Turn Complete · 2,846,290 in (2,846,282 cache) / 5,300 out tokens",
+    );
   });
 
   it("tool 에러 상태 표시", () => {

@@ -245,6 +245,8 @@ export interface CompleteEvent {
   usage?: {
     input_tokens: number;
     output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
     cached_input_tokens?: number;
     reasoning_output_tokens?: number;
   };
@@ -424,7 +426,14 @@ export interface ResultEvent {
   output: string;
   error?: string;
   /** 토큰 사용량 */
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    cached_input_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
   /** 총 비용 (USD) */
   total_cost_usd?: number;
   /** 종료 사유 */

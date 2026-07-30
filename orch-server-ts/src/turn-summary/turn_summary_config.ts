@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, dirname, extname, join } from "node:path";
 
 import { parse } from "yaml";
 import { z } from "zod";
@@ -9,7 +10,7 @@ export type TurnSummaryLogger = {
   readonly warn: (...args: unknown[]) => void;
 };
 
-const TurnSummaryConfigSchema = z
+const TurnSummaryConfigFileSchema = z
   .object({
     enabled: z.boolean(),
     instruction: z.string().trim().min(1),
@@ -23,7 +24,13 @@ const TurnSummaryConfigSchema = z
     history_limit: z.number().int().min(0).max(5),
     excluded_folder_ids: z.array(z.string().uuid()),
   })
-  .strict()
+  .strict();
+
+const TurnSummaryConfigOverlaySchema = TurnSummaryConfigFileSchema
+  .partial()
+  .strict();
+
+const TurnSummaryConfigSchema = TurnSummaryConfigFileSchema
   .transform((value) => ({
     enabled: value.enabled,
     instruction: value.instruction,
@@ -51,7 +58,14 @@ export class TurnSummaryConfigService {
   read(): TurnSummaryConfig {
     try {
       const source = readFileSync(this.configPath, "utf8");
-      const config = TurnSummaryConfigSchema.parse(parse(source));
+      const base = TurnSummaryConfigFileSchema.parse(parse(source));
+      const localConfigPath = resolveLocalConfigPath(this.configPath);
+      const overlay = existsSync(localConfigPath)
+        ? TurnSummaryConfigOverlaySchema.parse(
+          parse(readFileSync(localConfigPath, "utf8")),
+        )
+        : {};
+      const config = TurnSummaryConfigSchema.parse({ ...base, ...overlay });
       this.lastSuccessful = config;
       return config;
     } catch (error) {
@@ -63,4 +77,12 @@ export class TurnSummaryConfigService {
       return this.lastSuccessful;
     }
   }
+}
+
+function resolveLocalConfigPath(configPath: string): string {
+  const extension = extname(configPath);
+  return join(
+    dirname(configPath),
+    `${basename(configPath, extension)}.local${extension}`,
+  );
 }

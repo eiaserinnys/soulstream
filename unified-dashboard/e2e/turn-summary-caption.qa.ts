@@ -65,9 +65,14 @@ async function verifyTurnSummaryCaption(browser: Browser) {
       `캡션 순서가 잘못됐습니다: ${metrics.order.join(",")}`,
     );
     assert(metrics.summary.fontSize === metrics.complete.fontSize, "기존 complete 캡션의 글자 크기를 재사용하지 않았습니다.");
-    assert(metrics.summary.color === metrics.complete.color, "기존 complete 캡션의 보조 톤을 재사용하지 않았습니다.");
-    assert(metrics.summary.textAlign === "center", "캡션이 중앙 정렬되지 않았습니다.");
+    assert(metrics.summary.color !== metrics.complete.color, "완료 성공 톤과 요약 보조 톤의 기존 구분이 사라졌습니다.");
+    assert(metrics.summary.textAlign === "left", "다줄 요약 캡션이 좌측 정렬되지 않았습니다.");
+    assert(metrics.complete.textAlign === "left", "한 줄 완료 캡션이 좌측 정렬되지 않았습니다.");
     assert(metrics.summary.whiteSpace === "pre-line", "요약 줄바꿈이 보존되지 않았습니다.");
+    assert(metrics.completeText.includes("이번 턴 $0.1400"), "Turn Complete에 계산된 비용 차분이 보이지 않습니다.");
+    assert(metrics.completeText.includes("누적 $35.1400"), "Turn Complete에 누적 비용이 보이지 않습니다.");
+    assert(metrics.completeText.includes("2,846,290 in"), "Turn Complete에 캐시 포함 입력 토큰이 보이지 않습니다.");
+    assert(!metrics.resultVisible, "Session Complete 캡션이 중복 표시됩니다.");
     assert(browserErrors.length === 0, `브라우저 오류: ${browserErrors.join(" | ")}`);
 
     mkdirSync(outputRoot, { recursive: true });
@@ -106,8 +111,40 @@ async function injectLateSummary(page: Page) {
       };
     }).__SOULSTREAM_STORE__;
     const processEvent = store.getState().processEvent;
+    processEvent({
+      type: "result",
+      success: true,
+      output: "직전 턴 완료",
+      total_cost_usd: 35,
+      timestamp: 110,
+    }, 110);
     processEvent({ type: "assistant_message", content: "최종 구현과 검증 방향을 확정했습니다.", timestamp: 119 }, 119);
-    processEvent({ type: "complete", result: "Turn completed", attachments: [], timestamp: 120 }, 120);
+    processEvent({
+      type: "complete",
+      result: "Turn completed",
+      attachments: [],
+      usage: {
+        input_tokens: 8,
+        output_tokens: 5300,
+        cache_read_input_tokens: 2_838_895,
+        cache_creation_input_tokens: 7_387,
+      },
+      total_cost_usd: 35.14,
+      timestamp: 120,
+    }, 120);
+    processEvent({
+      type: "result",
+      success: true,
+      output: "현재 턴 완료",
+      usage: {
+        input_tokens: 8,
+        output_tokens: 5300,
+        cache_read_input_tokens: 2_838_895,
+        cache_creation_input_tokens: 7_387,
+      },
+      total_cost_usd: 35.14,
+      timestamp: 121,
+    }, 121);
     processEvent({ type: "user_message", text: "그다음 턴에서 배포 순서를 확인해 주세요.", user: "디렉터님", timestamp: 130 }, 130);
     processEvent({
       type: "turn_summary",
@@ -147,6 +184,10 @@ async function measureTimeline(page: Page) {
         whiteSpace: completeStyle.whiteSpace,
         width: complete.getBoundingClientRect().width,
       },
+      completeText: elements[1]?.textContent ?? "",
+      resultVisible: document.querySelector<HTMLElement>(
+        '[data-tree-node-id="result-121"]',
+      ) !== null,
       chatPane: document.querySelector<HTMLElement>(".v3-chat-pane")?.getBoundingClientRect().toJSON(),
     };
   });
