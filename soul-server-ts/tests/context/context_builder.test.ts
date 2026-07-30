@@ -111,7 +111,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     });
   });
 
-  it("injects the predecessor away summary before falling back to turns", async () => {
+  it("injects the predecessor session story through the shared context path", async () => {
     const getSession = vi.fn(async (sessionId: string) =>
       sessionId === "sess-current"
         ? { session_id: sessionId, predecessor_session_id: "sess-previous", folder_id: null }
@@ -121,8 +121,15 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
             folder_id: null,
             away_summary: "이전 세션에서 서버 계약을 확정했다.",
           });
-    const countEvents = vi.fn(async () => 0);
-    const cb = makeBuilder({ getSession, countEvents } as Partial<SessionDB>);
+    const getSessionStory = vi.fn(async () => ({
+      highlight: "핵심",
+      narrative: "[T1-T5] 이전 세션에서 서버 계약을 확정했다.",
+      unfoldedTurnSummaries: [],
+      narrativeThroughEventId: 42,
+      foldCount: 1,
+      updatedAt: new Date("2026-07-31T00:00:00.000Z"),
+    }));
+    const cb = makeBuilder({ getSession, getSessionStory } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
     const item = ctx.combinedContextItems.find(
@@ -131,13 +138,14 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(JSON.parse(String(item?.content))).toEqual({
       session_id: "sess-previous",
-      source: "away_summary",
-      summary: "이전 세션에서 서버 계약을 확정했다.",
+      source: "session_story",
+      narrative: "[T1-T5] 이전 세션에서 서버 계약을 확정했다.",
+      unfolded_turn_summaries: [],
     });
-    expect(countEvents).not.toHaveBeenCalled();
+    expect(getSessionStory).toHaveBeenCalledWith("sess-previous");
   });
 
-  it("reuses the shared turn excerpt when the predecessor has no away summary", async () => {
+  it("reuses the shared turn excerpt when the predecessor has no story data", async () => {
     const getSession = vi.fn(async (sessionId: string) =>
       sessionId === "sess-current"
         ? { session_id: sessionId, predecessor_session_id: "sess-previous", folder_id: null }
@@ -148,13 +156,26 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
             away_summary: null,
           });
     const countEvents = vi.fn(async () => 1);
+    const getSessionStory = vi.fn(async () => ({
+      highlight: null,
+      narrative: null,
+      unfoldedTurnSummaries: [],
+      narrativeThroughEventId: null,
+      foldCount: 0,
+      updatedAt: null,
+    }));
     const readEvents = vi.fn(async () => [{
       id: 7,
       event_type: "assistant_message",
       payload: { text: "완료 내용" },
       created_at: new Date("2026-07-14T00:00:00.000Z"),
     }]);
-    const cb = makeBuilder({ getSession, countEvents, readEvents } as Partial<SessionDB>);
+    const cb = makeBuilder({
+      getSession,
+      getSessionStory,
+      countEvents,
+      readEvents,
+    } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
     const item = ctx.combinedContextItems.find(

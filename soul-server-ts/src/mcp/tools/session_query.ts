@@ -14,6 +14,8 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { searchSessionEvents } from "../../search/session_search.js";
 import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
+import { serializeSessionStoryView } from
+  "../../db/repositories/session_story_repository.js";
 import { SessionQueryConsumptionBoundary } from
   "./session_query_consumption_boundary.js";
 
@@ -195,21 +197,7 @@ export function registerSessionQueryTools(
         return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
       }
       const story = await runtime.db.getSessionStory(session_id);
-      const result = jsonResult({
-        highlight: story.highlight,
-        narrative: story.narrative,
-        unfolded_turn_summaries: story.unfoldedTurnSummaries.map((summary) => ({
-          event_id: summary.eventId,
-          turn_number: summary.turnNumber,
-          content: summary.content,
-          turn_start_event_id: summary.turnStartEventId,
-          final_response_event_id: summary.finalResponseEventId,
-          created_at: summary.createdAt.toISOString(),
-        })),
-        narrative_through_event_id: story.narrativeThroughEventId,
-        fold_count: story.foldCount,
-        updated_at: story.updatedAt?.toISOString() ?? null,
-      });
+      const result = jsonResult(serializeSessionStoryView(story));
       return consumptionBoundary.commit(
         "get_session_story",
         result,
