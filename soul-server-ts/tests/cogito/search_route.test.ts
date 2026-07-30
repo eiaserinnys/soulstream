@@ -24,6 +24,7 @@ function createSilentLogger() {
 function makeRuntime(params: {
   searchEvents?: ReturnType<typeof vi.fn>;
   searchEventsBySessionId?: ReturnType<typeof vi.fn>;
+  searchSessionDigests?: ReturnType<typeof vi.fn>;
 }): McpRuntime {
   return {
     nodeId: "node-test",
@@ -31,6 +32,7 @@ function makeRuntime(params: {
     db: {
       searchEvents: params.searchEvents ?? vi.fn(async () => []),
       searchEventsBySessionId: params.searchEventsBySessionId ?? vi.fn(async () => []),
+      searchSessionDigests: params.searchSessionDigests ?? vi.fn(async () => []),
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
     taskExecutor: {} as TaskExecutor,
@@ -92,6 +94,7 @@ describe("GET /cogito/search", () => {
           score: 10.09,
           preview: "가라앉은 배\n한복...",
           event_type: "assistant_message",
+          match_source: "message",
         },
       ],
     });

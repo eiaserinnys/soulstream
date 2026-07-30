@@ -158,8 +158,40 @@ describe("cogito route harness", () => {
       q: "hello",
       top_k: 7,
       search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
       event_categories: "thinking,tools",
     });
+    await app.close();
+  });
+
+  it("forwards explicit derived-text search flags and rejects invalid booleans", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [] })),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=needle&include_turn_summaries=true&include_highlight=1&include_story=true",
+    });
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=needle&include_story=maybe",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(searchProvider.search).toHaveBeenCalledWith({
+      q: "needle",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: true,
+      include_highlight: true,
+      include_story: true,
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(searchProvider.search).toHaveBeenCalledTimes(1);
     await app.close();
   });
 

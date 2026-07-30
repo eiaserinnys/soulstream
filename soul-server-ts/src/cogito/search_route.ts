@@ -23,6 +23,9 @@ export function registerCogitoSearchRoute(
       event_types?: string;
       event_categories?: string;
       search_session_id?: string | boolean;
+      include_turn_summaries?: string | boolean;
+      include_highlight?: string | boolean;
+      include_story?: string | boolean;
     };
   }>("/cogito/search", async (request, reply) => {
     const query = typeof request.query.q === "string" ? request.query.q : "";
@@ -40,6 +43,9 @@ export function registerCogitoSearchRoute(
       limit,
       eventTypes,
       searchSessionId,
+      includeTurnSummaries: parseBoolean(request.query.include_turn_summaries),
+      includeHighlight: parseBoolean(request.query.include_highlight),
+      includeStory: parseBoolean(request.query.include_story),
     });
     return { results };
   });

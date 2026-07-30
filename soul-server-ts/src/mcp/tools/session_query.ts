@@ -18,6 +18,8 @@ import { serializeSessionStoryView } from
   "../../db/repositories/session_story_repository.js";
 import { SessionQueryConsumptionBoundary } from
   "./session_query_consumption_boundary.js";
+import { registerSessionTurnSummaryTool } from
+  "./session_turn_summary_tool.js";
 
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
@@ -29,6 +31,7 @@ export function registerSessionQueryTools(
   const consumptionBoundary = new SessionQueryConsumptionBoundary(
     runtime.childCompletionConsumption,
   );
+  registerSessionTurnSummaryTool(server, runtime, consumptionBoundary);
   server.registerTool(
     "list_sessions",
     {
@@ -272,16 +275,31 @@ export function registerSessionQueryTools(
         session_ids: z.array(z.string()).optional(),
         event_types: z.array(z.string()).optional(),
         search_session_id: z.boolean().default(false),
+        include_turn_summaries: z.boolean().default(false),
+        include_highlight: z.boolean().default(false),
+        include_story: z.boolean().default(false),
         top_k: z.number().int().min(1).max(100).default(10),
       },
     },
-    async ({ query, session_ids, event_types, search_session_id, top_k }) => {
+    async ({
+      query,
+      session_ids,
+      event_types,
+      search_session_id,
+      include_turn_summaries,
+      include_highlight,
+      include_story,
+      top_k,
+    }) => {
       try {
         const results = await searchSessionEvents(runtime.db, {
           query,
           sessionIds: session_ids ?? null,
           eventTypes: event_types,
           searchSessionId: search_session_id,
+          includeTurnSummaries: include_turn_summaries,
+          includeHighlight: include_highlight,
+          includeStory: include_story,
           limit: top_k ?? 10,
         });
         const observations = consumptionBoundary.enabled

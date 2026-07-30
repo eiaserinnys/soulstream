@@ -8,6 +8,47 @@ import { SessionStoryRepository } from
   "../src/turn-summary/session_story_repository.js";
 
 describe("SessionStoryRepository", () => {
+  it("counts digested and undigested turn summaries in one session-bounded query", async () => {
+    const { repository, calls } = repositoryWithResponses([[
+      { total_count: 6, digested_count: 5, undigested_count: 1 },
+    ]]);
+
+    await expect(repository.countTurnSummaries("session-a")).resolves.toEqual({
+      totalCount: 6,
+      digestedCount: 5,
+      undigestedCount: 1,
+    });
+    expect(calls[0]?.text).toContain("COUNT(*) FILTER");
+    expect(calls[0]?.values).toEqual(["session-a"]);
+  });
+
+  it("loads an inclusive turn-number range in chronological order", async () => {
+    const { repository, calls } = repositoryWithResponses([[
+      {
+        id: 31,
+        turn_number: 3,
+        payload: {
+          content: "세 번째 턴",
+          turn_start_event_id: 25,
+          final_response_event_id: 29,
+        },
+        created_at: new Date("2026-07-31T00:00:00.000Z"),
+      },
+    ]]);
+
+    await expect(repository.loadTurnSummaryRange(
+      "session-a",
+      3,
+      5,
+      4,
+    )).resolves.toEqual([
+      expect.objectContaining({ eventId: 31, turnNumber: 3 }),
+    ]);
+    expect(calls[0]?.text).toContain("ROW_NUMBER() OVER (ORDER BY id ASC)");
+    expect(calls[0]?.text).toContain("turn_number <=");
+    expect(calls[0]?.values).toEqual(["session-a", 3, 5, 4]);
+  });
+
   it("numbers all summaries before applying the watermark and keeps durable id order", async () => {
     const { repository, calls } = repositoryWithResponses([[
       {

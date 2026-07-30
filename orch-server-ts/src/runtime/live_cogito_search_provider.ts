@@ -34,6 +34,36 @@ export function createLiveCogitoSearchProvider(
             FROM session_id_search(${params.q}, ${eventTypes}::text[], ${params.top_k})
           `
         : [];
+      const digestRows = params.include_highlight || params.include_story
+        ? await sql`
+            SELECT
+              d.narrative_through_event_id AS id,
+              d.session_id,
+              matches.event_type,
+              matches.searchable_text,
+              1.0 / matches.position AS score,
+              matches.match_source
+            FROM session_digests d
+            CROSS JOIN LATERAL (
+              SELECT
+                'session_highlight'::text AS event_type,
+                d.highlight AS searchable_text,
+                STRPOS(LOWER(d.highlight), LOWER(${params.q})) AS position,
+                'highlight'::text AS match_source
+              WHERE ${params.include_highlight}
+              UNION ALL
+              SELECT
+                'session_story'::text,
+                d.narrative,
+                STRPOS(LOWER(d.narrative), LOWER(${params.q})),
+                'story'::text
+              WHERE ${params.include_story}
+            ) matches
+            WHERE matches.position > 0
+            ORDER BY score DESC, d.updated_at DESC, d.session_id ASC
+            LIMIT ${params.top_k}
+          `
+        : [];
       const navigationRows = await sql`
         SELECT *
         FROM (
@@ -72,7 +102,7 @@ export function createLiveCogitoSearchProvider(
       `;
       return {
         results: serializeEventRows(
-          [...eventRows, ...sessionRows],
+          [...eventRows, ...sessionRows, ...digestRows],
           params.q,
           params.top_k,
         ),
@@ -84,10 +114,14 @@ export function createLiveCogitoSearchProvider(
 
 function resolveEventTypes(params: CogitoSearchParams): string[] {
   const legacy = splitCommaList(params.event_types);
-  if (legacy !== null) return legacy;
-  const categories =
-    parseSearchEventCategories(params.event_categories) ?? [...DEFAULT_SEARCH_CATEGORIES];
-  return eventTypesForSearchCategories(categories);
+  const resolved = legacy ?? eventTypesForSearchCategories(
+    parseSearchEventCategories(params.event_categories) ??
+      [...DEFAULT_SEARCH_CATEGORIES],
+  );
+  if (params.include_turn_summaries && !resolved.includes("turn_summary")) {
+    resolved.push("turn_summary");
+  }
+  return resolved;
 }
 
 function serializeEventRows(
@@ -100,7 +134,8 @@ function serializeEventRows(
     const sessionId = stringValue(row.session_id);
     const eventId = numberValue(row.id);
     if (sessionId === null || eventId === null) continue;
-    const key = `${sessionId}:${eventId}`;
+    const matchSource = searchMatchSource(row);
+    const key = `${sessionId}:${eventId}:${matchSource}`;
     if (unique.has(key)) continue;
     const searchableText = stringValue(row.searchable_text) ?? "";
     unique.set(key, {
@@ -109,11 +144,22 @@ function serializeEventRows(
       score: numberValue(row.score) ?? 0,
       preview: buildSearchPreview(searchableText, query),
       event_type: stringValue(row.event_type) ?? "",
+      match_source: matchSource,
     });
   }
   return [...unique.values()]
     .sort((left, right) => scoreValue(right) - scoreValue(left))
     .slice(0, limit);
+}
+
+function searchMatchSource(
+  row: Record<string, unknown>,
+): "message" | "turn_summary" | "highlight" | "story" {
+  const explicit = stringValue(row.match_source);
+  if (explicit === "highlight" || explicit === "story") return explicit;
+  return stringValue(row.event_type) === "turn_summary"
+    ? "turn_summary"
+    : "message";
 }
 
 function serializeNavigationRow(

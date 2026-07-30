@@ -44,7 +44,24 @@ export interface SessionStoryRepositoryPort {
   storeDigest(input: StoreSessionStoryDigestInput): Promise<boolean>;
 }
 
-export class SessionStoryRepository implements SessionStoryRepositoryPort {
+export interface SessionTurnSummaryCounts {
+  readonly totalCount: number;
+  readonly digestedCount: number;
+  readonly undigestedCount: number;
+}
+
+export interface SessionTurnSummaryRepositoryPort {
+  countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
+  loadTurnSummaryRange(
+    sessionId: string,
+    fromTurnNumber: number,
+    toTurnNumber: number | null,
+    limit: number,
+  ): Promise<UnfoldedTurnSummary[]>;
+}
+
+export class SessionStoryRepository
+implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
   constructor(private readonly sqlResolver: LiveDbSqlResolver) {}
 
   async loadDigest(sessionId: string): Promise<SessionStoryDigest | null> {
@@ -81,6 +98,84 @@ export class SessionStoryRepository implements SessionStoryRepositoryPort {
         AND id > ${afterEventId ?? 0}
     `;
     return numberValue(rows[0]?.count) ?? 0;
+  }
+
+  async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql`
+      WITH input AS (
+        SELECT ${sessionId}::text AS session_id
+      ),
+      watermark AS (
+        SELECT COALESCE(d.narrative_through_event_id, 0) AS event_id
+        FROM input
+        LEFT JOIN session_digests d ON d.session_id = input.session_id
+      )
+      SELECT
+        COUNT(*)::integer AS total_count,
+        COUNT(*) FILTER (
+          WHERE e.id <= (SELECT event_id FROM watermark)
+        )::integer AS digested_count,
+        COUNT(*) FILTER (
+          WHERE e.id > (SELECT event_id FROM watermark)
+        )::integer AS undigested_count
+      FROM events e
+      JOIN input ON input.session_id = e.session_id
+      WHERE e.event_type = 'turn_summary'
+    `;
+    return {
+      totalCount: numberValue(rows[0]?.total_count) ?? 0,
+      digestedCount: numberValue(rows[0]?.digested_count) ?? 0,
+      undigestedCount: numberValue(rows[0]?.undigested_count) ?? 0,
+    };
+  }
+
+  async loadTurnSummaryRange(
+    sessionId: string,
+    fromTurnNumber: number,
+    toTurnNumber: number | null,
+    limit: number,
+  ): Promise<UnfoldedTurnSummary[]> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = toTurnNumber === null
+      ? await sql`
+          WITH ordered_summaries AS (
+            SELECT
+              id,
+              payload,
+              created_at,
+              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+            FROM events
+            WHERE session_id = ${sessionId}
+              AND event_type = 'turn_summary'
+          )
+          SELECT id, payload, created_at, turn_number
+          FROM ordered_summaries
+          WHERE turn_number >= ${fromTurnNumber}
+          ORDER BY turn_number ASC
+          LIMIT ${limit}
+        `
+      : await sql`
+          WITH ordered_summaries AS (
+            SELECT
+              id,
+              payload,
+              created_at,
+              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+            FROM events
+            WHERE session_id = ${sessionId}
+              AND event_type = 'turn_summary'
+          )
+          SELECT id, payload, created_at, turn_number
+          FROM ordered_summaries
+          WHERE turn_number >= ${fromTurnNumber}
+            AND turn_number <= ${toTurnNumber}
+          ORDER BY turn_number ASC
+          LIMIT ${limit}
+        `;
+    return rows
+      .map(normalizeUnfoldedSummary)
+      .filter((value): value is UnfoldedTurnSummary => value !== null);
   }
 
   async loadUnfoldedSummaries(

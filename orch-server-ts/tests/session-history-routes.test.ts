@@ -33,6 +33,7 @@ describe("session history/read-only route harness", () => {
       "/api/sessions/sess-1/timeline",
       "/api/sessions/sess-1/timeline/tool%3A1/trace",
       "/api/sessions/sess-1/story",
+      "/api/sessions/sess-1/turn-summaries?mode=count",
       "/api/sessions/sess-1/events",
     ]) {
       expect(await app.inject({ method: "GET", url })).toMatchObject({
@@ -88,6 +89,7 @@ describe("session history/read-only route harness", () => {
       "GET /api/sessions/:session_id/timeline": true,
       "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
       "GET /api/sessions/:session_id/story": true,
+      "GET /api/sessions/:session_id/turn-summaries": true,
       "GET /api/sessions/:session_id/events": true,
     });
 
@@ -190,6 +192,87 @@ describe("session history/read-only route harness", () => {
     ]);
     expect(response.json()).toEqual(story);
     expect(provider.readStory).toHaveBeenCalledWith("sess/1");
+
+    await app.close();
+  });
+
+  it("mirrors the turn summary count, index, and range contract", async () => {
+    const readTurnSummaries = vi.fn(async (
+      sessionId: string,
+      query: Parameters<SessionHistoryProvider["readTurnSummaries"]>[1],
+    ) => {
+      if (query.mode === "count") {
+        return {
+          session_id: sessionId,
+          mode: "count" as const,
+          total_count: 4,
+          digested_count: 3,
+          undigested_count: 1,
+        };
+      }
+      if (query.mode === "index") {
+        return {
+          session_id: sessionId,
+          mode: "index" as const,
+          turn_number: query.turnNumber,
+          summary: null,
+        };
+      }
+      return {
+        session_id: sessionId,
+        mode: "range" as const,
+        from_turn_number: query.fromTurnNumber,
+        to_turn_number: query.toTurnNumber,
+        limit: query.limit,
+        summaries: [],
+        has_more: false,
+        next_from_turn_number: null,
+      };
+    });
+    const { app } = createHarness(createProvider({ readTurnSummaries }));
+
+    const count = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/turn-summaries?mode=count",
+    });
+    const index = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/turn-summaries?mode=index&turn_number=9",
+    });
+    const range = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/turn-summaries?mode=range&from_turn_number=2&limit=100",
+    });
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/turn-summaries?mode=range&from_turn_number=4&to_turn_number=3",
+    });
+
+    expect(count.json()).toEqual({
+      session_id: "sess-1",
+      mode: "count",
+      total_count: 4,
+      digested_count: 3,
+      undigested_count: 1,
+    });
+    expect(index.json()).toEqual({
+      session_id: "sess-1",
+      mode: "index",
+      turn_number: 9,
+      summary: null,
+    });
+    expect(range.json()).toEqual({
+      session_id: "sess-1",
+      mode: "range",
+      from_turn_number: 2,
+      to_turn_number: null,
+      limit: 100,
+      summaries: [],
+      has_more: false,
+      next_from_turn_number: null,
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(readTurnSummaries).toHaveBeenCalledTimes(3);
 
     await app.close();
   });
@@ -321,9 +404,10 @@ describe("session history/read-only route harness", () => {
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline/tool%3A1/trace" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/story" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/turn-summaries?mode=count" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/events" });
 
-    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(6);
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(7);
     expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "sess-1" }),
     );
@@ -332,6 +416,7 @@ describe("session history/read-only route harness", () => {
     expect(provider.readTimeline).toHaveBeenCalled();
     expect(provider.readTimelineTrace).toHaveBeenCalled();
     expect(provider.readStory).toHaveBeenCalled();
+    expect(provider.readTurnSummaries).toHaveBeenCalled();
     expect(provider.readLastEventId).toHaveBeenCalled();
 
     await app.close();
@@ -632,6 +717,22 @@ function createProvider(
     readTimeline: vi.fn(async () => page([], null)),
     readTimelineTrace: vi.fn(async () => null),
     readStory: vi.fn(async () => emptyStory()),
+    readTurnSummaries: vi.fn(async (sessionId, query) => ({
+      session_id: sessionId,
+      mode: query.mode,
+      ...(query.mode === "count"
+        ? { total_count: 0, digested_count: 0, undigested_count: 0 }
+        : query.mode === "index"
+          ? { turn_number: query.turnNumber, summary: null }
+          : {
+              from_turn_number: query.fromTurnNumber,
+              to_turn_number: query.toTurnNumber,
+              limit: query.limit,
+              summaries: [],
+              has_more: false,
+              next_from_turn_number: null,
+            }),
+    })),
     readLastEventId: vi.fn(async () => 0),
     streamEventsRaw: vi.fn(async function* () {}),
     ...overrides,

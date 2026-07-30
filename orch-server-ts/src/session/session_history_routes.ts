@@ -14,6 +14,8 @@ import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
 } from "./session_resource_access.js";
+import { registerSessionTurnSummaryRoute } from
+  "./session_turn_summary_routes.js";
 
 export type SessionHistoryRouteOptions = {
   provider: SessionHistoryProvider;
@@ -41,6 +43,7 @@ export const sessionHistoryRouteAuthRequirements = {
   "GET /api/sessions/:session_id/timeline": true,
   "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
   "GET /api/sessions/:session_id/story": true,
+  "GET /api/sessions/:session_id/turn-summaries": true,
   "GET /api/sessions/:session_id/events": true,
 } as const;
 
@@ -72,6 +75,11 @@ export function registerSessionHistoryRoutes(
   options: SessionHistoryRouteOptions,
 ): void {
   const service = new SessionHistoryReadService({ provider: options.provider });
+  registerSessionTurnSummaryRoute(app, {
+    read: (sessionId, query) => service.readTurnSummaries(sessionId, query),
+    ensureAccess: (request, reply) =>
+      ensureSessionAccess(options, request, reply),
+  });
 
   app.get("/api/sessions/:session_id/events/viewport", async (request, reply) => {
     const yMin = requiredPositiveIntegerQuery(request.query, "y_min");
