@@ -27,7 +27,8 @@ const CONFIG: TurnSummaryConfig = {
   storyFoldBatchSize: 5,
   storyNarrativeMaxChars: 1_500,
   provider: "codex",
-  model: "gpt-5.6-terra",
+  model: "gpt-5.6-luna",
+  storyModel: "gpt-5.6-terra",
   reasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -63,7 +64,10 @@ describe("SessionStoryFoldService", () => {
     );
     expect(generator.generate).toHaveBeenCalledWith(
       expect.stringContaining("[T1] 첫 요청"),
-      CONFIG,
+      expect.objectContaining({
+        model: "gpt-5.6-terra",
+        storyModel: "gpt-5.6-terra",
+      }),
       expect.objectContaining({ maxAttempts: 1 }),
     );
     expect(repository.storeDigest).toHaveBeenCalledWith({
@@ -76,6 +80,7 @@ describe("SessionStoryFoldService", () => {
     expect(debug).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-a",
+        model: "gpt-5.6-terra",
         markerInversionPairs: 0,
         narrativeThroughEventId: 52,
       }),

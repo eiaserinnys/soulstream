@@ -20,6 +20,7 @@ const TurnSummaryConfigFileSchema = z
     story_narrative_max_chars: z.number().int().positive(),
     provider: z.enum(["codex", "openai-api"]),
     model: z.string().trim().min(1),
+    story_model: z.string().trim().min(1).optional(),
     reasoning_effort: z.enum(["minimal", "low", "medium", "high", "xhigh"]),
     timeout_ms: z.number().int().positive(),
     max_attempts: z.number().int().min(1).max(2),
@@ -48,6 +49,7 @@ const TurnSummaryConfigOverlaySchema = z
     story_narrative_max_chars: z.number().int().positive().optional(),
     provider: z.enum(["codex", "openai-api"]).optional(),
     model: z.string().trim().min(1).optional(),
+    story_model: z.string().trim().min(1).optional(),
     reasoning_effort: z.enum([
       "minimal",
       "low",
@@ -74,6 +76,7 @@ const TurnSummaryConfigSchema = TurnSummaryConfigFileSchema
     storyNarrativeMaxChars: value.story_narrative_max_chars,
     provider: value.provider,
     model: value.model,
+    storyModel: value.story_model ?? value.model,
     reasoningEffort: value.reasoning_effort,
     timeoutMs: value.timeout_ms,
     maxAttempts: value.max_attempts,

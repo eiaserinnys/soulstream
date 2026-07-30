@@ -164,9 +164,10 @@ export class SessionStoryFoldService {
     let lastError: unknown;
     let modelLatencyMs = 0;
     let usage: TurnSummaryUsage | undefined;
+    const storyConfig = { ...config, model: config.storyModel };
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const result = await this.deps.generator.generate(prompt, config, {
+        const result = await this.deps.generator.generate(prompt, storyConfig, {
           maxAttempts: 1,
           outputSchema: STORY_OUTPUT_SCHEMA,
         });
