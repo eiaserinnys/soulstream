@@ -221,18 +221,19 @@ describe("flattenTree", () => {
     expect(flattenTree(tree)).toEqual([]);
   });
 
-  it("정상 종료의 complete+result 두 이벤트를 Turn Complete 한 줄로 통합한다", () => {
+  it("정상 종료의 complete+result 두 이벤트를 턴 완료 한 줄로 통합한다", () => {
     const tree = makeSession([
-      makeResult("result-10", { totalCostUsd: 0.1 }),
-      makeComplete("complete-11", "Turn done", { totalCostUsd: 0.1 }),
+      makeResult("result-10", { totalCostUsd: 2.08 }),
+      makeComplete("complete-11", "Turn done", { totalCostUsd: 2.08 }),
       makeUserMessage("user-12", "second"),
-      makeResult("result-20", { totalCostUsd: 0.135 }),
+      makeResult("result-20", { totalCostUsd: 3.31 }),
       makeComplete("complete-21", "Turn done", {
-        totalCostUsd: 0.135,
+        totalCostUsd: 3.31,
         usage: {
-          input_tokens: 1000,
-          output_tokens: 500,
-          cached_input_tokens: 300,
+          input_tokens: 7,
+          output_tokens: 1473,
+          cache_read_input_tokens: 2_985_000,
+          cache_creation_input_tokens: 234,
         },
       }),
     ]);
@@ -242,21 +243,115 @@ describe("flattenTree", () => {
       message.treeNodeType === "complete" || message.treeNodeType === "result"
     );
     expect(completionCaptions).toHaveLength(2);
-    expect(completionCaptions[0].content).toBe(
-      "Turn Complete · 누적 $0.1000",
-    );
-    expect(completionCaptions[1].content).toBe(
-      "Turn Complete · 이번 턴 $0.0350 · 누적 $0.1350 · 1,000 in (300 cache) / 500 out tokens",
-    );
+    expect(completionCaptions[0]).toMatchObject({
+      content: "턴 완료",
+      captionStats: "최근 $2.08 · 누적 $2.08",
+    });
+    expect(completionCaptions[1]).toMatchObject({
+      content: "턴 완료",
+      captionStats:
+        "최근 $1.23 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473",
+    });
   });
 
-  it("Turn Complete 비용 차분을 계산할 수 없으면 누적값으로 명시한다", () => {
+  it("누적 비용이 감소하면 SDK 프로세스 리셋으로 보고 현재 누적값을 최근 비용으로 표시한다", () => {
+    const tree = makeSession([
+      makeResult("result-before-reset", { totalCostUsd: 35 }),
+      makeUserMessage("user-after-reset", "resumed"),
+      makeComplete("complete-after-reset", "Turn done", {
+        totalCostUsd: 3.31,
+      }),
+    ]);
+
+    expect(flattenTree(tree).at(-1)).toMatchObject({
+      content: "턴 완료",
+      captionStats: "최근 $3.31 · 누적 $3.31",
+    });
+  });
+
+  it("비용 차분 앵커가 없으면 현재 누적값을 최근 비용으로 사용한다", () => {
     const tree = makeSession([
       makeComplete("cmp1", "Turn done", { totalCostUsd: 35.14 }),
     ]);
 
-    expect(flattenTree(tree)[0].content).toBe(
-      "Turn Complete · 누적 $35.1400",
+    expect(flattenTree(tree)[0]).toMatchObject({
+      content: "턴 완료",
+      captionStats: "최근 $35.14 · 누적 $35.14",
+    });
+  });
+
+  it("비용 없이 토큰 사용량만 있어도 한국어 수치 블록을 만든다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done", {
+        usage: {
+          input_tokens: 8,
+          output_tokens: 5300,
+          cache_read_input_tokens: 2_838_895,
+          cache_creation_input_tokens: 7_387,
+        },
+      }),
+    ]);
+
+    expect(flattenTree(tree)[0]).toMatchObject({
+      content: "턴 완료",
+      captionStats: "입력 2,846,290 (캐시 2,846,282) · 출력 5,300",
+    });
+  });
+
+  it("complete 노드의 usage/cost를 구조화된 완료 캡션으로 보존한다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done", {
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          cached_input_tokens: 300,
+          reasoning_output_tokens: 50,
+        },
+        totalCostUsd: 0.0123,
+      }),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0]).toMatchObject({
+      content: "턴 완료",
+      captionStats:
+        "최근 $0.01 · 누적 $0.01 · 입력 1,000 (캐시 300) · 출력 500",
+      usage: {
+        input_tokens: 1000,
+        output_tokens: 500,
+        cached_input_tokens: 300,
+        reasoning_output_tokens: 50,
+      },
+      totalCostUsd: 0.0123,
+    });
+  });
+
+  it("complete 노드에 수치가 없으면 한국어 라벨만 표시한다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done"),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].content).toBe("턴 완료");
+    expect(msgs[0].captionStats).toBeUndefined();
+  });
+
+  it("턴 완료의 표시 문자열에는 영문 토큰 라벨을 남기지 않는다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done", {
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          cached_input_tokens: 300,
+        },
+        totalCostUsd: 0.0123,
+      }),
+    ]);
+
+    expect(flattenTree(tree)[0].captionStats).not.toMatch(
+      /\bin\b|\bout\b|tokens|cache/i,
     );
   });
 
@@ -375,59 +470,6 @@ describe("flattenTree", () => {
     expect(msgs[0].content).toBe("Context compacted");
   });
 
-  it("complete 노드", () => {
-    const tree = makeSession([
-      makeComplete("cmp1", "Turn done"),
-    ]);
-
-    const msgs = flattenTree(tree);
-    expect(msgs[0].role).toBe("system");
-    expect(msgs[0].content).toBe("Turn Complete");
-  });
-
-  it("complete 노드의 usage/cost를 완료 줄에 표시한다", () => {
-    const tree = makeSession([
-      makeComplete("cmp1", "Turn done", {
-        usage: {
-          input_tokens: 1000,
-          output_tokens: 500,
-          cached_input_tokens: 300,
-          reasoning_output_tokens: 50,
-        },
-        totalCostUsd: 0.0123,
-      }),
-    ]);
-
-    const msgs = flattenTree(tree);
-    expect(msgs[0].role).toBe("system");
-    expect(msgs[0].content).toBe(
-      "Turn Complete · 누적 $0.0123 · 1,000 in (300 cache) / 500 out tokens",
-    );
-    expect(msgs[0].usage).toEqual({
-      input_tokens: 1000,
-      output_tokens: 500,
-      cached_input_tokens: 300,
-      reasoning_output_tokens: 50,
-    });
-    expect(msgs[0].totalCostUsd).toBe(0.0123);
-  });
-
-  it("Claude 캐시 읽기와 생성을 포함한 실제 입력 토큰을 표시한다", () => {
-    const tree = makeSession([
-      makeComplete("cmp1", "Turn done", {
-        usage: {
-          input_tokens: 8,
-          output_tokens: 5300,
-          cache_read_input_tokens: 2_838_895,
-          cache_creation_input_tokens: 7_387,
-        },
-      }),
-    ]);
-
-    expect(flattenTree(tree)[0].content).toBe(
-      "Turn Complete · 2,846,290 in (2,846,282 cache) / 5,300 out tokens",
-    );
-  });
 
   it("tool 에러 상태 표시", () => {
     const tree = makeSession([
