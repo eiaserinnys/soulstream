@@ -150,6 +150,12 @@ export class TurnSummaryPipeline {
         model: result.model,
         latencyMs: result.latencyMs,
         attempts: result.attempts,
+        ...(result.spawnDurationMs === undefined
+          ? {}
+          : { spawnDurationMs: result.spawnDurationMs }),
+        ...(result.peakConcurrentSpawns === undefined
+          ? {}
+          : { peakConcurrentSpawns: result.peakConcurrentSpawns }),
         usage: result.usage,
       },
       "Turn summary stored",
@@ -263,7 +269,12 @@ function firstCallerInfoSource(metadata: unknown): string | null {
 
 function failureMetrics(
   error: unknown,
-): { readonly attempts?: number; readonly latencyMs?: number } {
+): {
+  readonly attempts?: number;
+  readonly latencyMs?: number;
+  readonly spawnDurationMs?: number;
+  readonly peakConcurrentSpawns?: number;
+} {
   const record = recordValue(error);
   return {
     ...(typeof record.attempts === "number"
@@ -271,6 +282,12 @@ function failureMetrics(
       : {}),
     ...(typeof record.latencyMs === "number"
       ? { latencyMs: record.latencyMs }
+      : {}),
+    ...(typeof record.spawnDurationMs === "number"
+      ? { spawnDurationMs: record.spawnDurationMs }
+      : {}),
+    ...(typeof record.peakConcurrentSpawns === "number"
+      ? { peakConcurrentSpawns: record.peakConcurrentSpawns }
       : {}),
   };
 }

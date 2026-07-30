@@ -18,6 +18,8 @@ export interface TurnSummaryResult {
   readonly model: string;
   readonly latencyMs: number;
   readonly attempts: number;
+  readonly spawnDurationMs?: number;
+  readonly peakConcurrentSpawns?: number;
   readonly usage?: TurnSummaryUsage;
 }
 

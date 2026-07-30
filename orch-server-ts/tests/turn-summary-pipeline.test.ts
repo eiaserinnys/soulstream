@@ -23,6 +23,7 @@ const CONFIG: TurnSummaryConfig = {
   reasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
+  codexConcurrencyLimit: 2,
   codepointLimit: 6_000,
   historyLimit: 5,
   excludedFolderIds: [
@@ -197,15 +198,18 @@ describe("TurnSummaryPipeline", () => {
         model: "gpt-5.6-terra",
         latencyMs: 70,
         attempts: 1,
+        spawnDurationMs: 60,
+        peakConcurrentSpawns: 2,
         usage: { input_tokens: 10 },
       }),
     };
+    const info = vi.fn();
     const pipeline = new TurnSummaryPipeline({
       repository,
       configService: { read: () => CONFIG },
       summarizer,
       eventHub: hub,
-      logger: { info: vi.fn(), warn: vi.fn() },
+      logger: { info, warn: vi.fn() },
       nowEpochSeconds: () => 123,
     });
 
@@ -242,6 +246,14 @@ describe("TurnSummaryPipeline", () => {
         }),
       },
     ]);
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        latencyMs: 70,
+        spawnDurationMs: 60,
+        peakConcurrentSpawns: 2,
+      }),
+      "Turn summary stored",
+    );
   });
 
   it("prechecks dedupe before invoking the provider", async () => {

@@ -43,6 +43,7 @@ const CONFIG: TurnSummaryConfig = {
   reasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
+  codexConcurrencyLimit: 2,
   codepointLimit: 6_000,
   historyLimit: 5,
   excludedFolderIds: [
@@ -92,8 +93,9 @@ describe("TurnSummaryConfigService", () => {
 
     expect(service.read()).toMatchObject({
       enabled: false,
-      provider: "openai-api",
-      model: "gpt-5.4-mini",
+      provider: "codex",
+      model: "gpt-5.6-terra",
+      codexConcurrencyLimit: 2,
     });
   });
 
@@ -236,7 +238,10 @@ describe("Codex turn summary provider", () => {
       processEnv: { HOME: "/oauth-home" },
       nowMs: vi.fn()
         .mockReturnValueOnce(100)
-        .mockReturnValueOnce(150),
+        .mockReturnValueOnce(110)
+        .mockReturnValueOnce(130)
+        .mockReturnValueOnce(140)
+        .mockReturnValueOnce(170),
     });
 
     await expect(summarizer.summarize({
@@ -246,10 +251,66 @@ describe("Codex turn summary provider", () => {
     }, CONFIG)).resolves.toMatchObject({
       content: "성공",
       attempts: 2,
-      latencyMs: 50,
+      latencyMs: 70,
+      spawnDurationMs: 50,
+      peakConcurrentSpawns: 1,
     });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute.mock.calls[0]?.[0].cwd).not.toBe(execute.mock.calls[1]?.[0].cwd);
+  });
+
+  it("queues bursts above the configured global spawn limit", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const releases: Array<() => void> = [];
+    const execute = vi.fn(async () =>
+      await new Promise<{ stdout: string; stderr: string }>((resolve) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        releases.push(() => {
+          active -= 1;
+          resolve({
+            stdout: JSON.stringify({
+              type: "item.completed",
+              item: { type: "agent_message", text: "요약" },
+            }),
+            stderr: "",
+          });
+        });
+      })
+    );
+    const summarizer = new CodexExecTurnSummarizer({
+      codexPath: "codex",
+      processPort: { execute },
+      processEnv: { HOME: "/oauth-home" },
+    });
+
+    const calls = Array.from({ length: 3 }, () =>
+      summarizer.summarize({
+        userText: "요청",
+        assistantText: "응답",
+        previousSummaries: [],
+      }, CONFIG)
+    );
+
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(active).toBe(2);
+    releases.shift()?.();
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    expect(maxActive).toBe(2);
+    releases.splice(0).forEach((release) => release());
+
+    const results = await Promise.all(calls);
+    expect(
+      results.every(
+        (result) =>
+          (result.peakConcurrentSpawns ?? 0) >= 1 &&
+          (result.peakConcurrentSpawns ?? 0) <= 2,
+      ),
+    ).toBe(true);
+    expect(
+      Math.max(...results.map((result) => result.peakConcurrentSpawns ?? 0)),
+    ).toBe(2);
   });
 });
 
@@ -310,6 +371,7 @@ function yamlConfig(model: string, enabled: boolean): string {
     "reasoning_effort: high",
     "timeout_ms: 30000",
     "max_attempts: 2",
+    "codex_concurrency_limit: 2",
     "codepoint_limit: 6000",
     "history_limit: 5",
     "excluded_folder_ids:",

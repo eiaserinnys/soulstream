@@ -39,6 +39,8 @@ export class TurnSummaryExecutionError extends Error {
   constructor(
     readonly attempts: number,
     readonly latencyMs: number,
+    readonly spawnDurationMs: number,
+    readonly peakConcurrentSpawns: number,
     cause: unknown,
   ) {
     super(`turn summary failed after ${attempts} attempts`, { cause });
@@ -158,6 +160,7 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
 export class CodexExecTurnSummarizer implements TurnSummarizer {
   private readonly processPort: CodexExecProcessPort;
   private readonly nowMs: () => number;
+  private readonly spawnLimiter = new CodexSpawnLimiter();
 
   constructor(private readonly options: CodexExecTurnSummarizerOptions) {
     this.processPort = options.processPort ?? new NodeCodexExecProcess();
@@ -174,30 +177,56 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
       throw new Error("Codex CLI path is unavailable for turn summaries");
     }
     let lastError: unknown;
+    let finishedAt = startedAt;
+    let spawnDurationMs = 0;
+    let peakConcurrentSpawns = 0;
     for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
       const workspaceDir = await mkdtemp(
         join(tmpdir(), "soulstream-turn-summary-"),
       );
       try {
-        const result = await this.processPort.execute(
-          buildCodexExecInvocation({
-            codexPath: this.options.codexPath,
-            workspaceDir,
-            model: config.model,
-            reasoningEffort: config.reasoningEffort,
-            processEnv: this.options.processEnv ?? process.env,
-          }),
-          prompt,
-          config.timeoutMs,
+        const permit = await this.spawnLimiter.acquire(
+          config.codexConcurrencyLimit,
         );
-        const parsed = parseCodexJsonl(result.stdout);
-        return {
-          content: parsed.content,
-          model: config.model,
-          latencyMs: Math.max(0, this.nowMs() - startedAt),
-          attempts: attempt,
-          ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
-        };
+        peakConcurrentSpawns = Math.max(
+          peakConcurrentSpawns,
+          permit.concurrentSpawns,
+        );
+        const spawnStartedAt = this.nowMs();
+        let parsed:
+          | ReturnType<typeof parseCodexJsonl>
+          | undefined;
+        try {
+          const result = await this.processPort.execute(
+            buildCodexExecInvocation({
+              codexPath: this.options.codexPath,
+              workspaceDir,
+              model: config.model,
+              reasoningEffort: config.reasoningEffort,
+              processEnv: this.options.processEnv ?? process.env,
+            }),
+            prompt,
+            config.timeoutMs,
+          );
+          parsed = parseCodexJsonl(result.stdout);
+        } catch (error) {
+          lastError = error;
+        } finally {
+          finishedAt = this.nowMs();
+          spawnDurationMs += Math.max(0, finishedAt - spawnStartedAt);
+          permit.release();
+        }
+        if (parsed !== undefined) {
+          return {
+            content: parsed.content,
+            model: config.model,
+            latencyMs: Math.max(0, finishedAt - startedAt),
+            attempts: attempt,
+            spawnDurationMs,
+            peakConcurrentSpawns,
+            ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
+          };
+        }
       } catch (error) {
         lastError = error;
       } finally {
@@ -206,9 +235,58 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
     }
     throw new TurnSummaryExecutionError(
       config.maxAttempts,
-      Math.max(0, this.nowMs() - startedAt),
+      Math.max(0, finishedAt - startedAt),
+      spawnDurationMs,
+      peakConcurrentSpawns,
       lastError,
     );
+  }
+}
+
+type CodexSpawnPermit = {
+  readonly concurrentSpawns: number;
+  readonly release: () => void;
+};
+
+class CodexSpawnLimiter {
+  private activeSpawns = 0;
+  private readonly waiters: Array<{
+    readonly limit: number;
+    readonly resolve: (permit: CodexSpawnPermit) => void;
+  }> = [];
+
+  async acquire(limit: number): Promise<CodexSpawnPermit> {
+    if (this.waiters.length === 0 && this.activeSpawns < limit) {
+      return this.grant();
+    }
+    return await new Promise<CodexSpawnPermit>((resolve) => {
+      this.waiters.push({ limit, resolve });
+      this.flush();
+    });
+  }
+
+  private grant(): CodexSpawnPermit {
+    this.activeSpawns += 1;
+    const concurrentSpawns = this.activeSpawns;
+    let released = false;
+    return {
+      concurrentSpawns,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.activeSpawns -= 1;
+        this.flush();
+      },
+    };
+  }
+
+  private flush(): void {
+    while (this.waiters.length > 0) {
+      const next = this.waiters[0];
+      if (next === undefined || this.activeSpawns >= next.limit) return;
+      this.waiters.shift();
+      next.resolve(this.grant());
+    }
   }
 }
 

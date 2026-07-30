@@ -1,10 +1,11 @@
 enabled: false
 instruction: "①사용자가 요청한 것 ②에이전트가 한 일 ③결과를 한국어 1~3줄로 요약하라. 원문에 없는 사실을 만들지 말 것."
-provider: openai-api
-model: gpt-5.4-mini
+provider: codex
+model: gpt-5.6-terra
 reasoning_effort: high
 timeout_ms: 30000
 max_attempts: 2
+codex_concurrency_limit: 2
 codepoint_limit: 6000
 history_limit: 5
 excluded_folder_ids:
