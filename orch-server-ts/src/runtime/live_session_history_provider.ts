@@ -2,6 +2,8 @@ import type {
   SessionHistoryProvider,
   SessionHistoryRawEvent,
 } from "../session/session_history_service.js";
+import { SessionStoryReadService } from "../session/session_story_read_service.js";
+import { SessionStoryRepository } from "../turn-summary/session_story_repository.js";
 import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
 import {
   buildToolTrace,
@@ -49,7 +51,13 @@ export function createLiveSessionHistoryProvider(
 }
 
 class LiveSessionHistoryProvider implements SessionHistoryProvider {
-  constructor(private readonly sqlResolver: LiveDbSqlResolver) {}
+  private readonly storyReader: SessionStoryReadService;
+
+  constructor(private readonly sqlResolver: LiveDbSqlResolver) {
+    this.storyReader = new SessionStoryReadService(
+      new SessionStoryRepository(sqlResolver),
+    );
+  }
 
   async readViewport(sessionId: string, yMin: number, yMax: number): Promise<unknown> {
     const sql = await this.sqlResolver.resolveSql();
@@ -130,6 +138,10 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     `;
     if (rows.length === 0) return null;
     return buildToolTrace(toolTimelineId(toolId), toolId, rows);
+  }
+
+  readStory(sessionId: string) {
+    return this.storyReader.readStory(sessionId);
   }
 
   async readLastEventId(sessionId: string): Promise<number> {

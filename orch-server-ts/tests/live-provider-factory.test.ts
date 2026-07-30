@@ -447,6 +447,14 @@ function createLiveDependencies(): LiveProviderDependencies {
     readMessages: vi.fn(async () => [[], null] as [unknown[], string | null]),
     readTimeline: vi.fn(async () => [[], null] as [unknown[], string | null]),
     readTimelineTrace: vi.fn(async () => null),
+    readStory: vi.fn(async () => ({
+      highlight: null,
+      narrative: null,
+      unfolded_turn_summaries: [],
+      narrative_through_event_id: null,
+      fold_count: 0,
+      updated_at: null,
+    })),
     readLastEventId: vi.fn(async () => 0),
     streamEventsRaw: vi.fn(() => emptyRawEvents()),
   };

@@ -6,6 +6,7 @@ import {
   MarkdownDocumentPanel,
   SessionContextMenu,
   SessionModelPresetBadge,
+  SessionStoryDisclosure,
   useDashboardStore,
   useGlassSurface,
   type CatalogBoardItem,
@@ -510,6 +511,9 @@ export function TaskBoardWorkspace({
             <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
               {activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}
             </span>
+            {activeSession ? (
+              <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
+            ) : null}
           </header>
           {activeSession ? (
             <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />

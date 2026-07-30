@@ -43,6 +43,7 @@ import { CHAT_STATUS_TONE_CONFIG } from "./chat-tone-config";
 import { useGlassSurface } from "../LiquidGlassProvider";
 import { resolveChatTypography } from "../../lib/chat-typography";
 import { SessionModelPresetBadge } from "../SessionModelPresetBadge";
+import { SessionStoryDisclosure } from "../SessionStoryDisclosure";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -329,6 +330,7 @@ export function ChatView({
               <SessionModelPresetBadge className="ml-1" session={activeSessionSummary} />
             </div>
           </div>
+          <SessionStoryDisclosure sessionId={activeSessionKey} />
         </div>
       )}
       {messages.length === 0 && !history.loading && (
