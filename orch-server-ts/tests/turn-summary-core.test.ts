@@ -83,7 +83,7 @@ describe("turn summary prompt", () => {
 });
 
 describe("TurnSummaryConfigService", () => {
-  it("ships with summary generation and emission disabled", () => {
+  it("uses the disabled repository default when no local overlay exists", () => {
     const path = fileURLToPath(
       new URL("../config/turn-summary.yaml", import.meta.url),
     );
@@ -97,6 +97,48 @@ describe("TurnSummaryConfigService", () => {
       model: "gpt-5.6-terra",
       codexConcurrencyLimit: 2,
     });
+  });
+
+  it("shallow merges a partial local overlay over the repository config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "turn-summary.yaml");
+    const service = new TurnSummaryConfigService(path, {
+      warn: vi.fn(),
+    });
+
+    writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
+    writeFileSync(
+      join(dir, "turn-summary.local.yaml"),
+      "enabled: true\nmodel: gpt-5.4-mini\n",
+      "utf8",
+    );
+
+    expect(service.read()).toMatchObject({
+      enabled: true,
+      provider: "codex",
+      model: "gpt-5.4-mini",
+      codexConcurrencyLimit: 2,
+    });
+  });
+
+  it("keeps the last good merged config after an invalid local overlay", () => {
+    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "turn-summary.yaml");
+    const localPath = join(dir, "turn-summary.local.yaml");
+    const warnings: unknown[] = [];
+    const service = new TurnSummaryConfigService(path, {
+      warn: (...args) => warnings.push(args),
+    });
+
+    writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
+    writeFileSync(localPath, "enabled: true\n", "utf8");
+    expect(service.read().enabled).toBe(true);
+
+    writeFileSync(localPath, "unexpected_key: true\n", "utf8");
+    expect(service.read().enabled).toBe(true);
+    expect(warnings).toHaveLength(1);
   });
 
   it("hot reloads valid config and keeps the last good value after an invalid update", () => {

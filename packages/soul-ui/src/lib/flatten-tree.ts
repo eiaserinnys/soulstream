@@ -195,7 +195,7 @@ export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
   if (!root) return [];
 
   const messages: ChatMessage[] = [];
-  collectMessages(root, messages);
+  collectMessages(root, messages, {});
   return messages;
 }
 
@@ -212,6 +212,7 @@ function intern(treeNodeId: string, fresh: ChatMessage): ChatMessage {
 function collectMessages(
   node: EventTreeNode,
   out: ChatMessage[],
+  context: { previousResultTotalCostUsd?: number },
 ): void {
   // session 루트: pid가 있으면 시스템 메시지로 표시
   if (node.type === "session") {
@@ -228,19 +229,26 @@ function collectMessages(
       out.push(intern(sessionPidId, fresh));
     }
   } else {
-    const msg = nodeToMessage(node);
+    const msg = nodeToMessage(node, context.previousResultTotalCostUsd);
     if (msg) out.push(intern(msg.treeNodeId, msg));
+    if (
+      node.type === "result"
+      && isFiniteNumber((node as ResultNode).totalCostUsd)
+    ) {
+      context.previousResultTotalCostUsd = (node as ResultNode).totalCostUsd;
+    }
   }
 
-  // result 노드가 complete 보다 먼저 오는 경우를 보정:
-  // complete → result 순서가 되도록 children을 정렬 (해당 노드가 있을 때만)
+  // SDK의 정상 종료는 result → complete 순서로 오지만 채팅 투영은
+  // complete 한 줄만 표시하고 result는 다음 턴 비용 차분의 누적 앵커로 쓴다.
+  // 따라서 complete → result 순서가 되도록 children을 정렬한다.
   //
   // Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening §11.2 유지 결정):
   //   백엔드 검증 결과 result/complete는 같은 user_message의 자식(형제)으로 emit되며,
   //   task_executor가 parent_event_id를 채운다. 송출 순서는 SDK 비동기 타이밍에 따라
   //   역전 가능 (코드상 result→complete이지만 eventId ASC 보장 없음).
   //   본 정렬 보정은 *백엔드 결함 우회*가 아니라 **UX 정책** —
-  //   "Session Complete (요약·비용·duration) → result 텍스트" 순서를 강제한다.
+  //   "Turn Complete 표시 → 숨긴 result로 다음 델타 기준 갱신" 순서를 강제한다.
   //   평탄화 후 root.children 1depth에서도 동일 동작 (needsSort 가드는 트리 단계 무관).
   const children = node.children;
   const needsSort = children.some((c) => c.type === "result") &&
@@ -255,11 +263,14 @@ function collectMessages(
   const ordered = placeTurnSummariesAtTurnBoundaries(chronological);
 
   for (const child of ordered) {
-    collectMessages(child, out);
+    collectMessages(child, out, context);
   }
 }
 
-function nodeToMessage(node: EventTreeNode): ChatMessage | null {
+function nodeToMessage(
+  node: EventTreeNode,
+  previousResultTotalCostUsd?: number,
+): ChatMessage | null {
   const eventId = extractNodeEventId(node);
   switch (node.type) {
     case "user_message": {
@@ -389,25 +400,10 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
     }
 
     case "result": {
-      const n = node as ResultNode;
-      const parts: string[] = ["Session Complete"];
-      if (n.durationMs) parts.push(`${(n.durationMs / 1000).toFixed(1)}s`);
-      if (n.totalCostUsd) parts.push(`$${n.totalCostUsd.toFixed(4)}`);
-      const usageStr = formatTokenUsage(n.usage);
-      if (usageStr) parts.push(usageStr);
-
-      return {
-        id: n.id,
-        role: "system",
-        content: parts.join("  "),
-        timestamp: n.timestamp,
-        usage: n.usage,
-        totalCostUsd: n.totalCostUsd,
-        durationMs: n.durationMs,
-        treeNodeId: n.id,
-        treeNodeType: n.type,
-        eventId,
-      };
+      // 표시 계약: result는 Session Complete 중복 캡션과 intervention 중간
+      // 진단을 함께 운반한다. 이벤트 트리에는 남기되 채팅에는 투영하지 않고,
+      // collectMessages에서 다음 complete의 누적비용 차분 앵커로만 사용한다.
+      return null;
     }
 
     case "error": {
@@ -436,14 +432,17 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
     case "complete": {
       const n = node as CompleteNode;
       const parts: string[] = ["Turn Complete"];
-      if (n.totalCostUsd) parts.push(`$${n.totalCostUsd.toFixed(4)}`);
+      parts.push(...formatTurnCosts(
+        n.totalCostUsd,
+        previousResultTotalCostUsd,
+      ));
       const usageStr = formatTokenUsage(n.usage);
       if (usageStr) parts.push(usageStr);
 
       return {
         id: node.id,
         role: "system",
-        content: parts.length > 1 ? parts.join("  ") : node.content || "Turn completed",
+        content: parts.join(" · "),
         timestamp: n.timestamp,
         usage: n.usage,
         totalCostUsd: n.totalCostUsd,
@@ -539,18 +538,35 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
 
 function formatTokenUsage(usage?: TokenUsage): string | null {
   if (!usage) return null;
-  const total = usage.input_tokens + usage.output_tokens;
-  const parts = [`${total.toLocaleString()} tokens`];
-  const details = [
-    `${usage.input_tokens.toLocaleString()} in`,
-    `${usage.output_tokens.toLocaleString()} out`,
-  ];
-  if (usage.cached_input_tokens) {
-    details.push(`${usage.cached_input_tokens.toLocaleString()} cached`);
+  const claudeCacheTokens =
+    (usage.cache_read_input_tokens ?? 0)
+    + (usage.cache_creation_input_tokens ?? 0);
+  const inputTokens = usage.input_tokens + claudeCacheTokens;
+  const cacheTokens = claudeCacheTokens || usage.cached_input_tokens || 0;
+  const input = `${inputTokens.toLocaleString()} in${cacheTokens > 0
+    ? ` (${cacheTokens.toLocaleString()} cache)`
+    : ""}`;
+  return `${input} / ${usage.output_tokens.toLocaleString()} out tokens`;
+}
+
+function formatTurnCosts(
+  totalCostUsd: number | undefined,
+  previousResultTotalCostUsd: number | undefined,
+): string[] {
+  if (!isFiniteNumber(totalCostUsd)) return [];
+  const parts: string[] = [];
+  if (
+    isFiniteNumber(previousResultTotalCostUsd)
+    && totalCostUsd >= previousResultTotalCostUsd
+  ) {
+    parts.push(
+      `이번 턴 $${(totalCostUsd - previousResultTotalCostUsd).toFixed(4)}`,
+    );
   }
-  if (usage.reasoning_output_tokens) {
-    details.push(`${usage.reasoning_output_tokens.toLocaleString()} reasoning`);
-  }
-  parts.push(`(${details.join(" / ")})`);
-  return parts.join(" ");
+  parts.push(`누적 $${totalCostUsd.toFixed(4)}`);
+  return parts;
+}
+
+function isFiniteNumber(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }

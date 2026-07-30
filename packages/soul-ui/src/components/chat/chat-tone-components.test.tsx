@@ -33,6 +33,10 @@ describe("chat tone component classes", () => {
 
     expect(resultHtml).toContain("chat-tone-success");
     expect(errorHtml).toContain("chat-tone-danger");
+    expect(resultHtml).toContain("text-left");
+    expect(errorHtml).toContain("text-left");
+    expect(resultHtml).not.toContain("text-center");
+    expect(errorHtml).not.toContain("text-center");
   });
 
   it("uses calm tone classes for tool done and error states", () => {
@@ -72,5 +76,7 @@ describe("chat tone component classes", () => {
     expect(summaryHtml).toContain("text-muted-foreground");
     expect(summaryHtml).toContain("bg-input");
     expect(summaryHtml).toContain("whitespace-pre-line");
+    expect(summaryHtml).toContain("text-left");
+    expect(summaryHtml).not.toContain("text-center");
   });
 });

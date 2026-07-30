@@ -34,6 +34,7 @@ unified-dashboard/e2e/test-results/
 .env.test
 .env.test.local
 .env.*.local
+orch-server-ts/config/turn-summary.local.yaml
 
 # Runtime data (soulstream_runtime에서만 존재)
 logs/
