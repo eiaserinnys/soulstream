@@ -11,16 +11,10 @@ import type { TaskManager } from "../../src/task/task_manager.js";
 
 const DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
   "user_message",
+  "intervention_sent",
   "assistant_message",
-  "user_text",
-  "assistant_text",
-  "text_delta",
   "result",
   "complete",
-  "error",
-  "away_summary",
-  "intervention_sent",
-  "realtime_transcript",
 ];
 
 const openClients: Client[] = [];

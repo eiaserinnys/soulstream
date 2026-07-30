@@ -3,11 +3,14 @@
  *
  * /cogito/search 엔드포인트를 호출하여 세션 이벤트를 검색합니다.
  * soul-dashboard의 useSessionSearch.ts에서 포팅.
- * 경로 변경: /api/cogito/search → /cogito/search
- * (worker에서 cogito 라우터는 /api 프리픽스 없이 마운트됨. BFF 없음)
+ * orch의 /cogito/search가 공유 PostgreSQL을 직접 조회합니다.
  */
 
 import { useState, useCallback, useRef } from "react";
+import {
+  DEFAULT_SEARCH_CATEGORIES,
+  type SearchEventCategory,
+} from "@soulstream/search-contract";
 
 export interface SearchResultItem {
   session_id: string;
@@ -19,16 +22,36 @@ export interface SearchResultItem {
 
 export interface SearchFilters {
   searchSessionId: boolean;
-  eventTypes: string[] | null; // null = 전체 (필터 없음)
+  eventCategories: SearchEventCategory[] | null;
 }
 
 export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
   searchSessionId: true,
-  eventTypes: ["user_message", "text_delta"],
+  eventCategories: [...DEFAULT_SEARCH_CATEGORIES],
 };
+
+export type SearchNavigationResult =
+  | {
+    kind: "folder";
+    id: string;
+    title: string;
+    folder_id: string;
+    project_page_id: string;
+  }
+  | {
+    kind: "task";
+    id: string;
+    title: string;
+    folder_id: string;
+    project_page_id: string;
+    board_item_id: string;
+    task_page_id: string;
+  };
 
 export function useSessionSearch() {
   const [results, setResults] = useState<SearchResultItem[]>([]);
+  const [navigationResults, setNavigationResults] =
+    useState<SearchNavigationResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -37,6 +60,7 @@ export function useSessionSearch() {
     async (query: string, filters: SearchFilters = DEFAULT_SEARCH_FILTERS, topK = 20) => {
       if (!query.trim()) {
         setResults([]);
+        setNavigationResults([]);
         return;
       }
       // 진행 중인 이전 요청 취소
@@ -52,8 +76,8 @@ export function useSessionSearch() {
           top_k: String(topK),
           search_session_id: String(filters.searchSessionId),
         });
-        if (filters.eventTypes !== null) {
-          params.set("event_types", filters.eventTypes.join(","));
+        if (filters.eventCategories !== null) {
+          params.set("event_categories", filters.eventCategories.join(","));
         }
         const res = await fetch(`/cogito/search?${params}`, {
           signal: controller.signal,
@@ -64,6 +88,7 @@ export function useSessionSearch() {
         }
         const data = await res.json();
         setResults(data.results ?? []);
+        setNavigationResults(data.navigation_results ?? []);
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         setError(e instanceof Error ? e.message : String(e));
@@ -76,8 +101,9 @@ export function useSessionSearch() {
 
   const clear = useCallback(() => {
     setResults([]);
+    setNavigationResults([]);
     setError(null);
   }, []);
 
-  return { results, loading, error, search, clear };
+  return { results, navigationResults, loading, error, search, clear };
 }

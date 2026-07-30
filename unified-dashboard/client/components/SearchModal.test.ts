@@ -11,6 +11,7 @@ import {
   type CatalogState,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import type { SearchNavigationResult } from "../hooks/useSessionSearch";
 
 const searchHarness = vi.hoisted(() => ({
   results: [] as Array<{
@@ -20,6 +21,24 @@ const searchHarness = vi.hoisted(() => ({
     preview: string;
     event_type: string;
   }>,
+  navigationResults: [] as Array<
+    | {
+      kind: "folder";
+      id: string;
+      title: string;
+      folder_id: string;
+      project_page_id: string;
+    }
+    | {
+      kind: "task";
+      id: string;
+      title: string;
+      folder_id: string;
+      project_page_id: string;
+      board_item_id: string;
+      task_page_id: string;
+    }
+  >,
   search: vi.fn(),
   clear: vi.fn(),
 }));
@@ -27,6 +46,7 @@ const searchHarness = vi.hoisted(() => ({
 vi.mock("../hooks/useSessionSearch", () => ({
   useSessionSearch: () => ({
     results: searchHarness.results,
+    navigationResults: searchHarness.navigationResults,
     loading: false,
     error: null,
     search: searchHarness.search,
@@ -74,6 +94,12 @@ function renderSearchModal(options: {
     focusEventId: number,
     session?: SessionSummary,
   ) => void;
+  onOpenFolder?: (
+    result: Extract<SearchNavigationResult, { kind: "folder" }>,
+  ) => void;
+  onOpenTask?: (
+    result: Extract<SearchNavigationResult, { kind: "task" }>,
+  ) => void;
 } = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -86,6 +112,8 @@ function renderSearchModal(options: {
       onOpenChange,
       sessions: options.sessions ?? [],
       onOpenSession: options.onOpenSession,
+      onOpenFolder: options.onOpenFolder,
+      onOpenTask: options.onOpenTask,
     }));
   });
 
@@ -110,6 +138,7 @@ describe("SearchModal", () => {
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     useDashboardStore.getState().reset();
     searchHarness.results = [];
+    searchHarness.navigationResults = [];
     searchHarness.search.mockReset();
     searchHarness.clear.mockReset();
   });
@@ -170,7 +199,7 @@ describe("SearchModal", () => {
         event_id: 88,
         score: 1,
         preview: "Same session preview",
-        event_type: "text_delta",
+        event_type: "assistant_message",
       },
     ];
 
@@ -218,5 +247,43 @@ describe("SearchModal", () => {
     expect(useDashboardStore.getState().selectedFolderId).toBe("current-folder");
     expect(useDashboardStore.getState().activeSessionKey).toBe("current-session");
     expect(useDashboardStore.getState().focusEventId).toBeNull();
+  });
+
+  it("opens project and task title results through the existing dashboard store", () => {
+    searchHarness.navigationResults = [
+      {
+        kind: "folder",
+        id: "project-folder",
+        title: "Needle project",
+        folder_id: "project-folder",
+        project_page_id: "project-page",
+      },
+    ];
+    ({ container, root } = renderSearchModal());
+
+    clickResult("Needle project");
+    expect(useDashboardStore.getState().selectedFolderId).toBe("project-folder");
+
+    flushSync(() => root?.unmount());
+    root = undefined;
+    container?.remove();
+    searchHarness.navigationResults = [
+      {
+        kind: "task",
+        id: "task-a",
+        title: "Needle task",
+        folder_id: "project-folder",
+        project_page_id: "project-page",
+        board_item_id: "board-item-a",
+        task_page_id: "task-page-a",
+      },
+    ];
+    ({ container, root } = renderSearchModal());
+
+    clickResult("Needle task");
+    expect(useDashboardStore.getState().activeBoardContainer).toEqual({
+      kind: "task",
+      id: "task-a",
+    });
   });
 });

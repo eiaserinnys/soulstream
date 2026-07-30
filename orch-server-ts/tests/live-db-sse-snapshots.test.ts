@@ -177,6 +177,8 @@ describe("live DB SSE replay snapshots", () => {
           callerSessionId: "caller-1",
           predecessorSessionId: null,
           agentId: "agent-a",
+          modelPreset: null,
+          model: null,
           agentName: "Agent A",
           agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
           backend: "codex",

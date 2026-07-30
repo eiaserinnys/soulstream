@@ -1,8 +1,7 @@
-import type { FastifyRequest } from "fastify";
-
 import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { AtomRouteOptions } from "../atom/atom_routes.js";
 import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
+import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import {
   createLiveAuthHttpClient,
@@ -15,6 +14,7 @@ import {
   createLiveCogitoRouteProviders,
   type LiveCogitoRouteProviderBundle,
 } from "./live_cogito_route_provider.js";
+import { createLiveCogitoSearchAccessProvider } from "./live_cogito_search_access_provider.js";
 import {
   createLiveConfigRouteProviders,
   type LiveConfigRouteProviderBundle,
@@ -55,33 +55,24 @@ import type { LiveProviderDependencies } from "./live_provider_dependencies.js";
 import { liveProviderDependencyCategories } from "./live_provider_dependencies.js";
 import {
   createSessionResourceAccessProvider,
-  type SessionResourceAccessProvider,
 } from "../session/session_resource_access.js";
 import {
   createSessionCreateLifecycle,
-  type SessionCreateLifecycle,
 } from "../session/session_create_lifecycle.js";
 import {
   createSessionStreamEventFilter,
-  type SessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
 import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import { withSessionCatalogMutationBroadcasts } from "./live_session_catalog_mutation_broadcaster.js";
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
 import {
   createLiveAuthenticatedUserResolvers,
-  type LiveCallerInfoResolver,
   type LiveAuthenticatedUserResolvers,
 } from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
 import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
-import {
-  createSessionReviewAcknowledgeFallback,
-  type SessionReviewAcknowledgeRepository,
-} from "../session/session_review_acknowledge_fallback.js";
-import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   resolveSessionSnapshotIds,
   resolveSessionSnapshotLimit,
@@ -101,6 +92,10 @@ import {
   type LiveProviderFactoryInventoryAlignmentResult,
   type ValidateLiveProviderFactoryInventoryAlignmentInput,
 } from "./live_provider_factory_inventory.js";
+import {
+  buildLiveRuntimeProviderBundle,
+  type LiveRuntimeProviderBundle,
+} from "./live_runtime_provider_bundle.js";
 
 export {
   LiveProviderFactoryError,
@@ -111,24 +106,7 @@ export {
   type LiveProviderFactoryInventoryAlignmentResult,
   type ValidateLiveProviderFactoryInventoryAlignmentInput,
 } from "./live_provider_factory_inventory.js";
-
-export type LiveRuntimeProviderBundle = {
-  readonly boardYjsHostProxyRoutes: OrchestratorRuntimeServices["routeOptions"]["boardYjsHostProxyRoutes"];
-  readonly nodeSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["nodeSnapshotRoutes"];
-  readonly nodeWsRoute: OrchestratorRuntimeServices["routeOptions"]["nodeWsRoute"];
-  readonly sessionActionCommandRoutes: NonNullable<
-    OrchestratorRuntimeServices["routeOptions"]["sessionActionCommandRoutes"]
-  >;
-  readonly sessionBackgroundScheduleRoutes: NonNullable<
-    OrchestratorRuntimeServices["routeOptions"]["sessionBackgroundScheduleRoutes"]
-  >;
-  readonly sessionCommandRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionCommandRoutes"];
-  readonly sessionHistoryRoutes: NonNullable<
-    OrchestratorRuntimeServices["routeOptions"]["sessionHistoryRoutes"]
-  >;
-  readonly sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"];
-  readonly sseReplayRoutes: OrchestratorRuntimeServices["routeOptions"]["sseReplayRoutes"];
-};
+export type { LiveRuntimeProviderBundle } from "./live_runtime_provider_bundle.js";
 
 export type LiveOrchestratorProviderBundle = {
   readonly authenticatedUserResolvers: LiveAuthenticatedUserResolvers;
@@ -167,7 +145,9 @@ export type LiveOrchestratorProviderBundle = {
   readonly userBackgroundRoutes: UserBackgroundRouteOptions;
   readonly sessionCatalogRoutes: SessionCatalogRouteOptions;
   readonly runtime: LiveRuntimeProviderBundle;
-  readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
+  readonly cogitoRoutes:
+    & LiveCogitoRouteProviderBundle["cogitoRoutes"]
+    & Pick<CogitoRouteOptions, "accessProvider">;
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
   readonly nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
@@ -209,11 +189,6 @@ export function createLiveOrchestratorProviderBundle(
     nodeHttpClient: options.dependencies.nodeHttpClient,
     portraitAssets: options.dependencies.systemPortraitAssets,
   });
-  const cogitoProviders = createLiveCogitoRouteProviders({
-    registry: options.runtimeServices.registry,
-    bridge: options.runtimeServices.sessionBridge,
-    nodeHttpClient: options.dependencies.nodeHttpClient,
-  });
   const taskProviders = createLiveTaskRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
     provider: options.dependencies.dbCatalogRepository.taskRouteProvider,
@@ -249,6 +224,15 @@ export function createLiveOrchestratorProviderBundle(
   });
   const sessionResourceAccessProvider = createSessionResourceAccessProvider({
     accessProvider: dashboardAccessProvider,
+    repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
+  });
+  const cogitoProviders = createLiveCogitoRouteProviders({
+    registry: options.runtimeServices.registry,
+    bridge: options.runtimeServices.sessionBridge,
+    searchProvider: options.dependencies.dbCatalogRepository.cogitoSearchProvider,
+  });
+  const cogitoSearchAccessProvider = createLiveCogitoSearchAccessProvider({
+    accessProvider: sessionResourceAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
   });
   const attachmentProviders = createLiveAttachmentRouteProviders({
@@ -393,7 +377,10 @@ export function createLiveOrchestratorProviderBundle(
         });
       },
     ),
-    cogitoRoutes: cogitoProviders.cogitoRoutes,
+    cogitoRoutes: {
+      ...cogitoProviders.cogitoRoutes,
+      accessProvider: cogitoSearchAccessProvider,
+    },
     configProviders,
     executeProxyRoutes: {
       provider: createLiveExecuteProxyRouteProvider({
@@ -439,85 +426,6 @@ function assertLiveProviderDependencies(
       })),
     );
   }
-}
-
-function buildLiveRuntimeProviderBundle(
-  services: OrchestratorRuntimeServices,
-  accessProvider: SessionResourceAccessProvider,
-  sessionStreamEventFilter: SessionStreamEventFilter,
-  resolveCallerInfo: LiveCallerInfoResolver,
-  sessionCreateLifecycle: SessionCreateLifecycle,
-  sessionReviewRepository: SessionReviewAcknowledgeRepository,
-  modelPresetAvailability: ModelPresetAvailabilityService,
-  sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"],
-  loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
-): LiveRuntimeProviderBundle {
-  const sessionHistoryRoutes = requireRuntimeRouteOption(
-    services.routeOptions.sessionHistoryRoutes,
-    "session.history",
-    "runtime.sessionHistoryProvider",
-  );
-  return {
-    boardYjsHostProxyRoutes: services.routeOptions.boardYjsHostProxyRoutes,
-    nodeSnapshotRoutes: services.routeOptions.nodeSnapshotRoutes,
-    nodeWsRoute: services.routeOptions.nodeWsRoute,
-    sessionActionCommandRoutes: {
-      ...requireRuntimeRouteOption(
-        services.routeOptions.sessionActionCommandRoutes,
-        "session.actions",
-        "runtime",
-      ),
-      reviewAcknowledgeFallback: createSessionReviewAcknowledgeFallback({
-        repository: sessionReviewRepository,
-        broadcaster: services.sessionBroadcaster,
-      }),
-      resolveCallerInfo: (request, bodyCallerInfo, targetSessionId) =>
-        resolveCallerInfo(
-          request,
-          bodyCallerInfo,
-          services.registry.findSessionOwner(targetSessionId)?.nodeId ?? "",
-        ),
-    },
-    sessionBackgroundScheduleRoutes: requireRuntimeRouteOption(
-      services.routeOptions.sessionBackgroundScheduleRoutes,
-      "session.background-schedule",
-      "runtime",
-    ),
-    sessionCommandRoutes: {
-      ...services.routeOptions.sessionCommandRoutes,
-      createSessionLifecycle: sessionCreateLifecycle,
-      modelPresetAvailability,
-    },
-    sessionHistoryRoutes: { ...sessionHistoryRoutes, accessProvider },
-    sessionSnapshotRoutes,
-    sseReplayRoutes: {
-      ...services.routeOptions.sseReplayRoutes,
-      session: {
-        ...services.routeOptions.sseReplayRoutes.session,
-        loadSnapshot: loadSessionSnapshot,
-        filterEvent: sessionStreamEventFilter,
-      },
-    },
-  };
-}
-
-function requireRuntimeRouteOption<T>(
-  value: T | undefined,
-  owner: string,
-  path: string,
-): T {
-  if (value === undefined) {
-    throw new LiveProviderFactoryError([
-      {
-        owner,
-        path,
-        status: "implemented",
-        source: "createOrchestratorRuntimeServices",
-        notes: "Runtime service did not expose a route option marked implemented in the live provider inventory.",
-      },
-    ]);
-  }
-  return value;
 }
 
 function queryBool(query: unknown, key: string): boolean {

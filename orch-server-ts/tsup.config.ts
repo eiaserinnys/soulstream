@@ -6,8 +6,6 @@ export default defineConfig({
   target: "node20",
   dts: true,
   clean: true,
-  noExternal: [
-    "@soulstream/fractional-position",
-    "@soulstream/page-model",
-  ],
+  // Workspace packages export raw TypeScript and must never remain as runtime imports.
+  noExternal: [/^@soulstream\//],
 });

@@ -5,7 +5,7 @@
  * 탑바 검색 버튼 클릭 시 열리며, 300ms debounce 자동 검색을 수행합니다.
  * 결과 클릭 시 해당 세션으로 이동하고 이벤트 위치로 자동 스크롤합니다.
  *
- * 검색 엔드포인트: /cogito/search (BFF 없이 soul-server 직접 접근)
+ * 검색 엔드포인트: /cogito/search (orch가 공유 PostgreSQL을 직접 조회)
  */
 
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -24,7 +24,12 @@ import {
   useSessionSearch,
   type SearchResultItem,
   type SearchFilters,
+  type SearchNavigationResult,
 } from "../hooks/useSessionSearch";
+import {
+  searchEventTypeLabel,
+  type SearchEventCategory,
+} from "@soulstream/search-contract";
 
 // === Filter state ===
 
@@ -53,29 +58,15 @@ const FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
 ];
 
 function toSearchFilters(state: FilterState): SearchFilters {
-  const eventTypes: string[] = [];
-  if (state.userMessage) eventTypes.push("user_message");
-  if (state.agentResponse) eventTypes.push("text_delta");
-  if (state.agentThinking) eventTypes.push("thinking");
-  if (state.toolUse) eventTypes.push("tool_use", "tool_start", "tool_result");
+  const eventCategories: SearchEventCategory[] = [];
+  if (state.userMessage) eventCategories.push("messages");
+  if (state.agentResponse) eventCategories.push("responses");
+  if (state.agentThinking) eventCategories.push("thinking");
+  if (state.toolUse) eventCategories.push("tools");
   return {
     searchSessionId: state.sessionId,
-    eventTypes: eventTypes.length > 0 ? eventTypes : null,
+    eventCategories,
   };
-}
-
-// === Event type label mapping ===
-
-const EVENT_TYPE_LABEL: Record<string, string> = {
-  user_message: "User",
-  text_delta: "Assistant",
-  thinking: "Thinking",
-  tool_use: "Tool",
-  tool_result: "Tool Result",
-};
-
-function eventTypeLabel(eventType: string): string {
-  return EVENT_TYPE_LABEL[eventType] ?? eventType;
 }
 
 // === Search Result Item ===
@@ -98,7 +89,7 @@ function SearchResultRow({
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-mono text-muted-foreground bg-input px-1.5 py-0.5 rounded shrink-0">
-          {eventTypeLabel(result.event_type)}
+          {searchEventTypeLabel(result.event_type)}
         </span>
         <span className="text-xs text-muted-foreground truncate font-mono">
           {result.session_id.slice(0, 20)}…
@@ -114,6 +105,32 @@ function SearchResultRow({
   );
 }
 
+function NavigationResultRow({
+  result,
+  onClick,
+}: {
+  result: SearchNavigationResult;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-3 py-2.5 rounded-lg border border-transparent",
+        "hover:bg-muted/60 hover:border-border transition-colors",
+        "focus:outline-none focus:bg-muted/60",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground bg-input px-1.5 py-0.5 rounded shrink-0">
+          {result.kind === "folder" ? "프로젝트" : "업무"}
+        </span>
+        <span className="text-sm text-foreground truncate">{result.title}</span>
+      </div>
+    </button>
+  );
+}
+
 // === Props ===
 
 interface SearchModalProps {
@@ -125,6 +142,10 @@ interface SearchModalProps {
     focusEventId: number,
     session?: SessionSummary,
   ) => void | Promise<void>;
+  onOpenFolder?: (result: Extract<SearchNavigationResult, { kind: "folder" }>) =>
+    void | Promise<void>;
+  onOpenTask?: (result: Extract<SearchNavigationResult, { kind: "task" }>) =>
+    void | Promise<void>;
 }
 
 // === Main Component ===
@@ -134,6 +155,8 @@ export function SearchModal({
   onOpenChange,
   sessions = [],
   onOpenSession,
+  onOpenFolder,
+  onOpenTask,
 }: SearchModalProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
@@ -142,7 +165,9 @@ export function SearchModal({
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
-  const { results, loading, error, search, clear } = useSessionSearch();
+  const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
+  const { results, navigationResults, loading, error, search, clear } =
+    useSessionSearch();
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTER_STATE);
   const sessionById = useMemo(() => {
@@ -226,6 +251,19 @@ export function SearchModal({
     onOpenChange(false);
   };
 
+  const handleNavigationClick = (result: SearchNavigationResult) => {
+    if (result.kind === "folder") {
+      if (onOpenFolder) void onOpenFolder(result);
+      else selectFolder(result.folder_id);
+    } else {
+      if (onOpenTask) void onOpenTask(result);
+      else openTaskBoard(result.id, result.folder_id);
+    }
+    onOpenChange(false);
+  };
+
+  const resultCount = results.length + navigationResults.length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-xl">
@@ -285,24 +323,31 @@ export function SearchModal({
             </div>
           )}
 
-          {!loading && !error && results.length === 0 && query.trim() && (
+          {!loading && !error && resultCount === 0 && query.trim() && (
             <div className="py-6 text-center text-sm text-muted-foreground">
               검색 결과가 없습니다
             </div>
           )}
 
-          {!loading && !error && results.length === 0 && !query.trim() && (
+          {!loading && !error && resultCount === 0 && !query.trim() && (
             <div className="py-6 text-center text-sm text-muted-foreground">
               위 필터를 선택하여 세션 기록을 검색합니다
             </div>
           )}
 
           {/* 결과 목록 */}
-          {!loading && results.length > 0 && (
+          {!loading && resultCount > 0 && (
             <div className="space-y-1 max-h-[400px] overflow-y-auto">
               <div className="text-xs text-muted-foreground mb-2 px-1">
-                {results.length}개 결과
+                {resultCount}개 결과
               </div>
+              {navigationResults.map((result) => (
+                <NavigationResultRow
+                  key={`${result.kind}-${result.id}`}
+                  result={result}
+                  onClick={() => handleNavigationClick(result)}
+                />
+              ))}
               {results.map((result) => (
                 <SearchResultRow
                   key={`${result.session_id}-${result.event_id}`}

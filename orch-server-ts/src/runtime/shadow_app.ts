@@ -187,7 +187,7 @@ export const shadowRouteCompositionRequirements = [
     owner: "cogito",
     paths: [
       "cogitoRoutes.provider",
-      "cogitoRoutes.httpClient",
+      "cogitoRoutes.searchProvider",
       "cogitoRoutes.briefCollector",
     ],
   },

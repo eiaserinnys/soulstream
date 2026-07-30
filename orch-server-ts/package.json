@@ -7,18 +7,20 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && npm run verify:bundle",
     "start": "node dist/production_main.js",
     "plan:page-yjs-snapshot-repair": "tsx scripts/plan-page-yjs-snapshot-repair.ts",
     "plan:task-crud-sync-audit": "tsx scripts/plan-task-crud-sync-audit.ts",
     "plan:task-project-mount-backfill": "tsx scripts/plan-task-project-mount-backfill.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/page-model": "workspace:*",
+    "@soulstream/search-contract": "workspace:*",
     "@fastify/websocket": "11.2.0",
     "@hocuspocus/extension-database": "3.4.4",
     "@hocuspocus/server": "3.4.4",

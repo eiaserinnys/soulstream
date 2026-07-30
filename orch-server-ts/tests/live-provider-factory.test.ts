@@ -117,23 +117,12 @@ describe("live provider factory boundary", () => {
     expect(bundle.cogitoRoutes.provider.listConnectedNodes()).toEqual([]);
     expect(bundle.cogitoRoutes.briefCollector.reflectBrief).toEqual(expect.any(Function));
     await expect(
-      bundle.cogitoRoutes.httpClient.get({
-        nodeId: "node-a",
-        url: "http://ignored.example.test/cogito/search",
-        params: {
-          q: "hello",
-          top_k: 2,
-          search_session_id: false,
-        },
-        headers: { authorization: "Bearer token" },
+      bundle.cogitoRoutes.searchProvider.search({
+        q: "hello",
+        top_k: 2,
+        search_session_id: false,
       }),
-    ).resolves.toMatchObject({ statusCode: 200 });
-    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
-      nodeId: "node-a",
-      method: "GET",
-      path: "/cogito/search?q=hello&top_k=2&search_session_id=false",
-      headers: { authorization: "Bearer token" },
-    });
+    ).resolves.toEqual({ results: [], navigation_results: [] });
     await expect(
       bundle.configProviders.publicStatusRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
@@ -407,6 +396,7 @@ describe("live provider factory boundary", () => {
       sessionCommandRoutes: {
         ...runtimeServices.routeOptions.sessionCommandRoutes,
         createSessionLifecycle: expect.any(Object),
+        modelPresetAvailability: expect.any(Object),
       },
       sessionHistoryRoutes: {
         ...runtimeServices.routeOptions.sessionHistoryRoutes,
@@ -534,6 +524,9 @@ function createLiveDependencies(): LiveProviderDependencies {
         hasMore: false,
       })),
       sessionHistoryProvider,
+      cogitoSearchProvider: {
+        search: vi.fn(async () => ({ results: [], navigation_results: [] })),
+      },
       sessionResourceAccessRepository: {
         getSessionAccessRecord: vi.fn(async () => null),
         listFoldersForAccess: vi.fn(async () => []),

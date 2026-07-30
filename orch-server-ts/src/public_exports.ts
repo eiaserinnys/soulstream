@@ -49,6 +49,8 @@ export * from "./production.js";
 export * from "./tasks/task_routes.js";
 export * from "./runtime/composition.js";
 export * from "./runtime/live_cogito_route_provider.js";
+export * from "./runtime/live_cogito_search_access_provider.js";
+export * from "./runtime/live_cogito_search_provider.js";
 export * from "./runtime/live_auth_route_provider.js";
 export * from "./runtime/live_authenticated_user_resolver.js";
 export * from "./runtime/live_admin_users_route_provider.js";

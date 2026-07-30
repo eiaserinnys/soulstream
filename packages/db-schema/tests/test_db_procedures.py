@@ -111,6 +111,20 @@ async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql(
     ) in schema_sql
 
 
+async def test_session_id_search_uses_sessions_before_indexed_event_lookup():
+    migration_sql = _migration_sql("050_session_id_search_indexed.sql").strip()
+    schema_sql = _schema_sql()
+    signature = "CREATE OR REPLACE FUNCTION session_id_search("
+    function_sql = _function_sql(migration_sql, signature)
+
+    assert function_sql in schema_sql
+    assert "FROM sessions s" in function_sql
+    assert "CROSS JOIN LATERAL" in function_sql
+    assert "e.session_id = matched.session_id" in function_sql
+    assert "ORDER BY e.id DESC" in function_sql
+    assert "FROM events e\n    WHERE e.session_id ILIKE" not in function_sql
+
+
 async def test_task_item_review_status_contract_is_mirrored_in_canonical_schema_sql():
     migration_sql = _migration_sql("031_runbook_item_review_status.sql").strip()
     schema_sql = _schema_sql()

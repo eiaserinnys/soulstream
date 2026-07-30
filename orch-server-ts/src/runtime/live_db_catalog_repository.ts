@@ -44,6 +44,7 @@ import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_r
 import { createLiveTaskRouteProvider } from "./live_task_route_provider.js";
 import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
+import { createLiveCogitoSearchProvider } from "./live_cogito_search_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
@@ -64,6 +65,7 @@ export type LiveDbCatalogRepository = {
   readonly taskRouteProvider: TaskRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
+  readonly cogitoSearchProvider: ReturnType<typeof createLiveCogitoSearchProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
   readonly userPreferencesRepository: UserBackgroundRepository;
@@ -123,6 +125,7 @@ export function createLiveDbCatalogRepository(
       closeTimeoutSeconds: options.closeTimeoutSeconds,
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
+  const cogitoSearchProvider = createLiveCogitoSearchProvider({ sqlResolver });
   const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
   const folderProvider = createLiveFolderProvider(sqlResolver);
   const boardItemProvider = createLiveBoardItemRouteProvider(
@@ -260,6 +263,7 @@ export function createLiveDbCatalogRepository(
     taskRouteProvider: taskProvider,
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
+    cogitoSearchProvider,
     sessionResourceAccessRepository,
     sessionReviewRepository,
     userPreferencesRepository: createLiveUserPreferencesRepository({ sqlResolver }),
