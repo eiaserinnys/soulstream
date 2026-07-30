@@ -57,4 +57,20 @@ describe("chat tone component classes", () => {
     expect(errorHtml).toContain("chat-tone-danger-text");
     expect(groupHtml).toContain("chat-tone-success-text");
   });
+
+  it("turn summary는 기존 system 보조 톤을 재사용하고 여러 줄을 보존한다", () => {
+    const summaryHtml = renderToStaticMarkup(
+      createElement(SystemMessage, {
+        msg: makeMessage({
+          treeNodeType: "turn_summary",
+          content: "결정 사항을 정리했다.\n다음 검증을 시작했다.",
+        }),
+      }),
+    );
+
+    expect(summaryHtml).toContain("text-xs");
+    expect(summaryHtml).toContain("text-muted-foreground");
+    expect(summaryHtml).toContain("bg-input");
+    expect(summaryHtml).toContain("whitespace-pre-line");
+  });
 });

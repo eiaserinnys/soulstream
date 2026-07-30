@@ -643,8 +643,8 @@ describe("flattenTree identity 보존", () => {
 
 // === extractEventId — node ID 끝자리 숫자 추출 (H-1 정본) ===
 //
-// 260508.05.tree-placer-hygiene: extractEventId 가 정규식 정본의 단일 export.
-// tree-placer.ts 의 extractNodeEventId 가 caller-local adapter 로 본 함수를 호출한다.
+// 260508.05.tree-placer-hygiene: extractEventId 정규식 정본은 event-tree-id.ts에 있고,
+// flatten-tree.ts는 기존 public import 경로를 호환 re-export한다.
 
 describe("extractEventId — node ID 끝자리 숫자 추출 (H-1 정본)", () => {
   it("createNodeFromEvent 패턴 — 끝자리 숫자 추출", () => {

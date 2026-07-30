@@ -78,6 +78,8 @@ export interface SystemMessageNode extends BaseNode {
 /** ledger가 dedupe한 완료/후속 전달 알림 노드. */
 export interface SessionNotificationNode extends BaseNode {
   type: "session_notification";
+  /** delivery_id 기반 node.id에서 복원할 수 없는 durable 이벤트 ID */
+  eventId?: number;
   deliveryId: string;
   deliveryIntent: "completion_notification" | "runtime_followup";
   source: string;
@@ -227,6 +229,13 @@ export interface AwaySummaryNode extends BaseNode {
   type: "away_summary";
 }
 
+/** 완료된 턴의 요약 캡션 노드 */
+export interface TurnSummaryNode extends BaseNode {
+  type: "turn_summary";
+  turnStartEventId?: number;
+  finalResponseEventId: number;
+}
+
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorNode extends BaseNode {
   type: "assistant_error";
@@ -253,4 +262,5 @@ export type EventTreeNode =
   | ToolApprovalNodeDef
   | AssistantMessageNode
   | AssistantErrorNode
-  | AwaySummaryNode;
+  | AwaySummaryNode
+  | TurnSummaryNode;

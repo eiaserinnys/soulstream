@@ -149,6 +149,42 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     unsubscribe();
   });
 
+  it("turn_summary named event를 durable eventId와 함께 전달한다", async () => {
+    const createSSESubscribe = await loadModule();
+    const onEvent = vi.fn();
+    const unsubscribe = createSSESubscribe({
+      baseUrl: "/api/sessions/abc/events",
+      onEvent,
+    });
+
+    instances[0].emit(
+      "turn_summary",
+      {
+        type: "turn_summary",
+        content: "구현 방향을 확정하고 테스트를 시작했다.",
+        turn_start_event_id: 101,
+        final_response_event_id: 119,
+        parent_event_id: 119,
+        model: "gpt-5.6-terra",
+        latency_ms: 800,
+        attempts: 1,
+        timestamp: 1785400000,
+        _event_id: 140,
+      },
+      140,
+    );
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "turn_summary",
+        final_response_event_id: 119,
+      }),
+      140,
+    );
+
+    unsubscribe();
+  });
+
   it("id 없는 _live_only 이벤트는 브라우저 lastEventId가 남아 있어도 eventId=0으로 전달한다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
