@@ -26,6 +26,8 @@ import {
   buildTurnSummaryPrompt,
   truncateCodepoints,
 } from "../src/turn-summary/turn_summarizer.js";
+import type { TurnSummarySpeaker } from
+  "../src/turn-summary/turn_summary_speaker.js";
 import {
   TurnSummaryConfigService,
   type TurnSummaryConfig,
@@ -60,6 +62,31 @@ const CONFIG: TurnSummaryConfig = {
 
 const tempDirs: string[] = [];
 
+const SPEAKER_LABEL_CASES = [
+  [
+    {
+      kind: "user",
+      displayName: "Jubok Kim",
+      source: "browser",
+      userId: "eiaserinnys@gmail.com",
+    },
+    "[발화자: Jubok Kim (사용자, browser, user_id: eiaserinnys@gmail.com)]",
+  ],
+  [
+    {
+      kind: "agent",
+      agentName: "로젤린",
+    },
+    "[발화자: 로젤린 (위임 에이전트 보고)]",
+  ],
+  [
+    {
+      kind: "system",
+    },
+    "[발화자: 시스템]",
+  ],
+] satisfies readonly (readonly [TurnSummarySpeaker, string])[];
+
 afterEach(() => {
   vi.restoreAllMocks();
   for (const path of tempDirs.splice(0)) {
@@ -86,6 +113,36 @@ describe("turn summary prompt", () => {
     expect(prompt).toContain("[사용자 메시지]\n요청");
     expect(prompt).toContain("[에이전트 최종 응답]\n결과");
   });
+
+  it.each(SPEAKER_LABEL_CASES)(
+    "labels %o turn-start speakers",
+    (speaker, expectedLabel) => {
+      const input = {
+        userText: "요청",
+        assistantText: "결과",
+        previousSummaries: [],
+        speaker,
+      };
+
+      const prompt = buildTurnSummaryPrompt(input, CONFIG);
+
+      expect(prompt).toContain(
+        `[턴 시작 발화]\n${expectedLabel}\n요청`,
+      );
+      expect(prompt).not.toContain("[사용자 메시지]\n요청");
+    },
+  );
+
+  it("preserves the legacy prompt when speaker metadata is missing", () => {
+    const prompt = buildTurnSummaryPrompt({
+      userText: "레거시 요청",
+      assistantText: "결과",
+      previousSummaries: [],
+    }, CONFIG);
+
+    expect(prompt).toContain("[사용자 메시지]\n레거시 요청");
+    expect(prompt).not.toContain("[발화자:");
+  });
 });
 
 describe("TurnSummaryConfigService", () => {
@@ -107,13 +164,18 @@ describe("TurnSummaryConfigService", () => {
       storyFoldBatchSize: 5,
       storyNarrativeMaxChars: 1_500,
     });
-    const instruction = service.read().storyInstruction;
-    expect(instruction).toContain("[T12]");
-    expect(instruction).toContain("[T12-T15]");
-    expect(instruction).toContain(
+    const turnInstruction = service.read().instruction;
+    expect(turnInstruction).toContain("발화자 라벨에 따라 주어를 정확히 구분");
+    expect(turnInstruction).toContain(
+      "위임 에이전트 보고나 시스템 알림을 사용자의 요청·발언으로 서술하지 말라",
+    );
+    const storyInstruction = service.read().storyInstruction;
+    expect(storyInstruction).toContain("[T12]");
+    expect(storyInstruction).toContain("[T12-T15]");
+    expect(storyInstruction).toContain(
       "모델 선정·정책·보안 관련 결정은 연령과 무관하게 보존",
     );
-    expect(instruction).toContain(
+    expect(storyInstruction).toContain(
       "결정이 번복된 경우 번복 이력을 시간 순서대로 남긴다",
     );
   });
