@@ -1,4 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import {
+  DEFAULT_SEARCH_CATEGORIES,
+  eventTypesForSearchCategories,
+  parseSearchEventCategories,
+} from "@soulstream/search-contract";
 
 import type { McpRuntime } from "../mcp/runtime.js";
 import { searchSessionEvents } from "../search/session_search.js";
@@ -16,6 +21,7 @@ export function registerCogitoSearchRoute(
       q?: string;
       top_k?: string | number;
       event_types?: string;
+      event_categories?: string;
       search_session_id?: string | boolean;
     };
   }>("/cogito/search", async (request, reply) => {
@@ -25,7 +31,9 @@ export function registerCogitoSearchRoute(
     }
 
     const limit = normalizeTopK(request.query.top_k);
-    const eventTypes = parseEventTypes(request.query.event_types);
+    const categories = parseSearchEventCategories(request.query.event_categories);
+    const eventTypes = parseEventTypes(request.query.event_types) ??
+      eventTypesForSearchCategories(categories ?? DEFAULT_SEARCH_CATEGORIES);
     const searchSessionId = parseBoolean(request.query.search_session_id);
     const results = await searchSessionEvents(config.runtime.db, {
       query,

@@ -135,7 +135,7 @@ describe("live provider wiring inventory", () => {
       "implemented",
     );
     expect(statusByPath.get("cogito:cogitoRoutes.provider")).toBe("implemented");
-    expect(statusByPath.get("cogito:cogitoRoutes.httpClient")).toBe("implemented");
+    expect(statusByPath.get("cogito:cogitoRoutes.searchProvider")).toBe("implemented");
     expect(statusByPath.get("cogito:cogitoRoutes.briefCollector")).toBe(
       "implemented",
     );

@@ -5,7 +5,7 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
 import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
-import { SearchModal } from "../components/SearchModal";
+import { V3SearchModal } from "./V3SearchModal";
 import { orchestratorSessionProvider } from "../providers";
 import { NewTaskForm } from "./NewTaskForm";
 import { DailyPlannerView, ProjectPlannerView } from "./PlannerViews";
@@ -22,20 +22,10 @@ import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
-import {
-  reduceMobilePlannerEscape,
-  selectMobilePlannerTab,
-  type MobilePlannerState,
-  type MobilePlannerTab,
-} from "./mobile-planner-state";
+import { reduceMobilePlannerEscape, selectMobilePlannerTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useTaskStarChanges } from "./task-star-store";
-import {
-  createPlannerDataDependencies,
-  loadStarredPlannerTask,
-  starredTaskPage,
-  type PlannerTask,
-} from "./planner-data";
+import { createPlannerDataDependencies, loadStarredPlannerTask, starredTaskPage, type PlannerTask } from "./planner-data";
 import { fetchPageSessionDefaults, type PageSessionDefaults } from "./task-workspace-api";
 import { activateRunSession, resolveRunSessions } from "./task-workspace-model";
 import { buildMobileTaskOptions, dateKey, errorText, recentDates } from "./v3-dashboard-utils";
@@ -496,7 +486,7 @@ function V3DashboardContent() {
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
-      <SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} />
+      <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} api={api} onOpenProjectPage={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} notify={notify} />
       <V3Toast message={toast} />
     </div>
   );

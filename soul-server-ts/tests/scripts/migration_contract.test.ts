@@ -114,10 +114,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(50);
+    expect(migrations).toHaveLength(51);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "049_external_llm_actor.sql",
+      "050_session_id_search_indexed.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -126,12 +126,13 @@ describe("versioned migration contract", () => {
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
     ]);
-    expect(migrations.slice(0, -8).every(
+    expect(migrations.slice(0, -9).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-8).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-9).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
@@ -184,6 +185,7 @@ describe("versioned migration contract", () => {
       "047_session_delivery_relation_consumptions.sql",
       "048_session_model_preset.sql",
       "049_external_llm_actor.sql",
+      "050_session_id_search_indexed.sql",
     ]);
   });
 
@@ -201,6 +203,7 @@ describe("versioned migration contract", () => {
       "047_session_delivery_relation_consumptions.sql",
       "048_session_model_preset.sql",
       "049_external_llm_actor.sql",
+      "050_session_id_search_indexed.sql",
     ]);
   });
 

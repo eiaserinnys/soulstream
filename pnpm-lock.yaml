@@ -17,12 +17,6 @@ importers:
 
   orch-server-ts:
     dependencies:
-      '@soulstream/fractional-position':
-        specifier: workspace:*
-        version: link:../packages/fractional-position
-      '@soulstream/page-model':
-        specifier: workspace:*
-        version: link:../packages/page-model
       '@fastify/websocket':
         specifier: 11.2.0
         version: 11.2.0
@@ -32,6 +26,15 @@ importers:
       '@hocuspocus/server':
         specifier: 3.4.4
         version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
+      '@soulstream/fractional-position':
+        specifier: workspace:*
+        version: link:../packages/fractional-position
+      '@soulstream/page-model':
+        specifier: workspace:*
+        version: link:../packages/page-model
+      '@soulstream/search-contract':
+        specifier: workspace:*
+        version: link:../packages/search-contract
       fastify:
         specifier: ^5.1.0
         version: 5.8.5
@@ -118,6 +121,8 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.41)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.46.1)
+
+  packages/search-contract: {}
 
   packages/soul-ui:
     dependencies:
@@ -348,6 +353,9 @@ importers:
       '@soulstream/page-model':
         specifier: workspace:*
         version: link:../packages/page-model
+      '@soulstream/search-contract':
+        specifier: workspace:*
+        version: link:../packages/search-contract
       '@soulstream/wire-schema':
         specifier: workspace:*
         version: link:../packages/wire-schema
@@ -403,6 +411,9 @@ importers:
       '@seosoyoung/soul-ui':
         specifier: workspace:*
         version: link:../packages/soul-ui
+      '@soulstream/search-contract':
+        specifier: workspace:*
+        version: link:../packages/search-contract
       '@tanstack/react-query':
         specifier: ^5.0.0
         version: 5.97.0(react@19.2.4)

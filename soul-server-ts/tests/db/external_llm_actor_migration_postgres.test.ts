@@ -174,10 +174,32 @@ describePostgres("049 external LLM actor migration PostgreSQL", () => {
     `;
     expect(survivors).toHaveLength(0);
 
+    await harness.sql`
+      INSERT INTO folders (id, name, sort_order)
+      VALUES ('folder-legacy-task', 'Legacy task', 2)
+      ON CONFLICT (id) DO NOTHING
+    `;
+    await harness.sql`
+      INSERT INTO board_items (
+        id, folder_id, container_kind, container_id, item_type, item_id
+      ) VALUES (
+        'task:legacy-swept', 'folder-legacy-task',
+        'folder', 'folder-legacy-task', 'task', 'task-legacy-swept'
+      )
+    `;
     await expect(harness.sql`
-      INSERT INTO tasks (id, title, status, completed_kind)
-      VALUES ('task-legacy-swept', 'legacy swept', 'completed', 'llm')
+      INSERT INTO tasks (id, board_item_id, title, status, completed_kind)
+      VALUES (
+        'task-legacy-swept', 'task:legacy-swept',
+        'legacy swept', 'completed', 'llm'
+      )
     `).resolves.toBeDefined();
+    await harness.sql`
+      DELETE FROM tasks WHERE id = 'task-legacy-swept'
+    `;
+    await harness.sql`
+      DELETE FROM board_items WHERE id = 'task:legacy-swept'
+    `;
   });
 
   it("still fails explicitly when an llm-hostile CHECK is unreachable by the sweep", async () => {

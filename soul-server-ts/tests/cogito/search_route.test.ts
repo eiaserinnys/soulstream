@@ -64,7 +64,7 @@ describe("GET /cogito/search", () => {
       {
         id: 828,
         session_id: "4cbdd6b7-490a-4aeb-bb76-0568d0dc0cdd",
-        event_type: "text_delta",
+        event_type: "assistant_message",
         searchable_text: "가라앉은 배\n한복...",
         score: 10.09,
       },
@@ -82,19 +82,7 @@ describe("GET /cogito/search", () => {
       "가라앉은",
       null,
       5,
-      [
-        "user_message",
-        "assistant_message",
-        "user_text",
-        "assistant_text",
-        "text_delta",
-        "result",
-        "complete",
-        "error",
-        "away_summary",
-        "intervention_sent",
-        "realtime_transcript",
-      ],
+      ["user_message", "intervention_sent", "assistant_message", "result", "complete"],
     );
     expect(response.json()).toEqual({
       results: [
@@ -103,7 +91,7 @@ describe("GET /cogito/search", () => {
           event_id: 828,
           score: 10.09,
           preview: "가라앉은 배\n한복...",
-          event_type: "text_delta",
+          event_type: "assistant_message",
         },
       ],
     });
@@ -132,5 +120,24 @@ describe("GET /cogito/search", () => {
     expect(searchEvents).toHaveBeenCalledWith("special", null, 3, ["user_message"]);
     expect(searchEventsBySessionId).toHaveBeenCalledWith("special", ["user_message"], 3);
     expect(response.json().results).toHaveLength(1);
+  });
+
+  it("maps category filters through the shared contract", async () => {
+    const searchEvents = vi.fn(async () => []);
+    const runtime = makeRuntime({ searchEvents });
+    const server = await createServer(runtime);
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/cogito/search?q=trace&event_categories=thinking,tools",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(searchEvents).toHaveBeenCalledWith(
+      "trace",
+      null,
+      10,
+      ["thinking"],
+    );
   });
 });

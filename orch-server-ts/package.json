@@ -19,6 +19,7 @@
   "dependencies": {
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/page-model": "workspace:*",
+    "@soulstream/search-contract": "workspace:*",
     "@fastify/websocket": "11.2.0",
     "@hocuspocus/extension-database": "3.4.4",
     "@hocuspocus/server": "3.4.4",

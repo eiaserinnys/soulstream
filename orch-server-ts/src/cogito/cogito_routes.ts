@@ -19,25 +19,20 @@ export type CogitoSearchParams = {
   top_k: number;
   search_session_id: boolean;
   event_types?: string;
-};
-
-export type CogitoSearchHttpRequest = {
-  nodeId: string;
-  url: string;
-  params: CogitoSearchParams;
-  headers: Record<string, string>;
-};
-
-export type CogitoSearchHttpResponse = {
-  statusCode: number;
-  body: unknown;
-};
-
-export type CogitoSearchHttpClient = {
-  get: (request: CogitoSearchHttpRequest) => Promise<CogitoSearchHttpResponse>;
+  event_categories?: string;
 };
 
 export type CogitoSearchResult = Record<string, unknown>;
+export type CogitoNavigationSearchResult = Record<string, unknown>;
+
+export type CogitoSearchResponse = {
+  results: CogitoSearchResult[];
+  navigation_results: CogitoNavigationSearchResult[];
+};
+
+export type CogitoSearchProvider = {
+  search: (params: CogitoSearchParams) => CogitoSearchResponse | Promise<CogitoSearchResponse>;
+};
 
 export type CogitoSearchSessionRecord = Record<string, unknown>;
 
@@ -59,8 +54,8 @@ export type CogitoSearchAccessProvider = {
   resolveAccess: (request: FastifyRequest) => CogitoSearchAccess | Promise<CogitoSearchAccess>;
   filterResults?: (input: {
     request: FastifyRequest;
-    results: CogitoSearchResult[];
-  }) => CogitoSearchResult[] | Promise<CogitoSearchResult[]>;
+    response: CogitoSearchResponse;
+  }) => CogitoSearchResponse | Promise<CogitoSearchResponse>;
 };
 
 export type CogitoBriefStatus = "ok" | "timeout" | "unavailable" | "error";
@@ -92,7 +87,7 @@ export type CogitoBriefCollector = {
 
 export type CogitoRouteOptions = {
   provider: CogitoNodeProvider;
-  httpClient: CogitoSearchHttpClient;
+  searchProvider: CogitoSearchProvider;
   briefCollector: CogitoBriefCollector;
   accessProvider?: CogitoSearchAccessProvider;
   nowIso?: () => string;
@@ -118,22 +113,11 @@ export function registerCogitoRoutes(
     const query = parseSearchQuery(request.query);
     if (!query.ok) return routeError(reply, query.statusCode, query.detail);
 
-    const nodes = await options.provider.listConnectedNodes();
-    if (nodes.length === 0) return { results: [] };
-
-    const headers = forwardCogitoAuthHeaders(request);
-    const results: CogitoSearchResult[] = [];
-    for (const node of nodes) {
-      const nodeResults = await searchNode(options.httpClient, node, query.value, headers);
-      results.push(...nodeResults);
-    }
-
+    const response = await options.searchProvider.search(query.value);
     const access = await resolveSearchAccess(options, request);
-    const accessibleResults = access.restricted
-      ? await filterRestrictedResults(options, request, results)
-      : results;
-    accessibleResults.sort((left, right) => scoreOf(right) - scoreOf(left));
-    return { results: accessibleResults.slice(0, query.value.top_k) };
+    return access.restricted
+      ? await filterRestrictedResults(options, request, response)
+      : response;
   });
 
   app.get("/cogito/briefs", async (request, reply) => {
@@ -211,35 +195,6 @@ export async function filterCogitoSearchResultsByAccess(
   return allowed;
 }
 
-async function searchNode(
-  httpClient: CogitoSearchHttpClient,
-  node: CogitoNode,
-  params: CogitoSearchParams,
-  headers: Record<string, string>,
-): Promise<CogitoSearchResult[]> {
-  try {
-    const response = await httpClient.get({
-      nodeId: node.id,
-      url: `http://${node.host}:${node.port}/cogito/search`,
-      params,
-      headers,
-    });
-    if (response.statusCode !== 200 || !isRecord(response.body)) return [];
-    const rawResults = response.body.results;
-    if (!Array.isArray(rawResults)) return [];
-    return rawResults
-      .filter(isRecord)
-      .map((result) => {
-        const item = { ...result };
-        if (!Object.hasOwn(item, "node_id")) item.node_id = node.id;
-        if (!Object.hasOwn(item, "node_name")) item.node_name = node.id;
-        return item;
-      });
-  } catch {
-    return [];
-  }
-}
-
 async function collectSingleNodeBrief(
   node: CogitoNode,
   collector: CogitoBriefCollector,
@@ -301,6 +256,7 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
     };
   }
   const eventTypes = stringQuery(query, "event_types", { allowEmpty: true });
+  const eventCategories = stringQuery(query, "event_categories", { allowEmpty: true });
   return {
     ok: true,
     value: {
@@ -308,6 +264,7 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       top_k: topK,
       search_session_id: searchSessionId,
       ...(eventTypes !== undefined ? { event_types: eventTypes } : {}),
+      ...(eventCategories !== undefined ? { event_categories: eventCategories } : {}),
     },
   };
 }
@@ -335,10 +292,12 @@ async function resolveSearchAccess(
 async function filterRestrictedResults(
   options: CogitoRouteOptions,
   request: FastifyRequest,
-  results: CogitoSearchResult[],
-): Promise<CogitoSearchResult[]> {
-  if (options.accessProvider?.filterResults === undefined) return [];
-  return options.accessProvider.filterResults({ request, results });
+  response: CogitoSearchResponse,
+): Promise<CogitoSearchResponse> {
+  if (options.accessProvider?.filterResults === undefined) {
+    throw new Error("Restricted Cogito search requires an access result filter");
+  }
+  return options.accessProvider.filterResults({ request, response });
 }
 
 function errorNodeEntry(
@@ -372,15 +331,6 @@ function aggregateStatus(entries: CogitoBriefNodeEntry[]): CogitoBriefAggregate[
 
 function supportsReflectBrief(node: CogitoNode): boolean {
   return isRecord(node.capabilities) && node.capabilities.reflect_brief === true;
-}
-
-function forwardCogitoAuthHeaders(request: FastifyRequest): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const authorization = firstHeader(request.headers.authorization);
-  if (authorization !== undefined) headers.authorization = authorization;
-  const cookie = firstHeader(request.headers.cookie);
-  if (cookie !== undefined) headers.cookie = cookie;
-  return headers;
 }
 
 function aggregateSource() {
@@ -441,10 +391,6 @@ function queryValue(query: unknown, key: string): unknown {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function scoreOf(result: CogitoSearchResult): number {
-  return typeof result.score === "number" ? result.score : 0;
-}
-
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" ? value : undefined;
@@ -452,10 +398,6 @@ function stringField(record: Record<string, unknown>, key: string): string | und
 
 function routeError(reply: FastifyReply, statusCode: number, detail: string): FastifyReply {
   return reply.code(statusCode).send({ detail });
-}
-
-function firstHeader(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

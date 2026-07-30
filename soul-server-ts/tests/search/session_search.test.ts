@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPreview } from "../../src/search/session_search.js";
+import {
+  buildPreview,
+  resolveSearchEventTypes,
+} from "../../src/search/session_search.js";
 
 /**
  * A well-formed JS string only contains surrogate code units as matched
@@ -24,6 +27,19 @@ function hasLoneSurrogate(str: string): boolean {
 const HAMMER = "\u{1F528}"; // 🔨 — surrogate pair 🔨
 
 describe("buildPreview surrogate safety", () => {
+  it("uses the shared live event category contract by default", () => {
+    expect(resolveSearchEventTypes()).toEqual([
+      "user_message",
+      "intervention_sent",
+      "assistant_message",
+      "result",
+      "complete",
+    ]);
+    expect(resolveSearchEventTypes()).not.toContain("text_delta");
+    expect(resolveSearchEventTypes()).not.toContain("tool_start");
+    expect(resolveSearchEventTypes([])).toEqual([]);
+  });
+
   it("does not leave a lone high surrogate when the window ends inside an emoji", () => {
     // query at index 0, so end = 0 + query.length + 100 = 104.
     // Place the emoji so its high surrogate sits exactly at index 103 (end - 1).

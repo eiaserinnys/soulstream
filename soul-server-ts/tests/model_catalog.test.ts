@@ -23,7 +23,7 @@ function withTempCatalog<T>(content: string, fn: (catalogPath: string) => T): T 
 }
 
 describe("ModelCatalog", () => {
-  it("ships the eight agreed preset ids in the example catalog", () => {
+  it("ships the nine agreed preset ids in the example catalog", () => {
     const catalog = new ModelCatalog(
       path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
     );
@@ -35,6 +35,7 @@ describe("ModelCatalog", () => {
       "codex-5.6-sol",
       "codex-5.6-lunar",
       "codex-5.6-terra",
+      "codex-5.3-spark",
       "kimi-2",
       "kimi-3",
     ]);

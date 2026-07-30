@@ -1,5 +1,6 @@
 import type { BoardYjsHostHttpClient } from "../board/board_yjs_host_proxy.js";
 import type { BoardAccess } from "../board/board_access.js";
+import type { CogitoSearchProvider } from "../cogito/cogito_routes.js";
 import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
 import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
@@ -54,6 +55,7 @@ export type LiveDbCatalogRepositoryBoundary = {
     readonly limit: number;
   }) => Promise<SessionSnapshotListResponse>;
   readonly sessionHistoryProvider: SessionHistoryProvider;
+  readonly cogitoSearchProvider: CogitoSearchProvider;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
   readonly userPreferencesRepository: UserBackgroundRepository;

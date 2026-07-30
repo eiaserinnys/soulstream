@@ -48,7 +48,7 @@ export interface ServerParams {
     path: string;
     auth: McpAuthConfig;
   };
-  /** Node-local cogito HTTP search route used by orchestrator fan-out. */
+  /** Node-local Cogito search route retained for MCP session-history search. */
   cogito?: CogitoSearchRouteConfig;
   /** LLM proxy route 설정. 미지정 시 `/llm/completions` 미등록. */
   llm?: LlmRouteConfig;

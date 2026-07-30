@@ -12,7 +12,7 @@ import {
   type CogitoNode,
   type CogitoNodeProvider,
   type CogitoSearchAccessProvider,
-  type CogitoSearchHttpClient,
+  type CogitoSearchProvider,
   type CogitoSearchResult,
   type CogitoSearchSessionRecord,
 } from "../src/index.js";
@@ -38,15 +38,15 @@ const nodeB: CogitoNode = {
 
 function createHarness(options: {
   nodes?: CogitoNode[];
-  httpClient?: CogitoSearchHttpClient;
+  searchProvider?: CogitoSearchProvider;
   accessProvider?: CogitoSearchAccessProvider;
   briefCollector?: CogitoBriefCollector;
 } = {}) {
   const provider: CogitoNodeProvider = {
     listConnectedNodes: () => options.nodes ?? [nodeA, nodeB],
   };
-  const httpClient = options.httpClient ?? {
-    get: vi.fn(async () => ({ statusCode: 200, body: { results: [] } })),
+  const searchProvider = options.searchProvider ?? {
+    search: vi.fn(async () => ({ results: [], navigation_results: [] })),
   };
   const briefCollector = options.briefCollector ?? {
     reflectBrief: vi.fn(async () => ({ brief: { ok: true } })),
@@ -55,13 +55,13 @@ function createHarness(options: {
     config,
     cogitoRoutes: {
       provider,
-      httpClient,
+      searchProvider,
       accessProvider: options.accessProvider,
       briefCollector,
       nowIso: () => "2026-07-09T04:00:00.000Z",
     },
   });
-  return { app, httpClient, briefCollector };
+  return { app, searchProvider, briefCollector };
 }
 
 describe("cogito route harness", () => {
@@ -97,7 +97,7 @@ describe("cogito route harness", () => {
   });
 
   it("validates search query contract", async () => {
-    const { app, httpClient } = createHarness();
+    const { app, searchProvider } = createHarness();
 
     expect(await app.inject({ method: "GET", url: "/cogito/search" }))
       .toMatchObject({ statusCode: 422 });
@@ -105,153 +105,77 @@ describe("cogito route harness", () => {
       .toMatchObject({ statusCode: 422 });
     expect(await app.inject({ method: "GET", url: "/cogito/search?q=x&top_k=101" }))
       .toMatchObject({ statusCode: 422 });
-    expect(httpClient.get).not.toHaveBeenCalled();
+    expect(searchProvider.search).not.toHaveBeenCalled();
 
     await app.close();
   });
 
-  it("returns an empty search result without fan-out when no nodes are connected", async () => {
-    const { app, httpClient } = createHarness({ nodes: [] });
+  it("returns shared DB results even when no nodes are connected", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({
+        results: [{ session_id: "hit", event_id: 3, score: 1 }],
+        navigation_results: [{
+          kind: "folder",
+          id: "folder-a",
+          title: "Project A",
+          folder_id: "folder-a",
+          project_page_id: "page-a",
+        }],
+      })),
+    };
+    const { app } = createHarness({ nodes: [], searchProvider });
 
     const response = await app.inject({ method: "GET", url: "/cogito/search?q=hello" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ results: [] });
-    expect(httpClient.get).not.toHaveBeenCalled();
-
+    expect(response.json()).toEqual({
+      results: [{ session_id: "hit", event_id: 3, score: 1 }],
+      navigation_results: [{
+        kind: "folder",
+        id: "folder-a",
+        title: "Project A",
+        folder_id: "folder-a",
+        project_page_id: "page-a",
+      }],
+    });
+    expect(searchProvider.search).toHaveBeenCalledOnce();
     await app.close();
   });
 
-  it("fans out search, forwards auth and cookie, skips failed nodes, sorts and truncates", async () => {
-    const httpClient: CogitoSearchHttpClient = {
-      get: vi.fn(async (request) => {
-        if (request.url.includes("4105")) {
-          return {
-            statusCode: 200,
-            body: {
-              results: [
-                { session_id: "low", score: 0.1, preview: "low" },
-                { session_id: "high", score: 0.9, preview: "high", node_name: "custom" },
-                "ignored",
-              ],
-            },
-          };
-        }
-        if (request.url.includes("4106")) {
-          return { statusCode: 503, body: { detail: "down" } };
-        }
-        throw new Error(`unexpected request: ${request.url}`);
-      }),
+  it("queries the shared DB provider exactly once with category and compatibility filters", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [] })),
     };
-    const { app } = createHarness({ httpClient });
+    const { app } = createHarness({ searchProvider });
 
     const response = await app.inject({
       method: "GET",
-      url: "/cogito/search?q=hello&top_k=1&event_types=message,tool&search_session_id=true",
-      headers: {
-        authorization: "Bearer secret",
-        cookie: "session=abc",
-        "x-ignored": "nope",
-      },
+      url: "/cogito/search?q=hello&top_k=7&event_categories=thinking,tools&search_session_id=true",
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      results: [
-        {
-          session_id: "high",
-          score: 0.9,
-          preview: "high",
-          node_id: "node-a",
-          node_name: "custom",
-        },
-      ],
+    expect(searchProvider.search).toHaveBeenCalledWith({
+      q: "hello",
+      top_k: 7,
+      search_session_id: true,
+      event_categories: "thinking,tools",
     });
-    expect(httpClient.get).toHaveBeenCalledTimes(2);
-    expect(httpClient.get).toHaveBeenNthCalledWith(1, {
-      nodeId: "node-a",
-      url: "http://127.0.0.1:4105/cogito/search",
-      params: {
-        q: "hello",
-        top_k: 1,
-        search_session_id: true,
-        event_types: "message,tool",
-      },
-      headers: {
-        authorization: "Bearer secret",
-        cookie: "session=abc",
-      },
-    });
-
-    await app.close();
-  });
-
-  it("skips thrown, non-2xx, and invalid node search responses", async () => {
-    const httpClient: CogitoSearchHttpClient = {
-      get: vi.fn(async (request) => {
-        if (request.nodeId === "node-a") {
-          return {
-            statusCode: 200,
-            body: { results: [{ session_id: "kept", score: 1 }] },
-          };
-        }
-        if (request.nodeId === "node-b") {
-          throw new Error("stale node");
-        }
-        if (request.nodeId === "node-c") {
-          return { statusCode: 503, body: { detail: "down" } };
-        }
-        return { statusCode: 200, body: { results: "not-array" } };
-      }),
-    };
-    const { app } = createHarness({
-      nodes: [
-        nodeA,
-        nodeB,
-        { id: "node-c", host: "127.0.0.3", port: 4107 },
-        { id: "node-d", host: "127.0.0.4", port: 4108 },
-      ],
-      httpClient,
-    });
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/cogito/search?q=hello&top_k=10",
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      results: [
-        {
-          session_id: "kept",
-          score: 1,
-          node_id: "node-a",
-          node_name: "node-a",
-        },
-      ],
-    });
-    expect(httpClient.get).toHaveBeenCalledTimes(4);
-
     await app.close();
   });
 
   it("applies the restricted search access filter only for restricted access", async () => {
-    const httpClient: CogitoSearchHttpClient = {
-      get: vi.fn(async () => ({
-        statusCode: 200,
-        body: {
-          results: [
-            { session_id: "allowed", score: 0.1 },
-            { session_id: "denied", score: 1.0 },
-            { score: 2.0 },
-          ],
-        },
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({
+        results: [
+          { session_id: "allowed", score: 0.1 },
+          { session_id: "denied", score: 1.0 },
+        ],
+        navigation_results: [],
       })),
     };
     const unrestrictedFilter = vi.fn();
     const unrestricted = createHarness({
-      nodes: [nodeA],
-      httpClient,
+      searchProvider,
       accessProvider: {
         resolveAccess: () => ({ restricted: false }),
         filterResults: unrestrictedFilter,
@@ -264,16 +188,18 @@ describe("cogito route harness", () => {
 
     expect(unrestrictedResponse.statusCode).toBe(200);
     expect(unrestrictedResponse.json().results.map((item: CogitoSearchResult) => item.session_id))
-      .toEqual([undefined, "denied", "allowed"]);
+      .toEqual(["allowed", "denied"]);
     expect(unrestrictedFilter).not.toHaveBeenCalled();
     await unrestricted.app.close();
 
-    const restrictedFilter = vi.fn(async (input: { results: CogitoSearchResult[] }) =>
-      input.results.filter((item) => item.session_id === "allowed"),
-    );
+    const restrictedFilter = vi.fn(async (input: {
+      response: { results: CogitoSearchResult[]; navigation_results: CogitoSearchResult[] };
+    }) => ({
+      ...input.response,
+      results: input.response.results.filter((item) => item.session_id === "allowed"),
+    }));
     const restricted = createHarness({
-      nodes: [nodeA],
-      httpClient,
+      searchProvider,
       accessProvider: {
         resolveAccess: () => ({ restricted: true }),
         filterResults: restrictedFilter,
@@ -286,15 +212,27 @@ describe("cogito route harness", () => {
 
     expect(restrictedResponse.statusCode).toBe(200);
     expect(restrictedResponse.json().results).toEqual([
-      {
-        session_id: "allowed",
-        score: 0.1,
-        node_id: "node-a",
-        node_name: "node-a",
-      },
+      { session_id: "allowed", score: 0.1 },
     ]);
     expect(restrictedFilter).toHaveBeenCalledOnce();
     await restricted.app.close();
+  });
+
+  it("fails explicitly when restricted access has no result filter", async () => {
+    const { app } = createHarness({
+      accessProvider: {
+        resolveAccess: () => ({ restricted: true }),
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=hello",
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json().message).toContain("requires an access result filter");
+    await app.close();
   });
 
   it("filters restricted search results by session id and allowed folder", async () => {

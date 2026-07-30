@@ -151,7 +151,12 @@ function createAllOptInRouteApp() {
     executeProxyRoutes: inert,
     folderRoutes: inert,
     markdownDocumentRoutes: inert,
-    nodeAgentProfileRoutes: inert,
+    nodeAgentProfileRoutes: {
+      ...inert,
+      modelPresetProvider: {
+        listForNode: () => [],
+      },
+    },
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,
     nodeWsRoute: { registry: inert },
