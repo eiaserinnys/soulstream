@@ -34,7 +34,7 @@ export function MobileChatHeader({
     "No session";
 
   return (
-    <div className="shrink-0 px-3 py-2">
+    <div className="relative z-[1] shrink-0 px-3 py-2">
       <div
         ref={headerRef}
         className="flex h-[50px] items-center gap-2 rounded-full border border-glass-border glass-strong glass-shadow-xs px-2"

@@ -305,7 +305,7 @@ export function ChatView({
       {showHeader && (
         <div
           ref={headerRef}
-          className="relative mb-3 flex h-[50px] shrink-0 items-center gap-2.5 rounded-full border border-glass-border glass-strong glass-shadow-xs px-4"
+          className="relative z-[1] mb-3 flex h-[50px] shrink-0 items-center gap-2.5 rounded-full border border-glass-border glass-strong glass-shadow-xs px-4"
           data-liquid-glass-webgl={headerWebglActive ? "true" : undefined}
         >
           <ProfileAvatar
