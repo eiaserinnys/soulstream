@@ -25,7 +25,10 @@ import { MarkdownDocumentRepository } from "./repositories/markdown_document_rep
 import { SessionRepository } from "./repositories/session_repository.js";
 import {
   SessionStoryReadRepository,
+  type SessionDigestSearchMatch,
+  type SessionStoryTurnSummary,
   type SessionStoryView,
+  type SessionTurnSummaryCounts,
 } from "./repositories/session_story_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
@@ -176,6 +179,40 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   async getSessionStory(sessionId: string): Promise<SessionStoryView> {
     return await this.sessionStoryRepository.getSessionStory(sessionId);
+  }
+
+  async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
+    return await this.sessionStoryRepository.countTurnSummaries(sessionId);
+  }
+
+  async loadTurnSummaryRange(
+    sessionId: string,
+    fromTurnNumber: number,
+    toTurnNumber: number | null,
+    limit: number,
+  ): Promise<SessionStoryTurnSummary[]> {
+    return await this.sessionStoryRepository.loadTurnSummaryRange(
+      sessionId,
+      fromTurnNumber,
+      toTurnNumber,
+      limit,
+    );
+  }
+
+  async searchSessionDigests(
+    query: string,
+    sessionIds: string[] | null,
+    limit: number,
+    includeHighlight: boolean,
+    includeStory: boolean,
+  ): Promise<SessionDigestSearchMatch[]> {
+    return await this.sessionStoryRepository.searchSessionDigests(
+      query,
+      sessionIds,
+      limit,
+      includeHighlight,
+      includeStory,
+    );
   }
 
   async deleteSession(sessionId: string): Promise<void> {

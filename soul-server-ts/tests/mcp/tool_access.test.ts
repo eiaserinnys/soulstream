@@ -39,6 +39,7 @@ describe("MCP tool access profiles", () => {
     );
     expect(isMutationMcpTool("list_sessions")).toBe(false);
     expect(isMutationMcpTool("get_session_story")).toBe(false);
+    expect(isMutationMcpTool("get_session_turn_summaries")).toBe(false);
   });
 
   it("hides mutation tools from supervisor_readonly registration", () => {

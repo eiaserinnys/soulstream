@@ -60,6 +60,9 @@ describe("live Cogito search provider", () => {
       q: "matching",
       top_k: 20,
       search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
       event_categories: "messages,responses",
     })).resolves.toEqual({
       results: [{
@@ -68,6 +71,7 @@ describe("live Cogito search provider", () => {
         event_type: "assistant_message",
         preview: "matching answer",
         score: 0.9,
+        match_source: "message",
       }],
       navigation_results: [
         {
@@ -109,6 +113,9 @@ describe("live Cogito search provider", () => {
       q: "trace",
       top_k: 5,
       search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
       event_categories: "thinking,tools",
     });
 

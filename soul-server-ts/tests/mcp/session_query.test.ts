@@ -38,6 +38,7 @@ function createSilentLogger() {
 function makeRuntime(params: {
   searchEvents?: ReturnType<typeof vi.fn>;
   searchEventsBySessionId?: ReturnType<typeof vi.fn>;
+  searchSessionDigests?: ReturnType<typeof vi.fn>;
   db?: Record<string, unknown>;
   childCompletionConsumption?: McpRuntime["childCompletionConsumption"];
 }): McpRuntime {
@@ -47,6 +48,7 @@ function makeRuntime(params: {
     db: {
       searchEvents: params.searchEvents ?? vi.fn(async () => []),
       searchEventsBySessionId: params.searchEventsBySessionId ?? vi.fn(async () => []),
+      searchSessionDigests: params.searchSessionDigests ?? vi.fn(async () => []),
       ...params.db,
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
@@ -280,6 +282,181 @@ describe("get_session_story", () => {
   });
 });
 
+describe("get_session_turn_summaries", () => {
+  it("returns count, missing index, and a bounded chronological range", async () => {
+    const loadTurnSummaryRange = vi.fn(async (
+      _sessionId: string,
+      from: number,
+      to: number | null,
+      limit: number,
+    ) => {
+      if (from === 9 && to === 9) return [];
+      expect([from, to, limit]).toEqual([2, null, 2]);
+      return [
+        {
+          eventId: 24,
+          turnNumber: 2,
+          content: "두 번째 턴",
+          turnStartEventId: 15,
+          finalResponseEventId: 22,
+          createdAt: new Date("2026-07-31T00:01:00.000Z"),
+        },
+        {
+          eventId: 36,
+          turnNumber: 3,
+          content: "세 번째 턴",
+          turnStartEventId: 25,
+          finalResponseEventId: 34,
+          createdAt: new Date("2026-07-31T00:02:00.000Z"),
+        },
+      ];
+    });
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({ session_id: "sess-1" })),
+        countTurnSummaries: vi.fn(async () => ({
+          totalCount: 4,
+          digestedCount: 3,
+          undigestedCount: 1,
+        })),
+        loadTurnSummaryRange,
+      },
+    }));
+
+    const count = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: { session_id: "sess-1", mode: "count" },
+    });
+    const missing = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: {
+        session_id: "sess-1",
+        mode: "index",
+        turn_number: 9,
+      },
+    });
+    const range = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: {
+        session_id: "sess-1",
+        mode: "range",
+        from_turn_number: 2,
+        limit: 1,
+      },
+    });
+
+    expect(count.structuredContent).toEqual({
+      session_id: "sess-1",
+      mode: "count",
+      total_count: 4,
+      digested_count: 3,
+      undigested_count: 1,
+    });
+    expect(missing.structuredContent).toEqual({
+      session_id: "sess-1",
+      mode: "index",
+      turn_number: 9,
+      summary: null,
+    });
+    expect(range.structuredContent).toEqual({
+      session_id: "sess-1",
+      mode: "range",
+      from_turn_number: 2,
+      to_turn_number: null,
+      limit: 1,
+      summaries: [{
+        event_id: 24,
+        turn_number: 2,
+        content: "두 번째 턴",
+        turn_start_event_id: 15,
+        final_response_event_id: 22,
+        created_at: "2026-07-31T00:01:00.000Z",
+      }],
+      has_more: true,
+      next_from_turn_number: 3,
+    });
+  });
+
+  it("records consumption only when the returned summaries reflect the terminal revision", async () => {
+    const recordObservedBatch = vi.fn(async () => ({ status: "recorded" as const }));
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({
+          session_id: "child-1",
+          status: "completed",
+          caller_session_id: "caller-1",
+          last_event_id: 42,
+        })),
+        loadTurnSummaryRange: vi.fn(async (
+          _sessionId: string,
+          from: number,
+        ) => from === 1
+          ? [{
+              eventId: 10,
+              turnNumber: 1,
+              content: "부분 조회",
+              turnStartEventId: 1,
+              finalResponseEventId: 9,
+              createdAt: new Date("2026-07-31T00:00:00.000Z"),
+            }]
+          : [{
+              eventId: 42,
+              turnNumber: 2,
+              content: "마지막 턴",
+              turnStartEventId: 11,
+              finalResponseEventId: 41,
+              createdAt: new Date("2026-07-31T00:01:00.000Z"),
+            }]),
+        countTurnSummaries: vi.fn(async () => ({
+          totalCount: 3,
+          digestedCount: 2,
+          undigestedCount: 1,
+        })),
+      },
+      childCompletionConsumption: {
+        recordObserved: vi.fn(),
+        recordObservedBatch,
+      },
+    }), {
+      "x-soulstream-agent-session-id": "caller-1",
+    });
+
+    const count = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: { session_id: "child-1", mode: "count" },
+    });
+    expect(count.isError).not.toBe(true);
+    expect(recordObservedBatch).not.toHaveBeenCalled();
+
+    const partialIndex = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: {
+        session_id: "child-1",
+        mode: "index",
+        turn_number: 1,
+      },
+    });
+    expect(partialIndex.isError).not.toBe(true);
+    expect(recordObservedBatch).not.toHaveBeenCalled();
+
+    const terminalRange = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: {
+        session_id: "child-1",
+        mode: "range",
+        from_turn_number: 2,
+      },
+    });
+    expect(terminalRange.isError).not.toBe(true);
+    expect(recordObservedBatch).toHaveBeenCalledWith([{
+      childSessionId: "child-1",
+      callerSessionId: "caller-1",
+      source: "get_session_turn_summaries",
+      terminalRevision: 42,
+    }]);
+  });
+});
+
 describe("search_session_history", () => {
   it("describes the explicit event_types needed to search tool events", async () => {
     const client = await createClient(makeRuntime({}));
@@ -327,6 +504,7 @@ describe("search_session_history", () => {
           score: 0.75,
           preview: "hello readable world",
           event_type: "user_message",
+          match_source: "message",
         },
       ],
     });
@@ -398,8 +576,37 @@ describe("search_session_history", () => {
           score: 0.5,
           preview: "readable session match",
           event_type: "user_message",
+          match_source: "message",
         },
       ],
     });
+  });
+
+  it("adds turn summaries and digest fields only when explicitly requested", async () => {
+    const searchEvents = vi.fn(async () => []);
+    const searchSessionDigests = vi.fn(async () => []);
+    const client = await createClient(makeRuntime({
+      searchEvents,
+      searchSessionDigests,
+    }));
+
+    await client.callTool({
+      name: "search_session_history",
+      arguments: {
+        query: "needle",
+        include_turn_summaries: true,
+        include_highlight: true,
+        include_story: true,
+      },
+    });
+
+    expect(searchEvents.mock.calls[0]?.[3]).toContain("turn_summary");
+    expect(searchSessionDigests).toHaveBeenCalledWith(
+      "needle",
+      null,
+      10,
+      true,
+      true,
+    );
   });
 });

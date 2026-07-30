@@ -1,4 +1,8 @@
 import type { SessionStoryResponse } from "./session_story_read_service.js";
+import type {
+  SessionTurnSummaryQuery,
+  SessionTurnSummaryResponse,
+} from "./session_turn_summary_read_service.js";
 
 export type SessionHistoryRawEvent = {
   eventId: number;
@@ -20,6 +24,10 @@ export type SessionHistoryProvider = {
   ) => Promise<[unknown[], string | null]>;
   readTimelineTrace: (sessionId: string, timelineId: string) => Promise<unknown | null | undefined>;
   readStory: (sessionId: string) => Promise<SessionStoryResponse>;
+  readTurnSummaries: (
+    sessionId: string,
+    query: SessionTurnSummaryQuery,
+  ) => Promise<SessionTurnSummaryResponse>;
   readLastEventId: (sessionId: string) => Promise<number>;
   streamEventsRaw: (
     sessionId: string,
@@ -73,6 +81,13 @@ export class SessionHistoryReadService {
 
   readStory(sessionId: string): Promise<SessionStoryResponse> {
     return this.provider.readStory(sessionId);
+  }
+
+  readTurnSummaries(
+    sessionId: string,
+    query: SessionTurnSummaryQuery,
+  ): Promise<SessionTurnSummaryResponse> {
+    return this.provider.readTurnSummaries(sessionId, query);
   }
 
   readLastEventId(sessionId: string): Promise<number> {

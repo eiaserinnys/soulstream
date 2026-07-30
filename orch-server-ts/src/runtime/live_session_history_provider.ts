@@ -3,6 +3,8 @@ import type {
   SessionHistoryRawEvent,
 } from "../session/session_history_service.js";
 import { SessionStoryReadService } from "../session/session_story_read_service.js";
+import { SessionTurnSummaryReadService } from
+  "../session/session_turn_summary_read_service.js";
 import { SessionStoryRepository } from "../turn-summary/session_story_repository.js";
 import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
 import {
@@ -52,11 +54,12 @@ export function createLiveSessionHistoryProvider(
 
 class LiveSessionHistoryProvider implements SessionHistoryProvider {
   private readonly storyReader: SessionStoryReadService;
+  private readonly turnSummaryReader: SessionTurnSummaryReadService;
 
   constructor(private readonly sqlResolver: LiveDbSqlResolver) {
-    this.storyReader = new SessionStoryReadService(
-      new SessionStoryRepository(sqlResolver),
-    );
+    const storyRepository = new SessionStoryRepository(sqlResolver);
+    this.storyReader = new SessionStoryReadService(storyRepository);
+    this.turnSummaryReader = new SessionTurnSummaryReadService(storyRepository);
   }
 
   async readViewport(sessionId: string, yMin: number, yMax: number): Promise<unknown> {
@@ -142,6 +145,13 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
 
   readStory(sessionId: string) {
     return this.storyReader.readStory(sessionId);
+  }
+
+  readTurnSummaries(
+    sessionId: string,
+    query: Parameters<SessionTurnSummaryReadService["read"]>[1],
+  ) {
+    return this.turnSummaryReader.read(sessionId, query);
   }
 
   async readLastEventId(sessionId: string): Promise<number> {

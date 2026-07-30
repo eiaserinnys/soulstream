@@ -19,6 +19,7 @@ export const SELF_IDENTITY = {
         "list_session_events",
         "get_session_event",
         "get_session_story",
+        "get_session_turn_summaries",
         "download_session_history",
         "search_session_history",
         "get_session_summary",

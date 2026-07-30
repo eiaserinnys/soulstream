@@ -18,6 +18,9 @@ export type CogitoSearchParams = {
   q: string;
   top_k: number;
   search_session_id: boolean;
+  include_turn_summaries: boolean;
+  include_highlight: boolean;
+  include_story: boolean;
   event_types?: string;
   event_categories?: string;
 };
@@ -255,6 +258,34 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       detail: "search_session_id must be a boolean",
     };
   }
+  const includeTurnSummaries = booleanQuery(
+    query,
+    "include_turn_summaries",
+    false,
+  );
+  const includeHighlight = booleanQuery(query, "include_highlight", false);
+  const includeStory = booleanQuery(query, "include_story", false);
+  if (includeTurnSummaries === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "include_turn_summaries must be a boolean",
+    };
+  }
+  if (includeHighlight === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "include_highlight must be a boolean",
+    };
+  }
+  if (includeStory === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "include_story must be a boolean",
+    };
+  }
   const eventTypes = stringQuery(query, "event_types", { allowEmpty: true });
   const eventCategories = stringQuery(query, "event_categories", { allowEmpty: true });
   return {
@@ -263,6 +294,9 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       q,
       top_k: topK,
       search_session_id: searchSessionId,
+      include_turn_summaries: includeTurnSummaries,
+      include_highlight: includeHighlight,
+      include_story: includeStory,
       ...(eventTypes !== undefined ? { event_types: eventTypes } : {}),
       ...(eventCategories !== undefined ? { event_categories: eventCategories } : {}),
     },

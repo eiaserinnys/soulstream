@@ -121,6 +121,9 @@ describe("live provider factory boundary", () => {
         q: "hello",
         top_k: 2,
         search_session_id: false,
+        include_turn_summaries: false,
+        include_highlight: false,
+        include_story: false,
       }),
     ).resolves.toEqual({ results: [], navigation_results: [] });
     await expect(
@@ -454,6 +457,13 @@ function createLiveDependencies(): LiveProviderDependencies {
       narrative_through_event_id: null,
       fold_count: 0,
       updated_at: null,
+    })),
+    readTurnSummaries: vi.fn(async (sessionId: string) => ({
+      session_id: sessionId,
+      mode: "count" as const,
+      total_count: 0,
+      digested_count: 0,
+      undigested_count: 0,
     })),
     readLastEventId: vi.fn(async () => 0),
     streamEventsRaw: vi.fn(() => emptyRawEvents()),

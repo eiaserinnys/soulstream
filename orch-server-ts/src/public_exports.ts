@@ -102,6 +102,8 @@ export * from "./session/session_command_transport.js";
 export * from "./session/session_history_routes.js";
 export * from "./session/session_history_service.js";
 export * from "./session/session_story_read_service.js";
+export * from "./session/session_turn_summary_read_service.js";
+export * from "./session/session_turn_summary_routes.js";
 export * from "./session/session_resource_access.js";
 export * from "./session/session_stream_event_filter.js";
 export * from "./session/session_snapshot_routes.js";
