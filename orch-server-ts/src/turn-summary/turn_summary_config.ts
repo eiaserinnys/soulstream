@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 
 export type TurnSummaryLogger = {
+  readonly debug?: (...args: unknown[]) => void;
   readonly info?: (...args: unknown[]) => void;
   readonly warn: (...args: unknown[]) => void;
 };
