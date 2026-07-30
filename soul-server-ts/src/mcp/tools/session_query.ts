@@ -239,7 +239,8 @@ export function registerSessionQueryTools(
     "search_session_history",
     {
       description:
-        "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합).",
+        "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합). "
+        + '툴 사용 기록은 event_types: ["tool_start","tool_result"]를 명시해 검색한다.',
       inputSchema: {
         query: z.string().min(1),
         session_ids: z.array(z.string()).optional(),

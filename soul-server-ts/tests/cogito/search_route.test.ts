@@ -137,7 +137,7 @@ describe("GET /cogito/search", () => {
       "trace",
       null,
       10,
-      ["thinking"],
+      ["thinking", "tool_start", "tool_result"],
     );
   });
 });
