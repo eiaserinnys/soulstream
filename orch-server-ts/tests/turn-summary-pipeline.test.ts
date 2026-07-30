@@ -16,6 +16,7 @@ import type { TurnSummaryConfig } from "../src/turn-summary/turn_summary_config.
 import type { TurnSummarizer } from "../src/turn-summary/turn_summarizer.js";
 
 const CONFIG: TurnSummaryConfig = {
+  enabled: true,
   instruction: "한국어 1~3줄로 요약하라.",
   provider: "codex",
   model: "gpt-5.6-terra",
@@ -161,6 +162,30 @@ describe("turn summary policy", () => {
 });
 
 describe("TurnSummaryPipeline", () => {
+  it("does no DB or provider work while the hot-reloaded feature flag is off", async () => {
+    const repository = fakeRepository();
+    const summarizer = {
+      summarize: vi.fn(),
+    } satisfies TurnSummarizer;
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => ({ ...CONFIG, enabled: false }) },
+      summarizer,
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(repository.loadTurn).not.toHaveBeenCalled();
+    expect(summarizer.summarize).not.toHaveBeenCalled();
+    expect(repository.appendSummary).not.toHaveBeenCalled();
+  });
+
   it("publishes DB gap events before the newly appended summary", async () => {
     const repository = fakeRepository();
     const hub = new RuntimeSessionEventHub();

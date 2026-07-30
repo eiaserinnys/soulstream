@@ -10,6 +10,7 @@ export type TurnSummaryLogger = {
 
 const TurnSummaryConfigSchema = z
   .object({
+    enabled: z.boolean(),
     instruction: z.string().trim().min(1),
     provider: z.enum(["codex", "openai-api"]),
     model: z.string().trim().min(1),
@@ -22,6 +23,7 @@ const TurnSummaryConfigSchema = z
   })
   .strict()
   .transform((value) => ({
+    enabled: value.enabled,
     instruction: value.instruction,
     provider: value.provider,
     model: value.model,

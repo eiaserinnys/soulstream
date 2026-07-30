@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -35,6 +36,7 @@ import {
 } from "../src/runtime/child_process_env.js";
 
 const CONFIG: TurnSummaryConfig = {
+  enabled: true,
   instruction:
     "①사용자가 요청한 것 ②에이전트가 한 일 ③결과를 한국어 1~3줄로 요약하라. 원문에 없는 사실을 만들지 말 것.",
   provider: "codex",
@@ -81,6 +83,17 @@ describe("turn summary prompt", () => {
 });
 
 describe("TurnSummaryConfigService", () => {
+  it("ships with summary generation and emission disabled", () => {
+    const path = fileURLToPath(
+      new URL("../config/turn-summary.yaml", import.meta.url),
+    );
+    const service = new TurnSummaryConfigService(path, {
+      warn: vi.fn(),
+    });
+
+    expect(service.read().enabled).toBe(false);
+  });
+
   it("hot reloads valid config and keeps the last good value after an invalid update", () => {
     const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
     tempDirs.push(dir);
@@ -90,10 +103,14 @@ describe("TurnSummaryConfigService", () => {
       warn: (...args) => warnings.push(args),
     });
 
-    writeFileSync(path, yamlConfig("gpt-5.6-terra"), "utf8");
+    writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
+    expect(service.read().enabled).toBe(false);
+
+    writeFileSync(path, yamlConfig("gpt-5.6-terra", true), "utf8");
+    expect(service.read().enabled).toBe(true);
     expect(service.read().model).toBe("gpt-5.6-terra");
 
-    writeFileSync(path, yamlConfig("gpt-5.4-mini"), "utf8");
+    writeFileSync(path, yamlConfig("gpt-5.4-mini", true), "utf8");
     expect(service.read().model).toBe("gpt-5.4-mini");
 
     writeFileSync(path, "provider: invalid", "utf8");
@@ -276,8 +293,9 @@ describe("OpenAI API turn summary provider", () => {
   });
 });
 
-function yamlConfig(model: string): string {
+function yamlConfig(model: string, enabled: boolean): string {
   return [
+    `enabled: ${enabled}`,
     `instruction: "${CONFIG.instruction}"`,
     "provider: codex",
     `model: ${model}`,

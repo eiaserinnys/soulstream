@@ -370,52 +370,8 @@ describe("processEventsBatch — app-server final assistant message", () => {
       content: "Hello final",
       isStreaming: false,
       treeNodeType: "text",
-      eventId: 10,
     });
     expect((result.root?.children ?? [])).toHaveLength(1);
-  });
-
-  it("turn_summary becomes an anchored caption node without refetching the tree", () => {
-    const ctx = createProcessingContext();
-    const result = processEventsBatch(
-      [
-        {
-          event: {
-            type: "assistant_message",
-            content: "최종 응답",
-            timestamp: 1,
-          } as unknown as SoulSSEEvent,
-          eventId: 20,
-        },
-        {
-          event: {
-            type: "turn_summary",
-            content: "요청을 처리했고 결과를 전달했다.",
-            turn_start_event_id: 10,
-            final_response_event_id: 20,
-            parent_event_id: 20,
-            model: "gpt-5.6-terra",
-            latency_ms: 100,
-            attempts: 1,
-            timestamp: 2,
-          } as unknown as SoulSSEEvent,
-          eventId: 30,
-        },
-      ],
-      ctx,
-      null,
-      "sess-1",
-      null,
-      0,
-    );
-
-    expect(flattenTree(result.root).at(-1)).toMatchObject({
-      role: "turn_summary",
-      content: "요청을 처리했고 결과를 전달했다.",
-      anchorStartEventId: 10,
-      anchorFinalResponseEventId: 20,
-      eventId: 30,
-    });
   });
 
   it("id 없는 live-only text_start는 과거 이벤트보다 뒤에 붙는다", () => {

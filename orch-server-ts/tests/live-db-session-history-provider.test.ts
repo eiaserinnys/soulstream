@@ -145,6 +145,58 @@ describe("live DB session history provider", () => {
     ]);
   });
 
+  it("returns durable turn summaries through timeline history with anchor metadata intact", async () => {
+    const createdAt = new Date("2026-07-30T00:00:00.000Z");
+    const harness = createSqlHarness((text, values) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: true }];
+      if (text.includes("event_type = ANY")) {
+        expect(values).toContainEqual(expect.arrayContaining(["turn_summary"]));
+        return [{
+          id: 30,
+          parent_event_id: 20,
+          event_type: "turn_summary",
+          payload: {
+            type: "turn_summary",
+            content: "요청을 처리하고 결과를 전달했다.",
+            turn_start_event_id: 10,
+            final_response_event_id: 20,
+            parent_event_id: 20,
+            model: "gpt-5.6-terra",
+            latency_ms: 120,
+            attempts: 1,
+            timestamp: 123,
+          },
+          created_at: createdAt,
+        }];
+      }
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({
+      sql: harness.sql,
+    }).sessionHistoryProvider;
+
+    await expect(provider.readTimeline("sess-1", null, 10)).resolves.toEqual([
+      [{
+        id: 30,
+        parent_event_id: 20,
+        event_type: "turn_summary",
+        payload: {
+          type: "turn_summary",
+          content: "요청을 처리하고 결과를 전달했다.",
+          turn_start_event_id: 10,
+          final_response_event_id: 20,
+          parent_event_id: 20,
+          model: "gpt-5.6-terra",
+          latency_ms: 120,
+          attempts: 1,
+          timestamp: 123,
+        },
+        created_at: createdAt.toISOString(),
+      }],
+      null,
+    ]);
+  });
+
   it("replays DB raw events through the route filter for finalized app-server fragments", async () => {
     const harness = createSqlHarness((text) =>
       text.includes("event_stream_raw")

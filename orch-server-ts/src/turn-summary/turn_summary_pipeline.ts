@@ -75,6 +75,7 @@ export class TurnSummaryPipeline {
 
   private async process(job: TurnSummaryCompleteJob): Promise<void> {
     const config = this.deps.configService.read();
+    if (!config.enabled) return;
     const turn = await this.deps.repository.loadTurn(
       job.sessionId,
       job.completeEventId,

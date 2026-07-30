@@ -12,7 +12,6 @@ import { ToolMessage } from "./ToolMessage";
 import { ChatInputRequest } from "./ChatInputRequest";
 import { ChatToolApproval } from "./ChatToolApproval";
 import { AwaySummaryMessage } from "./AwaySummaryMessage";
-import { TurnSummaryCaption } from "./TurnSummaryCaption";
 
 /**
  * 모듈 범위의 seen 집합.
@@ -65,9 +64,6 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       break;
     case "away_summary":
       body = <AwaySummaryMessage msg={msg} />;
-      break;
-    case "turn_summary":
-      body = <TurnSummaryCaption msg={msg} />;
       break;
     default:
       return null;
