@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -35,11 +35,13 @@ test("rejects every external @soulstream workspace import form", async () => {
   ]);
 
   const directory = await mkdtemp(join(tmpdir(), "soulstream-bundle-contract-"));
-  const bundle = join(directory, "main.js");
+  const nestedDirectory = join(directory, "chunks");
+  const bundle = join(nestedDirectory, "main.js");
   try {
+    await mkdir(nestedDirectory);
     await writeFile(bundle, source, "utf8");
     await assert.rejects(
-      () => verifyWorkspaceBundle([bundle]),
+      () => verifyWorkspaceBundle([directory]),
       /external workspace import @soulstream\/new-package/,
     );
   } finally {

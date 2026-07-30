@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:contracts": "tsc --noEmit -p tsconfig.contracts.json",
-    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist/*.js",
+    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts"
   },
   "dependencies": {

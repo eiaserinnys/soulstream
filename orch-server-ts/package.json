@@ -14,7 +14,7 @@
     "plan:task-project-mount-backfill": "tsx scripts/plan-task-project-mount-backfill.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist/*.js",
+    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
