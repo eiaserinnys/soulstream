@@ -9,10 +9,8 @@ import {
   type TurnSummaryUsage,
 } from "./turn_summarizer.js";
 
-export const OPENAI_API_TURN_SUMMARY_MODEL = "gpt-5.4-mini" as const;
-
 export interface OpenAiChatCompletionRequest {
-  readonly model: typeof OPENAI_API_TURN_SUMMARY_MODEL;
+  readonly model: string;
   readonly temperature: 0;
   readonly messages: [{ readonly role: "user"; readonly content: string }];
 }
@@ -56,7 +54,7 @@ export class OpenAiApiTurnSummarizer implements TurnSummarizer {
     for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
       try {
         const completion = await this.options.client.execute({
-          model: OPENAI_API_TURN_SUMMARY_MODEL,
+          model: config.model,
           temperature: 0,
           messages: [{ role: "user", content: prompt }],
         }, {
@@ -70,7 +68,7 @@ export class OpenAiApiTurnSummarizer implements TurnSummarizer {
         const usage = mapOpenAiUsage(completion.usage);
         return {
           content,
-          model: OPENAI_API_TURN_SUMMARY_MODEL,
+          model: config.model,
           latencyMs: Math.max(0, this.nowMs() - startedAt),
           attempts: attempt,
           ...(usage === undefined ? {} : { usage }),

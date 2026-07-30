@@ -20,7 +20,6 @@ import { resolveCodexCliPath } from
   "../src/turn-summary/codex_cli_path.js";
 import {
   OpenAiApiTurnSummarizer,
-  OPENAI_API_TURN_SUMMARY_MODEL,
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
 import {
   buildTurnSummaryPrompt,
@@ -91,7 +90,11 @@ describe("TurnSummaryConfigService", () => {
       warn: vi.fn(),
     });
 
-    expect(service.read().enabled).toBe(false);
+    expect(service.read()).toMatchObject({
+      enabled: false,
+      provider: "openai-api",
+      model: "gpt-5.4-mini",
+    });
   });
 
   it("hot reloads valid config and keeps the last good value after an invalid update", () => {
@@ -251,7 +254,7 @@ describe("Codex turn summary provider", () => {
 });
 
 describe("OpenAI API turn summary provider", () => {
-  it("uses chat.completions with the fixed model, temperature zero, and no SDK retries", async () => {
+  it("uses chat.completions with the configured model, temperature zero, and no SDK retries", async () => {
     const execute = vi.fn().mockResolvedValue({
       choices: [{ message: { content: "API 요약" } }],
       usage: {
@@ -267,13 +270,18 @@ describe("OpenAI API turn summary provider", () => {
         .mockReturnValueOnce(130),
     });
 
+    const apiConfig = {
+      ...CONFIG,
+      provider: "openai-api" as const,
+      model: "gpt-5.4-mini-test",
+    };
     await expect(summarizer.summarize({
       userText: "요청",
       assistantText: "응답",
       previousSummaries: [],
-    }, { ...CONFIG, provider: "openai-api" })).resolves.toEqual({
+    }, apiConfig)).resolves.toEqual({
       content: "API 요약",
-      model: OPENAI_API_TURN_SUMMARY_MODEL,
+      model: "gpt-5.4-mini-test",
       latencyMs: 30,
       attempts: 1,
       usage: {
@@ -283,7 +291,7 @@ describe("OpenAI API turn summary provider", () => {
       },
     });
     expect(execute).toHaveBeenCalledWith({
-      model: "gpt-5.4-mini",
+      model: "gpt-5.4-mini-test",
       temperature: 0,
       messages: [{ role: "user", content: expect.any(String) }],
     }, {
