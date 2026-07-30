@@ -79,4 +79,27 @@ describe("chat tone component classes", () => {
     expect(summaryHtml).toContain("text-left");
     expect(summaryHtml).not.toContain("text-center");
   });
+
+  it("턴 완료는 라벨과 수치 블록을 좌우 정렬하고 수치 줄바꿈도 우측 기준을 유지한다", () => {
+    const completeHtml = renderToStaticMarkup(
+      createElement(SystemMessage, {
+        msg: makeMessage({
+          treeNodeType: "complete",
+          content: "턴 완료",
+          captionStats:
+            "최근 $1.23 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473",
+          totalCostUsd: 3.31,
+        }),
+      }),
+    );
+
+    expect(completeHtml).toContain("justify-between");
+    expect(completeHtml).toContain("flex-wrap");
+    expect(completeHtml).toContain(">턴 완료</span>");
+    expect(completeHtml).toContain("ml-auto");
+    expect(completeHtml).toContain("text-right");
+    expect(completeHtml).toContain(
+      ">최근 $1.23 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473</span>",
+    );
+  });
 });

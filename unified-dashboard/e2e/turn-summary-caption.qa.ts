@@ -69,9 +69,31 @@ async function verifyTurnSummaryCaption(browser: Browser) {
     assert(metrics.summary.textAlign === "left", "다줄 요약 캡션이 좌측 정렬되지 않았습니다.");
     assert(metrics.complete.textAlign === "left", "한 줄 완료 캡션이 좌측 정렬되지 않았습니다.");
     assert(metrics.summary.whiteSpace === "pre-line", "요약 줄바꿈이 보존되지 않았습니다.");
-    assert(metrics.completeText.includes("이번 턴 $0.1400"), "Turn Complete에 계산된 비용 차분이 보이지 않습니다.");
-    assert(metrics.completeText.includes("누적 $35.1400"), "Turn Complete에 누적 비용이 보이지 않습니다.");
-    assert(metrics.completeText.includes("2,846,290 in"), "Turn Complete에 캐시 포함 입력 토큰이 보이지 않습니다.");
+    assert(metrics.complete.display === "flex", "턴 완료 라벨과 수치가 flex 한 줄로 배치되지 않았습니다.");
+    assert(metrics.complete.flexWrap === "wrap", "좁은 폭에서 수치 블록을 줄바꿈할 수 없습니다.");
+    assert(metrics.complete.labelText === "턴 완료", "턴 완료 라벨이 한국어로 표시되지 않았습니다.");
+    assert(
+      metrics.complete.statsText
+        === "최근 $3.31 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473",
+      `턴 완료 수치 포맷이 다릅니다: ${metrics.complete.statsText}`,
+    );
+    assert(
+      Math.abs(
+        metrics.complete.labelLeft
+          - metrics.complete.containerLeft
+          - metrics.complete.paddingLeft
+      ) < 1,
+      "턴 완료 라벨이 캡션 좌측에 붙지 않았습니다.",
+    );
+    assert(
+      Math.abs(
+        metrics.complete.containerRight
+          - metrics.complete.paddingRight
+          - metrics.complete.statsRight
+      ) < 1,
+      "턴 완료 수치 블록이 캡션 우측에 붙지 않았습니다.",
+    );
+    assert(metrics.complete.statsTextAlign === "right", "수치 블록 줄바꿈이 우측 기준이 아닙니다.");
     assert(!metrics.resultVisible, "Session Complete 캡션이 중복 표시됩니다.");
     assert(browserErrors.length === 0, `브라우저 오류: ${browserErrors.join(" | ")}`);
 
@@ -124,12 +146,12 @@ async function injectLateSummary(page: Page) {
       result: "Turn completed",
       attachments: [],
       usage: {
-        input_tokens: 8,
-        output_tokens: 5300,
-        cache_read_input_tokens: 2_838_895,
-        cache_creation_input_tokens: 7_387,
+        input_tokens: 7,
+        output_tokens: 1473,
+        cache_read_input_tokens: 2_985_000,
+        cache_creation_input_tokens: 234,
       },
-      total_cost_usd: 35.14,
+      total_cost_usd: 3.31,
       timestamp: 120,
     }, 120);
     processEvent({
@@ -137,12 +159,12 @@ async function injectLateSummary(page: Page) {
       success: true,
       output: "현재 턴 완료",
       usage: {
-        input_tokens: 8,
-        output_tokens: 5300,
-        cache_read_input_tokens: 2_838_895,
-        cache_creation_input_tokens: 7_387,
+        input_tokens: 7,
+        output_tokens: 1473,
+        cache_read_input_tokens: 2_985_000,
+        cache_creation_input_tokens: 234,
       },
-      total_cost_usd: 35.14,
+      total_cost_usd: 3.31,
       timestamp: 121,
     }, 121);
     processEvent({ type: "user_message", text: "그다음 턴에서 배포 순서를 확인해 주세요.", user: "디렉터님", timestamp: 130 }, 130);
@@ -166,8 +188,21 @@ async function measureTimeline(page: Page) {
     const summary = elements[2]?.querySelector<HTMLElement>(".flex-1");
     const complete = elements[1]?.querySelector<HTMLElement>(".flex-1");
     if (!summary || !complete) throw new Error("시스템 캡션 내부 요소를 찾지 못했습니다.");
+    const completeLabel = complete.querySelector<HTMLElement>(
+      '[data-slot="complete-caption-label"]',
+    );
+    const completeStats = complete.querySelector<HTMLElement>(
+      '[data-slot="complete-caption-stats"]',
+    );
+    if (!completeLabel || !completeStats) {
+      throw new Error("턴 완료 라벨·수치 블록을 찾지 못했습니다.");
+    }
     const summaryStyle = getComputedStyle(summary);
     const completeStyle = getComputedStyle(complete);
+    const statsStyle = getComputedStyle(completeStats);
+    const completeRect = complete.getBoundingClientRect();
+    const labelRect = completeLabel.getBoundingClientRect();
+    const statsRect = completeStats.getBoundingClientRect();
     return {
       order,
       summary: {
@@ -183,6 +218,17 @@ async function measureTimeline(page: Page) {
         textAlign: completeStyle.textAlign,
         whiteSpace: completeStyle.whiteSpace,
         width: complete.getBoundingClientRect().width,
+        display: completeStyle.display,
+        flexWrap: completeStyle.flexWrap,
+        containerLeft: completeRect.left,
+        containerRight: completeRect.right,
+        paddingLeft: Number.parseFloat(completeStyle.paddingLeft),
+        paddingRight: Number.parseFloat(completeStyle.paddingRight),
+        labelLeft: labelRect.left,
+        statsRight: statsRect.right,
+        labelText: completeLabel.textContent?.trim() ?? "",
+        statsText: completeStats.textContent?.trim() ?? "",
+        statsTextAlign: statsStyle.textAlign,
       },
       completeText: elements[1]?.textContent ?? "",
       resultVisible: document.querySelector<HTMLElement>(

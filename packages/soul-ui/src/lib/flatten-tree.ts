@@ -36,6 +36,8 @@ export interface ChatMessage {
   role: "user" | "assistant" | "tool" | "system" | "system_message" | "notification" | "intervention" | "input_request" | "tool_approval" | "away_summary";
   /** 메인 표시 텍스트 */
   content: string;
+  /** complete 전용: 라벨과 분리해 우측 정렬할 비용·토큰 수치 */
+  captionStats?: string;
   timestamp?: number;
   /** thinking 전용: 접기 토글에 표시할 내면 사고 텍스트 */
   thinkingContent?: string;
@@ -145,6 +147,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.id === b.id &&
     a.role === b.role &&
     a.content === b.content &&
+    a.captionStats === b.captionStats &&
     a.timestamp === b.timestamp &&
     a.thinkingContent === b.thinkingContent &&
     a.toolName === b.toolName &&
@@ -431,18 +434,18 @@ function nodeToMessage(
 
     case "complete": {
       const n = node as CompleteNode;
-      const parts: string[] = ["Turn Complete"];
-      parts.push(...formatTurnCosts(
+      const stats: string[] = formatTurnCosts(
         n.totalCostUsd,
         previousResultTotalCostUsd,
-      ));
+      );
       const usageStr = formatTokenUsage(n.usage);
-      if (usageStr) parts.push(usageStr);
+      if (usageStr) stats.push(usageStr);
 
       return {
         id: node.id,
         role: "system",
-        content: parts.join(" · "),
+        content: "턴 완료",
+        captionStats: stats.length > 0 ? stats.join(" · ") : undefined,
         timestamp: n.timestamp,
         usage: n.usage,
         totalCostUsd: n.totalCostUsd,
@@ -543,10 +546,10 @@ function formatTokenUsage(usage?: TokenUsage): string | null {
     + (usage.cache_creation_input_tokens ?? 0);
   const inputTokens = usage.input_tokens + claudeCacheTokens;
   const cacheTokens = claudeCacheTokens || usage.cached_input_tokens || 0;
-  const input = `${inputTokens.toLocaleString()} in${cacheTokens > 0
-    ? ` (${cacheTokens.toLocaleString()} cache)`
+  const input = `입력 ${inputTokens.toLocaleString()}${cacheTokens > 0
+    ? ` (캐시 ${cacheTokens.toLocaleString()})`
     : ""}`;
-  return `${input} / ${usage.output_tokens.toLocaleString()} out tokens`;
+  return `${input} · 출력 ${usage.output_tokens.toLocaleString()}`;
 }
 
 function formatTurnCosts(
@@ -554,17 +557,16 @@ function formatTurnCosts(
   previousResultTotalCostUsd: number | undefined,
 ): string[] {
   if (!isFiniteNumber(totalCostUsd)) return [];
-  const parts: string[] = [];
-  if (
+  const recentCostUsd = (
     isFiniteNumber(previousResultTotalCostUsd)
     && totalCostUsd >= previousResultTotalCostUsd
-  ) {
-    parts.push(
-      `이번 턴 $${(totalCostUsd - previousResultTotalCostUsd).toFixed(4)}`,
-    );
-  }
-  parts.push(`누적 $${totalCostUsd.toFixed(4)}`);
-  return parts;
+  )
+    ? totalCostUsd - previousResultTotalCostUsd
+    : totalCostUsd;
+  return [
+    `최근 $${recentCostUsd.toFixed(2)}`,
+    `누적 $${totalCostUsd.toFixed(2)}`,
+  ];
 }
 
 function isFiniteNumber(value: number | undefined): value is number {
