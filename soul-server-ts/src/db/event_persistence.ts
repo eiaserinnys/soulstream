@@ -17,9 +17,17 @@ import type { Task } from "../task/task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { SessionDB } from "./session_db.js";
+import {
+  sanitizeJsonText,
+  sanitizeJsonValue,
+  truncateJsonText,
+} from "./json_text.js";
+import { extractToolSearchableText } from "./tool_search_projection.js";
 
 const LAST_MESSAGE_PREVIEW_LIMIT = 200;
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
+
+export { sanitizeJsonText, sanitizeJsonValue, truncateJsonText };
 
 export interface PersistEventResult {
   eventId: number;
@@ -238,6 +246,10 @@ export function extractSearchableText(event: SSEEventPayload): string {
   const preview = extractPreviewText(event);
   if (preview) return preview;
   const eventType = (event as { type: string }).type;
+  const toolText = extractToolSearchableText(
+    event as unknown as Record<string, unknown>,
+  );
+  if (toolText !== null) return toolText;
   if (eventType === "complete") {
     return contentToText((event as Record<string, unknown>).result);
   }
@@ -266,47 +278,6 @@ function contentToText(content: unknown): string {
     })
     .filter(Boolean)
     .join(" ");
-}
-
-export function truncateJsonText(value: string, maxCodePoints: number): string {
-  return Array.from(sanitizeJsonText(value)).slice(0, maxCodePoints).join("");
-}
-
-export function sanitizeJsonValue(value: unknown): unknown {
-  if (typeof value === "string") return sanitizeJsonText(value);
-  if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item));
-  if (!value || typeof value !== "object") return value;
-  if (value instanceof Date) return value.toISOString();
-
-  const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    result[key] = sanitizeJsonValue(item);
-  }
-  return result;
-}
-
-export function sanitizeJsonText(value: string): string {
-  let result = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        result += value[index] ?? "";
-        result += value[index + 1] ?? "";
-        index += 1;
-      } else {
-        result += "\uFFFD";
-      }
-      continue;
-    }
-    if (code >= 0xdc00 && code <= 0xdfff) {
-      result += "\uFFFD";
-      continue;
-    }
-    result += value[index] ?? "";
-  }
-  return result;
 }
 
 /**

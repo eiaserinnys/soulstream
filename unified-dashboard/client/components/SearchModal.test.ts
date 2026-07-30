@@ -286,4 +286,44 @@ describe("SearchModal", () => {
       id: "task-a",
     });
   });
+
+  it("removes the human tool filter and gives every leading result badge one width", () => {
+    searchHarness.navigationResults = [
+      {
+        kind: "folder",
+        id: "project-folder",
+        title: "Aligned project",
+        folder_id: "project-folder",
+        project_page_id: "project-page",
+      },
+      {
+        kind: "task",
+        id: "task-a",
+        title: "Aligned task",
+        folder_id: "project-folder",
+        project_page_id: "project-page",
+        board_item_id: "board-item-a",
+        task_page_id: "task-page-a",
+      },
+    ];
+    searchHarness.results = [
+      {
+        session_id: "target-session",
+        event_id: 42,
+        score: 1,
+        preview: "Aligned message",
+        event_type: "assistant_message",
+      },
+    ];
+
+    ({ container, root } = renderSearchModal());
+
+    expect(document.body.textContent).not.toContain("툴 사용");
+    for (const label of ["프로젝트", "업무", "Assistant"]) {
+      const badge = Array.from(document.body.querySelectorAll("span"))
+        .find((span) => span.textContent === label);
+      expect(badge?.className).toContain("w-20");
+      expect(badge?.className).toContain("justify-center");
+    }
+  });
 });

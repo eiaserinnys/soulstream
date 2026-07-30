@@ -4,9 +4,7 @@ export const SEARCH_EVENT_TYPES_BY_CATEGORY = {
   messages: ["user_message", "intervention_sent"],
   responses: ["assistant_message", "result", "complete"],
   thinking: ["thinking"],
-  // The live TS persistence path stores tool events without searchable_text.
-  // Keep the category in the client contract, but do not send dead event types.
-  tools: [],
+  tools: ["tool_start", "tool_result"],
 } as const;
 
 export type SearchEventCategory = keyof typeof SEARCH_EVENT_TYPES_BY_CATEGORY;
@@ -33,6 +31,8 @@ const SEARCH_EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   result: "Assistant",
   complete: "Assistant",
   thinking: "Thinking",
+  tool_start: "Tool",
+  tool_result: "Tool",
 };
 
 export function searchEventTypeLabel(eventType: string): string {

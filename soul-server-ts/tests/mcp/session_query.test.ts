@@ -188,6 +188,19 @@ describe("get_session_summary child completion", () => {
 });
 
 describe("search_session_history", () => {
+  it("describes the explicit event_types needed to search tool events", async () => {
+    const client = await createClient(makeRuntime({}));
+
+    const tools = await client.listTools();
+    const searchTool = tools.tools.find(
+      (tool) => tool.name === "search_session_history",
+    );
+
+    expect(searchTool?.description).toContain(
+      'event_types: ["tool_start","tool_result"]',
+    );
+  });
+
   it("defaults to readable event types", async () => {
     const searchEvents = vi.fn(async () => [
       {
@@ -224,6 +237,27 @@ describe("search_session_history", () => {
         },
       ],
     });
+  });
+
+  it("passes explicit tool event types to the shared search path", async () => {
+    const searchEvents = vi.fn(async () => []);
+    const runtime = makeRuntime({ searchEvents });
+    const client = await createClient(runtime);
+
+    await client.callTool({
+      name: "search_session_history",
+      arguments: {
+        query: "search_cards",
+        event_types: ["tool_start", "tool_result"],
+      },
+    });
+
+    expect(searchEvents).toHaveBeenCalledWith(
+      "search_cards",
+      null,
+      10,
+      ["tool_start", "tool_result"],
+    );
   });
 
   it("filters empty-preview session id matches by default", async () => {

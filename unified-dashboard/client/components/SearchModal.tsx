@@ -38,7 +38,6 @@ interface FilterState {
   userMessage: boolean;
   agentResponse: boolean;
   agentThinking: boolean;
-  toolUse: boolean;
 }
 
 const DEFAULT_FILTER_STATE: FilterState = {
@@ -46,7 +45,6 @@ const DEFAULT_FILTER_STATE: FilterState = {
   userMessage: true,
   agentResponse: true,
   agentThinking: false,
-  toolUse: false,
 };
 
 const FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
@@ -54,7 +52,6 @@ const FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
   { key: "userMessage", label: "사용자 메시지" },
   { key: "agentResponse", label: "에이전트 응답" },
   { key: "agentThinking", label: "에이전트 내부 사고" },
-  { key: "toolUse", label: "툴 사용" },
 ];
 
 function toSearchFilters(state: FilterState): SearchFilters {
@@ -62,7 +59,6 @@ function toSearchFilters(state: FilterState): SearchFilters {
   if (state.userMessage) eventCategories.push("messages");
   if (state.agentResponse) eventCategories.push("responses");
   if (state.agentThinking) eventCategories.push("thinking");
-  if (state.toolUse) eventCategories.push("tools");
   return {
     searchSessionId: state.sessionId,
     eventCategories,
@@ -70,6 +66,9 @@ function toSearchFilters(state: FilterState): SearchFilters {
 }
 
 // === Search Result Item ===
+
+const SEARCH_RESULT_KIND_BADGE_CLASS =
+  "inline-flex w-20 shrink-0 items-center justify-center rounded bg-input px-1.5 py-0.5 text-xs text-muted-foreground";
 
 function SearchResultRow({
   result,
@@ -88,7 +87,7 @@ function SearchResultRow({
       )}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-mono text-muted-foreground bg-input px-1.5 py-0.5 rounded shrink-0">
+        <span className={cn(SEARCH_RESULT_KIND_BADGE_CLASS, "font-mono")}>
           {searchEventTypeLabel(result.event_type)}
         </span>
         <span className="text-xs text-muted-foreground truncate font-mono">
@@ -122,7 +121,7 @@ function NavigationResultRow({
       )}
     >
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground bg-input px-1.5 py-0.5 rounded shrink-0">
+        <span className={SEARCH_RESULT_KIND_BADGE_CLASS}>
           {result.kind === "folder" ? "프로젝트" : "업무"}
         </span>
         <span className="text-sm text-foreground truncate">{result.title}</span>
