@@ -42,6 +42,7 @@ export type SSEEventType =
   | "guardrail_tripwire"
   | "result"
   | "away_summary"
+  | "turn_summary"
   | "prompt_suggestion"
   // 서브에이전트 이벤트
   | "subagent_start"
@@ -448,6 +449,25 @@ export interface AwaySummaryEvent {
   parent_event_id?: string;
 }
 
+/** 완료된 채팅 턴의 비동기 요약 */
+export interface TurnSummaryEvent {
+  type: "turn_summary";
+  content: string;
+  turn_start_event_id: number;
+  final_response_event_id: number;
+  parent_event_id: number;
+  model: string;
+  latency_ms: number;
+  attempts: number;
+  usage?: {
+    input_tokens?: number;
+    cached_input_tokens?: number;
+    output_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+  timestamp: number;
+}
+
 /** prompt_suggestion 이벤트 — 다음 prompt 후보 (turn 직후, 1개) */
 export interface PromptSuggestionEvent {
   type: "prompt_suggestion";
@@ -834,6 +854,7 @@ export type SoulSSEEvent =
   | HistorySyncEvent
   | AssistantMessageEvent
   | AwaySummaryEvent
+  | TurnSummaryEvent
   | PromptSuggestionEvent
   | SubtreeUpdateSSEEvent;
 

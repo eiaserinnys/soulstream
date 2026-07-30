@@ -25,6 +25,10 @@ import type {
   ContextItem,
   TokenUsage,
 } from "@shared/types";
+import { extractNodeEventId } from "./event-tree-id";
+import { placeTurnSummariesAtTurnBoundaries } from "./turn-summary-projection";
+
+export { extractEventId } from "./event-tree-id";
 
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
@@ -241,36 +245,22 @@ function collectMessages(
   const children = node.children;
   const needsSort = children.some((c) => c.type === "result") &&
     children.some((c) => c.type === "complete");
-  const ordered = needsSort
+  const chronological = needsSort
     ? [...children].sort((a, b) => {
         if (a.type === "result" && b.type === "complete") return 1;
         if (a.type === "complete" && b.type === "result") return -1;
         return 0;
       })
     : children;
+  const ordered = placeTurnSummariesAtTurnBoundaries(chronological);
 
   for (const child of ordered) {
     collectMessages(child, out);
   }
 }
 
-/**
- * 트리 노드 ID (`{type-prefix}-{eventId}` 패턴) 에서 DB 이벤트 ID 를 추출한다.
- *
- * createNodeFromEvent 가 만드는 모든 노드 ID 와 handleTextStart 의 `text-{eventId}` 가
- * 본 패턴을 따른다. 매칭 실패 시 undefined — caller 가 자기 정책으로 fall-back 처리.
- *
- * 정규식 정본은 본 함수 1곳. 호출자:
- *   - flatten-tree.nodeToMessage : ChatMessage.eventId 옵셔널 필드에 그대로 할당
- *   - tree-placer.extractNodeEventId : `?? Number.NEGATIVE_INFINITY` 로 변환 (sorted insert fast-path)
- */
-export function extractEventId(nodeId: string): number | undefined {
-  const match = nodeId.match(/-(\d+)$/);
-  return match ? Number(match[1]) : undefined;
-}
-
 function nodeToMessage(node: EventTreeNode): ChatMessage | null {
-  const eventId = extractEventId(node.id);
+  const eventId = extractNodeEventId(node);
   switch (node.type) {
     case "user_message": {
       const n = node as UserMessageNode;
@@ -482,6 +472,18 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
       return {
         id: node.id,
         role: "away_summary",
+        content: node.content,
+        timestamp: node.timestamp,
+        treeNodeId: node.id,
+        treeNodeType: node.type,
+        eventId,
+      };
+    }
+
+    case "turn_summary": {
+      return {
+        id: node.id,
+        role: "system",
         content: node.content,
         timestamp: node.timestamp,
         treeNodeId: node.id,

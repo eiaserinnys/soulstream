@@ -38,6 +38,7 @@ import type {
   AssistantMessageEvent,
   AssistantErrorEvent,
   AwaySummaryEvent,
+  TurnSummaryEvent,
   ToolApprovalNodeDef,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
@@ -138,6 +139,7 @@ export function createNodeFromEvent(
         e.text,
         {
           completed: true,
+          eventId,
           deliveryId: e.delivery_id,
           deliveryIntent: e.delivery_intent,
           source: e.source,
@@ -351,6 +353,27 @@ export function createNodeFromEvent(
       return makeNode(`away-summary-${eventId}`, "away_summary", e.content, {
         completed: true,
         parentEventId: e.parent_event_id,
+        timestamp: e.timestamp,
+      });
+    }
+
+    case "turn_summary": {
+      const e = event as TurnSummaryEvent;
+      if (
+        typeof e.content !== "string" ||
+        e.content.trim().length === 0 ||
+        !Number.isSafeInteger(e.final_response_event_id) ||
+        e.final_response_event_id <= 0
+      ) {
+        return null;
+      }
+      return makeNode(`turn-summary-${eventId}`, "turn_summary", e.content.trim(), {
+        completed: true,
+        turnStartEventId:
+          Number.isSafeInteger(e.turn_start_event_id) && e.turn_start_event_id > 0
+            ? e.turn_start_event_id
+            : undefined,
+        finalResponseEventId: e.final_response_event_id,
         timestamp: e.timestamp,
       });
     }

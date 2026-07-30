@@ -55,6 +55,7 @@ export const SSE_EVENT_TYPES = [
   "guardrail_tripwire",
   "result",
   "away_summary",
+  "turn_summary",
   "prompt_suggestion",
   "subagent_start",
   "subagent_stop",

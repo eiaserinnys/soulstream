@@ -48,6 +48,53 @@ function makeTextStartEvent(eventId: number): { event: SoulSSEEvent; eventId: nu
   };
 }
 
+function makeAssistantMessageEvent(
+  eventId: number,
+  content: string,
+): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "assistant_message",
+      content,
+      timestamp: eventId,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeCompleteEvent(eventId: number): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "complete",
+      result: "Turn completed",
+      attachments: [],
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeTurnSummaryEvent(
+  eventId: number,
+  finalResponseEventId: number,
+  content = "턴에서 결정한 내용을 요약했다.",
+): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "turn_summary",
+      content,
+      turn_start_event_id: 101,
+      final_response_event_id: finalResponseEventId,
+      parent_event_id: finalResponseEventId,
+      model: "gpt-5.6-terra",
+      latency_ms: 800,
+      attempts: 1,
+      timestamp: eventId,
+      unexpected_future_field: { safe: true },
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
 describe("processEventsBatch — dedup", () => {
   it("lastEventId 이하 이벤트를 차단 (모든 배치 일관 적용)", () => {
     const ctx = createProcessingContext();
@@ -593,5 +640,192 @@ describe("processEventsBatch — skipDedup (history prepend 경로)", () => {
     expect(result.updated).toBe(true);
     expect(ctx.nodeMap.has("11")).toBe(true);
     expect(ctx.nodeMap.has("3")).toBe(false); // dedup 차단
+  });
+});
+
+describe("turn_summary — 턴 경계 캡션 투영", () => {
+  it("뒤 이벤트가 표시된 후 늦게 도착해도 같은 턴의 complete 뒤·다음 턴 시작 전에 삽입한다", () => {
+    const ctx = createProcessingContext();
+    const initial = processEventsBatch(
+      [
+        makeAssistantMessageEvent(119, "최종 응답"),
+        makeCompleteEvent(120),
+        makeUserMessageEvent(130),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+    const before = flattenTree(initial.root);
+
+    const late = processEventSingle(
+      makeTurnSummaryEvent(140, 119).event,
+      140,
+      ctx,
+      initial.root,
+      "sess-1",
+      null,
+      130,
+    );
+    const after = flattenTree(late.root);
+
+    expect(after.map((message) => message.treeNodeType)).toEqual([
+      "assistant_message",
+      "complete",
+      "turn_summary",
+      "user_message",
+    ]);
+    expect(after[2]).toMatchObject({
+      role: "system",
+      content: "턴에서 결정한 내용을 요약했다.",
+      eventId: 140,
+    });
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+    expect(after[3]).toBe(before[2]);
+  });
+
+  it("summary가 먼저 로드되고 anchor·같은 턴 행이 다음 pagination 페이지로 와도 같은 위치를 복원한다", () => {
+    const ctx = createProcessingContext();
+    const latestPage = processEventsBatch(
+      [
+        makeUserMessageEvent(130),
+        makeTurnSummaryEvent(140, 119),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(latestPage.root).map((message) => message.treeNodeType)).toEqual([
+      "turn_summary",
+      "user_message",
+    ]);
+
+    const olderPage = processEventsBatch(
+      [
+        makeAssistantMessageEvent(119, "최종 응답"),
+        makeCompleteEvent(120),
+      ],
+      ctx,
+      latestPage.root,
+      "sess-1",
+      null,
+      140,
+      true,
+    );
+
+    expect(flattenTree(olderPage.root).map((message) => message.treeNodeType)).toEqual([
+      "assistant_message",
+      "complete",
+      "turn_summary",
+      "user_message",
+    ]);
+  });
+
+  it.each([
+    {
+      label: "intervention_sent",
+      event: {
+        type: "intervention_sent",
+        user: "operator",
+        text: "다음 턴 개입",
+      },
+      expectedType: "intervention",
+    },
+    {
+      label: "session_notification",
+      event: {
+        type: "session_notification",
+        delivery_id: "delivery-next",
+        delivery_intent: "runtime_followup",
+        source: "agent",
+        text: "다음 턴 알림",
+        disposition: "auto_resume",
+      },
+      expectedType: "session_notification",
+    },
+  ])("$label도 다음 턴 시작 경계로 취급한다", ({ event, expectedType }) => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        makeAssistantMessageEvent(119, "최종 응답"),
+        makeCompleteEvent(120),
+        { event: event as unknown as SoulSSEEvent, eventId: 130 },
+        makeTurnSummaryEvent(140, 119),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual([
+      "assistant_message",
+      "complete",
+      "turn_summary",
+      expectedType,
+    ]);
+  });
+
+  it("표시에 필요 없는 필드가 빠지고 미지 필드가 있어도 content와 anchor가 유효하면 렌더한다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        {
+          event: {
+            type: "turn_summary",
+            content: "최소 payload 요약",
+            final_response_event_id: 119,
+            future_metadata: "ignored",
+          } as unknown as SoulSSEEvent,
+          eventId: 140,
+        },
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(result.root)).toEqual([
+      expect.objectContaining({
+        treeNodeType: "turn_summary",
+        content: "최소 payload 요약",
+      }),
+    ]);
+  });
+
+  it("필수 필드가 없는 payload는 건너뛰고 같은 배치의 다음 이벤트를 처리한다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        {
+          event: {
+            type: "turn_summary",
+            model: "gpt-5.6-terra",
+          } as unknown as SoulSSEEvent,
+          eventId: 140,
+        },
+        makeUserMessageEvent(141),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(ctx.nodeMap.has("140")).toBe(false);
+    expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual([
+      "user_message",
+    ]);
+    expect(result.maxEventId).toBe(141);
   });
 });

@@ -6,6 +6,7 @@ import { CollapsibleContent } from "./CollapsibleContent";
 export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage }) {
   const isError = msg.isError;
   const isComplete = msg.treeNodeType === "complete";
+  const isTurnSummary = msg.treeNodeType === "turn_summary";
   const hasCompleteStats = isComplete && (msg.usage || msg.totalCostUsd);
   const isResult = msg.treeNodeType === "result" || !!hasCompleteStats;
 
@@ -26,6 +27,7 @@ export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMes
       <span className="w-8 shrink-0" />
       <div className={cn(
         "flex-1 min-w-0 text-xs px-2 py-1 rounded text-center",
+        isTurnSummary && "whitespace-pre-line",
         isError
           ? "chat-tone-danger"
           : isResult

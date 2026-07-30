@@ -35,7 +35,7 @@ import type {
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
 import { diag } from "../lib/diag";
-import { extractEventId } from "../lib/flatten-tree";
+import { extractNodeEventId as readNodeEventId } from "../lib/event-tree-id";
 
 /**
  * insertNodeInOrder 의 caller-local adapter.
@@ -44,11 +44,10 @@ import { extractEventId } from "../lib/flatten-tree";
  * 즉 fast-path push 로 흘려보낸다 — children 에 비정형 노드가 invariant 상 없으므로
  * dead branch 지만 안전한 폴백 의미를 코드로 표현한다.
  *
- * 정규식·추출 로직의 정본은 lib/flatten-tree.ts 의 extractEventId
- * (260508.05.tree-placer-hygiene H-1: design-principles §3 정본 하나).
+ * durable 이벤트 ID 판독의 정본은 lib/event-tree-id.ts 이다.
  */
 function extractNodeEventId(node: EventTreeNode): number {
-  return extractEventId(node.id) ?? Number.NEGATIVE_INFINITY;
+  return readNodeEventId(node) ?? Number.NEGATIVE_INFINITY;
 }
 
 function textStreamKey(event: TextStartEvent): string | null {
