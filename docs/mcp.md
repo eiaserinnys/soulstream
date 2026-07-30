@@ -92,6 +92,7 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 |------|-------------|
 | `list_sessions(search, folder_name, node_id, ...)` | Paginated session list — lightweight fields only |
 | `get_session_summary(session_id)` | Turn-by-turn summary: user prompts, response previews, tools used, context usage |
+| `get_session_story(session_id)` | Folded session highlight/narrative plus all still-unfolded turn summaries |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
 | `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 full-text search across session events, with optional event type and session ID matching |

@@ -15,6 +15,10 @@ import type { TurnSummarizer } from "../src/turn-summary/turn_summarizer.js";
 const CONFIG: TurnSummaryConfig = {
   enabled: true,
   instruction: "한국어 1~3줄로 요약하라.",
+  storyInstruction: "마커를 붙인 narrative와 highlight를 JSON으로 반환하라.",
+  storyFoldThreshold: 10,
+  storyFoldBatchSize: 5,
+  storyNarrativeMaxChars: 1_500,
   provider: "codex",
   model: "gpt-5.6-terra",
   reasoningEffort: "high",
@@ -149,11 +153,30 @@ describe("TurnSummaryPipeline", () => {
       }),
     };
     const info = vi.fn();
+    const appendSessionUpdate = vi.fn();
+    const foldIfNeeded = vi.fn().mockResolvedValue(undefined);
+    repository.appendSummary.mockResolvedValue({
+      inserted: true,
+      eventId: 22,
+      previewUpdate: {
+        status: "running",
+        updatedAt: "2026-07-31T00:00:00.000Z",
+        lastMessage: {
+          type: "turn_summary",
+          preview: "요약",
+          timestamp: "2026-07-31T00:00:00.000Z",
+        },
+        lastEventId: 22,
+        lastReadEventId: 20,
+      },
+    });
     const pipeline = new TurnSummaryPipeline({
       repository,
       configService: { read: () => CONFIG },
       summarizer,
       eventHub: hub,
+      sessionBroadcaster: { append: appendSessionUpdate },
+      storyFolder: { foldIfNeeded },
       logger: { info, warn: vi.fn() },
       nowEpochSeconds: () => 123,
     });
@@ -199,6 +222,31 @@ describe("TurnSummaryPipeline", () => {
       }),
       "Turn summary stored",
     );
+    expect(appendSessionUpdate).toHaveBeenCalledTimes(1);
+    const update = appendSessionUpdate.mock.calls[0]?.[0];
+    expect(Object.keys(update ?? {}).sort()).toEqual([
+      "agent_session_id",
+      "last_event_id",
+      "last_message",
+      "last_read_event_id",
+      "status",
+      "type",
+      "updated_at",
+    ]);
+    expect(update).toEqual({
+      type: "session_updated",
+      agent_session_id: "session-a",
+      status: "running",
+      updated_at: "2026-07-31T00:00:00.000Z",
+      last_message: {
+        type: "turn_summary",
+        preview: "요약",
+        timestamp: "2026-07-31T00:00:00.000Z",
+      },
+      last_event_id: 22,
+      last_read_event_id: 20,
+    });
+    expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
   });
 
   it("prechecks dedupe before invoking the provider", async () => {

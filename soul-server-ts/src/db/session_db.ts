@@ -23,6 +23,10 @@ import { CustomViewRepository } from "./repositories/custom_view_repository.js";
 import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
+import {
+  SessionStoryReadRepository,
+  type SessionStoryView,
+} from "./repositories/session_story_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
@@ -45,6 +49,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private sessionDeliveryRepository?: SessionDeliveryRepository;
   private claudeBackgroundTaskRepository?: ClaudeBackgroundTaskRepository;
   private readonly sessionRepository: SessionRepository;
+  private readonly sessionStoryRepository: SessionStoryReadRepository;
   private readonly boardRepository: BoardRepository;
   private readonly catalogRepository: CatalogRepository;
   private readonly markdownDocumentRepository: MarkdownDocumentRepository;
@@ -72,6 +77,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
     this.ownsSql = ownsSql;
 
     this.sessionRepository = new SessionRepository(this.sql);
+    this.sessionStoryRepository = new SessionStoryReadRepository(this.sql);
     this.boardRepository = new BoardRepository(this.sql);
     this.catalogRepository = new CatalogRepository(this.sql, this.boardRepository);
     this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
@@ -166,6 +172,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   async getSession(sessionId: string): Promise<SessionRow | null> {
     return await this.sessionRepository.getSession(sessionId);
+  }
+
+  async getSessionStory(sessionId: string): Promise<SessionStoryView> {
+    return await this.sessionStoryRepository.getSessionStory(sessionId);
   }
 
   async deleteSession(sessionId: string): Promise<void> {

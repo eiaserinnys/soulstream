@@ -1,6 +1,12 @@
 import type { NodeRegistryEvent } from "../node/registry.js";
 import type { RuntimeSessionEventHub } from "../runtime/session_event_hub.js";
 import type {
+  InMemorySseReplayBroadcaster,
+  SessionStreamEvent,
+} from "../sse/replay_broadcaster.js";
+import type { SessionStoryFoldService } from
+  "./session_story_fold_service.js";
+import type {
   TurnSummaryConfig,
   TurnSummaryConfigService,
   TurnSummaryLogger,
@@ -39,6 +45,11 @@ export class TurnSummaryPipeline {
     readonly configService: Pick<TurnSummaryConfigService, "read">;
     readonly summarizer: TurnSummarizer;
     readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
+    readonly sessionBroadcaster?: Pick<
+      InMemorySseReplayBroadcaster<SessionStreamEvent>,
+      "append"
+    >;
+    readonly storyFolder?: Pick<SessionStoryFoldService, "foldIfNeeded">;
     readonly logger: TurnSummaryLogger;
     readonly nowEpochSeconds?: () => number;
   }) {
@@ -181,6 +192,25 @@ export class TurnSummaryPipeline {
         },
       },
     });
+    const previewUpdate = persisted.previewUpdate;
+    if (previewUpdate !== undefined) {
+      try {
+        this.deps.sessionBroadcaster?.append({
+          type: "session_updated",
+          agent_session_id: job.sessionId,
+          status: previewUpdate.status,
+          updated_at: previewUpdate.updatedAt,
+          last_message: previewUpdate.lastMessage,
+          last_event_id: previewUpdate.lastEventId,
+          last_read_event_id: previewUpdate.lastReadEventId,
+        });
+      } catch (error) {
+        this.deps.logger.debug?.(
+          { error, sessionId: job.sessionId },
+          "Turn summary preview broadcast failed",
+        );
+      }
+    }
     this.deps.logger.info?.(
       {
         sessionId: job.sessionId,
@@ -197,6 +227,7 @@ export class TurnSummaryPipeline {
       },
       "Turn summary stored",
     );
+    await this.deps.storyFolder?.foldIfNeeded(job.sessionId);
   }
 
   private debugSkip(

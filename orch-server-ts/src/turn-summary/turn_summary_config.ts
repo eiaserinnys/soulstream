@@ -14,6 +14,10 @@ const TurnSummaryConfigFileSchema = z
   .object({
     enabled: z.boolean(),
     instruction: z.string().trim().min(1),
+    story_instruction: z.string().trim().min(1),
+    story_fold_threshold: z.number().int().positive(),
+    story_fold_batch_size: z.number().int().positive(),
+    story_narrative_max_chars: z.number().int().positive(),
     provider: z.enum(["codex", "openai-api"]),
     model: z.string().trim().min(1),
     reasoning_effort: z.enum(["minimal", "low", "medium", "high", "xhigh"]),
@@ -24,16 +28,50 @@ const TurnSummaryConfigFileSchema = z
     history_limit: z.number().int().min(0).max(5),
     excluded_folder_ids: z.array(z.string().uuid()),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => value.story_fold_threshold >= value.story_fold_batch_size,
+    {
+      message:
+        "story_fold_threshold must be greater than or equal to story_fold_batch_size",
+      path: ["story_fold_threshold"],
+    },
+  );
 
-const TurnSummaryConfigOverlaySchema = TurnSummaryConfigFileSchema
-  .partial()
+const TurnSummaryConfigOverlaySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    instruction: z.string().trim().min(1).optional(),
+    story_instruction: z.string().trim().min(1).optional(),
+    story_fold_threshold: z.number().int().positive().optional(),
+    story_fold_batch_size: z.number().int().positive().optional(),
+    story_narrative_max_chars: z.number().int().positive().optional(),
+    provider: z.enum(["codex", "openai-api"]).optional(),
+    model: z.string().trim().min(1).optional(),
+    reasoning_effort: z.enum([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]).optional(),
+    timeout_ms: z.number().int().positive().optional(),
+    max_attempts: z.number().int().min(1).max(2).optional(),
+    codex_concurrency_limit: z.number().int().positive().optional(),
+    codepoint_limit: z.number().int().positive().optional(),
+    history_limit: z.number().int().min(0).max(5).optional(),
+    excluded_folder_ids: z.array(z.string().uuid()).optional(),
+  })
   .strict();
 
 const TurnSummaryConfigSchema = TurnSummaryConfigFileSchema
   .transform((value) => ({
     enabled: value.enabled,
     instruction: value.instruction,
+    storyInstruction: value.story_instruction,
+    storyFoldThreshold: value.story_fold_threshold,
+    storyFoldBatchSize: value.story_fold_batch_size,
+    storyNarrativeMaxChars: value.story_narrative_max_chars,
     provider: value.provider,
     model: value.model,
     reasoningEffort: value.reasoning_effort,

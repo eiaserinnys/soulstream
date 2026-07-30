@@ -267,6 +267,25 @@ ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_review_state_check;
 ALTER TABLE sessions ADD CONSTRAINT sessions_review_state_check
     CHECK (review_state IN ('not_required', 'needs_review', 'acknowledged'));
 
+CREATE TABLE IF NOT EXISTS session_digests (
+    session_id                  TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+    narrative                   TEXT NOT NULL,
+    highlight                   TEXT NOT NULL,
+    narrative_through_event_id  INTEGER NOT NULL,
+    fold_count                  INTEGER NOT NULL DEFAULT 0,
+    version                     INTEGER NOT NULL DEFAULT 1,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS narrative TEXT NOT NULL DEFAULT '';
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS highlight TEXT NOT NULL DEFAULT '';
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS narrative_through_event_id INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS fold_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- Async intervention/completion delivery ledger.
 -- Existing installations receive this table through versioned migration 045.
 CREATE TABLE IF NOT EXISTS session_deliveries (

@@ -115,6 +115,8 @@ describe("live Cogito search provider", () => {
     expect(harness.calls.some((call) => call.text.includes("session_id_search"))).toBe(false);
     expect(harness.calls[0]?.values[3]).toEqual([
       "thinking",
+      "tool_start",
+      "tool_result",
     ]);
   });
 });

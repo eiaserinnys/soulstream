@@ -2,6 +2,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -38,6 +39,10 @@ const CONFIG: TurnSummaryConfig = {
   enabled: true,
   instruction:
     "①사용자가 요청한 것 ②에이전트가 한 일 ③결과를 한국어 1~3줄로 요약하라. 원문에 없는 사실을 만들지 말 것.",
+  storyInstruction: "마커를 붙인 narrative와 highlight를 JSON으로 반환하라.",
+  storyFoldThreshold: 10,
+  storyFoldBatchSize: 5,
+  storyNarrativeMaxChars: 1_500,
   provider: "codex",
   model: "gpt-5.6-terra",
   reasoningEffort: "high",
@@ -96,7 +101,19 @@ describe("TurnSummaryConfigService", () => {
       provider: "codex",
       model: "gpt-5.6-terra",
       codexConcurrencyLimit: 2,
+      storyFoldThreshold: 10,
+      storyFoldBatchSize: 5,
+      storyNarrativeMaxChars: 1_500,
     });
+    const instruction = service.read().storyInstruction;
+    expect(instruction).toContain("[T12]");
+    expect(instruction).toContain("[T12-T15]");
+    expect(instruction).toContain(
+      "모델 선정·정책·보안 관련 결정은 연령과 무관하게 보존",
+    );
+    expect(instruction).toContain(
+      "결정이 번복된 경우 번복 이력을 시간 순서대로 남긴다",
+    );
   });
 
   it("shallow merges a partial local overlay over the repository config", () => {
@@ -110,7 +127,7 @@ describe("TurnSummaryConfigService", () => {
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     writeFileSync(
       join(dir, "turn-summary.local.yaml"),
-      "enabled: true\nmodel: gpt-5.4-mini\n",
+      "enabled: true\nmodel: gpt-5.4-mini\nstory_fold_threshold: 12\n",
       "utf8",
     );
 
@@ -119,6 +136,7 @@ describe("TurnSummaryConfigService", () => {
       provider: "codex",
       model: "gpt-5.4-mini",
       codexConcurrencyLimit: 2,
+      storyFoldThreshold: 12,
     });
   });
 
@@ -301,6 +319,88 @@ describe("Codex turn summary provider", () => {
     expect(execute.mock.calls[0]?.[0].cwd).not.toBe(execute.mock.calls[1]?.[0].cwd);
   });
 
+  it("passes a structured output schema to the same ephemeral Codex execution path", async () => {
+    let schema: unknown;
+    const execute = vi.fn(async (invocation) => {
+      const flagIndex = invocation.args.indexOf("--output-schema");
+      const schemaPath = invocation.args[flagIndex + 1];
+      schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+      return {
+        stdout: JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            text: "{\"narrative\":\"[T1] 시작했다.\",\"highlight\":\"핵심\"}",
+          },
+        }),
+        stderr: "",
+      };
+    });
+    const summarizer = new CodexExecTurnSummarizer({
+      codexPath: "codex",
+      processPort: { execute },
+      processEnv: { HOME: "/oauth-home" },
+    });
+
+    await summarizer.generate("스토리", CONFIG, {
+      maxAttempts: 1,
+      outputSchema: {
+        type: "object",
+        required: ["narrative", "highlight"],
+      },
+    });
+
+    expect(schema).toEqual({
+      type: "object",
+      required: ["narrative", "highlight"],
+    });
+    expect(execute.mock.calls[0]?.[0].args).toContain("--ephemeral");
+  });
+
+  it("shares one spawn limiter between turn summaries and story folds", async () => {
+    const oneAtATime = { ...CONFIG, codexConcurrencyLimit: 1 };
+    const releases: Array<() => void> = [];
+    let active = 0;
+    let maxActive = 0;
+    const execute = vi.fn(async () =>
+      await new Promise<{ stdout: string; stderr: string }>((resolve) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        releases.push(() => {
+          active -= 1;
+          resolve({
+            stdout: JSON.stringify({
+              type: "item.completed",
+              item: { type: "agent_message", text: "완료" },
+            }),
+            stderr: "",
+          });
+        });
+      })
+    );
+    const summarizer = new CodexExecTurnSummarizer({
+      codexPath: "codex",
+      processPort: { execute },
+      processEnv: { HOME: "/oauth-home" },
+    });
+
+    const turn = summarizer.summarize({
+      userText: "요청",
+      assistantText: "응답",
+      previousSummaries: [],
+    }, oneAtATime);
+    const story = summarizer.generate("스토리", oneAtATime, {
+      maxAttempts: 1,
+    });
+
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    releases.shift()?.();
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(maxActive).toBe(1);
+    releases.shift()?.();
+    await Promise.all([turn, story]);
+  });
+
   it("queues bursts above the configured global spawn limit", async () => {
     let active = 0;
     let maxActive = 0;
@@ -408,6 +508,10 @@ function yamlConfig(model: string, enabled: boolean): string {
   return [
     `enabled: ${enabled}`,
     `instruction: "${CONFIG.instruction}"`,
+    `story_instruction: "${CONFIG.storyInstruction}"`,
+    `story_fold_threshold: ${CONFIG.storyFoldThreshold}`,
+    `story_fold_batch_size: ${CONFIG.storyFoldBatchSize}`,
+    `story_narrative_max_chars: ${CONFIG.storyNarrativeMaxChars}`,
     "provider: codex",
     `model: ${model}`,
     "reasoning_effort: high",

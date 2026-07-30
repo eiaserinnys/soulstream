@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,6 +35,11 @@ export interface CodexExecTurnSummarizerOptions {
   readonly nowMs?: () => number;
 }
 
+export interface CodexExecGenerateOptions {
+  readonly maxAttempts?: number;
+  readonly outputSchema?: Readonly<Record<string, unknown>>;
+}
+
 export class TurnSummaryExecutionError extends Error {
   constructor(
     readonly attempts: number,
@@ -56,6 +61,7 @@ export function buildCodexExecInvocation(params: {
   readonly processEnv:
     | NodeJS.ProcessEnv
     | Readonly<Record<string, string | undefined>>;
+  readonly outputSchemaPath?: string;
 }): CodexExecInvocation {
   return {
     command: params.codexPath,
@@ -74,6 +80,9 @@ export function buildCodexExecInvocation(params: {
       params.workspaceDir,
       "--config",
       `model_reasoning_effort="${params.reasoningEffort}"`,
+      ...(params.outputSchemaPath === undefined
+        ? []
+        : ["--output-schema", params.outputSchemaPath]),
       "-",
     ],
     env: sanitizeChildProcessEnv(params.processEnv),
@@ -171,20 +180,38 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
     input: TurnSummaryInput,
     config: TurnSummaryConfig,
   ): Promise<TurnSummaryResult> {
+    return await this.generate(buildTurnSummaryPrompt(input, config), config);
+  }
+
+  async generate(
+    prompt: string,
+    config: TurnSummaryConfig,
+    options: CodexExecGenerateOptions = {},
+  ): Promise<TurnSummaryResult> {
     const startedAt = this.nowMs();
-    const prompt = buildTurnSummaryPrompt(input, config);
     if (!this.options.codexPath) {
       throw new Error("Codex CLI path is unavailable for turn summaries");
     }
+    const maxAttempts = options.maxAttempts ?? config.maxAttempts;
     let lastError: unknown;
     let finishedAt = startedAt;
     let spawnDurationMs = 0;
     let peakConcurrentSpawns = 0;
-    for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const workspaceDir = await mkdtemp(
         join(tmpdir(), "soulstream-turn-summary-"),
       );
       try {
+        const outputSchemaPath = options.outputSchema === undefined
+          ? undefined
+          : join(workspaceDir, "output-schema.json");
+        if (outputSchemaPath !== undefined) {
+          await writeFile(
+            outputSchemaPath,
+            JSON.stringify(options.outputSchema),
+            "utf8",
+          );
+        }
         const permit = await this.spawnLimiter.acquire(
           config.codexConcurrencyLimit,
         );
@@ -204,6 +231,9 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
               model: config.model,
               reasoningEffort: config.reasoningEffort,
               processEnv: this.options.processEnv ?? process.env,
+              ...(outputSchemaPath === undefined
+                ? {}
+                : { outputSchemaPath }),
             }),
             prompt,
             config.timeoutMs,
@@ -234,7 +264,7 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
       }
     }
     throw new TurnSummaryExecutionError(
-      config.maxAttempts,
+      maxAttempts,
       Math.max(0, finishedAt - startedAt),
       spawnDurationMs,
       peakConcurrentSpawns,

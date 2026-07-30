@@ -39,9 +39,21 @@ describe("TurnSummaryRepository", () => {
   });
 
   it("appends through event_append with the anchor dedupe key", async () => {
+    const updatedAt = new Date("2026-07-31T00:00:00.000Z");
     const { repository, calls } = repositoryWithResponses([
       [],
-      [{ event_append: 22 }],
+      [{
+        event_id: 22,
+        status: "running",
+        updated_at: updatedAt,
+        last_message: {
+          type: "turn_summary",
+          preview: "요약",
+          timestamp: updatedAt.toISOString(),
+        },
+        last_event_id: 22,
+        last_read_event_id: 20,
+      }],
     ]);
     const payload = {
       type: "turn_summary",
@@ -55,11 +67,38 @@ describe("TurnSummaryRepository", () => {
       "session-a",
       payload,
       summaryDedupeKey(10, 19),
-    )).resolves.toEqual({ inserted: true, eventId: 22 });
+    )).resolves.toMatchObject({
+      inserted: true,
+      eventId: 22,
+      previewUpdate: {
+        status: "running",
+        lastMessage: {
+          type: "turn_summary",
+          preview: "요약",
+        },
+        lastEventId: 22,
+        lastReadEventId: 20,
+      },
+    });
     expect(calls[1]?.text).toContain("SELECT event_append");
+    expect(calls[1]?.text).toContain("UPDATE sessions");
+    expect(calls[1]?.text).toContain("session.last_event_id = appended.event_id");
     expect(calls[1]?.values).toContain("session-a");
     expect(calls[1]?.values).toContain("turn_summary:10:19");
     expect(calls[1]?.values).toContain(JSON.stringify(payload));
+  });
+
+  it("does not report a preview update when a newer durable event won the race", async () => {
+    const { repository } = repositoryWithResponses([
+      [],
+      [{ event_id: 22, last_event_id: null }],
+    ]);
+
+    await expect(repository.appendSummary(
+      "session-a",
+      { type: "turn_summary", content: "늦은 요약" },
+      "turn_summary:10:19",
+    )).resolves.toEqual({ inserted: true, eventId: 22 });
   });
 
   it("returns gap events in DB order for local SSE catch-up", async () => {
