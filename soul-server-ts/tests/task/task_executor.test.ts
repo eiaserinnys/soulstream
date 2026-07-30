@@ -902,6 +902,97 @@ describe("TaskExecutor.startExecution", () => {
     }));
   });
 
+  it("Claude rate-limit StopFailure fatal event finalizes as limit_hit without a persistent timeout", async () => {
+    const mocks = makeMocks();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "credential_alert",
+          status: "rejected",
+          rate_limit_type: "five_hour",
+          timestamp: 1,
+        } as SSEEventPayload;
+        yield {
+          type: "assistant_error",
+          error_type: "rate_limit",
+          timestamp: 2,
+        } as SSEEventPayload;
+        yield {
+          type: "assistant_message",
+          text: "You've hit your usage limit.",
+          timestamp: 3,
+        } as SSEEventPayload;
+        yield {
+          type: "claude_runtime_hook_event",
+          hook_event_name: "StopFailure",
+          hook_input: { error: "rate_limit" },
+          timestamp: 4,
+        } as SSEEventPayload;
+        yield {
+          type: "error",
+          message: "Claude foreground turn stopped after a rate-limit rejection.",
+          error_code: "claude_rate_limit_stop_failure",
+          fatal: true,
+          timestamp: 5,
+        } as SSEEventPayload;
+        throw new Error("Claude foreground turn stopped after a rate-limit rejection.");
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe(
+      "Claude foreground turn stopped after a rate-limit rejection.",
+    );
+    expect(mocks.persistEvent.mock.calls.map((call) => call[1])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "assistant_message",
+          text: "You've hit your usage limit.",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_hook_event",
+          hook_event_name: "StopFailure",
+        }),
+        expect.objectContaining({
+          type: "error",
+          error_code: "claude_rate_limit_stop_failure",
+          fatal: true,
+        }),
+      ]),
+    );
+    expect(mocks.persistEvent.mock.calls.map((call) => call[1])).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          error_code: "claude_persistent_turn_timeout",
+        }),
+      ]),
+    );
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        status: "error",
+        termination_reason: "limit_hit",
+        termination_detail: "credential_alert",
+      }),
+    );
+  });
+
   it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
