@@ -6,10 +6,6 @@ export default defineConfig({
   target: "node20",
   clean: true,
   sourcemap: true,
-  // wire-schema는 source 그대로 export하므로 번들에 포함 (workspace 의존)
-  noExternal: [
-    "@soulstream/fractional-position",
-    "@soulstream/page-model",
-    "@soulstream/wire-schema",
-  ],
+  // Workspace packages export raw TypeScript and must never remain as runtime imports.
+  noExternal: [/^@soulstream\//],
 });
