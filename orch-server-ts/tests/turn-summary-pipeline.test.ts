@@ -21,6 +21,7 @@ const CONFIG: TurnSummaryConfig = {
   storyNarrativeMaxChars: 1_500,
   provider: "codex",
   model: "gpt-5.6-terra",
+  storyModel: "gpt-5.6-terra",
   reasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -144,7 +145,7 @@ describe("TurnSummaryPipeline", () => {
     const summarizer: TurnSummarizer = {
       summarize: vi.fn().mockResolvedValue({
         content: "요약",
-        model: "gpt-5.6-terra",
+        model: "gpt-5.6-luna",
         latencyMs: 70,
         attempts: 1,
         spawnDurationMs: 60,
@@ -172,7 +173,13 @@ describe("TurnSummaryPipeline", () => {
     });
     const pipeline = new TurnSummaryPipeline({
       repository,
-      configService: { read: () => CONFIG },
+      configService: {
+        read: () => ({
+          ...CONFIG,
+          model: "gpt-5.6-luna",
+          storyModel: "gpt-5.6-terra",
+        }),
+      },
       summarizer,
       eventHub: hub,
       sessionBroadcaster: { append: appendSessionUpdate },
@@ -191,12 +198,20 @@ describe("TurnSummaryPipeline", () => {
       "session-a",
       expect.objectContaining({
         type: "turn_summary",
+        model: "gpt-5.6-luna",
         turn_start_event_id: 10,
         final_response_event_id: 19,
         parent_event_id: 19,
         timestamp: 123,
       }),
       "turn_summary:10:19",
+    );
+    expect(summarizer.summarize).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        model: "gpt-5.6-luna",
+        storyModel: "gpt-5.6-terra",
+      }),
     );
     expect(seen).toEqual([
       {

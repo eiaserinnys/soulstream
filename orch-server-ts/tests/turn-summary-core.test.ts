@@ -45,6 +45,7 @@ const CONFIG: TurnSummaryConfig = {
   storyNarrativeMaxChars: 1_500,
   provider: "codex",
   model: "gpt-5.6-terra",
+  storyModel: "gpt-5.6-terra",
   reasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -100,6 +101,7 @@ describe("TurnSummaryConfigService", () => {
       enabled: false,
       provider: "codex",
       model: "gpt-5.6-terra",
+      storyModel: "gpt-5.6-terra",
       codexConcurrencyLimit: 2,
       storyFoldThreshold: 10,
       storyFoldBatchSize: 5,
@@ -135,8 +137,30 @@ describe("TurnSummaryConfigService", () => {
       enabled: true,
       provider: "codex",
       model: "gpt-5.4-mini",
+      storyModel: "gpt-5.4-mini",
       codexConcurrencyLimit: 2,
       storyFoldThreshold: 12,
+    });
+  });
+
+  it("accepts a local story model override without changing the turn summary model", () => {
+    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "turn-summary.yaml");
+    const service = new TurnSummaryConfigService(path, {
+      warn: vi.fn(),
+    });
+
+    writeFileSync(path, yamlConfig("gpt-5.6-luna", false), "utf8");
+    writeFileSync(
+      join(dir, "turn-summary.local.yaml"),
+      "story_model: gpt-5.6-terra\n",
+      "utf8",
+    );
+
+    expect(service.read()).toMatchObject({
+      model: "gpt-5.6-luna",
+      storyModel: "gpt-5.6-terra",
     });
   });
 
