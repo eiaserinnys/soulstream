@@ -4,7 +4,13 @@ import {
   truncateJsonText,
 } from "./json_text.js";
 
-export const TOOL_SEARCHABLE_TEXT_MAX_CODE_POINTS = 1_024;
+// 라이브 dry-run(최근 300세션 17,420건, BM25 tokenizer 실적용) 근거로 512를 채택했다.
+//   256  → 평균 207.5B / 27.0 tokens / 396,734 term rows / 상한 도달 44.5%
+//   512  → 평균 319.6B / 40.2 tokens / 536,759 term rows / 상한 도달 33.7%
+//   1024 → 평균 509.1B / 62.2 tokens / 733,874 term rows / 상한 도달 29.1%
+// 1,024는 상한 도달률을 4.6%p만 낮추면서 term 행을 36.7% 늘린다 — 비용 대비 회수가 나쁘다.
+// 검색 품질 불만이 관측되면 이 상수만 올리면 된다(백필 비용은 별도 게이트).
+export const TOOL_SEARCHABLE_TEXT_MAX_CODE_POINTS = 512;
 const TOOL_NAME_MAX_CODE_POINTS = 128;
 const TOOL_INPUT_SCALAR_MAX_CODE_POINTS = 160;
 const TOOL_INPUT_MAX_DEPTH = 2;
