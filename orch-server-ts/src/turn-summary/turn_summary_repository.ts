@@ -220,12 +220,30 @@ export function reconstructTurnFromEvents(
   rows: readonly TurnSummaryEventRow[],
   completeEventId: number,
 ): Omit<TurnSummaryTurn, "sessionId" | "folderId" | "metadata"> | null {
-  const completes = rows.filter((row) => row.eventType === "complete");
-  const completeOrdinal = completes.findIndex((row) => row.id === completeEventId);
-  if (completeOrdinal < 0) return null;
-  const starts = rows.filter((row) => TURN_START_EVENT_TYPES.has(row.eventType));
-  const start = starts[completeOrdinal];
-  if (start === undefined || start.id >= completeEventId) return null;
+  const complete = rows.find(
+    (row) => row.id === completeEventId && row.eventType === "complete",
+  );
+  if (complete === undefined) return null;
+  const previousCompleteEventId = rows.reduce(
+    (latest, row) =>
+      row.eventType === "complete" &&
+        row.id < completeEventId &&
+        row.id > latest
+        ? row.id
+        : latest,
+    0,
+  );
+  const start = rows.reduce<TurnSummaryEventRow | undefined>(
+    (latest, row) =>
+      TURN_START_EVENT_TYPES.has(row.eventType) &&
+        row.id > previousCompleteEventId &&
+        row.id < completeEventId &&
+        (latest === undefined || row.id > latest.id)
+        ? row
+        : latest,
+    undefined,
+  );
+  if (start === undefined) return null;
   const interval = rows.filter(
     (row) => row.id >= start.id && row.id <= completeEventId,
   );

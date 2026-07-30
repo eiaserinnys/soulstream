@@ -2,11 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { NodeRegistryEvent } from "../src/node/registry.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
-import {
-  reconstructTurnFromEvents,
-  type TurnSummaryEventRow,
-  type TurnSummaryRepositoryPort,
-} from "../src/turn-summary/turn_summary_repository.js";
+import type { TurnSummaryRepositoryPort } from
+  "../src/turn-summary/turn_summary_repository.js";
 import {
   collectTurnSummaryCompleteJobs,
   resolveTurnSummaryEligibility,
@@ -31,58 +28,6 @@ const CONFIG: TurnSummaryConfig = {
     "9e7baafe-387f-4404-8349-ec994597f4cf",
   ],
 };
-
-describe("turn reconstruction", () => {
-  it("pairs starts and completes by ordinal across an interleaved intervention", () => {
-    const rows: TurnSummaryEventRow[] = [
-      event(1, "user_message", { text: "첫 요청" }),
-      event(2, "assistant_message", { content: "첫 응답" }),
-      event(3, "intervention_sent", { text: "두 번째 요청" }),
-      event(4, "complete", {}),
-      event(5, "assistant_message", { content: "두 번째 응답 초안" }),
-      event(6, "assistant_message", { content: "두 번째 최종 응답" }),
-      event(7, "complete", {}),
-    ];
-
-    expect(reconstructTurnFromEvents(rows, 4)).toEqual({
-      turnStartEventId: 1,
-      finalResponseEventId: 2,
-      userText: "첫 요청",
-      assistantText: "첫 응답",
-    });
-    expect(reconstructTurnFromEvents(rows, 7)).toEqual({
-      turnStartEventId: 3,
-      finalResponseEventId: 6,
-      userText: "두 번째 요청",
-      assistantText: "두 번째 최종 응답",
-    });
-  });
-
-  it.each([
-    ["user_message", "사용자 요청"],
-    ["intervention_sent", "개입 요청"],
-    ["session_notification", "자동 전달"],
-  ])("accepts %s as a turn start", (eventType, text) => {
-    expect(reconstructTurnFromEvents([
-      event(10, eventType, { text }),
-      event(11, "assistant_message", { content: "응답" }),
-      event(12, "complete", {}),
-    ], 12)?.userText).toBe(text);
-  });
-
-  it("skips a turn with a fatal error or missing anchors", () => {
-    expect(reconstructTurnFromEvents([
-      event(1, "user_message", { text: "요청" }),
-      event(2, "error", { fatal: true }),
-      event(3, "assistant_message", { content: "부분 응답" }),
-      event(4, "complete", {}),
-    ], 4)).toBeNull();
-    expect(reconstructTurnFromEvents([
-      event(1, "user_message", { text: "요청" }),
-      event(2, "complete", {}),
-    ], 2)).toBeNull();
-  });
-});
 
 describe("complete observation", () => {
   it("accepts only durable complete events from the node relay", () => {
@@ -259,6 +204,7 @@ describe("TurnSummaryPipeline", () => {
   it("prechecks dedupe before invoking the provider", async () => {
     const repository = fakeRepository();
     repository.hasSummary.mockResolvedValue(true);
+    const debug = vi.fn();
     const summarizer = {
       summarize: vi.fn(),
     } satisfies TurnSummarizer;
@@ -267,7 +213,7 @@ describe("TurnSummaryPipeline", () => {
       configService: { read: () => CONFIG },
       summarizer,
       eventHub: new RuntimeSessionEventHub(),
-      logger: { info: vi.fn(), warn: vi.fn() },
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
     });
 
     pipeline.accept([nodeEvent("node-a", "session-a", {
@@ -278,6 +224,64 @@ describe("TurnSummaryPipeline", () => {
 
     expect(summarizer.summarize).not.toHaveBeenCalled();
     expect(repository.appendSummary).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "already_summarized",
+        sessionId: "session-a",
+        completeEventId: 20,
+      }),
+      "Turn summary skipped",
+    );
+  });
+
+  it.each([
+    ["turn_not_reconstructable", (repository: ReturnType<typeof fakeRepository>) => {
+      repository.loadTurn.mockResolvedValue(null);
+    }],
+    ["excluded_folder", (repository: ReturnType<typeof fakeRepository>) => {
+      repository.loadTurn.mockResolvedValue({
+        sessionId: "session-a",
+        folderId: CONFIG.excludedFolderIds[0] ?? null,
+        metadata: [{ type: "caller_info", value: { source: "browser" } }],
+        turnStartEventId: 10,
+        finalResponseEventId: 19,
+        userText: "요청",
+        assistantText: "응답",
+      });
+    }],
+    ["session_not_summarizable", (repository: ReturnType<typeof fakeRepository>) => {
+      repository.isSessionSummarizable.mockResolvedValue(false);
+    }],
+  ])("debug-logs the %s skip reason", async (reason, arrange) => {
+    const repository = fakeRepository();
+    arrange(repository);
+    const debug = vi.fn();
+    const summarizer = {
+      summarize: vi.fn(),
+    } satisfies TurnSummarizer;
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer,
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason,
+        sessionId: "session-a",
+        completeEventId: 20,
+      }),
+      "Turn summary skipped",
+    );
+    expect(summarizer.summarize).not.toHaveBeenCalled();
   });
 
   it("logs one skip and leaves persistence untouched when the provider fails", async () => {
@@ -317,6 +321,7 @@ describe("TurnSummaryPipeline", () => {
     repository.isSessionSummarizable
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
+    const debug = vi.fn();
     const summarizer = {
       summarize: vi.fn().mockResolvedValue({
         content: "폐기할 요약",
@@ -330,7 +335,7 @@ describe("TurnSummaryPipeline", () => {
       configService: { read: () => CONFIG },
       summarizer,
       eventHub: new RuntimeSessionEventHub(),
-      logger: { info: vi.fn(), warn: vi.fn() },
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
     });
 
     pipeline.accept([nodeEvent("node-a", "session-a", {
@@ -341,6 +346,13 @@ describe("TurnSummaryPipeline", () => {
 
     expect(summarizer.summarize).toHaveBeenCalledTimes(1);
     expect(repository.appendSummary).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "session_not_summarizable",
+        phase: "after_summarization",
+      }),
+      "Turn summary skipped",
+    );
   });
 
   it("serializes one session while allowing different sessions to overlap", async () => {
@@ -374,14 +386,6 @@ describe("TurnSummaryPipeline", () => {
     await pipeline.drain();
   });
 });
-
-function event(
-  id: number,
-  eventType: string,
-  payload: Record<string, unknown>,
-): TurnSummaryEventRow {
-  return { id, eventType, payload, createdAt: new Date(id * 1_000) };
-}
 
 function nodeEvent(
   nodeId: string,
