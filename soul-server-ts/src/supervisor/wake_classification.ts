@@ -14,7 +14,6 @@ export const WAKE_CLASS_BY_EVENT_TYPE = {
   session_notification: "quiet",
   user_message: "wake",
   assistant_message: "batch",
-  turn_summary: "quiet",
   input_request: "wake",
   input_request_expired: "wake",
   input_request_responded: "batch",

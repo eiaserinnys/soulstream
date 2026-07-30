@@ -9,40 +9,40 @@ import {
   type TurnSummaryUsage,
 } from "./turn_summarizer.js";
 
-export const OPENAI_API_TURN_SUMMARY_MODEL = "gpt-5.4-mini";
+export const OPENAI_API_TURN_SUMMARY_MODEL = "gpt-5.4-mini" as const;
 
 export interface OpenAiChatCompletionRequest {
-  model: typeof OPENAI_API_TURN_SUMMARY_MODEL;
-  temperature: 0;
-  messages: [{ role: "user"; content: string }];
+  readonly model: typeof OPENAI_API_TURN_SUMMARY_MODEL;
+  readonly temperature: 0;
+  readonly messages: [{ readonly role: "user"; readonly content: string }];
 }
 
 export interface OpenAiChatCompletionResponse {
-  choices: Array<{ message: { content: string | null } }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-    completion_tokens_details?: { reasoning_tokens?: number };
+  readonly choices: ReadonlyArray<{
+    readonly message: { readonly content: string | null };
+  }>;
+  readonly usage?: {
+    readonly prompt_tokens?: number;
+    readonly completion_tokens?: number;
+    readonly prompt_tokens_details?: { readonly cached_tokens?: number };
+    readonly completion_tokens_details?: { readonly reasoning_tokens?: number };
   };
 }
 
 export interface OpenAiChatCompletionPort {
   execute(
     request: OpenAiChatCompletionRequest,
-    options: { timeout: number; maxRetries: 0 },
+    options: { readonly timeout: number; readonly maxRetries: 0 },
   ): Promise<OpenAiChatCompletionResponse>;
-}
-
-export interface OpenAiApiTurnSummarizerOptions {
-  client: OpenAiChatCompletionPort;
-  nowMs?: () => number;
 }
 
 export class OpenAiApiTurnSummarizer implements TurnSummarizer {
   private readonly nowMs: () => number;
 
-  constructor(private readonly options: OpenAiApiTurnSummarizerOptions) {
+  constructor(private readonly options: {
+    readonly client: OpenAiChatCompletionPort;
+    readonly nowMs?: () => number;
+  }) {
     this.nowMs = options.nowMs ?? Date.now;
   }
 
@@ -64,17 +64,19 @@ export class OpenAiApiTurnSummarizer implements TurnSummarizer {
           maxRetries: 0,
         });
         const content = completion.choices[0]?.message.content?.trim();
-        if (!content) throw new Error("OpenAI chat completion produced no content");
+        if (!content) {
+          throw new Error("OpenAI chat completion produced no content");
+        }
         const usage = mapOpenAiUsage(completion.usage);
         return {
           content,
           model: OPENAI_API_TURN_SUMMARY_MODEL,
           latencyMs: Math.max(0, this.nowMs() - startedAt),
           attempts: attempt,
-          ...(usage ? { usage } : {}),
+          ...(usage === undefined ? {} : { usage }),
         };
-      } catch (err) {
-        lastError = err;
+      } catch (error) {
+        lastError = error;
       }
     }
     throw new OpenAiTurnSummaryExecutionError(
@@ -97,37 +99,34 @@ export class OpenAiTurnSummaryExecutionError extends Error {
 }
 
 export function createOpenAiApiTurnSummarizer(options: {
-  apiKey: string;
-  createClient?: (config: {
-    apiKey: string;
-    maxRetries: 0;
+  readonly apiKey: string;
+  readonly createClient?: (config: {
+    readonly apiKey: string;
+    readonly maxRetries: 0;
   }) => OpenAiChatCompletionPort;
 }): OpenAiApiTurnSummarizer {
   const createClient = options.createClient ?? defaultOpenAiClientFactory;
   return new OpenAiApiTurnSummarizer({
-    client: createClient({
-      apiKey: options.apiKey,
-      maxRetries: 0,
-    }),
+    client: createClient({ apiKey: options.apiKey, maxRetries: 0 }),
   });
 }
 
 function defaultOpenAiClientFactory(config: {
-  apiKey: string;
-  maxRetries: 0;
+  readonly apiKey: string;
+  readonly maxRetries: 0;
 }): OpenAiChatCompletionPort {
   const client = new OpenAI(config);
   return {
     execute: async (request, options) =>
-      client.chat.completions.create(request, options),
+      await client.chat.completions.create(request, options),
   };
 }
 
 function mapOpenAiUsage(
   value: OpenAiChatCompletionResponse["usage"],
 ): TurnSummaryUsage | undefined {
-  if (!value) return undefined;
-  const usage: TurnSummaryUsage = {};
+  if (value === undefined) return undefined;
+  const usage: Record<string, number> = {};
   if (typeof value.prompt_tokens === "number") {
     usage.input_tokens = value.prompt_tokens;
   }
@@ -137,9 +136,13 @@ function mapOpenAiUsage(
   if (typeof value.completion_tokens === "number") {
     usage.output_tokens = value.completion_tokens;
   }
-  if (typeof value.completion_tokens_details?.reasoning_tokens === "number") {
+  if (
+    typeof value.completion_tokens_details?.reasoning_tokens === "number"
+  ) {
     usage.reasoning_output_tokens =
       value.completion_tokens_details.reasoning_tokens;
   }
-  return Object.keys(usage).length > 0 ? usage : undefined;
+  return Object.keys(usage).length === 0
+    ? undefined
+    : usage as TurnSummaryUsage;
 }

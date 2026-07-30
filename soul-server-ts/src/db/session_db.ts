@@ -395,27 +395,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return await this.eventRepository.readEvents(sessionId, afterId, limit, eventTypes);
   }
 
-  async readLatestEvents(
-    sessionId: string,
-    limit: number,
-    eventTypes: string[],
-  ): Promise<
-    Array<{
-      id: number;
-      session_id: string;
-      event_type: string;
-      payload: Record<string, unknown>;
-      searchable_text: string;
-      created_at: Date;
-    }>
-  > {
-    return await this.eventRepository.readLatestEvents(
-      sessionId,
-      limit,
-      eventTypes,
-    );
-  }
-
   async readOneEvent(
     sessionId: string,
     eventId: number,

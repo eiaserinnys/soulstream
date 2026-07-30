@@ -26,7 +26,9 @@
     "@hocuspocus/server": "3.4.4",
     "fastify": "^5.1.0",
     "google-auth-library": "10.9.0",
+    "openai": "6.37.0",
     "postgres": "3.4.9",
+    "yaml": "^2.9.0",
     "y-protocols": "1.0.6",
     "yjs": "13.6.27",
     "zod": "^4.3.6"

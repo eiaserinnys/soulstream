@@ -103,7 +103,6 @@ describe("TaskEngineEventPublisher", () => {
 
     expect(deps.persistEventWithResult).toHaveBeenCalledWith("sess-1", event);
     expect(task.lastEventId).toBe(42);
-    expect(task.currentTurnFinalResponseEventId).toBe(42);
     expect((event as Record<string, unknown>)._event_id).toBe(42);
     expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);

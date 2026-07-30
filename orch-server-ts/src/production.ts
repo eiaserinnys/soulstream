@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import type { FastifyInstance } from "fastify";
 
@@ -48,6 +49,11 @@ import { createLivePushRegistrationRepository } from "./runtime/live_push_regist
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
+import {
+  createLiveTurnSummaryPipeline,
+  type LiveTurnSummaryPipeline,
+  type LiveTurnSummaryProductionOverrides,
+} from "./turn-summary/live_turn_summary_pipeline.js";
 
 export type ProductionApplication = {
   readonly app: FastifyInstance;
@@ -62,7 +68,7 @@ export type ProductionApplicationFactory = (
 
 export type LiveProductionApplicationOverrides = {
   readonly sqlResolver?: LiveDbSqlResolver;
-};
+} & LiveTurnSummaryProductionOverrides;
 
 export type CreateProductionOrchestratorOptions = {
   readonly config: OrchServerEnvironmentConfig;
@@ -159,6 +165,7 @@ export async function createLiveProductionApplication(
   let pageYjsService: PageYjsService | undefined;
   let taskIdentityService: TaskIdentityService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
+  let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -171,6 +178,7 @@ export async function createLiveProductionApplication(
     sessionForegroundObservers: foregroundObservers,
     additionalNodeEventSinks: [
       (events) => pushNotifier.accept(events),
+      (events) => turnSummaryPipeline?.accept(events),
     ],
     boardYjsRoutes: {
       createService: (logger) => boardYjsService ??= new BoardYjsService({
@@ -299,6 +307,16 @@ export async function createLiveProductionApplication(
     folderProjectIdentityService,
     memoryStats,
   ));
+  turnSummaryPipeline = createLiveTurnSummaryPipeline({
+    config,
+    configPath: overrides.turnSummaryConfigPath ??
+      fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
+    sqlResolver,
+    eventHub: runtimeServices.sessionEventHub,
+    logger: app.log,
+    warn: context.warn,
+    overrides,
+  });
   const maintenanceService = new OrchestratorMaintenanceService({
     sessionCache: registry.sessionCache,
     pushNotifier,
@@ -325,6 +343,7 @@ export async function createLiveProductionApplication(
       resourcesClosed = true;
       maintenanceService.stop();
       await usageSummaryService.stop();
+      await turnSummaryPipeline?.drain();
       await pushNotifier.close();
       await dbCatalogRepository.close();
     },

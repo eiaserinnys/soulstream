@@ -3,9 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { sanitizeCodexEnv } from "../engine/codex_env.js";
-import { withScratchWorkspaceEnv } from "../engine/scratch_workspace_env.js";
-
+import { sanitizeChildProcessEnv } from "../runtime/child_process_env.js";
 import type { TurnSummaryConfig } from "./turn_summary_config.js";
 import {
   buildTurnSummaryPrompt,
@@ -16,10 +14,10 @@ import {
 } from "./turn_summarizer.js";
 
 export interface CodexExecInvocation {
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  cwd: string;
+  readonly command: string;
+  readonly args: string[];
+  readonly env: Record<string, string>;
+  readonly cwd: string;
 }
 
 export interface CodexExecProcessPort {
@@ -27,14 +25,14 @@ export interface CodexExecProcessPort {
     invocation: CodexExecInvocation,
     prompt: string,
     timeoutMs: number,
-  ): Promise<{ stdout: string; stderr: string }>;
+  ): Promise<{ readonly stdout: string; readonly stderr: string }>;
 }
 
 export interface CodexExecTurnSummarizerOptions {
-  codexPath?: string;
-  processPort?: CodexExecProcessPort;
-  processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
-  nowMs?: () => number;
+  readonly codexPath?: string;
+  readonly processPort?: CodexExecProcessPort;
+  readonly processEnv?: NodeJS.ProcessEnv | Readonly<Record<string, string | undefined>>;
+  readonly nowMs?: () => number;
 }
 
 export class TurnSummaryExecutionError extends Error {
@@ -49,20 +47,14 @@ export class TurnSummaryExecutionError extends Error {
 }
 
 export function buildCodexExecInvocation(params: {
-  codexPath: string;
-  workspaceDir: string;
-  model: string;
-  reasoningEffort: TurnSummaryConfig["reasoningEffort"];
-  processEnv: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  readonly codexPath: string;
+  readonly workspaceDir: string;
+  readonly model: string;
+  readonly reasoningEffort: TurnSummaryConfig["reasoningEffort"];
+  readonly processEnv:
+    | NodeJS.ProcessEnv
+    | Readonly<Record<string, string | undefined>>;
 }): CodexExecInvocation {
-  const env = withScratchWorkspaceEnv(sanitizeCodexEnv(params.processEnv), {
-    workspaceDir: params.workspaceDir,
-    agentId: "turn-summary",
-  });
-  // Common billing-switch keys were removed by sanitizeCodexEnv.
-  // Turn summaries additionally force ChatGPT OAuth over explicit Codex API auth.
-  delete env.CODEX_API_KEY;
-
   return {
     command: params.codexPath,
     args: [
@@ -82,34 +74,37 @@ export function buildCodexExecInvocation(params: {
       `model_reasoning_effort="${params.reasoningEffort}"`,
       "-",
     ],
-    env,
+    env: sanitizeChildProcessEnv(params.processEnv),
     cwd: params.workspaceDir,
   };
 }
 
 export function parseCodexJsonl(
   stdout: string,
-): { content: string; usage?: TurnSummaryUsage } {
+): { readonly content: string; readonly usage?: TurnSummaryUsage } {
   let content = "";
   let usage: TurnSummaryUsage | undefined;
   for (const line of stdout.split(/\r?\n/)) {
-    if (!line.trim()) continue;
+    if (line.trim().length === 0) continue;
     const event = JSON.parse(line) as Record<string, unknown>;
-    if (event.type === "item.completed" && isRecord(event.item)) {
-      if (event.item.type === "agent_message" && typeof event.item.text === "string") {
-        content = event.item.text;
-      }
+    if (
+      event.type === "item.completed" &&
+      isRecord(event.item) &&
+      event.item.type === "agent_message" &&
+      typeof event.item.text === "string"
+    ) {
+      content = event.item.text;
     }
     if (event.type === "turn.completed" && isRecord(event.usage)) {
       usage = pickUsage(event.usage);
     }
   }
-  if (!content.trim()) {
+  if (content.trim().length === 0) {
     throw new Error("codex exec produced no completed agent message");
   }
-  return usage && Object.keys(usage).length > 0
-    ? { content: content.trim(), usage }
-    : { content: content.trim() };
+  return usage === undefined
+    ? { content: content.trim() }
+    : { content: content.trim(), usage };
 }
 
 export class NodeCodexExecProcess implements CodexExecProcessPort {
@@ -122,9 +117,6 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
       const child = spawn(invocation.command, invocation.args, {
         cwd: invocation.cwd,
         env: invocation.env,
-        ...(needsWindowsCommandShell(invocation.command, process.platform)
-          ? { shell: true }
-          : {}),
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       });
@@ -144,21 +136,19 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
       child.stderr.on("data", (chunk: string) => {
         stderr += chunk;
       });
-      child.once("error", (err) => {
+      child.once("error", (error) => {
         clearTimeout(timer);
-        reject(err);
+        reject(error);
       });
       child.once("close", (code) => {
         clearTimeout(timer);
         if (timedOut) {
           reject(new Error(`codex exec timed out after ${timeoutMs}ms`));
-          return;
-        }
-        if (code !== 0) {
+        } else if (code !== 0) {
           reject(new Error(`codex exec exited ${code}: ${stderr.slice(-500)}`));
-          return;
+        } else {
+          resolve({ stdout, stderr });
         }
-        resolve({ stdout, stderr });
       });
       child.stdin.end(prompt, "utf8");
     });
@@ -185,17 +175,18 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
     }
     let lastError: unknown;
     for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
-      const workspaceDir = await mkdtemp(join(tmpdir(), "soulstream-turn-summary-"));
+      const workspaceDir = await mkdtemp(
+        join(tmpdir(), "soulstream-turn-summary-"),
+      );
       try {
-        const invocation = buildCodexExecInvocation({
-          codexPath: this.options.codexPath,
-          workspaceDir,
-          model: config.model,
-          reasoningEffort: config.reasoningEffort,
-          processEnv: this.options.processEnv ?? process.env,
-        });
         const result = await this.processPort.execute(
-          invocation,
+          buildCodexExecInvocation({
+            codexPath: this.options.codexPath,
+            workspaceDir,
+            model: config.model,
+            reasoningEffort: config.reasoningEffort,
+            processEnv: this.options.processEnv ?? process.env,
+          }),
           prompt,
           config.timeoutMs,
         );
@@ -205,10 +196,10 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
           model: config.model,
           latencyMs: Math.max(0, this.nowMs() - startedAt),
           attempts: attempt,
-          ...(parsed.usage ? { usage: parsed.usage } : {}),
+          ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
         };
-      } catch (err) {
-        lastError = err;
+      } catch (error) {
+        lastError = error;
       } finally {
         await rm(workspaceDir, { recursive: true, force: true });
       }
@@ -226,23 +217,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function pickUsage(value: Record<string, unknown>): TurnSummaryUsage | undefined {
-  const usage: TurnSummaryUsage = {};
+  const usage: Record<string, number> = {};
   for (const field of [
     "input_tokens",
     "cached_input_tokens",
     "output_tokens",
     "reasoning_output_tokens",
-  ] as const) {
-    if (typeof value[field] === "number") usage[field] = value[field];
+  ]) {
+    const tokenCount = value[field];
+    if (typeof tokenCount === "number") usage[field] = tokenCount;
   }
-  return Object.keys(usage).length > 0 ? usage : undefined;
-}
-
-function needsWindowsCommandShell(
-  command: string,
-  platform: NodeJS.Platform,
-): boolean {
-  if (platform !== "win32") return false;
-  const lower = command.toLowerCase();
-  return lower.endsWith(".cmd") || lower.endsWith(".bat");
+  return Object.keys(usage).length === 0
+    ? undefined
+    : usage as TurnSummaryUsage;
 }

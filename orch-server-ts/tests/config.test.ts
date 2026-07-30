@@ -63,6 +63,7 @@ describe("orch-server-ts config scaffold", () => {
       ENVIRONMENT: "production",
       CLAUDE_OAUTH_CLIENT_ID: "claude-client",
       CLAUDE_OAUTH_CALLBACK_URL: "https://example.com/claude/callback",
+      TURN_SUMMARY_OPENAI_KEY: "turn-summary-key",
     });
 
     expect(config).toEqual({
@@ -102,6 +103,7 @@ describe("orch-server-ts config scaffold", () => {
       environment: "production",
       claude_oauth_client_id: "claude-client",
       claude_oauth_callback_url: "https://example.com/claude/callback",
+      turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,
     });
 
@@ -141,6 +143,7 @@ describe("orch-server-ts config scaffold", () => {
       cors_allowed_origins: [],
       google_client_id: "",
       jwt_secret: "",
+      turn_summary_openai_key: "",
       usage_summary_poll_interval_seconds: 300,
     });
   });

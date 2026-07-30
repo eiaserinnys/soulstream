@@ -1675,7 +1675,6 @@ describe("TaskManager.addIntervention — running fallback without live surface 
         text: "추가 메시지",
         user: "alice",
         callerInfo: { source: "slack" },
-        timelineEventId: 123,
       },
     ]);
     expect(persistEvent).toHaveBeenCalledWith(
@@ -1752,9 +1751,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     ]);
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(persistEvent).toHaveBeenCalledTimes(1);
-    expect(task.interventionQueue).toEqual([
-      { text: "추가", user: "u", timelineEventId: 1 },
-    ]);
+    expect(task.interventionQueue).toEqual([{ text: "추가", user: "u" }]);
   });
 
   it("completed task → user_message 접수 후 session_updated + onResume", async () => {

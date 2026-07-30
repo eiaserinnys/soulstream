@@ -16,7 +16,6 @@ import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
 import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
-import { logBlockedChildProcessEnvKeys } from "../engine/child_process_env.js";
 import {
   isPostResultDrainEvent,
   markPostResultDrainEvent,
@@ -49,13 +48,6 @@ import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
-import { CodexExecTurnSummarizer } from
-  "../turn-summary/codex_exec_turn_summarizer.js";
-import { TurnSummaryConfigService } from
-  "../turn-summary/turn_summary_config.js";
-import { TurnSummaryQueue } from "../turn-summary/turn_summary_queue.js";
-import { createTurnSummaryProviderRouter } from
-  "../turn-summary/turn_summary_provider_router.js";
 import {
   composeSupervisorRuntime,
   type SupervisorComposition,
@@ -94,7 +86,6 @@ export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath } = params;
-  logBlockedChildProcessEnvKeys(process.env, logger);
   const modelCatalog =
     params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger);
   let upstreamAdapter: UpstreamAdapter | null = null;
@@ -137,24 +128,6 @@ export async function composeWorkerRuntime(
   };
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(db, broadcaster, logger);
-  const turnSummaryQueue = new TurnSummaryQueue({
-    db,
-    configService: new TurnSummaryConfigService(
-      env.TURN_SUMMARY_CONFIG_PATH,
-      logger,
-    ),
-    summarizer: createTurnSummaryProviderRouter({
-      codex: new CodexExecTurnSummarizer({
-        codexPath: codexCliPath?.path,
-        processEnv: process.env,
-      }),
-      openAiApiKey: env.TURN_SUMMARY_OPENAI_KEY,
-      logger,
-    }),
-    persistence,
-    broadcaster,
-    logger,
-  });
   const realtimeBroker = new RealtimeBroker({
     agentRegistry,
     db,
@@ -313,7 +286,6 @@ export async function composeWorkerRuntime(
     scheduleService,
     orchProxyConfig,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
-    turnSummaryQueue,
   });
   const catalogService = new CatalogService(
     db,

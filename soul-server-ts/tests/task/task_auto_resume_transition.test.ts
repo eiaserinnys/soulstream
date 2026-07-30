@@ -126,7 +126,6 @@ describe("AutoResumeTransition", () => {
     expect(task.clientId).toBe("alice");
     expect(task.callerInfo).toBe(callerInfo);
     expect(task.attachmentPaths).toEqual(["/tmp/a.png"]);
-    expect(task.interventionQueue[0]?.timelineEventId).toBe(101);
     expect(persistEvent).toHaveBeenCalledTimes(1);
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
     expect(emitEventEnvelope).toHaveBeenCalledWith(

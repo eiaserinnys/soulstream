@@ -52,7 +52,6 @@ export class SessionNotificationPublisher {
           event,
         );
         task.lastEventId = persisted.eventId;
-        message.timelineEventId = persisted.eventId;
         (event as Record<string, unknown>)._event_id = persisted.eventId;
         shouldBroadcast = persisted.inserted;
         if (persisted.inserted) {

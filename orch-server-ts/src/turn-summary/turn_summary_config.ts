@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 
-import type { Logger } from "pino";
 import { parse } from "yaml";
 import { z } from "zod";
 
+export type TurnSummaryLogger = {
+  readonly info?: (...args: unknown[]) => void;
+  readonly warn: (...args: unknown[]) => void;
+};
+
 const TurnSummaryConfigSchema = z
   .object({
+    instruction: z.string().trim().min(1),
     provider: z.enum(["codex", "openai-api"]),
     model: z.string().trim().min(1),
     reasoning_effort: z.enum(["minimal", "low", "medium", "high", "xhigh"]),
@@ -15,7 +20,9 @@ const TurnSummaryConfigSchema = z
     history_limit: z.number().int().min(0).max(5),
     excluded_folder_ids: z.array(z.string().uuid()),
   })
+  .strict()
   .transform((value) => ({
+    instruction: value.instruction,
     provider: value.provider,
     model: value.model,
     reasoningEffort: value.reasoning_effort,
@@ -26,14 +33,14 @@ const TurnSummaryConfigSchema = z
     excludedFolderIds: value.excluded_folder_ids,
   }));
 
-export type TurnSummaryConfig = z.infer<typeof TurnSummaryConfigSchema>;
+export type TurnSummaryConfig = z.output<typeof TurnSummaryConfigSchema>;
 
 export class TurnSummaryConfigService {
   private lastSuccessful: TurnSummaryConfig | undefined;
 
   constructor(
     private readonly configPath: string,
-    private readonly logger: Logger,
+    private readonly logger: TurnSummaryLogger,
   ) {}
 
   read(): TurnSummaryConfig {
@@ -42,10 +49,10 @@ export class TurnSummaryConfigService {
       const config = TurnSummaryConfigSchema.parse(parse(source));
       this.lastSuccessful = config;
       return config;
-    } catch (err) {
-      if (!this.lastSuccessful) throw err;
+    } catch (error) {
+      if (this.lastSuccessful === undefined) throw error;
       this.logger.warn(
-        { err, configPath: this.configPath },
+        { error, configPath: this.configPath },
         "Invalid turn summary config update; keeping the last successful config",
       );
       return this.lastSuccessful;

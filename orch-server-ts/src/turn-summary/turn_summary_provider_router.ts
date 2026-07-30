@@ -1,5 +1,3 @@
-import type { Logger } from "pino";
-
 import { createOpenAiApiTurnSummarizer } from "./openai_api_turn_summarizer.js";
 import type { TurnSummaryConfig } from "./turn_summary_config.js";
 import type {
@@ -9,8 +7,6 @@ import type {
 } from "./turn_summarizer.js";
 
 export class TurnSummaryProviderUnavailableError extends Error {
-  readonly silent = true;
-
   constructor(readonly provider: TurnSummaryConfig["provider"]) {
     super(`Turn summary provider is unavailable: ${provider}`);
     this.name = "TurnSummaryProviderUnavailableError";
@@ -19,8 +15,8 @@ export class TurnSummaryProviderUnavailableError extends Error {
 
 export class TurnSummaryProviderRouter implements TurnSummarizer {
   constructor(private readonly providers: {
-    codex: TurnSummarizer;
-    openaiApi?: TurnSummarizer;
+    readonly codex: TurnSummarizer;
+    readonly openaiApi?: TurnSummarizer;
   }) {}
 
   async summarize(
@@ -30,7 +26,7 @@ export class TurnSummaryProviderRouter implements TurnSummarizer {
     if (config.provider === "codex") {
       return await this.providers.codex.summarize(input, config);
     }
-    if (!this.providers.openaiApi) {
+    if (this.providers.openaiApi === undefined) {
       throw new TurnSummaryProviderUnavailableError("openai-api");
     }
     return await this.providers.openaiApi.summarize(input, config);
@@ -38,13 +34,13 @@ export class TurnSummaryProviderRouter implements TurnSummarizer {
 }
 
 export function createTurnSummaryProviderRouter(options: {
-  codex: TurnSummarizer;
-  openAiApiKey?: string;
-  logger: Pick<Logger, "info">;
-  createOpenAiApi?: (apiKey: string) => TurnSummarizer;
+  readonly codex: TurnSummarizer;
+  readonly openAiApiKey?: string;
+  readonly info: (message: string) => void;
+  readonly createOpenAiApi?: (apiKey: string) => TurnSummarizer;
 }): TurnSummaryProviderRouter {
   if (!options.openAiApiKey) {
-    options.logger.info(
+    options.info(
       "OpenAI API turn-summary provider disabled: TURN_SUMMARY_OPENAI_KEY is unset",
     );
     return new TurnSummaryProviderRouter({ codex: options.codex });
@@ -55,10 +51,4 @@ export function createTurnSummaryProviderRouter(options: {
     codex: options.codex,
     openaiApi: createOpenAiApi(options.openAiApiKey),
   });
-}
-
-export function isTurnSummaryProviderUnavailableError(
-  error: unknown,
-): error is TurnSummaryProviderUnavailableError {
-  return error instanceof TurnSummaryProviderUnavailableError;
 }

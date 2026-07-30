@@ -28,10 +28,7 @@ export interface TaskInitialMessagePublisherDeps {
 export class TaskInitialMessagePublisher {
   constructor(private readonly deps: TaskInitialMessagePublisherDeps) {}
 
-  async publishInitialMessages(
-    task: Task,
-    ctx?: PreparedContext,
-  ): Promise<number | undefined> {
+  async publishInitialMessages(task: Task, ctx?: PreparedContext): Promise<void> {
     if (ctx?.effectiveSystemPrompt) {
       await this.publishSystemMessage(task, ctx.effectiveSystemPrompt);
     }
@@ -43,8 +40,6 @@ export class TaskInitialMessagePublisher {
     });
     await persistUserMessageEvent(task, event, this.deps, { failOnError: false });
     await finishUserMessageEvent(task, event, this.deps);
-    const eventId = event._event_id;
-    return typeof eventId === "number" ? eventId : undefined;
   }
 
   private async publishSystemMessage(

@@ -105,7 +105,7 @@ export class TaskInterventionRoute {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    const initialMessage = omitUndefined<InterventionMessage>({
+    const initialMessage: InterventionMessage = {
       text: params.text,
       user: params.user,
       callerInfo: params.callerInfo,
@@ -127,7 +127,7 @@ export class TaskInterventionRoute {
       followupTaskIds: params.followupTaskIds,
       storedDeliveryPayload: params.storedDeliveryPayload,
       storedDeliveryPayloadHash: params.storedDeliveryPayloadHash,
-    });
+    };
     const admission: DeliveryLedgerAdmission = this.deps.deliveryLedgerGate
       ? await this.deps.deliveryLedgerGate.admit(params)
       : { kind: "legacy" };
@@ -262,12 +262,6 @@ export class TaskInterventionRoute {
     this.deps.rememberTask(loaded);
     return loaded;
   }
-}
-
-function omitUndefined<T extends object>(value: T): T {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => item !== undefined),
-  ) as T;
 }
 
 function hydrateStoredDeliveryMessage(

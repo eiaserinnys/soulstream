@@ -14,7 +14,6 @@ describe("Supervisor wake classification", () => {
     expect(exhaustive.credential_alert).toBe("critical");
     expect(exhaustive.assistant_error).toBe("critical");
     expect(exhaustive.away_summary).toBe("batch");
-    expect(exhaustive.turn_summary).toBe("quiet");
   });
 
   it("returns null for unknown events instead of throwing or classifying as quiet", () => {

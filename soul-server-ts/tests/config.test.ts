@@ -183,24 +183,6 @@ describe("parseEnv", () => {
     }).MODEL_CATALOG_PATH).toBe("/etc/soulstream/model-catalog.yaml");
   });
 
-  it("TURN_SUMMARY_CONFIG_PATH는 config 기본 경로와 명시 override를 사용한다", () => {
-    expect(parseEnv(minimal).TURN_SUMMARY_CONFIG_PATH).toBe(
-      "config/turn-summary.yaml",
-    );
-    expect(parseEnv({
-      ...minimal,
-      TURN_SUMMARY_CONFIG_PATH: "/etc/soulstream/turn-summary.yaml",
-    }).TURN_SUMMARY_CONFIG_PATH).toBe("/etc/soulstream/turn-summary.yaml");
-  });
-
-  it("TURN_SUMMARY_OPENAI_KEY는 선택형 전용 키이며 명시 값만 보존한다", () => {
-    expect(parseEnv(minimal).TURN_SUMMARY_OPENAI_KEY).toBeUndefined();
-    expect(parseEnv({
-      ...minimal,
-      TURN_SUMMARY_OPENAI_KEY: "test-turn-summary-key",
-    }).TURN_SUMMARY_OPENAI_KEY).toBe("test-turn-summary-key");
-  });
-
   it("CLAUDE_AUTH_TOKEN_PATH는 default 없이 명시된 값만 정본으로 사용", () => {
     expect(parseEnv(minimal).CLAUDE_AUTH_TOKEN_PATH).toBeUndefined();
     const env = parseEnv({

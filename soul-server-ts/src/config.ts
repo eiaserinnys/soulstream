@@ -93,12 +93,6 @@ export const EnvSchema = z
      */
     MODEL_CATALOG_PATH: z.string().default("config/model-catalog.yaml"),
     /**
-     * Turn summary YAML policy. Re-read for each queued job so model and folder
-     * exclusions take effect without restarting the worker.
-     */
-    TURN_SUMMARY_CONFIG_PATH: z.string().default("config/turn-summary.yaml"),
-    TURN_SUMMARY_OPENAI_KEY: z.string().trim().min(1).optional(),
-    /**
      * 세션 첨부 파일 저장 디렉토리. orch가 WS reverse-proxy로 파일을 전달하면
      * TS 노드는 이 경로 아래에 저장하고 Codex에게 절대경로를 넘긴다.
      */

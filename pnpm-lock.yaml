@@ -41,9 +41,15 @@ importers:
       google-auth-library:
         specifier: 10.9.0
         version: 10.9.0
+      openai:
+        specifier: 6.37.0
+        version: 6.37.0(ws@8.20.0)(zod@4.3.6)
       postgres:
         specifier: 3.4.9
         version: 3.4.9
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
       y-protocols:
         specifier: 1.0.6
         version: 1.0.6(yjs@13.6.27)
@@ -365,9 +371,6 @@ importers:
       fastify:
         specifier: ^5.1.0
         version: 5.8.5
-      openai:
-        specifier: 6.37.0
-        version: 6.37.0(ws@8.20.0)(zod@4.3.6)
       pino:
         specifier: ^9.5.0
         version: 9.14.0

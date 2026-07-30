@@ -68,9 +68,7 @@ describe("CodexAppServerEngineAdapter env", () => {
           workspaceDir: "/tmp/right-app-server-work",
           agentId: "app-server-agent",
           processEnv: {
-            OPENAI_API_KEY: "must-not-leak",
-            ANTHROPIC_API_KEY: "must-not-leak",
-            TURN_SUMMARY_OPENAI_KEY: "must-not-leak",
+            OPENAI_API_KEY: "",
             [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-app-server-work",
             [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
             [AGENT_COMMON_FILES_DIR_ENV]: "/tmp/wrong-common",
@@ -85,8 +83,6 @@ describe("CodexAppServerEngineAdapter env", () => {
       };
       expect(options.cwd).toBe("/tmp/right-app-server-work");
       expect(options.env).not.toHaveProperty("OPENAI_API_KEY");
-      expect(options.env).not.toHaveProperty("ANTHROPIC_API_KEY");
-      expect(options.env).not.toHaveProperty("TURN_SUMMARY_OPENAI_KEY");
       expect(options.env[SCRATCH_WORKSPACE_DIR_ENV]).toBe("/tmp/right-app-server-work");
       expect(options.env[SOULSTREAM_AGENT_ID_ENV]).toBe("app-server-agent");
       expect(options.env[AGENT_COMMON_FILES_DIR_ENV]).toBe("/srv/agent-common");

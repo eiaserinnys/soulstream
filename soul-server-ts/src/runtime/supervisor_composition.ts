@@ -39,7 +39,6 @@ import {
 } from "../supervisor/wake_router.js";
 import { detectMissingSupervisors } from "../supervisor/watchdog.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
-import type { TurnSummaryQueuePort } from "../turn-summary/turn_summary_queue.js";
 
 export interface SupervisorCompositionParams {
   env: Env;
@@ -55,7 +54,6 @@ export interface SupervisorCompositionParams {
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
-  turnSummaryQueue: TurnSummaryQueuePort;
 }
 
 export interface SupervisorComposition {
@@ -90,7 +88,6 @@ export function composeSupervisorRuntime(
     scheduleService,
     orchProxyConfig,
     queuedDeliveryRecovery,
-    turnSummaryQueue,
   } = params;
   let taskExecutor: TaskExecutor;
   const onResume: StartExecutionCallback = (task) => {
@@ -349,7 +346,6 @@ export function composeSupervisorRuntime(
       ? taskManager.getDeliveryConsumptionRecorder()
       : undefined,
     modelCatalog,
-    turnSummaryQueue,
   );
   // Startup recovery may auto-resume a hydrated caller immediately. Start it
   // only after the executor closure is fully bound so the resumed turn can

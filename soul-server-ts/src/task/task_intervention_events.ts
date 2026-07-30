@@ -39,8 +39,7 @@ export async function publishInterventionSent(
   deps: InterventionEventPublisherDeps,
 ): Promise<void> {
   const interventionEvent = buildInterventionSentEvent(message);
-  const eventId = await persistIntervention(task, interventionEvent, deps);
-  if (eventId !== undefined) message.timelineEventId = eventId;
+  await persistIntervention(task, interventionEvent, deps);
   await broadcastIntervention(task, interventionEvent, deps);
 }
 
@@ -48,11 +47,10 @@ async function persistIntervention(
   task: Task,
   interventionEvent: Record<string, unknown>,
   deps: InterventionEventPublisherDeps,
-): Promise<number | undefined> {
-  if (!deps.persistence) return undefined;
-  let eventId: number;
+): Promise<void> {
+  if (!deps.persistence) return;
   try {
-    eventId = await deps.persistence.persistEvent(
+    const eventId = await deps.persistence.persistEvent(
       task.agentSessionId,
       interventionEvent as SSEEventPayload,
     );
@@ -78,7 +76,6 @@ async function persistIntervention(
       "intervention_sent handleSideEffects failed",
     );
   }
-  return eventId;
 }
 
 async function broadcastIntervention(

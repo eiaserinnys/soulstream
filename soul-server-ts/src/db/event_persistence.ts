@@ -256,9 +256,6 @@ export function extractSearchableText(event: SSEEventPayload): string {
   if (eventType === "result") {
     return contentToText((event as Record<string, unknown>).output);
   }
-  if (eventType === "turn_summary") {
-    return contentToText((event as Record<string, unknown>).content);
-  }
   const messages = (event as Record<string, unknown>).messages;
   if (!Array.isArray(messages)) return "";
   return messages
