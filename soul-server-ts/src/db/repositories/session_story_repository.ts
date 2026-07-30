@@ -19,6 +19,38 @@ export interface SessionStoryView {
   readonly updatedAt: Date | null;
 }
 
+export function serializeSessionStoryView(story: SessionStoryView): {
+  highlight: string | null;
+  narrative: string | null;
+  unfolded_turn_summaries: Array<{
+    event_id: number;
+    turn_number: number;
+    content: string;
+    turn_start_event_id: number | null;
+    final_response_event_id: number | null;
+    created_at: string;
+  }>;
+  narrative_through_event_id: number | null;
+  fold_count: number;
+  updated_at: string | null;
+} {
+  return {
+    highlight: story.highlight,
+    narrative: story.narrative,
+    unfolded_turn_summaries: story.unfoldedTurnSummaries.map((summary) => ({
+      event_id: summary.eventId,
+      turn_number: summary.turnNumber,
+      content: summary.content,
+      turn_start_event_id: summary.turnStartEventId,
+      final_response_event_id: summary.finalResponseEventId,
+      created_at: summary.createdAt.toISOString(),
+    })),
+    narrative_through_event_id: story.narrativeThroughEventId,
+    fold_count: story.foldCount,
+    updated_at: story.updatedAt?.toISOString() ?? null,
+  };
+}
+
 export class SessionStoryReadRepository {
   constructor(private readonly sql: SqlClient) {}
 
