@@ -51,8 +51,9 @@ describe("SessionNotificationPublisher", () => {
   it("persists and broadcasts the first canonical completion notification", async () => {
     const { publisher, persistence, broadcaster } = makeSubject(true);
     const task = makeTask();
+    const message = makeMessage();
 
-    await publisher.publish(task, makeMessage(), "queued");
+    await publisher.publish(task, message, "queued");
 
     expect(persistence.persistEventWithResult).toHaveBeenCalledWith(
       task.agentSessionId,
@@ -65,15 +66,18 @@ describe("SessionNotificationPublisher", () => {
       }),
     );
     expect(task.lastEventId).toBe(41);
+    expect(message.timelineEventId).toBe(41);
     expect(persistence.handleSideEffects).toHaveBeenCalledTimes(1);
     expect(broadcaster.emitEventEnvelope).toHaveBeenCalledTimes(1);
   });
 
   it("does not rebroadcast or reproject a dedupe conflict", async () => {
     const { publisher, persistence, broadcaster } = makeSubject(false);
+    const message = makeMessage();
 
-    await publisher.publish(makeTask(), makeMessage(), "auto_resume");
+    await publisher.publish(makeTask(), message, "auto_resume");
 
+    expect(message.timelineEventId).toBe(41);
     expect(persistence.handleSideEffects).not.toHaveBeenCalled();
     expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });

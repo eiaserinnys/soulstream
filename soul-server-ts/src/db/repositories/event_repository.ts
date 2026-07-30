@@ -57,6 +57,51 @@ export class EventRepository {
     }));
   }
 
+  async readLatestEvents(
+    sessionId: string,
+    limit: number,
+    eventTypes: string[],
+  ): Promise<
+    Array<{
+      id: number;
+      session_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      searchable_text: string;
+      created_at: Date;
+    }>
+  > {
+    if (limit <= 0 || eventTypes.length === 0) return [];
+    const rows = await this.sql<
+      Array<{
+        id: number;
+        session_id: string;
+        event_type: string;
+        payload: unknown;
+        searchable_text: string;
+        created_at: Date;
+      }>
+    >`
+      SELECT id, session_id, event_type, payload, searchable_text, created_at
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND event_type = ANY(${eventTypes}::text[])
+      ORDER BY id DESC
+      LIMIT ${limit}
+    `;
+    return rows.reverse().map((row) => ({
+      id: Number(row.id),
+      session_id: row.session_id,
+      event_type: row.event_type,
+      payload:
+        row.payload && typeof row.payload === "object"
+          ? (row.payload as Record<string, unknown>)
+          : {},
+      searchable_text: row.searchable_text,
+      created_at: row.created_at,
+    }));
+  }
+
   async readOneEvent(
     sessionId: string,
     eventId: number,

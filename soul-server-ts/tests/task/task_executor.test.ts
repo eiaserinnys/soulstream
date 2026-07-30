@@ -113,6 +113,43 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("enqueues a completed turn with durable start and final response anchors", async () => {
+    const mocks = makeMocks();
+    const enqueue = vi.fn();
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "완료 결과", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { enqueue },
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(enqueue).toHaveBeenCalledWith({
+      sessionId: "sess-1",
+      userText: "hi",
+      assistantText: "완료 결과",
+      turnStartEventId: 1,
+      finalResponseEventId: 2,
+    });
+  });
+
   it("keeps the legacy factory call exact when no preset is selected", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => makeFakeEngine([

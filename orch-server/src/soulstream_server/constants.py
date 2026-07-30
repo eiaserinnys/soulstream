@@ -96,7 +96,7 @@ ATTACHMENT_UPLOAD_CHUNK_SIZE = 1024 * 1024
 KNOWN_SSE_EVENT_TYPES = frozenset({
     "init", "reconnected",
     "progress", "memory", "session", "intervention_sent", "user_message",
-    "assistant_message", "input_request", "input_request_expired",
+    "assistant_message", "turn_summary", "input_request", "input_request_expired",
     "input_request_responded", "debug", "complete", "error",
     "credential_alert", "session_ended", "thinking", "text_start", "text_delta", "text_end",
     "tool_start", "tool_result", "result", "prompt_suggestion",

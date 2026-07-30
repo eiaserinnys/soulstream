@@ -1,0 +1,11 @@
+# provider와 Codex 모델은 각 작업 전에 다시 읽어 재시작 없이 반영한다.
+provider: codex
+model: gpt-5.6-terra
+reasoning_effort: high
+timeout_ms: 30000
+max_attempts: 2
+codepoint_limit: 6000
+history_limit: 5
+excluded_folder_ids:
+  - 055be5a6-1285-48aa-a8a1-59e40fbe59af
+  - 9e7baafe-387f-4404-8349-ec994597f4cf

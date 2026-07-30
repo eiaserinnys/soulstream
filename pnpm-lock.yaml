@@ -365,6 +365,9 @@ importers:
       fastify:
         specifier: ^5.1.0
         version: 5.8.5
+      openai:
+        specifier: 6.37.0
+        version: 6.37.0(ws@8.20.0)(zod@4.3.6)
       pino:
         specifier: ^9.5.0
         version: 9.14.0

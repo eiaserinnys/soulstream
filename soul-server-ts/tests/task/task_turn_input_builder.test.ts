@@ -95,6 +95,9 @@ describe("TaskTurnInputBuilder", () => {
     });
     const { builder, contextBuilder, initialMessagePublisher } = makeSubject({
       contextBuilder: { build: vi.fn().mockResolvedValue(ctx) },
+      initialMessagePublisher: {
+        publishInitialMessages: vi.fn().mockResolvedValue(91),
+      },
     });
 
     const input = await builder.prepareInitialTurnInput(task, claudeAgent);
@@ -107,6 +110,10 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).not.toContain("system instructions");
     expect(input.prompt.endsWith("사용자 요청")).toBe(true);
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/screen.png"]);
+    expect(input.summaryInput).toEqual({
+      userText: "사용자 요청",
+      turnStartEventId: 91,
+    });
   });
 
   it("prepares a new Codex turn by prepending systemPrompt into the prompt body", async () => {
@@ -148,6 +155,7 @@ describe("TaskTurnInputBuilder", () => {
         {
           text: "첨부 확인",
           user: "u",
+          timelineEventId: 92,
           context: [{ key: "prior", label: "Prior context", content: "remember this" }],
           attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
         },
@@ -172,6 +180,10 @@ describe("TaskTurnInputBuilder", () => {
     expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
     expect(input.systemPrompt).toBeUndefined();
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
+    expect(input.summaryInput).toEqual({
+      userText: "첨부 확인",
+      turnStartEventId: 92,
+    });
     expect(input.prompt).toContain("<prior>");
     expect(input.prompt).toContain("remember this");
     expect(input.prompt).toContain(

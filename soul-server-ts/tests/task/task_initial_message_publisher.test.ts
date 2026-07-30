@@ -72,7 +72,7 @@ describe("TaskInitialMessagePublisher", () => {
       }),
     });
 
-    await publisher.publishInitialMessages(task, {
+    const userMessageEventId = await publisher.publishInitialMessages(task, {
       effectiveSystemPrompt: "system prompt",
       combinedContextItems: [{ key: "atom_context", label: "atom", content: "# tree" }],
       assembledPrompt: "사용자 요청",
@@ -98,6 +98,7 @@ describe("TaskInitialMessagePublisher", () => {
       _event_id: 11,
     });
     expect(task.lastEventId).toBe(11);
+    expect(userMessageEventId).toBe(11);
     expect(emitEventEnvelope.mock.calls.map((c) => (c[1] as { type: string }).type)).toEqual([
       "system_message",
       "user_message",
@@ -230,9 +231,10 @@ describe("TaskInitialMessagePublisher", () => {
       handleSideEffects: vi.fn().mockRejectedValue(new Error("side effect down")),
     });
 
-    await publisher.publishInitialMessages(task);
+    const userMessageEventId = await publisher.publishInitialMessages(task);
 
     expect(task.lastEventId).toBe(3);
+    expect(userMessageEventId).toBeUndefined();
     expect(persistEvent).toHaveBeenCalledWith(
       "sess-initial",
       expect.not.objectContaining({ _event_id: expect.anything() }),

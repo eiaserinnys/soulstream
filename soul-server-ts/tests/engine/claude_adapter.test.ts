@@ -190,6 +190,9 @@ describe("ClaudeEngineAdapter options parity", () => {
         LANG: "C.UTF-8",
         SHELL: "/bin/bash",
         LOGNAME: "soul",
+        ANTHROPIC_API_KEY: "must-not-leak",
+        OPENAI_API_KEY: "must-not-leak",
+        TURN_SUMMARY_OPENAI_KEY: "must-not-leak",
         [CLAUDE_OAUTH_TOKEN_ENV]: "env-token",
       },
     });
@@ -204,6 +207,9 @@ describe("ClaudeEngineAdapter options parity", () => {
       [CLAUDE_OAUTH_TOKEN_ENV]: "env-token",
       [CLAUDE_PROMPT_SUGGESTION_ENV]: "1",
     });
+    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(env).not.toHaveProperty("TURN_SUMMARY_OPENAI_KEY");
   });
 
   it("부모 process env의 prompt suggestion 명시값을 보존한다", () => {
@@ -230,6 +236,9 @@ describe("ClaudeEngineAdapter options parity", () => {
       extraEnv: {
         [CLAUDE_OAUTH_TOKEN_ENV]: "task-token",
         [CLAUDE_PROMPT_SUGGESTION_ENV]: "0",
+        ANTHROPIC_API_KEY: "task-must-not-leak",
+        OPENAI_API_KEY: "task-must-not-leak",
+        TURN_SUMMARY_OPENAI_KEY: "task-must-not-leak",
         OMITTED: undefined,
       },
     });
@@ -241,10 +250,17 @@ describe("ClaudeEngineAdapter options parity", () => {
       [CLAUDE_PROMPT_SUGGESTION_ENV]: "0",
     });
     expect(env).not.toHaveProperty("OMITTED");
+    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(env).not.toHaveProperty("TURN_SUMMARY_OPENAI_KEY");
   });
 
-  it("processEnv와 extraEnv가 모두 없으면 SDK 기본 env 동작을 보존한다", () => {
-    expect(buildClaudeEnvironment()).toBeUndefined();
+  it("processEnv와 extraEnv가 없어도 SDK 암묵 상속 대신 sanitized env를 넘긴다", () => {
+    const env = buildClaudeEnvironment();
+    expect(env).toBeDefined();
+    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(env).not.toHaveProperty("TURN_SUMMARY_OPENAI_KEY");
   });
 
   it("어댑터가 SCRATCH_WORKSPACE_DIR를 extraEnv보다 마지막에 덮어쓴다", async () => {

@@ -76,6 +76,7 @@ export type SSEEventType =
   | "history_sync"
   // LLM 프록시 이벤트
   | "assistant_message"
+  | "turn_summary"
   // 메타데이터 이벤트
   | "metadata_updated"
   // 뷰포트 가상화 이벤트 (Phase 3 viewport API)
@@ -755,6 +756,25 @@ export interface AssistantMessageEvent {
   parent_event_id?: string;
 }
 
+/** 완료된 한 채팅 턴을 비동기로 요약한 durable 캡션 이벤트. */
+export interface TurnSummaryEvent {
+  type: "turn_summary";
+  content: string;
+  turn_start_event_id: number;
+  final_response_event_id: number;
+  parent_event_id: number;
+  model: string;
+  latency_ms: number;
+  attempts: number;
+  usage?: {
+    input_tokens?: number;
+    cached_input_tokens?: number;
+    output_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+  timestamp: number;
+}
+
 /**
  * @deprecated Phase 2-B-1: 백엔드 발신 폐기. 인터페이스는 wire 호환성을 위해 보존.
  *
@@ -833,6 +853,7 @@ export type SoulSSEEvent =
   | InputRequestRespondedEvent
   | HistorySyncEvent
   | AssistantMessageEvent
+  | TurnSummaryEvent
   | AwaySummaryEvent
   | PromptSuggestionEvent
   | SubtreeUpdateSSEEvent;

@@ -45,16 +45,18 @@ describe("publishInterventionSent", () => {
     const persistence = new EventPersistence(db, broadcaster, logger);
     const task = makeTask();
 
+    const message = {
+      text: `${"a".repeat(199)}\ud83dtail`,
+      user: "alice",
+      followupTaskIds: ["internal-runtime-task"],
+    };
     await publishInterventionSent(
       task,
-      {
-        text: `${"a".repeat(199)}\ud83dtail`,
-        user: "alice",
-        followupTaskIds: ["internal-runtime-task"],
-      },
+      message,
       { broadcaster, logger, persistence },
     );
 
+    expect(message.timelineEventId).toBe(42);
     expect(appendEvent).toHaveBeenCalledTimes(1);
     expect(updateLastMessage).toHaveBeenCalledWith("sess-1", {
       type: "intervention_sent",

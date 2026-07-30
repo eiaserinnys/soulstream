@@ -21,6 +21,10 @@ export interface TaskTurnInput {
   systemPrompt?: string;
   inputUuid?: string;
   intervention?: InterventionMessage;
+  summaryInput?: {
+    userText: string;
+    turnStartEventId: number;
+  };
 }
 
 export interface TaskTurnInputBuilderDeps {
@@ -30,7 +34,10 @@ export interface TaskTurnInputBuilderDeps {
 }
 
 export interface TaskInitialMessagePublisherPort {
-  publishInitialMessages(task: Task, ctx?: PreparedContext): Promise<void>;
+  publishInitialMessages(
+    task: Task,
+    ctx?: PreparedContext,
+  ): Promise<number | undefined>;
 }
 
 export class TaskTurnInputBuilder {
@@ -43,10 +50,21 @@ export class TaskTurnInputBuilder {
     }
 
     const ctx = await this.buildContext(task, agent);
-    await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
+    const turnStartEventId =
+      await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
     this.recordInitialContextInjection(task);
 
-    return this.prepareNewTaskTurnInput(task, agent, ctx);
+    return {
+      ...this.prepareNewTaskTurnInput(task, agent, ctx),
+      ...(turnStartEventId !== undefined
+        ? {
+            summaryInput: {
+              userText: task.prompt,
+              turnStartEventId,
+            },
+          }
+        : {}),
+    };
   }
 
   async prepareFollowupTurnInput(
@@ -87,6 +105,14 @@ export class TaskTurnInputBuilder {
         ? { inputUuid: buildDeliveryInputUuid(intervention.deliveryId) }
         : {}),
       intervention,
+      ...(intervention.timelineEventId !== undefined
+        ? {
+            summaryInput: {
+              userText: intervention.text,
+              turnStartEventId: intervention.timelineEventId,
+            },
+          }
+        : {}),
     };
   }
 

@@ -38,6 +38,7 @@ import type {
   AssistantMessageEvent,
   AssistantErrorEvent,
   AwaySummaryEvent,
+  TurnSummaryEvent,
   ToolApprovalNodeDef,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
@@ -346,6 +347,20 @@ export function createNodeFromEvent(
       });
     }
 
+    case "turn_summary": {
+      const e = event as TurnSummaryEvent;
+      return makeNode(`turn-summary-${eventId}`, "turn_summary", e.content, {
+        completed: true,
+        turnStartEventId: e.turn_start_event_id,
+        finalResponseEventId: e.final_response_event_id,
+        model: e.model,
+        latencyMs: e.latency_ms,
+        attempts: e.attempts,
+        usage: e.usage,
+        timestamp: e.timestamp,
+      });
+    }
+
     case "away_summary": {
       const e = event as AwaySummaryEvent;
       return makeNode(`away-summary-${eventId}`, "away_summary", e.content, {
@@ -380,6 +395,7 @@ export function createNodeFromEvent(
 
 export function applyFinalAssistantMessageToLiveText(
   event: SoulSSEEvent,
+  eventId: number,
   ctx: ProcessingContext,
 ): boolean {
   if (event.type !== "assistant_message") return false;
@@ -395,6 +411,7 @@ export function applyFinalAssistantMessageToLiveText(
   target.content = e.content;
   target.completed = true;
   target.textCompleted = true;
+  target.finalResponseEventId = eventId;
   if (ctx.activeTextTarget === target) ctx.activeTextTarget = null;
   return true;
 }

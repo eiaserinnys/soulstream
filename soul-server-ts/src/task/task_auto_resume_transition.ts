@@ -63,6 +63,9 @@ export class AutoResumeTransition {
       await persistUserMessageEvent(task, userMessageEvent, this.deps, {
         failOnError: true,
       });
+      if (typeof userMessageEvent._event_id === "number") {
+        message.timelineEventId = userMessageEvent._event_id;
+      }
     }
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {

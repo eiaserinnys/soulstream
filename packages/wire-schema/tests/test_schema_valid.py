@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 111개 $defs (wire 53 + SSE event 58)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 113개 $defs (wire 53 + SSE event 60)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -161,10 +161,11 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventHistorySync",
         "SSEEventMetadataUpdated",
         "SSEEventAssistantError",
+        "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 58, (
-        "SSE event $defs 58종 (canonical 57종 + production-gated runbook_updated 읽기 호환)."
+    assert len(sse_types) == 59, (
+        "SSE event $defs 59종 (canonical 58종 + production-gated runbook_updated 읽기 호환)."
     )
 
     expected = wire_types | sse_types
@@ -398,6 +399,7 @@ def test_known_sse_event_types_completeness() -> None:
         "history_sync",
         "metadata_updated",
         "assistant_error",
+        "turn_summary",
         "away_summary",
     }
     assert sse_consts == expected_known, (

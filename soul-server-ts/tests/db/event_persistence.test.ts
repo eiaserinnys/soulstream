@@ -69,6 +69,14 @@ describe("extractSearchableText", () => {
       } as unknown as SSEEventPayload),
     ).toBe("answer text");
   });
+  it("turn_summary content를 검색 대상으로 사용한다", () => {
+    expect(
+      extractSearchableText({
+        type: "turn_summary",
+        content: "요약 검색어",
+      } as unknown as SSEEventPayload),
+    ).toBe("요약 검색어");
+  });
   it("user_message messages 배열에서 텍스트를 추출한다", () => {
     expect(
       extractSearchableText({

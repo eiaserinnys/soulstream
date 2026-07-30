@@ -20,6 +20,7 @@ import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, typ
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
+import { placeTurnSummaries } from "../../lib/turn-summary-placement";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
@@ -91,7 +92,10 @@ export function ChatView({
   const history = useMessageHistoryBuffer(activeSessionKey);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
+  const messages = useMemo(
+    () => placeTurnSummaries(flattenTree(tree)),
+    [tree, treeVersion],
+  );
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   // virtuoso prepend 패턴: START_INDEX - 누적 prepend 개수 (grouped 단위)

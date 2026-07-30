@@ -53,6 +53,8 @@ export interface InterventionMessage {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  /** Durable intervention_sent/user_message event id anchoring this follow-up turn. */
+  timelineEventId?: number;
   /**
    * Internal runtime metadata. It is consumed by TaskExecutor follow-up guards and
    * intentionally not copied into intervention_sent/user_message wire payloads.
@@ -323,6 +325,8 @@ export interface Task {
   /** session_updated wire에 박힘 — 최종 assistant_message 또는 live text 누적 결과. */
   lastAssistantText?: string;
   lastProgressText?: string;
+  /** Current turn's durable final assistant_message event id. Runtime-only. */
+  currentTurnFinalResponseEventId?: number;
 
   /** 정상 완료 시 결과 텍스트, 실패 시 error 메시지. */
   result?: string;

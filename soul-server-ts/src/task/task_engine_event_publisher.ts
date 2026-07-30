@@ -60,6 +60,9 @@ export class TaskEngineEventPublisher {
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
     const persistedEvent = await this.persistEventIfNeeded(task, event, eventType);
+    if (eventType === "assistant_message" && persistedEvent) {
+      task.currentTurnFinalResponseEventId = persistedEvent.eventId;
+    }
     await this.broadcastEvent(task, event, eventType);
     await this.appendSupervisorEventIfNeeded(task, event, eventType, persistedEvent);
     const usageRecorded = persistedEvent?.inserted === false

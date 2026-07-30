@@ -59,6 +59,8 @@ import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
 } from "./task_model_preset.js";
+import { buildCompletedTurnSummaryJob } from "./task_turn_summary.js";
+import type { TurnSummaryQueuePort } from "../turn-summary/turn_summary_queue.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
@@ -111,6 +113,7 @@ export class TaskExecutor {
       "recordConsumed" | "recordTurnStarted"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
+    private readonly turnSummaryQueue?: TurnSummaryQueuePort,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
@@ -249,8 +252,10 @@ export class TaskExecutor {
     let turnSystemPrompt = initialTurnInput.systemPrompt;
     let turnInputUuid = initialTurnInput.inputUuid;
     let currentTurnIntervention = initialTurnInput.intervention;
+    let currentTurnSummaryInput = initialTurnInput.summaryInput;
     try {
       while (true) {
+        task.currentTurnFinalResponseEventId = undefined;
         if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
           this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
             task,
@@ -291,6 +296,14 @@ export class TaskExecutor {
           previousAssistantText,
         );
         if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
+        this.enqueueTurnSummary(task, {
+          prompt: turnPrompt,
+          imageAttachmentPaths: turnImageAttachmentPaths,
+          ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
+          ...(turnInputUuid !== undefined ? { inputUuid: turnInputUuid } : {}),
+          ...(currentTurnIntervention ? { intervention: currentTurnIntervention } : {}),
+          ...(currentTurnSummaryInput ? { summaryInput: currentTurnSummaryInput } : {}),
+        }, followupStalled);
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
@@ -310,12 +323,31 @@ export class TaskExecutor {
         turnSystemPrompt = followupTurnInput.systemPrompt;
         turnInputUuid = followupTurnInput.inputUuid;
         currentTurnIntervention = transition.intervention;
+        currentTurnSummaryInput = followupTurnInput.summaryInput;
       }
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }
       await this._finalize(task);
+    }
+  }
+
+  private enqueueTurnSummary(
+    task: Task,
+    input: Parameters<typeof buildCompletedTurnSummaryJob>[1],
+    followupStalled: boolean,
+  ): void {
+    if (!this.turnSummaryQueue) return;
+    const job = buildCompletedTurnSummaryJob(task, input, followupStalled);
+    if (!job) return;
+    try {
+      this.turnSummaryQueue.enqueue(job);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "Turn summary enqueue failed",
+      );
     }
   }
 

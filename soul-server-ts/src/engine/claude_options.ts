@@ -1,3 +1,5 @@
+import { sanitizeChildProcessEnv } from "./child_process_env.js";
+
 export const CLAUDE_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN";
 export const CLAUDE_PROMPT_SUGGESTION_ENV = "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION";
 
@@ -10,14 +12,7 @@ export function normalizeClaudeModel(model: string | null | undefined): string |
 export function buildClaudeEnvironment(params: {
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   extraEnv?: Record<string, string | undefined>;
-} = {}): Record<string, string> | undefined {
-  const hasExtraEnv = Object.values(params.extraEnv ?? {}).some(
-    (value) => value !== undefined,
-  );
-  if (params.processEnv === undefined && !hasExtraEnv) {
-    return undefined;
-  }
-
+} = {}): Record<string, string> {
   const out: Record<string, string> = {};
   const baseEnv = params.processEnv ?? process.env;
   for (const [key, value] of Object.entries(baseEnv)) {
@@ -33,5 +28,5 @@ export function buildClaudeEnvironment(params: {
     }
   }
 
-  return Object.keys(out).length > 0 ? out : undefined;
+  return sanitizeChildProcessEnv(out);
 }

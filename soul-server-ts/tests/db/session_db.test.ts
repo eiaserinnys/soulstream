@@ -1564,6 +1564,37 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(calls[0].values).toEqual(["s1", 0, 50, null]);
   });
 
+  it("readLatestEvents → 최신 N개를 조회하고 시간 오름차순으로 반환", async () => {
+    const { sql, calls } = createMockSql(() => [
+      {
+        id: 9,
+        session_id: "s1",
+        event_type: "turn_summary",
+        payload: { content: "둘째" },
+        searchable_text: "둘째",
+        created_at: new Date("2026-07-30T00:00:09Z"),
+      },
+      {
+        id: 5,
+        session_id: "s1",
+        event_type: "turn_summary",
+        payload: { content: "첫째" },
+        searchable_text: "첫째",
+        created_at: new Date("2026-07-30T00:00:05Z"),
+      },
+    ]);
+
+    const events = await new SessionDB(sql).readLatestEvents(
+      "s1",
+      5,
+      ["turn_summary"],
+    );
+
+    expect(calls[0].values).toEqual(["s1", ["turn_summary"], 5]);
+    expect(calls[0].fragments.join("?")).toContain("ORDER BY id DESC");
+    expect(events.map((event) => event.id)).toEqual([5, 9]);
+  });
+
   it("readOneEvent → 부재 시 null", async () => {
     const { sql } = createMockSql(() => []);
     expect(await new SessionDB(sql).readOneEvent("s1", 99)).toBeNull();

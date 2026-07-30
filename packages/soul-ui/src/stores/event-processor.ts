@@ -42,6 +42,7 @@ const NEEDS_ROOT = new Set([
   "complete", "error", "result", "compact", "input_request",
   "tool_approval_requested", "agent_updated", "handoff_requested", "handoff_occurred",
   "guardrail_tripwire", "assistant_message", "assistant_error", "away_summary",
+  "turn_summary",
 ]);
 
 /**
@@ -148,7 +149,11 @@ export function processEventSingle(
   }
 
   // 노드 생성/배치/업데이트
-  const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+  const replacedLiveText = applyFinalAssistantMessageToLiveText(
+    event,
+    eventId,
+    ctx,
+  );
   const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
   let updated: boolean;
 
@@ -272,7 +277,11 @@ export function processEventsBatch(
     }
 
     // 노드 생성/배치/업데이트
-    const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+    const replacedLiveText = applyFinalAssistantMessageToLiveText(
+      event,
+      eventId,
+      ctx,
+    );
     const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
     if (replacedLiveText) {
       updated = true;

@@ -24,12 +24,13 @@ import type {
   ToolApprovalNodeDef,
   ContextItem,
   TokenUsage,
+  TurnSummaryNode,
 } from "@shared/types";
 
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool" | "system" | "system_message" | "notification" | "intervention" | "input_request" | "tool_approval" | "away_summary";
+  role: "user" | "assistant" | "tool" | "system" | "system_message" | "notification" | "intervention" | "input_request" | "tool_approval" | "away_summary" | "turn_summary";
   /** 메인 표시 텍스트 */
   content: string;
   timestamp?: number;
@@ -96,6 +97,9 @@ export interface ChatMessage {
   callerInfo?: CallerInfo;
   /** DB 이벤트 ID. 히스토리-라이브 병합 시 dedup 기준. */
   eventId?: number;
+  /** turn_summary 전용: 요약 대상 턴의 시작·최종 응답 event id. */
+  anchorStartEventId?: number;
+  anchorFinalResponseEventId?: number;
   /** session_notification 전용 exactly-once 식별자. */
   deliveryId?: string;
   /** session_notification 전용 전달 결과. */
@@ -172,7 +176,9 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.contextItems === b.contextItems &&
     a.agentInfo === b.agentInfo &&
     a.callerInfo === b.callerInfo &&
-    a.eventId === b.eventId
+    a.eventId === b.eventId &&
+    a.anchorStartEventId === b.anchorStartEventId &&
+    a.anchorFinalResponseEventId === b.anchorFinalResponseEventId
   );
 }
 
@@ -362,7 +368,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         isStreaming: !n.textCompleted,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
+        eventId: n.finalResponseEventId ?? eventId,
       };
     }
 
@@ -475,6 +481,23 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         treeNodeId: n.id,
         treeNodeType: n.type,
         eventId,
+      };
+    }
+
+    case "turn_summary": {
+      const n = node as TurnSummaryNode;
+      return {
+        id: n.id,
+        role: "turn_summary",
+        content: n.content,
+        timestamp: n.timestamp,
+        model: n.model,
+        durationMs: n.latencyMs,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        eventId,
+        anchorStartEventId: n.turnStartEventId,
+        anchorFinalResponseEventId: n.finalResponseEventId,
       };
     }
 

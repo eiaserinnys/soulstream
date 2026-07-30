@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 112개 $defs (wire 53 + SSE event 59). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 113개 $defs (wire 53 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -203,6 +203,7 @@
             { "$ref": "#/$defs/SSEEventSessionNotification" },
             { "$ref": "#/$defs/SSEEventUserMessage" },
             { "$ref": "#/$defs/SSEEventAssistantMessage" },
+            { "$ref": "#/$defs/SSEEventTurnSummary" },
             { "$ref": "#/$defs/SSEEventInputRequest" },
             { "$ref": "#/$defs/SSEEventInputRequestExpired" },
             { "$ref": "#/$defs/SSEEventInputRequestResponded" },
@@ -1420,6 +1421,43 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "assistant_message" } }
+    },
+    "SSEEventTurnSummary": {
+      "type": "object",
+      "description": "SSE: 완료된 채팅 턴의 비동기 요약.",
+      "required": [
+        "type",
+        "content",
+        "turn_start_event_id",
+        "final_response_event_id",
+        "parent_event_id",
+        "model",
+        "latency_ms",
+        "attempts",
+        "timestamp"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "turn_summary" },
+        "content": { "type": "string" },
+        "turn_start_event_id": { "type": "integer", "minimum": 1 },
+        "final_response_event_id": { "type": "integer", "minimum": 1 },
+        "parent_event_id": { "type": "integer", "minimum": 1 },
+        "model": { "type": "string" },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "attempts": { "type": "integer", "minimum": 1 },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "cached_input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "reasoning_output_tokens": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventInputRequest": {
       "type": "object",

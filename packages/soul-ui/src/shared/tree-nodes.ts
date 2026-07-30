@@ -130,6 +130,8 @@ export interface TextNode extends BaseNode {
   type: "text";
   /** text_end 수신 여부 */
   textCompleted?: boolean;
+  /** Durable assistant_message id replacing this transient live text node. */
+  finalResponseEventId?: number;
 }
 
 /** 도구 호출 노드 */
@@ -222,6 +224,22 @@ export interface AssistantMessageNode extends BaseNode {
   usage?: { input_tokens: number; output_tokens: number };
 }
 
+/** 완료된 턴의 앵커 기반 비동기 요약 캡션. */
+export interface TurnSummaryNode extends BaseNode {
+  type: "turn_summary";
+  turnStartEventId: number;
+  finalResponseEventId: number;
+  model: string;
+  latencyMs: number;
+  attempts: number;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cached_input_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+}
+
 /** away_summary (recap) 노드 — 세션 복귀 시 요약 */
 export interface AwaySummaryNode extends BaseNode {
   type: "away_summary";
@@ -252,5 +270,6 @@ export type EventTreeNode =
   | InputRequestNodeDef
   | ToolApprovalNodeDef
   | AssistantMessageNode
+  | TurnSummaryNode
   | AssistantErrorNode
   | AwaySummaryNode;

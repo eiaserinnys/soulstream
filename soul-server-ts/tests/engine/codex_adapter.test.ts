@@ -270,7 +270,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
     expect(passedEnv.HOME).toBe("/home/test");
   });
 
-  it("비어있지 않은 OPENAI_API_KEY는 보존된다 (운영자 의도 존중)", async () => {
+  it("모든 billing-switch magic key는 값과 무관하게 제거된다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     new CodexEngineAdapter(
       {
@@ -278,12 +278,16 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
         processEnv: {
           HOME: "/home/test",
           OPENAI_API_KEY: "sk-real-key",
+          ANTHROPIC_API_KEY: "anthropic-real-key",
+          TURN_SUMMARY_OPENAI_KEY: "summary-real-key",
         },
       },
       silentLogger(),
     );
     const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
-    expect(passedEnv.OPENAI_API_KEY).toBe("sk-real-key");
+    expect(passedEnv).not.toHaveProperty("OPENAI_API_KEY");
+    expect(passedEnv).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(passedEnv).not.toHaveProperty("TURN_SUMMARY_OPENAI_KEY");
   });
 
   it("undefined 값은 SDK env에 포함되지 않는다 (Record<string,string> 타입 정합)", async () => {
