@@ -88,7 +88,7 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
-        migration_count: 51,
+        migration_count: 52,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -354,23 +354,31 @@ describe("apply-schema.mjs", () => {
             ordinal: 51,
             applied_kind: "migration",
           },
+          {
+            migration_id: "051_session_digests.sql",
+            ordinal: 52,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
           deliveries: string | null;
           background_tasks: string | null;
           relation_consumptions: string | null;
+          session_digests: string | null;
         }>>`
           SELECT
             to_regclass('session_deliveries')::text AS deliveries,
             to_regclass('claude_background_tasks')::text AS background_tasks,
             to_regclass('session_delivery_relation_consumptions')::text
-              AS relation_consumptions
+              AS relation_consumptions,
+            to_regclass('session_digests')::text AS session_digests
         `;
         expect(objects[0]).toEqual({
           deliveries: "session_deliveries",
           background_tasks: "claude_background_tasks",
           relation_consumptions: "session_delivery_relation_consumptions",
+          session_digests: "session_digests",
         });
 
         const repeated = runMigration(cwd, "apply");
@@ -380,7 +388,7 @@ describe("apply-schema.mjs", () => {
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":51');
+        expect(verified.stdout).toContain('"ledger_count":52');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });
@@ -612,6 +620,7 @@ async function resetToPreRuntimeMigrationState(
     DROP TABLE IF EXISTS claude_background_tasks CASCADE;
     DROP TABLE IF EXISTS session_delivery_notification_outbox CASCADE;
     DROP TABLE IF EXISTS session_deliveries CASCADE;
+    DROP TABLE IF EXISTS session_digests CASCADE;
   `);
 }
 
