@@ -13,6 +13,7 @@ import { STATUS_CONFIG } from "./SessionItem";
 import { cn } from "../lib/cn";
 import { useGlassSurface } from "./LiquidGlassProvider";
 import { SessionModelPresetBadge } from "./SessionModelPresetBadge";
+import { SessionStoryDisclosure } from "./SessionStoryDisclosure";
 
 export function MobileChatHeader({
   onBack,
@@ -70,6 +71,9 @@ export function MobileChatHeader({
             <SessionModelPresetBadge className="ml-1" session={activeSession} />
           </div>
         </div>
+        {activeSessionKey ? (
+          <SessionStoryDisclosure sessionId={activeSessionKey} />
+        ) : null}
       </div>
     </div>
   );

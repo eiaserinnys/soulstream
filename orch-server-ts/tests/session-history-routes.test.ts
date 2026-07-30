@@ -32,6 +32,7 @@ describe("session history/read-only route harness", () => {
       "/api/sessions/sess-1/messages",
       "/api/sessions/sess-1/timeline",
       "/api/sessions/sess-1/timeline/tool%3A1/trace",
+      "/api/sessions/sess-1/story",
       "/api/sessions/sess-1/events",
     ]) {
       expect(await app.inject({ method: "GET", url })).toMatchObject({
@@ -86,6 +87,7 @@ describe("session history/read-only route harness", () => {
       "GET /api/sessions/:session_id/messages": true,
       "GET /api/sessions/:session_id/timeline": true,
       "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
+      "GET /api/sessions/:session_id/story": true,
       "GET /api/sessions/:session_id/events": true,
     });
 
@@ -147,6 +149,47 @@ describe("session history/read-only route harness", () => {
     expect(provider.readViewport).toHaveBeenCalledWith("sess-1", 1, 50);
     expect(provider.readLastEventId).not.toHaveBeenCalled();
     expect(provider.streamEventsRaw).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("returns the exact get_session_story response contract", async () => {
+    const story = {
+      highlight: "핵심 결정과 현재 상태입니다.",
+      narrative: "[T1-T4] 첫 번째 줄거리입니다.",
+      unfolded_turn_summaries: [{
+        event_id: 45,
+        turn_number: 5,
+        content: "최근 턴 요약",
+        turn_start_event_id: 40,
+        final_response_event_id: 44,
+        created_at: "2026-07-30T17:00:00.000Z",
+      }],
+      narrative_through_event_id: 39,
+      fold_count: 2,
+      updated_at: "2026-07-30T16:59:00.000Z",
+    };
+    const provider = createProvider({
+      readStory: vi.fn(async () => story),
+    });
+    const { app } = createHarness(provider);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess%2F1/story",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(Object.keys(response.json())).toEqual([
+      "highlight",
+      "narrative",
+      "unfolded_turn_summaries",
+      "narrative_through_event_id",
+      "fold_count",
+      "updated_at",
+    ]);
+    expect(response.json()).toEqual(story);
+    expect(provider.readStory).toHaveBeenCalledWith("sess/1");
 
     await app.close();
   });
@@ -263,6 +306,7 @@ describe("session history/read-only route harness", () => {
       readMessages: vi.fn(async () => page([], null)),
       readTimeline: vi.fn(async () => page([], null)),
       readTimelineTrace: vi.fn(async () => ({ trace: [] })),
+      readStory: vi.fn(async () => emptyStory()),
       readLastEventId: vi.fn(async () => 9),
     });
     const accessProvider: SessionResourceAccessProvider = {
@@ -276,9 +320,10 @@ describe("session history/read-only route harness", () => {
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/messages" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline/tool%3A1/trace" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/story" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/events" });
 
-    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(5);
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(6);
     expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "sess-1" }),
     );
@@ -286,6 +331,7 @@ describe("session history/read-only route harness", () => {
     expect(provider.readMessages).toHaveBeenCalled();
     expect(provider.readTimeline).toHaveBeenCalled();
     expect(provider.readTimelineTrace).toHaveBeenCalled();
+    expect(provider.readStory).toHaveBeenCalled();
     expect(provider.readLastEventId).toHaveBeenCalled();
 
     await app.close();
@@ -585,6 +631,7 @@ function createProvider(
     readMessages: vi.fn(async () => page([], null)),
     readTimeline: vi.fn(async () => page([], null)),
     readTimelineTrace: vi.fn(async () => null),
+    readStory: vi.fn(async () => emptyStory()),
     readLastEventId: vi.fn(async () => 0),
     streamEventsRaw: vi.fn(async function* () {}),
     ...overrides,
@@ -593,4 +640,15 @@ function createProvider(
 
 function page(messages: unknown[], nextCursor: string | null): [unknown[], string | null] {
   return [messages, nextCursor];
+}
+
+function emptyStory() {
+  return {
+    highlight: null,
+    narrative: null,
+    unfolded_turn_summaries: [],
+    narrative_through_event_id: null,
+    fold_count: 0,
+    updated_at: null,
+  };
 }

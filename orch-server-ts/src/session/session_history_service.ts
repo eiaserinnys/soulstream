@@ -1,3 +1,5 @@
+import type { SessionStoryResponse } from "./session_story_read_service.js";
+
 export type SessionHistoryRawEvent = {
   eventId: number;
   eventType: string;
@@ -17,6 +19,7 @@ export type SessionHistoryProvider = {
     limit: number,
   ) => Promise<[unknown[], string | null]>;
   readTimelineTrace: (sessionId: string, timelineId: string) => Promise<unknown | null | undefined>;
+  readStory: (sessionId: string) => Promise<SessionStoryResponse>;
   readLastEventId: (sessionId: string) => Promise<number>;
   streamEventsRaw: (
     sessionId: string,
@@ -66,6 +69,10 @@ export class SessionHistoryReadService {
 
   readTimelineTrace(sessionId: string, timelineId: string): Promise<unknown | null | undefined> {
     return this.provider.readTimelineTrace(sessionId, timelineId);
+  }
+
+  readStory(sessionId: string): Promise<SessionStoryResponse> {
+    return this.provider.readStory(sessionId);
   }
 
   readLastEventId(sessionId: string): Promise<number> {

@@ -2,8 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
-import { flushSync } from "react-dom";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,7 +77,7 @@ function renderBanner(node: EventTreeNode) {
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  flushSync(() => {
+  act(() => {
     root.render(createElement(AskQuestionBanner));
   });
 
@@ -99,7 +98,7 @@ describe("AskQuestionBanner", () => {
 
   afterEach(() => {
     if (root) {
-      flushSync(() => {
+      act(() => {
         root?.unmount();
       });
     }
@@ -213,7 +212,7 @@ describe("AskQuestionBanner", () => {
       document.body.querySelectorAll<HTMLButtonElement>("button"),
     ).find((candidate) => candidate.textContent?.includes("같이 고쳐서"));
     expect(button).toBeTruthy();
-    flushSync(() => {
+    await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 

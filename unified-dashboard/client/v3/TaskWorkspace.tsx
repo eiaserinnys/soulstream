@@ -4,6 +4,7 @@ import {
   DashboardIconCap,
   MarkdownDocumentPanel,
   SessionModelPresetBadge,
+  SessionStoryDisclosure,
   useDashboardStore,
   useGlassSurface,
   type CatalogFolder,
@@ -210,6 +211,9 @@ export function TaskWorkspace({
               <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "세션"}</strong></div>
               <SessionModelPresetBadge session={activeSession} />
               <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
+              {activeSession ? (
+                <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
+              ) : null}
               <DashboardIconCap label="채팅 닫기" onClick={onCloseWorkspace}>
                 <X className="h-4 w-4" aria-hidden="true" />
               </DashboardIconCap>
@@ -312,6 +316,9 @@ export function TaskWorkspace({
                 )}
                 {inspectorKind !== "document" ? <SessionModelPresetBadge session={activeSession} /> : null}
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
+                {inspectorKind !== "document" && activeSession ? (
+                  <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
+                ) : null}
               </header>
               {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               {inspectorKind === "document" ? (

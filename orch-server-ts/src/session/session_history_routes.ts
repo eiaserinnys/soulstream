@@ -40,6 +40,7 @@ export const sessionHistoryRouteAuthRequirements = {
   "GET /api/sessions/:session_id/messages": true,
   "GET /api/sessions/:session_id/timeline": true,
   "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
+  "GET /api/sessions/:session_id/story": true,
   "GET /api/sessions/:session_id/events": true,
 } as const;
 
@@ -121,6 +122,11 @@ export function registerSessionHistoryRoutes(
       });
     }
     return trace;
+  });
+
+  app.get("/api/sessions/:session_id/story", async (request, reply) => {
+    if (!(await ensureSessionAccess(options, request, reply))) return;
+    return service.readStory(sessionParams(request).session_id);
   });
 
   app.get("/api/sessions/:session_id/events", async (request, reply) =>

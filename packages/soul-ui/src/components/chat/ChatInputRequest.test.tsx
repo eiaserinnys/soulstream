@@ -2,8 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
-import { flushSync } from "react-dom";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -59,7 +58,7 @@ describe("ChatInputRequest", () => {
   });
 
   afterEach(() => {
-    flushSync(() => {
+    act(() => {
       root.unmount();
     });
     container.remove();
@@ -68,7 +67,7 @@ describe("ChatInputRequest", () => {
   });
 
   function render(message = makeMessage()) {
-    flushSync(() => {
+    act(() => {
       root.render(createElement(ChatInputRequest, { msg: message, sessionId: "session-1" }));
     });
   }
@@ -76,10 +75,9 @@ describe("ChatInputRequest", () => {
   it("submits the selected option as an AskUserQuestion response", async () => {
     render();
 
-    flushSync(() => {
+    await act(async () => {
       findButton(container, "진행").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    await Promise.resolve();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/respond", {
       method: "POST",
@@ -100,15 +98,14 @@ describe("ChatInputRequest", () => {
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     expect(valueSetter).toBeTruthy();
 
-    flushSync(() => {
+    act(() => {
       valueSetter!.call(input, "직접 답변");
       input!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    flushSync(() => {
+    await act(async () => {
       findButton(container, "전송").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    await Promise.resolve();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/respond", {
       method: "POST",
@@ -148,7 +145,7 @@ describe("ChatInputRequest", () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
     render();
 
-    flushSync(() => {
+    await act(async () => {
       findButton(container, "진행").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
