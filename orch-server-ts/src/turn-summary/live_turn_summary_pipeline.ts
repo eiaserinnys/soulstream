@@ -4,6 +4,10 @@ import { warnForBlockedChildProcessEnvKeys } from
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type { RuntimeSessionEventHub } from
   "../runtime/session_event_hub.js";
+import type {
+  InMemorySseReplayBroadcaster,
+  SessionStreamEvent,
+} from "../sse/replay_broadcaster.js";
 import { resolveCodexCliPath } from "./codex_cli_path.js";
 import { CodexExecTurnSummarizer } from
   "./codex_exec_turn_summarizer.js";
@@ -15,6 +19,8 @@ import { TurnSummaryPipeline } from "./turn_summary_pipeline.js";
 import { createTurnSummaryProviderRouter } from
   "./turn_summary_provider_router.js";
 import { TurnSummaryRepository } from "./turn_summary_repository.js";
+import { SessionStoryFoldService } from "./session_story_fold_service.js";
+import { SessionStoryRepository } from "./session_story_repository.js";
 
 export type LiveTurnSummaryPipeline = Pick<
   TurnSummaryPipeline,
@@ -33,6 +39,10 @@ export function createLiveTurnSummaryPipeline(options: {
   readonly configPath: string;
   readonly sqlResolver: LiveDbSqlResolver;
   readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
+  readonly sessionBroadcaster: Pick<
+    InMemorySseReplayBroadcaster<SessionStreamEvent>,
+    "append"
+  >;
   readonly logger: TurnSummaryLogger;
   readonly warn: (message: string) => void;
   readonly overrides?: LiveTurnSummaryProductionOverrides;
@@ -54,21 +64,30 @@ export function createLiveTurnSummaryPipeline(options: {
       "Codex turn-summary provider disabled: CLI path was not resolved from CODEX_CLI_PATH, PATH, or HOME",
     );
   }
+  const codexSummarizer = new CodexExecTurnSummarizer({
+    ...(codexPath === undefined ? {} : { codexPath }),
+    processEnv,
+  });
   const summarizer = createTurnSummaryProviderRouter({
-    codex: new CodexExecTurnSummarizer({
-      ...(codexPath === undefined ? {} : { codexPath }),
-      processEnv,
-    }),
+    codex: codexSummarizer,
     ...(options.config.turn_summary_openai_key
       ? { openAiApiKey: options.config.turn_summary_openai_key }
       : {}),
     info: (message) => options.logger.info?.(message),
+  });
+  const storyFolder = new SessionStoryFoldService({
+    repository: new SessionStoryRepository(options.sqlResolver),
+    configService,
+    generator: codexSummarizer,
+    logger: options.logger,
   });
   return new TurnSummaryPipeline({
     repository: new TurnSummaryRepository(options.sqlResolver),
     configService,
     summarizer,
     eventHub: options.eventHub,
+    sessionBroadcaster: options.sessionBroadcaster,
+    storyFolder,
     logger: options.logger,
   });
 }

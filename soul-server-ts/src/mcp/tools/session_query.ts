@@ -181,6 +181,44 @@ export function registerSessionQueryTools(
   );
 
   server.registerTool(
+    "get_session_story",
+    {
+      description:
+        "접힌 세션 줄거리와 하이라이트, 아직 접히지 않은 턴 요약을 시간순으로 조회한다.",
+      inputSchema: {
+        session_id: z.string(),
+      },
+    },
+    async ({ session_id }) => {
+      const session = await runtime.db.getSession(session_id);
+      if (!session) {
+        return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
+      }
+      const story = await runtime.db.getSessionStory(session_id);
+      const result = jsonResult({
+        highlight: story.highlight,
+        narrative: story.narrative,
+        unfolded_turn_summaries: story.unfoldedTurnSummaries.map((summary) => ({
+          event_id: summary.eventId,
+          turn_number: summary.turnNumber,
+          content: summary.content,
+          turn_start_event_id: summary.turnStartEventId,
+          final_response_event_id: summary.finalResponseEventId,
+          created_at: summary.createdAt.toISOString(),
+        })),
+        narrative_through_event_id: story.narrativeThroughEventId,
+        fold_count: story.foldCount,
+        updated_at: story.updatedAt?.toISOString() ?? null,
+      });
+      return consumptionBoundary.commit(
+        "get_session_story",
+        result,
+        [{ session, reflectedRevision: session.last_event_id }],
+      );
+    },
+  );
+
+  server.registerTool(
     "download_session_history",
     {
       description:

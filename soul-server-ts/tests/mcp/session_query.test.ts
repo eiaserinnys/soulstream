@@ -187,6 +187,99 @@ describe("get_session_summary child completion", () => {
   });
 });
 
+describe("get_session_story", () => {
+  it("returns separated highlight and narrative with unfolded summaries in wire shape", async () => {
+    const runtime = makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({
+          session_id: "sess-1",
+          status: "running",
+          last_event_id: 42,
+        })),
+        getSessionStory: vi.fn(async () => ({
+          highlight: "핵심 다섯 문장.",
+          narrative: "[T1] 시작했다.",
+          unfoldedTurnSummaries: [{
+            eventId: 42,
+            turnNumber: 6,
+            content: "아직 접히지 않은 턴",
+            turnStartEventId: 40,
+            finalResponseEventId: 41,
+            createdAt: new Date("2026-07-31T00:00:00.000Z"),
+          }],
+          narrativeThroughEventId: 35,
+          foldCount: 1,
+          updatedAt: new Date("2026-07-31T00:01:00.000Z"),
+        })),
+      },
+    });
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "get_session_story",
+      arguments: { session_id: "sess-1" },
+    });
+
+    expect(result.structuredContent).toEqual({
+      highlight: "핵심 다섯 문장.",
+      narrative: "[T1] 시작했다.",
+      unfolded_turn_summaries: [{
+        event_id: 42,
+        turn_number: 6,
+        content: "아직 접히지 않은 턴",
+        turn_start_event_id: 40,
+        final_response_event_id: 41,
+        created_at: "2026-07-31T00:00:00.000Z",
+      }],
+      narrative_through_event_id: 35,
+      fold_count: 1,
+      updated_at: "2026-07-31T00:01:00.000Z",
+    });
+  });
+
+  it("preserves the no-digest fallback without inventing narrative fields", async () => {
+    const runtime = makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({
+          session_id: "sess-1",
+          status: "running",
+          last_event_id: 8,
+        })),
+        getSessionStory: vi.fn(async () => ({
+          highlight: null,
+          narrative: null,
+          unfoldedTurnSummaries: [{
+            eventId: 8,
+            turnNumber: 1,
+            content: "첫 턴",
+            turnStartEventId: 2,
+            finalResponseEventId: 7,
+            createdAt: new Date("2026-07-31T00:00:00.000Z"),
+          }],
+          narrativeThroughEventId: null,
+          foldCount: 0,
+          updatedAt: null,
+        })),
+      },
+    });
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "get_session_story",
+      arguments: { session_id: "sess-1" },
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      highlight: null,
+      narrative: null,
+      narrative_through_event_id: null,
+      fold_count: 0,
+      updated_at: null,
+      unfolded_turn_summaries: [{ event_id: 8, turn_number: 1 }],
+    });
+  });
+});
+
 describe("search_session_history", () => {
   it("describes the explicit event_types needed to search tool events", async () => {
     const client = await createClient(makeRuntime({}));

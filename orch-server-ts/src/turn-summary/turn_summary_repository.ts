@@ -38,6 +38,19 @@ export interface TurnSummaryTurn {
 export interface TurnSummaryAppendResult {
   readonly inserted: boolean;
   readonly eventId: number;
+  readonly previewUpdate?: TurnSummaryPreviewUpdate;
+}
+
+export interface TurnSummaryPreviewUpdate {
+  readonly status: string | null;
+  readonly updatedAt: string;
+  readonly lastMessage: {
+    readonly type: "turn_summary";
+    readonly preview: string;
+    readonly timestamp: string;
+  };
+  readonly lastEventId: number;
+  readonly lastReadEventId: number | null;
 }
 
 export interface TurnSummaryRepositoryPort {
@@ -173,21 +186,69 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
     const sql = await this.sqlResolver.resolveSql();
     const existing = await findEventIdByDedupe(sql, sessionId, dedupeKey);
     if (existing !== null) return { inserted: false, eventId: existing };
+    const createdAt = new Date();
+    const timestamp = createdAt.toISOString();
+    const lastMessage = {
+      type: "turn_summary" as const,
+      preview: truncateCodepoints(stringValue(payload.content) ?? "", 200),
+      timestamp,
+    };
     const rows = await sql`
-      SELECT event_append(
-        ${sessionId},
-        'turn_summary',
-        ${JSON.stringify(payload)},
-        ${stringValue(payload.content) ?? ""},
-        ${new Date()},
-        ${dedupeKey}
-      ) AS event_append
+      WITH appended AS (
+        SELECT event_append(
+          ${sessionId},
+          'turn_summary',
+          ${JSON.stringify(payload)},
+          ${stringValue(payload.content) ?? ""},
+          ${createdAt},
+          ${dedupeKey}
+        ) AS event_id
+      ),
+      preview_update AS (
+        UPDATE sessions AS session
+        SET
+          last_message = ${JSON.stringify(lastMessage)}::jsonb,
+          updated_at = ${createdAt}
+        FROM appended
+        WHERE session.session_id = ${sessionId}
+          AND session.last_event_id = appended.event_id
+        RETURNING
+          session.status,
+          session.updated_at,
+          session.last_message,
+          session.last_event_id,
+          session.last_read_event_id
+      )
+      SELECT
+        appended.event_id,
+        preview_update.status,
+        preview_update.updated_at,
+        preview_update.last_message,
+        preview_update.last_event_id,
+        preview_update.last_read_event_id
+      FROM appended
+      LEFT JOIN preview_update ON TRUE
     `;
-    const eventId = numberValue(rows[0]?.event_append);
+    const row = rows[0];
+    const eventId = numberValue(row?.event_id);
     if (eventId === null) {
       throw new Error("event_append returned no event id for turn summary");
     }
-    return { inserted: true, eventId };
+    const previewEventId = numberValue(row?.last_event_id);
+    if (previewEventId !== eventId) {
+      return { inserted: true, eventId };
+    }
+    return {
+      inserted: true,
+      eventId,
+      previewUpdate: {
+        status: stringValue(row?.status),
+        updatedAt: dateValue(row?.updated_at).toISOString(),
+        lastMessage,
+        lastEventId: eventId,
+        lastReadEventId: numberValue(row?.last_read_event_id),
+      },
+    };
   }
 
   async loadGapEvents(
@@ -325,6 +386,13 @@ function nullableString(value: unknown): string | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function truncateCodepoints(value: string, limit: number): string {
+  const points = Array.from(value);
+  return points.length <= limit
+    ? value
+    : `${points.slice(0, limit).join("")}…`;
 }
 
 function numberValue(value: unknown): number | null {
