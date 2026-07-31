@@ -35,6 +35,13 @@ function createProvider(overrides: Partial<NodeAgentProfileProvider> = {}) {
           name: "Alpha",
           portrait_url: "/api/agents/agent-a/portrait",
           max_turns: 8,
+          default_preset: "claude-opus",
+          aliases: [
+            {
+              id: "alpha-opus",
+              default_preset: "claude-opus",
+            },
+          ],
         },
         "agent-b": {
           name: "Beta",
@@ -185,6 +192,7 @@ describe("node agent/profile route harness", () => {
           portraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
           max_turns: 8,
           backend: "claude",
+          default_preset: "claude-opus",
         },
         {
           id: "agent-b",
@@ -195,6 +203,7 @@ describe("node agent/profile route harness", () => {
         },
       ],
     });
+    expect(response.json().agents[0]).not.toHaveProperty("aliases");
 
     const missing = await app.inject({
       method: "GET",

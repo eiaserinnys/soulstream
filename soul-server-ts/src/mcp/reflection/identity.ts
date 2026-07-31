@@ -82,6 +82,7 @@ export const SELF_IDENTITY = {
       tools: [
         "list_nodes",
         "list_node_agents",
+        "list_node_model_presets",
         "reflect_cluster_brief",
         "create_remote_agent_session",
         "plan_remote_agent_profile_update",
