@@ -487,7 +487,7 @@ export function MarkdownDocumentPanel() {
             onClick={enterEditMode}
             data-testid="markdown-read-body"
           >
-            <MarkdownContent content={body || "Empty document"} />
+            <MarkdownContent content={body || "Empty document"} codeBlockLayout="document" />
           </div>
         )}
       </div>
