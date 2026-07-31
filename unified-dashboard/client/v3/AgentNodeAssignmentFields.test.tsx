@@ -147,6 +147,32 @@ describe("AgentNodeAssignmentFields", () => {
     expect(container.textContent).not.toContain("실행");
   });
 
+  it("marks the explicit compact desktop row layout without changing field order", () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
+      String(input).includes("model-presets") ? presetResponse([]) : response([])
+    ));
+
+    flushSync(() => {
+      root.render(createElement(AgentNodeAssignmentFields, {
+        nodeId: "node-a",
+        agentId: "",
+        modelPreset: "",
+        presentation: "session",
+        layout: "compact-row",
+        onNodeIdChange: vi.fn(),
+        onAgentIdChange: vi.fn(),
+        onModelPresetChange: vi.fn(),
+      }));
+    });
+
+    const assignment = container.querySelector(".v3-succession-assignment");
+    expect(assignment?.classList.contains("v3-succession-assignment--compact-row")).toBe(true);
+    const labels = [...container.querySelectorAll("label")].map((label) =>
+      label.firstChild?.textContent?.trim(),
+    );
+    expect(labels).toEqual(["노드", "에이전트", "모델"]);
+  });
+
   it("shows unavailable presets as disabled and keeps usage warnings selectable", async () => {
     const onValidityChange = vi.fn();
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>

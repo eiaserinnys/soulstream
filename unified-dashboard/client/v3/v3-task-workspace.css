@@ -412,36 +412,36 @@
 }
 
 .v3-task-default-summary {
-  display: flex;
+  display: grid;
   width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  border: 0;
-  border-radius: 8px;
-  padding: 8px 2px;
+  padding: 6px 2px;
   color: var(--foreground);
-  background: transparent;
   font: inherit;
   font-size: var(--font-size-xs);
   font-weight: 730;
-  text-align: left;
-  cursor: pointer;
 }
 
-.v3-task-default-summary:hover {
-  background: color-mix(in srgb, var(--muted) 64%, transparent);
+.v3-task-default-values {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 
-.v3-task-default-summary:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+.v3-task-default-values > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.v3-task-default-summary small {
-  margin-left: auto;
+.v3-task-default-edit.dashboard-icon-cap {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
   color: var(--muted-foreground);
-  font-size: inherit;
-  font-weight: 600;
 }
 
 .v3-task-default-editor {

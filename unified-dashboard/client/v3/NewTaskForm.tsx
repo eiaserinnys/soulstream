@@ -180,6 +180,7 @@ export function NewTaskForm({
                 nodeId={defaultNodeId}
                 modelPreset={defaultModelPreset}
                 presentation="session"
+                layout="compact-row"
                 disabled={busy}
                 onAgentIdChange={setDefaultAgentId}
                 onNodeIdChange={updateDefaultNodeId}

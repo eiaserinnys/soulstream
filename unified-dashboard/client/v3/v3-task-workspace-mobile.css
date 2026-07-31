@@ -1,4 +1,8 @@
 @media (max-width: 760px) {
+  .v3-task-default-values {
+    flex-wrap: wrap;
+  }
+
   .v3-workspace-scrim {
     inset: 0 0 58px;
     display: block;

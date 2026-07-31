@@ -14,6 +14,7 @@ export function AgentNodeAssignmentFields({
   preferredAgentId,
   preferredNodeId,
   presentation = "execution-defaults",
+  layout = "default",
   fallbackToAvailable = false,
   disabled = false,
   onAgentIdChange,
@@ -30,6 +31,7 @@ export function AgentNodeAssignmentFields({
   preferredAgentId?: string | null;
   preferredNodeId?: string | null;
   presentation?: "execution-defaults" | "session";
+  layout?: "default" | "compact-row";
   fallbackToAvailable?: boolean;
   disabled?: boolean;
   onAgentIdChange(value: string): void;
@@ -153,7 +155,9 @@ export function AgentNodeAssignmentFields({
   );
 
   return (
-    <div className="v3-succession-assignment">
+    <div
+      className={`v3-succession-assignment${layout === "compact-row" ? " v3-succession-assignment--compact-row" : ""}`}
+    >
       {presentation === "session"
         ? <>{nodeField}{agentField}{modelField}</>
         : <>{agentField}{nodeField}{modelField}</>}

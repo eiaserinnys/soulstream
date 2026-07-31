@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
+import { Pencil } from "lucide-react";
 
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
 
@@ -7,13 +8,11 @@ export function TaskDefaultAssignment({
   agentId,
   nodeId,
   modelPreset,
-  sourceLabel,
   onSave,
 }: {
   agentId: string | null;
   nodeId: string | null;
   modelPreset: string | null;
-  sourceLabel: string;
   onSave(value: { agentId: string; nodeId: string; modelPreset: string }): Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -59,19 +58,28 @@ export function TaskDefaultAssignment({
 
   return (
     <div className="v3-task-default-assignment">
-      <button
-        type="button"
+      <div
         className="v3-task-default-summary"
-        aria-label="기본 담당 수정"
-        aria-expanded={editing}
-        disabled={pending}
-        onClick={() => { setError(null); setEditing(true); }}
+        data-testid="task-default-summary"
       >
         <span className="v3-emoji" aria-hidden="true">👤</span>
-        <span>{agentId ?? "agent 미지정"}@{nodeId ?? "node 미지정"}</span>
-        {modelPreset ? <small> · 모델 지정</small> : null}
-        <small> · {sourceLabel}</small>
-      </button>
+        <span className="v3-task-default-values">
+          <span>{nodeId ?? "노드 미지정"}</span>
+          <span aria-hidden="true">·</span>
+          <span>{agentId ?? "에이전트 미지정"}</span>
+          <span aria-hidden="true">·</span>
+          <span>{modelPreset ?? "모델 미지정"}</span>
+        </span>
+        <DashboardIconCap
+          className="v3-task-default-edit"
+          label="기본 담당 편집"
+          aria-expanded={editing}
+          disabled={pending || editing}
+          onClick={() => { setError(null); setEditing(true); }}
+        >
+          <Pencil className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+      </div>
       {editing ? (
         <div className="v3-task-default-editor">
           <AgentNodeAssignmentFields
@@ -79,6 +87,7 @@ export function TaskDefaultAssignment({
             nodeId={draftNodeId}
             modelPreset={draftModelPreset}
             presentation="session"
+            layout="compact-row"
             disabled={pending}
             onAgentIdChange={setDraftAgentId}
             onNodeIdChange={(value) => {
@@ -101,7 +110,7 @@ export function TaskDefaultAssignment({
               }
               onClick={() => { void save(); }}
             >
-              {pending ? "저장 중…" : "직접 지정"}
+              {pending ? "저장 중…" : "저장"}
             </Button>
           </div>
         </div>
