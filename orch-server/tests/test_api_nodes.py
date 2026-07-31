@@ -108,6 +108,13 @@ class TestListNodeAgents:
                 "portrait_url": "/api/agents/codex-default/portrait",
                 "max_turns": None,
                 "backend": "codex",
+                "default_preset": "codex-5.6-sol",
+                "aliases": [
+                    {
+                        "id": "codex-opus",
+                        "default_preset": "claude-opus",
+                    },
+                ],
             },
         }, {})
 
@@ -117,6 +124,8 @@ class TestListNodeAgents:
         agent = resp.json()["agents"][0]
         assert agent["id"] == "codex-default"
         assert agent["backend"] == "codex"
+        assert agent["default_preset"] == "codex-5.6-sol"
+        assert "aliases" not in agent
 
 
 class TestPlanAgentProfileUpdate:

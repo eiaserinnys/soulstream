@@ -8,6 +8,7 @@ import { AgentRegistry } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime, OrchProxyConfig } from "../../src/mcp/runtime.js";
+import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import { buildServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type {
@@ -252,10 +253,20 @@ describe("agent profile backend boundary", () => {
   };
 
   it("list_local_agents는 registry agent를 backend와 함께 모두 반환", async () => {
+    const agentWithPreset: AgentProfile = {
+      ...codexAgent,
+      default_preset: "codex-5.6-sol",
+      aliases: [
+        {
+          id: "codex-opus-alias",
+          default_preset: "claude-opus",
+        },
+      ],
+    };
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
-      [codexAgent, claudeAgent],
+      [agentWithPreset, claudeAgent],
     );
     const client = await createClient(runtime);
 
@@ -272,6 +283,7 @@ describe("agent profile backend boundary", () => {
           name: "로젤린",
           backend: "codex",
           max_turns: null,
+          default_preset: "codex-5.6-sol",
         },
         {
           id: "claude-roselin",
@@ -281,6 +293,7 @@ describe("agent profile backend boundary", () => {
         },
       ],
     });
+    expect(result.structuredContent).not.toHaveProperty("agents.0.aliases");
   });
 
   it("create_agent_session은 선택한 backend profile을 executor에 그대로 전달", async () => {
@@ -312,6 +325,33 @@ describe("agent profile backend boundary", () => {
       expect.objectContaining({ agentSessionId: expect.any(String) }),
       claudeAgent,
     );
+  });
+
+  it("create_agent_session은 잘못된 preset에 조회 도구와 현재 node 힌트를 제공", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent],
+    );
+    runtime.createTask.mockRejectedValueOnce(
+      new UnknownModelPresetError("opus"),
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "hi",
+        model_preset: "opus",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual({
+      error:
+        "Unknown model preset: opus. Call list_node_model_presets with node_id 'node-test' to list valid preset ids.",
+    });
   });
 
   it("create_agent_session은 caller_session_id와 caller_info를 로컬 task에 보존한다", async () => {
@@ -642,6 +682,108 @@ describe("agent profile backend boundary", () => {
   });
 });
 
+describe("list_node_model_presets", () => {
+  it("오케스트레이터의 노드별 가용성 응답을 공개 필드 그대로 반환", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (
+        req.method === "GET"
+        && req.url === "/api/nodes/node-remote/model-presets"
+      ) {
+        return {
+          body: {
+            model_presets: [
+              {
+                id: "kimi-3",
+                label: "Kimi - 3",
+                backend: "claude",
+                available: false,
+                reason: "env_unresolved",
+                reason_label: "키 미설정",
+                resets_at: null,
+                usage_warning: false,
+              },
+              {
+                id: "claude-opus",
+                label: "Claude - Opus",
+                backend: "claude",
+                available: true,
+                reason: null,
+                reason_label: null,
+                resets_at: null,
+                usage_warning: true,
+              },
+            ],
+          },
+        };
+      }
+      return { status: 404, body: { detail: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "list_node_model_presets",
+        arguments: { node_id: "node-remote" },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({
+        model_presets: [
+          {
+            id: "kimi-3",
+            label: "Kimi - 3",
+            backend: "claude",
+            available: false,
+            reason: "env_unresolved",
+            reason_label: "키 미설정",
+            resets_at: null,
+            usage_warning: false,
+          },
+          {
+            id: "claude-opus",
+            label: "Claude - Opus",
+            backend: "claude",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            usage_warning: true,
+          },
+        ],
+      });
+      expect(capture.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+        "GET /api/nodes/node-remote/model-presets",
+      ]);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("미연결 노드는 오케스트레이터 404를 MCP 오류로 반환", async () => {
+    const capture = await createOrchCapture(404, () => ({
+      status: 404,
+      body: { detail: "Node missing-node not connected" },
+    }));
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "list_node_model_presets",
+        arguments: { node_id: "missing-node" },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: expect.stringContaining("Node missing-node not connected"),
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+});
+
 describe("create_remote_agent_session", () => {
   it("목록에 없는 agent_id의 판정은 alias를 아는 세션 생성 정본에 맡긴다", async () => {
     const capture = await createOrchCapture(200, (req) => {
@@ -726,6 +868,48 @@ describe("create_remote_agent_session", () => {
         "POST /api/sessions",
       ]);
       expect(JSON.parse(capture.requests[1]!.body).profile).toBe("roselin_codex");
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("잘못된 원격 preset 오류에 노드별 조회 도구 힌트를 제공", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return {
+          status: 400,
+          body: {
+            error: {
+              code: "MODEL_PRESET_NOT_FOUND",
+              message: "Model preset 'opus' is not advertised by node node-remote",
+            },
+          },
+        };
+      }
+      return { status: 404, body: { detail: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          prompt: "delegate",
+          model_preset: "opus",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const structured = result.structuredContent as { error?: string };
+      expect(structured.error).toBe(
+        "Model preset 'opus' is not advertised by node node-remote. Call list_node_model_presets with node_id 'node-remote' to list valid preset ids.",
+      );
+      expect(capture.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+        "POST /api/sessions",
+      ]);
     } finally {
       await capture.close();
     }

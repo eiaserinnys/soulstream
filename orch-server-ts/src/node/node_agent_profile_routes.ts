@@ -9,6 +9,7 @@ export type RawNodeAgentProfile = {
   portrait_url?: unknown;
   max_turns?: unknown;
   backend?: unknown;
+  aliases?: unknown;
   default_preset?: unknown;
 };
 

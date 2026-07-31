@@ -121,6 +121,11 @@ def create_nodes_router(
                 ),
                 "max_turns": p.get("max_turns"),
                 "backend": p.get("backend", "claude"),
+                **(
+                    {"default_preset": p["default_preset"]}
+                    if isinstance(p.get("default_preset"), str)
+                    else {}
+                ),
             }
             for agent_id, p in node.agent_profiles.items()
         ]

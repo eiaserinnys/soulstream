@@ -7,12 +7,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
+import { UnknownModelPresetError } from "../../model_catalog.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { sendMessageToSession } from "../../task/session_message_sender.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
+import { appendModelPresetLookupHint } from "./model_preset_hint.js";
 
 const delegatedContainerSchema = z.object({
   kind: boardContainerKindInputSchema,
@@ -36,6 +38,9 @@ export function registerSessionMgmtTools(
           name: p.name,
           backend: p.backend,
           max_turns: p.max_turns ?? null,
+          ...(p.default_preset
+            ? { default_preset: p.default_preset }
+            : {}),
         })),
       });
     },
@@ -109,7 +114,11 @@ export function registerSessionMgmtTools(
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        return errorResult(msg);
+        return errorResult(
+          err instanceof UnknownModelPresetError
+            ? appendModelPresetLookupHint(msg, runtime.nodeId)
+            : msg,
+        );
       }
     },
   );

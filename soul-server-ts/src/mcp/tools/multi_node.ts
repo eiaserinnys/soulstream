@@ -15,6 +15,7 @@ import { resolveStructuralCallerSessionId } from "../../task/delegation_relation
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireRemoteCallerAttribution } from "./caller_session.js";
+import { appendModelPresetLookupHint } from "./model_preset_hint.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
 const delegatedContainerSchema = z.object({
@@ -58,6 +59,29 @@ export function registerMultiNodeTools(
           orch,
           "GET",
           `/api/nodes/${encodeURIComponent(node_id)}/agents`,
+        );
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_node_model_presets",
+    {
+      description:
+        "특정 노드가 광고한 모델 preset id와 현재 가용성·사용량 경고를 조회.",
+      inputSchema: { node_id: z.string().min(1) },
+    },
+    async ({ node_id }) => {
+      const orch = runtime.orch;
+      if (!orch) return errorResult(NOT_CONFIGURED_MSG);
+      try {
+        const data = await fetchOrch(
+          orch,
+          "GET",
+          `/api/nodes/${encodeURIComponent(node_id)}/model-presets`,
         );
         return jsonResult(data);
       } catch (err) {
@@ -300,7 +324,16 @@ export function registerMultiNodeTools(
         const data = await fetchOrch(orch, "POST", "/api/sessions", body);
         return jsonResult(data);
       } catch (err) {
-        return errorResult(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        return errorResult(
+          err instanceof OrchHttpError
+            && err.code === "MODEL_PRESET_NOT_FOUND"
+            ? appendModelPresetLookupHint(
+                err.detailMessage ?? message,
+                node_id,
+              )
+            : message,
+        );
       }
     },
   );
@@ -354,11 +387,44 @@ async function fetchOrch(
   const res = await fetch(url, init);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(
+    const parsedDetail = orchErrorDetail(detail);
+    throw new OrchHttpError(
       `orch ${method} ${path} failed: ${res.status} ${res.statusText}${detail ? ` ${detail}` : ""}`,
+      parsedDetail.code,
+      parsedDetail.message,
     );
   }
   return await res.json();
+}
+
+class OrchHttpError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly detailMessage?: string,
+  ) {
+    super(message);
+    this.name = "OrchHttpError";
+  }
+}
+
+function orchErrorDetail(
+  detail: string,
+): { code?: string; message?: string } {
+  try {
+    const payload: unknown = JSON.parse(detail);
+    if (!isRecord(payload) || !isRecord(payload.error)) return {};
+    return {
+      ...(typeof payload.error.code === "string"
+        ? { code: payload.error.code }
+        : {}),
+      ...(typeof payload.error.message === "string"
+        ? { message: payload.error.message }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

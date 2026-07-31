@@ -78,6 +78,7 @@ const EXPECTED_TOOLS = [
   // multi_node
   "list_nodes",
   "list_node_agents",
+  "list_node_model_presets",
   "reflect_cluster_brief",
   "create_remote_agent_session",
   "plan_remote_agent_profile_update",
@@ -503,6 +504,19 @@ describe("MCP SDK client smoke", () => {
       expect(names).toContain(tool);
     }
     expect(names.length).toBeGreaterThanOrEqual(expected.length);
+    expect(
+      result.tools.find((tool) => tool.name === "list_node_model_presets")
+        ?.inputSchema,
+    ).toMatchObject({
+      type: "object",
+      required: ["node_id"],
+      properties: {
+        node_id: {
+          type: "string",
+          minLength: 1,
+        },
+      },
+    });
   });
 
   it("callTool('reflect_brief') → compact aggregate includes Level 0-3 sections", async () => {
