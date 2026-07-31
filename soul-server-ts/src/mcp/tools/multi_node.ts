@@ -328,7 +328,10 @@ export function registerMultiNodeTools(
         return errorResult(
           err instanceof OrchHttpError
             && err.code === "MODEL_PRESET_NOT_FOUND"
-            ? appendModelPresetLookupHint(message, node_id)
+            ? appendModelPresetLookupHint(
+                err.detailMessage ?? message,
+                node_id,
+              )
             : message,
         );
       }
@@ -384,9 +387,11 @@ async function fetchOrch(
   const res = await fetch(url, init);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
+    const parsedDetail = orchErrorDetail(detail);
     throw new OrchHttpError(
       `orch ${method} ${path} failed: ${res.status} ${res.statusText}${detail ? ` ${detail}` : ""}`,
-      orchErrorCode(detail),
+      parsedDetail.code,
+      parsedDetail.message,
     );
   }
   return await res.json();
@@ -396,21 +401,29 @@ class OrchHttpError extends Error {
   constructor(
     message: string,
     readonly code?: string,
+    readonly detailMessage?: string,
   ) {
     super(message);
     this.name = "OrchHttpError";
   }
 }
 
-function orchErrorCode(detail: string): string | undefined {
+function orchErrorDetail(
+  detail: string,
+): { code?: string; message?: string } {
   try {
     const payload: unknown = JSON.parse(detail);
-    if (!isRecord(payload) || !isRecord(payload.error)) return undefined;
-    return typeof payload.error.code === "string"
-      ? payload.error.code
-      : undefined;
+    if (!isRecord(payload) || !isRecord(payload.error)) return {};
+    return {
+      ...(typeof payload.error.code === "string"
+        ? { code: payload.error.code }
+        : {}),
+      ...(typeof payload.error.message === "string"
+        ? { message: payload.error.message }
+        : {}),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 

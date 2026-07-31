@@ -904,8 +904,8 @@ describe("create_remote_agent_session", () => {
 
       expect(result.isError).toBe(true);
       const structured = result.structuredContent as { error?: string };
-      expect(structured.error).toContain(
-        "Call list_node_model_presets with node_id 'node-remote' to list valid preset ids.",
+      expect(structured.error).toBe(
+        "Model preset 'opus' is not advertised by node node-remote. Call list_node_model_presets with node_id 'node-remote' to list valid preset ids.",
       );
       expect(capture.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
         "POST /api/sessions",
