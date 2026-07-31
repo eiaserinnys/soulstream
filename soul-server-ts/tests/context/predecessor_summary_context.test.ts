@@ -20,7 +20,7 @@ describe("buildPredecessorSummaryContextItem", () => {
       narrative: "[T1-T5] 서버 계약을 확정했다.",
       narrativeThroughEventId: 50,
       unfoldedTurnSummaries: [
-        makeSummary(61, 6, "후속 검증을 시작했다."),
+        makeSummary(61, 6, "위임 세션의 단계 3 통과 상태를 보존했다."),
         makeSummary(72, 7, "검증 결과를 반영했다."),
       ],
     });
@@ -36,7 +36,7 @@ describe("buildPredecessorSummaryContextItem", () => {
         expect.objectContaining({
           event_id: 61,
           turn_number: 6,
-          content: "후속 검증을 시작했다.",
+          content: "위임 세션의 단계 3 통과 상태를 보존했다.",
         }),
         expect.objectContaining({
           event_id: 72,

@@ -11,6 +11,8 @@ import {
 } from "../src/turn-summary/turn_summary_pipeline.js";
 import type { TurnSummaryConfig } from "../src/turn-summary/turn_summary_config.js";
 import type { TurnSummarizer } from "../src/turn-summary/turn_summarizer.js";
+import type { TurnSummaryStartEvidence } from
+  "../src/turn-summary/turn_summary_completion_evidence.js";
 
 const CONFIG: TurnSummaryConfig = {
   enabled: true,
@@ -68,6 +70,7 @@ describe("turn summary policy", () => {
       ],
       folderId: CONFIG.excludedFolderIds[0] ?? null,
       excludedFolderIds: CONFIG.excludedFolderIds,
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
     })).toEqual({ include: false, reason: "internal_summary" });
     expect(resolveTurnSummaryEligibility({
       metadata: [
@@ -76,6 +79,7 @@ describe("turn summary policy", () => {
       ],
       folderId: CONFIG.excludedFolderIds[0] ?? null,
       excludedFolderIds: CONFIG.excludedFolderIds,
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
     })).toEqual({ include: false, reason: "agent_origin" });
   });
 
@@ -100,6 +104,7 @@ describe("turn summary policy", () => {
       metadata,
       folderId,
       excludedFolderIds: CONFIG.excludedFolderIds,
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
     })).toEqual({ include: false, reason });
   });
 
@@ -110,7 +115,94 @@ describe("turn summary policy", () => {
         metadata: [{ type: "caller_info", value: { source } }],
         folderId: "allowed-folder",
         excludedFolderIds: CONFIG.excludedFolderIds,
-      })).toEqual({ include: true });
+        startEvidence: { kind: "user_message", evidenceState: "complete" },
+      })).toEqual({ include: true, reason: "user_input" });
+    },
+  );
+
+  it.each([
+    [
+      { kind: "user_message", evidenceState: "complete" },
+      { include: true, reason: "user_input" },
+    ],
+    [
+      { kind: "intervention_sent", evidenceState: "complete" },
+      { include: true, reason: "intervention" },
+    ],
+    [
+      { kind: "system_notification", evidenceState: "complete" },
+      { include: false, reason: "system_notification" },
+    ],
+    [
+      {
+        kind: "completion_notification",
+        evidenceState: "legacy_missing_relation",
+        childSessionId: null,
+        currentRevision: null,
+        previousCompletedRevision: null,
+        currentTerminalStatus: null,
+        hasNewExternalInput: null,
+      },
+      { include: true, reason: "legacy_evidence_missing" },
+    ],
+    [
+      completionEvidence({ currentTerminalStatus: "error" }),
+      { include: false, reason: "delegated_terminal_failure" },
+    ],
+    [
+      completionEvidence({ previousCompletedRevision: null }),
+      { include: true, reason: "first_delegated_completion" },
+    ],
+    [
+      completionEvidence({ hasNewExternalInput: true }),
+      { include: true, reason: "delegated_completion_after_new_input" },
+    ],
+    [
+      completionEvidence({ hasNewExternalInput: false }),
+      {
+        include: false,
+        reason: "delegated_completion_without_new_input",
+      },
+    ],
+  ])("applies the structural eligibility decision table %#", (
+    startEvidence,
+    expected,
+  ) => {
+    expect(resolveTurnSummaryEligibility({
+      metadata: [{ type: "caller_info", value: { source: "browser" } }],
+      folderId: "allowed-folder",
+      excludedFolderIds: CONFIG.excludedFolderIds,
+      startEvidence: startEvidence as TurnSummaryStartEvidence,
+    })).toEqual(expected);
+  });
+
+  it("fails open when previous completed evidence is missing", () => {
+    expect(resolveTurnSummaryEligibility({
+      metadata: [{ type: "caller_info", value: { source: "browser" } }],
+      folderId: "allowed-folder",
+      excludedFolderIds: CONFIG.excludedFolderIds,
+      startEvidence: completionEvidence({
+        evidenceState: "legacy_missing_previous_terminal",
+        hasNewExternalInput: null,
+      }),
+    })).toEqual({ include: true, reason: "legacy_evidence_missing" });
+  });
+
+  it.each(["claude", "codex"])(
+    "applies the same delegated completion policy to a %s parent",
+    (backend) => {
+      expect(resolveTurnSummaryEligibility({
+        metadata: {
+          backend,
+          caller_info: { source: "browser" },
+        },
+        folderId: "allowed-folder",
+        excludedFolderIds: CONFIG.excludedFolderIds,
+        startEvidence: completionEvidence({ hasNewExternalInput: false }),
+      })).toEqual({
+        include: false,
+        reason: "delegated_completion_without_new_input",
+      });
     },
   );
 });
@@ -274,6 +366,181 @@ describe("TurnSummaryPipeline", () => {
     expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
   });
 
+  it("reduces the measured 15-turn fixture to nine complete store-and-fold paths", async () => {
+    const repository = fakeRepository();
+    const fixture = measuredFifteenTurnFixture();
+    repository.loadTurn.mockImplementation(async (_sessionId, completeEventId) => {
+      const turn = fixture.find((candidate) =>
+        candidate.completeEventId === completeEventId
+      );
+      if (turn === undefined) return null;
+      return {
+        sessionId: "parent-session",
+        folderId: "allowed-folder",
+        metadata: [{ type: "caller_info", value: { source: "browser" } }],
+        turnStartEventId: turn.turn,
+        finalResponseEventId: turn.completeEventId - 1,
+        userText: `turn-${turn.turn}`,
+        assistantText: `response-${turn.turn}`,
+        startEvidence: turn.startEvidence,
+      };
+    });
+    let persistedTurn = 0;
+    const appendedTurns: number[] = [];
+    repository.appendSummary.mockImplementation(async (_sessionId, payload) => {
+      persistedTurn = Number(payload.turn_start_event_id);
+      appendedTurns.push(persistedTurn);
+      return { inserted: true, eventId: 10_000 + persistedTurn };
+    });
+    repository.loadGapEvents.mockResolvedValue([]);
+    const foldedTurns: number[] = [];
+    const foldIfNeeded = vi.fn().mockImplementation(async () => {
+      foldedTurns.push(persistedTurn);
+    });
+    const summarize = vi.fn().mockImplementation(async ({ userText }) => ({
+      content: `summary-${userText}`,
+      model: "gpt-5.6-terra",
+      latencyMs: 1,
+      attempts: 1,
+    }));
+    const debug = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: { summarize },
+      eventHub: new RuntimeSessionEventHub(),
+      storyFolder: { foldIfNeeded },
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept(fixture.map((turn) =>
+      nodeEvent("node-a", "parent-session", {
+        type: "complete",
+        _event_id: turn.completeEventId,
+      })
+    ));
+    await pipeline.drain();
+
+    const included = [1, 2, 3, 4, 6, 7, 8, 10, 13];
+    const excluded = [5, 9, 11, 12, 14, 15];
+    expect(summarize.mock.calls.map((call) => call[0].userText)).toEqual(
+      included.map((turn) => `turn-${turn}`),
+    );
+    expect(appendedTurns).toEqual(included);
+    expect(foldedTurns).toEqual(included);
+    expect(summarize).toHaveBeenCalledTimes(9);
+    expect(repository.appendSummary).toHaveBeenCalledTimes(9);
+    expect(foldIfNeeded).toHaveBeenCalledTimes(9);
+    for (const turn of excluded) {
+      expect(summarize.mock.calls).not.toContainEqual([
+        expect.objectContaining({ userText: `turn-${turn}` }),
+        expect.anything(),
+      ]);
+      expect(appendedTurns).not.toContain(turn);
+      expect(foldedTurns).not.toContain(turn);
+    }
+  });
+
+  it.each([
+    [
+      completionEvidence({ currentRevision: 1_207, currentTerminalStatus: "error" }),
+      "delegated_terminal_failure",
+    ],
+    [
+      completionEvidence({
+        currentRevision: 200,
+        previousCompletedRevision: 169,
+        hasNewExternalInput: false,
+      }),
+      "delegated_completion_without_new_input",
+    ],
+  ])("logs complete structural evidence for %s", async (
+    startEvidence,
+    reason,
+  ) => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "parent-session",
+      folderId: "allowed-folder",
+      metadata: [{ type: "caller_info", value: { source: "browser" } }],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "위임 결과",
+      assistantText: "처리 결과",
+      startEvidence,
+    });
+    const debug = vi.fn();
+    const summarizer = { summarize: vi.fn() } satisfies TurnSummarizer;
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer,
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "parent-session", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionId: "child-a",
+        currentRevision: startEvidence.currentRevision,
+        previousCompletedRevision: startEvidence.previousCompletedRevision,
+        evidenceState: "complete",
+        reason,
+      }),
+      "Turn summary skipped",
+    );
+    expect(summarizer.summarize).not.toHaveBeenCalled();
+    expect(repository.appendSummary).not.toHaveBeenCalled();
+  });
+
+  it("logs null relation fields for a non-completion system notification", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "parent-session",
+      folderId: "allowed-folder",
+      metadata: [{ type: "caller_info", value: { source: "browser" } }],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "정리 후속",
+      assistantText: "이미 완료됐다.",
+      startEvidence: {
+        kind: "system_notification",
+        evidenceState: "complete",
+      },
+    });
+    const debug = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: { summarize: vi.fn() },
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "parent-session", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionId: null,
+        currentRevision: null,
+        previousCompletedRevision: null,
+        evidenceState: "complete",
+        reason: "system_notification",
+      }),
+      "Turn summary skipped",
+    );
+  });
+
   it("prechecks dedupe before invoking the provider", async () => {
     const repository = fakeRepository();
     repository.hasSummary.mockResolvedValue(true);
@@ -320,6 +587,7 @@ describe("TurnSummaryPipeline", () => {
         finalResponseEventId: 19,
         userText: "요청",
         assistantText: "응답",
+        startEvidence: { kind: "user_message", evidenceState: "complete" },
       });
     }],
     ["session_not_summarizable", (repository: ReturnType<typeof fakeRepository>) => {
@@ -487,6 +755,7 @@ function fakeRepository() {
         finalResponseEventId: completeEventId - 1,
         userText: "요청",
         assistantText: "응답",
+        startEvidence: { kind: "user_message", evidenceState: "complete" },
         speaker: {
           kind: "user",
           displayName: "Jubok Kim",
@@ -505,4 +774,37 @@ function fakeRepository() {
       event: { type: "progress", _event_id: 21, text: "late" },
     }]),
   } satisfies Record<keyof TurnSummaryRepositoryPort, ReturnType<typeof vi.fn>>;
+}
+
+function completionEvidence(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: "completion_notification" as const,
+    evidenceState: "complete" as const,
+    childSessionId: "child-a",
+    currentRevision: 1_038,
+    previousCompletedRevision: 381,
+    currentTerminalStatus: "completed",
+    hasNewExternalInput: true,
+    ...overrides,
+  };
+}
+
+function measuredFifteenTurnFixture() {
+  return [
+    { turn: 1, completeEventId: 100, startEvidence: { kind: "user_message" as const, evidenceState: "complete" as const } },
+    { turn: 2, completeEventId: 200, startEvidence: completionEvidence({ currentRevision: 381, previousCompletedRevision: null }) },
+    { turn: 3, completeEventId: 300, startEvidence: completionEvidence({ currentRevision: 1_038, previousCompletedRevision: 381 }) },
+    { turn: 4, completeEventId: 400, startEvidence: completionEvidence({ currentRevision: 1_203, previousCompletedRevision: 1_038 }) },
+    { turn: 5, completeEventId: 500, startEvidence: completionEvidence({ currentRevision: 1_207, previousCompletedRevision: 1_203, currentTerminalStatus: "error", hasNewExternalInput: false }) },
+    { turn: 6, completeEventId: 600, startEvidence: completionEvidence({ currentRevision: 1_726, previousCompletedRevision: 1_203 }) },
+    { turn: 7, completeEventId: 700, startEvidence: completionEvidence({ currentRevision: 1_811, previousCompletedRevision: 1_726 }) },
+    { turn: 8, completeEventId: 800, startEvidence: completionEvidence({ currentRevision: 2_326, previousCompletedRevision: 1_811 }) },
+    { turn: 9, completeEventId: 900, startEvidence: completionEvidence({ currentRevision: 2_330, previousCompletedRevision: 2_326, currentTerminalStatus: "error", hasNewExternalInput: false }) },
+    { turn: 10, completeEventId: 1_000, startEvidence: completionEvidence({ currentRevision: 2_466, previousCompletedRevision: 2_326 }) },
+    { turn: 11, completeEventId: 1_100, startEvidence: completionEvidence({ currentRevision: 2_470, previousCompletedRevision: 2_466, currentTerminalStatus: "error", hasNewExternalInput: false }) },
+    { turn: 12, completeEventId: 1_200, startEvidence: completionEvidence({ currentRevision: 2_474, previousCompletedRevision: 2_466, currentTerminalStatus: "error", hasNewExternalInput: false }) },
+    { turn: 13, completeEventId: 1_300, startEvidence: completionEvidence({ childSessionId: "child-b", currentRevision: 169, previousCompletedRevision: null }) },
+    { turn: 14, completeEventId: 1_400, startEvidence: completionEvidence({ childSessionId: "child-b", currentRevision: 187, previousCompletedRevision: 169, hasNewExternalInput: false }) },
+    { turn: 15, completeEventId: 1_500, startEvidence: completionEvidence({ childSessionId: "child-b", currentRevision: 200, previousCompletedRevision: 169, hasNewExternalInput: false }) },
+  ];
 }

@@ -6,6 +6,10 @@ import {
   resolveTurnSummarySpeaker,
   type TurnSummarySpeaker,
 } from "./turn_summary_speaker.js";
+import {
+  loadTurnSummaryStartEvidence,
+  type TurnSummaryStartEvidence,
+} from "./turn_summary_completion_evidence.js";
 
 const TURN_EVENT_TYPES = [
   "user_message",
@@ -37,6 +41,7 @@ export interface TurnSummaryTurn {
   readonly finalResponseEventId: number;
   readonly userText: string;
   readonly assistantText: string;
+  readonly startEvidence: TurnSummaryStartEvidence;
   readonly speaker?: TurnSummarySpeaker;
 }
 
@@ -118,8 +123,9 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
         AND event_type = ANY(${TURN_EVENT_TYPES}::text[])
       ORDER BY id ASC
     `;
+    const normalizedEvents = eventRows.map(normalizeEventRow).filter(isDefined);
     const reconstructed = reconstructTurnFromEvents(
-      eventRows.map(normalizeEventRow).filter(isDefined),
+      normalizedEvents,
       completeEventId,
     );
     if (reconstructed === null) return null;
@@ -127,11 +133,17 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
       sql,
       reconstructed.speaker,
     );
+    const startEvidence = await loadTurnSummaryStartEvidence(
+      sql,
+      normalizedEvents,
+      reconstructed.turnStartEventId,
+    );
     return {
       sessionId,
       folderId: nullableString(session.folder_id),
       metadata: parseJsonValue(session.metadata),
       ...reconstructed,
+      startEvidence,
       ...(speaker === undefined ? {} : { speaker }),
     };
   }
@@ -328,7 +340,10 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
 export function reconstructTurnFromEvents(
   rows: readonly TurnSummaryEventRow[],
   completeEventId: number,
-): Omit<TurnSummaryTurn, "sessionId" | "folderId" | "metadata"> | null {
+): Omit<
+  TurnSummaryTurn,
+  "sessionId" | "folderId" | "metadata" | "startEvidence"
+> | null {
   const complete = rows.find(
     (row) => row.id === completeEventId && row.eventType === "complete",
   );
