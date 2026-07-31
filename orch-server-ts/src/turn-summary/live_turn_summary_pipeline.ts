@@ -22,13 +22,15 @@ import { TurnSummaryPipeline } from "./turn_summary_pipeline.js";
 import { createTurnSummaryProviderRouter } from
   "./turn_summary_provider_router.js";
 import { TurnSummaryRepository } from "./turn_summary_repository.js";
+import { SessionStoryCompletionSweep } from
+  "./session_story_completion_sweep.js";
 import { SessionStoryFoldService } from "./session_story_fold_service.js";
 import { SessionStoryRepository } from "./session_story_repository.js";
 
 export type LiveTurnSummaryPipeline = Pick<
   TurnSummaryPipeline,
   "accept" | "drain"
->;
+> & { readonly start?: () => void };
 
 export type LiveTurnSummaryProductionOverrides = {
   readonly turnSummaryConfigPath?: string;
@@ -79,13 +81,14 @@ export function createLiveTurnSummaryPipeline(options: {
       : {}),
     info: (message) => options.logger.info?.(message),
   });
+  const storyRepository = new SessionStoryRepository(options.sqlResolver);
   const storyFolder = new SessionStoryFoldService({
-    repository: new SessionStoryRepository(options.sqlResolver),
+    repository: storyRepository,
     configService,
     generator: codexSummarizer,
     logger: options.logger,
   });
-  return new TurnSummaryPipeline({
+  const pipeline = new TurnSummaryPipeline({
     repository: new TurnSummaryRepository(options.sqlResolver, {
       resolveAgentName: ({ agentId, nodeId }) => {
         const profile = findRegisteredAgentProfile(
@@ -106,4 +109,19 @@ export function createLiveTurnSummaryPipeline(options: {
     storyFolder,
     logger: options.logger,
   });
+  const completionSweep = new SessionStoryCompletionSweep({
+    repository: storyRepository,
+    folder: storyFolder,
+    configService,
+    logger: options.logger,
+  });
+  return {
+    accept: (events) => pipeline.accept(events),
+    start: () => completionSweep.start(),
+    drain: async () => {
+      completionSweep.stop();
+      await pipeline.drain();
+      await completionSweep.drain();
+    },
+  };
 }

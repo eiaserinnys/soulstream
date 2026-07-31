@@ -30,6 +30,24 @@ export interface StoreSessionStoryDigestInput {
   readonly expectedVersion: number;
 }
 
+export interface CompletedSessionFoldCandidate {
+  readonly sessionId: string;
+  readonly completedAt: Date;
+}
+
+export interface ListCompletedFoldCandidatesInput {
+  readonly completedBefore: Date;
+  readonly minimumSummaryCount: number;
+  readonly limit: number;
+}
+
+export interface StoreCompletedSessionStoryDigestInput
+extends StoreSessionStoryDigestInput {
+  readonly completedAt: Date;
+  readonly completedBefore: Date;
+  readonly minimumSummaryCount: number;
+}
+
 export interface SessionStoryRepositoryPort {
   loadDigest(sessionId: string): Promise<SessionStoryDigest | null>;
   countUnfoldedSummaries(
@@ -41,7 +59,14 @@ export interface SessionStoryRepositoryPort {
     afterEventId: number | null,
     limit: number,
   ): Promise<UnfoldedTurnSummary[]>;
+  countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
+  listCompletedFoldCandidates(
+    input: ListCompletedFoldCandidatesInput,
+  ): Promise<CompletedSessionFoldCandidate[]>;
   storeDigest(input: StoreSessionStoryDigestInput): Promise<boolean>;
+  storeCompletedDigest(
+    input: StoreCompletedSessionStoryDigestInput,
+  ): Promise<boolean>;
 }
 
 export interface SessionTurnSummaryCounts {
@@ -98,6 +123,42 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
         AND id > ${afterEventId ?? 0}
     `;
     return numberValue(rows[0]?.count) ?? 0;
+  }
+
+  async listCompletedFoldCandidates(
+    input: ListCompletedFoldCandidatesInput,
+  ): Promise<CompletedSessionFoldCandidate[]> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql`
+      WITH candidates AS (
+        SELECT
+          s.session_id,
+          s.updated_at AS completed_at,
+          COUNT(e.id) FILTER (
+            WHERE e.event_type = 'turn_summary'
+          )::integer AS total_summary_count,
+          COUNT(e.id) FILTER (
+            WHERE e.event_type = 'turn_summary'
+              AND e.id > COALESCE(d.narrative_through_event_id, 0)
+          )::integer AS unfolded_summary_count
+        FROM sessions s
+        LEFT JOIN session_digests d ON d.session_id = s.session_id
+        LEFT JOIN events e ON e.session_id = s.session_id
+        WHERE s.status = 'completed'
+          AND s.updated_at <= ${input.completedBefore}
+        GROUP BY s.session_id, s.updated_at, d.narrative_through_event_id
+      )
+      SELECT session_id, completed_at
+      FROM candidates
+      WHERE total_summary_count >= ${input.minimumSummaryCount}
+        AND unfolded_summary_count > 0
+      ORDER BY completed_at ASC, session_id ASC
+      LIMIT ${input.limit}
+    `;
+    return rows.map((row) => ({
+      sessionId: String(row.session_id),
+      completedAt: dateValue(row.completed_at),
+    }));
   }
 
   async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
@@ -229,6 +290,60 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
         NOW(),
         NOW()
       )
+      ON CONFLICT (session_id) DO UPDATE
+      SET
+        narrative = EXCLUDED.narrative,
+        highlight = EXCLUDED.highlight,
+        narrative_through_event_id = EXCLUDED.narrative_through_event_id,
+        fold_count = session_digests.fold_count + 1,
+        version = session_digests.version + 1,
+        updated_at = NOW()
+      WHERE session_digests.version = ${input.expectedVersion}
+      RETURNING version
+    `;
+    return rows.length === 1;
+  }
+
+  async storeCompletedDigest(
+    input: StoreCompletedSessionStoryDigestInput,
+  ): Promise<boolean> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql`
+      WITH eligible AS (
+        SELECT s.session_id
+        FROM sessions s
+        WHERE s.session_id = ${input.sessionId}
+          AND s.status = 'completed'
+          AND s.updated_at = ${input.completedAt}
+          AND s.updated_at <= ${input.completedBefore}
+          AND (
+            SELECT COUNT(*)
+            FROM events e
+            WHERE e.session_id = s.session_id
+              AND e.event_type = 'turn_summary'
+          ) >= ${input.minimumSummaryCount}
+        FOR UPDATE OF s
+      )
+      INSERT INTO session_digests (
+        session_id,
+        narrative,
+        highlight,
+        narrative_through_event_id,
+        fold_count,
+        version,
+        created_at,
+        updated_at
+      )
+      SELECT
+        eligible.session_id,
+        ${input.narrative},
+        ${input.highlight},
+        ${input.narrativeThroughEventId},
+        1,
+        1,
+        NOW(),
+        NOW()
+      FROM eligible
       ON CONFLICT (session_id) DO UPDATE
       SET
         narrative = EXCLUDED.narrative,

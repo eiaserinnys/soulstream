@@ -28,6 +28,7 @@ import {
   type SessionDigestSearchMatch,
   type SessionStoryTurnSummary,
   type SessionStoryView,
+  type SessionSearchMetadata,
   type SessionTurnSummaryCounts,
 } from "./repositories/session_story_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
@@ -179,6 +180,12 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   async getSessionStory(sessionId: string): Promise<SessionStoryView> {
     return await this.sessionStoryRepository.getSessionStory(sessionId);
+  }
+
+  async getSessionSearchMetadata(
+    sessionIds: string[],
+  ): Promise<Map<string, SessionSearchMetadata>> {
+    return await this.sessionStoryRepository.getSessionSearchMetadata(sessionIds);
   }
 
   async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {

@@ -25,6 +25,13 @@ export interface SessionTurnSummaryCounts {
   readonly undigestedCount: number;
 }
 
+export interface SessionSearchMetadata {
+  readonly turnCount: number;
+  readonly hasTurnSummaries: boolean;
+  readonly hasStoryDigest: boolean;
+  readonly hasHighlight: boolean;
+}
+
 export interface SessionDigestSearchMatch {
   readonly id: number;
   readonly session_id: string;
@@ -82,6 +89,50 @@ export function serializeSessionStoryView(story: SessionStoryView): {
 
 export class SessionStoryReadRepository {
   constructor(private readonly sql: SqlClient) {}
+
+  async getSessionSearchMetadata(
+    sessionIds: string[],
+  ): Promise<Map<string, SessionSearchMetadata>> {
+    if (sessionIds.length === 0) return new Map();
+    const rows = await this.sql<{
+      session_id: string;
+      turn_count: number | string;
+      has_turn_summaries: boolean;
+      has_story_digest: boolean;
+      has_highlight: boolean;
+    }[]>`
+      WITH requested AS (
+        SELECT UNNEST(${sessionIds}::text[]) AS session_id
+      )
+      SELECT
+        requested.session_id,
+        COUNT(e.id) FILTER (
+          WHERE e.event_type IN (
+            'user_message',
+            'intervention_sent',
+            'session_notification'
+          )
+        )::integer AS turn_count,
+        COALESCE(BOOL_OR(e.event_type = 'turn_summary'), false)
+          AS has_turn_summaries,
+        (d.session_id IS NOT NULL) AS has_story_digest,
+        COALESCE(NULLIF(BTRIM(d.highlight), '') IS NOT NULL, false)
+          AS has_highlight
+      FROM requested
+      LEFT JOIN events e ON e.session_id = requested.session_id
+      LEFT JOIN session_digests d ON d.session_id = requested.session_id
+      GROUP BY requested.session_id, d.session_id, d.highlight
+    `;
+    return new Map(rows.map((row) => [
+      row.session_id,
+      {
+        turnCount: Number(row.turn_count),
+        hasTurnSummaries: row.has_turn_summaries,
+        hasStoryDigest: row.has_story_digest,
+        hasHighlight: row.has_highlight,
+      },
+    ]));
+  }
 
   async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
     const rows = await this.sql<{

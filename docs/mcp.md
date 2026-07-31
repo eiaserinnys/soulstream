@@ -91,11 +91,13 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | Tool | Description |
 |------|-------------|
 | `list_sessions(search, folder_name, node_id, ...)` | Paginated session list — lightweight fields only |
-| `get_session_summary(session_id)` | Turn-by-turn summary: user prompts, response previews, tools used, context usage |
-| `get_session_story(session_id)` | Folded session highlight/narrative plus all still-unfolded turn summaries |
+| `get_session_summary(session_id)` | Legacy event-based turn reconstruction: user prompts, response previews, tools used, context usage |
+| `get_session_highlight(session_id)` | Stored highlight, or chronological stored turn summaries when no story exists; `source` is `story`, `turn_summaries`, or `empty` |
+| `get_session_story(session_id, include_highlight=false)` | Folded narrative plus all still-unfolded turn summaries; highlight body is opt-in and `source` is explicit |
+| `get_session_turn_summaries(session_id, mode, ...)` | Stored turn-summary count, single index, or chronological range |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
-| `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 full-text search across session events, with optional event type and session ID matching |
+| `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 session search with actual turn count and saved summary/story/highlight presence metadata |
 
 ### Session management
 

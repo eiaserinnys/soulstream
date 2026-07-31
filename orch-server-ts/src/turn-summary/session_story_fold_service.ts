@@ -2,7 +2,10 @@ import type {
   CodexExecGenerateOptions,
 } from "./codex_exec_turn_summarizer.js";
 import type {
+  CompletedSessionFoldCandidate,
+  SessionStoryDigest,
   SessionStoryRepositoryPort,
+  StoreSessionStoryDigestInput,
   UnfoldedTurnSummary,
 } from "./session_story_repository.js";
 import type {
@@ -53,13 +56,7 @@ export class SessionStoryFoldService {
   }
 
   async foldIfNeeded(sessionId: string): Promise<void> {
-    if (this.inFlight.has(sessionId)) {
-      this.debugSkip(sessionId, "already_in_flight");
-      return;
-    }
-    this.inFlight.add(sessionId);
-    const startedAt = this.nowMs();
-    try {
+    await this.runExclusive(sessionId, async (startedAt) => {
       const config = this.deps.configService.read();
       if (!config.enabled) return;
       const digest = await this.deps.repository.loadDigest(sessionId);
@@ -88,59 +85,83 @@ export class SessionStoryFoldService {
         });
         return;
       }
-
-      const prompt = buildSessionStoryPrompt(
-        config.storyInstruction,
-        digest?.narrative ?? null,
+      await this.generateAndStore({
+        sessionId,
+        config,
+        digest,
         summaries,
-      );
-      const generated = await this.generateStructuredStory(
-        prompt,
-        config,
-        sessionId,
-      );
-      if (generated === null) return;
-
-      const lastSummary = summaries[summaries.length - 1];
-      if (lastSummary === undefined) return;
-      observeOutputShape(
-        generated.output,
-        config,
-        sessionId,
-        this.deps.logger,
-      );
-      const stored = await this.deps.repository.storeDigest({
-        sessionId,
-        narrative: generated.output.narrative,
-        highlight: generated.output.highlight,
-        narrativeThroughEventId: lastSummary.eventId,
-        expectedVersion: digest?.version ?? 0,
+        startedAt,
+        conflictReason: "version_conflict",
+        store: async (input) => await this.deps.repository.storeDigest(input),
       });
-      if (!stored) {
-        this.debugSkip(sessionId, "version_conflict", {
-          expectedVersion: digest?.version ?? 0,
+    });
+  }
+
+  async foldCompletedIfNeeded(
+    candidate: CompletedSessionFoldCandidate,
+    completedBefore: Date,
+    minimumSummaryCount: number,
+  ): Promise<void> {
+    await this.runExclusive(candidate.sessionId, async (startedAt) => {
+      const config = this.deps.configService.read();
+      if (!config.enabled) return;
+      const digest = await this.deps.repository.loadDigest(candidate.sessionId);
+      const counts = await this.deps.repository.countTurnSummaries(
+        candidate.sessionId,
+      );
+      if (
+        counts.totalCount < minimumSummaryCount ||
+        counts.undigestedCount === 0
+      ) {
+        this.debugSkip(candidate.sessionId, "completed_not_eligible", {
+          totalCount: counts.totalCount,
+          undigestedCount: counts.undigestedCount,
+          minimumSummaryCount,
         });
         return;
       }
-      const markerStats = markerOrderStats(generated.output.narrative);
-      this.deps.logger.debug?.(
-        {
-          sessionId,
-          model: generated.model,
-          latencyMs: Math.max(0, this.nowMs() - startedAt),
-          modelLatencyMs: generated.latencyMs,
-          attempts: generated.attempts,
-          usage: generated.usage,
-          inputTokens: generated.usage?.input_tokens,
-          outputTokens: generated.usage?.output_tokens,
-          markerCount: markerStats.markerCount,
-          markerInversionPairs: markerStats.inversionPairs,
-          foldedTurnCount: summaries.length,
-          narrativeThroughEventId: lastSummary.eventId,
-          foldCount: (digest?.foldCount ?? 0) + 1,
-        },
-        "Session story fold stored",
+      const summaries = await this.deps.repository.loadUnfoldedSummaries(
+        candidate.sessionId,
+        digest?.narrativeThroughEventId ?? null,
+        counts.undigestedCount,
       );
+      if (summaries.length !== counts.undigestedCount) {
+        this.debugSkip(candidate.sessionId, "completed_tail_changed", {
+          expectedCount: counts.undigestedCount,
+          loadedCount: summaries.length,
+        });
+        return;
+      }
+      await this.generateAndStore({
+        sessionId: candidate.sessionId,
+        config,
+        digest,
+        summaries,
+        startedAt,
+        conflictReason: "completion_guard_conflict",
+        store: async (input) =>
+          await this.deps.repository.storeCompletedDigest({
+            ...input,
+            completedAt: candidate.completedAt,
+            completedBefore,
+            minimumSummaryCount,
+          }),
+      });
+    });
+  }
+
+  private async runExclusive(
+    sessionId: string,
+    action: (startedAt: number) => Promise<void>,
+  ): Promise<void> {
+    if (this.inFlight.has(sessionId)) {
+      this.debugSkip(sessionId, "already_in_flight");
+      return;
+    }
+    this.inFlight.add(sessionId);
+    const startedAt = this.nowMs();
+    try {
+      await action(startedAt);
     } catch (error) {
       this.debugSkip(sessionId, "fold_error", {
         error: error instanceof Error ? error.message : String(error),
@@ -148,6 +169,68 @@ export class SessionStoryFoldService {
     } finally {
       this.inFlight.delete(sessionId);
     }
+  }
+
+  private async generateAndStore(input: {
+    readonly sessionId: string;
+    readonly config: TurnSummaryConfig;
+    readonly digest: SessionStoryDigest | null;
+    readonly summaries: readonly UnfoldedTurnSummary[];
+    readonly startedAt: number;
+    readonly conflictReason: string;
+    readonly store: (value: StoreSessionStoryDigestInput) => Promise<boolean>;
+  }): Promise<void> {
+    const prompt = buildSessionStoryPrompt(
+      input.config.storyInstruction,
+      input.digest?.narrative ?? null,
+      input.summaries,
+    );
+    const generated = await this.generateStructuredStory(
+      prompt,
+      input.config,
+      input.sessionId,
+    );
+    if (generated === null) return;
+    const lastSummary = input.summaries[input.summaries.length - 1];
+    if (lastSummary === undefined) return;
+    observeOutputShape(
+      generated.output,
+      input.config,
+      input.sessionId,
+      this.deps.logger,
+    );
+    const stored = await input.store({
+      sessionId: input.sessionId,
+      narrative: generated.output.narrative,
+      highlight: generated.output.highlight,
+      narrativeThroughEventId: lastSummary.eventId,
+      expectedVersion: input.digest?.version ?? 0,
+    });
+    if (!stored) {
+      this.debugSkip(input.sessionId, input.conflictReason, {
+        expectedVersion: input.digest?.version ?? 0,
+      });
+      return;
+    }
+    const markerStats = markerOrderStats(generated.output.narrative);
+    this.deps.logger.debug?.(
+      {
+        sessionId: input.sessionId,
+        model: generated.model,
+        latencyMs: Math.max(0, this.nowMs() - input.startedAt),
+        modelLatencyMs: generated.latencyMs,
+        attempts: generated.attempts,
+        usage: generated.usage,
+        inputTokens: generated.usage?.input_tokens,
+        outputTokens: generated.usage?.output_tokens,
+        markerCount: markerStats.markerCount,
+        markerInversionPairs: markerStats.inversionPairs,
+        foldedTurnCount: input.summaries.length,
+        narrativeThroughEventId: lastSummary.eventId,
+        foldCount: (input.digest?.foldCount ?? 0) + 1,
+      },
+      "Session story fold stored",
+    );
   }
 
   private async generateStructuredStory(
