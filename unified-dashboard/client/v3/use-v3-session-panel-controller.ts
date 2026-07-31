@@ -115,7 +115,7 @@ export function useV3SessionPanelController({
 
   const openSessionById = useCallback(async (
     sessionId: string,
-    focusEventId: number,
+    focusEventId: number | null,
     knownSession?: SessionSummary,
   ) => {
     try {
@@ -126,12 +126,14 @@ export function useV3SessionPanelController({
       });
       if (!session) {
         notify("선택한 세션을 찾을 수 없습니다");
-        return;
+        return false;
       }
       await openSession(session);
       setFocusEventId(focusEventId);
+      return true;
     } catch (error) {
       notify(`세션 열기 실패 · ${errorText(error)}`);
+      return false;
     }
   }, [notify, openSession, setFocusEventId]);
 

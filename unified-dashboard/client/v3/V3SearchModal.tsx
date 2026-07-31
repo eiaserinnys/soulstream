@@ -16,9 +16,9 @@ type V3SearchModalProps = {
   sessions: SessionSummary[];
   onOpenSession: (
     sessionId: string,
-    focusEventId: number,
+    focusEventId: number | null,
     session?: SessionSummary,
-  ) => void | Promise<void>;
+  ) => boolean | void | Promise<boolean | void>;
   api: ReturnType<typeof createPageApiClient>;
   onOpenProjectPage: (pageId: string) => void;
   onOpenTask: (task: PlannerTask) => void;
