@@ -21,6 +21,8 @@ import type {
 } from "./turn_summarizer.js";
 import { TurnSummaryProviderUnavailableError } from
   "./turn_summary_provider_router.js";
+import type { TurnSummaryStartEvidence } from
+  "./turn_summary_completion_evidence.js";
 
 export interface TurnSummaryCompleteJob {
   readonly nodeId: string;
@@ -33,6 +35,9 @@ type TurnSummarySkipReason =
   | "internal_summary"
   | "agent_origin"
   | "excluded_folder"
+  | "system_notification"
+  | "delegated_terminal_failure"
+  | "delegated_completion_without_new_input"
   | "already_summarized"
   | "session_not_summarizable";
 
@@ -107,11 +112,13 @@ export class TurnSummaryPipeline {
       metadata: turn.metadata,
       folderId: turn.folderId,
       excludedFolderIds: config.excludedFolderIds,
+      startEvidence: turn.startEvidence,
     });
     if (!eligibility.include) {
       this.debugSkip(job, eligibility.reason, {
         turnStartEventId: turn.turnStartEventId,
         finalResponseEventId: turn.finalResponseEventId,
+        ...startEvidenceLogFields(turn.startEvidence),
       });
       return;
     }
@@ -284,11 +291,26 @@ export function resolveTurnSummaryEligibility(params: {
   readonly metadata: unknown;
   readonly folderId: string | null;
   readonly excludedFolderIds: readonly string[];
+  readonly startEvidence: TurnSummaryStartEvidence;
 }):
-  | { readonly include: true }
+  | {
+      readonly include: true;
+      readonly reason:
+        | "user_input"
+        | "intervention"
+        | "legacy_evidence_missing"
+        | "first_delegated_completion"
+        | "delegated_completion_after_new_input";
+    }
   | {
       readonly include: false;
-      readonly reason: "internal_summary" | "agent_origin" | "excluded_folder";
+      readonly reason:
+        | "internal_summary"
+        | "agent_origin"
+        | "excluded_folder"
+        | "system_notification"
+        | "delegated_terminal_failure"
+        | "delegated_completion_without_new_input";
     } {
   const metadata = params.metadata;
   const entries = Array.isArray(metadata)
@@ -315,7 +337,57 @@ export function resolveTurnSummaryEligibility(params: {
   ) {
     return { include: false, reason: "excluded_folder" };
   }
-  return { include: true };
+  const evidence = params.startEvidence;
+  if (evidence.kind === "user_message") {
+    return { include: true, reason: "user_input" };
+  }
+  if (evidence.kind === "intervention_sent") {
+    return { include: true, reason: "intervention" };
+  }
+  if (evidence.kind === "system_notification") {
+    return { include: false, reason: "system_notification" };
+  }
+  if (
+    evidence.currentTerminalStatus !== null &&
+    evidence.currentTerminalStatus !== "completed"
+  ) {
+    return { include: false, reason: "delegated_terminal_failure" };
+  }
+  if (evidence.evidenceState !== "complete") {
+    return { include: true, reason: "legacy_evidence_missing" };
+  }
+  if (evidence.previousCompletedRevision === null) {
+    return { include: true, reason: "first_delegated_completion" };
+  }
+  if (evidence.hasNewExternalInput === true) {
+    return {
+      include: true,
+      reason: "delegated_completion_after_new_input",
+    };
+  }
+  return {
+    include: false,
+    reason: "delegated_completion_without_new_input",
+  };
+}
+
+function startEvidenceLogFields(
+  evidence: TurnSummaryStartEvidence,
+): Record<string, unknown> {
+  if (evidence.kind !== "completion_notification") {
+    return {
+      childSessionId: null,
+      currentRevision: null,
+      previousCompletedRevision: null,
+      evidenceState: evidence.evidenceState,
+    };
+  }
+  return {
+    childSessionId: evidence.childSessionId,
+    currentRevision: evidence.currentRevision,
+    previousCompletedRevision: evidence.previousCompletedRevision,
+    evidenceState: evidence.evidenceState,
+  };
 }
 
 function buildTurnSummaryPayload(

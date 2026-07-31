@@ -31,6 +31,7 @@ describe("TurnSummaryRepository", () => {
       finalResponseEventId: 19,
       userText: "요청",
       assistantText: "응답",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
     });
     expect(calls).toHaveLength(2);
     expect(calls[0]?.text).toContain("FROM sessions");
@@ -59,6 +60,11 @@ describe("TurnSummaryRepository", () => {
         agent_id: "roselin",
         node_id: "eiaserinnys",
       }],
+      [{
+        id: 1291,
+        event_type: "session_ended",
+        payload: { status: "completed" },
+      }],
     ], ({ agentId, nodeId }) =>
       agentId === "roselin" && nodeId === "eiaserinnys"
         ? "로젤린"
@@ -72,12 +78,105 @@ describe("TurnSummaryRepository", () => {
           childSessionId: "6c958db1-f792-445e-b355-6c5537b0c5c1",
           agentName: "로젤린",
         },
+        startEvidence: {
+          kind: "completion_notification",
+          evidenceState: "complete",
+          childSessionId: "6c958db1-f792-445e-b355-6c5537b0c5c1",
+          currentRevision: 1291,
+          previousCompletedRevision: null,
+          currentTerminalStatus: "completed",
+          hasNewExternalInput: false,
+        },
       });
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     expect(calls[2]?.text).toContain("FROM sessions");
     expect(calls[2]?.values).toContain(
       "6c958db1-f792-445e-b355-6c5537b0c5c1",
     );
+    expect(calls[3]?.text).toContain("FROM events");
+  });
+
+  it("uses the greatest prior completed revision and ignores intermediate errors", async () => {
+    const completion = (id: number) => row(id, "session_notification", {
+      text: `completion-${id}`,
+      delivery_intent: "completion_notification",
+      relation_key: `child_session:child-a:${id}`,
+    });
+    const { repository } = repositoryWithResponses([
+      [{ folder_id: "folder-a", metadata: {} }],
+      [
+        completion(381),
+        row(390, "assistant_message", { content: "첫 완료" }),
+        row(400, "complete", {}),
+        completion(1203),
+        row(1210, "assistant_message", { content: "두 번째 완료" }),
+        row(1220, "complete", {}),
+        completion(1207),
+        row(1230, "assistant_message", { content: "오류 해설" }),
+        row(1240, "complete", {}),
+        completion(1726),
+        row(1730, "assistant_message", { content: "현재 완료" }),
+        row(1740, "complete", {}),
+      ],
+      [{ agent_id: "roselin", node_id: "eiaserinnys" }],
+      [
+        row(381, "session_ended", { status: "completed" }),
+        row(1203, "session_ended", { status: "completed" }),
+        row(1207, "session_ended", { status: "error" }),
+        row(1209, "user_message", { text: "반려 보강" }),
+        row(1726, "session_ended", { status: "completed" }),
+      ],
+    ]);
+
+    await expect(repository.loadTurn("parent-session", 1740)).resolves
+      .toMatchObject({
+        startEvidence: {
+          kind: "completion_notification",
+          evidenceState: "complete",
+          childSessionId: "child-a",
+          currentRevision: 1726,
+          previousCompletedRevision: 1203,
+          currentTerminalStatus: "completed",
+          hasNewExternalInput: true,
+        },
+      });
+  });
+
+  it("marks missing prior completed terminal evidence for fail-open", async () => {
+    const { repository } = repositoryWithResponses([
+      [{ folder_id: "folder-a", metadata: {} }],
+      [
+        row(10, "session_notification", {
+          text: "이전 완료",
+          delivery_intent: "completion_notification",
+          relation_key: "child_session:child-a:381",
+        }),
+        row(11, "assistant_message", { content: "이전 처리" }),
+        row(12, "complete", {}),
+        row(20, "session_notification", {
+          text: "현재 완료",
+          delivery_intent: "completion_notification",
+          relation_key: "child_session:child-a:1038",
+        }),
+        row(21, "assistant_message", { content: "현재 처리" }),
+        row(22, "complete", {}),
+      ],
+      [{ agent_id: "roselin", node_id: "eiaserinnys" }],
+      [row(1038, "session_ended", { status: "completed" })],
+    ]);
+
+    await expect(repository.loadTurn("parent-session", 22)).resolves
+      .toMatchObject({
+        startEvidence: {
+          kind: "completion_notification",
+          evidenceState: "legacy_missing_previous_terminal",
+          childSessionId: "child-a",
+          currentRevision: 1038,
+          previousCompletedRevision: null,
+          currentTerminalStatus: "completed",
+          hasNewExternalInput: null,
+        },
+      });
   });
 
   it("appends through event_append with the anchor dedupe key", async () => {

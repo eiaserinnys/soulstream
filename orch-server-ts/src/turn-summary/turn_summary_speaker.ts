@@ -32,9 +32,9 @@ export function resolveTurnSummarySpeaker(
     if (nonEmptyString(payload.delivery_intent) !== "completion_notification") {
       return { kind: "system" };
     }
-    const childSessionId = childSessionIdFromRelationKey(
+    const childSessionId = parseChildSessionRelationKey(
       nonEmptyString(payload.relation_key),
-    );
+    )?.childSessionId;
     return {
       kind: "delegated_session",
       ...(childSessionId === undefined ? {} : { childSessionId }),
@@ -102,11 +102,23 @@ export function formatTurnSummarySpeakerLabel(
   return `[발화자: ${speaker.displayName} (사용자, ${speaker.source}${userId})]`;
 }
 
-function childSessionIdFromRelationKey(
+export function parseChildSessionRelationKey(
   relationKey: string | undefined,
-): string | undefined {
+): {
+  readonly childSessionId: string;
+  readonly terminalRevision: number;
+} | undefined {
   if (relationKey === undefined) return undefined;
-  return /^child_session:([^:]+):\d+$/.exec(relationKey)?.[1];
+  const match = /^child_session:([^:]+):(\d+)$/.exec(relationKey);
+  if (match === null) return undefined;
+  const terminalRevision = Number(match[2]);
+  if (!Number.isSafeInteger(terminalRevision) || terminalRevision <= 0) {
+    return undefined;
+  }
+  return {
+    childSessionId: match[1] ?? "",
+    terminalRevision,
+  };
 }
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
