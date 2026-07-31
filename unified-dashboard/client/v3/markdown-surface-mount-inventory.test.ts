@@ -20,6 +20,10 @@ function countMounts(componentName: string, file: string) {
   return readFileSync(path.join(REPO_ROOT, file), "utf8").split(`<${componentName}`).length - 1;
 }
 
+function readSource(file: string) {
+  return readFileSync(path.join(REPO_ROOT, file), "utf8");
+}
+
 function walkTypescriptReactFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = path.join(directory, entry.name);
@@ -49,6 +53,27 @@ describe("markdown surface mount inventory", () => {
       "unified-dashboard/client/v3/TaskWorkspace.tsx",
       "unified-dashboard/client/v3/V3StandaloneDocumentInspector.tsx",
     ]);
+  });
+
+  it("makes document code expansion explicit without changing chat or compact feeds", () => {
+    const documentSurfaces = [
+      "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
+      "unified-dashboard/client/v3/TaskBoardResourcePane.tsx",
+      "unified-dashboard/client/v3/TaskDescriptionPanel.tsx",
+    ];
+    const boundedSurfaces = [
+      "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
+      "packages/soul-ui/src/components/chat/UserMessage.tsx",
+      "packages/soul-ui/src/task/TaskChecklistItem.tsx",
+      "packages/soul-ui/src/task/TaskOverviewRows.tsx",
+    ];
+
+    for (const file of documentSurfaces) {
+      expect(readSource(file), file).toContain('codeBlockLayout="document"');
+    }
+    for (const file of boundedSurfaces) {
+      expect(readSource(file), file).not.toContain('codeBlockLayout="document"');
+    }
   });
 
   it("enumerates every TaskDescriptionPanel wrapper surface", () => {

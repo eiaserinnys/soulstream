@@ -74,4 +74,25 @@ describe("MarkdownContent — remark-breaks plugin", () => {
     expect(html).toContain("text-white underline decoration-white/70 underline-offset-2");
     expect(html).not.toContain("text-accent-blue hover:underline");
   });
+
+  test("case 7: document fenced code expands vertically with separate horizontal overflow", () => {
+    const html = renderMarkdownContent("```yaml\ndialogue: one\ndialogue: two\n```", {
+      codeBlockLayout: "document",
+    });
+
+    expect(html).toContain('data-markdown-code-scroll="horizontal"');
+    expect(html).toContain("overflow-x-auto overflow-y-hidden");
+    expect(html).toContain('data-markdown-code-layout="document"');
+    expect(html).not.toContain("max-h-60");
+  });
+
+  test("case 8: chat and compact feeds retain bounded code blocks", () => {
+    const chat = renderMarkdownContent("```text\nchat\n```");
+    const compact = renderMarkdownContent("```text\nfeed\n```", { compact: true });
+
+    expect(chat).toContain("overflow-auto max-h-60");
+    expect(compact).toContain("overflow-auto max-h-24");
+    expect(chat).not.toContain('data-markdown-code-layout="document"');
+    expect(compact).not.toContain('data-markdown-code-layout="document"');
+  });
 });

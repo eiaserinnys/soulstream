@@ -372,7 +372,7 @@ function TaskBoardDocumentReader({
       </div>
       {error ? <p className="v3-inline-board-error">문서를 불러오지 못했습니다. {error}</p> : null}
       {!document && !error ? <p className="v3-detail-empty">본문을 불러오는 중…</p> : null}
-      {document ? <div className="v3-task-board-document-copy"><MarkdownContent content={document.body} /></div> : null}
+      {document ? <div className="v3-task-board-document-copy"><MarkdownContent content={document.body} codeBlockLayout="document" /></div> : null}
     </div>
   );
 }

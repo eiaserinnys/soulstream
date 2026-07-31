@@ -143,7 +143,7 @@ export function TaskDescriptionPanel({
             aria-label={`${ariaLabel} 편집`}
             onClick={() => changeEditing(true)}
           >
-            {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">{emptyText}</span>}
+            {markdown ? <MarkdownContent content={markdown} codeBlockLayout="document" /> : <span className="v3-description-empty">{emptyText}</span>}
           </button>
           <div className="v3-description-actions">
             <DashboardIconCap label={`${ariaLabel} 편집`} onClick={() => changeEditing(true)}>

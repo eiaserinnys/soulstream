@@ -20,6 +20,7 @@ interface MarkdownContentProps {
   compact?: boolean;
   linkTone?: "default" | "onUserBubble";
   enableBlockquoteCopy?: boolean;
+  codeBlockLayout?: "bounded" | "document";
 }
 
 const defaultAnchorClass = "text-accent-blue hover:underline";
@@ -220,6 +221,20 @@ const compactComponents: Components = {
 const userBubbleComponents: Components = { ...components, a: userBubbleAnchor };
 const compactUserBubbleComponents: Components = { ...compactComponents, a: userBubbleAnchor };
 
+const documentCodeBlock: NonNullable<Components["pre"]> = ({ children }) => (
+  <div
+    data-markdown-code-scroll="horizontal"
+    className="my-1.5 overflow-x-auto overflow-y-hidden rounded"
+  >
+    <pre
+      data-markdown-code-layout="document"
+      className="m-0 text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words font-mono"
+    >
+      {children}
+    </pre>
+  </div>
+);
+
 const BlockquoteDepthContext = createContext(0);
 
 function CopyableBlockquote({
@@ -305,6 +320,7 @@ export function MarkdownContent({
   compact = false,
   linkTone = "default",
   enableBlockquoteCopy = false,
+  codeBlockLayout = "bounded",
 }: MarkdownContentProps) {
   const selectedComponents = useMemo(() => {
     const baseComponents = linkTone === "onUserBubble"
@@ -314,10 +330,13 @@ export function MarkdownContent({
       : compact
         ? compactComponents
         : components;
-    return enableBlockquoteCopy
-      ? { ...baseComponents, blockquote: createCopyableBlockquote(compact) }
+    const layoutComponents = codeBlockLayout === "document"
+      ? { ...baseComponents, pre: documentCodeBlock }
       : baseComponents;
-  }, [compact, enableBlockquoteCopy, linkTone]);
+    return enableBlockquoteCopy
+      ? { ...layoutComponents, blockquote: createCopyableBlockquote(compact) }
+      : layoutComponents;
+  }, [codeBlockLayout, compact, enableBlockquoteCopy, linkTone]);
 
   return (
     <ReactMarkdown

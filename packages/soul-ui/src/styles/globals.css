@@ -220,9 +220,9 @@
   line-height: 18px;
 }
 
-/* Code blocks normally keep a compact internal scroller. Inside a quote,
-   the quote owns their vertical extent and the nearest document surface scrolls. */
-[data-markdown-blockquote] pre {
+/* Document readers expand fenced code vertically. A separate wrapper owns
+   horizontal overflow; chat and compact feeds retain their bounded pre styles. */
+pre[data-markdown-code-layout="document"] {
   max-height: none;
   overflow: visible;
 }

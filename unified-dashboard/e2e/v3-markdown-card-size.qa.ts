@@ -10,25 +10,20 @@ const outputRoot = path.resolve(
   process.env.MARKDOWN_CARD_QA_OUTPUT
     ?? path.join("e2e", "screenshots", "v3-markdown-card-size"),
 );
+const documentCodeLabels = ["dialogue", "nj", "fx", "pre_bk"] as const;
+const codeLineCount = 32;
 const longMarkdown = [
   "# 긴 문서 위치 검증",
   "",
-  "> ```text",
-  ...Array.from({ length: 80 }, (_, index) => (
-    `> 인용문 코드 행 ${index + 1} — 코드 블록도 인용문 높이에 포함되어야 합니다.`
-  )),
-  "> ```",
-  "",
-  ...Array.from({ length: 80 }, (_, index) => (
-    `> 긴 인용문 ${index + 1} — 내부 스크롤 없이 문서 흐름 안에서 펼쳐져야 합니다.`
-  )),
-  "",
-  "```text",
-  ...Array.from({ length: 80 }, (_, index) => (
-    `일반 코드 행 ${index + 1} — 인용문 밖 코드 블록의 기존 스크롤은 유지되어야 합니다.`
-  )),
-  "```",
-  "",
+  ...documentCodeLabels.flatMap((label) => [
+    `## ${label}`,
+    "```yaml",
+    ...Array.from({ length: codeLineCount }, (_, index) => (
+      `${label}: line ${index + 1} — 문서 코드 블록은 세로로 모두 펼쳐져야 합니다.`
+    )),
+    "```",
+    "",
+  ]),
   ...Array.from({ length: 80 }, (_, index) => `본문 문단 ${index + 1} — 편집 왕복 위치 기준점입니다.`),
 ].join("\n");
 
@@ -70,13 +65,9 @@ async function verifyMarkdownSurfaces(browser: Browser) {
     await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
 
     const inlineMarkdown = page.getByTestId("v3-inline-markdown");
-    await inlineMarkdown.getByText("긴 인용문 80", { exact: false }).waitFor({ state: "visible" });
-    const inline = await measureInlineMarkdown(inlineMarkdown);
-    assert(inline.maxHeight === "none", `인라인 문서 높이 상한이 남았습니다: ${inline.maxHeight}`);
-    assert(!["auto", "scroll"].includes(inline.overflowY), `인라인 문서가 내부 스크롤을 소유합니다: ${inline.overflowY}`);
-    assert(inline.scrollHeight <= inline.clientHeight + 1, "인라인 문서 안에 별도 세로 스크롤 영역이 남았습니다.");
-    assert(inline.quoteScrollHeight <= inline.quoteClientHeight + 1, "긴 blockquote 안에 별도 세로 스크롤 영역이 남았습니다.");
-    await capture(page, "01-inline-long-blockquote");
+    await inlineMarkdown.getByText("pre_bk: line 32", { exact: false }).waitFor({ state: "visible" });
+    const inlineCodeMetrics = await measureDocumentCodeBlocks(inlineMarkdown);
+    await capture(page, "01-inline-document-code-blocks");
 
     await page.getByRole("button", { name: "업무 보드 열기" }).click();
     const board = page.getByTestId("v3-task-board-pane");
@@ -93,33 +84,29 @@ async function verifyMarkdownSurfaces(browser: Browser) {
     await overlay.getByTestId("v3-task-board-document-overlay-expand").click();
     const readBody = overlay.getByTestId("markdown-read-body");
     await readBody.getByText("본문 문단 80", { exact: false }).waitFor({ state: "visible" });
-    const nestedCodeQuote = readBody.locator("blockquote").filter({ hasText: "인용문 코드 행 80" }).first();
-    const nestedCodeBlock = nestedCodeQuote.locator("pre");
-    const nestedCodeMetrics = await measureElement(nestedCodeBlock);
-    const ordinaryCodeBlock = readBody.locator("pre").filter({ hasText: "일반 코드 행 80" });
-    const ordinaryCodeMetrics = await measureElement(ordinaryCodeBlock);
-    const centralQuote = readBody.locator("blockquote").first();
-    const centralReadSurface = await measureScrollAncestry(centralQuote, overlay);
-    console.log(JSON.stringify({ nestedCodeMetrics, ordinaryCodeMetrics, centralReadSurface }, null, 2));
-    await capture(page, "02-board-central-blockquote");
-    assert(nestedCodeMetrics.maxHeight === "none", `중앙 인용문 코드 높이 상한이 남았습니다: ${nestedCodeMetrics.maxHeight}`);
+    const resourceCodeMetrics = await measureDocumentCodeBlocks(resources);
+    const centralCodeMetrics = await measureDocumentCodeBlocks(readBody);
+    const centralReadSurface = await measureScrollAncestry(readBody.locator("pre").first(), overlay);
+    await readBody.evaluate((element) => {
+      if (element.parentElement) element.parentElement.scrollTop = 0;
+    });
+    console.log(JSON.stringify({ inlineCodeMetrics, resourceCodeMetrics, centralCodeMetrics, centralReadSurface }, null, 2));
+    await capture(page, "02-board-document-code-blocks");
+    assertDocumentCodeBlocks(inlineCodeMetrics, "보드 인라인 문서");
+    assertDocumentCodeBlocks(resourceCodeMetrics, "왼쪽 업무 자료 문서");
+    assertDocumentCodeBlocks(centralCodeMetrics, "중앙 문서 오버레이");
+    const verticalScrollOwners = centralReadSurface.nodes.filter((node) => node.ownsVerticalScroll);
+    assert(verticalScrollOwners.length === 1, `중앙 문서의 세로 스크롤 소유자가 하나가 아닙니다: ${JSON.stringify(verticalScrollOwners)}`);
     assert(
-      !["auto", "scroll"].includes(nestedCodeMetrics.overflowY),
-      `중앙 인용문 코드가 별도 세로 스크롤을 소유합니다: ${nestedCodeMetrics.overflowY}`,
+      verticalScrollOwners[0]?.classes.includes("overflow-auto p-3"),
+      `문서 패널이 아닌 요소가 상위 세로 스크롤을 소유합니다: ${JSON.stringify(verticalScrollOwners[0])}`,
     );
+    const horizontalCodeScroller = centralReadSurface.nodes.find((node) => node.markdownCodeScroll === "horizontal");
     assert(
-      nestedCodeMetrics.scrollHeight <= nestedCodeMetrics.clientHeight + 1,
-      "중앙 인용문 코드가 내용 높이만큼 펼쳐지지 않았습니다.",
-    );
-    assert(
-      ordinaryCodeMetrics.maxHeight === "240px"
-        && ordinaryCodeMetrics.overflowY === "auto"
-        && ordinaryCodeMetrics.scrollHeight > ordinaryCodeMetrics.clientHeight + 1,
-      `인용문 밖 코드 블록의 기존 스크롤 계약이 달라졌습니다: ${JSON.stringify(ordinaryCodeMetrics)}`,
-    );
-    assert(
-      centralReadSurface.nodes[0]?.scrollHeight <= (centralReadSurface.nodes[0]?.clientHeight ?? 0) + 1,
-      "중앙 문서의 긴 blockquote 자체에 별도 세로 스크롤 영역이 남았습니다.",
+      horizontalCodeScroller?.overflowX === "auto"
+        && horizontalCodeScroller.overflowY === "hidden"
+        && horizontalCodeScroller.scrollHeight <= horizontalCodeScroller.clientHeight + 1,
+      `코드 가로 스크롤 분리 계약이 어긋났습니다: ${JSON.stringify(horizontalCodeScroller)}`,
     );
     const readMiddle = await setScrollFraction(readBody, 0.5);
     await capture(page, "03-board-read-middle");
@@ -140,9 +127,9 @@ async function verifyMarkdownSurfaces(browser: Browser) {
 
     assert(browserErrors.length === 0, `브라우저 오류가 발생했습니다: ${browserErrors.join(" | ")}`);
     const metrics = {
-      inline,
-      nestedCodeMetrics,
-      ordinaryCodeMetrics,
+      inlineCodeMetrics,
+      resourceCodeMetrics,
+      centralCodeMetrics,
       centralReadSurface,
       readMiddle,
       editMiddle,
@@ -166,11 +153,37 @@ async function measureElement(target: Locator) {
       maxHeight: style.maxHeight,
       height: style.height,
       overflow: style.overflow,
+      overflowX: style.overflowX,
       overflowY: style.overflowY,
       clientHeight: node.clientHeight,
       scrollHeight: node.scrollHeight,
     };
   });
+}
+
+async function measureDocumentCodeBlocks(root: Locator) {
+  return Object.fromEntries(await Promise.all(documentCodeLabels.map(async (label) => {
+    const block = root.locator("pre").filter({ hasText: `${label}: line ${codeLineCount}` }).first();
+    await block.waitFor({ state: "visible" });
+    return [label, await measureElement(block)] as const;
+  })));
+}
+
+function assertDocumentCodeBlocks(
+  metrics: Awaited<ReturnType<typeof measureDocumentCodeBlocks>>,
+  surface: string,
+) {
+  for (const [label, block] of Object.entries(metrics)) {
+    assert(block.maxHeight === "none", `${surface} ${label} 높이 상한이 남았습니다: ${block.maxHeight}`);
+    assert(
+      !["auto", "scroll"].includes(block.overflowY),
+      `${surface} ${label} 코드가 세로 스크롤을 소유합니다: ${block.overflowY}`,
+    );
+    assert(
+      block.scrollHeight <= block.clientHeight + 1,
+      `${surface} ${label} 코드가 내용 높이만큼 펼쳐지지 않았습니다: ${JSON.stringify(block)}`,
+    );
+  }
 }
 
 async function measureScrollAncestry(target: Locator, boundary: Locator) {
@@ -180,10 +193,12 @@ async function measureScrollAncestry(target: Locator, boundary: Locator) {
     const nodes: Array<{
       tag: string;
       testId: string | null;
+      markdownCodeScroll: string | null;
       classes: string;
       maxHeight: string;
       height: string;
       overflow: string;
+      overflowX: string;
       overflowY: string;
       clientHeight: number;
       scrollHeight: number;
@@ -196,10 +211,12 @@ async function measureScrollAncestry(target: Locator, boundary: Locator) {
       nodes.push({
         tag: current.tagName.toLowerCase(),
         testId: current.dataset.testid ?? null,
+        markdownCodeScroll: current.dataset.markdownCodeScroll ?? null,
         classes: current.className,
         maxHeight: style.maxHeight,
         height: style.height,
         overflow: style.overflow,
+        overflowX: style.overflowX,
         overflowY,
         clientHeight: current.clientHeight,
         scrollHeight: current.scrollHeight,
@@ -241,24 +258,6 @@ async function preparePage(page: Page) {
       });
     }
     return route.fallback();
-  });
-}
-
-async function measureInlineMarkdown(inlineMarkdown: Locator) {
-  return inlineMarkdown.evaluate((element) => {
-    const wrapper = element as HTMLElement;
-    const style = getComputedStyle(wrapper);
-    const quote = wrapper.querySelector<HTMLElement>("blockquote");
-    if (!quote) throw new Error("긴 blockquote를 찾지 못했습니다.");
-    return {
-      maxHeight: style.maxHeight,
-      overflowY: style.overflowY,
-      clientHeight: wrapper.clientHeight,
-      scrollHeight: wrapper.scrollHeight,
-      quoteClientHeight: quote.clientHeight,
-      quoteScrollHeight: quote.scrollHeight,
-      quoteOverflowY: getComputedStyle(quote).overflowY,
-    };
   });
 }
 
