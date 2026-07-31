@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import {
   defaultKeymap,
   history,
@@ -15,6 +15,13 @@ import type { Awareness } from "y-protocols/awareness";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
 
+import {
+  captureMarkdownViewport,
+  markdownScrollTopForAnchor,
+  markdownSelectionOffset,
+  type MarkdownViewportSnapshot,
+} from "./markdown-document-view-state";
+
 interface MarkdownCodeMirrorEditorProps {
   value: string;
   yText: Y.Text | null;
@@ -23,6 +30,11 @@ interface MarkdownCodeMirrorEditorProps {
   onBlur: () => void;
   onEscape: () => void;
   ariaLabel?: string;
+  initialViewport?: MarkdownViewportSnapshot | null;
+}
+
+export interface MarkdownCodeMirrorEditorHandle {
+  captureViewport: () => MarkdownViewportSnapshot | null;
 }
 
 interface MarkdownEditorExtensionOptions {
@@ -34,7 +46,8 @@ interface MarkdownEditorExtensionOptions {
   onEscape: () => void;
 }
 
-export function MarkdownCodeMirrorEditor({
+export const MarkdownCodeMirrorEditor = forwardRef<MarkdownCodeMirrorEditorHandle, MarkdownCodeMirrorEditorProps>(
+function MarkdownCodeMirrorEditor({
   value,
   yText,
   awareness,
@@ -42,11 +55,22 @@ export function MarkdownCodeMirrorEditor({
   onBlur,
   onEscape,
   ariaLabel,
-}: MarkdownCodeMirrorEditorProps) {
+  initialViewport,
+}, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const callbacksRef = useRef({ onChange, onBlur, onEscape });
   const initialValueRef = useRef(value);
+  const initialViewportRef = useRef(initialViewport);
+
+  useImperativeHandle(ref, () => ({
+    captureViewport: () => {
+      const view = viewRef.current;
+      return view
+        ? captureMarkdownViewport(view.scrollDOM, view.state.selection.main.head)
+        : null;
+    },
+  }), []);
 
   useEffect(() => {
     callbacksRef.current = { onChange, onBlur, onEscape };
@@ -57,10 +81,15 @@ export function MarkdownCodeMirrorEditor({
     if (!host) return;
 
     const undoManager = yText ? new Y.UndoManager(yText) : null;
+    const initialDocument = yText ? yText.toString() : initialValueRef.current;
+    const viewport = initialViewportRef.current;
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
-        doc: yText ? yText.toString() : initialValueRef.current,
+        doc: initialDocument,
+        selection: viewport
+          ? { anchor: markdownSelectionOffset(initialDocument.length, viewport) }
+          : undefined,
         extensions: createMarkdownEditorExtensions({
           yText,
           awareness,
@@ -77,6 +106,14 @@ export function MarkdownCodeMirrorEditor({
     }
     viewRef.current = view;
     view.focus();
+    if (viewport) {
+      view.requestMeasure({
+        read: () => markdownScrollTopForAnchor(viewport.anchor, view.scrollDOM),
+        write: (scrollTop) => {
+          view.scrollDOM.scrollTop = scrollTop;
+        },
+      });
+    }
 
     return () => {
       view.destroy();
@@ -103,7 +140,7 @@ export function MarkdownCodeMirrorEditor({
       data-testid="markdown-codemirror-editor"
     />
   );
-}
+});
 
 export function createMarkdownEditorExtensions({
   yText,
