@@ -25,15 +25,20 @@ describe("v3 task document board unification", () => {
     expect(inlineBoard).toContain('variant="inline"');
   });
 
-  it("sizes inline markdown from content while preserving the long-document cap", () => {
+  it("expands inline markdown to its content while preserving the board scroll owner", () => {
     const css = read("./v3-context-menus.css");
+    const boardCss = read("./v3-task-board.css");
     const inlineMarkdownRule = css.match(/\.v3-inline-markdown\s*\{([^}]*)\}/)?.[1] ?? "";
 
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*gap:\s*var\(--v3-space-1\)/);
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*padding-inline:\s*var\(--v3-space-1\)/);
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*--v3-inline-rename-action-size:\s*var\(--v3-action-size\)/);
     expect(inlineMarkdownRule).not.toMatch(/^\s*height\s*:/m);
-    expect(inlineMarkdownRule).toMatch(/max-height:\s*clamp\(420px,\s*65vh,\s*760px\)/);
+    expect(inlineMarkdownRule).not.toMatch(/^\s*max-height\s*:/m);
+    expect(inlineMarkdownRule).not.toMatch(/^\s*overflow(?:-y)?\s*:\s*(?:auto|scroll)/m);
+    expect(boardCss).toMatch(
+      /\.v3-task-board-resource-content\s*\{[^}]*overflow:\s*auto;/s,
+    );
     expect(css).toMatch(
       /\.v3-description-editor\[data-editor-variant="inline"\]\s+textarea\s*\{[\s\S]*?min-height:\s*0;/,
     );

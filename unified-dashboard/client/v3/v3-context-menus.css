@@ -89,8 +89,6 @@
 }
 
 .v3-inline-markdown {
-  max-height: clamp(420px, 65vh, 760px);
-  overflow: auto;
   border-top: 1px solid var(--lg-line);
   padding: 14px;
 }

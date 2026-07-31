@@ -101,6 +101,17 @@ function dispatchEditorKey(view: EditorView, key: string, init: KeyboardEventIni
   }));
 }
 
+function setScrollMetrics(
+  element: HTMLElement,
+  metrics: { clientHeight: number; scrollHeight: number; scrollTop: number },
+) {
+  Object.defineProperties(element, {
+    clientHeight: { configurable: true, value: metrics.clientHeight },
+    scrollHeight: { configurable: true, value: metrics.scrollHeight },
+    scrollTop: { configurable: true, writable: true, value: metrics.scrollTop },
+  });
+}
+
 function createStandaloneEditor(params: {
   doc?: string;
   yText?: Y.Text;
@@ -280,6 +291,72 @@ describe("MarkdownDocumentPanel", () => {
     await waitForText(container, '[data-testid="markdown-save-status"]', "저장됨");
     expect(container.querySelector('[data-testid="markdown-save-status"]')?.textContent).toBe("저장됨");
     expect(container.querySelector('button[title="Delete document"]')).not.toBeNull();
+  });
+
+  it("enters edit mode at the middle content anchor instead of the top", async () => {
+    storedDocument.body = "0123456789".repeat(100);
+    ({ container, root } = renderPanel());
+
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    const readScroller = readBody.parentElement as HTMLElement;
+    setScrollMetrics(readScroller, { clientHeight: 200, scrollHeight: 1_000, scrollTop: 400 });
+
+    flushSync(() => readBody.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    const view = await waitForEditorView(container);
+    expect(view.state.selection.main.head).toBe(500);
+  });
+
+  it("restores the bottom content anchor after the explicit save exit", async () => {
+    storedDocument.body = "0123456789".repeat(100);
+    ({ container, root } = renderPanel());
+
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    const readScroller = readBody.parentElement as HTMLElement;
+    setScrollMetrics(readScroller, { clientHeight: 200, scrollHeight: 1_200, scrollTop: 700 });
+    flushSync(() => readBody.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    const view = await waitForEditorView(container);
+    setScrollMetrics(view.scrollDOM, { clientHeight: 200, scrollHeight: 1_000, scrollTop: 800 });
+    const editDone = await waitForSelector<HTMLButtonElement>(container, '[data-testid="markdown-edit-done"]');
+    flushSync(() => editDone.click());
+
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+    expect(readScroller.scrollTop).toBe(980);
+  });
+
+  it("restores the middle content anchor after the blur save exit", async () => {
+    storedDocument.body = "0123456789".repeat(100);
+    ({ container, root } = renderPanel());
+
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    const readScroller = readBody.parentElement as HTMLElement;
+    setScrollMetrics(readScroller, { clientHeight: 200, scrollHeight: 1_200, scrollTop: 700 });
+    flushSync(() => readBody.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    const view = await waitForEditorView(container);
+    setScrollMetrics(view.scrollDOM, { clientHeight: 200, scrollHeight: 1_000, scrollTop: 400 });
+    flushSync(() => view.contentDOM.dispatchEvent(new FocusEvent("blur")));
+
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+    expect(readScroller.scrollTop).toBe(500);
+  });
+
+  it("restores the bottom content anchor after the Escape cancel exit", async () => {
+    storedDocument.body = "0123456789".repeat(100);
+    ({ container, root } = renderPanel());
+
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    const readScroller = readBody.parentElement as HTMLElement;
+    setScrollMetrics(readScroller, { clientHeight: 200, scrollHeight: 1_200, scrollTop: 700 });
+    flushSync(() => readBody.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    const view = await waitForEditorView(container);
+    setScrollMetrics(view.scrollDOM, { clientHeight: 200, scrollHeight: 1_000, scrollTop: 800 });
+    flushSync(() => dispatchEditorKey(view, "Escape"));
+
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+    expect(readScroller.scrollTop).toBe(980);
   });
 
   it("auto-enters edit mode when opened via requestBoardDocumentEdit (🔴25)", async () => {

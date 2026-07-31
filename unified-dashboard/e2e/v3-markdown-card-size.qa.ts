@@ -10,26 +10,45 @@ const outputRoot = path.resolve(
   process.env.MARKDOWN_CARD_QA_OUTPUT
     ?? path.join("e2e", "screenshots", "v3-markdown-card-size"),
 );
+const longMarkdown = [
+  "# 긴 문서 위치 검증",
+  "",
+  ...Array.from({ length: 80 }, (_, index) => (
+    `> 긴 인용문 ${index + 1} — 내부 스크롤 없이 문서 흐름 안에서 펼쳐져야 합니다.`
+  )),
+  "",
+  ...Array.from({ length: 80 }, (_, index) => `본문 문단 ${index + 1} — 편집 왕복 위치 기준점입니다.`),
+].join("\n");
 
 const result = await runPlaywrightLifecycle({
   lockName: "v3-markdown-card-size",
-  timeoutMs: 120_000,
-}, async ({ browser }) => verifyMarkdownCard(browser));
+  timeoutMs: 180_000,
+  closeTimeoutMs: 15_000,
+}, async ({ browser }) => verifyMarkdownSurfaces(browser));
 
 console.log(JSON.stringify({ ok: true, outputRoot, residualProcesses: 0, ...result }, null, 2));
 
-async function verifyMarkdownCard(browser: Browser) {
+async function verifyMarkdownSurfaces(browser: Browser) {
   const context = await browser.newContext({
     colorScheme: "dark",
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
-    viewport: { width: 1440, height: 1000 },
+    viewport: { width: 1600, height: 1000 },
   });
   const page = await context.newPage();
   const browserErrors: string[] = [];
-  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("pageerror", (error) => {
+    if (!error.message.includes("document is sandboxed and lacks the 'allow-same-origin' flag")) {
+      browserErrors.push(error.message);
+    }
+  });
   page.on("console", (message) => {
-    if (message.type() === "error") browserErrors.push(message.text());
+    if (
+      message.type() === "error"
+      && !message.text().includes("document is sandboxed and lacks the 'allow-same-origin' flag")
+    ) {
+      browserErrors.push(message.text());
+    }
   });
 
   try {
@@ -38,70 +57,54 @@ async function verifyMarkdownCard(browser: Browser) {
     await page.getByTestId("v3-task-task-alpha").click();
     await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
 
-    const card = page.locator('[data-board-kind="markdown"]').first();
-    const inlineMarkdown = card.getByTestId("v3-inline-markdown");
-    const editButton = inlineMarkdown.locator(".v3-description-content");
-    await editButton.waitFor({
-      state: "visible",
-      timeout: 20_000,
-    });
+    const inlineMarkdown = page.getByTestId("v3-inline-markdown");
+    await inlineMarkdown.getByText("긴 인용문 80", { exact: false }).waitFor({ state: "visible" });
+    const inline = await measureInlineMarkdown(inlineMarkdown);
+    assert(inline.maxHeight === "none", `인라인 문서 높이 상한이 남았습니다: ${inline.maxHeight}`);
+    assert(!["auto", "scroll"].includes(inline.overflowY), `인라인 문서가 내부 스크롤을 소유합니다: ${inline.overflowY}`);
+    assert(inline.scrollHeight <= inline.clientHeight + 1, "인라인 문서 안에 별도 세로 스크롤 영역이 남았습니다.");
+    assert(inline.quoteScrollHeight <= inline.quoteClientHeight + 1, "긴 blockquote 안에 별도 세로 스크롤 영역이 남았습니다.");
+    await capture(page, "01-inline-long-blockquote");
 
-    const emptyView = await measure(card, inlineMarkdown);
-    assert(emptyView.wrapperHeight < emptyView.maxHeight, "빈 보기 카드가 높이 상한까지 늘어났습니다.");
-    await capture(card, "01-empty-view");
+    await page.getByRole("button", { name: "업무 보드 열기" }).click();
+    const board = page.getByTestId("v3-task-board-pane");
+    const resources = page.getByTestId("v3-task-board-resources");
+    const canvas = page.getByTestId("v3-task-board-canvas");
+    await board.waitFor({ state: "visible" });
+    await page.getByTestId("v3-task-board-loading").waitFor({ state: "hidden" });
+    await canvas.getByTestId("board-declutter-button").click();
+    await canvas.getByTestId("board-markdown-tile").click();
+    await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
 
-    await editButton.click();
-    const editor = inlineMarkdown.getByRole("textbox", { name: "PR-O 결정 로그 문서 마크다운" });
-    await editor.waitFor({ state: "visible" });
-    const emptyEdit = await measure(card, inlineMarkdown);
-    await capture(card, "02-empty-edit");
-    assert(
-      Math.abs(emptyEdit.wrapperHeight - emptyView.wrapperHeight) <= 1,
-      `빈 문서 보기↔편집 높이가 달라졌습니다: ${emptyView.wrapperHeight} → ${emptyEdit.wrapperHeight}`,
-    );
+    const overlay = page.getByTestId("v3-task-board-document-overlay");
+    await overlay.waitFor({ state: "visible" });
+    await overlay.getByTestId("v3-task-board-document-overlay-expand").click();
+    const readBody = overlay.getByTestId("markdown-read-body");
+    await readBody.getByText("본문 문단 80", { exact: false }).waitFor({ state: "visible" });
+    const readMiddle = await setScrollFraction(readBody, 0.5);
+    await capture(page, "02-board-read-middle");
 
-    await inlineMarkdown.getByRole("button", { name: "완료" }).click();
-    await editButton.waitFor({ state: "visible" });
-    const emptyViewAfterEdit = await measure(card, inlineMarkdown);
-    assert(
-      Math.abs(emptyViewAfterEdit.wrapperHeight - emptyView.wrapperHeight) <= 1,
-      `빈 문서 편집 이탈 뒤 높이가 달라졌습니다: ${emptyView.wrapperHeight} → ${emptyViewAfterEdit.wrapperHeight}`,
-    );
+    await overlay.getByTestId("markdown-edit-start").click();
+    const editorScroller = overlay.locator(".cm-scroller");
+    await editorScroller.waitFor({ state: "visible" });
+    const editMiddle = await readSettledMetrics(editorScroller);
+    assertAnchorClose(readMiddle.anchor, editMiddle.anchor, "읽기 → 편집 중간 위치");
+    await capture(page, "03-board-edit-middle");
 
-    await editButton.click();
-    await editor.waitFor({ state: "visible" });
-    await editor.fill([
-      "## 내용이 생긴 문서",
-      "",
-      "첫 번째 확인 항목입니다.",
-      "",
-      "두 번째 줄이 추가되면 편집 영역도 자연스럽게 커집니다.",
-      "",
-      "- 보기와 편집의 최소 높이는 같다.",
-      "- 내용은 잘리지 않는다.",
-    ].join("\n"));
-    await waitForWrapperGrowth(page, emptyEdit.wrapperHeight);
-    const contentEdit = await measure(card, inlineMarkdown);
-    assert(
-      contentEdit.wrapperHeight > emptyEdit.wrapperHeight,
-      `내용 입력 뒤 카드 높이가 늘지 않았습니다: ${emptyEdit.wrapperHeight} → ${contentEdit.wrapperHeight}`,
-    );
-    assert(contentEdit.wrapperHeight < contentEdit.maxHeight, "보통 길이 문서가 높이 상한까지 늘어났습니다.");
-    await capture(card, "03-content-edit");
+    const editBottom = await setScrollFraction(editorScroller, 0.86);
+    await overlay.getByTestId("markdown-edit-done").click();
+    await readBody.waitFor({ state: "visible" });
+    const savedBottom = await readSettledMetrics(readBody);
+    assertAnchorClose(editBottom.anchor, savedBottom.anchor, "편집 완료 → 읽기 하단 위치");
+    await capture(page, "04-board-saved-bottom");
 
-    await editor.fill(Array.from({ length: 80 }, (_, index) => `긴 문서 ${index + 1}번째 줄`).join("\n"));
-    await waitForWrapperGrowth(page, contentEdit.wrapperHeight);
-    const longEdit = await measure(card, inlineMarkdown);
-    assert(longEdit.wrapperHeight <= longEdit.maxHeight + 1, "긴 문서가 기존 높이 상한을 넘었습니다.");
-    assert(longEdit.scrollHeight > longEdit.clientHeight, "긴 문서의 기존 내부 스크롤이 사라졌습니다.");
     assert(browserErrors.length === 0, `브라우저 오류가 발생했습니다: ${browserErrors.join(" | ")}`);
-
     const metrics = {
-      emptyView,
-      emptyEdit,
-      emptyViewAfterEdit,
-      contentEdit,
-      longEdit,
+      inline,
+      readMiddle,
+      editMiddle,
+      editBottom,
+      savedBottom,
       browserErrors: browserErrors.length,
     };
     mkdirSync(outputRoot, { recursive: true });
@@ -135,7 +138,7 @@ async function preparePage(page: Page) {
       return fulfillJson(route, {
         id: "doc-inline",
         title: "PR-O 결정 로그",
-        body: "",
+        body: longMarkdown,
         version: 2,
       });
     }
@@ -143,52 +146,66 @@ async function preparePage(page: Page) {
   });
 }
 
-async function measure(
-  card: ReturnType<Page["locator"]>,
-  inlineMarkdown: ReturnType<Page["getByTestId"]>,
-) {
-  const metrics = await inlineMarkdown.evaluate((element) => {
+async function measureInlineMarkdown(inlineMarkdown: Locator) {
+  return inlineMarkdown.evaluate((element) => {
     const wrapper = element as HTMLElement;
-    const cardNode = wrapper.closest<HTMLElement>('[data-board-kind="markdown"]');
-    if (!cardNode) return null;
     const style = getComputedStyle(wrapper);
-    const shell = wrapper.querySelector<HTMLElement>(".v3-description-shell");
-    const editor = wrapper.querySelector<HTMLElement>(".v3-description-editor");
-    const textarea = wrapper.querySelector<HTMLTextAreaElement>("textarea");
+    const quote = wrapper.querySelector<HTMLElement>("blockquote");
+    if (!quote) throw new Error("긴 blockquote를 찾지 못했습니다.");
     return {
-      cardHeight: cardNode.getBoundingClientRect().height,
-      wrapperHeight: wrapper.getBoundingClientRect().height,
-      maxHeight: Number.parseFloat(style.maxHeight),
+      maxHeight: style.maxHeight,
+      overflowY: style.overflowY,
       clientHeight: wrapper.clientHeight,
       scrollHeight: wrapper.scrollHeight,
-      shellHeight: shell?.getBoundingClientRect().height ?? null,
-      editorHeight: editor?.getBoundingClientRect().height ?? null,
-      textarea: textarea ? {
-        height: textarea.getBoundingClientRect().height,
-        clientHeight: textarea.clientHeight,
-        scrollHeight: textarea.scrollHeight,
-      } : null,
+      quoteClientHeight: quote.clientHeight,
+      quoteScrollHeight: quote.scrollHeight,
+      quoteOverflowY: getComputedStyle(quote).overflowY,
     };
   });
-  assert(metrics !== null, "마크다운 카드 높이 측정 대상을 찾지 못했습니다.");
-  assert(await card.count() === 1, "마크다운 카드가 하나가 아닙니다.");
-  return metrics;
 }
 
-async function capture(card: Locator, name: string) {
+async function setScrollFraction(locator: Locator, fraction: number) {
+  return locator.evaluate((element, targetFraction) => {
+    const scroller = element.matches('[data-testid="markdown-read-body"]')
+      ? element.parentElement as HTMLElement
+      : element as HTMLElement;
+    scroller.scrollTop = Math.max(scroller.scrollHeight - scroller.clientHeight, 0) * targetFraction;
+    return {
+      scrollTop: scroller.scrollTop,
+      clientHeight: scroller.clientHeight,
+      scrollHeight: scroller.scrollHeight,
+      anchor: (scroller.scrollTop + scroller.clientHeight / 2) / Math.max(scroller.scrollHeight, 1),
+    };
+  }, fraction);
+}
+
+async function readSettledMetrics(locator: Locator) {
+  await locator.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  return locator.evaluate((element) => {
+    const scroller = element.matches('[data-testid="markdown-read-body"]')
+      ? element.parentElement as HTMLElement
+      : element as HTMLElement;
+    return {
+      scrollTop: scroller.scrollTop,
+      clientHeight: scroller.clientHeight,
+      scrollHeight: scroller.scrollHeight,
+      anchor: (scroller.scrollTop + scroller.clientHeight / 2) / Math.max(scroller.scrollHeight, 1),
+    };
+  });
+}
+
+function assertAnchorClose(expected: number, actual: number, label: string) {
+  assert(Math.abs(expected - actual) <= 0.08, `${label}가 어긋났습니다: ${expected} → ${actual}`);
+}
+
+async function capture(page: Page, name: string) {
   mkdirSync(outputRoot, { recursive: true });
-  await card.scrollIntoViewIfNeeded();
-  await card.screenshot({
+  await page.screenshot({
     path: path.join(outputRoot, `${name}.png`),
     animations: "disabled",
   });
-}
-
-async function waitForWrapperGrowth(page: Page, previousHeight: number) {
-  await page.waitForFunction((height) => {
-    const wrapper = document.querySelector<HTMLElement>(".v3-inline-markdown");
-    return wrapper !== null && wrapper.getBoundingClientRect().height > height;
-  }, previousHeight, { timeout: 5_000 });
 }
 
 async function fulfillJson(route: Route, payload: unknown) {

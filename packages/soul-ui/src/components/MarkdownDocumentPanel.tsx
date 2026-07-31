@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Check, Pencil, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
@@ -12,6 +12,15 @@ import {
   useBoardRuntime,
 } from "./markdown-document-runtime";
 import { MarkdownContent } from "./MarkdownContent";
+import type { MarkdownCodeMirrorEditorHandle } from "./MarkdownCodeMirrorEditor";
+import {
+  captureMarkdownReadViewport,
+  DEFAULT_DOCUMENT_TITLE,
+  isDefaultDocumentTitle,
+  isScrollbarMouseDown,
+  restoreMarkdownViewport,
+  type MarkdownViewportSnapshot,
+} from "./markdown-document-view-state";
 import {
   deleteMarkdownDocument,
   fetchMarkdownDocument,
@@ -22,15 +31,6 @@ import {
 } from "../lib/markdown-document-operations";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "conflict";
-
-const DEFAULT_DOCUMENT_TITLE = "Untitled document";
-
-/** 기본/placeholder 제목(빈 값 또는 "Untitled document")인지 판정한다. 대소문자 무시. */
-export function isDefaultDocumentTitle(title: string): boolean {
-  const trimmed = title.trim();
-  return trimmed === "" || trimmed.toLowerCase() === DEFAULT_DOCUMENT_TITLE.toLowerCase();
-}
-
 const MarkdownCodeMirrorEditor = lazy(async () => {
   const module = await import("./MarkdownCodeMirrorEditor");
   return { default: module.MarkdownCodeMirrorEditor };
@@ -72,6 +72,10 @@ export function MarkdownDocumentPanel() {
   const canDeleteDocument = loadedDocumentIdRef.current === documentId && (!runtime?.isProviderBacked || runtimeReady);
   const editBodySnapshotRef = useRef("");
   const skipNextBlurSaveRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<MarkdownCodeMirrorEditorHandle>(null);
+  const viewportRef = useRef<MarkdownViewportSnapshot | null>(null);
+  const restoreReadViewportRef = useRef(false);
   // 제목 입력이 포커스된 동안에는 런타임 스냅샷이 입력값을 덮어써 공백을 지우지
   // 않도록 가드한다(🔴 9 근본 원인: Yjs observer 피드백 루프).
   const titleEditingRef = useRef(false);
@@ -166,6 +170,8 @@ export function MarkdownDocumentPanel() {
   useEffect(() => {
     clearSaveTimer();
     skipNextBlurSaveRef.current = false;
+    viewportRef.current = null;
+    restoreReadViewportRef.current = false;
     loadedDocumentIdRef.current = null;
     if (!documentId) return;
     setDocument(null);
@@ -280,9 +286,7 @@ export function MarkdownDocumentPanel() {
     title,
   ]);
 
-  useEffect(() => () => {
-    clearSaveTimer();
-  }, [clearSaveTimer]);
+  useEffect(() => () => clearSaveTimer(), [clearSaveTimer]);
 
   const remove = async () => {
     if (!documentId || !canDeleteDocument) return;
@@ -302,8 +306,24 @@ export function MarkdownDocumentPanel() {
   const enterEditMode = () => {
     skipNextBlurSaveRef.current = false;
     editBodySnapshotRef.current = yText ? yText.toString() : body;
+    if (scrollContainerRef.current) {
+      viewportRef.current = captureMarkdownReadViewport(scrollContainerRef.current, viewportRef.current);
+    }
     setIsEditingBody(true);
   };
+
+  const leaveEditMode = useCallback(() => {
+    viewportRef.current = editorRef.current?.captureViewport() ?? viewportRef.current;
+    restoreReadViewportRef.current = true;
+    setIsEditingBody(false);
+  }, []);
+  useLayoutEffect(() => {
+    if (isEditingBody || !restoreReadViewportRef.current) return;
+    restoreReadViewportRef.current = false;
+    if (scrollContainerRef.current && viewportRef.current) {
+      restoreMarkdownViewport(scrollContainerRef.current, viewportRef.current);
+    }
+  }, [isEditingBody]);
 
   // 🔴25: "편집" 요청(requestBoardDocumentEdit)으로 열린 문서는 로드된 뒤 자동으로 편집
   // 모드에 진입한다. 요청 문서가 실제 로드된 문서와 일치할 때만 소비하고 즉시 clear한다.
@@ -343,8 +363,8 @@ export function MarkdownDocumentPanel() {
       return;
     }
     void saveNow();
-    setIsEditingBody(false);
-  }, [saveNow]);
+    leaveEditMode();
+  }, [leaveEditMode, saveNow]);
 
   const handleEditScrollMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (!isEditingBody) return;
@@ -372,14 +392,14 @@ export function MarkdownDocumentPanel() {
       setBody(savedBody);
     }
     setSaveStatus("saved");
-    setIsEditingBody(false);
-  }, [clearSaveTimer, collaborativeRuntime, documentId, savedBody, savedTitle]);
+    leaveEditMode();
+  }, [clearSaveTimer, collaborativeRuntime, documentId, leaveEditMode, savedBody, savedTitle]);
 
   // 편집완료(체크) — 기존 자동 저장/동기화 흐름을 그대로 사용해 저장 후 읽기로 전환한다.
   const finishEditing = useCallback(() => {
     void saveNow();
-    setIsEditingBody(false);
-  }, [saveNow]);
+    leaveEditMode();
+  }, [leaveEditMode, saveNow]);
 
   if (!documentId) return null;
   return (
@@ -443,12 +463,13 @@ export function MarkdownDocumentPanel() {
         </Button></span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-3" onMouseDown={handleEditScrollMouseDown}>
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto p-3" onMouseDown={handleEditScrollMouseDown}>
         {!document ? (
           <div className="text-sm text-muted-foreground">Loading...</div>
         ) : isEditingBody ? (
           <Suspense fallback={<div className="text-sm text-muted-foreground">Loading editor...</div>}>
             <MarkdownCodeMirrorEditor
+              ref={editorRef}
               value={body}
               yText={yText}
               awareness={collaborativeRuntime?.awareness ?? null}
@@ -456,6 +477,7 @@ export function MarkdownDocumentPanel() {
               onBlur={handleEditorBlur}
               onEscape={handleEditorEscape}
               ariaLabel="Document body"
+              initialViewport={viewportRef.current}
             />
           </Suspense>
         ) : (
@@ -471,22 +493,4 @@ export function MarkdownDocumentPanel() {
       </div>
     </div>
   );
-}
-
-/**
- * 주어진 mousedown 대상이 스크롤 컨테이너의 스크롤바 거터(콘텐츠 영역 밖)에서
- * 시작됐는지 판정한다. 세로 스크롤바는 `offsetX`가 `clientWidth`를 넘고, 가로
- * 스크롤바는 `offsetY`가 `clientHeight`를 넘는다. 실제 스크롤이 가능한 축만
- * 인정하여 콘텐츠 클릭을 오탐하지 않는다.
- */
-export function isScrollbarMouseDown(
-  target: Pick<HTMLElement, "clientWidth" | "clientHeight" | "scrollWidth" | "scrollHeight">,
-  offsetX: number,
-  offsetY: number,
-): boolean {
-  const hasVerticalScrollbar = target.scrollHeight > target.clientHeight;
-  const hasHorizontalScrollbar = target.scrollWidth > target.clientWidth;
-  if (hasVerticalScrollbar && offsetX > target.clientWidth) return true;
-  if (hasHorizontalScrollbar && offsetY > target.clientHeight) return true;
-  return false;
 }
