@@ -137,7 +137,10 @@ const components: Components = {
 
   // 인용
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-muted-foreground/30 pl-3 my-2 text-muted-foreground italic">
+    <blockquote
+      data-markdown-blockquote="true"
+      className="border-l-2 border-muted-foreground/30 pl-3 my-2 text-muted-foreground italic"
+    >
       {children}
     </blockquote>
   ),
@@ -190,7 +193,10 @@ const compactComponents: Components = {
   strong: ({ children }) => <strong className="font-bold">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-muted-foreground/30 pl-2 my-1 text-muted-foreground italic">
+    <blockquote
+      data-markdown-blockquote="true"
+      className="border-l-2 border-muted-foreground/30 pl-2 my-1 text-muted-foreground italic"
+    >
       {children}
     </blockquote>
   ),
@@ -238,7 +244,7 @@ function CopyableBlockquote({
   if (depth > 0) {
     return (
       <BlockquoteDepthContext.Provider value={depth + 1}>
-        <blockquote className={quoteClassName}>{children}</blockquote>
+        <blockquote data-markdown-blockquote="true" className={quoteClassName}>{children}</blockquote>
       </BlockquoteDepthContext.Provider>
     );
   }
@@ -268,6 +274,7 @@ function CopyableBlockquote({
         <blockquote
           ref={contentRef}
           data-slot="blockquote-copy-content"
+          data-markdown-blockquote="true"
           className={`${quoteClassName} pr-9`}
         >
           {children}
