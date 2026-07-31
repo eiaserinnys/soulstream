@@ -24,6 +24,7 @@ import {
   useSessionSearch,
   type SearchResultItem,
   type SearchFilters,
+  type SearchMatchSource,
   type SearchNavigationResult,
 } from "../hooks/useSessionSearch";
 import {
@@ -38,6 +39,9 @@ interface FilterState {
   userMessage: boolean;
   agentResponse: boolean;
   agentThinking: boolean;
+  includeTurnSummaries: boolean;
+  includeHighlight: boolean;
+  includeStory: boolean;
 }
 
 const DEFAULT_FILTER_STATE: FilterState = {
@@ -45,13 +49,22 @@ const DEFAULT_FILTER_STATE: FilterState = {
   userMessage: true,
   agentResponse: true,
   agentThinking: false,
+  includeTurnSummaries: false,
+  includeHighlight: false,
+  includeStory: false,
 };
 
-const FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
+const EVENT_FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
   { key: "sessionId", label: "세션 아이디" },
   { key: "userMessage", label: "사용자 메시지" },
   { key: "agentResponse", label: "에이전트 응답" },
   { key: "agentThinking", label: "에이전트 내부 사고" },
+];
+
+const DERIVED_FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
+  { key: "includeTurnSummaries", label: "턴 요약" },
+  { key: "includeHighlight", label: "하이라이트" },
+  { key: "includeStory", label: "줄거리" },
 ];
 
 function toSearchFilters(state: FilterState): SearchFilters {
@@ -62,6 +75,9 @@ function toSearchFilters(state: FilterState): SearchFilters {
   return {
     searchSessionId: state.sessionId,
     eventCategories,
+    includeTurnSummaries: state.includeTurnSummaries,
+    includeHighlight: state.includeHighlight,
+    includeStory: state.includeStory,
   };
 }
 
@@ -70,6 +86,15 @@ function toSearchFilters(state: FilterState): SearchFilters {
 const SEARCH_RESULT_KIND_BADGE_CLASS =
   "inline-flex w-20 shrink-0 items-center justify-center rounded bg-input px-1.5 py-0.5 text-xs text-muted-foreground";
 
+const SEARCH_MATCH_SOURCE_LABELS: Record<
+  Exclude<SearchMatchSource, "message">,
+  string
+> = {
+  turn_summary: "턴 요약",
+  highlight: "하이라이트",
+  story: "줄거리",
+};
+
 function SearchResultRow({
   result,
   onClick,
@@ -77,31 +102,89 @@ function SearchResultRow({
   result: SearchResultItem;
   onClick: () => void;
 }) {
+  const isDerivedMatch = result.match_source !== "message";
+  const opensStoryPanel =
+    result.match_source === "highlight" || result.match_source === "story";
+  const badgeLabel =
+    result.match_source === "message"
+      ? searchEventTypeLabel(result.event_type)
+      : SEARCH_MATCH_SOURCE_LABELS[result.match_source];
+
   return (
     <button
       onClick={onClick}
+      data-match-source={result.match_source}
       className={cn(
-        "w-full text-left px-3 py-2.5 rounded-lg border border-transparent",
-        "hover:bg-muted/60 hover:border-border transition-colors",
+        "w-full text-left px-3 py-2.5 rounded-lg border transition-colors",
         "focus:outline-none focus:bg-muted/60",
+        isDerivedMatch
+          ? "border-border/50 bg-muted/25 hover:bg-muted/60"
+          : "border-transparent hover:bg-muted/60 hover:border-border",
       )}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className={cn(SEARCH_RESULT_KIND_BADGE_CLASS, "font-mono")}>
-          {searchEventTypeLabel(result.event_type)}
+        <span
+          className={cn(
+            SEARCH_RESULT_KIND_BADGE_CLASS,
+            result.match_source === "message" && "font-mono",
+            isDerivedMatch && "bg-muted",
+          )}
+          aria-label={
+            isDerivedMatch ? `매치 출처: ${badgeLabel}` : undefined
+          }
+        >
+          {badgeLabel}
         </span>
         <span className="text-xs text-muted-foreground truncate font-mono">
           {result.session_id.slice(0, 20)}…
         </span>
         <span className="text-xs text-muted-foreground/60 ml-auto shrink-0">
-          #{result.event_id}
+          {opensStoryPanel ? "스토리 패널" : `#${result.event_id}`}
         </span>
       </div>
-      <p className="text-sm text-foreground line-clamp-2 break-words">
+      <p
+        className={cn(
+          "text-sm line-clamp-2 break-words",
+          isDerivedMatch ? "text-muted-foreground" : "text-foreground",
+        )}
+      >
         {result.preview}
       </p>
     </button>
   );
+}
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(() => resolve());
+      return;
+    }
+    globalThis.setTimeout(resolve, 0);
+  });
+}
+
+async function openMountedSessionStoryPanel(): Promise<boolean> {
+  await nextAnimationFrame();
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const triggers = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="session-story-trigger"]',
+      ),
+    );
+    if (triggers.some((trigger) => trigger.getAttribute("aria-expanded") === "true")) {
+      return true;
+    }
+    const trigger =
+      triggers.find((candidate) => candidate.getClientRects().length > 0) ??
+      triggers[0];
+    if (trigger) {
+      trigger.click();
+      return true;
+    }
+    await nextAnimationFrame();
+  }
+  return false;
 }
 
 function NavigationResultRow({
@@ -138,9 +221,9 @@ interface SearchModalProps {
   sessions?: SessionSummary[];
   onOpenSession?: (
     sessionId: string,
-    focusEventId: number,
+    focusEventId: number | null,
     session?: SessionSummary,
-  ) => void | Promise<void>;
+  ) => boolean | void | Promise<boolean | void>;
   onOpenFolder?: (result: Extract<SearchNavigationResult, { kind: "folder" }>) =>
     void | Promise<void>;
   onOpenTask?: (result: Extract<SearchNavigationResult, { kind: "task" }>) =>
@@ -230,8 +313,16 @@ export function SearchModal({
             displayName: assignment.displayName,
           }
         : summary;
+    const opensStoryPanel =
+      result.match_source === "highlight" || result.match_source === "story";
+    const focusEventId = opensStoryPanel ? null : result.event_id;
+    let openResult: boolean | void | Promise<boolean | void>;
     if (onOpenSession) {
-      void onOpenSession(result.session_id, result.event_id, targetSummary);
+      openResult = onOpenSession(
+        result.session_id,
+        focusEventId,
+        targetSummary,
+      );
     } else {
       const targetFolderId = assignment
         ? assignment.folderId
@@ -244,10 +335,21 @@ export function SearchModal({
         setActiveSessionSummary(targetSummary);
       }
       setActiveSession(result.session_id);
-      setFocusEventId(result.event_id);
+      setFocusEventId(focusEventId);
       setActiveTab("chat");
+      openResult = true;
     }
     onOpenChange(false);
+    if (opensStoryPanel) {
+      void Promise.resolve(openResult)
+        .then((opened) => {
+          if (opened !== false) return openMountedSessionStoryPanel();
+          return false;
+        })
+        .catch((storyOpenError) => {
+          console.error("세션 스토리 패널 열기 실패", storyOpenError);
+        });
+    }
   };
 
   const handleNavigationClick = (result: SearchNavigationResult) => {
@@ -288,9 +390,35 @@ export function SearchModal({
             />
           </div>
 
-          {/* 필터 체크박스 */}
+          {/* 이벤트 필터 체크박스 */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
-            {FILTER_LABELS.map(({ key, label }) => (
+            {EVENT_FILTER_LABELS.map(({ key, label }) => (
+              <label
+                key={key}
+                className="flex items-center gap-1.5 cursor-pointer select-none"
+              >
+                <input
+                  type="checkbox"
+                  checked={filters[key]}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, [key]: e.target.checked }))
+                  }
+                  className="w-3.5 h-3.5 rounded accent-primary"
+                />
+                <span className="text-xs text-muted-foreground">{label}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* 파생 텍스트 포함 범위 */}
+          <div
+            className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/30 px-2.5 py-2"
+            aria-label="검색 포함 범위"
+          >
+            <span className="text-xs font-medium text-muted-foreground">
+              포함 범위
+            </span>
+            {DERIVED_FILTER_LABELS.map(({ key, label }) => (
               <label
                 key={key}
                 className="flex items-center gap-1.5 cursor-pointer select-none"
@@ -349,7 +477,7 @@ export function SearchModal({
               ))}
               {results.map((result) => (
                 <SearchResultRow
-                  key={`${result.session_id}-${result.event_id}`}
+                  key={`${result.session_id}-${result.event_id}-${result.match_source}`}
                   result={result}
                   onClick={() => handleResultClick(result)}
                 />

@@ -11,16 +11,13 @@ import {
   type CatalogState,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import type { SearchNavigationResult } from "../hooks/useSessionSearch";
+import type {
+  SearchNavigationResult,
+  SearchResultItem,
+} from "../hooks/useSessionSearch";
 
 const searchHarness = vi.hoisted(() => ({
-  results: [] as Array<{
-    session_id: string;
-    event_id: number;
-    score: number;
-    preview: string;
-    event_type: string;
-  }>,
+  results: [] as SearchResultItem[],
   navigationResults: [] as Array<
     | {
       kind: "folder";
@@ -91,9 +88,9 @@ function renderSearchModal(options: {
   onOpenChange?: (open: boolean) => void;
   onOpenSession?: (
     sessionId: string,
-    focusEventId: number,
+    focusEventId: number | null,
     session?: SessionSummary,
-  ) => void;
+  ) => boolean | void | Promise<boolean | void>;
   onOpenFolder?: (
     result: Extract<SearchNavigationResult, { kind: "folder" }>,
   ) => void;
@@ -127,6 +124,18 @@ function clickResult(preview: string) {
 
   flushSync(() => {
     resultButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+function setTextInputValue(input: HTMLInputElement, value: string) {
+  const valueSetter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  expect(valueSetter).toBeTypeOf("function");
+  flushSync(() => {
+    valueSetter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
 
@@ -168,6 +177,7 @@ describe("SearchModal", () => {
         score: 1,
         preview: "Needle preview",
         event_type: "user_message",
+        match_source: "message",
       },
     ];
 
@@ -200,6 +210,7 @@ describe("SearchModal", () => {
         score: 1,
         preview: "Same session preview",
         event_type: "assistant_message",
+        match_source: "message",
       },
     ];
 
@@ -229,6 +240,7 @@ describe("SearchModal", () => {
         score: 1,
         preview: "Delegated preview",
         event_type: "user_message",
+        match_source: "message",
       },
     ];
 
@@ -313,6 +325,7 @@ describe("SearchModal", () => {
         score: 1,
         preview: "Aligned message",
         event_type: "assistant_message",
+        match_source: "message",
       },
     ];
 
@@ -325,5 +338,155 @@ describe("SearchModal", () => {
       expect(badge?.className).toContain("w-20");
       expect(badge?.className).toContain("justify-center");
     }
+  });
+
+  it("shows three derived-text scope toggles off by default", () => {
+    ({ container, root } = renderSearchModal());
+
+    for (const label of ["턴 요약", "하이라이트", "줄거리"]) {
+      const labelElement = Array.from(document.body.querySelectorAll("label"))
+        .find((candidate) => candidate.textContent?.includes(label));
+      const input = labelElement?.querySelector<HTMLInputElement>("input");
+      expect(input?.checked).toBe(false);
+    }
+  });
+
+  it("keeps enabled derived-text scopes while the search query changes", async () => {
+    ({ container, root } = renderSearchModal());
+    const queryInput = document.body.querySelector<HTMLInputElement>(
+      'input[type="text"]',
+    );
+    const storyLabel = Array.from(document.body.querySelectorAll("label"))
+      .find((candidate) => candidate.textContent?.includes("줄거리"));
+    const storyInput = storyLabel?.querySelector<HTMLInputElement>("input");
+    expect(queryInput).not.toBeNull();
+    expect(storyInput).not.toBeNull();
+
+    setTextInputValue(queryInput!, "first query");
+    flushSync(() => storyInput!.click());
+
+    await vi.waitFor(() => {
+      expect(searchHarness.search).toHaveBeenCalledWith(
+        "first query",
+        expect.objectContaining({
+          includeTurnSummaries: false,
+          includeHighlight: false,
+          includeStory: true,
+        }),
+      );
+    });
+
+    setTextInputValue(queryInput!, "second query");
+    expect(storyInput?.checked).toBe(true);
+  });
+
+  it("marks derived-text matches with source badges and a secondary tone", () => {
+    searchHarness.results = [
+      {
+        session_id: "message-session",
+        event_id: 11,
+        score: 1,
+        preview: "Message preview",
+        event_type: "assistant_message",
+        match_source: "message",
+      },
+      {
+        session_id: "summary-session",
+        event_id: 12,
+        score: 1,
+        preview: "Summary preview",
+        event_type: "turn_summary",
+        match_source: "turn_summary",
+      },
+      {
+        session_id: "highlight-session",
+        event_id: 13,
+        score: 1,
+        preview: "Highlight preview",
+        event_type: "session_highlight",
+        match_source: "highlight",
+      },
+      {
+        session_id: "story-session",
+        event_id: 14,
+        score: 1,
+        preview: "Story preview",
+        event_type: "session_story",
+        match_source: "story",
+      },
+    ];
+
+    ({ container, root } = renderSearchModal());
+
+    expect(document.body.textContent).toContain("Assistant");
+    expect(document.body.textContent).toContain("턴 요약");
+    expect(document.body.textContent).toContain("하이라이트");
+    expect(document.body.textContent).toContain("줄거리");
+
+    const messageRow = document.body.querySelector('[data-match-source="message"]');
+    const summaryRow = document.body.querySelector('[data-match-source="turn_summary"]');
+    const highlightRow = document.body.querySelector('[data-match-source="highlight"]');
+    const storyRow = document.body.querySelector('[data-match-source="story"]');
+    expect(messageRow?.querySelector("p")?.className).toContain("text-foreground");
+    for (const row of [summaryRow, highlightRow, storyRow]) {
+      expect(row?.querySelector("p")?.className).toContain(
+        "text-muted-foreground",
+      );
+    }
+  });
+
+  it("anchors turn-summary matches and opens story matches in the existing panel", async () => {
+    const onOpenSession = vi.fn().mockResolvedValue(true);
+    const storyTrigger = document.createElement("button");
+    storyTrigger.dataset.testid = "session-story-trigger";
+    storyTrigger.setAttribute("aria-expanded", "false");
+    const storyTriggerClick = vi.fn();
+    storyTrigger.addEventListener("click", storyTriggerClick);
+    document.body.appendChild(storyTrigger);
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      },
+    );
+
+    searchHarness.results = [
+      {
+        session_id: "summary-session",
+        event_id: 21,
+        score: 1,
+        preview: "Summary anchor preview",
+        event_type: "turn_summary",
+        match_source: "turn_summary",
+      },
+      {
+        session_id: "story-session",
+        event_id: 22,
+        score: 1,
+        preview: "Story panel preview",
+        event_type: "session_story",
+        match_source: "story",
+      },
+    ];
+
+    ({ container, root } = renderSearchModal({ onOpenSession }));
+
+    clickResult("Summary anchor preview");
+    expect(onOpenSession).toHaveBeenCalledWith(
+      "summary-session",
+      21,
+      undefined,
+    );
+
+    clickResult("Story panel preview");
+    await vi.waitFor(() => {
+      expect(onOpenSession).toHaveBeenCalledWith(
+        "story-session",
+        null,
+        undefined,
+      );
+      expect(storyTriggerClick).toHaveBeenCalledTimes(1);
+    });
   });
 });

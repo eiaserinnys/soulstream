@@ -18,16 +18,29 @@ export interface SearchResultItem {
   score: number;
   preview: string;
   event_type: string;
+  match_source: SearchMatchSource;
 }
+
+export type SearchMatchSource =
+  | "message"
+  | "turn_summary"
+  | "highlight"
+  | "story";
 
 export interface SearchFilters {
   searchSessionId: boolean;
   eventCategories: SearchEventCategory[] | null;
+  includeTurnSummaries: boolean;
+  includeHighlight: boolean;
+  includeStory: boolean;
 }
 
 export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
   searchSessionId: true,
   eventCategories: [...DEFAULT_SEARCH_CATEGORIES],
+  includeTurnSummaries: false,
+  includeHighlight: false,
+  includeStory: false,
 };
 
 export type SearchNavigationResult =
@@ -47,6 +60,31 @@ export type SearchNavigationResult =
     board_item_id: string;
     task_page_id: string;
   };
+
+export function buildSessionSearchUrl(
+  query: string,
+  filters: SearchFilters,
+  topK: number,
+): string {
+  const params = new URLSearchParams({
+    q: query,
+    top_k: String(topK),
+    search_session_id: String(filters.searchSessionId),
+  });
+  if (filters.eventCategories !== null) {
+    params.set("event_categories", filters.eventCategories.join(","));
+  }
+  if (filters.includeTurnSummaries) {
+    params.set("include_turn_summaries", "true");
+  }
+  if (filters.includeHighlight) {
+    params.set("include_highlight", "true");
+  }
+  if (filters.includeStory) {
+    params.set("include_story", "true");
+  }
+  return `/cogito/search?${params}`;
+}
 
 export function useSessionSearch() {
   const [results, setResults] = useState<SearchResultItem[]>([]);
@@ -71,15 +109,7 @@ export function useSessionSearch() {
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({
-          q: query,
-          top_k: String(topK),
-          search_session_id: String(filters.searchSessionId),
-        });
-        if (filters.eventCategories !== null) {
-          params.set("event_categories", filters.eventCategories.join(","));
-        }
-        const res = await fetch(`/cogito/search?${params}`, {
+        const res = await fetch(buildSessionSearchUrl(query, filters, topK), {
           signal: controller.signal,
         });
         if (!res.ok) {
