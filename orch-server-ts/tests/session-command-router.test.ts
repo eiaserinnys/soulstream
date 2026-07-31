@@ -7,7 +7,6 @@ import {
   SessionRouteNoAvailableNodesError,
   SessionRouteNodeUnavailableError,
   SessionRouteSessionOwnerMissingError,
-  SessionRouteSessionOwnerStaleError,
   loadContractFixtures,
   type CreateSessionNodeCommandPayload,
   type NodeRegistrationPayload,
@@ -168,28 +167,24 @@ describe("Session command router primitive", () => {
     });
   });
 
-  it("does not route through a stale owner after reconnect until sessions_update refreshes it", async () => {
+  it("routes a stale cache entry through the connected durable session owner", async () => {
     const { registry } = createRegistry();
-    const firstConnectionId = registerNode(registry, "fake-node");
-    await createExistingSession(registry, "fake-node");
-    const router = new SessionCommandRouter({ registry });
+    const firstConnectionId = registerNode(registry, "cached-node");
+    await createExistingSession(registry, "cached-node");
+    const findSessionOwnerNodeId = vi.fn(async (agentSessionId: string) =>
+      agentSessionId === "sess-contract" ? "durable-node" : null
+    );
+    const router = new SessionCommandRouter({
+      registry,
+      findSessionOwnerNodeId,
+    });
 
-    expect(registry.disconnectNode("fake-node", "network close")).toMatchObject({
+    expect(registry.disconnectNode("cached-node", "network close")).toMatchObject({
       type: "node_unregistered",
       connectionId: firstConnectionId,
     });
-    const secondConnectionId = registerNode(registry, "fake-node");
-
-    await expect(
-      router.respond({
-        type: "respond",
-        agentSessionId: "sess-contract",
-        inputRequestId: "input-req-contract",
-        answers: { choice: "yes" },
-      }),
-    ).rejects.toThrow(SessionRouteSessionOwnerStaleError);
-
-    registry.receiveNodeMessage("fake-node", reconnect.sessionsUpdateAfterReconnect);
+    registerNode(registry, "cached-node");
+    const durableConnectionId = registerNode(registry, "durable-node");
 
     const routed = await router.respond({
       type: "respond",
@@ -198,10 +193,65 @@ describe("Session command router primitive", () => {
       answers: { choice: "yes" },
     });
 
-    expect(routed.node.connectionId).toBe(secondConnectionId);
+    expect(findSessionOwnerNodeId).toHaveBeenCalledWith("sess-contract");
+    expect(routed.node).toMatchObject({
+      nodeId: "durable-node",
+      connectionId: durableConnectionId,
+    });
   });
 
-  it("uses explicit error types for no node, missing owner, stale owner, and unavailable owner", async () => {
+  it("reports the durable owner node as unavailable when a stale cache entry cannot route to it", async () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "cached-node");
+    await createExistingSession(registry, "cached-node");
+    registry.disconnectNode("cached-node", "network close");
+    registerNode(registry, "cached-node");
+    const router = new SessionCommandRouter({
+      registry,
+      findSessionOwnerNodeId: async () => "offline-durable-node",
+    });
+
+    await expect(
+      router.respond({
+        type: "respond",
+        agentSessionId: "sess-contract",
+        inputRequestId: "input-req-contract",
+        answers: {},
+      }),
+    ).rejects.toMatchObject({
+      name: "SessionRouteNodeUnavailableError",
+      code: "NODE_UNAVAILABLE",
+      agentSessionId: "sess-contract",
+      nodeId: "offline-durable-node",
+    });
+  });
+
+  it("reports a missing durable owner when a stale cache entry has no database row", async () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "cached-node");
+    await createExistingSession(registry, "cached-node");
+    registry.disconnectNode("cached-node", "network close");
+    registerNode(registry, "cached-node");
+    const router = new SessionCommandRouter({
+      registry,
+      findSessionOwnerNodeId: async () => null,
+    });
+
+    await expect(
+      router.respond({
+        type: "respond",
+        agentSessionId: "sess-contract",
+        inputRequestId: "input-req-contract",
+        answers: {},
+      }),
+    ).rejects.toMatchObject({
+      name: "SessionRouteSessionOwnerMissingError",
+      code: "SESSION_OWNER_MISSING",
+      agentSessionId: "sess-contract",
+    });
+  });
+
+  it("uses explicit error types for no node, missing owner, and unavailable owner", async () => {
     const { registry, sessionCache } = createRegistry();
     const router = new SessionCommandRouter({
       registry,
@@ -236,15 +286,6 @@ describe("Session command router primitive", () => {
     registerNode(registry, "fresh-node");
     await createExistingSession(registry, "fresh-node");
     registry.disconnectNode("fresh-node", "network close");
-
-    await expect(
-      router.respond({
-        type: "respond",
-        agentSessionId: "sess-contract",
-        inputRequestId: "input-req-contract",
-        answers: {},
-      }),
-    ).rejects.toThrow(SessionRouteSessionOwnerStaleError);
 
     sessionCache.replaceNodeSessions({
       nodeId: "ghost-node",

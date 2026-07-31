@@ -247,7 +247,7 @@ export class SessionCommandRouter {
     agentSessionId: string,
   ): Promise<NodeConnectionSnapshot> {
     const owner = this.registry.findSessionOwner(agentSessionId);
-    if (owner === undefined) {
+    if (owner === undefined || !owner.fresh) {
       const durableNodeId =
         (await this.findSessionOwnerNodeId?.(agentSessionId)) ?? null;
       if (durableNodeId === null) {
@@ -261,12 +261,6 @@ export class SessionCommandRouter {
         });
       }
       return durableNode;
-    }
-    if (!owner.fresh) {
-      throw new SessionRouteSessionOwnerStaleError({
-        agentSessionId,
-        nodeId: owner.nodeId,
-      });
     }
 
     const connectedNode = this.registry.findConnectedNodeForSession(agentSessionId);
