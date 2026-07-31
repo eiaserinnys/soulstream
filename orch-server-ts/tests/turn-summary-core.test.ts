@@ -81,6 +81,14 @@ const SPEAKER_LABEL_CASES = [
   ],
   [
     {
+      kind: "delegated_session",
+      childSessionId: "6c958db1-f792-445e-b355-6c5537b0c5c1",
+      agentName: "로젤린",
+    },
+    "[발화자: 로젤린 (위임 세션 완료 보고, session_id: 6c958db1-f792-445e-b355-6c5537b0c5c1)]",
+  ],
+  [
+    {
       kind: "system",
     },
     "[발화자: 시스템]",
@@ -168,6 +176,15 @@ describe("TurnSummaryConfigService", () => {
     expect(turnInstruction).toContain("발화자 라벨에 따라 주어를 정확히 구분");
     expect(turnInstruction).toContain(
       "위임 에이전트 보고나 시스템 알림을 사용자의 요청·발언으로 서술하지 말라",
+    );
+    expect(turnInstruction).toContain(
+      "\"에이전트\"는 [에이전트 최종 응답]을 작성한 이 세션의 어시스턴트 자신",
+    );
+    expect(turnInstruction).toContain(
+      "위임 세션 완료 보고는 해당 위임 세션이 보고한 내용",
+    );
+    expect(turnInstruction).toContain(
+      "사용자와 이 세션의 에이전트와 위임 세션을 서로 뒤바꾸지 말라",
     );
     const storyInstruction = service.read().storyInstruction;
     expect(storyInstruction).toContain("[T12]");

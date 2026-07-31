@@ -16,12 +16,31 @@ export type TurnSummarySpeaker =
     readonly agentName: string;
   }
   | {
+    readonly kind: "delegated_session";
+    readonly childSessionId?: string;
+    readonly agentName?: string;
+  }
+  | {
     readonly kind: "system";
   };
 
 export function resolveTurnSummarySpeaker(
+  eventType: string,
   payload: Record<string, unknown>,
 ): TurnSummarySpeaker | undefined {
+  if (eventType === "session_notification") {
+    if (nonEmptyString(payload.delivery_intent) !== "completion_notification") {
+      return { kind: "system" };
+    }
+    const childSessionId = childSessionIdFromRelationKey(
+      nonEmptyString(payload.relation_key),
+    );
+    return {
+      kind: "delegated_session",
+      ...(childSessionId === undefined ? {} : { childSessionId }),
+    };
+  }
+
   const callerInfo = recordValue(payload.caller_info ?? payload.callerInfo);
   const source = nonEmptyString(callerInfo.source);
   if (source === undefined) return undefined;
@@ -60,6 +79,20 @@ export function formatTurnSummarySpeakerLabel(
   if (speaker.kind === "agent") {
     return `[발화자: ${speaker.agentName} (위임 에이전트 보고)]`;
   }
+  if (speaker.kind === "delegated_session") {
+    const identity =
+      speaker.agentName ??
+      (
+        speaker.childSessionId === undefined
+          ? "위임 세션"
+          : `위임 세션 ${speaker.childSessionId.slice(0, 8)}`
+      );
+    const sessionId =
+      speaker.childSessionId === undefined
+        ? ""
+        : `, session_id: ${speaker.childSessionId}`;
+    return `[발화자: ${identity} (위임 세션 완료 보고${sessionId})]`;
+  }
   if (speaker.kind === "system") {
     return "[발화자: 시스템]";
   }
@@ -67,6 +100,13 @@ export function formatTurnSummarySpeakerLabel(
     ? ""
     : `, user_id: ${speaker.userId}`;
   return `[발화자: ${speaker.displayName} (사용자, ${speaker.source}${userId})]`;
+}
+
+function childSessionIdFromRelationKey(
+  relationKey: string | undefined,
+): string | undefined {
+  if (relationKey === undefined) return undefined;
+  return /^child_session:([^:]+):\d+$/.exec(relationKey)?.[1];
 }
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {

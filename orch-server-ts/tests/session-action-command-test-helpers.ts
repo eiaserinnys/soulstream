@@ -9,6 +9,7 @@ import {
   type CreateSessionNodeCommandPayload,
   type NodeRegistrationPayload,
   type SessionActionCommandRouteOptions,
+  type SessionOwnerNodeIdLookup,
 } from "../src/index.js";
 
 type AckFactory = (message: Record<string, unknown>) => Record<string, unknown>;
@@ -23,7 +24,9 @@ export type ActionHarnessOptions = {
     SessionActionCommandRouteOptions["reviewAcknowledgeFallback"];
 };
 
-export function createHarnessCore(): {
+export function createHarnessCore(options: {
+  readonly findSessionOwnerNodeId?: SessionOwnerNodeIdLookup;
+} = {}): {
   registry: InMemoryNodeRegistry;
   transports: NodeCommandTransportHub;
   router: SessionCommandRouter;
@@ -37,7 +40,12 @@ export function createHarnessCore(): {
       `action-${commandType}-${sequence}-${nowMs}`,
   });
   const transports = new NodeCommandTransportHub();
-  const router = new SessionCommandRouter({ registry });
+  const router = new SessionCommandRouter({
+    registry,
+    ...(options.findSessionOwnerNodeId === undefined
+      ? {}
+      : { findSessionOwnerNodeId: options.findSessionOwnerNodeId }),
+  });
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   return { registry, transports, router, bridge };
 }
@@ -50,11 +58,15 @@ export function createActionHarness(options: ActionHarnessOptions = {}): {
   bridge: SessionCommandTransportBridge;
   sent: Array<Record<string, unknown>>;
 } {
-  const { registry, transports, router, bridge } = createHarnessCore();
+  const createSession = options.createSession ?? true;
+  const { registry, transports, router, bridge } = createHarnessCore({
+    findSessionOwnerNodeId: async (sessionId) =>
+      createSession && sessionId === "sess-contract" ? "fake-node" : null,
+  });
   const connectionId = registry.registerNode(
     reconnectFixture().registration as NodeRegistrationPayload,
   ).node.connectionId;
-  if (options.createSession ?? true) {
+  if (createSession) {
     createExistingSession(registry);
   }
   const sent: Array<Record<string, unknown>> = [];

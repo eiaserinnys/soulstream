@@ -1,4 +1,7 @@
 import type { OrchServerEnvironmentConfig } from "../config.js";
+import { findRegisteredAgentProfile } from
+  "../node/agent_profile_lookup.js";
+import type { InMemoryNodeRegistry } from "../node/registry.js";
 import { warnForBlockedChildProcessEnvKeys } from
   "../runtime/child_process_env.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
@@ -38,6 +41,7 @@ export function createLiveTurnSummaryPipeline(options: {
   readonly config: OrchServerEnvironmentConfig;
   readonly configPath: string;
   readonly sqlResolver: LiveDbSqlResolver;
+  readonly registry: InMemoryNodeRegistry;
   readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
   readonly sessionBroadcaster: Pick<
     InMemorySseReplayBroadcaster<SessionStreamEvent>,
@@ -82,7 +86,19 @@ export function createLiveTurnSummaryPipeline(options: {
     logger: options.logger,
   });
   return new TurnSummaryPipeline({
-    repository: new TurnSummaryRepository(options.sqlResolver),
+    repository: new TurnSummaryRepository(options.sqlResolver, {
+      resolveAgentName: ({ agentId, nodeId }) => {
+        const profile = findRegisteredAgentProfile(
+          options.registry,
+          agentId,
+          nodeId ?? undefined,
+        );
+        const name = profile?.agent.name;
+        return typeof name === "string" && name.trim().length > 0
+          ? name.trim()
+          : undefined;
+      },
+    }),
     configService,
     summarizer,
     eventHub: options.eventHub,

@@ -128,12 +128,64 @@ describe("turn reconstruction", () => {
     ], 12)?.speaker).toEqual(expectedSpeaker);
   });
 
-  it("keeps legacy turns without caller_info unlabeled", () => {
+  it("uses caller_info for intervention starts", () => {
     expect(reconstructTurnFromEvents([
-      event(10, "user_message", { text: "레거시 요청" }),
+      event(10, "intervention_sent", {
+        text: "개입 요청",
+        caller_info: {
+          source: "browser",
+          display_name: "Jubok Kim",
+          user_id: "eiaserinnys@gmail.com",
+        },
+      }),
       event(11, "assistant_message", { content: "응답" }),
       event(12, "complete", {}),
-    ], 12)).not.toHaveProperty("speaker");
+    ], 12)?.speaker).toEqual({
+      kind: "user",
+      displayName: "Jubok Kim",
+      source: "browser",
+      userId: "eiaserinnys@gmail.com",
+    });
+  });
+
+  it.each(["user_message", "intervention_sent"])(
+    "keeps legacy %s turns without caller_info unlabeled",
+    (eventType) => {
+      expect(reconstructTurnFromEvents([
+        event(10, eventType, { text: "레거시 요청" }),
+        event(11, "assistant_message", { content: "응답" }),
+        event(12, "complete", {}),
+      ], 12)).not.toHaveProperty("speaker");
+    },
+  );
+
+  it("labels the live completion notification shape as a delegated session report", () => {
+    expect(reconstructTurnFromEvents([
+      event(1199, "session_notification", {
+        text: "✅ 에이전트 세션 완료",
+        source: "completion_notifier",
+        delivery_intent: "completion_notification",
+        relation_key:
+          "child_session:6c958db1-f792-445e-b355-6c5537b0c5c1:1291",
+      }),
+      event(1225, "assistant_message", { content: "PR #610을 머지했다." }),
+      event(1226, "complete", {}),
+    ], 1226)?.speaker).toEqual({
+      kind: "delegated_session",
+      childSessionId: "6c958db1-f792-445e-b355-6c5537b0c5c1",
+    });
+  });
+
+  it("labels non-completion session notifications as system turns", () => {
+    expect(reconstructTurnFromEvents([
+      event(10, "session_notification", {
+        text: "업무 항목 후속 실행",
+        source: "claude_runtime_task_followup",
+        delivery_intent: "runtime_followup",
+      }),
+      event(11, "assistant_message", { content: "후속 실행을 처리했다." }),
+      event(12, "complete", {}),
+    ], 12)?.speaker).toEqual({ kind: "system" });
   });
 
   it("skips a turn with a fatal error or missing anchors", () => {
