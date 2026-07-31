@@ -28,6 +28,7 @@ export function createBackgroundScheduleHarness(options: BackgroundScheduleHarne
   bridge: SessionCommandTransportBridge;
   sent: Array<Record<string, unknown>>;
 } {
+  const createSession = options.createSession ?? true;
   const sessionCache = new PerNodeSessionCache();
   const registry = new InMemoryNodeRegistry({
     sessionCache,
@@ -36,13 +37,17 @@ export function createBackgroundScheduleHarness(options: BackgroundScheduleHarne
       `background-${commandType}-${sequence}-${nowMs}`,
   });
   const transports = new NodeCommandTransportHub();
-  const router = new SessionCommandRouter({ registry });
+  const router = new SessionCommandRouter({
+    registry,
+    findSessionOwnerNodeId: async (sessionId) =>
+      createSession && sessionId === "sess-contract" ? "fake-node" : null,
+  });
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   const connectionId = registry.registerNode(
     reconnectFixture().registration as NodeRegistrationPayload,
   ).node.connectionId;
 
-  if (options.createSession ?? true) {
+  if (createSession) {
     createExistingSession(registry);
   }
 

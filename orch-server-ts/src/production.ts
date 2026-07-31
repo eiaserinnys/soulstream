@@ -312,6 +312,7 @@ export async function createLiveProductionApplication(
     configPath: overrides.turnSummaryConfigPath ??
       fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
     sqlResolver,
+    registry,
     eventHub: runtimeServices.sessionEventHub,
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     logger: app.log,

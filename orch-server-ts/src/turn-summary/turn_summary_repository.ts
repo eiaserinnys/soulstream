@@ -82,8 +82,20 @@ export interface TurnSummaryRepositoryPort {
   ): Promise<Record<string, unknown>[]>;
 }
 
+export type TurnSummaryAgentNameResolver = (input: {
+  readonly agentId: string;
+  readonly nodeId: string | null;
+}) => string | undefined;
+
+export type TurnSummaryRepositoryOptions = {
+  readonly resolveAgentName?: TurnSummaryAgentNameResolver;
+};
+
 export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
-  constructor(private readonly sqlResolver: LiveDbSqlResolver) {}
+  constructor(
+    private readonly sqlResolver: LiveDbSqlResolver,
+    private readonly options: TurnSummaryRepositoryOptions = {},
+  ) {}
 
   async loadTurn(
     sessionId: string,
@@ -111,11 +123,42 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
       completeEventId,
     );
     if (reconstructed === null) return null;
+    const speaker = await this.enrichDelegatedSessionSpeaker(
+      sql,
+      reconstructed.speaker,
+    );
     return {
       sessionId,
       folderId: nullableString(session.folder_id),
       metadata: parseJsonValue(session.metadata),
       ...reconstructed,
+      ...(speaker === undefined ? {} : { speaker }),
+    };
+  }
+
+  private async enrichDelegatedSessionSpeaker(
+    sql: LivePostgresSql,
+    speaker: TurnSummarySpeaker | undefined,
+  ): Promise<TurnSummarySpeaker | undefined> {
+    if (
+      speaker?.kind !== "delegated_session" ||
+      speaker.childSessionId === undefined
+    ) {
+      return speaker;
+    }
+    const rows = await sql`
+      SELECT agent_id, node_id
+      FROM sessions
+      WHERE session_id = ${speaker.childSessionId}
+      LIMIT 1
+    `;
+    const agentId = stringValue(rows[0]?.agent_id);
+    if (agentId === null) return speaker;
+    const nodeId = nullableString(rows[0]?.node_id);
+    return {
+      ...speaker,
+      agentName:
+        this.options.resolveAgentName?.({ agentId, nodeId }) ?? agentId,
     };
   }
 
@@ -329,7 +372,7 @@ export function reconstructTurnFromEvents(
   const userText = stringValue(start.payload.text)?.trim();
   const assistantText = stringValue(finalResponse?.payload.content)?.trim();
   if (!userText || !assistantText || finalResponse === undefined) return null;
-  const speaker = resolveTurnSummarySpeaker(start.payload);
+  const speaker = resolveTurnSummarySpeaker(start.eventType, start.payload);
   return {
     turnStartEventId: start.id,
     finalResponseEventId: finalResponse.id,

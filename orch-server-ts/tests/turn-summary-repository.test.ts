@@ -38,6 +38,48 @@ describe("TurnSummaryRepository", () => {
     expect(calls.flatMap((call) => call.values)).not.toContain("node-a");
   });
 
+  it("joins a completion notification child session and resolves its agent name", async () => {
+    const { repository, calls } = repositoryWithResponses([
+      [{
+        folder_id: "folder-a",
+        metadata: [{ type: "caller_info", value: { source: "browser" } }],
+      }],
+      [
+        row(1199, "session_notification", {
+          text: "✅ 에이전트 세션 완료",
+          source: "completion_notifier",
+          delivery_intent: "completion_notification",
+          relation_key:
+            "child_session:6c958db1-f792-445e-b355-6c5537b0c5c1:1291",
+        }),
+        row(1225, "assistant_message", { content: "PR #610을 머지했다." }),
+        row(1226, "complete", {}),
+      ],
+      [{
+        agent_id: "roselin",
+        node_id: "eiaserinnys",
+      }],
+    ], ({ agentId, nodeId }) =>
+      agentId === "roselin" && nodeId === "eiaserinnys"
+        ? "로젤린"
+        : undefined
+    );
+
+    await expect(repository.loadTurn("parent-session", 1226)).resolves
+      .toMatchObject({
+        speaker: {
+          kind: "delegated_session",
+          childSessionId: "6c958db1-f792-445e-b355-6c5537b0c5c1",
+          agentName: "로젤린",
+        },
+      });
+    expect(calls).toHaveLength(3);
+    expect(calls[2]?.text).toContain("FROM sessions");
+    expect(calls[2]?.values).toContain(
+      "6c958db1-f792-445e-b355-6c5537b0c5c1",
+    );
+  });
+
   it("appends through event_append with the anchor dedupe key", async () => {
     const updatedAt = new Date("2026-07-31T00:00:00.000Z");
     const { repository, calls } = repositoryWithResponses([
@@ -136,6 +178,10 @@ describe("TurnSummaryRepository", () => {
 
 function repositoryWithResponses(
   responses: ReadonlyArray<readonly Record<string, unknown>[]>,
+  resolveAgentName?: (input: {
+    readonly agentId: string;
+    readonly nodeId: string | null;
+  }) => string | undefined,
 ): {
   repository: TurnSummaryRepository;
   calls: Array<{ text: string; values: unknown[] }>;
@@ -159,7 +205,7 @@ function repositoryWithResponses(
     close: async () => undefined,
   };
   return {
-    repository: new TurnSummaryRepository(resolver),
+    repository: new TurnSummaryRepository(resolver, { resolveAgentName }),
     calls,
   };
 }
