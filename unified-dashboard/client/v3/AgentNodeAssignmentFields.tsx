@@ -5,6 +5,7 @@ import type {
 } from "@seosoyoung/soul-ui";
 
 import { NodeModelPresetSelect } from "../components/NodeModelPresetSelect";
+import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
 export function AgentNodeAssignmentFields({
@@ -14,11 +15,13 @@ export function AgentNodeAssignmentFields({
   preferredAgentId,
   preferredNodeId,
   presentation = "execution-defaults",
+  layout = "default",
   fallbackToAvailable = false,
   disabled = false,
   onAgentIdChange,
   onNodeIdChange,
   onModelPresetChange,
+  modelPresetCatalog,
   onAgentInfoChange,
   onModelPresetInfoChange,
   onModelPresetValidityChange,
@@ -30,11 +33,13 @@ export function AgentNodeAssignmentFields({
   preferredAgentId?: string | null;
   preferredNodeId?: string | null;
   presentation?: "execution-defaults" | "session";
+  layout?: "default" | "compact-row";
   fallbackToAvailable?: boolean;
   disabled?: boolean;
   onAgentIdChange(value: string): void;
   onNodeIdChange(value: string): void;
   onModelPresetChange(value: string): void;
+  modelPresetCatalog?: NodeModelPresetCatalog;
   onAgentInfoChange?(value: AgentInfo | null): void;
   onModelPresetInfoChange?(value: ModelPresetAvailability | null): void;
   onModelPresetValidityChange?(valid: boolean): void;
@@ -145,6 +150,7 @@ export function AgentNodeAssignmentFields({
       label={presentation === "session" ? "모델" : "실행 모델"}
       disabled={disabled}
       triggerClassName="v3-model-preset-trigger"
+      modelPresetCatalog={modelPresetCatalog}
       onValueChange={onModelPresetChange}
       onPresetChange={onModelPresetInfoChange}
       onValidityChange={onModelPresetValidityChange}
@@ -153,7 +159,9 @@ export function AgentNodeAssignmentFields({
   );
 
   return (
-    <div className="v3-succession-assignment">
+    <div
+      className={`v3-succession-assignment${layout === "compact-row" ? " v3-succession-assignment--compact-row" : ""}`}
+    >
       {presentation === "session"
         ? <>{nodeField}{agentField}{modelField}</>
         : <>{agentField}{nodeField}{modelField}</>}

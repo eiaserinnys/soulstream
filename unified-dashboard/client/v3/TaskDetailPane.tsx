@@ -196,11 +196,6 @@ export function TaskDetailPane({
     sourcePageId: sourcedDefaults.source.pageId,
     sourceBlockId: sourcedDefaults.blockId,
   } : sessionDefaults;
-  const assignmentSourceLabel = sourcedDefaults
-    ? (sourcedDefaults.source.pageId === task.page.id
-        ? "직접 지정"
-        : `${sourcedDefaults.source.folderName}에서 상속`)
-    : fallbackAssignmentSource(sessionDefaults, task.page.id, folders);
   const pageContextSources = buildPageContextSourcesMarker(
     inheritedContext.status === "ready"
       ? inheritedContext.data
@@ -368,7 +363,6 @@ export function TaskDetailPane({
                 agentId={effectiveSessionDefaults?.agentId ?? null}
                 nodeId={effectiveSessionDefaults?.nodeId ?? null}
                 modelPreset={effectiveSessionDefaults?.modelPreset ?? null}
-                sourceLabel={assignmentSourceLabel}
                 onSave={saveDefaultAssignment}
               />
             </section>
@@ -451,15 +445,4 @@ function ContextRemoveButton({ title, disabled, onClick }: {
 
 function contextSourceLabel(folderName: string): string {
   return folderName === "이 업무" ? folderName : `${folderName}에서 상속`;
-}
-
-function fallbackAssignmentSource(
-  defaults: PageSessionDefaults | null,
-  taskPageId: string,
-  folders: readonly CatalogFolder[],
-): string {
-  if (!defaults) return "미지정";
-  if (defaults.sourcePageId === taskPageId) return "직접 지정";
-  const source = folders.find((folder) => folder.projectPageId === defaults.sourcePageId);
-  return source ? `${source.name}에서 상속` : "상위 컨텍스트에서 상속";
 }

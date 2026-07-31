@@ -22,6 +22,7 @@ vi.mock("./AgentNodeAssignmentFields", () => ({
     agentId,
     nodeId,
     modelPreset,
+    layout,
     onAgentIdChange,
     onNodeIdChange,
     onModelPresetChange,
@@ -30,12 +31,13 @@ vi.mock("./AgentNodeAssignmentFields", () => ({
     agentId: string;
     nodeId: string;
     modelPreset: string;
+    layout?: string;
     onAgentIdChange(value: string): void;
     onNodeIdChange(value: string): void;
     onModelPresetChange(value: string): void;
     onModelPresetValidityChange(value: boolean): void;
   }) => (
-    <>
+    <div data-testid="assignment-fields" data-layout={layout}>
       <input aria-label="노드 선택" value={nodeId} onChange={(event) => onNodeIdChange(event.target.value)} />
       <input aria-label="에이전트 선택" value={agentId} onChange={(event) => onAgentIdChange(event.target.value)} />
       <input
@@ -46,7 +48,7 @@ vi.mock("./AgentNodeAssignmentFields", () => ({
           onModelPresetValidityChange(true);
         }}
       />
-    </>
+    </div>
   ),
 }));
 
@@ -113,6 +115,12 @@ describe("NewTaskForm submission feedback", () => {
     ));
   });
 
+  it("uses the compact desktop row for the new task assignment fields", () => {
+    render(vi.fn(async () => null));
+
+    expect(element("assignment-fields").dataset.layout).toBe("compact-row");
+  });
+
   it("clears the model preset when the assignment node changes", () => {
     render(vi.fn(async () => null));
 
@@ -146,6 +154,12 @@ function button(label: string): HTMLButtonElement {
   const target = [...document.body.querySelectorAll<HTMLButtonElement>("button")]
     .find((candidate) => candidate.textContent?.trim() === label);
   if (!target) throw new Error(`${label} 버튼을 찾지 못했습니다.`);
+  return target;
+}
+
+function element(testId: string): HTMLElement {
+  const target = document.body.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  if (!target) throw new Error(`${testId} 요소를 찾지 못했습니다.`);
   return target;
 }
 
