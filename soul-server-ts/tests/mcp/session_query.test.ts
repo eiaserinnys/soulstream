@@ -49,6 +49,7 @@ function makeRuntime(params: {
       searchEvents: params.searchEvents ?? vi.fn(async () => []),
       searchEventsBySessionId: params.searchEventsBySessionId ?? vi.fn(async () => []),
       searchSessionDigests: params.searchSessionDigests ?? vi.fn(async () => []),
+      getSessionSearchMetadata: vi.fn(async () => new Map()),
       ...params.db,
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
@@ -190,7 +191,7 @@ describe("get_session_summary child completion", () => {
 });
 
 describe("get_session_story", () => {
-  it("returns separated highlight and narrative with unfolded summaries in wire shape", async () => {
+  it("returns story source without the highlight body by default", async () => {
     const runtime = makeRuntime({
       db: {
         getSession: vi.fn(async () => ({
@@ -223,7 +224,7 @@ describe("get_session_story", () => {
     });
 
     expect(result.structuredContent).toEqual({
-      highlight: "핵심 다섯 문장.",
+      source: "story",
       narrative: "[T1] 시작했다.",
       unfolded_turn_summaries: [{
         event_id: 42,
@@ -239,7 +240,38 @@ describe("get_session_story", () => {
     });
   });
 
-  it("preserves the no-digest fallback without inventing narrative fields", async () => {
+  it("includes the highlight body only when explicitly requested", async () => {
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({
+          session_id: "sess-1",
+          status: "running",
+          last_event_id: 42,
+        })),
+        getSessionStory: vi.fn(async () => ({
+          highlight: "핵심 다섯 문장.",
+          narrative: "[T1] 시작했다.",
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: 35,
+          foldCount: 1,
+          updatedAt: new Date("2026-07-31T00:01:00.000Z"),
+        })),
+      },
+    }));
+
+    const result = await client.callTool({
+      name: "get_session_story",
+      arguments: { session_id: "sess-1", include_highlight: true },
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      source: "story",
+      highlight: "핵심 다섯 문장.",
+      narrative: "[T1] 시작했다.",
+    });
+  });
+
+  it("uses stored turn summaries as the explicit no-digest fallback", async () => {
     const runtime = makeRuntime({
       db: {
         getSession: vi.fn(async () => ({
@@ -272,12 +304,125 @@ describe("get_session_story", () => {
     });
 
     expect(result.structuredContent).toMatchObject({
-      highlight: null,
+      source: "turn_summaries",
       narrative: null,
       narrative_through_event_id: null,
       fold_count: 0,
       updated_at: null,
       unfolded_turn_summaries: [{ event_id: 8, turn_number: 1 }],
+    });
+    expect(result.structuredContent).not.toHaveProperty("highlight");
+  });
+
+  it("distinguishes a completely empty session", async () => {
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({
+          session_id: "sess-1",
+          status: "completed",
+          last_event_id: 3,
+        })),
+        getSessionStory: vi.fn(async () => ({
+          highlight: null,
+          narrative: null,
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: null,
+          foldCount: 0,
+          updatedAt: null,
+        })),
+      },
+    }));
+
+    const result = await client.callTool({
+      name: "get_session_story",
+      arguments: { session_id: "sess-1" },
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      source: "empty",
+      narrative: null,
+      unfolded_turn_summaries: [],
+    });
+  });
+});
+
+describe("get_session_highlight", () => {
+  it("returns a stored highlight when a story digest exists", async () => {
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({ session_id: "sess-1", last_event_id: 42 })),
+        getSessionStory: vi.fn(async () => ({
+          highlight: "가장 중요한 다섯 문장.",
+          narrative: "[T1-T5] 구현했다.",
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: 40,
+          foldCount: 1,
+          updatedAt: new Date("2026-07-31T00:01:00.000Z"),
+        })),
+      },
+    }));
+
+    const result = await client.callTool({
+      name: "get_session_highlight",
+      arguments: { session_id: "sess-1" },
+    });
+
+    expect(result.structuredContent).toEqual({
+      source: "story",
+      highlight: "가장 중요한 다섯 문장.",
+      updated_at: "2026-07-31T00:01:00.000Z",
+    });
+  });
+
+  it("falls back to chronological stored summaries and distinguishes empty", async () => {
+    const getSession = vi.fn(async (sessionId: string) => ({
+      session_id: sessionId,
+      last_event_id: 9,
+    }));
+    const getSessionStory = vi.fn(async (sessionId: string) => ({
+      highlight: null,
+      narrative: null,
+      unfoldedTurnSummaries: sessionId === "with-summaries"
+        ? [{
+            eventId: 9,
+            turnNumber: 1,
+            content: "저장된 첫 턴",
+            turnStartEventId: 1,
+            finalResponseEventId: 8,
+            createdAt: new Date("2026-07-31T00:00:00.000Z"),
+          }]
+        : [],
+      narrativeThroughEventId: null,
+      foldCount: 0,
+      updatedAt: null,
+    }));
+    const client = await createClient(makeRuntime({
+      db: { getSession, getSessionStory },
+    }));
+
+    const fallback = await client.callTool({
+      name: "get_session_highlight",
+      arguments: { session_id: "with-summaries" },
+    });
+    const empty = await client.callTool({
+      name: "get_session_highlight",
+      arguments: { session_id: "empty" },
+    });
+
+    expect(fallback.structuredContent).toEqual({
+      source: "turn_summaries",
+      turn_summaries: [{
+        event_id: 9,
+        turn_number: 1,
+        content: "저장된 첫 턴",
+        turn_start_event_id: 1,
+        final_response_event_id: 8,
+        created_at: "2026-07-31T00:00:00.000Z",
+      }],
+    });
+    expect(empty.structuredContent).toEqual({
+      source: "empty",
+      turn_summaries: [],
     });
   });
 });
@@ -505,6 +650,10 @@ describe("search_session_history", () => {
           preview: "hello readable world",
           event_type: "user_message",
           match_source: "message",
+          turn_count: 0,
+          has_turn_summaries: false,
+          has_story_digest: false,
+          has_highlight: false,
         },
       ],
     });
@@ -577,6 +726,10 @@ describe("search_session_history", () => {
           preview: "readable session match",
           event_type: "user_message",
           match_source: "message",
+          turn_count: 0,
+          has_turn_summaries: false,
+          has_story_digest: false,
+          has_highlight: false,
         },
       ],
     });
@@ -608,5 +761,59 @@ describe("search_session_history", () => {
       true,
       true,
     );
+  });
+
+  it("attaches one consistent session metadata snapshot to every match", async () => {
+    const searchEvents = vi.fn(async () => [
+      {
+        id: 11,
+        session_id: "s1",
+        event_type: "user_message",
+        searchable_text: "needle one",
+        score: 0.9,
+      },
+      {
+        id: 12,
+        session_id: "s1",
+        event_type: "assistant_message",
+        searchable_text: "needle two",
+        score: 0.8,
+      },
+    ]);
+    const getSessionSearchMetadata = vi.fn(async () => new Map([
+      ["s1", {
+        turnCount: 7,
+        hasTurnSummaries: true,
+        hasStoryDigest: false,
+        hasHighlight: false,
+      }],
+    ]));
+    const client = await createClient(makeRuntime({
+      searchEvents,
+      db: { getSessionSearchMetadata },
+    }));
+
+    const result = await client.callTool({
+      name: "search_session_history",
+      arguments: { query: "needle" },
+    });
+
+    expect(getSessionSearchMetadata).toHaveBeenCalledWith(["s1"]);
+    expect(result.structuredContent?.results).toEqual([
+      expect.objectContaining({
+        session_id: "s1",
+        turn_count: 7,
+        has_turn_summaries: true,
+        has_story_digest: false,
+        has_highlight: false,
+      }),
+      expect.objectContaining({
+        session_id: "s1",
+        turn_count: 7,
+        has_turn_summaries: true,
+        has_story_digest: false,
+        has_highlight: false,
+      }),
+    ]);
   });
 });

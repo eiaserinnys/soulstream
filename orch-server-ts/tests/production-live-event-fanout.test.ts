@@ -26,14 +26,17 @@ describe("production live event fanout", () => {
       resolveSql: vi.fn(async () => database.sql),
       close: vi.fn(async () => undefined),
     };
+    const start = vi.fn();
     const accept = vi.fn();
     const drain = vi.fn(async () => undefined);
     const application = await createLiveProductionApplication(
       loadOrchServerEnvironment(minimalEnvironment()),
       { warn: vi.fn() },
-      { sqlResolver, turnSummaryPipeline: { accept, drain } },
+      { sqlResolver, turnSummaryPipeline: { start, accept, drain } },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
+    await application.startBackground();
+    expect(start).toHaveBeenCalledTimes(1);
     let ws: TestWebSocket | undefined;
     try {
       ws = await (application.app as typeof application.app & {

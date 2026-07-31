@@ -14,7 +14,11 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { searchSessionEvents } from "../../search/session_search.js";
 import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
-import { serializeSessionStoryView } from
+import {
+  serializeSessionStoryTurnSummary,
+  serializeSessionStoryView,
+  type SessionStoryView,
+} from
   "../../db/repositories/session_story_repository.js";
 import { SessionQueryConsumptionBoundary } from
   "./session_query_consumption_boundary.js";
@@ -189,7 +193,41 @@ export function registerSessionQueryTools(
     "get_session_story",
     {
       description:
-        "접힌 세션 줄거리와 하이라이트, 아직 접히지 않은 턴 요약을 시간순으로 조회한다.",
+        "접힌 세션 줄거리와 아직 접히지 않은 턴 요약을 조회한다. 스토리가 없으면 저장된 턴 요약으로 폴백한다.",
+      inputSchema: {
+        session_id: z.string(),
+        include_highlight: z.boolean().default(false),
+      },
+    },
+    async ({ session_id, include_highlight }) => {
+      const session = await runtime.db.getSession(session_id);
+      if (!session) {
+        return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
+      }
+      const story = await runtime.db.getSessionStory(session_id);
+      const serialized = serializeSessionStoryView(story);
+      const result = jsonResult({
+        source: sessionStorySource(story),
+        ...(include_highlight ? { highlight: serialized.highlight } : {}),
+        narrative: serialized.narrative,
+        unfolded_turn_summaries: serialized.unfolded_turn_summaries,
+        narrative_through_event_id: serialized.narrative_through_event_id,
+        fold_count: serialized.fold_count,
+        updated_at: serialized.updated_at,
+      });
+      return consumptionBoundary.commit(
+        "get_session_story",
+        result,
+        [{ session, reflectedRevision: session.last_event_id }],
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_session_highlight",
+    {
+      description:
+        "저장된 세션 하이라이트를 우선 조회하고, 스토리가 없으면 저장된 턴 요약으로 폴백한다.",
       inputSchema: {
         session_id: z.string(),
       },
@@ -200,9 +238,21 @@ export function registerSessionQueryTools(
         return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
       }
       const story = await runtime.db.getSessionStory(session_id);
-      const result = jsonResult(serializeSessionStoryView(story));
+      const source = sessionStorySource(story);
+      const result = source === "story"
+        ? jsonResult({
+            source,
+            highlight: story.highlight,
+            updated_at: story.updatedAt?.toISOString() ?? null,
+          })
+        : jsonResult({
+            source,
+            turn_summaries: story.unfoldedTurnSummaries.map(
+              serializeSessionStoryTurnSummary,
+            ),
+          });
       return consumptionBoundary.commit(
-        "get_session_story",
+        "get_session_highlight",
         result,
         [{ session, reflectedRevision: session.last_event_id }],
       );
@@ -302,12 +352,29 @@ export function registerSessionQueryTools(
           includeStory: include_story,
           limit: top_k ?? 10,
         });
+        const sessionIds = [...new Set(results.map((result) => result.session_id))];
+        const metadata = await runtime.db.getSessionSearchMetadata(sessionIds);
+        const enrichedResults = results.map((result) => {
+          const sessionMetadata = metadata.get(result.session_id) ?? {
+            turnCount: 0,
+            hasTurnSummaries: false,
+            hasStoryDigest: false,
+            hasHighlight: false,
+          };
+          return {
+            ...result,
+            turn_count: sessionMetadata.turnCount,
+            has_turn_summaries: sessionMetadata.hasTurnSummaries,
+            has_story_digest: sessionMetadata.hasStoryDigest,
+            has_highlight: sessionMetadata.hasHighlight,
+          };
+        });
         const observations = consumptionBoundary.enabled
           ? await buildSearchObservations(runtime, results)
           : [];
         return consumptionBoundary.commit(
           "search_session_history",
-          jsonResult({ results }),
+          jsonResult({ results: enrichedResults }),
           observations,
         );
       } catch (err) {
@@ -354,6 +421,13 @@ export function registerSessionQueryTools(
       );
     },
   );
+}
+
+function sessionStorySource(
+  story: SessionStoryView,
+): "story" | "turn_summaries" | "empty" {
+  if (story.narrative !== null) return "story";
+  return story.unfoldedTurnSummaries.length > 0 ? "turn_summaries" : "empty";
 }
 
 async function buildSearchObservations(

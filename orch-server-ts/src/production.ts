@@ -339,6 +339,7 @@ export async function createLiveProductionApplication(
     startBackground: async () => {
       usageSummaryService.start();
       maintenanceService.start();
+      turnSummaryPipeline?.start?.();
     },
     async closeResources() {
       if (resourcesClosed) return;

@@ -8,6 +8,29 @@ import { SessionStoryRepository } from
   "../src/turn-summary/session_story_repository.js";
 
 describe("SessionStoryRepository", () => {
+  it("lists only stale completed sessions with at least five summaries and an unfolded tail", async () => {
+    const completedAt = new Date("2026-07-31T00:00:00.000Z");
+    const { repository, calls } = repositoryWithResponses([[
+      { session_id: "session-a", completed_at: completedAt },
+    ]]);
+
+    await expect(repository.listCompletedFoldCandidates({
+      completedBefore: new Date("2026-07-31T00:30:00.000Z"),
+      minimumSummaryCount: 5,
+      limit: 100,
+    })).resolves.toEqual([{ sessionId: "session-a", completedAt }]);
+
+    expect(calls[0]?.text).toContain("s.status = 'completed'");
+    expect(calls[0]?.text).toContain("s.updated_at <=");
+    expect(calls[0]?.text).toContain("COUNT(e.id) FILTER");
+    expect(calls[0]?.text).toContain("turn_summary");
+    expect(calls[0]?.values).toEqual([
+      new Date("2026-07-31T00:30:00.000Z"),
+      5,
+      100,
+    ]);
+  });
+
   it("counts digested and undigested turn summaries in one session-bounded query", async () => {
     const { repository, calls } = repositoryWithResponses([[
       { total_count: 6, digested_count: 5, undigested_count: 1 },
@@ -117,6 +140,40 @@ describe("SessionStoryRepository", () => {
       narrativeThroughEventId: 12,
       expectedVersion: 1,
     })).resolves.toBe(false);
+  });
+
+  it("stores a final digest only while the same completed revision is still eligible", async () => {
+    const completedAt = new Date("2026-07-31T00:00:00.000Z");
+    const completedBefore = new Date("2026-07-31T00:30:00.000Z");
+    const { repository, calls } = repositoryWithResponses([[{ version: 4 }]]);
+
+    await expect(repository.storeCompletedDigest({
+      sessionId: "session-a",
+      narrative: "[T1-T5] 최종 줄거리.",
+      highlight: "최종 하이라이트.",
+      narrativeThroughEventId: 52,
+      expectedVersion: 3,
+      completedAt,
+      completedBefore,
+      minimumSummaryCount: 5,
+    })).resolves.toBe(true);
+
+    expect(calls[0]?.text).toContain("s.status = 'completed'");
+    expect(calls[0]?.text).toContain("s.updated_at =");
+    expect(calls[0]?.text).toContain("s.updated_at <=");
+    expect(calls[0]?.text).toContain("FOR UPDATE OF s");
+    expect(calls[0]?.text).toContain("session_digests.version =");
+    expect(calls[0]?.text).toContain("COUNT(*)");
+    expect(calls[0]?.values).toEqual([
+      "session-a",
+      completedAt,
+      completedBefore,
+      5,
+      "[T1-T5] 최종 줄거리.",
+      "최종 하이라이트.",
+      52,
+      3,
+    ]);
   });
 });
 

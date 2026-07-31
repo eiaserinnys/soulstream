@@ -5,6 +5,49 @@ import { SessionStoryReadRepository } from
 import type { SqlClient } from "../../src/db/session_db_types.js";
 
 describe("SessionStoryReadRepository", () => {
+  it("loads turn and digest presence metadata for unique sessions in one query", async () => {
+    const { repository, calls } = repositoryWithResponses([[
+      {
+        session_id: "session-a",
+        turn_count: 3,
+        has_turn_summaries: true,
+        has_story_digest: true,
+        has_highlight: true,
+      },
+      {
+        session_id: "session-b",
+        turn_count: 0,
+        has_turn_summaries: false,
+        has_story_digest: false,
+        has_highlight: false,
+      },
+    ]]);
+
+    await expect(repository.getSessionSearchMetadata([
+      "session-a",
+      "session-b",
+    ])).resolves.toEqual(new Map([
+      ["session-a", {
+        turnCount: 3,
+        hasTurnSummaries: true,
+        hasStoryDigest: true,
+        hasHighlight: true,
+      }],
+      ["session-b", {
+        turnCount: 0,
+        hasTurnSummaries: false,
+        hasStoryDigest: false,
+        hasHighlight: false,
+      }],
+    ]));
+    expect(calls[0]?.text).toContain("user_message");
+    expect(calls[0]?.text).toContain("intervention_sent");
+    expect(calls[0]?.text).toContain("session_notification");
+    expect(calls[0]?.text).toContain("turn_summary");
+    expect(calls[0]?.text).toContain("session_digests");
+    expect(calls[0]?.values).toEqual([["session-a", "session-b"]]);
+  });
+
   it("returns all turn summaries as unfolded when no digest row exists", async () => {
     const { repository, calls } = repositoryWithResponses([
       [],
