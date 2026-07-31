@@ -220,6 +220,13 @@
   line-height: 18px;
 }
 
+/* Code blocks normally keep a compact internal scroller. Inside a quote,
+   the quote owns their vertical extent and the nearest document surface scrolls. */
+[data-markdown-blockquote] pre {
+  max-height: none;
+  overflow: visible;
+}
+
 /* 모바일 탭 패널 fade 전환 — keepMounted + [hidden] 오버라이드.
    base-ui TabsPanel(ui/tabs.tsx L70-78)은 data-slot="tabs-content"를 부여한다.
    .mobile-tabs 스코프 내에서만 동작하여 다른 Tabs 사용처에는 영향을 주지 않는다. */

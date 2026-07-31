@@ -13,9 +13,21 @@ const outputRoot = path.resolve(
 const longMarkdown = [
   "# 긴 문서 위치 검증",
   "",
+  "> ```text",
+  ...Array.from({ length: 80 }, (_, index) => (
+    `> 인용문 코드 행 ${index + 1} — 코드 블록도 인용문 높이에 포함되어야 합니다.`
+  )),
+  "> ```",
+  "",
   ...Array.from({ length: 80 }, (_, index) => (
     `> 긴 인용문 ${index + 1} — 내부 스크롤 없이 문서 흐름 안에서 펼쳐져야 합니다.`
   )),
+  "",
+  "```text",
+  ...Array.from({ length: 80 }, (_, index) => (
+    `일반 코드 행 ${index + 1} — 인용문 밖 코드 블록의 기존 스크롤은 유지되어야 합니다.`
+  )),
+  "```",
   "",
   ...Array.from({ length: 80 }, (_, index) => `본문 문단 ${index + 1} — 편집 왕복 위치 기준점입니다.`),
 ].join("\n");
@@ -81,26 +93,57 @@ async function verifyMarkdownSurfaces(browser: Browser) {
     await overlay.getByTestId("v3-task-board-document-overlay-expand").click();
     const readBody = overlay.getByTestId("markdown-read-body");
     await readBody.getByText("본문 문단 80", { exact: false }).waitFor({ state: "visible" });
+    const nestedCodeQuote = readBody.locator("blockquote").filter({ hasText: "인용문 코드 행 80" }).first();
+    const nestedCodeBlock = nestedCodeQuote.locator("pre");
+    const nestedCodeMetrics = await measureElement(nestedCodeBlock);
+    const ordinaryCodeBlock = readBody.locator("pre").filter({ hasText: "일반 코드 행 80" });
+    const ordinaryCodeMetrics = await measureElement(ordinaryCodeBlock);
+    const centralQuote = readBody.locator("blockquote").first();
+    const centralReadSurface = await measureScrollAncestry(centralQuote, overlay);
+    console.log(JSON.stringify({ nestedCodeMetrics, ordinaryCodeMetrics, centralReadSurface }, null, 2));
+    await capture(page, "02-board-central-blockquote");
+    assert(nestedCodeMetrics.maxHeight === "none", `중앙 인용문 코드 높이 상한이 남았습니다: ${nestedCodeMetrics.maxHeight}`);
+    assert(
+      !["auto", "scroll"].includes(nestedCodeMetrics.overflowY),
+      `중앙 인용문 코드가 별도 세로 스크롤을 소유합니다: ${nestedCodeMetrics.overflowY}`,
+    );
+    assert(
+      nestedCodeMetrics.scrollHeight <= nestedCodeMetrics.clientHeight + 1,
+      "중앙 인용문 코드가 내용 높이만큼 펼쳐지지 않았습니다.",
+    );
+    assert(
+      ordinaryCodeMetrics.maxHeight === "240px"
+        && ordinaryCodeMetrics.overflowY === "auto"
+        && ordinaryCodeMetrics.scrollHeight > ordinaryCodeMetrics.clientHeight + 1,
+      `인용문 밖 코드 블록의 기존 스크롤 계약이 달라졌습니다: ${JSON.stringify(ordinaryCodeMetrics)}`,
+    );
+    assert(
+      centralReadSurface.nodes[0]?.scrollHeight <= (centralReadSurface.nodes[0]?.clientHeight ?? 0) + 1,
+      "중앙 문서의 긴 blockquote 자체에 별도 세로 스크롤 영역이 남았습니다.",
+    );
     const readMiddle = await setScrollFraction(readBody, 0.5);
-    await capture(page, "02-board-read-middle");
+    await capture(page, "03-board-read-middle");
 
     await overlay.getByTestId("markdown-edit-start").click();
     const editorScroller = overlay.locator(".cm-scroller");
     await editorScroller.waitFor({ state: "visible" });
     const editMiddle = await readSettledMetrics(editorScroller);
     assertAnchorClose(readMiddle.anchor, editMiddle.anchor, "읽기 → 편집 중간 위치");
-    await capture(page, "03-board-edit-middle");
+    await capture(page, "04-board-edit-middle");
 
     const editBottom = await setScrollFraction(editorScroller, 0.86);
     await overlay.getByTestId("markdown-edit-done").click();
     await readBody.waitFor({ state: "visible" });
     const savedBottom = await readSettledMetrics(readBody);
     assertAnchorClose(editBottom.anchor, savedBottom.anchor, "편집 완료 → 읽기 하단 위치");
-    await capture(page, "04-board-saved-bottom");
+    await capture(page, "05-board-saved-bottom");
 
     assert(browserErrors.length === 0, `브라우저 오류가 발생했습니다: ${browserErrors.join(" | ")}`);
     const metrics = {
       inline,
+      nestedCodeMetrics,
+      ordinaryCodeMetrics,
+      centralReadSurface,
       readMiddle,
       editMiddle,
       editBottom,
@@ -113,6 +156,61 @@ async function verifyMarkdownSurfaces(browser: Browser) {
   } finally {
     await context.close();
   }
+}
+
+async function measureElement(target: Locator) {
+  return target.evaluate((element) => {
+    const node = element as HTMLElement;
+    const style = getComputedStyle(node);
+    return {
+      maxHeight: style.maxHeight,
+      height: style.height,
+      overflow: style.overflow,
+      overflowY: style.overflowY,
+      clientHeight: node.clientHeight,
+      scrollHeight: node.scrollHeight,
+    };
+  });
+}
+
+async function measureScrollAncestry(target: Locator, boundary: Locator) {
+  const boundaryHandle = await boundary.elementHandle();
+  if (!boundaryHandle) throw new Error("중앙 문서 오버레이를 찾지 못했습니다.");
+  return target.evaluate((element, overlay) => {
+    const nodes: Array<{
+      tag: string;
+      testId: string | null;
+      classes: string;
+      maxHeight: string;
+      height: string;
+      overflow: string;
+      overflowY: string;
+      clientHeight: number;
+      scrollHeight: number;
+      ownsVerticalScroll: boolean;
+    }> = [];
+    let current: HTMLElement | null = element as HTMLElement;
+    while (current) {
+      const style = getComputedStyle(current);
+      const overflowY = style.overflowY;
+      nodes.push({
+        tag: current.tagName.toLowerCase(),
+        testId: current.dataset.testid ?? null,
+        classes: current.className,
+        maxHeight: style.maxHeight,
+        height: style.height,
+        overflow: style.overflow,
+        overflowY,
+        clientHeight: current.clientHeight,
+        scrollHeight: current.scrollHeight,
+        ownsVerticalScroll: ["auto", "scroll"].includes(overflowY)
+          && current.scrollHeight > current.clientHeight + 1,
+      });
+      if (current === overlay) break;
+      current = current.parentElement;
+    }
+    return { nodes };
+  }, boundaryHandle);
 }
 
 async function preparePage(page: Page) {

@@ -52,4 +52,16 @@ describe("v3 task document board unification", () => {
       /\.v3-description-editor\[data-editor-variant="inline"\]\s*>\s*div\s*\{[\s\S]*?position:\s*absolute;/,
     );
   });
+
+  it("expands code blocks inside blockquotes while preserving ordinary code scroll", () => {
+    const globals = read("../../../packages/soul-ui/src/styles/globals.css");
+    const markdown = read("../../../packages/soul-ui/src/components/MarkdownContent.tsx");
+
+    expect(globals).toMatch(
+      /\[data-markdown-blockquote\]\s+pre\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
+    );
+    expect(markdown).toContain('data-markdown-blockquote="true"');
+    expect(markdown).toContain("overflow-auto max-h-60");
+    expect(markdown).toContain("overflow-auto max-h-24");
+  });
 });

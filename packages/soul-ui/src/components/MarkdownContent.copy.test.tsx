@@ -12,27 +12,50 @@ import { MarkdownContent } from "./MarkdownContent";
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
-function renderMarkdown(content: string, enableBlockquoteCopy = false) {
+function renderMarkdown(content: string, enableBlockquoteCopy = false, compact = false) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   flushSync(() => {
-    root!.render(createElement(MarkdownContent, { content, enableBlockquoteCopy }));
+    root!.render(createElement(MarkdownContent, { content, enableBlockquoteCopy, compact }));
   });
   return container;
 }
 
-afterEach(() => {
+function resetRender() {
   if (root) flushSync(() => root?.unmount());
   container?.remove();
-  document.body.innerHTML = "";
   root = undefined;
   container = undefined;
+}
+
+afterEach(() => {
+  resetRender();
+  document.body.innerHTML = "";
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
 describe("MarkdownContent blockquote copy", () => {
+  it("marks every blockquote so nested code can share the no-scroll contract", () => {
+    const standard = renderMarkdown("> ```text\n> 일반 코드\n> ```");
+
+    expect(standard.querySelectorAll("blockquote")).toHaveLength(1);
+    expect(standard.querySelectorAll("blockquote[data-markdown-blockquote]")).toHaveLength(1);
+
+    resetRender();
+
+    const compact = renderMarkdown("> ```text\n> 컴팩트 코드\n> ```", false, true);
+    expect(compact.querySelectorAll("blockquote")).toHaveLength(1);
+    expect(compact.querySelectorAll("blockquote[data-markdown-blockquote]")).toHaveLength(1);
+
+    resetRender();
+
+    const copyable = renderMarkdown("> 바깥\n>\n> > ```text\n> > 중첩 코드\n> > ```", true);
+    expect(copyable.querySelectorAll("blockquote")).toHaveLength(2);
+    expect(copyable.querySelectorAll("blockquote[data-markdown-blockquote]")).toHaveLength(2);
+  });
+
   it("keeps non-chat Markdown opt-out by default", () => {
     const view = renderMarkdown("> 인용문");
 
