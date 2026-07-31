@@ -5,6 +5,8 @@ import {
 
 export { fetchNodeModelPresets };
 
+export const MODEL_PRESET_FETCH_ERROR = "모델 목록을 불러오지 못했습니다";
+
 const UNAVAILABLE_SELECTION_MESSAGE =
   "선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.";
 
@@ -42,6 +44,25 @@ export function modelPresetSelectionState(
     return { preset, valid: false, warning: UNAVAILABLE_SELECTION_MESSAGE };
   }
   return { preset, valid: true, warning: null };
+}
+
+export function modelPresetDisplayLabel({
+  selectedId,
+  preset,
+  status,
+  missingLabel = "선택한 모델",
+}: {
+  selectedId: string;
+  preset: ModelPresetAvailability | null;
+  status: "idle" | "loading" | "ready" | "error";
+  missingLabel?: string;
+}): string {
+  if (status === "error") return MODEL_PRESET_FETCH_ERROR;
+  if (preset) return modelPresetOptionLabel(preset, undefined, false);
+  if (status === "loading") {
+    return selectedId ? "선택한 모델 확인 중…" : "불러오는 중…";
+  }
+  return selectedId ? missingLabel : "미지정";
 }
 
 function localResetTime(value: string): string | null {

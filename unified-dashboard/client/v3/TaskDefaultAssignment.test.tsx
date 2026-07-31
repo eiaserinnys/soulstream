@@ -9,16 +9,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskDefaultAssignment } from "./TaskDefaultAssignment";
 
 vi.mock("./AgentNodeAssignmentFields", () => ({
-  AgentNodeAssignmentFields: ({ agentId, nodeId, modelPreset, layout, onAgentIdChange, onNodeIdChange, onModelPresetChange }: {
+  AgentNodeAssignmentFields: ({ agentId, nodeId, modelPreset, layout, modelPresetCatalog, onAgentIdChange, onNodeIdChange, onModelPresetChange }: {
     agentId: string;
     nodeId: string;
     modelPreset: string;
     layout?: string;
+    modelPresetCatalog?: { status: string; nodeId: string };
     onAgentIdChange(value: string): void;
     onNodeIdChange(value: string): void;
     onModelPresetChange(value: string): void;
   }) => (
-    <div data-testid="assignment-fields" data-layout={layout}>
+    <div
+      data-testid="assignment-fields"
+      data-layout={layout}
+      data-catalog-status={modelPresetCatalog?.status}
+      data-catalog-node={modelPresetCatalog?.nodeId}
+    >
       <input aria-label="에이전트 선택" value={agentId} onChange={(event) => onAgentIdChange(event.target.value)} />
       <input aria-label="노드 선택" value={nodeId} onChange={(event) => onNodeIdChange(event.target.value)} />
       <input aria-label="모델 선택" value={modelPreset} onChange={(event) => onModelPresetChange(event.target.value)} />
@@ -34,25 +40,75 @@ describe("TaskDefaultAssignment", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(presetResponse([{
+      id: "preset-inherited",
+      label: "Codex - 5.6 Sol",
+      backend: "codex",
+      available: true,
+      reason: null,
+      reason_label: null,
+      resets_at: null,
+      usage_warning: false,
+    }])));
   });
 
   afterEach(() => {
     flushSync(() => root.unmount());
     document.body.replaceChildren();
+    vi.unstubAllGlobals();
   });
 
-  it("shows the selected node, agent, and model with one accessible edit action", () => {
+  it("shows the selected model label without exposing its internal preset id", async () => {
     render(vi.fn(async () => undefined));
 
     const summary = element("task-default-summary");
-    expect(summary.textContent).toContain("eiaserinnys");
-    expect(summary.textContent).toContain("seosoyoung");
-    expect(summary.textContent).toContain("preset-inherited");
+    await vi.waitFor(() => expect(summary.textContent).toContain("Codex - 5.6 Sol"));
+    expect(summary.textContent).not.toContain("preset-inherited");
     expect(summary.textContent).not.toContain("모델 지정");
     expect(summary.textContent).not.toContain("직접 지정");
     expect(summary.textContent).not.toContain("상속");
     expect(summary.querySelectorAll("button")).toHaveLength(1);
     expect(button("기본 담당 편집").getAttribute("aria-expanded")).toBe("false");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce();
+
+    click("기본 담당 편집");
+    expect(element("assignment-fields").dataset.catalogStatus).toBe("ready");
+    expect(element("assignment-fields").dataset.catalogNode).toBe("eiaserinnys");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce();
+  });
+
+  it("keeps loading, lookup failure, and missing presets explicit without exposing the id", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    render(vi.fn(async () => undefined));
+    await vi.waitFor(() => expect(element("task-default-summary").textContent).toContain("선택한 모델 확인 중…"));
+    expect(element("task-default-summary").textContent).not.toContain("preset-inherited");
+    expect(button("기본 담당 편집").disabled).toBe(false);
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("catalog unavailable")));
+    render(vi.fn(async () => undefined), {
+      agentId: "seosoyoung",
+      nodeId: "eias-linegames-wsl",
+      modelPreset: "preset-failed",
+    });
+    await vi.waitFor(() => expect(element("task-default-summary").textContent).toContain("모델 목록을 불러오지 못했습니다"));
+    expect(element("task-default-summary").textContent).not.toContain("preset-failed");
+    expect(button("기본 담당 편집").disabled).toBe(false);
+    click("기본 담당 편집");
+    expect(element("assignment-fields").dataset.catalogStatus).toBe("error");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[role="alert"]')?.textContent)
+      .toContain("모델 목록을 불러오지 못했습니다");
+    click("취소");
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(presetResponse([])));
+    render(vi.fn(async () => undefined), {
+      agentId: "seosoyoung",
+      nodeId: "qa-node",
+      modelPreset: "retired-preset",
+    });
+    await vi.waitFor(() => expect(element("task-default-summary").textContent).toContain("모델 확인 필요"));
+    expect(element("task-default-summary").textContent).not.toContain("retired-preset");
+    expect(button("기본 담당 편집").disabled).toBe(false);
   });
 
   it("saves the edited value through the compact assignment editor", async () => {
@@ -106,6 +162,7 @@ describe("TaskDefaultAssignment", () => {
     expect(element("task-default-summary").textContent).toContain("노드 미지정");
     expect(element("task-default-summary").textContent).toContain("에이전트 미지정");
     expect(element("task-default-summary").textContent).toContain("모델 미지정");
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
     click("기본 담당 편집");
     setInput(input("노드 선택"), "eiaserinnys");
     setInput(input("에이전트 선택"), "roselin_codex");
@@ -119,7 +176,7 @@ describe("TaskDefaultAssignment", () => {
     }));
   });
 
-  it("restores persisted values when editing is cancelled", () => {
+  it("restores persisted values when editing is cancelled", async () => {
     const onSave = vi.fn(async () => undefined);
     render(onSave);
     click("기본 담당 편집");
@@ -131,7 +188,8 @@ describe("TaskDefaultAssignment", () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(document.body.querySelector('input[aria-label="에이전트 선택"]')).toBeNull();
     expect(element("task-default-summary").textContent).toContain("seosoyoung");
-    expect(element("task-default-summary").textContent).toContain("preset-inherited");
+    await vi.waitFor(() => expect(element("task-default-summary").textContent).toContain("Codex - 5.6 Sol"));
+    expect(element("task-default-summary").textContent).not.toContain("preset-inherited");
   });
 
   function render(
@@ -185,5 +243,12 @@ function setInput(target: HTMLInputElement, value: string) {
   flushSync(() => {
     setter?.call(target, value);
     target.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function presetResponse(modelPresets: unknown[]): Response {
+  return new Response(JSON.stringify({ model_presets: modelPresets }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
   });
 }

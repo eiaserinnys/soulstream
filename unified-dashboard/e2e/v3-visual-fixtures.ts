@@ -28,6 +28,7 @@ export interface V3VisualQaRouteOptions {
   contextMenuParity?: boolean;
   contextChainPreview?: boolean;
   taskDefaultAssignment?: boolean;
+  taskAssignmentModelPreset?: string;
   taskContextEditing?: boolean;
   legacyAtomContext?: boolean;
   outsideTaskSession?: boolean;
@@ -880,7 +881,22 @@ export async function installV3VisualQaRoutes(
         }
       }
       const result = pageReads[pageId];
-      return result ? fulfillJson(route, result) : fulfillJson(route, { detail: "page not found" }, 404);
+      if (!result) return fulfillJson(route, { detail: "page not found" }, 404);
+      const response = pageId === pages.project.id && options.taskAssignmentModelPreset
+        ? {
+            ...result,
+            blocks: result.blocks.map((candidate) => candidate.id === "project-defaults"
+              ? {
+                  ...candidate,
+                  properties: {
+                    ...candidate.properties,
+                    modelPreset: options.taskAssignmentModelPreset,
+                  },
+                }
+              : candidate),
+          }
+        : result;
+      return fulfillJson(route, response);
     }
     const pageOperationsMatch = /^\/api\/pages\/([^/]+)\/operations$/.exec(path);
     if (pageOperationsMatch && request.method() === "POST") {
@@ -1036,6 +1052,7 @@ export async function installV3VisualQaRoutes(
       return fulfillJson(route, {
         agentId: "roselin_codex",
         nodeId: "eiaserinnys",
+        modelPreset: options.taskAssignmentModelPreset ?? null,
         sourcePageId: pages.project.id,
         sourceBlockId: "project-guidance",
       });

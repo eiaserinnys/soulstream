@@ -173,6 +173,45 @@ describe("AgentNodeAssignmentFields", () => {
     expect(labels).toEqual(["노드", "에이전트", "모델"]);
   });
 
+  it("reuses a provided node preset catalog without fetching the same API again", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes("model-presets")) {
+        throw new Error("model preset API must not be fetched twice");
+      }
+      return response([{ id: "agent-a", name: "에이전트 A" }]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    flushSync(() => {
+      root.render(createElement(AgentNodeAssignmentFields, {
+        nodeId: "node-a",
+        agentId: "agent-a",
+        modelPreset: "preset-sol",
+        presentation: "session",
+        modelPresetCatalog: {
+          status: "ready",
+          nodeId: "node-a",
+          presets: [{
+            id: "preset-sol",
+            label: "Codex - 5.6 Sol",
+            backend: "codex",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            usage_warning: false,
+          }],
+        },
+        onNodeIdChange: vi.fn(),
+        onAgentIdChange: vi.fn(),
+        onModelPresetChange: vi.fn(),
+      }));
+    });
+
+    await waitFor(() => expect(modelTrigger().textContent).toContain("Codex - 5.6 Sol"));
+    expect(fetchMock.mock.calls.every(([input]) => !String(input).includes("model-presets"))).toBe(true);
+  });
+
   it("shows unavailable presets as disabled and keeps usage warnings selectable", async () => {
     const onValidityChange = vi.fn();
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>

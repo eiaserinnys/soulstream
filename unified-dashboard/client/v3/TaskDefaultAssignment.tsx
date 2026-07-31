@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Pencil } from "lucide-react";
 
+import {
+  MODEL_PRESET_FETCH_ERROR,
+  modelPresetDisplayLabel,
+  modelPresetSelectionState,
+} from "../lib/model-presets";
+import { useNodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
 
 export function TaskDefaultAssignment({
@@ -22,6 +28,29 @@ export function TaskDefaultAssignment({
   const [modelPresetValid, setModelPresetValid] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modelPresetCatalog = useNodeModelPresetCatalog(
+    nodeId && modelPreset ? nodeId : "",
+    setError,
+  );
+  const catalogMatchesNode = modelPresetCatalog.nodeId === nodeId;
+  const modelCatalogStatus = !modelPreset
+    ? "idle"
+    : catalogMatchesNode
+      ? modelPresetCatalog.status
+      : "loading";
+  const modelSelection = modelPresetSelectionState(
+    modelPreset ?? "",
+    catalogMatchesNode ? modelPresetCatalog.presets : [],
+    modelCatalogStatus === "ready",
+  );
+  const modelDisplayLabel = modelPreset
+    ? modelPresetDisplayLabel({
+        selectedId: modelPreset,
+        preset: modelSelection.preset,
+        status: modelCatalogStatus,
+        missingLabel: "모델 확인 필요",
+      })
+    : "모델 미지정";
 
   useEffect(() => {
     if (editing) return;
@@ -68,14 +97,22 @@ export function TaskDefaultAssignment({
           <span aria-hidden="true">·</span>
           <span>{agentId ?? "에이전트 미지정"}</span>
           <span aria-hidden="true">·</span>
-          <span>{modelPreset ?? "모델 미지정"}</span>
+          <span
+            data-model-preset-state={modelCatalogStatus}
+            title={modelSelection.warning ?? undefined}
+          >
+            {modelDisplayLabel}
+          </span>
         </span>
         <DashboardIconCap
           className="v3-task-default-edit"
           label="기본 담당 편집"
           aria-expanded={editing}
           disabled={pending || editing}
-          onClick={() => { setError(null); setEditing(true); }}
+          onClick={() => {
+            setError(modelPresetCatalog.status === "error" ? MODEL_PRESET_FETCH_ERROR : null);
+            setEditing(true);
+          }}
         >
           <Pencil className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
@@ -88,6 +125,7 @@ export function TaskDefaultAssignment({
             modelPreset={draftModelPreset}
             presentation="session"
             layout="compact-row"
+            modelPresetCatalog={modelPresetCatalog}
             disabled={pending}
             onAgentIdChange={setDraftAgentId}
             onNodeIdChange={(value) => {

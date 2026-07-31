@@ -113,6 +113,7 @@ async function preparePage(page: Page) {
   await installV3VisualQaRoutes(page, {
     contextChainPreview: true,
     taskDefaultAssignment: true,
+    taskAssignmentModelPreset: "qa-standard",
   });
 }
 
@@ -212,6 +213,8 @@ function assertSummaryContract(
   assert(!metrics.text.includes("직접 지정"), "업무 요약에 `직접 지정`이 남았습니다.");
   assert(metrics.valueParts.length === 5, "노드·에이전트·모델 요약 구조가 아닙니다.");
   assert(metrics.valueParts[0].length > 0 && metrics.valueParts[2].length > 0 && metrics.valueParts[4].length > 0, "요약 값이 비었습니다.");
+  assert(metrics.valueParts[4] === "QA 표준 모델", "모델 preset 사용자 표시명이 요약에 없습니다.");
+  assert(!metrics.text.includes("qa-standard"), "내부 model preset ID가 요약에 노출됩니다.");
   assert(metrics.editButtonCount === 1, "편집 버튼이 정확히 하나가 아닙니다.");
   assert(metrics.buttonLabel === "기본 담당 편집", "편집 버튼의 접근 가능한 이름이 다릅니다.");
   assert(metrics.values.right <= metrics.button.left + 1, "요약 값과 편집 버튼이 겹칩니다.");

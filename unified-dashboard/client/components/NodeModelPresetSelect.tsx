@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo } from "react";
 import {
   Badge,
   Select,
@@ -9,13 +9,14 @@ import {
 } from "@seosoyoung/soul-ui";
 
 import {
-  fetchNodeModelPresets,
+  modelPresetDisplayLabel,
   modelPresetOptionLabel,
   modelPresetSelectionState,
 } from "../lib/model-presets";
-
-const MODEL_PRESET_FETCH_TIMEOUT_MS = 10_000;
-const MODEL_PRESET_FETCH_ERROR = "모델 목록을 불러오지 못했습니다";
+import {
+  type NodeModelPresetCatalog,
+  useNodeModelPresetCatalog,
+} from "../lib/use-node-model-preset-catalog";
 
 export function NodeModelPresetSelect({
   nodeId,
@@ -24,6 +25,7 @@ export function NodeModelPresetSelect({
   disabled = false,
   className,
   triggerClassName,
+  modelPresetCatalog,
   onValueChange,
   onPresetChange,
   onValidityChange,
@@ -35,61 +37,33 @@ export function NodeModelPresetSelect({
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
+  modelPresetCatalog?: NodeModelPresetCatalog;
   onValueChange(value: string): void;
   onPresetChange?(preset: ModelPresetAvailability | null): void;
   onValidityChange?(valid: boolean): void;
   onError?(message: string): void;
 }) {
-  const [presets, setPresets] = useState<ModelPresetAvailability[]>([]);
-  const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState(false);
   const selectId = useId();
-  const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
-
-  useEffect(() => {
-    if (!nodeId) {
-      setPresets([]);
-      setLoadedNodeId(null);
-      setLoading(false);
-      setLoadError(false);
-      return;
-    }
-    let active = true;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(
-      () => controller.abort(),
-      MODEL_PRESET_FETCH_TIMEOUT_MS,
-    );
-    setPresets([]);
-    setLoadedNodeId(null);
-    setLoading(true);
-    setLoadError(false);
-    void fetchNodeModelPresets(nodeId, globalThis.fetch, controller.signal).then((next) => {
-      if (!active) return;
-      setPresets(next);
-      setLoadedNodeId(nodeId);
-    }).catch(() => {
-      if (!active) return;
-      setPresets([]);
-      setLoadedNodeId(null);
-      setLoadError(true);
-      onErrorRef.current?.(MODEL_PRESET_FETCH_ERROR);
-    }).finally(() => {
-      window.clearTimeout(timeoutId);
-      if (active) setLoading(false);
-    });
-    return () => {
-      active = false;
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [nodeId]);
+  const reuseExternalCatalog = Boolean(
+    modelPresetCatalog
+    && modelPresetCatalog.nodeId === nodeId,
+  );
+  const internalCatalog = useNodeModelPresetCatalog(
+    reuseExternalCatalog ? "" : nodeId,
+    onError,
+  );
+  const catalog = reuseExternalCatalog ? modelPresetCatalog! : internalCatalog;
+  const catalogMatchesNode = catalog.nodeId === nodeId;
+  const catalogStatus = catalogMatchesNode
+    ? catalog.status
+    : nodeId ? "loading" : "idle";
+  const presets = catalogMatchesNode ? catalog.presets : [];
+  const loading = catalogStatus === "loading";
+  const loaded = catalogStatus === "ready";
 
   const selection = useMemo(
-    () => modelPresetSelectionState(value, presets, loadedNodeId === nodeId && !loading),
-    [loadedNodeId, loading, nodeId, presets, value],
+    () => modelPresetSelectionState(value, presets, loaded),
+    [loaded, presets, value],
   );
   useEffect(() => {
     onPresetChange?.(selection.preset);
@@ -98,13 +72,11 @@ export function NodeModelPresetSelect({
   const selectedPresetMissing = Boolean(
     value && !presets.some((preset) => preset.id === value),
   );
-  const triggerLabel = loadError
-    ? MODEL_PRESET_FETCH_ERROR
-    : selection.preset
-      ? modelPresetOptionLabel(selection.preset, undefined, false)
-      : loading
-        ? value ? "선택한 모델 확인 중…" : "불러오는 중…"
-        : value ? "선택한 모델" : "미지정";
+  const triggerLabel = modelPresetDisplayLabel({
+    selectedId: value,
+    preset: selection.preset,
+    status: catalogStatus,
+  });
 
   return (
     <div className={className}>
@@ -127,7 +99,7 @@ export function NodeModelPresetSelect({
           <SelectPopup>
             <SelectItem value="">미지정</SelectItem>
             {selectedPresetMissing ? (
-              <SelectItem value={value} disabled={loadedNodeId === nodeId}>
+              <SelectItem value={value} disabled={loaded}>
                 {loading ? "선택한 모델 확인 중…" : "선택한 모델"}
               </SelectItem>
             ) : null}
