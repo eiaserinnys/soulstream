@@ -42,7 +42,22 @@ vi.mock("react-virtuoso", async () => {
       };
     }, [props]);
 
-    return React.createElement("div", { ref: scrollerRef, "data-testid": "virtuoso" });
+    const data = (props.data as any[] | undefined) ?? [];
+    const firstItemIndex = props.firstItemIndex as number;
+    const computeItemKey = props.computeItemKey as (
+      index: number,
+      item: any,
+    ) => React.Key;
+    const itemContent = props.itemContent as (index: number, item: any) => React.ReactNode;
+    return React.createElement(
+      "div",
+      { ref: scrollerRef, "data-testid": "virtuoso" },
+      data.map((item, index) => React.createElement(
+        "div",
+        { key: computeItemKey(firstItemIndex + index, item) },
+        itemContent(firstItemIndex + index, item),
+      )),
+    );
   });
 
   return { Virtuoso };
@@ -142,10 +157,31 @@ function setFirstVisibleDataIndex(dataIndex: number): {
   const firstItemIndex = virtuosoMock.props?.firstItemIndex as number;
   const absoluteIndex = firstItemIndex + dataIndex;
   const key = itemKeyAt(dataIndex);
-  const rangeChanged = virtuosoMock.props?.rangeChanged as
-    | ((range: { startIndex: number; endIndex: number }) => void)
-    | undefined;
-  rangeChanged?.({ startIndex: absoluteIndex, endIndex: absoluteIndex });
+  const scroller = document.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+  if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+  const makeRect = (top: number, bottom: number): DOMRect => ({
+    x: 0,
+    y: top,
+    top,
+    bottom,
+    left: 0,
+    right: 320,
+    width: 320,
+    height: bottom - top,
+    toJSON: () => ({}),
+  });
+  scroller.getBoundingClientRect = () => makeRect(100, 300);
+  const markers = Array.from(
+    scroller.querySelectorAll<HTMLElement>("[data-chat-item-key]"),
+  );
+  markers.forEach((marker, index) => {
+    const row = marker.firstElementChild as HTMLElement | null;
+    if (!row) throw new Error("chat item geometry target이 없습니다.");
+    const top = 100 + (index - dataIndex) * 40;
+    row.getBoundingClientRect = () => makeRect(top, top + 40);
+  });
+  scroller.dispatchEvent(new Event("scroll"));
+  expect(scroller.dataset.chatFirstVisibleKey).toBe(String(key));
   return { absoluteIndex, key };
 }
 
@@ -247,7 +283,7 @@ describe("ChatView long-session initial bottom focus", () => {
     });
   });
 
-  it("follow-off에서 first visible 앞의 live 과거 summary만 firstItemIndex로 보정한다", async () => {
+  it("follow-off에서 first visible 앞의 live 과거 summary를 anchor stable row 안에 결합한다", async () => {
     useDashboardStore.getState().processHistoryEvents([
       makeAssistantMessage(1000),
       makeComplete(1001),
@@ -278,8 +314,8 @@ describe("ChatView long-session initial bottom focus", () => {
 
     const afterIndex = findDataIndexByKey(before.key);
     const afterFirstItemIndex = virtuosoMock.props?.firstItemIndex as number;
-    expect(afterIndex).toBe(completeIndex + 1);
-    expect(afterFirstItemIndex).toBe(beforeFirstItemIndex - 1);
+    expect(afterIndex).toBe(completeIndex);
+    expect(afterFirstItemIndex).toBe(beforeFirstItemIndex);
     expect(afterFirstItemIndex + afterIndex).toBe(before.absoluteIndex);
     expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
   });
@@ -372,8 +408,8 @@ describe("ChatView long-session initial bottom focus", () => {
 
     const afterIndex = findDataIndexByKey(before.key);
     const added = useDashboardStore.getState().chatPrependedCount - beforePrependedCount;
-    expect(added).toBe(3);
-    expect(afterIndex).toBe(3);
+    expect(added).toBe(2);
+    expect(afterIndex).toBe(2);
     expect((virtuosoMock.props?.firstItemIndex as number) + afterIndex).toBe(
       before.absoluteIndex,
     );
@@ -404,7 +440,7 @@ describe("ChatView long-session initial bottom focus", () => {
       useDashboardStore.getState().processEvent(makeTurnSummary(1201, 1000).event, 1201);
     });
     await flushPassiveEffects();
-    expect(virtuosoData()).toHaveLength(4);
+    expect(virtuosoData()).toHaveLength(3);
     expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
       index: "LAST",
       align: "end",
@@ -523,7 +559,7 @@ describe("ChatView long-session initial bottom focus", () => {
     await flushPassiveEffects();
 
     expect(virtuosoMock.props?.firstItemIndex).toBe(correctedFirstItemIndex);
-    expect(findDataIndexByKey(visible.key)).toBe(completeIndex + 1);
+    expect(findDataIndexByKey(visible.key)).toBe(completeIndex);
     expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
   });
 
@@ -602,7 +638,7 @@ describe("ChatView long-session initial bottom focus", () => {
       useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
     });
     await flushPassiveEffects();
-    expect(virtuosoMock.props?.firstItemIndex).toBe(9_996);
+    expect(virtuosoMock.props?.firstItemIndex).toBe(9_997);
 
     flushSync(() => {
       useDashboardStore.getState().setActiveSession("sess-other");

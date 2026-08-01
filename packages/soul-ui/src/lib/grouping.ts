@@ -6,20 +6,28 @@
 
 import type { ChatMessage } from "./flatten-tree";
 
-export type MessageOrGroup =
+export type BaseMessageOrGroup =
   | { type: "single"; msg: ChatMessage }
   | { type: "tool-group"; messages: ChatMessage[] };
 
+export type MessageOrGroup =
+  | BaseMessageOrGroup
+  | {
+      type: "summary-group";
+      anchor: BaseMessageOrGroup;
+      summaries: ChatMessage[];
+    };
+
 export function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
-  const result: MessageOrGroup[] = [];
+  const base: BaseMessageOrGroup[] = [];
   let toolBuffer: ChatMessage[] = [];
 
   const flushTools = () => {
     if (toolBuffer.length === 0) return;
     if (toolBuffer.length === 1) {
-      result.push({ type: "single", msg: toolBuffer[0] });
+      base.push({ type: "single", msg: toolBuffer[0] });
     } else {
-      result.push({ type: "tool-group", messages: [...toolBuffer] });
+      base.push({ type: "tool-group", messages: [...toolBuffer] });
     }
     toolBuffer = [];
   };
@@ -29,9 +37,33 @@ export function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
       toolBuffer.push(msg);
     } else {
       flushTools();
-      result.push({ type: "single", msg });
+      base.push({ type: "single", msg });
     }
   }
   flushTools();
+  const result: MessageOrGroup[] = [];
+  for (const item of base) {
+    const summary = item.type === "single" && item.msg.treeNodeType === "turn_summary"
+      ? item.msg
+      : null;
+    if (summary === null || result.length === 0) {
+      result.push(item);
+      continue;
+    }
+
+    const previous = result[result.length - 1];
+    if (previous.type === "summary-group") {
+      result[result.length - 1] = {
+        ...previous,
+        summaries: [...previous.summaries, summary],
+      };
+    } else {
+      result[result.length - 1] = {
+        type: "summary-group",
+        anchor: previous,
+        summaries: [summary],
+      };
+    }
+  }
   return result;
 }

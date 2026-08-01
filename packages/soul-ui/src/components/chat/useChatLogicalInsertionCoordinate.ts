@@ -25,7 +25,7 @@ export function useChatLogicalInsertionCoordinate(
   prependedCount: number,
 ): {
   firstItemIndex: number;
-  recordFirstVisible: (absoluteIndex: number) => void;
+  recordFirstVisibleKey: (key: string | null) => void;
 } {
   const groupedKeys = useMemo(() => grouped.map(messageOrGroupKey), [grouped]);
   const firstVisibleRef = useRef<{
@@ -77,16 +77,15 @@ export function useChatLogicalInsertionCoordinate(
   const firstItemIndex = computeFirstItemIndex(
     prependedCount + renderCoordinate.insertedBeforeVisible,
   );
-  const recordFirstVisible = useCallback(
-    (absoluteIndex: number) => {
-      const dataIndex = absoluteIndex - firstItemIndex;
+  const recordFirstVisibleKey = useCallback(
+    (key: string | null) => {
       firstVisibleRef.current = {
         sessionKey,
-        key: groupedKeys[dataIndex] ?? null,
+        key,
       };
     },
-    [firstItemIndex, groupedKeys, sessionKey],
+    [sessionKey],
   );
 
-  return { firstItemIndex, recordFirstVisible };
+  return { firstItemIndex, recordFirstVisibleKey };
 }

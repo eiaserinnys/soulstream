@@ -26,6 +26,7 @@ export const computeFirstItemIndex = (prependedCount: number): number =>
 
 /** Virtuoso와 viewport 보정이 공유하는 안정 키. */
 export function messageOrGroupKey(item: MessageOrGroup): string {
+  if (item.type === "summary-group") return messageOrGroupKey(item.anchor);
   return item.type === "tool-group"
     ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
     : item.msg.treeNodeId;
@@ -54,6 +55,15 @@ export function areMessageGroupsRenderEqual(
         item.messages.every(
           (message, messageIndex) =>
             message === nextItem.messages[messageIndex],
+        )
+      );
+    }
+    if (item.type === "summary-group" && nextItem.type === "summary-group") {
+      return (
+        areMessageGroupsRenderEqual([item.anchor], [nextItem.anchor]) &&
+        item.summaries.length === nextItem.summaries.length &&
+        item.summaries.every(
+          (summary, summaryIndex) => summary === nextItem.summaries[summaryIndex],
         )
       );
     }
@@ -106,6 +116,12 @@ export const findFocusIndex = (
 ): number => {
   if (focusEventId == null) return -1;
   return grouped.findIndex((item) => {
+    if (item.type === "summary-group") {
+      return findFocusIndex(
+        [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))],
+        focusEventId,
+      ) >= 0;
+    }
     if (item.type === "tool-group") {
       return item.messages.some(
         (m) =>
