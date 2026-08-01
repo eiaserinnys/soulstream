@@ -60,13 +60,11 @@ function appServerStreamKey(event: SoulSSEEvent): string | null {
 }
 
 function positiveSafeInteger(value: unknown): number | undefined {
-  const numeric =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && value.trim().length > 0
-        ? Number(value)
-        : Number.NaN;
-  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : undefined;
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value > 0
+    ? value
+    : undefined;
 }
 
 /** LLM 세션의 messages 배열에서 마지막 user 메시지 콘텐츠를 추출한다. */

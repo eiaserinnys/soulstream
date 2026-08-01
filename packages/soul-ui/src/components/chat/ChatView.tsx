@@ -131,7 +131,7 @@ export function ChatView({
     activeSessionKey,
     grouped,
     firstItemIndex,
-    isFollowingRef,
+    isFollowing,
     recordFirstVisibleKey,
   });
   const resolveVirtuosoFollowOutput = useCallback(

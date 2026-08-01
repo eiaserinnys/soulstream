@@ -834,6 +834,38 @@ describe("turn_summary — 응답 anchor 직접 캡션 투영", () => {
     ]);
   });
 
+  it("숫자 문자열 anchor는 유효한 safe integer가 아니므로 legacy 위치로 fail-open한다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        makeAssistantMessageEvent(100, "앞 응답"),
+        {
+          event: {
+            type: "turn_summary",
+            content: "문자열 anchor 요약",
+            final_response_event_id: "130",
+            parent_event_id: "130",
+          } as unknown as SoulSSEEvent,
+          eventId: 110,
+        },
+        makeCompleteEvent(120),
+        makeAssistantMessageEvent(130, "문자열이 가리킨 응답"),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual([
+      "assistant_message",
+      "turn_summary",
+      "complete",
+      "assistant_message",
+    ]);
+  });
+
   it("필수 필드가 없는 payload는 건너뛰고 같은 배치의 다음 이벤트를 처리한다", () => {
     const ctx = createProcessingContext();
     const result = processEventsBatch(

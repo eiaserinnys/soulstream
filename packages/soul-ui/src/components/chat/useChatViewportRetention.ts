@@ -2,7 +2,6 @@ import {
   useCallback,
   useLayoutEffect,
   useRef,
-  type RefObject,
 } from "react";
 
 import type { MessageOrGroup } from "../../lib/grouping";
@@ -25,7 +24,7 @@ interface ChatViewportRetentionOptions {
   activeSessionKey: string | null;
   grouped: MessageOrGroup[];
   firstItemIndex: number;
-  isFollowingRef: RefObject<boolean>;
+  isFollowing: boolean;
   recordFirstVisibleKey: (key: string | null) => void;
 }
 
@@ -38,7 +37,7 @@ export function useChatViewportRetention({
   activeSessionKey,
   grouped,
   firstItemIndex,
-  isFollowingRef,
+  isFollowing,
   recordFirstVisibleKey,
 }: ChatViewportRetentionOptions) {
   const scrollerRef = useRef<HTMLElement | null>(null);
@@ -246,14 +245,12 @@ export function useChatViewportRetention({
   }, [cancelRetentionForUserInput, observeAfterScroll, scheduleVisuallyFirstItem]);
 
   useLayoutEffect(() => {
-    if (retentionFrameRef.current !== null) {
-      window.cancelAnimationFrame(retentionFrameRef.current);
-      retentionFrameRef.current = null;
-    }
     const scroller = scrollerRef.current;
-    const target = scrollObservationPendingRef.current
-      ? pendingScrollAnchorRef.current
-      : viewportAnchorRef.current;
+    const activeTarget = retentionTargetRef.current;
+    const target = activeTarget
+      ?? (scrollObservationPendingRef.current
+        ? pendingScrollAnchorRef.current
+        : viewportAnchorRef.current);
     const previousGrouped = previousGroupedRef.current;
     const previousFirstItemIndex = previousFirstItemIndexRef.current;
     const isSameSession = previousSessionKeyRef.current === activeSessionKey;
@@ -285,15 +282,27 @@ export function useChatViewportRetention({
         coordinateChanged,
       );
       scroller.dataset.chatViewportRetentionFollowing = String(
-        isFollowingRef.current,
+        isFollowing,
       );
     }
-    if (
-      scroller === null
-      || target === null
-      || isFollowingRef.current
-      || !needsRetention
-    ) {
+    if (!isSameSession || isFollowing) {
+      if (retentionFrameRef.current !== null) {
+        window.cancelAnimationFrame(retentionFrameRef.current);
+        retentionFrameRef.current = null;
+      }
+      retentionTargetRef.current = null;
+      if (scroller !== null) {
+        scroller.dataset.chatViewportRetentionPending = "false";
+        scroller.dataset.chatViewportRetentionCorrection = "0";
+      }
+      scheduleVisuallyFirstItem();
+      return;
+    }
+    // 같은 세션의 first-visible 뒤 text_delta, duplicate, 미로딩 summary는 진행 중인
+    // settle window를 취소하지 않는다. 이 update 자체가 새 보정을 요구하지 않을 뿐,
+    // 직전 과거 삽입의 ResizeObserver/spacer 보정은 아직 끝나지 않았을 수 있다.
+    if (!needsRetention && activeTarget !== null) return;
+    if (scroller === null || target === null || !needsRetention) {
       retentionTargetRef.current = null;
       if (scroller !== null) {
         scroller.dataset.chatViewportRetentionPending = "false";
@@ -304,23 +313,12 @@ export function useChatViewportRetention({
     }
 
     beginViewportRetention(target);
-
-    return () => {
-      if (retentionFrameRef.current !== null) {
-        window.cancelAnimationFrame(retentionFrameRef.current);
-        retentionFrameRef.current = null;
-      }
-      if (retentionTargetRef.current === target) {
-        retentionTargetRef.current = null;
-        scroller.dataset.chatViewportRetentionPending = "false";
-      }
-    };
   }, [
     activeSessionKey,
     beginViewportRetention,
     firstItemIndex,
     grouped,
-    isFollowingRef,
+    isFollowing,
     recordVisuallyFirstItem,
     scheduleVisuallyFirstItem,
   ]);

@@ -171,6 +171,13 @@ async function verifyActualViewportRetention(page: Page) {
     afterFarBefore.overscanAboveKeys[afterFarBefore.overscanAboveKeys.length - 1],
   );
   await injectSummary(page, 9_002, overscanAnchor, "overscan 안 visible 앞 삽입");
+  await page.waitForFunction(() => (
+    document.querySelector<HTMLElement>('[data-chat-scroller="true"]')
+      ?.dataset.chatViewportRetentionPending === "true"
+  ));
+  // 진행 중 settle window와 겹쳐도 표시 항목을 만들지 않는 summary가 직전 보존을
+  // 취소하면 안 된다. 실제 anchor가 로드되지 않았으므로 projection 결과는 0행이다.
+  await injectSummary(page, 9_006, 999_999, "미로딩 anchor 연속 삽입");
   await waitForSettledViewport(page);
   const afterOverscanBefore = await measureViewport(page);
   assertViewportPreserved(afterFarBefore, afterOverscanBefore, "overscan 안 visible 앞");
@@ -180,7 +187,7 @@ async function verifyActualViewportRetention(page: Page) {
   );
 
   const afterVisibleAnchor = parseEventId(afterOverscanBefore.visibleKeys[1]);
-  await injectSummary(page, 9_003, afterVisibleAnchor, "visible 뒤 삽입");
+  await injectSummary(page, 9_007, afterVisibleAnchor, "visible 뒤 삽입");
   await waitForSettledViewport(page);
   const afterVisible = await measureViewport(page);
   assertViewportPreserved(afterOverscanBefore, afterVisible, "visible 뒤");
@@ -190,14 +197,14 @@ async function verifyActualViewportRetention(page: Page) {
   );
   assert(
     Math.abs(afterVisible.retentionCorrectionPx) < 0.5,
-    "first-visible 뒤 삽입에 불필요한 viewport 보정이 발생했습니다.",
+    `first-visible 뒤 삽입에 불필요한 viewport 보정이 발생했습니다. ${JSON.stringify({ afterOverscanBefore, afterVisible })}`,
   );
 
   // scroll task의 listener/microtask는 끝났지만 다음 animation frame 전에 SSE data가
   // 도착하는 실제 race를 만든다. 제품은 새 user anchor를 보존 기준으로 사용해야 한다.
   const beforeScrollRace = await measureViewport(page, {
     scrollDelta: 64,
-    injectSummaryEventId: 9_004,
+    injectSummaryEventId: 9_008,
   });
   await waitForSettledViewport(page);
   const afterScrollRace = await measureViewport(page);
@@ -210,7 +217,7 @@ async function verifyActualViewportRetention(page: Page) {
   const pendingAnchor = parseEventId(
     afterScrollRace.overscanAboveKeys[afterScrollRace.overscanAboveKeys.length - 1],
   );
-  await injectSummary(page, 9_005, pendingAnchor, "data 직후 사용자 scroll");
+  await injectSummary(page, 9_009, pendingAnchor, "data 직후 사용자 scroll");
   await page.waitForFunction(() => (
     document.querySelector<HTMLElement>('[data-chat-scroller="true"]')
       ?.dataset.chatViewportRetentionPending === "true"
