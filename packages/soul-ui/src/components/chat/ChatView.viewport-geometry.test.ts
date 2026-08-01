@@ -49,6 +49,8 @@ describe("findFirstVisuallyIntersectingItemKey", () => {
     expect(measureFirstVisuallyIntersectingItem(scroller)).toEqual({
       key: "first-visible",
       offset: -20,
+      scrollHeight: 0,
+      scrollTop: 0,
     });
   });
 

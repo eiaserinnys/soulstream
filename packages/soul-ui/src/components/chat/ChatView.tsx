@@ -34,11 +34,7 @@ import {
   messageOrGroupKey,
 } from "./ChatView.reverse-helpers";
 import { useChatLogicalInsertionCoordinate } from "./useChatLogicalInsertionCoordinate";
-import {
-  measureChatItemOffset,
-  measureFirstVisuallyIntersectingItem,
-  type ChatViewportAnchor,
-} from "./ChatView.viewport-geometry";
+import { useChatViewportRetention } from "./useChatViewportRetention";
 import {
   decideFollowOnAtBottomChange,
   resolveFollowOutput,
@@ -120,57 +116,6 @@ export function ChatView({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const headerWebglActive = useGlassSurface(headerRef, { enabled: showHeader });
-  /**
-   * virtuoso 내부 스크롤러 DOM 레퍼런스. `itemsRendered` 콜백에서 포커스 타겟을
-   * 찾을 때 `document.querySelector` 전역 쿼리 대신 이 범위로 한정한다.
-   */
-  const scrollerRef = useRef<HTMLElement | null>(null);
-  const firstVisibleFrameRef = useRef<number | null>(null);
-  const viewportAnchorRef = useRef<ChatViewportAnchor | null>(null);
-  const retentionTargetRef = useRef<ChatViewportAnchor | null>(null);
-  const retentionFrameRef = useRef<number | null>(null);
-  const recordFirstVisibleKeyRef = useRef(recordFirstVisibleKey);
-  recordFirstVisibleKeyRef.current = recordFirstVisibleKey;
-  const recordVisuallyFirstItem = useCallback(() => {
-    if (retentionTargetRef.current !== null) return;
-    const scroller = scrollerRef.current;
-    const anchor = scroller === null
-      ? null
-      : measureFirstVisuallyIntersectingItem(scroller);
-    viewportAnchorRef.current = anchor;
-    if (scroller !== null) {
-      scroller.dataset.chatFirstVisibleKey = anchor?.key ?? "";
-    }
-    recordFirstVisibleKeyRef.current(anchor?.key ?? null);
-  }, []);
-  const scheduleVisuallyFirstItem = useCallback(() => {
-    if (firstVisibleFrameRef.current !== null) {
-      window.cancelAnimationFrame(firstVisibleFrameRef.current);
-    }
-    firstVisibleFrameRef.current = window.requestAnimationFrame(() => {
-      firstVisibleFrameRef.current = null;
-      recordVisuallyFirstItem();
-    });
-  }, [recordVisuallyFirstItem]);
-  const bindScrollerElement = useCallback((ref: HTMLElement | Window | null) => {
-    scrollerRef.current?.removeEventListener("scroll", scheduleVisuallyFirstItem);
-    if (firstVisibleFrameRef.current !== null) {
-      window.cancelAnimationFrame(firstVisibleFrameRef.current);
-      firstVisibleFrameRef.current = null;
-    }
-    if (retentionFrameRef.current !== null) {
-      window.cancelAnimationFrame(retentionFrameRef.current);
-      retentionFrameRef.current = null;
-    }
-    retentionTargetRef.current = null;
-    viewportAnchorRef.current = null;
-    const element = ref instanceof HTMLElement ? ref : null;
-    scrollerRef.current = element;
-    if (element === null) return;
-    element.dataset.chatScroller = "true";
-    element.addEventListener("scroll", scheduleVisuallyFirstItem, { passive: true });
-    scheduleVisuallyFirstItem();
-  }, [scheduleVisuallyFirstItem]);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
@@ -178,6 +123,17 @@ export function ChatView({
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  const {
+    scrollerRef,
+    bindScrollerElement,
+    scheduleVisuallyFirstItem,
+  } = useChatViewportRetention({
+    activeSessionKey,
+    grouped,
+    firstItemIndex,
+    isFollowingRef,
+    recordFirstVisibleKey,
+  });
   const resolveVirtuosoFollowOutput = useCallback(
     () => resolveFollowOutput(isFollowingRef.current),
     [],
@@ -224,72 +180,6 @@ export function ChatView({
     },
     [bottomScrollLocation],
   );
-
-  useLayoutEffect(() => {
-    if (retentionFrameRef.current !== null) {
-      window.cancelAnimationFrame(retentionFrameRef.current);
-      retentionFrameRef.current = null;
-    }
-    const scroller = scrollerRef.current;
-    const target = viewportAnchorRef.current;
-    if (scroller === null || target === null || isFollowingRef.current) {
-      retentionTargetRef.current = null;
-      scheduleVisuallyFirstItem();
-      return;
-    }
-
-    retentionTargetRef.current = target;
-    scroller.dataset.chatViewportRetentionCorrection = "0";
-    let remainingPasses = 2;
-    const preserveObservedViewport = () => {
-      if (retentionTargetRef.current !== target) return;
-      const currentOffset = measureChatItemOffset(scroller, target.key);
-      if (currentOffset === null) {
-        retentionTargetRef.current = null;
-        scheduleVisuallyFirstItem();
-        return;
-      }
-      const delta = currentOffset - target.offset;
-      if (Math.abs(delta) >= 0.5) {
-        scroller.scrollTop += delta;
-        const accumulated = Number(
-          scroller.dataset.chatViewportRetentionCorrection ?? "0",
-        );
-        scroller.dataset.chatViewportRetentionCorrection = String(
-          accumulated + delta,
-        );
-      }
-      remainingPasses -= 1;
-      if (remainingPasses > 0) {
-        retentionFrameRef.current = window.requestAnimationFrame(
-          preserveObservedViewport,
-        );
-        return;
-      }
-      retentionFrameRef.current = null;
-      retentionTargetRef.current = null;
-      recordVisuallyFirstItem();
-    };
-    retentionFrameRef.current = window.requestAnimationFrame(
-      preserveObservedViewport,
-    );
-
-    return () => {
-      if (retentionFrameRef.current !== null) {
-        window.cancelAnimationFrame(retentionFrameRef.current);
-        retentionFrameRef.current = null;
-      }
-      if (retentionTargetRef.current === target) {
-        retentionTargetRef.current = null;
-      }
-    };
-  }, [
-    activeSessionKey,
-    firstItemIndex,
-    grouped,
-    recordVisuallyFirstItem,
-    scheduleVisuallyFirstItem,
-  ]);
 
   useLayoutEffect(() => {
     if (!activeSessionKey) {

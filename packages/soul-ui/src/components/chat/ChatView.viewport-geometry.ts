@@ -3,6 +3,8 @@ export const CHAT_ITEM_KEY_SELECTOR = "[data-chat-item-key]";
 export interface ChatViewportAnchor {
   key: string;
   offset: number;
+  scrollHeight: number;
+  scrollTop: number;
 }
 
 function markerBounds(marker: HTMLElement): { top: number; bottom: number } | null {
@@ -42,7 +44,12 @@ export function measureFirstVisuallyIntersectingItem(
 
   return first === null
     ? null
-    : { key: first.key, offset: first.top - viewport.top };
+    : {
+        key: first.key,
+        offset: first.top - viewport.top,
+        scrollHeight: scroller.scrollHeight,
+        scrollTop: scroller.scrollTop,
+      };
 }
 
 export function findFirstVisuallyIntersectingItemKey(
