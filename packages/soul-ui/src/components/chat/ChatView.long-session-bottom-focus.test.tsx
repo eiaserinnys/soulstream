@@ -486,6 +486,101 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
   });
 
+  it("자동 reconnect는 같은 세션의 live 논리 삽입 보정을 유지한다", async () => {
+    const history = [
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ];
+    useDashboardStore.getState().processHistoryEvents(history);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const completeIndex = virtuosoData().findIndex(
+      (item) => item.type === "single" && item.msg.treeNodeType === "complete",
+    );
+    const visible = setFirstVisibleDataIndex(completeIndex);
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+    const correctedFirstItemIndex = virtuosoMock.props?.firstItemIndex;
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        ...history,
+        makeTurnSummary(1200, 1000),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.props?.firstItemIndex).toBe(correctedFirstItemIndex);
+    expect(findDataIndexByKey(visible.key)).toBe(completeIndex + 1);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("수동 clearTree 뒤 같은 세션 reconnect는 이전 논리 삽입 보정을 버린다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const completeIndex = virtuosoData().findIndex(
+      (item) => item.type === "single" && item.msg.treeNodeType === "complete",
+    );
+    setFirstVisibleDataIndex(completeIndex);
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      useDashboardStore.getState().clearTree();
+    });
+    expect(useDashboardStore.getState().tree).toBeNull();
+    // clearTree의 empty-data 렌더를 지난 뒤 같은 ChatView instance에 reconnect한다.
+    // 빈 상태에서는 Virtuoso가 unmount되므로 remount 좌표가 훅 reset의 증거다.
+    flushSync(() => {
+      root?.render(createElement(ChatView));
+    });
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        makeAssistantMessage(2000),
+        makeComplete(2001),
+        makeUserMessage(2100),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    const prependedCount = useDashboardStore.getState().chatPrependedCount;
+    expect(virtuosoMock.props?.firstItemIndex).toBe(10_000 - prependedCount);
+    expect(virtuosoData().map((_, index) => itemKeyAt(index))).toEqual([
+      "asst-msg-2000",
+      "complete-2001",
+      "user-msg-2100",
+    ]);
+  });
+
   it("session switch는 이전 세션의 논리 삽입 보정과 key를 재사용하지 않는다", async () => {
     useDashboardStore.getState().processHistoryEvents([
       makeAssistantMessage(1000),

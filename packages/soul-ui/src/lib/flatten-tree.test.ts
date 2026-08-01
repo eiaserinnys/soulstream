@@ -6,7 +6,48 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { flattenTree, clearFlattenTreeCache, extractEventId, type ChatMessage } from "./flatten-tree";
-import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, SessionNotificationNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode, TokenUsage } from "@shared/types";
+import type {
+  AssistantMessageNode,
+  CompactNode,
+  CompleteNode,
+  ErrorNode,
+  EventTreeNode,
+  ResultNode,
+  SessionNode,
+  SessionNotificationNode,
+  SystemMessageNode,
+  TextNode,
+  ThinkingNode,
+  TokenUsage,
+  ToolNode,
+  TurnSummaryNode,
+  UserMessageNode,
+} from "@shared/types";
+
+const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
+  session: "synthetic",
+  user_message: "render",
+  system_message: "render",
+  session_notification: "render",
+  intervention: "render",
+  thinking: "render",
+  text: "render",
+  tool: "render",
+  tool_use: "render",
+  result: "hidden",
+  compact: "render",
+  complete: "render",
+  error: "render",
+  input_request: "render",
+  tool_approval: "render",
+  assistant_message: "render",
+  assistant_error: "hidden",
+  away_summary: "render",
+  turn_summary: "render",
+} as const satisfies Record<
+  EventTreeNode["type"],
+  "render" | "hidden" | "synthetic"
+>;
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
   return { type: "session", id: "session-root", content: "", completed: false, children };
@@ -88,6 +129,41 @@ function makeSessionNotification(id: string, text: string): SessionNotificationN
   };
 }
 
+function makeAssistantMessage(eventId: number): AssistantMessageNode {
+  return {
+    type: "assistant_message",
+    id: `asst-msg-${eventId}`,
+    content: `assistant-${eventId}`,
+    completed: true,
+    children: [],
+  };
+}
+
+function makeLegacyTurnSummary(eventId: number): TurnSummaryNode {
+  return {
+    type: "turn_summary",
+    id: `turn-summary-${eventId}`,
+    content: `summary-${eventId}`,
+    completed: true,
+    children: [],
+  };
+}
+
+function makeRawEventNode(
+  type: EventTreeNode["type"],
+  eventId: number,
+  fields: Record<string, unknown> = {},
+): EventTreeNode {
+  return {
+    type,
+    id: `${type.replaceAll("_", "-")}-${eventId}`,
+    content: type,
+    completed: true,
+    children: [],
+    ...fields,
+  } as EventTreeNode;
+}
+
 function makeAgentUserMessage(
   id: string,
   text: string,
@@ -125,6 +201,116 @@ describe("flattenTree", () => {
     expect(message.deliveryId).toBe("22222222-2222-4222-8222-222222222222");
     expect(message.deliveryDisposition).toBe("auto_resume");
   });
+
+  it("모든 raw-event ChatMessage 생성 경로가 eventId를 한 번씩 전달한다", () => {
+    const notification = makeSessionNotification("delivery-notification", "완료 결과");
+    notification.eventId = 30;
+    const fixtures: Array<{
+      node: EventTreeNode;
+      type: EventTreeNode["type"];
+      eventId: number;
+    }> = [
+      { node: makeUserMessage("user-msg-10", "user"), type: "user_message", eventId: 10 },
+      { node: makeSystemMessage("system-message-20", "system"), type: "system_message", eventId: 20 },
+      { node: notification, type: "session_notification", eventId: 30 },
+      { node: makeRawEventNode("intervention", 40), type: "intervention", eventId: 40 },
+      { node: makeThinking("thinking-50", "thinking"), type: "thinking", eventId: 50 },
+      { node: makeText("text-60", "text"), type: "text", eventId: 60 },
+      { node: makeTool("tool-70", "Read"), type: "tool", eventId: 70 },
+      {
+        node: { ...makeTool("tool-use-80", "Bash"), type: "tool_use" },
+        type: "tool_use",
+        eventId: 80,
+      },
+      { node: makeError("error-90", "error"), type: "error", eventId: 90 },
+      { node: makeCompact("compact-100", "compact"), type: "compact", eventId: 100 },
+      { node: makeComplete("complete-110", "complete"), type: "complete", eventId: 110 },
+      { node: makeAssistantMessage(120), type: "assistant_message", eventId: 120 },
+      { node: makeRawEventNode("away_summary", 130), type: "away_summary", eventId: 130 },
+      { node: makeLegacyTurnSummary(140), type: "turn_summary", eventId: 140 },
+      {
+        node: makeRawEventNode("input_request", 150, {
+          requestId: "request-150",
+          questions: [{ question: "Continue?", header: "Confirm", options: [] }],
+        }),
+        type: "input_request",
+        eventId: 150,
+      },
+      {
+        node: makeRawEventNode("tool_approval", 160, {
+          approvalId: "approval-160",
+          toolName: "Bash",
+          toolInput: {},
+        }),
+        type: "tool_approval",
+        eventId: 160,
+      },
+    ];
+
+    const inventoryRenderTypes = Object.entries(CHAT_MESSAGE_EVENT_ID_INVENTORY)
+      .filter(([, disposition]) => disposition === "render")
+      .map(([type]) => type)
+      .sort();
+    expect(fixtures.map((fixture) => fixture.type).sort()).toEqual(inventoryRenderTypes);
+
+    const byType = new Map(
+      flattenTree(makeSession(fixtures.map(({ node }) => node)))
+        .map((message) => [message.treeNodeType, message.eventId]),
+    );
+    for (const fixture of fixtures) {
+      expect(byType.get(fixture.type), fixture.type).toBe(fixture.eventId);
+    }
+  });
+
+  it("비표시 raw event와 synthetic session 행을 eventId inventory에서 명시적으로 제외한다", () => {
+    const messages = flattenTree(makeSession([
+      makeResult("result-170", { totalCostUsd: 1 }),
+      makeRawEventNode("assistant_error", 180, { errorType: "billing_error" }),
+    ]));
+
+    expect(messages).toEqual([]);
+    expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.result).toBe("hidden");
+    expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.assistant_error).toBe("hidden");
+    expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.session).toBe("synthetic");
+  });
+
+  it("실제 flattenTree에서 legacy summary를 complete보다 앞의 raw event ID 위치에 둔다", () => {
+    const messages = flattenTree(makeSession([
+      makeAssistantMessage(100),
+      makeLegacyTurnSummary(110),
+      makeComplete("complete-120", "complete"),
+      makeUserMessage("user-msg-130", "next"),
+    ]));
+
+    expect(messages.map((message) => message.treeNodeType)).toEqual([
+      "assistant_message",
+      "turn_summary",
+      "complete",
+      "user_message",
+    ]);
+  });
+
+  it.each([
+    ["error", makeError("error-120", "error")],
+    ["compact", makeCompact("compact-120", "compact")],
+  ] as const)(
+    "legacy summary가 %s보다 앞의 raw event ID 위치에 남는다",
+    (_type, boundary) => {
+      const messages = flattenTree(makeSession([
+        makeAssistantMessage(100),
+        makeLegacyTurnSummary(110),
+        boundary,
+        makeUserMessage("user-msg-130", "next"),
+      ]));
+
+      expect(messages.map((message) => message.treeNodeId)).toEqual([
+        "asst-msg-100",
+        "turn-summary-110",
+        boundary.id,
+        "user-msg-130",
+      ]);
+    },
+  );
 
   it("user_message + thinking + text + tool 조합", () => {
     const tree = makeSession([

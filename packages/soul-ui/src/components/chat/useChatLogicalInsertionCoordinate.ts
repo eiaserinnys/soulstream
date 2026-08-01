@@ -46,22 +46,29 @@ export function useChatLogicalInsertionCoordinate(
     coordinate.prependedCount !== prependedCount
   ) {
     const isSameSession = coordinate.sessionKey === sessionKey;
+    const shouldResetViewportBasis =
+      !isSameSession ||
+      groupedKeys.length === 0 ||
+      prependedCount < coordinate.prependedCount;
+    if (shouldResetViewportBasis) {
+      firstVisibleRef.current = { sessionKey, key: null };
+    }
     const nextCoordinate: LogicalCoordinate = {
       sessionKey,
       groupedKeys,
       prependedCount,
       insertedBeforeVisible:
-        isSameSession && coordinate.prependedCount === prependedCount
-          ? coordinate.insertedBeforeVisible + countInsertedRowsBeforeKey(
-              coordinate.groupedKeys,
-              groupedKeys,
-              firstVisibleRef.current.sessionKey === sessionKey
-                ? firstVisibleRef.current.key
-                : null,
-            )
-          : isSameSession
-            ? coordinate.insertedBeforeVisible
-            : 0,
+        shouldResetViewportBasis
+          ? 0
+          : coordinate.prependedCount === prependedCount
+            ? coordinate.insertedBeforeVisible + countInsertedRowsBeforeKey(
+                coordinate.groupedKeys,
+                groupedKeys,
+                firstVisibleRef.current.sessionKey === sessionKey
+                  ? firstVisibleRef.current.key
+                  : null,
+              )
+            : coordinate.insertedBeforeVisible,
     };
     setCoordinate(nextCoordinate);
     renderCoordinate = nextCoordinate;

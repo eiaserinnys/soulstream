@@ -239,7 +239,13 @@ function collectMessages(
     }
   } else {
     const msg = nodeToMessage(node, context.previousResultTotalCostUsd);
-    if (msg) out.push(intern(msg.treeNodeId, msg));
+    if (msg) {
+      // raw-event ChatMessage의 durable ID 전달은 이 경계 하나가 소유한다.
+      // 각 switch 분기에 흩어 넣으면 complete/error/compact 같은 렌더 행이
+      // 누락되어 legacy turn_summary의 시간축이 불완전해진다.
+      msg.eventId = extractNodeEventId(node);
+      out.push(intern(msg.treeNodeId, msg));
+    }
     if (
       node.type === "result"
       && isFiniteNumber((node as ResultNode).totalCostUsd)
@@ -278,7 +284,6 @@ function nodeToMessage(
   node: EventTreeNode,
   previousResultTotalCostUsd?: number,
 ): ChatMessage | null {
-  const eventId = extractNodeEventId(node);
   switch (node.type) {
     case "user_message": {
       const n = node as UserMessageNode;
@@ -289,7 +294,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
@@ -305,7 +309,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -318,7 +321,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         deliveryId: n.deliveryId,
         deliveryDisposition: n.disposition,
       };
@@ -337,7 +339,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
@@ -354,7 +355,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
       };
@@ -370,7 +370,6 @@ function nodeToMessage(
         isStreaming: !n.textCompleted,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -400,7 +399,6 @@ function nodeToMessage(
         toolTraceId: n.toolTraceId,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
       };
@@ -470,7 +468,6 @@ function nodeToMessage(
         provider: n.provider,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -482,7 +479,6 @@ function nodeToMessage(
         timestamp: node.timestamp,
         treeNodeId: node.id,
         treeNodeType: node.type,
-        eventId,
       };
     }
 
@@ -495,7 +491,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         summaryFinalResponseEventId: n.finalResponseEventId,
         summaryParentEventId: n.summaryParentEventId,
       };
@@ -517,7 +512,6 @@ function nodeToMessage(
         timeoutSec: n.timeoutSec,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -537,7 +531,6 @@ function nodeToMessage(
         approvalMessage: n.message,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
