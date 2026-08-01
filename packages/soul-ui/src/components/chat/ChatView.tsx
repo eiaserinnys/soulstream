@@ -27,6 +27,7 @@ import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import {
+  areMessageGroupsRenderEqual,
   findFocusIndex,
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
@@ -122,7 +123,7 @@ export function ChatView({
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
-  const prevVisibleItemCountRef = useRef(grouped.length);
+  const prevVisibleItemsRef = useRef(grouped);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
@@ -190,12 +191,15 @@ export function ChatView({
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
-    const visibleItemCountChanged =
-      prevVisibleItemCountRef.current !== grouped.length;
-    prevVisibleItemCountRef.current = grouped.length;
+    const visibleItemsChanged = !areMessageGroupsRenderEqual(
+      prevVisibleItemsRef.current,
+      grouped,
+    );
+    prevVisibleItemsRef.current = grouped;
     // 미로딩 anchor summary와 duplicate/reload는 treeVersion만 바꿀 수 있다.
-    // 실제 렌더 행이 그대로면 follow 좌표와 banner를 건드리지 않는다.
-    if (!visibleItemCountChanged) return;
+    // 실제 렌더 행의 reference가 그대로면 follow 좌표와 banner를 건드리지 않는다.
+    // 반대로 text_delta는 key와 행 수가 같아도 reference가 바뀌므로 follow를 유지한다.
+    if (!visibleItemsChanged) return;
     const isInitialBottomFocusPending =
       activeSessionKey !== null &&
       initialBottomFocusPendingSessionRef.current === activeSessionKey &&
@@ -218,7 +222,7 @@ export function ChatView({
     }
   }, [
     treeVersion,
-    grouped.length,
+    grouped,
     bottomScrollLocation,
     activeSessionKey,
     scrollToBottomWithBehavior,

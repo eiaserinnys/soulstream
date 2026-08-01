@@ -412,6 +412,45 @@ describe("ChatView long-session initial bottom focus", () => {
     });
   });
 
+  it("stable key와 행 수가 같은 streaming delta도 bottom follow를 유지한다", async () => {
+    useDashboardStore.getState().processEvent(
+      {
+        type: "text_start",
+        parent_event_id: "0",
+        timestamp: 0,
+      } as unknown as SoulSSEEvent,
+      1000,
+    );
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    const beforeLength = virtuosoData().length;
+    const beforeKey = itemKeyAt(0);
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(
+        {
+          type: "text_delta",
+          text: "streaming content grew",
+          timestamp: 1,
+        } as unknown as SoulSSEEvent,
+        1001,
+      );
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoData()).toHaveLength(beforeLength);
+    expect(itemKeyAt(0)).toBe(beforeKey);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
   it("duplicate reconnect와 reload는 stable key·순서·follow-off 좌표를 바꾸지 않는다", async () => {
     const history = [
       makeAssistantMessage(1000),
