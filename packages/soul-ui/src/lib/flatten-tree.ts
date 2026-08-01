@@ -24,9 +24,10 @@ import type {
   ToolApprovalNodeDef,
   ContextItem,
   TokenUsage,
+  TurnSummaryNode,
 } from "@shared/types";
 import { extractNodeEventId } from "./event-tree-id";
-import { placeTurnSummariesAtTurnBoundaries } from "./turn-summary-projection";
+import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
 
 export { extractEventId } from "./event-tree-id";
 
@@ -106,6 +107,9 @@ export interface ChatMessage {
   deliveryId?: string;
   /** session_notification 전용 전달 결과. */
   deliveryDisposition?: "queued" | "auto_resume";
+  /** turn_summary 전용: 실제 렌더 행에 결합할 우선·대체 anchor. */
+  summaryFinalResponseEventId?: number;
+  summaryParentEventId?: number;
 }
 
 /**
@@ -179,7 +183,9 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.contextItems === b.contextItems &&
     a.agentInfo === b.agentInfo &&
     a.callerInfo === b.callerInfo &&
-    a.eventId === b.eventId
+    a.eventId === b.eventId &&
+    a.summaryFinalResponseEventId === b.summaryFinalResponseEventId &&
+    a.summaryParentEventId === b.summaryParentEventId
   );
 }
 
@@ -199,7 +205,7 @@ export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
 
   const messages: ChatMessage[] = [];
   collectMessages(root, messages, {});
-  return messages;
+  return placeTurnSummariesAtResponseAnchors(messages);
 }
 
 /** 캐시 조회·갱신 후 reference를 반환한다. */
@@ -263,9 +269,7 @@ function collectMessages(
         return 0;
       })
     : children;
-  const ordered = placeTurnSummariesAtTurnBoundaries(chronological);
-
-  for (const child of ordered) {
+  for (const child of chronological) {
     collectMessages(child, out, context);
   }
 }
@@ -483,14 +487,17 @@ function nodeToMessage(
     }
 
     case "turn_summary": {
+      const n = node as TurnSummaryNode;
       return {
-        id: node.id,
+        id: n.id,
         role: "system",
-        content: node.content,
-        timestamp: node.timestamp,
-        treeNodeId: node.id,
-        treeNodeType: node.type,
+        content: n.content,
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
         eventId,
+        summaryFinalResponseEventId: n.finalResponseEventId,
+        summaryParentEventId: n.summaryParentEventId,
       };
     }
 

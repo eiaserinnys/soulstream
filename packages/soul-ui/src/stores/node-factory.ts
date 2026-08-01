@@ -59,6 +59,16 @@ function appServerStreamKey(event: SoulSSEEvent): string | null {
   return typeof toolUseId === "string" && toolUseId ? toolUseId : null;
 }
 
+function positiveSafeInteger(value: unknown): number | undefined {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : Number.NaN;
+  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
+
 /** LLM 세션의 messages 배열에서 마지막 user 메시지 콘텐츠를 추출한다. */
 function extractLastUserContent(messages?: Array<{role: string; content: unknown}>): string {
   if (!messages) return "";
@@ -361,19 +371,15 @@ export function createNodeFromEvent(
       const e = event as TurnSummaryEvent;
       if (
         typeof e.content !== "string" ||
-        e.content.trim().length === 0 ||
-        !Number.isSafeInteger(e.final_response_event_id) ||
-        e.final_response_event_id <= 0
+        e.content.trim().length === 0
       ) {
         return null;
       }
       return makeNode(`turn-summary-${eventId}`, "turn_summary", e.content.trim(), {
         completed: true,
-        turnStartEventId:
-          Number.isSafeInteger(e.turn_start_event_id) && e.turn_start_event_id > 0
-            ? e.turn_start_event_id
-            : undefined,
-        finalResponseEventId: e.final_response_event_id,
+        turnStartEventId: positiveSafeInteger(e.turn_start_event_id),
+        finalResponseEventId: positiveSafeInteger(e.final_response_event_id),
+        summaryParentEventId: positiveSafeInteger(e.parent_event_id),
         timestamp: e.timestamp,
       });
     }

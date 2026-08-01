@@ -24,6 +24,29 @@ export const START_INDEX = 10_000;
 export const computeFirstItemIndex = (prependedCount: number): number =>
   START_INDEX - prependedCount;
 
+/** Virtuoso와 viewport 보정이 공유하는 안정 키. */
+export function messageOrGroupKey(item: MessageOrGroup): string {
+  return item.type === "tool-group"
+    ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
+    : item.msg.treeNodeId;
+}
+
+/**
+ * 같은 first-visible key가 새 배열에서 뒤로 이동한 양을 반환한다.
+ * 음수(앞 행 제거), key 부재, 또는 first-visible 뒤 삽입은 좌표를 바꾸지 않는다.
+ */
+export function countInsertedRowsBeforeKey(
+  previousKeys: string[],
+  nextKeys: string[],
+  firstVisibleKey: string | null,
+): number {
+  if (firstVisibleKey === null) return 0;
+  const previousIndex = previousKeys.indexOf(firstVisibleKey);
+  const nextIndex = nextKeys.indexOf(firstVisibleKey);
+  if (previousIndex < 0 || nextIndex < 0) return 0;
+  return Math.max(0, nextIndex - previousIndex);
+}
+
 export function getInitialTopMostItemIndex(
   itemCount: number,
 ): { index: number; align: "end" } | 0 {

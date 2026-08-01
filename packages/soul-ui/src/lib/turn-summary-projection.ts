@@ -1,56 +1,81 @@
-import type { EventTreeNode, TurnSummaryNode } from "@shared/types";
-import { extractNodeEventId } from "./event-tree-id";
+export interface TurnSummaryProjectionItem {
+  treeNodeId: string;
+  treeNodeType: string;
+  eventId?: number;
+  summaryFinalResponseEventId?: number;
+  summaryParentEventId?: number;
+}
 
-function isTurnStartNode(node: EventTreeNode): boolean {
-  return (
-    node.type === "user_message" ||
-    node.type === "intervention" ||
-    node.type === "session_notification"
-  );
+function isPositiveSafeInteger(value: number | undefined): value is number {
+  return Number.isSafeInteger(value) && (value ?? 0) > 0;
 }
 
 /**
- * turn_summary의 durable event ID는 비동기 생성 시점 때문에 다음 턴보다 클 수 있다.
- * 저장 트리의 event ID 정렬은 유지하고, 화면 투영에서만 해당 턴 뒤로 옮긴다.
- *
- * final response 이후 처음 나타나는 턴 시작 직전에 캡션을 두면 complete·usage 같은
- * 같은 턴의 후행 행은 캡션 앞에 남는다. 다음 턴이 아직 없으면 현재 끝에 둔다.
- * 이 투영은 live 지연 도착과 history pagination 모두 같은 경로로 처리한다.
+ * 저장 순서는 바꾸지 않고 실제 렌더 행의 raw event ID에 turn_summary를 결합한다.
+ * 유효한 anchor가 아직 화면에 없으면 숨기며, anchor 자체가 없는 legacy summary만
+ * durable event ID 순서로 fail-open한다. live와 history 모두 이 한 투영을 지난다.
  */
-export function placeTurnSummariesAtTurnBoundaries(
-  children: EventTreeNode[],
-): EventTreeNode[] {
-  const summaries = children
-    .filter((child): child is TurnSummaryNode => child.type === "turn_summary")
-    .sort((a, b) => {
-      if (a.finalResponseEventId !== b.finalResponseEventId) {
-        return a.finalResponseEventId - b.finalResponseEventId;
-      }
-      return (extractNodeEventId(a) ?? 0) - (extractNodeEventId(b) ?? 0);
-    });
-  if (summaries.length === 0) return children;
+export function placeTurnSummariesAtResponseAnchors<
+  T extends TurnSummaryProjectionItem,
+>(items: T[]): T[] {
+  const timeline = items.filter((item) => item.treeNodeType !== "turn_summary");
+  const summaries = items
+    .filter((item) => item.treeNodeType === "turn_summary")
+    .sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0));
+  if (summaries.length === 0) return items;
 
-  const timeline = children.filter((child) => child.type !== "turn_summary");
-  const ordered: EventTreeNode[] = [];
-  let summaryIndex = 0;
-
-  for (const child of timeline) {
-    const eventId = extractNodeEventId(child);
-    if (isTurnStartNode(child) && eventId !== undefined) {
-      while (
-        summaryIndex < summaries.length &&
-        summaries[summaryIndex].finalResponseEventId < eventId
-      ) {
-        ordered.push(summaries[summaryIndex]);
-        summaryIndex++;
-      }
+  const indexByEventId = new Map<number, number>();
+  timeline.forEach((item, index) => {
+    if (isPositiveSafeInteger(item.eventId)) {
+      indexByEventId.set(item.eventId, index);
     }
-    ordered.push(child);
+  });
+
+  const after = new Map<number, T[]>();
+  const legacyBefore = new Map<number, T[]>();
+  const seenSummaryKeys = new Set<string>();
+  for (const summary of summaries) {
+    if (seenSummaryKeys.has(summary.treeNodeId)) continue;
+    seenSummaryKeys.add(summary.treeNodeId);
+
+    const finalId = summary.summaryFinalResponseEventId;
+    const parentId = summary.summaryParentEventId;
+    const hasFinal = isPositiveSafeInteger(finalId);
+    const hasParent = isPositiveSafeInteger(parentId);
+    const anchorIndex = hasFinal
+      ? indexByEventId.get(finalId)
+      : undefined;
+    const fallbackIndex = anchorIndex === undefined && hasParent
+      ? indexByEventId.get(parentId)
+      : undefined;
+    const loadedIndex = anchorIndex ?? fallbackIndex;
+
+    if (loadedIndex !== undefined) {
+      const bucket = after.get(loadedIndex) ?? [];
+      bucket.push(summary);
+      after.set(loadedIndex, bucket);
+      continue;
+    }
+    if (hasFinal || hasParent) continue;
+
+    const summaryId = summary.eventId;
+    const insertionIndex = isPositiveSafeInteger(summaryId)
+      ? timeline.findIndex(
+          (item) => isPositiveSafeInteger(item.eventId) && item.eventId > summaryId,
+        )
+      : -1;
+    const legacyIndex = insertionIndex < 0 ? timeline.length : insertionIndex;
+    const bucket = legacyBefore.get(legacyIndex) ?? [];
+    bucket.push(summary);
+    legacyBefore.set(legacyIndex, bucket);
   }
 
-  while (summaryIndex < summaries.length) {
-    ordered.push(summaries[summaryIndex]);
-    summaryIndex++;
+  const ordered: T[] = [];
+  for (let index = 0; index <= timeline.length; index++) {
+    ordered.push(...(legacyBefore.get(index) ?? []));
+    if (index === timeline.length) break;
+    ordered.push(timeline[index]);
+    ordered.push(...(after.get(index) ?? []));
   }
   return ordered;
 }

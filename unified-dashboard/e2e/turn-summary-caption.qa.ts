@@ -61,7 +61,7 @@ async function verifyTurnSummaryCaption(browser: Browser) {
     const metrics = await measureTimeline(page);
 
     assert(
-      metrics.order.join(",") === "asst-msg-119,complete-120,turn-summary-140,user-msg-130",
+      metrics.order.join(",") === "asst-msg-119,turn-summary-140,complete-120,user-msg-130",
       `캡션 순서가 잘못됐습니다: ${metrics.order.join(",")}`,
     );
     assert(metrics.summary.fontSize === metrics.complete.fontSize, "기존 complete 캡션의 글자 크기를 재사용하지 않았습니다.");
@@ -180,13 +180,13 @@ async function injectLateSummary(page: Page) {
 
 async function measureTimeline(page: Page) {
   return page.evaluate(() => {
-    const ids = ["asst-msg-119", "complete-120", "turn-summary-140", "user-msg-130"];
+    const ids = ["asst-msg-119", "turn-summary-140", "complete-120", "user-msg-130"];
     const elements = ids.map((id) => document.querySelector<HTMLElement>(`[data-tree-node-id="${id}"]`));
     const order = Array.from(document.querySelectorAll<HTMLElement>("[data-tree-node-id]"))
       .map((element) => element.dataset.treeNodeId ?? "")
       .filter((id) => ids.includes(id));
-    const summary = elements[2]?.querySelector<HTMLElement>(".flex-1");
-    const complete = elements[1]?.querySelector<HTMLElement>(".flex-1");
+    const summary = elements[1]?.querySelector<HTMLElement>(".flex-1");
+    const complete = elements[2]?.querySelector<HTMLElement>(".flex-1");
     if (!summary || !complete) throw new Error("시스템 캡션 내부 요소를 찾지 못했습니다.");
     const completeLabel = complete.querySelector<HTMLElement>(
       '[data-slot="complete-caption-label"]',
@@ -230,7 +230,7 @@ async function measureTimeline(page: Page) {
         statsText: completeStats.textContent?.trim() ?? "",
         statsTextAlign: statsStyle.textAlign,
       },
-      completeText: elements[1]?.textContent ?? "",
+      completeText: elements[2]?.textContent ?? "",
       resultVisible: document.querySelector<HTMLElement>(
         '[data-tree-node-id="result-121"]',
       ) !== null,

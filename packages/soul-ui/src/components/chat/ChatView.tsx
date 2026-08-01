@@ -27,11 +27,12 @@ import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import {
-  computeFirstItemIndex,
   findFocusIndex,
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
+  messageOrGroupKey,
 } from "./ChatView.reverse-helpers";
+import { useChatLogicalInsertionCoordinate } from "./useChatLogicalInsertionCoordinate";
 import {
   decideFollowOnAtBottomChange,
   resolveFollowOutput,
@@ -94,12 +95,12 @@ export function ChatView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
-
-  // virtuoso prepend 패턴: START_INDEX - 누적 prepend 개수 (grouped 단위)
-  const firstItemIndex = useMemo(
-    () => computeFirstItemIndex(chatPrependedCount),
-    [chatPrependedCount],
-  );
+  const { firstItemIndex, recordFirstVisible } =
+    useChatLogicalInsertionCoordinate(
+      grouped,
+      activeSessionKey,
+      chatPrependedCount,
+    );
   const bottomScrollLocation = useMemo(
     () => getBottomScrollLocation(grouped.length),
     [grouped.length],
@@ -121,6 +122,7 @@ export function ChatView({
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
+  const prevVisibleItemCountRef = useRef(grouped.length);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
@@ -188,6 +190,12 @@ export function ChatView({
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
+    const visibleItemCountChanged =
+      prevVisibleItemCountRef.current !== grouped.length;
+    prevVisibleItemCountRef.current = grouped.length;
+    // 미로딩 anchor summary와 duplicate/reload는 treeVersion만 바꿀 수 있다.
+    // 실제 렌더 행이 그대로면 follow 좌표와 banner를 건드리지 않는다.
+    if (!visibleItemCountChanged) return;
     const isInitialBottomFocusPending =
       activeSessionKey !== null &&
       initialBottomFocusPendingSessionRef.current === activeSessionKey &&
@@ -396,16 +404,15 @@ export function ChatView({
           startReached={() => {
             history.requestOlder();
           }}
+          rangeChanged={({ startIndex }) => {
+            recordFirstVisible(startIndex);
+          }}
           /**
            * tool-group은 messages[length-1].treeNodeId — prepend 시 가장 최신 멤버는
            * 변하지 않으므로 키가 안정적. messages[0]은 prepend로 변경되어 키 불안정.
            * grouping.ts L18-22로 tool-group은 messages.length >= 2 보장 (안전).
            */
-          computeItemKey={(_index, item) =>
-            item.type === "tool-group"
-              ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
-              : item.msg.treeNodeId
-          }
+          computeItemKey={(_index, item) => messageOrGroupKey(item)}
           itemContent={(_, item) => (
             <VirtualizedItem
               item={item}
