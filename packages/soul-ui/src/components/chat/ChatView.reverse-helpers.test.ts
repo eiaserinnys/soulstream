@@ -11,6 +11,9 @@ import {
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
   findFocusIndex,
+  messageOrGroupKey,
+  countInsertedRowsBeforeKey,
+  areMessageGroupsRenderEqual,
 } from "./ChatView.reverse-helpers";
 import type { MessageOrGroup } from "../../lib/grouping";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -53,6 +56,51 @@ describe("bottom focus index helpers", () => {
     expect(getBottomScrollLocation(0)).toBeNull();
     expect(getBottomScrollLocation(1)).toEqual({ index: "LAST", align: "end" });
     expect(getBottomScrollLocation(5)).toEqual({ index: "LAST", align: "end" });
+  });
+});
+
+describe("stable viewport key helpers", () => {
+  it("single과 tool group에 안정 키를 부여한다", () => {
+    const single: MessageOrGroup = {
+      type: "single",
+      msg: makeMsg({ treeNodeId: "node-10" }),
+    };
+    const group: MessageOrGroup = {
+      type: "tool-group",
+      messages: [
+        makeMsg({ treeNodeId: "tool-11" }),
+        makeMsg({ treeNodeId: "tool-12" }),
+      ],
+    };
+    expect(messageOrGroupKey(single)).toBe("node-10");
+    expect(messageOrGroupKey(group)).toBe("tg-tool-12");
+  });
+
+  it("숨겨진 이벤트처럼 같은 message reference면 렌더 무변화로 판정한다", () => {
+    const message = makeMsg({ treeNodeId: "node-10", content: "before" });
+    const previous: MessageOrGroup[] = [{ type: "single", msg: message }];
+    const regrouped: MessageOrGroup[] = [{ type: "single", msg: message }];
+
+    expect(areMessageGroupsRenderEqual(previous, regrouped)).toBe(true);
+  });
+
+  it("stable key와 행 수가 같아도 message reference가 바뀌면 렌더 변화로 판정한다", () => {
+    const previous: MessageOrGroup[] = [{
+      type: "single",
+      msg: makeMsg({ treeNodeId: "node-10", content: "before" }),
+    }];
+    const updated: MessageOrGroup[] = [{
+      type: "single",
+      msg: makeMsg({ treeNodeId: "node-10", content: "after" }),
+    }];
+
+    expect(areMessageGroupsRenderEqual(previous, updated)).toBe(false);
+  });
+
+  it("first visible 앞의 순증가 행만 센다", () => {
+    expect(countInsertedRowsBeforeKey(["a", "b"], ["x", "a", "b"], "b")).toBe(1);
+    expect(countInsertedRowsBeforeKey(["a", "b"], ["a", "b", "x"], "b")).toBe(0);
+    expect(countInsertedRowsBeforeKey(["a", "b"], ["x", "a", "b"], "missing")).toBe(0);
   });
 });
 

@@ -42,7 +42,22 @@ vi.mock("react-virtuoso", async () => {
       };
     }, [props]);
 
-    return React.createElement("div", { ref: scrollerRef, "data-testid": "virtuoso" });
+    const data = (props.data as any[] | undefined) ?? [];
+    const firstItemIndex = props.firstItemIndex as number;
+    const computeItemKey = props.computeItemKey as (
+      index: number,
+      item: any,
+    ) => React.Key;
+    const itemContent = props.itemContent as (index: number, item: any) => React.ReactNode;
+    return React.createElement(
+      "div",
+      { ref: scrollerRef, "data-testid": "virtuoso" },
+      data.map((item, index) => React.createElement(
+        "div",
+        { key: computeItemKey(firstItemIndex + index, item) },
+        itemContent(firstItemIndex + index, item),
+      )),
+    );
   });
 
   return { Virtuoso };
@@ -82,6 +97,96 @@ function makeUserMessage(eventId: number): { event: SoulSSEEvent; eventId: numbe
     } as unknown as SoulSSEEvent,
     eventId,
   };
+}
+
+function makeAssistantMessage(eventId: number): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "assistant_message",
+      text: `assistant-${eventId}`,
+      timestamp: 0,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeComplete(eventId: number): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "complete",
+      timestamp: 0,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeTurnSummary(
+  eventId: number,
+  anchorEventId: number,
+): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "turn_summary",
+      content: `summary-${eventId}`,
+      final_response_event_id: anchorEventId,
+      parent_event_id: anchorEventId,
+      timestamp: 0,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function virtuosoData(): any[] {
+  return (virtuosoMock.props?.data as any[] | undefined) ?? [];
+}
+
+function itemKeyAt(dataIndex: number): React.Key {
+  const data = virtuosoData();
+  const firstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+  const computeItemKey = virtuosoMock.props?.computeItemKey as (
+    index: number,
+    item: any,
+  ) => React.Key;
+  return computeItemKey(firstItemIndex + dataIndex, data[dataIndex]);
+}
+
+function setFirstVisibleDataIndex(dataIndex: number): {
+  absoluteIndex: number;
+  key: React.Key;
+} {
+  const firstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+  const absoluteIndex = firstItemIndex + dataIndex;
+  const key = itemKeyAt(dataIndex);
+  const scroller = document.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+  if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+  const makeRect = (top: number, bottom: number): DOMRect => ({
+    x: 0,
+    y: top,
+    top,
+    bottom,
+    left: 0,
+    right: 320,
+    width: 320,
+    height: bottom - top,
+    toJSON: () => ({}),
+  });
+  scroller.getBoundingClientRect = () => makeRect(100, 300);
+  const markers = Array.from(
+    scroller.querySelectorAll<HTMLElement>("[data-chat-item-key]"),
+  );
+  markers.forEach((marker, index) => {
+    const row = marker.firstElementChild as HTMLElement | null;
+    if (!row) throw new Error("chat item geometry target이 없습니다.");
+    const top = 100 + (index - dataIndex) * 40;
+    row.getBoundingClientRect = () => makeRect(top, top + 40);
+  });
+  scroller.dispatchEvent(new Event("scroll"));
+  expect(scroller.dataset.chatFirstVisibleKey).toBe(String(key));
+  return { absoluteIndex, key };
+}
+
+function findDataIndexByKey(key: React.Key): number {
+  return virtuosoData().findIndex((_, index) => itemKeyAt(index) === key);
 }
 
 function flushPassiveEffects(): Promise<void> {
@@ -176,5 +281,374 @@ describe("ChatView long-session initial bottom focus", () => {
       align: "end",
       behavior: "auto",
     });
+  });
+
+  it("follow-off에서 first visible 앞의 live 과거 summary를 anchor stable row 안에 결합한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.scrollToIndex.mockClear();
+
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const completeIndex = virtuosoData().findIndex(
+      (item) => item.type === "single" && item.msg.treeNodeType === "complete",
+    );
+    const before = setFirstVisibleDataIndex(completeIndex);
+    const beforeFirstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+
+    const afterIndex = findDataIndexByKey(before.key);
+    const afterFirstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+    expect(afterIndex).toBe(completeIndex);
+    expect(afterFirstItemIndex).toBe(beforeFirstItemIndex);
+    expect(afterFirstItemIndex + afterIndex).toBe(before.absoluteIndex);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("first visible 뒤의 live summary는 firstItemIndex를 바꾸지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.scrollToIndex.mockClear();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const before = setFirstVisibleDataIndex(0);
+    const beforeFirstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+
+    expect(findDataIndexByKey(before.key)).toBe(0);
+    expect(virtuosoMock.props?.firstItemIndex).toBe(beforeFirstItemIndex);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("미로딩 anchor summary는 data와 firstItemIndex를 바꾸지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1100)]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.scrollToIndex.mockClear();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const before = setFirstVisibleDataIndex(0);
+    const beforeFirstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+    const beforeLength = virtuosoData().length;
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoData()).toHaveLength(beforeLength);
+    expect(itemKeyAt(0)).toBe(before.key);
+    expect(virtuosoMock.props?.firstItemIndex).toBe(beforeFirstItemIndex);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("미로딩 summary의 anchor prepend는 history count만으로 visible 절대 좌표를 보존한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(1100),
+      makeTurnSummary(1200, 1000),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.scrollToIndex.mockClear();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const before = setFirstVisibleDataIndex(0);
+    const beforePrependedCount = useDashboardStore.getState().chatPrependedCount;
+
+    now = 1100;
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        makeAssistantMessage(1000),
+        makeComplete(1001),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    const afterIndex = findDataIndexByKey(before.key);
+    const added = useDashboardStore.getState().chatPrependedCount - beforePrependedCount;
+    expect(added).toBe(2);
+    expect(afterIndex).toBe(2);
+    expect((virtuosoMock.props?.firstItemIndex as number) + afterIndex).toBe(
+      before.absoluteIndex,
+    );
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("bottom의 live summary는 bottom을 유지하고 미로딩 summary는 scroll을 일으키지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 999).event, 1200);
+    });
+    await flushPassiveEffects();
+    expect(virtuosoData()).toHaveLength(3);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1201, 1000).event, 1201);
+    });
+    await flushPassiveEffects();
+    expect(virtuosoData()).toHaveLength(3);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
+  it("stable key와 행 수가 같은 streaming delta도 bottom follow를 유지한다", async () => {
+    useDashboardStore.getState().processEvent(
+      {
+        type: "text_start",
+        parent_event_id: "0",
+        timestamp: 0,
+      } as unknown as SoulSSEEvent,
+      1000,
+    );
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    const beforeLength = virtuosoData().length;
+    const beforeKey = itemKeyAt(0);
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(
+        {
+          type: "text_delta",
+          text: "streaming content grew",
+          timestamp: 1,
+        } as unknown as SoulSSEEvent,
+        1001,
+      );
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoData()).toHaveLength(beforeLength);
+    expect(itemKeyAt(0)).toBe(beforeKey);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
+  it("duplicate reconnect와 reload는 stable key·순서·follow-off 좌표를 바꾸지 않는다", async () => {
+    const history = [
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+      makeTurnSummary(1200, 1000),
+    ];
+    useDashboardStore.getState().processHistoryEvents(history);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const visible = setFirstVisibleDataIndex(2);
+    const beforeKeys = virtuosoData().map((_, index) => itemKeyAt(index));
+    const beforeFirstItemIndex = virtuosoMock.props?.firstItemIndex;
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(history[3].event, history[3].eventId);
+      useDashboardStore.getState().processHistoryEvents(history);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoData().map((_, index) => itemKeyAt(index))).toEqual(beforeKeys);
+    expect(findDataIndexByKey(visible.key)).toBe(2);
+    expect(virtuosoMock.props?.firstItemIndex).toBe(beforeFirstItemIndex);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("자동 reconnect는 같은 세션의 live 논리 삽입 보정을 유지한다", async () => {
+    const history = [
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ];
+    useDashboardStore.getState().processHistoryEvents(history);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const completeIndex = virtuosoData().findIndex(
+      (item) => item.type === "single" && item.msg.treeNodeType === "complete",
+    );
+    const visible = setFirstVisibleDataIndex(completeIndex);
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+    const correctedFirstItemIndex = virtuosoMock.props?.firstItemIndex;
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        ...history,
+        makeTurnSummary(1200, 1000),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.props?.firstItemIndex).toBe(correctedFirstItemIndex);
+    expect(findDataIndexByKey(visible.key)).toBe(completeIndex);
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("수동 clearTree 뒤 같은 세션 reconnect는 이전 논리 삽입 보정을 버린다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    const completeIndex = virtuosoData().findIndex(
+      (item) => item.type === "single" && item.msg.treeNodeType === "complete",
+    );
+    setFirstVisibleDataIndex(completeIndex);
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      useDashboardStore.getState().clearTree();
+    });
+    expect(useDashboardStore.getState().tree).toBeNull();
+    // clearTree의 empty-data 렌더를 지난 뒤 같은 ChatView instance에 reconnect한다.
+    // 빈 상태에서는 Virtuoso가 unmount되므로 remount 좌표가 훅 reset의 증거다.
+    flushSync(() => {
+      root?.render(createElement(ChatView));
+    });
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        makeAssistantMessage(2000),
+        makeComplete(2001),
+        makeUserMessage(2100),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    const prependedCount = useDashboardStore.getState().chatPrependedCount;
+    expect(virtuosoMock.props?.firstItemIndex).toBe(10_000 - prependedCount);
+    expect(virtuosoData().map((_, index) => itemKeyAt(index))).toEqual([
+      "asst-msg-2000",
+      "complete-2001",
+      "user-msg-2100",
+    ]);
+  });
+
+  it("session switch는 이전 세션의 논리 삽입 보정과 key를 재사용하지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeAssistantMessage(1000),
+      makeComplete(1001),
+      makeUserMessage(1100),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    now = 1000;
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+    });
+    await flushPassiveEffects();
+    setFirstVisibleDataIndex(1);
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeTurnSummary(1200, 1000).event, 1200);
+    });
+    await flushPassiveEffects();
+    expect(virtuosoMock.props?.firstItemIndex).toBe(9_997);
+
+    flushSync(() => {
+      useDashboardStore.getState().setActiveSession("sess-other");
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(2000)]);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.props?.firstItemIndex).toBe(9_999);
+    expect(virtuosoData().map((_, index) => itemKeyAt(index))).toEqual([
+      "user-msg-2000",
+    ]);
   });
 });

@@ -27,11 +27,14 @@ import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import {
-  computeFirstItemIndex,
+  areMessageGroupsRenderEqual,
   findFocusIndex,
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
+  messageOrGroupKey,
 } from "./ChatView.reverse-helpers";
+import { useChatLogicalInsertionCoordinate } from "./useChatLogicalInsertionCoordinate";
+import { useChatViewportRetention } from "./useChatViewportRetention";
 import {
   decideFollowOnAtBottomChange,
   resolveFollowOutput,
@@ -94,12 +97,12 @@ export function ChatView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
-
-  // virtuoso prepend 패턴: START_INDEX - 누적 prepend 개수 (grouped 단위)
-  const firstItemIndex = useMemo(
-    () => computeFirstItemIndex(chatPrependedCount),
-    [chatPrependedCount],
-  );
+  const { firstItemIndex, recordFirstVisibleKey } =
+    useChatLogicalInsertionCoordinate(
+      grouped,
+      activeSessionKey,
+      chatPrependedCount,
+    );
   const bottomScrollLocation = useMemo(
     () => getBottomScrollLocation(grouped.length),
     [grouped.length],
@@ -113,17 +116,24 @@ export function ChatView({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const headerWebglActive = useGlassSurface(headerRef, { enabled: showHeader });
-  /**
-   * virtuoso 내부 스크롤러 DOM 레퍼런스. `itemsRendered` 콜백에서 포커스 타겟을
-   * 찾을 때 `document.querySelector` 전역 쿼리 대신 이 범위로 한정한다.
-   */
-  const scrollerRef = useRef<HTMLElement | null>(null);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
+  const prevVisibleItemsRef = useRef(grouped);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  const {
+    scrollerRef,
+    bindScrollerElement,
+    scheduleVisuallyFirstItem,
+  } = useChatViewportRetention({
+    activeSessionKey,
+    grouped,
+    firstItemIndex,
+    isFollowing,
+    recordFirstVisibleKey,
+  });
   const resolveVirtuosoFollowOutput = useCallback(
     () => resolveFollowOutput(isFollowingRef.current),
     [],
@@ -188,6 +198,15 @@ export function ChatView({
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
+    const visibleItemsChanged = !areMessageGroupsRenderEqual(
+      prevVisibleItemsRef.current,
+      grouped,
+    );
+    prevVisibleItemsRef.current = grouped;
+    // 미로딩 anchor summary와 duplicate/reload는 treeVersion만 바꿀 수 있다.
+    // 실제 렌더 행의 reference가 그대로면 follow 좌표와 banner를 건드리지 않는다.
+    // 반대로 text_delta는 key와 행 수가 같아도 reference가 바뀌므로 follow를 유지한다.
+    if (!visibleItemsChanged) return;
     const isInitialBottomFocusPending =
       activeSessionKey !== null &&
       initialBottomFocusPendingSessionRef.current === activeSessionKey &&
@@ -210,7 +229,7 @@ export function ChatView({
     }
   }, [
     treeVersion,
-    grouped.length,
+    grouped,
     bottomScrollLocation,
     activeSessionKey,
     scrollToBottomWithBehavior,
@@ -299,6 +318,7 @@ export function ChatView({
     <div
       data-slot="chat-root"
       data-chat-font-size={chatFontSize}
+      data-chat-first-item-index={firstItemIndex}
       style={chatTypographyStyle}
       className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"
     >
@@ -349,9 +369,7 @@ export function ChatView({
         <Virtuoso
           key={activeSessionKey}
           ref={virtuosoRef}
-          scrollerRef={(ref) => {
-            scrollerRef.current = ref as HTMLElement | null;
-          }}
+          scrollerRef={bindScrollerElement}
           data={grouped}
           firstItemIndex={firstItemIndex}
           initialTopMostItemIndex={initialTopMostItemIndex}
@@ -397,23 +415,26 @@ export function ChatView({
             history.requestOlder();
           }}
           /**
-           * tool-group은 messages[length-1].treeNodeId — prepend 시 가장 최신 멤버는
-           * 변하지 않으므로 키가 안정적. messages[0]은 prepend로 변경되어 키 불안정.
-           * grouping.ts L18-22로 tool-group은 messages.length >= 2 보장 (안전).
+           * tool-group은 마지막 tool, summary-group은 anchor의 키를 유지한다.
+           * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
            */
-          computeItemKey={(_index, item) =>
-            item.type === "tool-group"
-              ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
-              : item.msg.treeNodeId
-          }
+          computeItemKey={(_index, item) => messageOrGroupKey(item)}
           itemContent={(_, item) => (
-            <VirtualizedItem
-              item={item}
-              llmContext={llmContext}
-              sessionId={activeSessionKey ?? undefined}
-            />
+            <div
+              data-chat-item-key={messageOrGroupKey(item)}
+              className="contents"
+            >
+              <VirtualizedItem
+                item={item}
+                llmContext={llmContext}
+                sessionId={activeSessionKey ?? undefined}
+              />
+            </div>
           )}
           itemsRendered={() => {
+            // Virtuoso가 data와 spacer DOM을 같은 프레임에 정합한 뒤 geometry를 읽는다.
+            // 즉시 읽으면 재배치 중인 overscan 행 또는 빈 중간 프레임을 관찰할 수 있다.
+            scheduleVisuallyFirstItem();
             if (focusEventId == null) return;
             // 이미 이 focusEventId를 처리했다면 중복 예약 방지
             if (handledFocusRef.current === focusEventId) return;

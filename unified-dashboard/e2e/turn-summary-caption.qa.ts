@@ -61,7 +61,7 @@ async function verifyTurnSummaryCaption(browser: Browser) {
     const metrics = await measureTimeline(page);
 
     assert(
-      metrics.order.join(",") === "asst-msg-119,complete-120,turn-summary-140,user-msg-130",
+      metrics.order.join(",") === "asst-msg-119,turn-summary-140,complete-120,user-msg-130",
       `캡션 순서가 잘못됐습니다: ${metrics.order.join(",")}`,
     );
     assert(metrics.summary.fontSize === metrics.complete.fontSize, "기존 complete 캡션의 글자 크기를 재사용하지 않았습니다.");
@@ -102,15 +102,503 @@ async function verifyTurnSummaryCaption(browser: Browser) {
       path: path.join(outputRoot, "chat-frame-dark.png"),
       animations: "disabled",
     });
+    const scrollRetention = await verifyActualViewportRetention(page);
     writeFileSync(
       path.join(outputRoot, "metrics.json"),
-      `${JSON.stringify({ metrics, browserErrors }, null, 2)}\n`,
+      `${JSON.stringify({ metrics, scrollRetention, browserErrors }, null, 2)}\n`,
       "utf8",
     );
-    return { metrics, browserErrors };
+    return { metrics, scrollRetention, browserErrors };
   } finally {
     await context.close();
   }
+}
+
+async function verifyActualViewportRetention(page: Page) {
+  await page.evaluate(() => {
+    const store = (globalThis as unknown as {
+      __SOULSTREAM_STORE__: {
+        getState(): {
+          processEvent(event: Record<string, unknown>, eventId: number): unknown;
+        };
+      };
+    }).__SOULSTREAM_STORE__;
+    for (let eventId = 1_000; eventId < 1_300; eventId++) {
+      store.getState().processEvent({
+        type: "assistant_message",
+        content: `long timeline row ${eventId}\nviewport geometry contract`,
+        timestamp: eventId,
+      }, eventId);
+    }
+  });
+
+  const scroller = page.locator('[data-chat-scroller="true"]');
+  await scroller.waitFor({ state: "visible", timeout: 20_000 });
+  await page.waitForTimeout(750);
+  await scroller.evaluate((element) => {
+    element.scrollTop = Math.floor(
+      (element.scrollHeight - element.clientHeight) * 0.55,
+    );
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await waitForSettledViewport(page);
+
+  const before = await measureViewport(page);
+  assert(
+    before.observedFirstKey === before.firstKey,
+    `제품 observer가 실제 first-visible key를 기록하지 못했습니다: ${JSON.stringify(before)}`,
+  );
+  assert(before.overscanAboveKeys.length > 0, "800px 위 overscan 행을 관찰하지 못했습니다.");
+  assert(before.visibleKeys.length > 1, "실제 viewport 교차 행이 부족합니다.");
+  const firstVisibleEventId = parseEventId(before.firstKey);
+  const farBeforeKey = Array.from(
+    { length: firstVisibleEventId - 1_000 },
+    (_, index) => `asst-msg-${1_000 + index}`,
+  ).find((key) => !before.renderedKeys.includes(key));
+  assert(farBeforeKey !== undefined, "overscan 밖의 loaded far-before 행을 찾지 못했습니다.");
+
+  await installScrollCommandProbe(page);
+  await injectSummary(page, 9_001, parseEventId(farBeforeKey), "overscan 밖 visible 앞 삽입");
+  await waitForSettledViewport(page);
+  const afterFarBefore = await measureViewport(page);
+  assertViewportPreserved(before, afterFarBefore, "overscan 밖 visible 앞");
+  assert(
+    Math.abs(afterFarBefore.retentionCorrectionPx) < 0.5,
+    "렌더되지 않은 far-before 앵커에 불필요한 viewport 보정이 발생했습니다.",
+  );
+
+  const overscanAnchor = parseEventId(
+    afterFarBefore.overscanAboveKeys[afterFarBefore.overscanAboveKeys.length - 1],
+  );
+  await injectSummary(page, 9_002, overscanAnchor, "overscan 안 visible 앞 삽입");
+  await page.waitForFunction(() => (
+    document.querySelector<HTMLElement>('[data-chat-scroller="true"]')
+      ?.dataset.chatViewportRetentionPending === "true"
+  ));
+  // 진행 중 settle window와 겹쳐도 표시 항목을 만들지 않는 summary가 직전 보존을
+  // 취소하면 안 된다. 실제 anchor가 로드되지 않았으므로 projection 결과는 0행이다.
+  await injectSummary(page, 9_006, 999_999, "미로딩 anchor 연속 삽입");
+  await waitForSettledViewport(page);
+  const afterOverscanBefore = await measureViewport(page);
+  assertViewportPreserved(afterFarBefore, afterOverscanBefore, "overscan 안 visible 앞");
+  assert(
+    Math.abs(afterOverscanBefore.retentionCorrectionPx) >= 0.5,
+    "overscan 행 높이 변화에 대한 실제 viewport offset 보정이 관찰되지 않았습니다.",
+  );
+
+  const afterVisibleAnchor = parseEventId(afterOverscanBefore.visibleKeys[1]);
+  await injectSummary(page, 9_007, afterVisibleAnchor, "visible 뒤 삽입");
+  await waitForSettledViewport(page);
+  const afterVisible = await measureViewport(page);
+  assertViewportPreserved(afterOverscanBefore, afterVisible, "visible 뒤");
+  assert(
+    afterVisible.retentionStarts === afterOverscanBefore.retentionStarts,
+    "first-visible 뒤 삽입이 불필요한 retention window를 시작했습니다.",
+  );
+  assert(
+    Math.abs(afterVisible.retentionCorrectionPx) < 0.5,
+    `first-visible 뒤 삽입에 불필요한 viewport 보정이 발생했습니다. ${JSON.stringify({ afterOverscanBefore, afterVisible })}`,
+  );
+
+  // scroll task의 listener/microtask는 끝났지만 다음 animation frame 전에 SSE data가
+  // 도착하는 실제 race를 만든다. 제품은 새 user anchor를 보존 기준으로 사용해야 한다.
+  const beforeScrollRace = await measureViewport(page, {
+    scrollDelta: 64,
+    injectSummaryEventId: 9_008,
+  });
+  await waitForSettledViewport(page);
+  const afterScrollRace = await measureViewport(page);
+  assertViewportPreserved(beforeScrollRace, afterScrollRace, "scroll 직후 data 갱신");
+
+  assert(
+    afterScrollRace.overscanAboveKeys.length > 0,
+    "data→사용자 scroll race 검증에 필요한 위쪽 overscan 행이 없습니다.",
+  );
+  const pendingAnchor = parseEventId(
+    afterScrollRace.overscanAboveKeys[afterScrollRace.overscanAboveKeys.length - 1],
+  );
+  await injectSummary(page, 9_009, pendingAnchor, "data 직후 사용자 scroll");
+  await page.waitForFunction(() => (
+    document.querySelector<HTMLElement>('[data-chat-scroller="true"]')
+      ?.dataset.chatViewportRetentionPending === "true"
+  ));
+  const afterUserInput = await measureViewport(page, {
+    scrollDelta: 512,
+    userInput: true,
+  });
+  await waitForSettledViewport(page);
+  const afterUserInputSettled = await measureViewport(page);
+  assertViewportPreserved(
+    afterUserInput,
+    afterUserInputSettled,
+    "data 갱신 중 사용자 viewport 우선",
+  );
+  assert(
+    afterUserInputSettled.firstKey !== afterScrollRace.firstKey,
+    "pending 보정이 사용자 scroll을 이전 first-visible key로 되돌렸습니다.",
+  );
+
+  await injectStreamingDeltasBehindViewport(page);
+  await waitForSettledViewport(page);
+  const afterStreamingDeltas = await measureViewport(page);
+  assertViewportPreserved(
+    afterUserInputSettled,
+    afterStreamingDeltas,
+    "과거 읽기 중 지속 streaming delta",
+  );
+  assert(
+    afterStreamingDeltas.retentionStarts === afterUserInputSettled.retentionStarts,
+    "first-visible 뒤의 streaming delta가 retention window를 반복 시작했습니다.",
+  );
+
+  const logicalInsertionScrollCommands = await page.evaluate(() => (
+    globalThis as unknown as { __TURN_SUMMARY_SCROLL_COMMANDS__: string[] }
+  ).__TURN_SUMMARY_SCROLL_COMMANDS__);
+  assert(
+    logicalInsertionScrollCommands.length === 0,
+    `live summary 삽입이 강제 scroll 명령을 발생시켰습니다: ${logicalInsertionScrollCommands.join(",")}`,
+  );
+  await page.evaluate(() => {
+    (
+      globalThis as unknown as { __TURN_SUMMARY_SCROLL_COMMANDS__: string[] }
+    ).__TURN_SUMMARY_SCROLL_COMMANDS__.length = 0;
+  });
+
+  const prependedCount = await prependHistory(page);
+  await waitForSettledViewport(page);
+  const afterHistoryPrepend = await measureViewport(page);
+  assertViewportPreserved(
+    afterStreamingDeltas,
+    afterHistoryPrepend,
+    "실제 history prepend",
+  );
+  assert(
+    afterHistoryPrepend.firstItemIndex
+      === afterScrollRace.firstItemIndex - prependedCount,
+    "history prepend의 data와 firstItemIndex가 같은 렌더에서 정합하지 않습니다.",
+  );
+  assert(
+    Math.abs(
+      (afterHistoryPrepend.scrollTop - afterStreamingDeltas.scrollTop)
+        - (afterHistoryPrepend.scrollHeight - afterStreamingDeltas.scrollHeight)
+    ) < 1,
+    `history prepend의 최종 공개 scroll 좌표가 보존되지 않았습니다. ${JSON.stringify({ afterStreamingDeltas, afterHistoryPrepend })}`,
+  );
+
+  const scrollCommands = await page.evaluate(() => (
+    globalThis as unknown as { __TURN_SUMMARY_SCROLL_COMMANDS__: string[] }
+  ).__TURN_SUMMARY_SCROLL_COMMANDS__);
+  assert(
+    scrollCommands.every((command) => command === "scrollBy"),
+    `history prepend가 Virtuoso 좌표 보정 외 명령을 발생시켰습니다: ${scrollCommands.join(",")}`,
+  );
+  assert(
+    afterVisible.distanceFromBottom > afterVisible.viewportHeight,
+    "과거 읽기 중 대화 끝으로 강제 이동했습니다.",
+  );
+
+  return {
+    increaseViewportBy: { top: 800, bottom: 400 },
+    before,
+    afterFarBefore,
+    afterOverscanBefore,
+    afterVisible,
+    beforeScrollRace,
+    afterScrollRace,
+    afterUserInput,
+    afterUserInputSettled,
+    afterStreamingDeltas,
+    afterHistoryPrepend,
+    prependedCount,
+    logicalInsertionScrollCommands,
+    scrollCommands,
+  };
+}
+
+async function waitForSettledViewport(page: Page) {
+  await page.waitForFunction(() => {
+    const scroller = document.querySelector<HTMLElement>('[data-chat-scroller="true"]');
+    if (!scroller) return false;
+    const viewport = scroller.getBoundingClientRect();
+    const visible = Array.from(
+      scroller.querySelectorAll<HTMLElement>("[data-chat-item-key]"),
+    ).flatMap((marker) => {
+      const key = marker.dataset.chatItemKey;
+      const rows = Array.from(marker.children).filter(
+        (row): row is HTMLElement => row instanceof HTMLElement,
+      );
+      if (!key || rows.length === 0) return [];
+      const rects = rows.map((row) => row.getBoundingClientRect());
+      const top = Math.min(...rects.map((row) => row.top));
+      const bottom = Math.max(...rects.map((row) => row.bottom));
+      return bottom > viewport.top && top < viewport.bottom ? [{ key, top }] : [];
+    }).sort((left, right) => left.top - right.top);
+    return visible.length > 0
+      && scroller.dataset.chatViewportRetentionPending !== "true"
+      && scroller.dataset.chatFirstVisibleKey === visible[0]?.key;
+  }, undefined, { timeout: 10_000 });
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
+async function installScrollCommandProbe(page: Page) {
+  await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>('[data-chat-scroller="true"]');
+    if (!scroller) throw new Error("chat scroller를 찾지 못했습니다.");
+    const calls: string[] = [];
+    const originalScrollTo = scroller.scrollTo.bind(scroller);
+    const originalScrollBy = scroller.scrollBy.bind(scroller);
+    scroller.scrollTo = (...args: Parameters<HTMLElement["scrollTo"]>) => {
+      calls.push("scrollTo");
+      originalScrollTo(...args);
+    };
+    scroller.scrollBy = (...args: Parameters<HTMLElement["scrollBy"]>) => {
+      calls.push("scrollBy");
+      originalScrollBy(...args);
+    };
+    (
+      globalThis as unknown as { __TURN_SUMMARY_SCROLL_COMMANDS__: string[] }
+    ).__TURN_SUMMARY_SCROLL_COMMANDS__ = calls;
+  });
+}
+
+async function injectSummary(
+  page: Page,
+  summaryEventId: number,
+  anchorEventId: number,
+  content: string,
+) {
+  await page.evaluate(({ summaryEventId, anchorEventId, content }) => {
+    const store = (globalThis as unknown as {
+      __SOULSTREAM_STORE__: {
+        getState(): {
+          processEvent(event: Record<string, unknown>, eventId: number): unknown;
+        };
+      };
+    }).__SOULSTREAM_STORE__;
+    store.getState().processEvent({
+      type: "turn_summary",
+      content,
+      final_response_event_id: anchorEventId,
+      parent_event_id: anchorEventId,
+      timestamp: summaryEventId,
+    }, summaryEventId);
+  }, { summaryEventId, anchorEventId, content });
+}
+
+async function prependHistory(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const store = (globalThis as unknown as {
+      __SOULSTREAM_STORE__: {
+        getState(): {
+          processHistoryEvents(events: Array<{
+            event: Record<string, unknown>;
+            eventId: number;
+          }>): { addedCount: number };
+        };
+      };
+    }).__SOULSTREAM_STORE__;
+    const events = Array.from({ length: 100 }, (_, index) => {
+      const eventId = 900 + index;
+      return {
+        eventId,
+        event: {
+          type: "assistant_message",
+          content: `history row ${eventId}`,
+          timestamp: eventId,
+        },
+      };
+    });
+    return store.getState().processHistoryEvents(events).addedCount;
+  });
+}
+
+async function injectStreamingDeltasBehindViewport(page: Page) {
+  await page.evaluate(() => {
+    const store = (globalThis as unknown as {
+      __SOULSTREAM_STORE__: {
+        getState(): {
+          processEvent(event: Record<string, unknown>, eventId: number): unknown;
+        };
+      };
+    }).__SOULSTREAM_STORE__;
+    store.getState().processEvent({
+      type: "text_start",
+      parent_event_id: "0",
+      timestamp: 9_100,
+    }, 9_100);
+  });
+  for (let index = 1; index <= 8; index += 1) {
+    await page.evaluate((eventId) => {
+      const store = (globalThis as unknown as {
+        __SOULSTREAM_STORE__: {
+          getState(): {
+            processEvent(event: Record<string, unknown>, eventId: number): unknown;
+          };
+        };
+      }).__SOULSTREAM_STORE__;
+      store.getState().processEvent({
+        type: "text_delta",
+        text: `streaming delta ${eventId}`,
+        timestamp: eventId,
+      }, eventId);
+    }, 9_100 + index);
+    await page.waitForTimeout(20);
+  }
+}
+
+interface ViewportMeasurement {
+  firstItemIndex: number;
+  observedFirstKey: string;
+  firstKey: string;
+  firstTop: number;
+  visibleKeys: string[];
+  overscanAboveKeys: string[];
+  renderedKeys: string[];
+  scrollTop: number;
+  scrollHeight: number;
+  viewportHeight: number;
+  distanceFromBottom: number;
+  retentionCorrectionPx: number;
+  retentionPending: boolean;
+  retentionStarts: number;
+  retentionTargetKey: string;
+  retentionRowsBeforeChanged: boolean;
+  retentionCoordinateChanged: boolean;
+  retentionFollowing: boolean;
+}
+
+interface MeasureViewportOptions {
+  scrollDelta?: number;
+  userInput?: boolean;
+  injectSummaryEventId?: number;
+}
+
+async function measureViewport(
+  page: Page,
+  options: MeasureViewportOptions = {},
+): Promise<ViewportMeasurement> {
+  return page.evaluate(async (measureOptions) => {
+    const scroller = document.querySelector<HTMLElement>('[data-chat-scroller="true"]');
+    if (!scroller) throw new Error("chat scroller를 찾지 못했습니다.");
+    if (measureOptions.userInput) {
+      scroller.dispatchEvent(new WheelEvent("wheel", {
+        deltaY: measureOptions.scrollDelta ?? 0,
+      }));
+    }
+    if (measureOptions.scrollDelta) {
+      scroller.scrollTop += measureOptions.scrollDelta;
+      scroller.dispatchEvent(new Event("scroll"));
+    }
+    const viewport = scroller.getBoundingClientRect();
+    const rows = Array.from(
+      scroller.querySelectorAll<HTMLElement>("[data-chat-item-key]"),
+    ).flatMap((marker) => {
+      const key = marker.dataset.chatItemKey;
+      const rows = Array.from(marker.children).filter(
+        (row): row is HTMLElement => row instanceof HTMLElement,
+      );
+      if (rows.length === 0 || !key) return [];
+      const rects = rows.map((row) => row.getBoundingClientRect());
+      return [{
+        key,
+        rect: {
+          top: Math.min(...rects.map((row) => row.top)),
+          bottom: Math.max(...rects.map((row) => row.bottom)),
+        },
+      }];
+    });
+    const visible = rows
+      .filter(({ rect }) => rect.bottom > viewport.top && rect.top < viewport.bottom)
+      .sort((a, b) => a.rect.top - b.rect.top);
+    const overscanAbove = rows
+      .filter(({ rect }) => rect.bottom <= viewport.top)
+      .sort((a, b) => a.rect.bottom - b.rect.bottom);
+    const first = visible[0];
+    if (!first) throw new Error("실제 viewport 교차 행을 찾지 못했습니다.");
+    const measurement = {
+      firstItemIndex: Number(
+        document.querySelector<HTMLElement>('[data-slot="chat-root"]')
+          ?.dataset.chatFirstItemIndex,
+      ),
+      observedFirstKey: scroller.dataset.chatFirstVisibleKey ?? "",
+      firstKey: first.key,
+      firstTop: first.rect.top - viewport.top,
+      visibleKeys: visible.map(({ key }) => key),
+      overscanAboveKeys: overscanAbove.map(({ key }) => key),
+      renderedKeys: rows.map(({ key }) => key),
+      scrollTop: scroller.scrollTop,
+      scrollHeight: scroller.scrollHeight,
+      viewportHeight: scroller.clientHeight,
+      distanceFromBottom: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+      retentionCorrectionPx: Number(
+        scroller.dataset.chatViewportRetentionCorrection ?? "0",
+      ),
+      retentionPending:
+        scroller.dataset.chatViewportRetentionPending === "true",
+      retentionStarts: Number(
+        scroller.dataset.chatViewportRetentionStarts ?? "0",
+      ),
+      retentionTargetKey: scroller.dataset.chatViewportRetentionTargetKey ?? "",
+      retentionRowsBeforeChanged:
+        scroller.dataset.chatViewportRetentionRowsBeforeChanged === "true",
+      retentionCoordinateChanged:
+        scroller.dataset.chatViewportRetentionCoordinateChanged === "true",
+      retentionFollowing:
+        scroller.dataset.chatViewportRetentionFollowing === "true",
+    };
+    if (measureOptions.injectSummaryEventId !== undefined) {
+      // 실제 브라우저 event loop와 같이 scroll task의 listener/microtask는 끝났지만
+      // 다음 animation frame은 오기 전에 SSE data task가 도착하는 경계를 만든다.
+      await Promise.resolve();
+      const anchorKey = overscanAbove.at(-1)?.key;
+      const match = anchorKey?.match(/-(\d+)$/);
+      const anchorEventId = match ? Number(match[1]) : Number.NaN;
+      if (!Number.isSafeInteger(anchorEventId) || anchorEventId <= 0) {
+        throw new Error("scroll→data race 검증에 필요한 overscan anchor가 없습니다.");
+      }
+      const store = (globalThis as unknown as {
+        __SOULSTREAM_STORE__: {
+          getState(): {
+            processEvent(event: Record<string, unknown>, eventId: number): unknown;
+          };
+        };
+      }).__SOULSTREAM_STORE__;
+      store.getState().processEvent({
+        type: "turn_summary",
+        content: "scroll 직후 overscan 삽입",
+        final_response_event_id: anchorEventId,
+        parent_event_id: anchorEventId,
+        timestamp: measureOptions.injectSummaryEventId,
+      }, measureOptions.injectSummaryEventId);
+    }
+    return measurement;
+  }, options);
+}
+
+function assertViewportPreserved(
+  before: ViewportMeasurement,
+  after: ViewportMeasurement,
+  label: string,
+) {
+  assert(
+    after.firstKey === before.firstKey,
+    `${label}: first-visible key가 바뀌었습니다. ${JSON.stringify({ before, after })}`,
+  );
+  assert(
+    Math.abs(after.firstTop - before.firstTop) < 1,
+    `${label}: first-visible offset이 ${before.firstTop} → ${after.firstTop}로 움직였습니다.`,
+  );
+}
+
+function parseEventId(key: string): number {
+  const match = key.match(/-(\d+)$/);
+  const eventId = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+    throw new Error(`event ID를 key에서 읽지 못했습니다: ${key}`);
+  }
+  return eventId;
 }
 
 async function openChat(page: Page) {
@@ -180,13 +668,13 @@ async function injectLateSummary(page: Page) {
 
 async function measureTimeline(page: Page) {
   return page.evaluate(() => {
-    const ids = ["asst-msg-119", "complete-120", "turn-summary-140", "user-msg-130"];
+    const ids = ["asst-msg-119", "turn-summary-140", "complete-120", "user-msg-130"];
     const elements = ids.map((id) => document.querySelector<HTMLElement>(`[data-tree-node-id="${id}"]`));
     const order = Array.from(document.querySelectorAll<HTMLElement>("[data-tree-node-id]"))
       .map((element) => element.dataset.treeNodeId ?? "")
       .filter((id) => ids.includes(id));
-    const summary = elements[2]?.querySelector<HTMLElement>(".flex-1");
-    const complete = elements[1]?.querySelector<HTMLElement>(".flex-1");
+    const summary = elements[1]?.querySelector<HTMLElement>(".flex-1");
+    const complete = elements[2]?.querySelector<HTMLElement>(".flex-1");
     if (!summary || !complete) throw new Error("시스템 캡션 내부 요소를 찾지 못했습니다.");
     const completeLabel = complete.querySelector<HTMLElement>(
       '[data-slot="complete-caption-label"]',
@@ -230,7 +718,7 @@ async function measureTimeline(page: Page) {
         statsText: completeStats.textContent?.trim() ?? "",
         statsTextAlign: statsStyle.textAlign,
       },
-      completeText: elements[1]?.textContent ?? "",
+      completeText: elements[2]?.textContent ?? "",
       resultVisible: document.querySelector<HTMLElement>(
         '[data-tree-node-id="result-121"]',
       ) !== null,

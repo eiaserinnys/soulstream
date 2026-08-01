@@ -24,6 +24,69 @@ export const START_INDEX = 10_000;
 export const computeFirstItemIndex = (prependedCount: number): number =>
   START_INDEX - prependedCount;
 
+/** Virtuoso와 viewport 보정이 공유하는 안정 키. */
+export function messageOrGroupKey(item: MessageOrGroup): string {
+  if (item.type === "summary-group") return messageOrGroupKey(item.anchor);
+  return item.type === "tool-group"
+    ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
+    : item.msg.treeNodeId;
+}
+
+/**
+ * 같은 논리 행이라도 표시 내용이 바뀌면 follow 수명주기는 다시 실행해야 한다.
+ * stable key나 행 수만 비교하면 text_delta처럼 key를 유지한 채 높이가 늘어나는
+ * 갱신을 숨겨 버린다. flattenTree가 보존하는 ChatMessage reference를 표시 계약으로
+ * 사용해, 숨겨진 summary/duplicate와 실제 렌더 갱신을 구분한다.
+ */
+export function areMessageGroupsRenderEqual(
+  previous: MessageOrGroup[],
+  next: MessageOrGroup[],
+): boolean {
+  if (previous.length !== next.length) return false;
+  return previous.every((item, index) => {
+    const nextItem = next[index];
+    if (item.type !== nextItem?.type) return false;
+    if (item.type === "single" && nextItem.type === "single") {
+      return item.msg === nextItem.msg;
+    }
+    if (item.type === "tool-group" && nextItem.type === "tool-group") {
+      return (
+        item.messages.length === nextItem.messages.length &&
+        item.messages.every(
+          (message, messageIndex) =>
+            message === nextItem.messages[messageIndex],
+        )
+      );
+    }
+    if (item.type === "summary-group" && nextItem.type === "summary-group") {
+      return (
+        areMessageGroupsRenderEqual([item.anchor], [nextItem.anchor]) &&
+        item.summaries.length === nextItem.summaries.length &&
+        item.summaries.every(
+          (summary, summaryIndex) => summary === nextItem.summaries[summaryIndex],
+        )
+      );
+    }
+    return false;
+  });
+}
+
+/**
+ * 같은 first-visible key가 새 배열에서 뒤로 이동한 양을 반환한다.
+ * 음수(앞 행 제거), key 부재, 또는 first-visible 뒤 삽입은 좌표를 바꾸지 않는다.
+ */
+export function countInsertedRowsBeforeKey(
+  previousKeys: string[],
+  nextKeys: string[],
+  firstVisibleKey: string | null,
+): number {
+  if (firstVisibleKey === null) return 0;
+  const previousIndex = previousKeys.indexOf(firstVisibleKey);
+  const nextIndex = nextKeys.indexOf(firstVisibleKey);
+  if (previousIndex < 0 || nextIndex < 0) return 0;
+  return Math.max(0, nextIndex - previousIndex);
+}
+
 export function getInitialTopMostItemIndex(
   itemCount: number,
 ): { index: number; align: "end" } | 0 {
@@ -53,6 +116,12 @@ export const findFocusIndex = (
 ): number => {
   if (focusEventId == null) return -1;
   return grouped.findIndex((item) => {
+    if (item.type === "summary-group") {
+      return findFocusIndex(
+        [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))],
+        focusEventId,
+      ) >= 0;
+    }
     if (item.type === "tool-group") {
       return item.messages.some(
         (m) =>

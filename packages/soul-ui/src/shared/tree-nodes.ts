@@ -235,7 +235,8 @@ export interface AwaySummaryNode extends BaseNode {
 export interface TurnSummaryNode extends BaseNode {
   type: "turn_summary";
   turnStartEventId?: number;
-  finalResponseEventId: number;
+  finalResponseEventId?: number;
+  summaryParentEventId?: number;
 }
 
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */

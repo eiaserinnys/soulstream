@@ -7,6 +7,7 @@
  * 검증 매트릭스:
  *   - single: msg reference 동일성
  *   - tool-group: messages 배열 element-wise 비교
+ *   - summary-group: anchor와 summary reference를 모두 비교
  *   - llmContext / sessionId 변화 감지
  *   - type 변화 감지 (single ↔ tool-group)
  */
@@ -103,6 +104,55 @@ describe("VirtualizedItem.arePropsEqual — tool-group", () => {
       arePropsEqual(
         { item: { type: "tool-group", messages: [a1, b] } },
         { item: { type: "tool-group", messages: [a2, b] } },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("VirtualizedItem.arePropsEqual — summary-group", () => {
+  it("같은 anchor와 summary reference면 wrapper가 새로 만들어져도 true", () => {
+    const anchor = makeMsg("anchor", "assistant");
+    const summary = makeMsg("summary", "system");
+    expect(
+      arePropsEqual(
+        {
+          item: {
+            type: "summary-group",
+            anchor: { type: "single", msg: anchor },
+            summaries: [summary],
+          },
+        },
+        {
+          item: {
+            type: "summary-group",
+            anchor: { type: "single", msg: anchor },
+            summaries: [summary],
+          },
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("summary reference가 바뀌면 같은 stable row를 다시 렌더한다", () => {
+    const anchor = makeMsg("anchor", "assistant");
+    const before = makeMsg("summary", "system");
+    const after = makeMsg("summary", "system");
+    expect(
+      arePropsEqual(
+        {
+          item: {
+            type: "summary-group",
+            anchor: { type: "single", msg: anchor },
+            summaries: [before],
+          },
+        },
+        {
+          item: {
+            type: "summary-group",
+            anchor: { type: "single", msg: anchor },
+            summaries: [after],
+          },
+        },
       ),
     ).toBe(false);
   });

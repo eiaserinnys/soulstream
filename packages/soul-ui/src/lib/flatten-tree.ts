@@ -24,9 +24,10 @@ import type {
   ToolApprovalNodeDef,
   ContextItem,
   TokenUsage,
+  TurnSummaryNode,
 } from "@shared/types";
 import { extractNodeEventId } from "./event-tree-id";
-import { placeTurnSummariesAtTurnBoundaries } from "./turn-summary-projection";
+import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
 
 export { extractEventId } from "./event-tree-id";
 
@@ -106,6 +107,9 @@ export interface ChatMessage {
   deliveryId?: string;
   /** session_notification 전용 전달 결과. */
   deliveryDisposition?: "queued" | "auto_resume";
+  /** turn_summary 전용: 실제 렌더 행에 결합할 우선·대체 anchor. */
+  summaryFinalResponseEventId?: number;
+  summaryParentEventId?: number;
 }
 
 /**
@@ -179,7 +183,9 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.contextItems === b.contextItems &&
     a.agentInfo === b.agentInfo &&
     a.callerInfo === b.callerInfo &&
-    a.eventId === b.eventId
+    a.eventId === b.eventId &&
+    a.summaryFinalResponseEventId === b.summaryFinalResponseEventId &&
+    a.summaryParentEventId === b.summaryParentEventId
   );
 }
 
@@ -199,7 +205,7 @@ export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
 
   const messages: ChatMessage[] = [];
   collectMessages(root, messages, {});
-  return messages;
+  return placeTurnSummariesAtResponseAnchors(messages);
 }
 
 /** 캐시 조회·갱신 후 reference를 반환한다. */
@@ -233,7 +239,13 @@ function collectMessages(
     }
   } else {
     const msg = nodeToMessage(node, context.previousResultTotalCostUsd);
-    if (msg) out.push(intern(msg.treeNodeId, msg));
+    if (msg) {
+      // raw-event ChatMessage의 durable ID 전달은 이 경계 하나가 소유한다.
+      // 각 switch 분기에 흩어 넣으면 complete/error/compact 같은 렌더 행이
+      // 누락되어 legacy turn_summary의 시간축이 불완전해진다.
+      msg.eventId = extractNodeEventId(node);
+      out.push(intern(msg.treeNodeId, msg));
+    }
     if (
       node.type === "result"
       && isFiniteNumber((node as ResultNode).totalCostUsd)
@@ -263,9 +275,7 @@ function collectMessages(
         return 0;
       })
     : children;
-  const ordered = placeTurnSummariesAtTurnBoundaries(chronological);
-
-  for (const child of ordered) {
+  for (const child of chronological) {
     collectMessages(child, out, context);
   }
 }
@@ -274,7 +284,6 @@ function nodeToMessage(
   node: EventTreeNode,
   previousResultTotalCostUsd?: number,
 ): ChatMessage | null {
-  const eventId = extractNodeEventId(node);
   switch (node.type) {
     case "user_message": {
       const n = node as UserMessageNode;
@@ -285,7 +294,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
@@ -301,7 +309,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -314,7 +321,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         deliveryId: n.deliveryId,
         deliveryDisposition: n.disposition,
       };
@@ -333,7 +339,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
@@ -350,7 +355,6 @@ function nodeToMessage(
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
       };
@@ -366,7 +370,6 @@ function nodeToMessage(
         isStreaming: !n.textCompleted,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -396,7 +399,6 @@ function nodeToMessage(
         toolTraceId: n.toolTraceId,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
       };
@@ -466,7 +468,6 @@ function nodeToMessage(
         provider: n.provider,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -478,19 +479,20 @@ function nodeToMessage(
         timestamp: node.timestamp,
         treeNodeId: node.id,
         treeNodeType: node.type,
-        eventId,
       };
     }
 
     case "turn_summary": {
+      const n = node as TurnSummaryNode;
       return {
-        id: node.id,
+        id: n.id,
         role: "system",
-        content: node.content,
-        timestamp: node.timestamp,
-        treeNodeId: node.id,
-        treeNodeType: node.type,
-        eventId,
+        content: n.content,
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        summaryFinalResponseEventId: n.finalResponseEventId,
+        summaryParentEventId: n.summaryParentEventId,
       };
     }
 
@@ -510,7 +512,6 @@ function nodeToMessage(
         timeoutSec: n.timeoutSec,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 
@@ -530,7 +531,6 @@ function nodeToMessage(
         approvalMessage: n.message,
         treeNodeId: n.id,
         treeNodeType: n.type,
-        eventId,
       };
     }
 

@@ -22,6 +22,25 @@ export type VirtualizedItemProps = {
 };
 
 function VirtualizedItemImpl({ item, llmContext, sessionId }: VirtualizedItemProps) {
+  if (item.type === "summary-group") {
+    return (
+      <>
+        <VirtualizedItemImpl
+          item={item.anchor}
+          llmContext={llmContext}
+          sessionId={sessionId}
+        />
+        {item.summaries.map((summary) => (
+          <ChatMessageItem
+            key={summary.treeNodeId}
+            msg={summary}
+            llmContext={llmContext}
+            sessionId={sessionId}
+          />
+        ))}
+      </>
+    );
+  }
   if (item.type === "tool-group") {
     return <ToolCallGroup messages={item.messages} />;
   }
@@ -55,6 +74,15 @@ export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemP
       if (a[i] !== b[i]) return false;
     }
     return true;
+  }
+  if (prev.item.type === "summary-group" && next.item.type === "summary-group") {
+    if (!arePropsEqual(
+      { ...prev, item: prev.item.anchor },
+      { ...next, item: next.item.anchor },
+    )) return false;
+    const a = prev.item.summaries;
+    const b = next.item.summaries;
+    return a.length === b.length && a.every((summary, index) => summary === b[index]);
   }
   return false;
 }

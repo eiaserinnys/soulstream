@@ -643,8 +643,8 @@ describe("processEventsBatch — skipDedup (history prepend 경로)", () => {
   });
 });
 
-describe("turn_summary — 턴 경계 캡션 투영", () => {
-  it("뒤 이벤트가 표시된 후 늦게 도착해도 같은 턴의 complete 뒤·다음 턴 시작 전에 삽입한다", () => {
+describe("turn_summary — 응답 anchor 직접 캡션 투영", () => {
+  it("뒤 이벤트가 표시된 후 늦게 도착해도 final response 바로 뒤에 삽입한다", () => {
     const ctx = createProcessingContext();
     const initial = processEventsBatch(
       [
@@ -673,21 +673,21 @@ describe("turn_summary — 턴 경계 캡션 투영", () => {
 
     expect(after.map((message) => message.treeNodeType)).toEqual([
       "assistant_message",
-      "complete",
       "turn_summary",
+      "complete",
       "user_message",
     ]);
-    expect(after[2]).toMatchObject({
+    expect(after[1]).toMatchObject({
       role: "system",
       content: "턴에서 결정한 내용을 요약했다.",
       eventId: 140,
     });
     expect(after[0]).toBe(before[0]);
-    expect(after[1]).toBe(before[1]);
+    expect(after[2]).toBe(before[1]);
     expect(after[3]).toBe(before[2]);
   });
 
-  it("summary가 먼저 로드되고 anchor·같은 턴 행이 다음 pagination 페이지로 와도 같은 위치를 복원한다", () => {
+  it("summary가 먼저 로드되면 숨고 anchor가 pagination으로 오면 같은 stable key로 결합한다", () => {
     const ctx = createProcessingContext();
     const latestPage = processEventsBatch(
       [
@@ -702,7 +702,6 @@ describe("turn_summary — 턴 경계 캡션 투영", () => {
     );
 
     expect(flattenTree(latestPage.root).map((message) => message.treeNodeType)).toEqual([
-      "turn_summary",
       "user_message",
     ]);
 
@@ -721,8 +720,8 @@ describe("turn_summary — 턴 경계 캡션 투영", () => {
 
     expect(flattenTree(olderPage.root).map((message) => message.treeNodeType)).toEqual([
       "assistant_message",
-      "complete",
       "turn_summary",
+      "complete",
       "user_message",
     ]);
   });
@@ -749,7 +748,7 @@ describe("turn_summary — 턴 경계 캡션 투영", () => {
       },
       expectedType: "session_notification",
     },
-  ])("$label도 다음 턴 시작 경계로 취급한다", ({ event, expectedType }) => {
+  ])("$label이 뒤에 있어도 summary는 final response 바로 뒤다", ({ event, expectedType }) => {
     const ctx = createProcessingContext();
     const result = processEventsBatch(
       [
@@ -767,22 +766,23 @@ describe("turn_summary — 턴 경계 캡션 투영", () => {
 
     expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual([
       "assistant_message",
-      "complete",
       "turn_summary",
+      "complete",
       expectedType,
     ]);
   });
 
-  it("표시에 필요 없는 필드가 빠지고 미지 필드가 있어도 content와 anchor가 유효하면 렌더한다", () => {
+  it("final이 미로딩이고 parent가 로딩됐으면 parent 바로 뒤에 렌더한다", () => {
     const ctx = createProcessingContext();
     const result = processEventsBatch(
       [
+        makeAssistantMessageEvent(118, "parent 응답"),
         {
           event: {
             type: "turn_summary",
-            content: "최소 payload 요약",
+            content: "parent fallback 요약",
             final_response_event_id: 119,
-            future_metadata: "ignored",
+            parent_event_id: 118,
           } as unknown as SoulSSEEvent,
           eventId: 140,
         },
@@ -796,9 +796,73 @@ describe("turn_summary — 턴 경계 캡션 투영", () => {
 
     expect(flattenTree(result.root)).toEqual([
       expect.objectContaining({
-        treeNodeType: "turn_summary",
-        content: "최소 payload 요약",
+        treeNodeType: "assistant_message",
+        eventId: 118,
       }),
+      expect.objectContaining({
+        treeNodeType: "turn_summary",
+        content: "parent fallback 요약",
+      }),
+    ]);
+  });
+
+  it("유효 anchor 후보가 없는 legacy만 자기 event ID 위치로 fail-open한다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        makeUserMessageEvent(100),
+        {
+          event: {
+            type: "turn_summary",
+            content: "legacy 요약",
+          } as unknown as SoulSSEEvent,
+          eventId: 110,
+        },
+        makeAssistantMessageEvent(120, "후속 응답"),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual([
+      "user_message",
+      "turn_summary",
+      "assistant_message",
+    ]);
+  });
+
+  it("숫자 문자열 anchor는 유효한 safe integer가 아니므로 legacy 위치로 fail-open한다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        makeAssistantMessageEvent(100, "앞 응답"),
+        {
+          event: {
+            type: "turn_summary",
+            content: "문자열 anchor 요약",
+            final_response_event_id: "130",
+            parent_event_id: "130",
+          } as unknown as SoulSSEEvent,
+          eventId: 110,
+        },
+        makeCompleteEvent(120),
+        makeAssistantMessageEvent(130, "문자열이 가리킨 응답"),
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual([
+      "assistant_message",
+      "turn_summary",
+      "complete",
+      "assistant_message",
     ]);
   });
 
