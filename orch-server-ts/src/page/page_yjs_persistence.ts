@@ -12,6 +12,7 @@ import {
   readPageYDocReplica,
   type PageYjsReplica,
 } from "./page_yjs_model.js";
+import { isCommittedPageSnapshotOrigin } from "./page_committed_snapshot_sync.js";
 
 export interface StorePageYjsStateInput {
   documentName: string;
@@ -151,6 +152,7 @@ export function createPageYjsPersistence(
       return pending ? Y.mergeUpdates([snapshot, pending]) : snapshot;
     },
     store: async (payload: storePayload) => {
+      if (isCommittedPageSnapshotOrigin(payload.transactionOrigin)) return;
       const pageId = requirePageDocumentName(payload.documentName);
       const context = payload.context as {
         pageLockHeld?: unknown;
@@ -193,7 +195,10 @@ export function createPageYjsPersistence(
     extensionName: "soulstream-page-yjs-update-collector",
     async onChange(payload: onChangePayload) {
       requirePageDocumentName(payload.documentName);
-      if (typeof payload.transactionOrigin === "string") return;
+      if (
+        typeof payload.transactionOrigin === "string" ||
+        isCommittedPageSnapshotOrigin(payload.transactionOrigin)
+      ) return;
       mergePendingUpdate(payload.documentName, payload.update);
     },
   };
