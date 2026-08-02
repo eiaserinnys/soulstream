@@ -22,6 +22,8 @@ export * from "./contract/route_registry.js";
 export type * from "./contract/types.js";
 export * from "./dashboard/dashboard_serving.js";
 export * from "./execute/execute_proxy_routes.js";
+export * from "./llm/codex_ephemeral_executor.js";
+export * from "./llm/ephemeral_llm_routes.js";
 export * from "./folders/folder_routes.js";
 export * from "./node/node_agent_profile_routes.js";
 export * from "./node/node_claude_auth_routes.js";

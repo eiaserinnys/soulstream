@@ -146,6 +146,13 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   {
+    methods: ["POST"],
+    path: "/api/llm/ephemeral",
+    name: "create_ephemeral_llm_response",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
     methods: ["GET"],
     path: "/api/usage/summary",
     name: "get_usage_summary",

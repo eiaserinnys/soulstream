@@ -8,6 +8,7 @@ import { boardYjsHostProxyRouteAuthRequirements } from "../board/board_yjs_host_
 import { markdownDocumentRouteAuthRequirements } from "../board/markdown_document_routes.js";
 import { cogitoRouteAuthRequirements } from "../cogito/cogito_routes.js";
 import { executeProxyRouteAuthRequirements } from "../execute/execute_proxy_routes.js";
+import { ephemeralLlmRouteAuthRequirements } from "../llm/ephemeral_llm_routes.js";
 import { folderRouteAuthRequirements } from "../folders/folder_routes.js";
 import { nodeAgentProfileRouteAuthRequirements } from "../node/node_agent_profile_routes.js";
 import { nodeClaudeAuthRouteAuthRequirements } from "../node/node_claude_auth_routes.js";
@@ -42,6 +43,7 @@ export const routeCoverageOwners = [
   { owner: "board.yjs-host", authRequirements: boardYjsHostProxyRouteAuthRequirements },
   { owner: "cogito", authRequirements: cogitoRouteAuthRequirements },
   { owner: "execute", authRequirements: executeProxyRouteAuthRequirements },
+  { owner: "llm.ephemeral", authRequirements: ephemeralLlmRouteAuthRequirements },
   { owner: "folders", authRequirements: folderRouteAuthRequirements },
   { owner: "markdown.documents", authRequirements: markdownDocumentRouteAuthRequirements },
   { owner: "page.yjs", authRequirements: pageYjsRouteAuthRequirements },

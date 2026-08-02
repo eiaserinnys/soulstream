@@ -51,6 +51,10 @@ import {
   type ExecuteProxyRouteOptions,
 } from "./execute/execute_proxy_routes.js";
 import {
+  registerEphemeralLlmRoutes,
+  type EphemeralLlmRouteOptions,
+} from "./llm/ephemeral_llm_routes.js";
+import {
   registerTaskRoutes,
   type TaskRouteOptions,
 } from "./tasks/task_routes.js";
@@ -163,6 +167,7 @@ export type CreateAppOptions = {
   systemConfigRoutes?: SystemConfigRouteOptions;
   runtimeMemoryRoutes?: RuntimeMemoryRouteOptions;
   executeProxyRoutes?: ExecuteProxyRouteOptions;
+  ephemeralLlmRoutes?: EphemeralLlmRouteOptions;
   pushRoutes?: PushRouteOptions;
   publicStatusRoutes?: PublicStatusRouteOptions;
   userBackgroundRoutes?: UserBackgroundRouteOptions;
@@ -247,6 +252,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.executeProxyRoutes !== undefined) {
     registerExecuteProxyRoutes(app, options.executeProxyRoutes);
+  }
+  if (options.ephemeralLlmRoutes !== undefined) {
+    registerEphemeralLlmRoutes(app, options.ephemeralLlmRoutes);
   }
   if (options.pushRoutes !== undefined) {
     registerPushRoutes(app, options.pushRoutes);
