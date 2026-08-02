@@ -192,6 +192,18 @@ describe("TurnSummaryConfigService", () => {
     expect(turnInstruction).toContain(
       "사용자와 이 세션의 에이전트와 위임 세션을 서로 뒤바꾸지 말라",
     );
+    expect(turnInstruction).toContain(
+      "첫 문장은 무엇이 달라졌는지 결과부터",
+    );
+    expect(turnInstruction).toContain(
+      "완료·진행 중·착수·상태 불명 중 하나",
+    );
+    expect(turnInstruction).toContain(
+      "판단 근거가 없으면 반드시 상태 불명",
+    );
+    expect(turnInstruction).toContain(
+      "PR 번호·P0/P1·내부 계약",
+    );
     const storyInstruction = service.read().storyInstruction;
     expect(storyInstruction).toContain("[T12]");
     expect(storyInstruction).toContain("[T12-T15]");
@@ -200,6 +212,15 @@ describe("TurnSummaryConfigService", () => {
     );
     expect(storyInstruction).toContain(
       "결정이 번복된 경우 번복 이력을 시간 순서대로 남긴다",
+    );
+    expect(storyInstruction).toContain(
+      "narrative와 highlight의 서두에는 무엇이 달라졌는지 결과와 현재 상태를 먼저",
+    );
+    expect(storyInstruction).toContain(
+      "절차와 경과는 그 뒤에",
+    );
+    expect(storyInstruction).toContain(
+      "PR 번호·P0/P1·내부 계약",
     );
   });
 
