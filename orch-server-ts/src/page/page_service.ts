@@ -51,6 +51,7 @@ import {
   notifyPageUpdates,
   type PageUpdatedObserver,
 } from "./page_update_notifications.js";
+import { syncCommittedPageSnapshot } from "./page_committed_snapshot_sync.js";
 
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
@@ -207,7 +208,7 @@ export class PageYjsService {
       if (committed.idempotent) return await this.resultFromCommit(committed);
       const result = toMutationResult(application.replica, application.tempIdMapping, committed);
       notifyPageUpdates([result], this.config.onPageUpdated, this.config.logger);
-      await this.hydrateCommittedPage(documentName);
+      await this.syncCommittedPage(documentName, true);
       return result;
     });
   }
@@ -269,7 +270,7 @@ export class PageYjsService {
       mutex: this.mutex,
       hocuspocus: this.hocuspocus,
       createOperationId: this.createOperationId,
-      hydrateCommittedPage: async (documentName) => await this.hydrateCommittedPage(documentName),
+      hydrateCommittedPage: async (documentName) => await this.syncCommittedPage(documentName, true),
       decodeSnapshot: (snapshot) => this.decodeSnapshot(snapshot),
       toMutationResult,
     }, input);
@@ -380,12 +381,17 @@ export class PageYjsService {
   }
 
   async hydrateCommittedPage(documentName: string): Promise<void> {
-    const connection = await this.hocuspocus.openDirectConnection(documentName, {
-      pageLockHeld: true,
-      source: "page-operation",
-      skipPagePersistence: true,
+    await this.syncCommittedPage(documentName, false);
+  }
+
+  private async syncCommittedPage(documentName: string, pageLockHeld: boolean): Promise<void> {
+    await syncCommittedPageSnapshot({
+      documentName,
+      repository: this.config.repository,
+      coordinator: this.mutex,
+      hocuspocus: this.hocuspocus,
+      pageLockHeld,
     });
-    await connection.disconnect();
   }
 
   private async openConnection(
