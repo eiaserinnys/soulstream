@@ -97,7 +97,12 @@ export function ProjectDialog({
   const canSubmit = !loadFailed && value.title.trim().length > 0
     && assignmentValid
     && value.guidance.every((item) => item.text.trim().length > 0)
-    && value.atomReferences.every((item) => item.nodeId.trim().length > 0 && item.depth >= 1 && item.depth <= 5);
+    && value.atomReferences.every((item) => (
+      item.nodeId.trim().length > 0
+      && item.depth >= 1
+      && item.depth <= 5
+      && (item.limit == null || (Number.isInteger(item.limit) && item.limit > 0))
+    ));
 
   const submit = async () => {
     if (!target || pending || !canSubmit) return;
@@ -172,6 +177,7 @@ function ProjectFormFields({
     nodeTitle: "",
     depth: 3,
     titlesOnly: false,
+    limit: null,
   }), []);
   return (
     <div className="v3-project-dialog-form" data-testid="v3-project-dialog-form">

@@ -84,6 +84,7 @@ export function initialTaskContextOperations({
         nodeTitle: reference.nodeTitle,
         depth: reference.depth,
         titlesOnly: reference.titlesOnly,
+        ...(reference.limit !== undefined ? { limit: reference.limit } : {}),
       },
     })),
     ...(context.sessionDefaults ? [{

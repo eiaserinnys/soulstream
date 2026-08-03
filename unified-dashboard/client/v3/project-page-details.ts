@@ -7,6 +7,7 @@ export interface ProjectAtomReference {
   nodeTitle: string;
   depth: number | null;
   titlesOnly: boolean | null;
+  limit?: number | null;
 }
 
 export interface ProjectGuidance {
@@ -59,6 +60,7 @@ export function parseProjectPageDetails(blocks: readonly BlockDto[]): ProjectPag
           ?? nodeId,
         depth: normalizeAtomDepth(block.properties.depth),
         titlesOnly: block.properties.titlesOnly === true,
+        limit: normalizeAtomLimit(block.properties.limit),
       }];
     }),
     sessionDefaults: blocks.flatMap((block) => {
@@ -105,4 +107,8 @@ function stringProperty(properties: Record<string, unknown>, key: string): strin
 function normalizeAtomDepth(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 3;
   return Math.min(5, Math.max(1, Math.trunc(value)));
+}
+
+function normalizeAtomLimit(value: unknown): number | null {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
 }

@@ -343,6 +343,7 @@ function toCandidate(
     nodeId,
     depth: normalizeAtomDepth(block.properties.depth),
     titlesOnly: block.properties.titlesOnly === true,
+    ...normalizeAtomLimit(block.properties.limit),
   };
 }
 
@@ -363,6 +364,7 @@ async function enrichAtomRefCandidates(
         candidate.depth,
         candidate.titlesOnly,
         logger,
+        candidate.limit,
       );
       return [candidate, text] as const;
     } catch (err) {
@@ -387,6 +389,12 @@ async function enrichAtomRefCandidates(
 function normalizeAtomDepth(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 3;
   return Math.min(5, Math.max(1, Math.trunc(value)));
+}
+
+function normalizeAtomLimit(value: unknown): { limit?: number } {
+  return Number.isInteger(value) && Number(value) > 0
+    ? { limit: Number(value) }
+    : {};
 }
 
 function failure(

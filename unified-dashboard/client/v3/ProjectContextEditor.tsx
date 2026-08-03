@@ -36,7 +36,7 @@ import type {
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 
 type EditorState =
-  | { kind: "atom"; blockId: string | null; instance: "atom" | "atom-nl"; nodeId: string; nodeTitle: string; depth: number; titlesOnly: boolean }
+  | { kind: "atom"; blockId: string | null; instance: "atom" | "atom-nl"; nodeId: string; nodeTitle: string; depth: number; titlesOnly: boolean; limit: number | null }
   | {
       kind: "defaults";
       blockId: string | null;
@@ -335,6 +335,7 @@ function atomEditor(reference: ProjectAtomReference): AtomEditorState {
     nodeTitle: reference.nodeTitle,
     depth: reference.depth ?? 3,
     titlesOnly: reference.titlesOnly ?? false,
+    limit: reference.limit ?? null,
   };
 }
 
@@ -347,6 +348,7 @@ function emptyAtomEditor(): AtomEditorState {
     nodeTitle: "",
     depth: 3,
     titlesOnly: false,
+    limit: null,
   };
 }
 

@@ -109,10 +109,42 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
     expect(callUrl).toContain("titles_only=true");
     expect(callUrl).toContain("include_ids=true");
     expect(callUrl).toContain("max_chars=50000");
+    expect(callUrl).not.toContain("limit=");
 
     // x-api-key header
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect((init.headers as Record<string, string>)["x-api-key"]).toBe("k");
+  });
+
+  it("limit 값마다 compile 요청과 반환 context가 달라진다", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+      .mockImplementation(async (input) => {
+        const limit = new URL(input.toString()).searchParams.get("limit");
+        return new Response(JSON.stringify({ markdown: `compiled-${limit}` }), { status: 200 });
+      });
+
+    const limitedToOne = await fetchAtomContext(
+      { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
+      "n-1",
+      1,
+      false,
+      silentLogger,
+      1,
+    );
+    const limitedToThree = await fetchAtomContext(
+      { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
+      "n-3",
+      1,
+      false,
+      silentLogger,
+      3,
+    );
+
+    expect(new URL(fetchMock.mock.calls[0]![0].toString()).searchParams.get("limit")).toBe("1");
+    expect(new URL(fetchMock.mock.calls[1]![0].toString()).searchParams.get("limit")).toBe("3");
+    expect(limitedToOne).toContain("compiled-1");
+    expect(limitedToThree).toContain("compiled-3");
+    expect(limitedToOne).not.toBe(limitedToThree);
   });
 
   it("non-200 → null (graceful)", async () => {
@@ -170,6 +202,7 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
           nodeId: "11111111-2222-3333-4444-555555555555",
           depth: 1,
           titlesOnly: true,
+          limit: 2,
         },
         {
           nodeId: "66666666-7777-8888-9999-aaaaaaaaaaaa",
@@ -187,6 +220,8 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
     expect(out).toContain("depth=4, titles_only=false");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("titles_only=true");
+    expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("limit=2");
     expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("titles_only=true");
+    expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("limit=");
   });
 });

@@ -41,6 +41,13 @@ describe("TaskIdentityService", () => {
           nodeTitle: "soulstream",
           depth: 4,
           titlesOnly: true,
+          limit: 3,
+        }, {
+          instance: "atom",
+          nodeId: "node-unlimited",
+          nodeTitle: "unlimited",
+          depth: 2,
+          titlesOnly: false,
         }],
         sessionDefaults: {
           agentId: "roselin_codex",
@@ -78,6 +85,17 @@ describe("TaskIdentityService", () => {
           nodeTitle: "soulstream",
           depth: 4,
           titlesOnly: true,
+          limit: 3,
+        },
+      }),
+      expect.objectContaining({
+        type: "atom_ref",
+        properties: {
+          instance: "atom",
+          nodeId: "node-unlimited",
+          nodeTitle: "unlimited",
+          depth: 2,
+          titlesOnly: false,
         },
       }),
       expect.objectContaining({

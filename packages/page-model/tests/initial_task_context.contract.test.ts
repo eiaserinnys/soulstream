@@ -15,6 +15,7 @@ describe("initial task context wire", () => {
         nodeTitle: "soulstream",
         depth: 5,
         titlesOnly: true,
+        limit: 3,
       }],
       sessionDefaults: {
         agentId: "roselin_codex",
@@ -32,6 +33,7 @@ describe("initial task context wire", () => {
         node_title: "soulstream",
         depth: 5,
         titles_only: true,
+        limit: 3,
       }],
       session_defaults: {
         agent_id: "roselin_codex",
@@ -55,6 +57,38 @@ describe("initial task context wire", () => {
         titles_only: false,
       }],
     })).toMatchObject({ ok: false });
+  });
+
+  it("keeps an omitted limit omitted and rejects non-positive limits", () => {
+    const context = {
+      guidance: "",
+      atomReferences: [{
+        instance: "atom" as const,
+        nodeId: "node-a",
+        nodeTitle: "soulstream",
+        depth: 3,
+        titlesOnly: false,
+      }],
+    };
+
+    expect(serializeInitialTaskContext(context)?.atom_references?.[0]).not.toHaveProperty("limit");
+    expect(parseInitialTaskContextWire(serializeInitialTaskContext(context))).toEqual({
+      ok: true,
+      value: context,
+    });
+    expect(parseInitialTaskContextWire({
+      atom_references: [{
+        instance: "atom",
+        node_id: "node-a",
+        node_title: "soulstream",
+        depth: 3,
+        titles_only: false,
+        limit: 0,
+      }],
+    })).toEqual({
+      ok: false,
+      error: "initial_context.atom_references[0].limit must be a positive integer",
+    });
   });
 
   it("accepts session defaults as the only initial context", () => {

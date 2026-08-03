@@ -4,6 +4,7 @@ export interface InitialTaskAtomReference {
   nodeTitle: string;
   depth: number;
   titlesOnly: boolean;
+  limit?: number;
 }
 
 export interface InitialTaskSessionDefaults {
@@ -26,6 +27,7 @@ export interface InitialTaskContextWire {
     node_title: string;
     depth: number;
     titles_only: boolean;
+    limit?: number;
   }>;
   session_defaults?: {
     agent_id: string;
@@ -96,12 +98,16 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
     if (typeof candidate.titles_only !== "boolean") {
       return { ok: false, error: `initial_context.atom_references[${index}].titles_only must be a boolean` };
     }
+    if (candidate.limit !== undefined && (!Number.isInteger(candidate.limit) || Number(candidate.limit) < 1)) {
+      return { ok: false, error: `initial_context.atom_references[${index}].limit must be a positive integer` };
+    }
     atomReferences.push({
       instance: candidate.instance,
       nodeId,
       nodeTitle,
       depth: candidate.depth as number,
       titlesOnly: candidate.titles_only,
+      ...(candidate.limit !== undefined ? { limit: candidate.limit as number } : {}),
     });
   }
 
@@ -130,6 +136,7 @@ export function serializeInitialTaskContext(
     node_title: reference.nodeTitle.trim(),
     depth: reference.depth,
     titles_only: reference.titlesOnly,
+    ...(reference.limit !== undefined ? { limit: reference.limit } : {}),
   }));
   const sessionDefaults = context.sessionDefaults
     ? {

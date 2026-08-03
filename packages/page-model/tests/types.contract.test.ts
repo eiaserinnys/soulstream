@@ -48,6 +48,9 @@ describe("page model DTO contract", () => {
     expectTypeOf<AtomRefBlockProperties["titlesOnly"]>().toEqualTypeOf<
       boolean | undefined
     >();
+    expectTypeOf<AtomRefBlockProperties["limit"]>().toEqualTypeOf<
+      number | undefined
+    >();
     expectTypeOf<PageBlockProperties<"checklist">>().toEqualTypeOf<ChecklistBlockProperties>();
     expectTypeOf<PageBlockProperties<"session_defaults">>().toEqualTypeOf<
       SessionDefaultsBlockProperties

@@ -7,10 +7,10 @@ export function ProjectAtomChip({
   reference,
   onClick,
 }: {
-  reference: Pick<ProjectAtomReference, "nodeTitle" | "depth" | "titlesOnly">;
+  reference: Pick<ProjectAtomReference, "nodeTitle" | "depth" | "titlesOnly" | "limit">;
   onClick?: () => void;
 }) {
-  const content = <>⚛ {reference.nodeTitle} · depth {reference.depth ?? 3} · titlesOnly {(reference.titlesOnly ?? false) ? "on" : "off"}</>;
+  const content = <>⚛ {reference.nodeTitle} · depth {reference.depth ?? 3} · titlesOnly {(reference.titlesOnly ?? false) ? "on" : "off"}{reference.limit == null ? null : <> · 최근 {reference.limit}개</>}</>;
   return onClick ? (
     <button type="button" className="v3-project-context-chip" onClick={onClick}>{content}</button>
   ) : (

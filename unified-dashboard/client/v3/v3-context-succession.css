@@ -179,7 +179,18 @@
   font: inherit;
 }
 
-.v3-context-option-settings select:focus-visible {
+.v3-context-option-settings input[type="number"] {
+  width: 64px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 5px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+}
+
+.v3-context-option-settings select:focus-visible,
+.v3-context-option-settings input[type="number"]:focus-visible {
   border-color: var(--info);
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);

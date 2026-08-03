@@ -134,12 +134,12 @@ export function TaskContextPicker({
     setSelected((current) => new Map(current).set(selection.key, selection));
   };
 
-  const updateAtomOptions = (key: string, depth: number, titlesOnly: boolean) => {
+  const updateAtomOptions = (key: string, depth: number, titlesOnly: boolean, limit?: number) => {
     setSelected((current) => {
       const selection = current.get(key);
       if (!selection || selection.kind !== "atom") return current;
       const next = new Map(current);
-      next.set(key, { ...selection, depth, titlesOnly });
+      next.set(key, withAtomOptions(selection, depth, titlesOnly, limit));
       return next;
     });
   };
@@ -187,11 +187,13 @@ export function TaskContextPicker({
                   meta={selection.nodeId}
                   depth={selection.depth}
                   titlesOnly={selection.titlesOnly}
+                  limit={selection.limit}
                   disabled={pending}
-                  onOptionsChange={(depth, titlesOnly) => updateAtomOptions(
+                  onOptionsChange={(depth, titlesOnly, limit) => updateAtomOptions(
                     selection.key,
                     depth,
                     titlesOnly,
+                    limit,
                   )}
                   onRemove={() => toggle(selection)}
                 />
@@ -251,12 +253,13 @@ export function InitialTaskContextPicker({
     nodeId: string,
     depth: number,
     titlesOnly: boolean,
+    limit?: number,
   ) => {
     onChange({
       ...value,
       atomReferences: value.atomReferences.map((reference) => (
         reference.instance === instance && reference.nodeId === nodeId
-          ? { ...reference, depth, titlesOnly }
+          ? withAtomOptions(reference, depth, titlesOnly, limit)
           : reference
       )),
     });
@@ -314,12 +317,14 @@ export function InitialTaskContextPicker({
                       meta={reference.nodeId}
                       depth={reference.depth}
                       titlesOnly={reference.titlesOnly}
+                      limit={reference.limit}
                       disabled={disabled}
-                      onOptionsChange={(depth, titlesOnly) => updateAtomOptions(
+                      onOptionsChange={(depth, titlesOnly, limit) => updateAtomOptions(
                         reference.instance,
                         reference.nodeId,
                         depth,
                         titlesOnly,
+                        limit,
                       )}
                       onRemove={() => onChange({
                         ...value,
@@ -345,6 +350,7 @@ function SelectedAtomOption({
   meta,
   depth,
   titlesOnly,
+  limit,
   disabled,
   onOptionsChange,
   onRemove,
@@ -353,8 +359,9 @@ function SelectedAtomOption({
   meta: string;
   depth: number;
   titlesOnly: boolean;
+  limit?: number;
   disabled: boolean;
-  onOptionsChange(depth: number, titlesOnly: boolean): void;
+  onOptionsChange(depth: number, titlesOnly: boolean, limit?: number): void;
   onRemove(): void;
 }) {
   return (
@@ -368,10 +375,26 @@ function SelectedAtomOption({
             aria-label={`${title} atom depth`}
             value={depth}
             disabled={disabled}
-            onChange={(event) => onOptionsChange(Number(event.target.value), titlesOnly)}
+            onChange={(event) => onOptionsChange(Number(event.target.value), titlesOnly, limit)}
           >
             {[1, 2, 3, 4, 5].map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
+        </label>
+        <label>
+          최근 자식 수
+          <input
+            type="number"
+            min={1}
+            value={limit ?? ""}
+            placeholder="전체"
+            aria-label={`${title} 최근 자식 수`}
+            disabled={disabled}
+            onChange={(event) => onOptionsChange(
+              depth,
+              titlesOnly,
+              event.target.value === "" ? undefined : Number(event.target.value),
+            )}
+          />
         </label>
         <label>
           <input
@@ -379,7 +402,7 @@ function SelectedAtomOption({
             aria-label={`${title} 제목만 포함`}
             checked={titlesOnly}
             disabled={disabled}
-            onChange={(event) => onOptionsChange(depth, event.target.checked)}
+            onChange={(event) => onOptionsChange(depth, event.target.checked, limit)}
           />
           제목만
         </label>
@@ -395,6 +418,17 @@ function SelectedAtomOption({
       </button>
     </div>
   );
+}
+
+function withAtomOptions<T extends { depth: number; titlesOnly: boolean; limit?: number }>(
+  reference: T,
+  depth: number,
+  titlesOnly: boolean,
+  limit?: number,
+): T {
+  const updated = { ...reference, depth, titlesOnly, limit };
+  if (limit === undefined) delete updated.limit;
+  return updated;
 }
 
 function ContextOption({ icon, title, meta, selected, disabled = false, onClick }: {

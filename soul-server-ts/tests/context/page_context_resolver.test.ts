@@ -234,12 +234,13 @@ describe("AncestorPageContextResolver", () => {
   });
 
   it("parses atom_ref depth and titlesOnly, clamps depth, and compiles selected refs", async () => {
-    vi.mocked(globalThis.fetch).mockImplementation(async () =>
-      new Response(JSON.stringify({ markdown: "compiled" }), {
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) => {
+      const limit = new URL(input.toString()).searchParams.get("limit") ?? "all";
+      return new Response(JSON.stringify({ markdown: `compiled-${limit}` }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
-      }),
-    );
+      });
+    });
     const repo = repository({
       pages: {
         target: page("target", [
@@ -248,17 +249,20 @@ describe("AncestorPageContextResolver", () => {
             nodeId: "node-max",
             depth: 99,
             titlesOnly: true,
+            limit: 3,
           }),
           block("default", "max", "atom_ref", "", {
             instance: "atom",
             nodeId: "node-default",
             depth: "not-a-number",
             titlesOnly: "true",
+            limit: "3",
           }),
           block("min", "default", "atom_ref", "", {
             instance: "atom",
             nodeId: "node-min",
             depth: -4,
+            limit: 0,
           }),
           block("anchor", "min", "session_ref"),
         ]),
@@ -270,10 +274,12 @@ describe("AncestorPageContextResolver", () => {
       nodeId: entry.node_id,
       depth: entry.depth,
       titlesOnly: entry.titles_only,
+      limit: entry.limit ?? null,
+      markdown: entry.markdown,
     }))).toEqual([
-      { nodeId: "node-max", depth: 5, titlesOnly: true },
-      { nodeId: "node-default", depth: 3, titlesOnly: false },
-      { nodeId: "node-min", depth: 1, titlesOnly: false },
+      { nodeId: "node-max", depth: 5, titlesOnly: true, limit: 3, markdown: expect.stringContaining("compiled-3") },
+      { nodeId: "node-default", depth: 3, titlesOnly: false, limit: null, markdown: expect.stringContaining("compiled-all") },
+      { nodeId: "node-min", depth: 1, titlesOnly: false, limit: null, markdown: expect.stringContaining("compiled-all") },
     ]);
     const urls = vi.mocked(globalThis.fetch).mock.calls.map(
       (call) => new URL(call[0].toString()),
@@ -284,6 +290,7 @@ describe("AncestorPageContextResolver", () => {
       false,
       true,
     ]);
+    expect(urls.map((url) => url.searchParams.get("limit"))).toEqual([null, null, "3"]);
   });
 
   it("compiles only the nearest duplicate atom_ref and preserves its depth", async () => {

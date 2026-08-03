@@ -23,6 +23,7 @@ export interface AtomRefPageContextCandidate extends CandidateBase {
   nodeId: string;
   depth: number;
   titlesOnly: boolean;
+  limit?: number;
   compiledText?: string;
 }
 
@@ -133,6 +134,7 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
               node_id: candidate.nodeId,
               depth: candidate.depth,
               titles_only: candidate.titlesOnly,
+              ...(candidate.limit !== undefined ? { limit: candidate.limit } : {}),
               markdown: candidate.compiledText!.slice(0, used),
               ...(truncated ? { truncated: true } : {}),
             }),

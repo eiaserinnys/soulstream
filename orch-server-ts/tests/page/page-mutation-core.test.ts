@@ -370,6 +370,34 @@ describe("PageMutationCore", () => {
     ))).toBe(false);
   });
 
+  it("accepts a positive atom_ref limit and rejects invalid limits at the storage boundary", () => {
+    const core = createCore();
+    const created = createPage(core);
+    const valid = core.mutate(created.document, mutation(1, {
+      type: "batch_operations",
+      operations: [structuralBlock("atom-limit", "atom_ref", {
+        instance: "atom",
+        nodeId: "node-1",
+        limit: 3,
+      })],
+    }, "valid-atom-limit"));
+    expect(valid.replica.blocks).toContainEqual(expect.objectContaining({
+      type: "atom_ref",
+      properties: expect.objectContaining({ limit: 3 }),
+    }));
+
+    for (const limit of [0, -1, 1.5, "3"]) {
+      expect(() => core.mutate(created.document, mutation(1, {
+        type: "batch_operations",
+        operations: [structuralBlock(`invalid-${String(limit)}`, "atom_ref", {
+          instance: "atom",
+          nodeId: "node-1",
+          limit,
+        })],
+      }, `invalid-atom-limit-${String(limit)}`))).toThrow("atom_ref.limit must be a positive integer");
+    }
+  });
+
   it("requires valid actor provenance and idempotency keys", () => {
     const core = createCore();
     expect(() => core.createPage({

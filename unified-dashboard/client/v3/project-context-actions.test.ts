@@ -49,6 +49,7 @@ describe("project context page mutations", () => {
       nodeTitle: "기존",
       depth: 3,
       titlesOnly: false,
+      limit: 8,
     }, "atom_ref")]);
 
     await saveProjectAtomReference(api, "project", {
@@ -57,6 +58,7 @@ describe("project context page mutations", () => {
       nodeTitle: "새 노드",
       depth: 5,
       titlesOnly: true,
+      limit: 3,
     }, () => "request-3");
     expect(api.applyOperations).toHaveBeenLastCalledWith("project", expect.objectContaining({
       operations: [{
@@ -69,6 +71,7 @@ describe("project context page mutations", () => {
           nodeTitle: "새 노드",
           depth: 5,
           titlesOnly: true,
+          limit: 3,
         },
       }],
     }));
@@ -79,7 +82,20 @@ describe("project context page mutations", () => {
       nodeTitle: "노드",
       depth: 6,
       titlesOnly: false,
+      limit: null,
     }, () => "invalid")).rejects.toThrow("1~5");
+
+    await saveProjectAtomReference(api, "project", {
+      blockId: "atom",
+      nodeId: "new-node",
+      nodeTitle: "새 노드",
+      depth: 5,
+      titlesOnly: true,
+      limit: null,
+    }, () => "clear-limit");
+    const clearedProperties = (api.applyOperations as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]
+      .operations[0].properties;
+    expect(clearedProperties).not.toHaveProperty("limit");
 
     await deleteProjectContextBlock(api, "project", "atom", () => "request-4");
     expect(api.applyOperations).toHaveBeenLastCalledWith("project", expect.objectContaining({

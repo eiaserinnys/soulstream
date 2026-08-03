@@ -8,6 +8,7 @@ export interface ProjectAtomFieldValue {
   nodeTitle: string;
   depth: number;
   titlesOnly: boolean;
+  limit?: number | null;
 }
 
 export function ProjectAtomFields({
@@ -50,6 +51,21 @@ export function ProjectAtomFields({
           value={value.depth}
           disabled={disabled}
           onChange={(event) => onChange({ ...value, depth: Number(event.target.value) })}
+        />
+      </label>
+      <label>
+        최근 자식 수
+        <input
+          type="number"
+          min={1}
+          value={value.limit ?? ""}
+          placeholder="전체"
+          aria-label="atom 최근 자식 수"
+          disabled={disabled}
+          onChange={(event) => onChange({
+            ...value,
+            limit: event.target.value === "" ? null : Number(event.target.value),
+          })}
         />
       </label>
       <label>
