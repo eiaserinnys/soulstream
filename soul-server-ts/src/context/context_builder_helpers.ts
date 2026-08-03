@@ -1,5 +1,5 @@
 import type { CallerInfo, Task } from "../task/task_models.js";
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 
 import type { AtomContextSpec } from "./atom_context.js";
 import type { PreparedContext } from "./context_builder.js";
@@ -18,6 +18,11 @@ export interface PrioritizedAtomContextSpecs {
   agent: AtomContextSpec[];
 }
 
+export interface ProfileRuntimeSettings {
+  workingDir?: string;
+  maxTurns?: number;
+}
+
 export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   const parts: string[] = [];
   if (ctx.effectiveSystemPrompt) parts.push(ctx.effectiveSystemPrompt);
@@ -25,6 +30,26 @@ export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   if (contextBlock) parts.push(contextBlock);
   parts.push(ctx.assembledPrompt);
   return parts.join("\n\n");
+}
+
+export function composeEffectiveSystemPrompt(args: {
+  agentAtomMarkdown: string | null;
+  folderPrompt?: string;
+  taskSystemPrompt?: string;
+}): string | undefined {
+  return [args.agentAtomMarkdown, args.folderPrompt, args.taskSystemPrompt]
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n") || undefined;
+}
+
+export function resolveProfileRuntimeSettings(
+  task: Task,
+  registry: AgentRegistry,
+): ProfileRuntimeSettings {
+  if (!task.profileId) return {};
+  const profile = registry.get(task.profileId);
+  if (!profile) return {};
+  return { workingDir: profile.workspace_dir, maxTurns: profile.max_turns };
 }
 
 export function buildClaudeSessionIdUpdateContextItem(task: Task): ContextItem {

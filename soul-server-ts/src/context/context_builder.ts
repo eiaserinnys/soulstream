@@ -33,6 +33,7 @@ import {
   buildCallerInfoUpdateContextItem,
   buildClaudeSessionIdUpdateContextItem,
   callerInfoChanged,
+  composeEffectiveSystemPrompt,
   composeFirstTurnPrompt as composeFirstTurnPromptImpl,
   composeFolderPromptChain,
   extractAgentAtomContextSpecs,
@@ -40,6 +41,7 @@ import {
   extractFolderProjectPageIds,
   normalizeSettings,
   prioritizeAtomContextSpecs,
+  resolveProfileRuntimeSettings,
   type FolderChainEntry,
 } from "./context_builder_helpers.js";
 import {
@@ -173,7 +175,7 @@ export class ExecutionContextBuilder {
   async buildSystemPrompt(task: Task, agent: AgentProfile): Promise<string | undefined> {
     const { folderPrompt } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
-    return this._composeSystemPrompt({
+    return composeEffectiveSystemPrompt({
       agentAtomMarkdown,
       folderPrompt,
       taskSystemPrompt: task.systemPrompt,
@@ -221,7 +223,7 @@ export class ExecutionContextBuilder {
     );
     const predecessorSummaryItem = await buildPredecessorSummaryContextItem(this.db, this.logger, task.agentSessionId);
     const cogitoContextItem = await this._fetchCogitoContext();
-    const { workingDir, maxTurns } = this._resolveProfile(task);
+    const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
     return this._assembleContext({
       task,
       agent,
@@ -374,25 +376,6 @@ export class ExecutionContextBuilder {
     }
   }
 
-  /**
-   * profile_id → agent registry 조회 (Python L122-135).
-   *
-   * codex 노드는 allowed/disallowed_tools를 SDK가 받지 않아 메타만 보존(별건 카드).
-   * workspace_dir와 max_turns만 반환.
-   */
-  private _resolveProfile(task: Task): {
-    workingDir?: string;
-    maxTurns?: number;
-  } {
-    if (!task.profileId) return {};
-    const profile = this.registry.get(task.profileId);
-    if (!profile) return {};
-    return {
-      workingDir: profile.workspace_dir,
-      maxTurns: profile.max_turns,
-    };
-  }
-
   private _assembleContext(args: {
     task: Task;
     agent: AgentProfile;
@@ -410,7 +393,7 @@ export class ExecutionContextBuilder {
     workingDir?: string;
     maxTurns?: number;
   }): PreparedContext {
-    const effectiveSystemPrompt = this._composeSystemPrompt({
+    const effectiveSystemPrompt = composeEffectiveSystemPrompt({
       agentAtomMarkdown: args.agentAtomMarkdown,
       folderPrompt: args.folderPrompt,
       taskSystemPrompt: args.task.systemPrompt,
@@ -475,23 +458,6 @@ export class ExecutionContextBuilder {
     };
   }
 
-  private _composeSystemPrompt(args: {
-    agentAtomMarkdown: string | null;
-    folderPrompt?: string;
-    taskSystemPrompt?: string;
-  }): string | undefined {
-    const systemParts: string[] = [];
-    if (args.agentAtomMarkdown) {
-      systemParts.push(args.agentAtomMarkdown);
-    }
-    if (args.folderPrompt) {
-      systemParts.push(args.folderPrompt);
-    }
-    if (args.taskSystemPrompt) {
-      systemParts.push(args.taskSystemPrompt);
-    }
-    return systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
-  }
 }
 
 /** Keeps the public and cogito-reflected context composition entrypoint stable. */
