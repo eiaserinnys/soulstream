@@ -51,8 +51,10 @@ type ResponseWaitSignal = {
 
 const COMPLETION_SOURCES = new Set(["slack", "browser", "soul-app"]);
 const INPUT_REQUEST_SOURCES = new Set([...COMPLETION_SOURCES, "agent"]);
-const TERMINAL_STATUSES = new Set(["completed", "error"]);
-export const PUSH_TERMINAL_STATUS_TTL_MS = 10 * 60_000;
+const TERMINAL_NOTIFICATION_TITLES = new Map([
+  ["completed", "세션 완료"],
+  ["error", "세션 오류"],
+]);
 export const PUSH_TOOL_INPUT_TTL_MS = 60 * 60_000;
 const PUSH_BODY_MAX = 100;
 const INPUT_EXCERPT_MAX = 50;
@@ -84,7 +86,6 @@ export class SessionForegroundObserverTracker {
 }
 
 export class PushNotifier {
-  private readonly lastStatus = new Map<string, { status: string; atMs: number }>();
   private readonly toolInputs = new Map<string, { value: unknown; atMs: number }>();
   private readonly pending = new Set<Promise<void>>();
   private readonly warn: (message: string, error?: unknown) => void;
@@ -123,15 +124,17 @@ export class PushNotifier {
       this.clearNodeState(event.nodeId);
       return;
     }
-    if (event.type === "node_session_session_updated") {
-      await this.handleSessionUpdated(event.nodeId, event.data);
-      return;
-    }
+    // Terminal snapshots are observations, not transitions. Only session_ended may notify.
+    if (event.type === "node_session_session_updated") return;
     if (event.type !== "node_session_event") return;
 
     const sessionId = sessionIdFrom(event.data);
     const payload = recordValue(event.data.event) ?? recordValue(event.data.payload);
     if (sessionId === undefined || payload === undefined) return;
+    if (payload.type === "session_ended") {
+      await this.handleSessionEnded(event.nodeId, sessionId, event.data, payload);
+      return;
+    }
     this.cacheToolInput(event.nodeId, sessionId, payload);
     const toolUseId = stringValue(payload.tool_use_id, payload.toolUseId);
     const inputKey = toolInputKey(event.nodeId, sessionId, toolUseId);
@@ -145,27 +148,25 @@ export class PushNotifier {
     }
   }
 
-  private async handleSessionUpdated(
+  private async handleSessionEnded(
     nodeId: string,
-    data: Record<string, unknown>,
+    sessionId: string,
+    envelope: Record<string, unknown>,
+    event: Record<string, unknown>,
   ): Promise<void> {
-    const sessionId = sessionIdFrom(data);
-    if (sessionId === undefined) return;
-    const payload = { ...(this.options.sessionLookup(sessionId) ?? {}), ...data };
+    const payload = {
+      ...(this.options.sessionLookup(sessionId) ?? {}),
+      ...envelope,
+      ...event,
+    };
     if (normalizedString(payload.session_type, payload.sessionType) === "llm") return;
     const source = normalizedString(payload.caller_source, payload.callerSource);
     if (!COMPLETION_SOURCES.has(source)) return;
     const status = normalizedString(payload.status);
-    if (status.length === 0) return;
-
-    const statusKey = sessionStateKey(nodeId, sessionId);
-    const previous = this.lastStatus.get(statusKey);
-    if (previous?.status === status) return;
-    this.lastStatus.set(statusKey, { status, atMs: this.nowMs() });
-    if (!TERMINAL_STATUSES.has(status)) return;
+    const title = TERMINAL_NOTIFICATION_TITLES.get(status);
+    if (title === undefined) return;
     if (await this.folderExcludes(sessionId, payload)) return;
 
-    const title = status === "completed" ? "세션 완료" : "세션 오류";
     await this.sendToUser(nodeId, title, completionBody(payload, title), {
       sessionId,
       status,
@@ -285,47 +286,31 @@ export class PushNotifier {
   }
 
   getStats(): {
-    lastStatuses: number;
     toolInputs: number;
     pendingSends: number;
   } {
     return {
-      lastStatuses: this.lastStatus.size,
       toolInputs: this.toolInputs.size,
       pendingSends: this.pending.size,
     };
   }
 
   sweepExpired(nowMs = this.nowMs()): {
-    lastStatuses: number;
     toolInputs: number;
     total: number;
   } {
-    let lastStatuses = 0;
     let toolInputs = 0;
-    for (const [key, entry] of this.lastStatus) {
-      if (
-        TERMINAL_STATUSES.has(entry.status) &&
-        nowMs - entry.atMs >= PUSH_TERMINAL_STATUS_TTL_MS
-      ) {
-        this.lastStatus.delete(key);
-        lastStatuses += 1;
-      }
-    }
     for (const [key, entry] of this.toolInputs) {
       if (nowMs - entry.atMs >= PUSH_TOOL_INPUT_TTL_MS) {
         this.toolInputs.delete(key);
         toolInputs += 1;
       }
     }
-    return { lastStatuses, toolInputs, total: lastStatuses + toolInputs };
+    return { toolInputs, total: toolInputs };
   }
 
   private clearNodeState(nodeId: string): void {
     const prefix = `${nodeId}\u0000`;
-    for (const key of this.lastStatus.keys()) {
-      if (key.startsWith(prefix)) this.lastStatus.delete(key);
-    }
     for (const key of this.toolInputs.keys()) {
       if (key.startsWith(prefix)) this.toolInputs.delete(key);
     }
@@ -424,10 +409,6 @@ function toolInputExcerpt(value: unknown): string {
 
 function sessionIdFrom(data: Record<string, unknown>): string | undefined {
   return optionalString(data.agentSessionId, data.agent_session_id, data.sessionId, data.session_id);
-}
-
-function sessionStateKey(nodeId: string, sessionId: string): string {
-  return `${nodeId}\u0000${sessionId}`;
 }
 
 function toolInputKey(nodeId: string, sessionId: string, toolUseId: string): string {

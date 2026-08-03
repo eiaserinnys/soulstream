@@ -23,9 +23,8 @@ describe("OrchestratorMaintenanceService", () => {
     };
     const pushNotifier = {
       sweepExpired: vi.fn(() => ({
-        lastStatuses: 4,
         toolInputs: 5,
-        total: 9,
+        total: 5,
       })),
     };
     const service = new OrchestratorMaintenanceService({
@@ -39,7 +38,7 @@ describe("OrchestratorMaintenanceService", () => {
     expect(pushNotifier.sweepExpired).toHaveBeenCalledTimes(1);
     expect(service.getLastSweepStats()).toMatchObject({
       sessionCacheEntries: 3,
-      pushNotifierEntries: 9,
+      pushNotifierEntries: 5,
     });
 
     vi.advanceTimersByTime(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
@@ -79,7 +78,6 @@ describe("OrchestratorMaintenanceService", () => {
       },
       pushNotifier: {
         sweepExpired: () => ({
-          lastStatuses: 0,
           toolInputs: 0,
           total: 0,
         }),
