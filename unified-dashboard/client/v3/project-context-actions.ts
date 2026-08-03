@@ -34,6 +34,7 @@ export async function savePageAtomReference(
     nodeTitle: string;
     depth: number;
     titlesOnly: boolean;
+    limit?: number | null;
     instance?: string;
   },
   idFactory: ContextOperationIdFactory = operationId,
@@ -43,18 +44,23 @@ export async function savePageAtomReference(
   if (!Number.isInteger(input.depth) || input.depth < 1 || input.depth > 5) {
     throw new Error("atom 깊이는 1~5여야 합니다");
   }
+  if (input.limit != null && (!Number.isInteger(input.limit) || input.limit < 1)) {
+    throw new Error("atom 최근 자식 수는 양의 정수여야 합니다");
+  }
   return await mutate(api, pageId, idFactory, "v3 page atom reference save", (blocks) => {
     const previous = input.blockId
       ? blocks.find((block) => block.id === input.blockId)?.properties ?? {}
       : {};
-    const properties = {
+    const properties: Record<string, unknown> = {
       ...previous,
       instance: input.instance?.trim() || "atom",
       nodeId,
       nodeTitle: input.nodeTitle.trim() || nodeId,
       depth: input.depth,
       titlesOnly: input.titlesOnly,
+      ...(input.limit != null ? { limit: input.limit } : {}),
     };
+    if (input.limit == null) delete properties.limit;
     return input.blockId
       ? [{
         op: "update_block_type_and_properties",

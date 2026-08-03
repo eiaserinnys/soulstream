@@ -9,6 +9,7 @@ export type ContextPickerSelection =
       nodeTitle: string;
       depth: number;
       titlesOnly: boolean;
+      limit?: number;
     };
 
 export function buildContextBlockOperations({
@@ -51,6 +52,7 @@ export function buildContextBlockOperations({
           nodeTitle: selection.nodeTitle,
           depth: selection.depth,
           titlesOnly: selection.titlesOnly,
+          ...(selection.limit !== undefined ? { limit: selection.limit } : {}),
         },
       });
     }

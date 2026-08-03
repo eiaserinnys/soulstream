@@ -17,6 +17,7 @@ describe("context picker block mapping", () => {
         nodeTitle: "soulstream / 페이지 모델",
         depth: 4,
         titlesOnly: true,
+        limit: 3,
       },
     ];
 
@@ -51,6 +52,7 @@ describe("context picker block mapping", () => {
           nodeTitle: "soulstream / 페이지 모델",
           depth: 4,
           titlesOnly: true,
+          limit: 3,
         },
         collapsed: false,
       },

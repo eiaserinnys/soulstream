@@ -13,6 +13,7 @@ describe("project page details", () => {
         nodeTitle: "소울스트림",
         depth: 3,
         titlesOnly: false,
+        limit: 3,
       }),
       block("session_defaults", "", {
         scope: "project",
@@ -29,6 +30,7 @@ describe("project page details", () => {
         nodeTitle: "소울스트림",
         depth: 3,
         titlesOnly: false,
+        limit: 3,
       }],
       sessionDefaults: [{
         blockId: "session_defaults-block",
@@ -67,6 +69,14 @@ describe("project page details", () => {
         title: "플래너 UX 원칙",
       }),
     ]).atomReferences[0]?.nodeTitle).toBe("플래너 UX 원칙");
+  });
+
+  it("keeps a missing or invalid atom limit unlimited", () => {
+    const references = parseProjectPageDetails([
+      block("atom_ref", "", { instance: "atom", nodeId: "missing" }),
+      block("atom_ref", "invalid", { instance: "atom", nodeId: "invalid", limit: 0 }),
+    ]).atomReferences;
+    expect(references.map((reference) => reference.limit)).toEqual([null, null]);
   });
 });
 

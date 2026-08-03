@@ -14,6 +14,7 @@ export interface ProjectFormAtomReference {
   nodeTitle: string;
   depth: number;
   titlesOnly: boolean;
+  limit?: number | null;
 }
 
 export interface ProjectFormSessionDefaults {
@@ -56,6 +57,7 @@ export function projectFormValueFromDetails(
       nodeTitle: item.nodeTitle,
       depth: item.depth ?? 3,
       titlesOnly: item.titlesOnly ?? false,
+      limit: item.limit ?? null,
     })),
     sessionDefaults: details.sessionDefaults[0]
       ? {

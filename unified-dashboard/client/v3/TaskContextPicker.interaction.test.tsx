@@ -46,7 +46,7 @@ describe("InitialTaskContextPicker atom options", () => {
     document.body.replaceChildren();
   });
 
-  it("edits depth and titles-only on the selected card before task creation", () => {
+  it("edits depth, titles-only, and limit on the selected card before task creation", () => {
     const onChange = vi.fn();
     flushSync(() => root.render(
       <InitialTaskContextPicker
@@ -78,6 +78,11 @@ describe("InitialTaskContextPicker atom options", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       atomReferences: [expect.objectContaining({ depth: 3, titlesOnly: true })],
     }));
+
+    setNumberInput(input("soulstream 최근 자식 수"), "3");
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      atomReferences: [expect.objectContaining({ limit: 3 })],
+    }));
   });
 
   it("keeps the same options on the existing-task selection card before apply", async () => {
@@ -100,6 +105,10 @@ describe("InitialTaskContextPicker atom options", () => {
     const titlesOnly = input("soulstream 제목만 포함");
     flushSync(() => titlesOnly.click());
     expect(titlesOnly.checked).toBe(true);
+
+    const limit = input("soulstream 최근 자식 수");
+    setNumberInput(limit, "5");
+    expect(limit.value).toBe("5");
   });
 });
 
@@ -124,6 +133,14 @@ function input(label: string): HTMLInputElement {
 
 function setSelect(target: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+  flushSync(() => {
+    setter?.call(target, value);
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function setNumberInput(target: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   flushSync(() => {
     setter?.call(target, value);
     target.dispatchEvent(new Event("change", { bubbles: true }));

@@ -19,6 +19,7 @@ describe("PR-CJ task context editing contract", () => {
     expect(picker).toContain("onOptionsChange");
     expect(picker).toContain("atom depth");
     expect(picker).toContain("제목만 포함");
+    expect(picker).toContain("최근 자식 수");
   });
 
   it("keeps inherited atom rows read-only and edits direct rows with one block mutation", () => {
@@ -31,6 +32,7 @@ describe("PR-CJ task context editing contract", () => {
     expect(detail).toContain("deleteOptimisticTaskContextBlock");
     expect(detail).toContain("context.direct ?");
     expect(detail).toContain("v3-context-row-readonly");
+    expect(detail).toContain("최근 자식 수");
   });
 
   it("uses destructive trash affordances instead of an atom toggle", () => {

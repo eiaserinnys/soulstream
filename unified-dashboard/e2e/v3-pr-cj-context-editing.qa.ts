@@ -84,6 +84,7 @@ async function verify(browser: Browser) {
       await selectAtomNode(newTaskDialog, page);
       const selected = newTaskDialog.locator(".v3-context-option--selected");
       await waitForText(selected, atomNodeTitle);
+      await selected.getByLabel(`${atomNodeTitle} 최근 자식 수`).fill("3");
       assert((await selected.textContent())?.includes(atomNodeId), "새 업무 atom 선택에 nodeId 메타가 없습니다.");
     }
     await capture(page, "01-new-task-dialog");
@@ -97,6 +98,7 @@ async function verify(browser: Browser) {
       const references = initialContext?.atom_references;
       assert(Array.isArray(references) && references.length === 1, "생성 atom_references가 한 건이 아닙니다.");
       assert((references[0] as Record<string, unknown>).node_title === atomNodeTitle, "생성 atom 제목 스냅샷이 없습니다.");
+      assert((references[0] as Record<string, unknown>).limit === 3, "생성 atom limit가 initial_context에 없습니다.");
     } else {
       await newTaskDialog.getByRole("button", { name: "취소", exact: true }).click();
     }
@@ -116,6 +118,7 @@ async function verify(browser: Browser) {
       const picker = information.locator(".v3-context-picker");
       await picker.getByRole("tab", { name: "atom" }).click();
       await selectAtomNode(picker, page);
+      await picker.getByLabel(`${atomNodeTitle} 최근 자식 수`).fill("5");
       await picker.getByRole("button", { name: "선택 추가", exact: true }).click();
 
       const row = information.locator(".v3-context-row").filter({ hasText: atomNodeTitle });
@@ -123,13 +126,16 @@ async function verify(browser: Browser) {
       const rowText = await row.textContent() ?? "";
       assert(rowText.includes(atomNodeTitle), "직접 추가 atom 행에 노드 제목이 없습니다.");
       assert(!rowText.includes(atomNodeId), "직접 추가 atom 행에 UUID가 제목으로 노출됩니다.");
+      assert((taskOperations[0]?.operations?.[0]?.properties as Record<string, unknown> | undefined)?.limit === 5, "선택기의 atom limit가 생성 operation에 없습니다.");
 
+      await row.getByLabel(`${atomNodeTitle} 최근 자식 수`).fill("3");
       await row.getByLabel(`${atomNodeTitle} atom depth`).selectOption("5");
       await row.getByLabel(`${atomNodeTitle} 제목만 포함`).check();
-      await waitUntil(() => taskOperations.length >= 3, "atom 추가·depth·titles_only 부분 패치");
-      const updates = taskOperations.slice(1, 3).flatMap((request) => request.operations ?? []);
+      await waitUntil(() => taskOperations.length >= 4, "atom 추가·limit·depth·titles_only 부분 패치");
+      const updates = taskOperations.slice(1, 4).flatMap((request) => request.operations ?? []);
       assert(updates.every((operation) => operation.op === "update_block_type_and_properties"), "설정 저장이 기존 블록 mutation을 사용하지 않았습니다.");
       assert(updates.every((operation) => Object.keys(operation).includes("block_id")), "설정 저장에 block_id 부분 패치가 없습니다.");
+      assert(updates.some((operation) => (operation.properties as Record<string, unknown> | undefined)?.limit === 3), "직접 편집한 atom limit가 저장 operation에 없습니다.");
       assert(plannerTodayRequests === requestsBeforeMutation, `컨텍스트 저장 뒤 광역 재조회가 발생했습니다: ${requestsBeforeMutation} → ${plannerTodayRequests}`);
     }
 
@@ -139,7 +145,7 @@ async function verify(browser: Browser) {
     if (mode === "after") {
       const row = information.locator(".v3-context-row").filter({ hasText: atomNodeTitle });
       await row.getByRole("button", { name: `${atomNodeTitle} 컨텍스트 제거`, exact: true }).click();
-      await waitUntil(() => taskOperations.length >= 4, "atom 삭제 operation");
+      await waitUntil(() => taskOperations.length >= 5, "atom 삭제 operation");
       const deletion = taskOperations.at(-1)?.operations?.[0];
       assert(deletion?.op === "delete_block_subtree", "atom 제거가 블록 삭제 정본을 사용하지 않았습니다.");
     }

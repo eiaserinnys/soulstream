@@ -357,13 +357,18 @@
   white-space: nowrap;
 }
 
-.v3-context-row-controls select {
+.v3-context-row-controls select,
+.v3-context-row-controls input[type="number"] {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 2px 4px;
   color: var(--foreground);
   background: var(--background);
   font: inherit;
+}
+
+.v3-context-row-controls input[type="number"] {
+  width: 64px;
 }
 
 .v3-context-row-remove {

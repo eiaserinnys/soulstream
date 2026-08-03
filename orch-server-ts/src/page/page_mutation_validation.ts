@@ -23,6 +23,9 @@ export function validateBlockProperties(
     if (!["atom", "atom-nl"].includes(String(value.instance))) {
       throw new PageMutationValidationError("atom_ref.instance invalid");
     }
+    if (value.limit !== undefined && (!Number.isInteger(value.limit) || Number(value.limit) < 1)) {
+      throw new PageMutationValidationError("atom_ref.limit must be a positive integer");
+    }
   }
   if (type === "guidance") {
     requireField("enabled", "boolean");
