@@ -5,7 +5,6 @@ import type { BlockDto } from "@seosoyoung/soul-ui/page";
 
 import { singleLinePreview } from "./session-preview";
 import {
-  buildPageContextSourcesMarker,
   mergeProjectContextPages,
 } from "./project-context-inheritance";
 import { parseProjectPageDetails } from "./project-page-details";
@@ -16,8 +15,8 @@ import type { PageSessionDefaults } from "./task-workspace-api";
  * 업무 세션 생성에 필요한 컨텍스트 상속 파생값의 단일 정본.
  *
  * 상위 폴더 → 이 업무 순으로 컨텍스트를 병합해 succession 모달/컨텍스트 칩에
- * 넣을 `contextItems`, 배정 기본값(`effectiveSessionDefaults`), 페이지 컨텍스트
- * 소스 마커를 만든다. `TaskDetailPane`(업무 패널)과 `TaskBoardWorkspace`(보드
+ * 넣을 `contextItems`와 배정 기본값(`effectiveSessionDefaults`)을 만든다.
+ * `TaskDetailPane`(업무 패널)과 `TaskBoardWorkspace`(보드
  * 세션 리스트의 새 세션 버튼)가 이 훅을 공유해 동일한 컨테이너 상속 경로를 쓴다.
  */
 export function useTaskSessionContext({
@@ -96,13 +95,6 @@ export function useTaskSessionContext({
     sourcePageId: sourcedDefaults.source.pageId,
     sourceBlockId: sourcedDefaults.blockId,
   } : sessionDefaults;
-  const pageContextSources = buildPageContextSourcesMarker(
-    inheritedContext.status === "ready"
-      ? inheritedContext.data
-      : mergeProjectContextPages([]),
-    taskPageId,
-  );
-
   return {
     inheritedContext,
     taskContext,
@@ -110,7 +102,6 @@ export function useTaskSessionContext({
     contextItems,
     directDefaults,
     effectiveSessionDefaults,
-    pageContextSources,
     contextPending: inheritedContext.status === "loading",
   };
 }

@@ -3,16 +3,10 @@ import { describe, expect, it } from "vitest";
 import { buildSessionContextSelection } from "./session-context-items";
 
 describe("session context item selection", () => {
-  const inherited = {
-    key: "page_context_sources" as const,
-    label: "Project and task page context sources",
-    content: { pages: [{ page_id: "project-page" }, { page_id: "task-page" }] },
-  };
-
-  it("combines inherited and explicitly selected documents without duplicate pages", () => {
+  it("keeps project inheritance out of the payload while including explicitly selected documents", () => {
     expect(buildSessionContextSelection({
       inheritCard: true,
-      pageContextSources: inherited,
+      taskPageId: "task-page",
       documentPageIds: ["doc-a", "task-page", "doc-b"],
       atomNode: null,
       guidance: "",
@@ -20,9 +14,8 @@ describe("session context item selection", () => {
       needsPageAnchor: true,
       contextItems: [{
         key: "page_context_sources",
-        label: "Project and task page context sources",
+        label: "업무 카드와 선택한 보드 문서",
         content: { pages: [
-          { page_id: "project-page" },
           { page_id: "task-page" },
           { page_id: "doc-a" },
           { page_id: "doc-b" },
@@ -34,7 +27,7 @@ describe("session context item selection", () => {
   it("creates session-only document, atom, and guidance items without inheriting the card", () => {
     expect(buildSessionContextSelection({
       inheritCard: false,
-      pageContextSources: inherited,
+      taskPageId: "task-page",
       documentPageIds: ["doc-a"],
       atomNode: { nodeId: "atom-node", title: "소울스트림" },
       guidance: "  결과부터 간결하게 보고한다.  ",
@@ -62,10 +55,27 @@ describe("session context item selection", () => {
     });
   });
 
+  it("labels the task page alone as card content", () => {
+    expect(buildSessionContextSelection({
+      inheritCard: true,
+      taskPageId: "task-page",
+      documentPageIds: [],
+      atomNode: null,
+      guidance: "",
+    })).toEqual({
+      needsPageAnchor: true,
+      contextItems: [{
+        key: "page_context_sources",
+        label: "업무 카드 본문",
+        content: { pages: [{ page_id: "task-page" }] },
+      }],
+    });
+  });
+
   it("does not create empty context items or a page anchor", () => {
     expect(buildSessionContextSelection({
       inheritCard: false,
-      pageContextSources: inherited,
+      taskPageId: "task-page",
       documentPageIds: [],
       atomNode: null,
       guidance: "   ",
@@ -75,7 +85,7 @@ describe("session context item selection", () => {
   it("does not create a page anchor for atom and guidance alone", () => {
     const result = buildSessionContextSelection({
       inheritCard: false,
-      pageContextSources: inherited,
+      taskPageId: "task-page",
       documentPageIds: [],
       atomNode: { nodeId: "atom-node", title: "소울스트림" },
       guidance: "검증한다.",
