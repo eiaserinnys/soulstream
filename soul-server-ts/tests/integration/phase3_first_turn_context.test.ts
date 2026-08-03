@@ -179,7 +179,8 @@ describe("Phase 3 first-turn page context integration", () => {
       properties: { sessionId: "sess-first-turn", primary: true },
     });
     expect(contextResult).toMatchObject({
-      kind: "page-anchor",
+      kind: "page-context",
+      atomNodeIds: [],
       contextItem: {
         key: "page_context",
         content: {

@@ -84,8 +84,7 @@ function makeCogitoConfig(
 describe("ExecutionContextBuilder.build — 기본 흐름", () => {
   it("calls the injected page resolver once while preserving legacy context for no-page-anchor", async () => {
     const resolve = vi.fn().mockResolvedValue({ kind: "no-page-anchor" });
-    const hasPageAnchor = vi.fn().mockResolvedValue(false);
-    const cb = makeBuilder({}, undefined, false, undefined, { hasPageAnchor, resolve });
+    const cb = makeBuilder({}, undefined, false, undefined, { resolve });
     const task = makeTask();
 
     const ctx = await cb.build(task, codexAgent);
@@ -95,6 +94,9 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       enabled: false,
       serverUrl: "",
       apiKey: "",
+    }, {
+      pageIds: undefined,
+      excludedAtomNodeIds: [],
     });
     expect(ctx.effectiveSystemPrompt).toBeUndefined();
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
@@ -105,7 +107,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
   it("provides an explicit no-page-anchor default resolver", async () => {
     const resolver = new NoPageAnchorContextResolver();
 
-    await expect(resolver.hasPageAnchor(makeTask(), codexAgent)).resolves.toBe(false);
     await expect(resolver.resolve(makeTask(), codexAgent)).resolves.toEqual({
       kind: "no-page-anchor",
     });
@@ -190,7 +191,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     });
   });
 
-  it("page anchor replaces legacy folder/task context while retaining core context", async () => {
+  it("unions page context with folder and agent context", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input);
@@ -224,7 +225,13 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
           name: "Legacy Folder",
           sortOrder: 0,
           parentFolderId: null,
-          settings: { folderPrompt: "legacy folder prompt" },
+          settings: {
+            folderPrompt: "legacy folder prompt",
+            atomContextNode: {
+              nodeId: "11111111-2222-3333-4444-555555555555",
+              depth: 2,
+            },
+          },
         }],
         sessions: {},
       });
@@ -257,10 +264,10 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
         content: { items: [{ category: "guidance", text: "page guidance" }] },
       };
       const resolve = vi.fn().mockResolvedValue({
-        kind: "page-anchor",
+        kind: "page-context",
         contextItem: pageContextItem,
+        atomNodeIds: [],
       });
-      const hasPageAnchor = vi.fn().mockResolvedValue(true);
       const agent: AgentProfile = {
         ...codexAgent,
         atom_contexts: [{
@@ -281,7 +288,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
         new AgentRegistry([agent]),
         true,
         makeCogitoConfig(),
-        { hasPageAnchor, resolve },
+        { resolve },
       );
 
       const ctx = await cb.build(makeTask({ systemPrompt: "task system" }), agent);
@@ -290,16 +297,16 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
       expect(ctx.effectiveSystemPrompt).toContain("# agent identity");
       expect(ctx.effectiveSystemPrompt).toContain("task system");
-      expect(ctx.effectiveSystemPrompt).not.toContain("legacy folder prompt");
+      expect(ctx.effectiveSystemPrompt).toContain("legacy folder prompt");
       expect(keys).toContain("page_context");
       expect(keys).toContain("running_sessions");
       expect(keys).toContain("cogito_context");
-      expect(keys).not.toContain("board_workspace");
-      expect(keys).not.toContain("atom_context");
+      expect(keys).toContain("board_workspace");
+      expect(keys).toContain("atom_context");
       expect(sessionContent.container).toEqual({ kind: "task", id: "rb-1", title: "Task" });
-      expect(sessionContent).not.toHaveProperty("task_guidance");
+      expect(sessionContent.task_guidance).toContain("rb-1(Task)");
       expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
-        String(url).includes("/api/tree/"))).toHaveLength(1);
+        String(url).includes("/api/tree/"))).toHaveLength(2);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -954,10 +961,10 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
 
   it("page context source marker는 resolver 전용이며 모델 context에는 노출하지 않음", async () => {
     const cb = makeBuilder({}, undefined, false, undefined, {
-      hasPageAnchor: vi.fn().mockResolvedValue(true),
       resolve: vi.fn().mockResolvedValue({
-        kind: "page-anchor",
+        kind: "page-context",
         contextItem: { key: "page_context", content: { items: [] } },
+        atomNodeIds: [],
       }),
     });
     const ctx = await cb.build(makeTask({
@@ -1537,7 +1544,7 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
     globalThis.fetch = originalFetch;
   });
 
-  it("uses the anchor-only seam instead of traversing page ancestry for suppression", async () => {
+  it("always keeps the folder prompt without traversing page ancestry", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "f-1",
@@ -1545,19 +1552,19 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
       sort_order: 0,
       settings: { folderPrompt: "legacy folder prompt" },
     });
-    const hasPageAnchor = vi.fn().mockResolvedValue(true);
     const resolve = vi.fn().mockRejectedValue(new Error("full traversal must not run"));
     const cb = makeBuilder(
       { getSession, getFolderById } as Partial<SessionDB>,
       undefined,
       false,
       undefined,
-      { hasPageAnchor, resolve },
+      { resolve },
     );
     const task = makeTask({ systemPrompt: "task prompt" });
 
-    await expect(cb.buildSystemPrompt(task, codexAgent)).resolves.toBe("task prompt");
-    expect(hasPageAnchor).toHaveBeenCalledWith(task, codexAgent);
+    await expect(cb.buildSystemPrompt(task, codexAgent)).resolves.toBe(
+      "legacy folder prompt\n\ntask prompt",
+    );
     expect(resolve).not.toHaveBeenCalled();
   });
 

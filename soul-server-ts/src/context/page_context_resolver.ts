@@ -29,34 +29,37 @@ export interface NoPageAnchorContext {
   kind: "no-page-anchor";
 }
 
-export interface PageAnchorContext {
-  kind: "page-anchor";
+export interface ResolvedPageContext {
+  kind: "page-context";
   contextItem: ContextItem;
+  atomNodeIds: string[];
 }
 
-export type PageContextResolution = NoPageAnchorContext | PageAnchorContext;
+export type PageContextResolution = NoPageAnchorContext | ResolvedPageContext;
+
+export interface PageContextResolveOptions {
+  pageIds?: readonly string[];
+  excludedAtomNodeIds?: readonly string[];
+}
 
 export const PAGE_CONTEXT_SOURCES_KEY = "page_context_sources";
 
 /** Boundary for resolving page-owned context before the first engine turn. */
 export interface PageContextResolver {
-  hasPageAnchor(task: Task, agent: AgentProfile): Promise<boolean>;
   resolve(
     task: Task,
     agent: AgentProfile,
     atomConfig?: AtomFetchConfig,
+    options?: PageContextResolveOptions,
   ): Promise<PageContextResolution>;
 }
 
 export class NoPageAnchorContextResolver implements PageContextResolver {
-  async hasPageAnchor(_task: Task, _agent: AgentProfile): Promise<boolean> {
-    return false;
-  }
-
   async resolve(
     _task: Task,
     _agent: AgentProfile,
     _atomConfig?: AtomFetchConfig,
+    _options?: PageContextResolveOptions,
   ): Promise<NoPageAnchorContext> {
     return { kind: "no-page-anchor" };
   }
@@ -73,22 +76,18 @@ export class AncestorPageContextResolver implements PageContextResolver {
     private readonly maxPages = 64,
   ) {}
 
-  async hasPageAnchor(task: Task, _agent: AgentProfile): Promise<boolean> {
-    return (await this.lookupAnchor(task)) !== null;
-  }
-
   async resolve(
     task: Task,
     _agent: AgentProfile,
     atomConfig?: AtomFetchConfig,
+    options: PageContextResolveOptions = {},
   ): Promise<PageContextResolution> {
     const anchor = await this.lookupAnchor(task);
-    if (!anchor) return { kind: "no-page-anchor" };
-
     const candidates: PageContextCandidate[] = [];
     const failures: PageContextTraversalFailure[] = [];
-    const explicitPageLimit = Math.max(0, this.maxPages - 1);
-    const sourcePageIds = pageContextSourceIds(task.contextItems);
+    const sourcePageIds = pageContextSourceIds(options.pageIds, task.contextItems);
+    if (!anchor && sourcePageIds.length === 0) return { kind: "no-page-anchor" };
+    const explicitPageLimit = Math.max(0, this.maxPages - (anchor ? 1 : 0));
     const explicitPageIds = explicitPageLimit > 0
       ? sourcePageIds.slice(-explicitPageLimit)
       : [];
@@ -100,8 +99,8 @@ export class AncestorPageContextResolver implements PageContextResolver {
       this.logger,
     );
     const visited = new Set<string>();
-    const queue: QueueEntry[] = [{ ...anchor, distance: 0 }];
-    const traversalLimit = Math.max(1, this.maxPages - explicitPageIds.length);
+    const queue: QueueEntry[] = anchor ? [{ ...anchor, distance: 0 }] : [];
+    const traversalLimit = Math.max(anchor ? 1 : 0, this.maxPages - explicitPageIds.length);
     let truncated = false;
     while (queue.length > 0) {
       const first = queue.shift()!;
@@ -140,19 +139,29 @@ export class AncestorPageContextResolver implements PageContextResolver {
         this.logger.warn({ err, pageId: first.pageId }, "page context mount lookup failed");
       }
     }
+    const excludedAtomNodeIds = new Set(options.excludedAtomNodeIds ?? []);
+    const eligibleCandidates = candidates.filter((candidate) => (
+      candidate.category !== "atom_ref" || !excludedAtomNodeIds.has(candidate.nodeId)
+    ));
+    const atomNodeIds = selectNearestPageContextCandidates(eligibleCandidates)
+      .filter((candidate): candidate is AtomRefPageContextCandidate => (
+        candidate.category === "atom_ref"
+      ))
+      .map((candidate) => candidate.nodeId);
     const enrichedCandidates = await enrichAtomRefCandidates(
-      candidates,
+      eligibleCandidates,
       atomConfig,
       this.logger,
     );
     return {
-      kind: "page-anchor",
+      kind: "page-context",
       contextItem: this.assembler.assemble(anchor, {
         candidates: enrichedCandidates,
         visitedPages: new Set([...visited, ...explicitPageIds]).size,
         failures,
         truncated,
       }),
+      atomNodeIds,
     };
   }
 
@@ -175,11 +184,22 @@ export function withoutPageContextSources(items: ContextItem[] | undefined): Con
   return (items ?? []).filter((item) => !isPageContextSourcesItem(item));
 }
 
-function pageContextSourceIds(items: ContextItem[] | undefined): string[] {
+function pageContextSourceIds(
+  derivedPageIds: readonly string[] | undefined,
+  items: ContextItem[] | undefined,
+): string[] {
   const marker = items?.find(isPageContextSourcesItem);
-  if (!marker || !isRecord(marker.content) || !Array.isArray(marker.content.pages)) return [];
+  const markerPages = marker && isRecord(marker.content) && Array.isArray(marker.content.pages)
+    ? marker.content.pages
+    : [];
   const seen = new Set<string>();
-  return marker.content.pages.flatMap((entry) => {
+  return [...(derivedPageIds ?? []), ...markerPages].flatMap((entry) => {
+    if (typeof entry === "string") {
+      const pageId = entry.trim();
+      if (!pageId || seen.has(pageId)) return [];
+      seen.add(pageId);
+      return [pageId];
+    }
     if (!isRecord(entry)) return [];
     const pageId = typeof entry.page_id === "string" ? entry.page_id.trim() : "";
     if (!pageId || seen.has(pageId)) return [];
@@ -334,7 +354,7 @@ function toCandidate(
   }
   return {
     category: "atom_ref",
-    semanticKey: `atom_ref:${instance}:${nodeId}`,
+    semanticKey: `atom_ref:${nodeId}`,
     pageId: block.page_id,
     blockId: block.id,
     positionKey: block.position_key,

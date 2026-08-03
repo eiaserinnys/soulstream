@@ -61,7 +61,7 @@ export interface PageContextBudgets {
 }
 
 export interface PageContextAssembler {
-  assemble(anchor: PageContextAnchor, traversal: PageContextTraversal): ContextItem;
+  assemble(anchor: PageContextAnchor | null, traversal: PageContextTraversal): ContextItem;
 }
 
 export const DEFAULT_PAGE_CONTEXT_BUDGETS: PageContextBudgets = {
@@ -78,7 +78,7 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
     this.budgets = { ...DEFAULT_PAGE_CONTEXT_BUDGETS, ...budgets };
   }
 
-  assemble(anchor: PageContextAnchor, traversal: PageContextTraversal): ContextItem {
+  assemble(anchor: PageContextAnchor | null, traversal: PageContextTraversal): ContextItem {
     const selected = selectNearestPageContextCandidates(traversal.candidates);
     const usage = {
       guidance: { limit: this.budgets.guidanceChars, used: 0, omitted: 0 },
@@ -147,7 +147,7 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
       key: "page_context",
       label: "Page ancestor context",
       content: {
-        anchor: { page_id: anchor.pageId, block_id: anchor.blockId },
+        anchor: anchor ? { page_id: anchor.pageId, block_id: anchor.blockId } : null,
         items,
         metadata: {
           deduplicated: traversal.candidates.length - selected.length,

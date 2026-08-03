@@ -73,7 +73,9 @@ function repository(input: {
   return {
     getAnchor: vi.fn(async () => {
       if (input.anchorError) throw input.anchorError;
-      return input.anchor ?? { pageId: "target", blockId: "anchor" };
+      return input.anchor === undefined
+        ? { pageId: "target", blockId: "anchor" }
+        : input.anchor;
     }),
     getPage: vi.fn(async (pageId: string) => {
       const value = input.pages?.[pageId];
@@ -93,17 +95,19 @@ function resolve(
   repo: PageContextRepository,
   maxPages = 64,
   atomConfig: AtomFetchConfig = disabledAtomConfig,
+  options: { pageIds?: readonly string[]; excludedAtomNodeIds?: readonly string[] } = {},
+  contextItems: Array<{ key: string; content: unknown }> = [],
 ) {
   return new AncestorPageContextResolver(
     repo,
     new DefaultPageContextAssembler(),
     logger,
     maxPages,
-  ).resolve({ agentSessionId: "sess-1" } as never, {} as never, atomConfig);
+  ).resolve({ agentSessionId: "sess-1", contextItems } as never, {} as never, atomConfig, options);
 }
 
 function contentOf(result: Awaited<ReturnType<typeof resolve>>): Record<string, any> {
-  expect(result.kind).toBe("page-anchor");
+  expect(result.kind).toBe("page-context");
   return (result as any).contextItem.content;
 }
 
@@ -118,21 +122,66 @@ describe("AncestorPageContextResolver", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("checks anchor presence without traversing page ancestry", async () => {
-    const repo = repository({ anchor: { pageId: "target", blockId: "anchor" } });
-    const resolver = new AncestorPageContextResolver(
+  it("resolves server-derived and legacy page ids without a durable anchor", async () => {
+    const repo = repository({
+      anchor: null,
+      pages: {
+        root: page("root", [
+          block("root-guidance", null, "guidance", "root context", { enabled: true }),
+        ]),
+        leaf: page("leaf", [
+          block("leaf-guidance", null, "guidance", "leaf context", { enabled: true }),
+        ]),
+      },
+    });
+    const result = await resolve(
       repo,
-      new DefaultPageContextAssembler(),
-      logger,
+      64,
+      disabledAtomConfig,
+      { pageIds: ["root", "leaf", "root"] },
+      [{ key: "page_context_sources", content: {
+        pages: [{ page_id: "root" }, { page_id: "leaf" }],
+      } }],
     );
 
-    await expect(resolver.hasPageAnchor(
-      { agentSessionId: "sess-1" } as never,
-      {} as never,
-    )).resolves.toBe(true);
-    expect(repo.getAnchor).toHaveBeenCalledOnce();
-    expect(repo.getPage).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      kind: "page-context",
+      atomNodeIds: [],
+      contextItem: { content: { anchor: null } },
+    });
+    expect(contentOf(result).items.map((item: { text: string }) => item.text)).toEqual([
+      "root context",
+      "leaf context",
+    ]);
+    expect(repo.getPage).toHaveBeenCalledTimes(2);
+    expect(repo.getPage).toHaveBeenNthCalledWith(1, "root");
+    expect(repo.getPage).toHaveBeenNthCalledWith(2, "leaf");
     expect(repo.listMountParents).not.toHaveBeenCalled();
+  });
+
+  it("reserves a higher-priority atom node without compiling the page duplicate", async () => {
+    const repo = repository({
+      anchor: null,
+      pages: {
+        project: page("project", [
+          block("atom", null, "atom_ref", "", {
+            instance: "atom",
+            nodeId: "shared-node",
+            depth: 2,
+          }),
+        ]),
+      },
+    });
+    const result = await resolve(
+      repo,
+      64,
+      enabledAtomConfig,
+      { pageIds: ["project"], excludedAtomNodeIds: ["shared-node"] },
+    );
+
+    expect(result).toMatchObject({ kind: "page-context", atomNodeIds: [] });
+    expect(contentOf(result).items).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("renders physical three-depth explicit context root-to-leaf", async () => {
@@ -153,7 +202,9 @@ describe("AncestorPageContextResolver", () => {
       },
     });
 
-    const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
+    const result = await resolve(repo, 64, enabledAtomConfig);
+    expect(result).toMatchObject({ atomNodeIds: ["node-1"] });
+    const content = contentOf(result);
     expect(content.items.map((entry: any) => entry.block_id)).toEqual([
       "root", "middle", "leaf",
     ]);
@@ -315,7 +366,9 @@ describe("AncestorPageContextResolver", () => {
       },
     });
 
-    const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
+    const result = await resolve(repo, 64, enabledAtomConfig);
+    expect(result).toMatchObject({ atomNodeIds: ["same-node"] });
+    const content = contentOf(result);
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("depth=2"),

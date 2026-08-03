@@ -1,4 +1,5 @@
 import type { CallerInfo, Task } from "../task/task_models.js";
+import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 
 import type { AtomContextSpec } from "./atom_context.js";
 import type { PreparedContext } from "./context_builder.js";
@@ -7,7 +8,19 @@ import { formatContextItems, type ContextItem } from "./prompt_assembler.js";
 export interface FolderChainEntry {
   id: string;
   parentFolderId: string | null;
+  projectPageId?: string | null;
   settings: Record<string, unknown>;
+}
+
+export interface PrioritizedAtomContextSpecs {
+  session: AtomContextSpec[];
+  folder: AtomContextSpec[];
+  agent: AtomContextSpec[];
+}
+
+export interface ProfileRuntimeSettings {
+  workingDir?: string;
+  maxTurns?: number;
 }
 
 export function composeFirstTurnPrompt(ctx: PreparedContext): string {
@@ -17,6 +30,26 @@ export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   if (contextBlock) parts.push(contextBlock);
   parts.push(ctx.assembledPrompt);
   return parts.join("\n\n");
+}
+
+export function composeEffectiveSystemPrompt(args: {
+  agentAtomMarkdown: string | null;
+  folderPrompt?: string;
+  taskSystemPrompt?: string;
+}): string | undefined {
+  return [args.agentAtomMarkdown, args.folderPrompt, args.taskSystemPrompt]
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n") || undefined;
+}
+
+export function resolveProfileRuntimeSettings(
+  task: Task,
+  registry: AgentRegistry,
+): ProfileRuntimeSettings {
+  if (!task.profileId) return {};
+  const profile = registry.get(task.profileId);
+  if (!profile) return {};
+  return { workingDir: profile.workspace_dir, maxTurns: profile.max_turns };
 }
 
 export function buildClaudeSessionIdUpdateContextItem(task: Task): ContextItem {
@@ -72,6 +105,41 @@ export function extractFolderAtomContextSpecs(chain: FolderChainEntry[]): AtomCo
     specsByNodeId.set(spec.nodeId, spec);
   }
   return [...specsByNodeId.values()];
+}
+
+export function extractFolderProjectPageIds(chain: FolderChainEntry[]): string[] {
+  const seen = new Set<string>();
+  return chain.flatMap((folder) => {
+    const pageId = folder.projectPageId?.trim();
+    if (!pageId || seen.has(pageId)) return [];
+    seen.add(pageId);
+    return [pageId];
+  });
+}
+
+export function extractAgentAtomContextSpecs(agent: AgentProfile): AtomContextSpec[] {
+  return (agent.atom_contexts ?? []).map((context) => ({
+    nodeId: context.node_id,
+    depth: context.depth,
+    titlesOnly: context.titles_only,
+  }));
+}
+
+export function prioritizeAtomContextSpecs(args: {
+  session: AtomContextSpec[];
+  pageNodeIds: readonly string[];
+  folder: AtomContextSpec[];
+  agent: AtomContextSpec[];
+}): PrioritizedAtomContextSpecs {
+  const seen = new Set<string>();
+  const take = (specs: AtomContextSpec[]): AtomContextSpec[] => specs.filter((spec) => {
+    if (seen.has(spec.nodeId)) return false;
+    seen.add(spec.nodeId);
+    return true;
+  });
+  const session = take(args.session);
+  for (const nodeId of args.pageNodeIds) seen.add(nodeId);
+  return { session, folder: take(args.folder), agent: take(args.agent) };
 }
 
 export function normalizeSettings(settings: unknown): Record<string, unknown> {
