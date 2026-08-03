@@ -35,8 +35,11 @@ import {
   callerInfoChanged,
   composeFirstTurnPrompt as composeFirstTurnPromptImpl,
   composeFolderPromptChain,
+  extractAgentAtomContextSpecs,
   extractFolderAtomContextSpecs,
+  extractFolderProjectPageIds,
   normalizeSettings,
+  prioritizeAtomContextSpecs,
   type FolderChainEntry,
 } from "./context_builder_helpers.js";
 import {
@@ -151,11 +154,7 @@ export class ExecutionContextBuilder {
     return { contextItems };
   }
 
-  /**
-   * Legacy public wrapper. 후속 턴 context 정본은 `buildFollowupContext()` 하나다.
-   * 이 helper도 더 이상 soulstream_session을 만들지 않고, 일반 후속 턴 delta + running_sessions를
-   * 반환한다.
-   */
+  /** Legacy wrapper for the shared follow-up context path. */
   async buildResumeContextItems(task: Task, agent: AgentProfile): Promise<ContextItem[]> {
     const ctx = await this.buildFollowupContext(task, agent, {
       includeClaudeSessionIdUpdate: Boolean(task.codexThreadId),
@@ -172,12 +171,11 @@ export class ExecutionContextBuilder {
    * task.contextItems는 user/context 영역이라 여기서 제외한다.
    */
   async buildSystemPrompt(task: Task, agent: AgentProfile): Promise<string | undefined> {
-    const pageAnchored = await this.pageContextResolver.hasPageAnchor(task, agent);
     const { folderPrompt } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     return this._composeSystemPrompt({
       agentAtomMarkdown,
-      folderPrompt: pageAnchored ? undefined : folderPrompt,
+      folderPrompt,
       taskSystemPrompt: task.systemPrompt,
     });
   }
@@ -190,19 +188,26 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    const pageContext = await this.pageContextResolver.resolve(task, agent, this.cfg.atom);
-    const pageAnchored = pageContext.kind === "page-anchor";
     const folder = await this._resolveFolder(task);
-    const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
-    const atomMarkdown = pageAnchored
-      ? null
-      : await this._fetchAtomContext(folder.atomContextSpecs);
-    const taskAtomMarkdown = await this._fetchAtomContext(
-      extractAtomContextSourceSpecs(task.contextItems),
-    );
-    const boardWorkspaceItem = pageAnchored
-      ? null
-      : await fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId);
+    const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
+    const pageContext = await this.pageContextResolver.resolve(task, agent, this.cfg.atom, {
+      pageIds: folder.projectPageIds,
+      excludedAtomNodeIds: sessionAtomSpecs.map((spec) => spec.nodeId),
+    });
+    const pageContextItem = pageContext.kind === "page-context" ? pageContext.contextItem : null;
+    const atomSources = prioritizeAtomContextSpecs({
+      session: sessionAtomSpecs,
+      pageNodeIds: pageContext.kind === "page-context" ? pageContext.atomNodeIds : [],
+      folder: folder.atomContextSpecs ?? [],
+      agent: extractAgentAtomContextSpecs(agent),
+    });
+    const [agentAtomMarkdown, atomMarkdown, taskAtomMarkdown, boardWorkspaceItem] =
+      await Promise.all([
+        this._fetchAtomContext(atomSources.agent),
+        this._fetchAtomContext(atomSources.folder),
+        this._fetchAtomContext(atomSources.session),
+        fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId),
+      ]);
     const primaryContainer = await resolvePrimarySessionContainerContext(
       this.db,
       this.logger,
@@ -221,13 +226,12 @@ export class ExecutionContextBuilder {
       task,
       agent,
       folderName: folder.folderName,
-      folderPrompt: pageAnchored ? undefined : folder.folderPrompt,
+      folderPrompt: folder.folderPrompt,
       agentAtomMarkdown,
       atomMarkdown,
       taskAtomMarkdown,
       primaryContainer,
-      pageContextItem: pageAnchored ? pageContext.contextItem : null,
-      suppressTaskGuidance: pageAnchored,
+      pageContextItem,
       boardWorkspaceItem,
       runningSessionsItem,
       predecessorSummaryItem,
@@ -249,6 +253,7 @@ export class ExecutionContextBuilder {
     folderName?: string;
     folderPrompt?: string;
     atomContextSpecs?: AtomContextSpec[];
+    projectPageIds?: string[];
   }> {
     let sessionRow;
     try {
@@ -278,18 +283,21 @@ export class ExecutionContextBuilder {
     const chain = await this._resolveFolderChain(folderRow);
     const folderPrompt = composeFolderPromptChain(chain);
     const atomContextSpecs = extractFolderAtomContextSpecs(chain);
-    return { folderId: folderRow.id, folderName, folderPrompt, atomContextSpecs };
+    const projectPageIds = extractFolderProjectPageIds(chain);
+    return { folderId: folderRow.id, folderName, folderPrompt, atomContextSpecs, projectPageIds };
   }
 
   private async _resolveFolderChain(folderRow: {
     id: string;
     parent_folder_id?: string | null;
+    project_page_id?: string | null;
     settings?: Record<string, unknown>;
   }): Promise<FolderChainEntry[]> {
     const fallback: FolderChainEntry[] = [
       {
         id: folderRow.id,
         parentFolderId: folderRow.parent_folder_id ?? null,
+        projectPageId: folderRow.project_page_id ?? null,
         settings: normalizeSettings(folderRow.settings),
       },
     ];
@@ -306,6 +314,7 @@ export class ExecutionContextBuilder {
           {
             id: folder.id,
             parentFolderId: folder.parentFolderId,
+            projectPageId: folder.projectPageId ?? null,
             settings: normalizeSettings(folder.settings),
           },
         ]),
@@ -352,12 +361,7 @@ export class ExecutionContextBuilder {
    * fetchAtomContexts 내부에서 skip되어 전체 turn 시작을 막지 않는다.
    */
   private async _fetchAgentAtomContext(agent: AgentProfile): Promise<string | null> {
-    const specs = (agent.atom_contexts ?? []).map((ctx) => ({
-      nodeId: ctx.node_id,
-      depth: ctx.depth,
-      titlesOnly: ctx.titles_only,
-    }));
-    return await fetchAtomContexts(this.cfg.atom, specs, this.logger);
+    return await this._fetchAtomContext(extractAgentAtomContextSpecs(agent));
   }
 
   private async _fetchCogitoContext(): Promise<ContextItem | null> {
@@ -399,7 +403,6 @@ export class ExecutionContextBuilder {
     taskAtomMarkdown: string | null;
     primaryContainer: PrimarySessionContainerContext | null;
     pageContextItem: ContextItem | null;
-    suppressTaskGuidance: boolean;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
     predecessorSummaryItem: ContextItem | null;
@@ -425,9 +428,7 @@ export class ExecutionContextBuilder {
       callerInfo: args.task.callerInfo,
       container: args.primaryContainer?.container ?? null,
       sourceTaskItemId: args.primaryContainer?.sourceTaskItemId ?? null,
-      taskGuidance: args.suppressTaskGuidance
-        ? null
-        : args.primaryContainer?.taskGuidance ?? null,
+      taskGuidance: args.primaryContainer?.taskGuidance ?? null,
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];
