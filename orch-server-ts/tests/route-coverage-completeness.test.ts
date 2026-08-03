@@ -149,6 +149,7 @@ function createAllOptInRouteApp() {
     boardYjsHostProxyRoutes: inert,
     cogitoRoutes: inert,
     executeProxyRoutes: inert,
+    ephemeralLlmRoutes: inert,
     folderRoutes: inert,
     markdownDocumentRoutes: inert,
     nodeAgentProfileRoutes: {

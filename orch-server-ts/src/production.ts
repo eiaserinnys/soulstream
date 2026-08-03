@@ -19,6 +19,8 @@ import {
   toOrchServerTsConfig,
 } from "./config.js";
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
+import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
+import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
@@ -54,6 +56,7 @@ import {
   type LiveTurnSummaryPipeline,
   type LiveTurnSummaryProductionOverrides,
 } from "./turn-summary/live_turn_summary_pipeline.js";
+import { resolveCodexCliPath } from "./turn-summary/codex_cli_path.js";
 
 export type ProductionApplication = {
   readonly app: FastifyInstance;
@@ -298,6 +301,16 @@ export async function createLiveProductionApplication(
     },
     onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
   });
+  const ephemeralProcessEnv = overrides.turnSummaryProcessEnv ?? process.env;
+  const ephemeralCodexPath = overrides.turnSummaryCodexPath ??
+    resolveCodexCliPath(ephemeralProcessEnv)?.path;
+  const ephemeralLlmRoutes: EphemeralLlmRouteOptions = {
+    authBearerToken: appConfig.authBearerToken,
+    generator: new CodexEphemeralExecutor({
+      ...(ephemeralCodexPath === undefined ? {} : { codexPath: ephemeralCodexPath }),
+      processEnv: ephemeralProcessEnv,
+    }),
+  };
   const app = createApp(buildProductionRouteOptions(
     appConfig,
     runtimeServices,
@@ -306,6 +319,7 @@ export async function createLiveProductionApplication(
     taskIdentityService,
     folderProjectIdentityService,
     memoryStats,
+    ephemeralLlmRoutes,
   ));
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
@@ -370,6 +384,7 @@ export function buildProductionRouteOptions(
   taskIdentityService?: TaskIdentityService,
   folderProjectIdentityService?: FolderProjectIdentityService,
   memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
+  ephemeralLlmRoutes?: EphemeralLlmRouteOptions,
 ): CreateAppOptions {
   return {
     config,
@@ -391,6 +406,7 @@ export function buildProductionRouteOptions(
     pageYjsRoutes: runtime.routeOptions.pageYjsRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
+    ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     folderRoutes: {
       ...providers.folderRoutes,
       authBearerToken: config.authBearerToken,

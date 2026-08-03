@@ -153,6 +153,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     boardItemRoutes: createInertProvider(),
     cogitoRoutes: createInertProvider(),
     executeProxyRoutes: createInertProvider(),
+    ephemeralLlmRoutes: createInertProvider(),
     folderRoutes: createInertProvider(),
     markdownDocumentRoutes: createInertProvider(),
     nodeAgentProfileRoutes: createInertProvider(),

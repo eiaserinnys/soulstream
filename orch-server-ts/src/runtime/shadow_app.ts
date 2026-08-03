@@ -17,6 +17,7 @@ import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchServerTsConfig } from "../config.js";
 import type { RouteOwnerManifest } from "../contract/route_owner_manifest.js";
 import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.js";
+import type { EphemeralLlmRouteOptions } from "../llm/ephemeral_llm_routes.js";
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
 import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
 import type { NodeClaudeAuthRouteOptions } from "../node/node_claude_auth_routes.js";
@@ -85,6 +86,7 @@ export type ShadowOrchestratorProviderBundle = {
   boardItemRoutes: ShadowBoardItemRouteProviders;
   cogitoRoutes: CogitoRouteOptions;
   executeProxyRoutes: ExecuteProxyRouteOptions;
+  ephemeralLlmRoutes: EphemeralLlmRouteOptions;
   folderRoutes: FolderRouteOptions;
   markdownDocumentRoutes: ShadowMarkdownDocumentRouteProviders;
   nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
@@ -118,6 +120,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "boardYjsHostProxyRoutes"
     | "cogitoRoutes"
     | "executeProxyRoutes"
+    | "ephemeralLlmRoutes"
     | "folderRoutes"
     | "markdownDocumentRoutes"
     | "nodeAgentProfileRoutes"
@@ -192,6 +195,7 @@ export const shadowRouteCompositionRequirements = [
     ],
   },
   { owner: "execute", paths: ["executeProxyRoutes.provider"] },
+  { owner: "llm.ephemeral", paths: ["ephemeralLlmRoutes.generator"] },
   {
     owner: "folders",
     paths: ["folderRoutes.provider", "folderRoutes.accessProvider"],
@@ -362,6 +366,7 @@ function buildShadowRouteOptions(
     boardYjsHostProxyRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
+    ephemeralLlmRoutes: providers.ephemeralLlmRoutes,
     folderRoutes: providers.folderRoutes,
     markdownDocumentRoutes: {
       provider: providers.markdownDocumentRoutes.provider,
