@@ -21,7 +21,6 @@ export type OrchestratorMemoryStatsComponents = {
   };
   readonly pushNotifier: {
     getStats: () => {
-      lastStatuses: number;
       toolInputs: number;
       pendingSends: number;
     };
@@ -67,7 +66,7 @@ export function createOrchestratorMemoryStatsCollector(
     name: "push_notifier",
     entries: () => {
       const stats = components.pushNotifier.getStats();
-      return stats.lastStatuses + stats.toolInputs + stats.pendingSends;
+      return stats.toolInputs + stats.pendingSends;
     },
     details: () => components.pushNotifier.getStats(),
   });

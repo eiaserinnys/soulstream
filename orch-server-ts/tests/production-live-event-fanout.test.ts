@@ -290,13 +290,14 @@ describe("production live event fanout", () => {
       observedConsumers.add("sessions-stream");
 
       ws.send(JSON.stringify({
-        type: "session_updated",
-        agent_session_id: "session-a",
-        status: "completed",
-        caller_source: "browser",
-        session_type: "codex",
-        last_event_id: 42,
-        last_message: { preview: "completed" },
+        type: "event",
+        agentSessionId: "session-a",
+        event: {
+          _event_id: 42,
+          type: "session_ended",
+          status: "completed",
+          termination_reason: "completed_ok",
+        },
       }));
       await waitForCondition(() =>
         database.queries.some((query) => query.includes("FROM push_tokens"))

@@ -12,16 +12,16 @@ import {
 const OK: PushSendResult = { ok: true, invalidToken: false };
 
 describe("PushNotifier", () => {
-  it("sends one completion or error notification and suppresses repeated terminal status", async () => {
+  it("sends completion and error notifications from session_ended transitions only", async () => {
     const harness = createHarness();
 
     harness.notifier.accept([
       updated("node-a", "session-a", "running"),
-      updated("node-a", "session-a", "completed", {
-        last_assistant_text: "작업을 마쳤습니다.",
-      }),
+      sessionEnded("node-a", "session-a", "completed"),
       updated("node-a", "session-a", "completed"),
+      sessionEnded("node-a", "session-b", "error"),
       updated("node-a", "session-b", "error"),
+      sessionEvent("node-a", "session-a", { type: "session_ended", status: "interrupted" }),
     ]);
     await harness.notifier.flush();
 
@@ -51,12 +51,13 @@ describe("PushNotifier", () => {
   ] as const)(
     "applies completion source policy for %s/%s",
     async (sessionType, callerSource, expected) => {
-      const harness = createHarness();
+      const harness = createHarness({
+        sessions: new Map([[
+          "session-a", { session_type: sessionType, caller_source: callerSource },
+        ]]),
+      });
       harness.notifier.accept([
-        updated("node-a", "session-a", "completed", {
-          session_type: sessionType,
-          caller_source: callerSource,
-        }),
+        sessionEnded("node-a", "session-a", "completed"),
       ]);
       await harness.notifier.flush();
       expect(harness.provider.send).toHaveBeenCalledTimes(expected);
@@ -224,7 +225,7 @@ describe("PushNotifier", () => {
     });
     const harness = createHarness({ repository, provider });
 
-    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
+    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
     await harness.notifier.flush();
 
     expect(provider.send).toHaveBeenCalledTimes(3);
@@ -248,7 +249,7 @@ describe("PushNotifier", () => {
     const harness = createHarness({ provider, onWarning: warnings });
 
     expect(() => {
-      harness.notifier.accept([updated("node-a", "session-a", "completed")]);
+      harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
     }).not.toThrow();
     const closing = harness.notifier.close();
     let closed = false;
@@ -260,36 +261,72 @@ describe("PushNotifier", () => {
     expect(warnings).toHaveBeenCalled();
   });
 
-  it("clears terminal status cache when a node unregisters", async () => {
+  it("does not turn review acknowledge or node re-registration snapshots into completions", async () => {
     const harness = createHarness();
-    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
+    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+    harness.notifier.accept([
+      updated("node-a", "session-a", "completed", {
+        review_required: true,
+        review_state: "acknowledged",
+      }),
+    ]);
     await harness.notifier.flush();
     harness.notifier.accept([{ type: "node_unregistered", nodeId: "node-a", connectionId: "c", reason: "disconnect" }]);
     await harness.notifier.flush();
     harness.notifier.accept([updated("node-a", "session-a", "completed")]);
     await harness.notifier.flush();
-    expect(harness.provider.send).toHaveBeenCalledTimes(2);
+    expect(harness.provider.send).toHaveBeenCalledTimes(1);
   });
 
-  it("expires terminal status after ten minutes while preserving dedup inside the grace window", async () => {
+  it("does not resend after the former ten-minute dedup window expires", async () => {
     let nowMs = 1_000;
     const harness = createHarness({ nowMs: () => nowMs });
-    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
+    harness.notifier.accept([
+      sessionEnded("node-a", "session-a", "completed"),
+      updated("node-a", "session-a", "completed"),
+    ]);
     await harness.notifier.flush();
 
-    expect(harness.notifier.getStats()).toMatchObject({
-      lastStatuses: 1,
-      toolInputs: 0,
-    });
-    nowMs += 10 * 60_000 - 1;
-    expect(harness.notifier.sweepExpired(nowMs).lastStatuses).toBe(0);
+    nowMs += 10 * 60_000;
+    harness.notifier.sweepExpired(nowMs);
     harness.notifier.accept([updated("node-a", "session-a", "completed")]);
     await harness.notifier.flush();
     expect(harness.provider.send).toHaveBeenCalledTimes(1);
+  });
 
-    nowMs += 1;
-    expect(harness.notifier.sweepExpired(nowMs).lastStatuses).toBe(1);
-    expect(harness.notifier.getStats().lastStatuses).toBe(0);
+  it("does not resend a terminal snapshot after the notifier is reconstructed", async () => {
+    const repository = createRepository();
+    const provider = createProvider(async () => OK);
+    const first = createHarness({ repository, provider });
+    first.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
+    await first.notifier.flush();
+
+    const restarted = createHarness({ repository, provider });
+    restarted.notifier.accept([updated("node-a", "session-a", "completed")]);
+    await restarted.notifier.flush();
+
+    expect(provider.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies again when the same session runs and reaches a fresh terminal transition", async () => {
+    const harness = createHarness();
+    harness.notifier.accept([
+      sessionEnded("node-a", "session-a", "completed", { _event_id: 11 }),
+      updated("node-a", "session-a", "running"),
+      sessionEnded("node-a", "session-a", "completed", { _event_id: 22 }),
+    ]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves folder exclusion for terminal transition notifications", async () => {
+    const harness = createHarness({ catalog: createCatalog({ excluded: true }) });
+    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).not.toHaveBeenCalled();
   });
 
   it("deletes ExitPlanMode input after signal creation and sweeps orphaned input after one hour", async () => {
@@ -348,7 +385,7 @@ function createHarness(options: {
   const repository = options.repository ?? createRepository();
   const provider = options.provider ?? createProvider(async () => OK);
   const sessions = options.sessions ?? new Map([
-    ["session-a", userSession("browser")],
+    ["session-a", { ...userSession("browser"), last_assistant_text: "작업을 마쳤습니다." }],
     ["session-b", userSession("slack")],
   ]);
   return {
@@ -433,6 +470,18 @@ function inputRequest(
   return sessionEvent(nodeId, sessionId, {
     type: "input_request",
     questions: [{ question: "Continue?", options: [] }],
+    ...extra,
+  });
+}
+
+function sessionEnded(
+  nodeId: string, sessionId: string, status: "completed" | "error",
+  extra: Record<string, unknown> = {},
+): NodeRegistryEvent {
+  return sessionEvent(nodeId, sessionId, {
+    type: "session_ended",
+    status,
+    termination_reason: status === "completed" ? "completed_ok" : "error_aborted",
     ...extra,
   });
 }
