@@ -1,6 +1,5 @@
-import type { PageContextSourcesMarker } from "./project-context-inheritance";
-
 export const ATOM_CONTEXT_SOURCES_KEY = "atom_context_sources";
+export const PAGE_CONTEXT_SOURCES_KEY = "page_context_sources";
 
 interface SessionAtomNode {
   nodeId: string;
@@ -15,26 +14,30 @@ interface SessionContextItem {
 
 export function buildSessionContextSelection({
   inheritCard,
-  pageContextSources,
+  taskPageId,
   documentPageIds,
   atomNode,
   guidance,
 }: {
   inheritCard: boolean;
-  pageContextSources: PageContextSourcesMarker;
+  taskPageId: string;
   documentPageIds: readonly string[];
   atomNode: SessionAtomNode | null;
   guidance: string;
 }): { needsPageAnchor: boolean; contextItems: SessionContextItem[] } {
+  const normalizedTaskPageId = taskPageId.trim();
   const pageIds = uniquePageIds([
-    ...(inheritCard ? pageContextSources.content.pages.map((page) => page.page_id) : []),
+    ...(inheritCard ? [normalizedTaskPageId] : []),
     ...documentPageIds,
   ]);
+  const hasAdditionalDocument = pageIds.some((pageId) => pageId !== normalizedTaskPageId);
   const contextItems: SessionContextItem[] = [];
   if (pageIds.length > 0) {
     contextItems.push({
-      key: pageContextSources.key,
-      label: inheritCard ? pageContextSources.label : "선택한 보드 문서",
+      key: PAGE_CONTEXT_SOURCES_KEY,
+      label: inheritCard
+        ? hasAdditionalDocument ? "업무 카드와 선택한 보드 문서" : "업무 카드 본문"
+        : "선택한 보드 문서",
       content: { pages: pageIds.map((pageId) => ({ page_id: pageId })) },
     });
   }

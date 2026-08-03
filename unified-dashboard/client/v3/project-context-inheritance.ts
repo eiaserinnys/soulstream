@@ -7,8 +7,6 @@ import type {
   ProjectSessionDefault,
 } from "./project-page-details";
 
-export const PAGE_CONTEXT_SOURCES_KEY = "page_context_sources";
-
 export interface ProjectContextSource {
   folderId: string;
   folderName: string;
@@ -39,12 +37,6 @@ export type ProjectContextPreviewState =
   | { status: "loading"; folderId: string; data: null; message: null }
   | { status: "ready"; folderId: string; data: ProjectContextInheritance; message: null }
   | { status: "error"; folderId: string; data: null; message: string };
-
-export interface PageContextSourcesMarker {
-  key: typeof PAGE_CONTEXT_SOURCES_KEY;
-  label: string;
-  content: { pages: Array<{ page_id: string }> };
-}
 
 interface Ranked<T> {
   value: T;
@@ -137,22 +129,6 @@ export function completeProjectContextLoad(
     && JSON.stringify(current.data) === JSON.stringify(next.data)
   ) return current;
   return next;
-}
-
-export function buildPageContextSourcesMarker(
-  inheritance: ProjectContextInheritance,
-  taskPageId: string,
-): PageContextSourcesMarker {
-  return {
-    key: PAGE_CONTEXT_SOURCES_KEY,
-    label: "Project and task page context sources",
-    content: {
-      pages: [
-        ...inheritance.pages.map((page) => ({ page_id: page.source.pageId })),
-        { page_id: taskPageId },
-      ],
-    },
-  };
 }
 
 function ranked<T>(value: T, sourceIndex: number, blockIndex: number): Ranked<T> {

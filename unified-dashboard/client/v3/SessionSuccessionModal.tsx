@@ -31,7 +31,6 @@ import {
   type PageSessionDefaults,
 } from "./task-workspace-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
-import type { PageContextSourcesMarker } from "./project-context-inheritance";
 import { buildSessionContextSelection } from "./session-context-items";
 
 export interface SuccessionContextItem {
@@ -51,7 +50,6 @@ export function SessionSuccessionModal({
   taskId,
   contextItems,
   documentOptions,
-  pageContextSources,
   contextPending,
   predecessorOptions,
   pageDefaults,
@@ -64,7 +62,6 @@ export function SessionSuccessionModal({
   taskId: string;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
-  pageContextSources: PageContextSourcesMarker;
   contextPending: boolean;
   predecessorOptions: readonly SuccessionSessionOption[];
   pageDefaults: PageSessionDefaults | null;
@@ -128,13 +125,13 @@ export function SessionSuccessionModal({
   } = useFileUpload({ uploadUrl, sessionId: pendingSessionId });
   const contextSelection = useMemo(() => buildSessionContextSelection({
     inheritCard,
-    pageContextSources,
+    taskPageId,
     documentPageIds: documentOptions
       .filter((document) => selectedDocumentIds.has(document.pageId))
       .map((document) => document.pageId),
     atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle } : null,
     guidance: "",
-  }), [atomNodeId, atomNodeTitle, documentOptions, inheritCard, pageContextSources, selectedDocumentIds]);
+  }), [atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, taskPageId]);
   const handleAssignmentError = useCallback((message: string) => {
     console.error("[v3/session-succession] 실행 대상 조회 실패", message);
     setError(message);

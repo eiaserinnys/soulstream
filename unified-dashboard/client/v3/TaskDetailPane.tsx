@@ -31,7 +31,6 @@ import { TaskTodayToggle } from "./TaskTodayToggle";
 import "./v3-context-succession.css";
 import { useTaskStar } from "./use-task-star";
 import {
-  buildPageContextSourcesMarker,
   mergeProjectContextPages,
 } from "./project-context-inheritance";
 import { parseProjectPageDetails } from "./project-page-details";
@@ -196,12 +195,6 @@ export function TaskDetailPane({
     sourcePageId: sourcedDefaults.source.pageId,
     sourceBlockId: sourcedDefaults.blockId,
   } : sessionDefaults;
-  const pageContextSources = buildPageContextSourcesMarker(
-    inheritedContext.status === "ready"
-      ? inheritedContext.data
-      : mergeProjectContextPages([]),
-    task.page.id,
-  );
   const reconciledSessions = useMemo(() => {
     const next = reconcileTaskSessions({
       serverSessionIds: task.sessionIds,
@@ -399,7 +392,6 @@ export function TaskDetailPane({
                 taskId={task.taskId}
                 contextItems={contextItems}
                 documentOptions={boardDocuments}
-                pageContextSources={pageContextSources}
                 contextPending={inheritedContext.status === "loading"}
                 sessionDefaults={effectiveSessionDefaults}
                 sessionIds={allSessionIds}

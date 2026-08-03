@@ -282,7 +282,7 @@ describe("createDashboardSession", () => {
     });
   });
 
-  it("forwards explicit page context sources for the first task session", async () => {
+  it("forwards explicitly selected page context sources", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({
       agentSessionId: "session-context",
       status: "running",
@@ -298,14 +298,14 @@ describe("createDashboardSession", () => {
       agentId: "roselin_codex",
       contextItems: [{
         key: "page_context_sources",
-        content: { pages: [{ page_id: "project-root" }, { page_id: "task-page" }] },
+        content: { pages: [{ page_id: "task-page" }, { page_id: "doc-a" }] },
       }],
     });
 
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
       extra_context_items: [{
         key: "page_context_sources",
-        content: { pages: [{ page_id: "project-root" }, { page_id: "task-page" }] },
+        content: { pages: [{ page_id: "task-page" }, { page_id: "doc-a" }] },
       }],
     });
   });

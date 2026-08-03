@@ -582,7 +582,6 @@ export function TaskBoardWorkspace({
           taskId={task.taskId}
           contextItems={sessionContext.contextItems}
           documentOptions={documentOptions}
-          pageContextSources={sessionContext.pageContextSources}
           contextPending={sessionContext.contextPending}
           predecessorOptions={predecessorOptions}
           pageDefaults={sessionContext.effectiveSessionDefaults}

@@ -89,12 +89,8 @@ async function verify(browser: Browser) {
     const marker = contextItems.find((item) => item.key === "page_context_sources");
     assert(marker, "세션 생성 요청에 page_context_sources가 없습니다.");
     assert(JSON.stringify(marker.content) === JSON.stringify({
-      pages: [
-        { page_id: "project-amber" },
-        { page_id: "project-dashboard" },
-        { page_id: "task-alpha" },
-      ],
-    }), `세션 생성 source 체인이 다릅니다: ${JSON.stringify(marker.content)}`);
+      pages: [{ page_id: "task-alpha" }],
+    }), `세션 생성 요청에 명시 선택하지 않은 프로젝트 문서가 포함됐습니다: ${JSON.stringify(marker.content)}`);
 
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.locator(".v3-workspace-scrim").waitFor({ state: "detached" });
