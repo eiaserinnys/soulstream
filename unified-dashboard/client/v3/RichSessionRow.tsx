@@ -32,6 +32,7 @@ export function RichSessionRow({
   const title = failed ? runNumberLabel(runNumber) : sessionPanelTitle(session);
   const status = failed ? "조회 실패" : nodeOffline ? "노드 오프라인" : statusLabel(session.status);
   const presentationStatus = failed ? "failed" : nodeOffline ? "offline" : session.status;
+  const modelLabel = failed ? null : sessionModelLabel(session);
   const portraitUrl = failed ? null : sessionPortraitUrl(session);
   const visiblePreview = failed
     ? "세션 정보를 불러오지 못했습니다."
@@ -60,6 +61,7 @@ export function RichSessionRow({
           </span>
           <span className="v3-run-agent-line">
             <span>{failed ? "세션 상세 없음" : session.agentName ?? session.agentId ?? "에이전트 미상"}</span>
+            {modelLabel ? <span title={modelLabel}>{modelLabel}</span> : null}
             {!failed ? <span>{session.nodeId ?? "노드 미상"}</span> : null}
           </span>
           {affiliation ? <span className="v3-run-affiliation" title={affiliation}>{affiliation}</span> : null}
@@ -76,6 +78,20 @@ export function RichSessionRow({
       {actions ? <div className="v3-run-row-actions">{actions}</div> : null}
     </LiquidGlassCard>
   );
+}
+
+export function sessionModelLabel(
+  session: Pick<SessionSummary, "modelLabel" | "backend">,
+): string | null {
+  const explicitLabel = session.modelLabel?.trim();
+  if (explicitLabel) return explicitLabel;
+  const backend = session.backend?.trim();
+  if (!backend) return null;
+  return backend
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function sessionPortraitUrl(session: SessionSummary): string | null {

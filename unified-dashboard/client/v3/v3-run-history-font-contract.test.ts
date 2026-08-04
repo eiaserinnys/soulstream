@@ -13,4 +13,11 @@ describe("v3 run history font contract", () => {
     expect(css).toMatch(/\.v3-run-open small\s*{[^}]*font-size:\s*var\(--font-size-sm\)/s);
     expect(css).toMatch(/\.v3-run-trailing time\s*{[^}]*font-size:\s*var\(--font-size-xs\)/s);
   });
+
+  it("reserves visible width for the node after adding the model label", () => {
+    const css = readFileSync(CSS_PATH, "utf8");
+
+    expect(css).toMatch(/\.v3-run-title-line,\s*\.v3-run-agent-line\s*{[^}]*display:\s*flex[^}]*min-width:\s*0/s);
+    expect(css).toMatch(/\.v3-run-agent-line span:last-child\s*{[^}]*min-width:\s*6ch/s);
+  });
 });

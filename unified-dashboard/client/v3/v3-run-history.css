@@ -115,6 +115,23 @@
   white-space: nowrap;
 }
 
+.v3-run-agent-line span {
+  min-width: 0;
+}
+
+.v3-run-agent-line span:first-child {
+  flex: 1 1 auto;
+}
+
+.v3-run-agent-line span:not(:first-child) {
+  max-width: 40%;
+  flex: 0 1 auto;
+}
+
+.v3-run-agent-line span:last-child {
+  min-width: 6ch;
+}
+
 .v3-run-affiliation {
   display: block;
   color: var(--muted-foreground);

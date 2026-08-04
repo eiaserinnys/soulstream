@@ -43,6 +43,7 @@ describe("serializeSessionRow predecessor contract", () => {
       updated_at: new Date("2026-07-14T00:00:00.000Z"),
     }, { registry })).toMatchObject({
       modelPreset: "codex-5.6-sol",
+      modelLabel: "Codex - 5.6 Sol",
       model: "gpt-5.6-codex",
       backend: "codex",
     });

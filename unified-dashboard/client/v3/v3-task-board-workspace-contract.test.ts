@@ -105,8 +105,9 @@ describe("task board panel resize, overlay height, and session list contract", (
     // composition reuses the task panel's run tree + rich rows.
     expect(resources).toContain("buildRunTree");
     expect(resources).toContain("RichSessionRow");
-    // sub-delegations stay collapsed by default.
-    expect(resources).toContain("useState(false)");
+    // 위임 세션은 기본 노출되고, 페이지 밖 과거 세션에도 도달할 수 있다.
+    expect(resources).toContain("useState(true)");
+    expect(resources).toContain("v3-task-board-load-more-runs");
     // no longer framed/labelled as a "delegation relation".
     expect(resources).not.toContain("위임 관계");
     expect(resources).not.toContain("아직 위임된 세션이 없습니다");

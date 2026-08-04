@@ -50,6 +50,7 @@ export function serializeSessionRow(
     agentId: firstDefined(row, "agent_id", "agentId") ?? null,
     modelPreset:
       firstDefined(row, "model_preset", "modelPreset") ?? null,
+    modelLabel: null,
     model: row.model ?? null,
     agentName: firstDefined(row, "agent_name", "agentName") ?? null,
     agentPortraitUrl:
@@ -103,12 +104,13 @@ function enrichModelPreset(
   const node = registry.getConnectedNode(nodeId);
   for (const candidate of node?.modelPresets ?? []) {
     const preset = asRecord(candidate);
-    if (
-      preset?.id === modelPreset
-      && typeof preset.backend === "string"
-      && preset.backend.length > 0
-    ) {
-      payload.backend = preset.backend;
+    if (preset?.id === modelPreset) {
+      if (typeof preset.label === "string" && preset.label.length > 0) {
+        payload.modelLabel = preset.label;
+      }
+      if (typeof preset.backend === "string" && preset.backend.length > 0) {
+        payload.backend = preset.backend;
+      }
       return;
     }
   }

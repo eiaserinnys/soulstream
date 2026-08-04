@@ -236,6 +236,9 @@ export function TaskWorkspace({
         projectTitle={projectTitle}
         sessions={sessions}
         runSessionLoadStates={runSessionLoadStates}
+        runHistoryTotal={runHistoryTotal}
+        runHistoryHasMore={runHistoryHasMore}
+        runHistoryLoading={runHistoryLoading}
         activeSession={activeSession}
         chatInputDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
@@ -247,6 +250,7 @@ export function TaskWorkspace({
         sessionDefaults={sessionDefaults}
         onClose={() => setBoardOpen(false)}
         onOpenSession={onOpenSession}
+        onLoadMoreRuns={onLoadMoreRuns}
         onRenameSession={onRenameSession}
         onDeleteSessions={onDeleteSessions}
         onMoveSession={onMoveSession}

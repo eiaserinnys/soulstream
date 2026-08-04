@@ -47,4 +47,17 @@ describe("session serialization contract fixture", () => {
       fixture.expectedCanonicalSummary,
     );
   });
+
+  it("accepts the model label from snake_case and camelCase session wires", () => {
+    expect(toSessionSummary({
+      agent_session_id: "session-snake",
+      status: "running",
+      model_label: "Claude - Opus",
+    }).modelLabel).toBe("Claude - Opus");
+    expect(toSessionSummary({
+      agentSessionId: "session-camel",
+      status: "running",
+      modelLabel: "Codex - 5.6 Sol",
+    }).modelLabel).toBe("Codex - 5.6 Sol");
+  });
 });
