@@ -71,6 +71,12 @@ export interface PlannerPageSlice<T> {
   next_cursor: string | null;
 }
 
+export interface PlannerLegacySessionDto extends Record<string, unknown> {
+  agentSessionId: string;
+  status: string;
+  eventCount: number;
+}
+
 export interface PlannerTodayDto {
   daily: {
     page: PlannerPageDto;
@@ -105,6 +111,7 @@ export const PLANNER_READ_PAGE_LIMITS = {
   project: { default: 20, max: 50 },
   projectTasks: { default: 20, max: 50 },
   projectDocuments: { default: 20, max: 50 },
+  projectLegacySessions: { default: 20, max: 50 },
   taskRuns: { default: 20, max: 50 },
 } as const satisfies Record<string, {
   default: number;
@@ -128,6 +135,10 @@ export interface PlannerReadProvider {
     pageId: string,
     input: { cursor?: string; limit: number },
   ): Promise<PlannerPageSlice<PlannerPageDto> | null>;
+  getProjectLegacySessions(
+    pageId: string,
+    input: { cursor?: string; limit: number },
+  ): Promise<PlannerPageSlice<PlannerLegacySessionDto>>;
   getTaskRuns(
     pageId: string,
     input: { cursor?: string; limit: number },

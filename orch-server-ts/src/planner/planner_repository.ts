@@ -19,6 +19,7 @@ import { listFullStarredTasks } from "./planner_starred_task_reads.js";
 import {
   plannerQuery,
 } from "./planner_aggregate_query.js";
+import { listProjectLegacySessions } from "./planner_legacy_session_reads.js";
 import type {
   PlannerKind,
   PlannerPayloadRow,
@@ -85,6 +86,17 @@ export class PlannerRepository implements PlannerReadProvider {
       includeDocuments: true,
     });
     return project?.documents ?? null;
+  }
+
+  async getProjectLegacySessions(
+    pageId: string,
+    input: { cursor?: string; limit: number },
+  ) {
+    return await listProjectLegacySessions(
+      await this.resolver.resolveSql(),
+      pageId,
+      input,
+    );
   }
 
   async getTaskRuns(

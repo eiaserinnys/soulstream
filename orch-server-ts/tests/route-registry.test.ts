@@ -167,6 +167,7 @@ describe("route registry", () => {
       ["GET", "/api/planner/projects/{pageId}"],
       ["GET", "/api/planner/projects/{pageId}/tasks"],
       ["GET", "/api/planner/projects/{pageId}/documents"],
+      ["GET", "/api/planner/projects/{pageId}/legacy-sessions"],
       ["GET", "/api/planner/tasks/{pageId}/runs"],
     ] as const;
 

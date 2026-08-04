@@ -5,7 +5,7 @@ import type {
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 import type { TaskSnapshot } from "@seosoyoung/soul-ui/stores/task-store";
-import { fetchTaskSnapshot } from "@seosoyoung/soul-ui";
+import { fetchTaskSnapshot, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   classifyMountedPage,
@@ -215,6 +215,20 @@ export async function loadProjectDocumentPage(
       cursor,
     ),
   ) as PageSlicePayload<PageDto>;
+  return plannerPage(payload);
+}
+
+export async function loadProjectLegacySessionPage(
+  dependencies: PlannerDataDependencies,
+  projectPageId: string,
+  cursor: string | undefined,
+): Promise<PlannerPage<SessionSummary>> {
+  const payload = await dependencies.fetchPlanner(
+    pagePath(
+      `/api/planner/projects/${encodeURIComponent(projectPageId)}/legacy-sessions`,
+      cursor,
+    ),
+  ) as PageSlicePayload<SessionSummary>;
   return plannerPage(payload);
 }
 

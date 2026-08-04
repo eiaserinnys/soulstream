@@ -55,6 +55,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "execute", path: "executeProxyRoutes.provider" },
   { owner: "folders", path: "folderRoutes.accessProvider" },
   { owner: "folders", path: "folderRoutes.provider" },
+  { owner: "llm.ephemeral", path: "ephemeralLlmRoutes.generator" },
   { owner: "markdown.documents", path: "markdownDocumentRoutes.accessProvider" },
   { owner: "markdown.documents", path: "markdownDocumentRoutes.provider" },
   { owner: "node.agent-profiles", path: "nodeAgentProfileRoutes.provider" },

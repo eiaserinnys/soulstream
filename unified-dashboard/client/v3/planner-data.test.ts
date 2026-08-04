@@ -7,6 +7,7 @@ import {
   loadDailyHistoryDates,
   loadDailyPlanner,
   loadProjectDocumentPage,
+  loadProjectLegacySessionPage,
   loadPlannerTask,
   loadPlannerTaskByTaskId,
   loadStarredTasks,
@@ -96,7 +97,7 @@ describe("planner BFF data", () => {
     expect(project.tasks.map((task) => task.page.id)).toEqual(["task"]);
   });
 
-  it("loads bounded project, daily, task, document, and run pages through dedicated planner routes", async () => {
+  it("loads bounded project, daily, task, document, legacy session, and run pages through dedicated planner routes", async () => {
     const fetchPlanner = vi.fn(async (path: string) => {
       if (path.startsWith("/api/planner/starred-tasks")) {
         return { items: [taskPayload()], next_cursor: "task-next" };
@@ -109,6 +110,12 @@ describe("planner BFF data", () => {
       }
       if (path.includes("/documents?")) {
         return { items: [page("document", "문서")], next_cursor: null };
+      }
+      if (path.includes("/legacy-sessions?")) {
+        return {
+          items: [{ agentSessionId: "legacy-session", status: "completed", eventCount: 0 }],
+          next_cursor: "legacy-next",
+        };
       }
       return {
         items: [{ agent_session_id: "session-a" }],
@@ -129,14 +136,20 @@ describe("planner BFF data", () => {
       .resolves.toMatchObject({ items: [{ page: { id: "task" } }], nextCursor: "task-next" });
     await expect(loadProjectDocumentPage(dependencies, "project/a", "cursor-c"))
       .resolves.toMatchObject({ items: [{ id: "document" }], nextCursor: null });
-    await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-d"))
+    await expect(loadProjectLegacySessionPage(dependencies, "project/a", "cursor-d"))
+      .resolves.toMatchObject({
+        items: [{ agentSessionId: "legacy-session" }],
+        nextCursor: "legacy-next",
+      });
+    await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-e"))
       .resolves.toEqual({ sessionIds: ["session-a"], nextCursor: "run-next", total: 61 });
 
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&detail=full");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/tasks/task%2Fa/runs?cursor=cursor-d");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/legacy-sessions?cursor=cursor-d");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/tasks/task%2Fa/runs?cursor=cursor-e");
   });
 
   it("uses one authenticated JSON fetch in the production dependency", async () => {
