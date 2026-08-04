@@ -20,4 +20,19 @@ describe("v3 run history font contract", () => {
     expect(css).toMatch(/\.v3-run-title-line,\s*\.v3-run-agent-line\s*{[^}]*display:\s*flex[^}]*min-width:\s*0/s);
     expect(css).toMatch(/\.v3-run-agent-line span:last-child\s*{[^}]*min-width:\s*6ch/s);
   });
+
+  it("never lets an agent-line item grow into the leftover width", () => {
+    // 260804: span:first-child에 flex:1을 주자 에이전트 이름이 남는 폭을 전부
+    // 삼켜 모델·노드가 오른쪽 끝으로 밀려났다. 항목은 내용 너비대로 좌측에
+    // 붙어 있어야 한다 — grow를 허용하는 어떤 선언도 이 줄에 들어오면 안 된다.
+    const css = readFileSync(CSS_PATH, "utf8");
+    const agentLineItemRules = [...css.matchAll(/\.v3-run-agent-line span[^{]*{([^}]*)}/gs)]
+      .map((match) => match[1]);
+
+    expect(agentLineItemRules.length).toBeGreaterThan(0);
+    for (const body of agentLineItemRules) {
+      expect(body).not.toMatch(/flex-grow:\s*[1-9]/);
+      expect(body).not.toMatch(/flex:\s*[1-9]/);
+    }
+  });
 });
