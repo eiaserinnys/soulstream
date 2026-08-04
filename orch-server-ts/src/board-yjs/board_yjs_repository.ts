@@ -14,6 +14,14 @@ import {
   BoardYjsSqlResolver,
   type BoardYjsQuerySql,
 } from "./board_yjs_sql.js";
+import {
+  type BoardYjsRawDocument,
+  type BoardYjsRunbookMigrationCommit,
+} from "./board_yjs_persistence.js";
+import {
+  BoardYjsMigrationRevisionConflictError,
+  loadExactRawBoardYjsDocument,
+} from "./board_yjs_raw_document.js";
 import type {
   BoardItemType,
   BoardYjsContainerRef,
@@ -41,6 +49,85 @@ export class BoardYjsRepository {
     `;
     const snapshot = rows[0]?.snapshot;
     return snapshot ? new Uint8Array(snapshot) : null;
+  }
+
+  async loadRawBoardYjsDocument(documentName: string): Promise<BoardYjsRawDocument | null> {
+    const sql = await this.sqlResolver.resolveSql();
+    return await sql.begin(async (transaction) => {
+      await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+      return await loadExactRawBoardYjsDocument(transaction, documentName, false);
+    });
+  }
+
+  async commitBoardYjsRunbookMigration(input: BoardYjsRunbookMigrationCommit): Promise<void> {
+    const sql = await this.sqlResolver.resolveSql();
+    await sql.begin(async (transaction) => {
+      const names = [...new Set([
+        input.sourceDocumentName,
+        input.canonicalDocumentName,
+      ])].sort();
+      const locked = new Map<string, BoardYjsRawDocument | null>();
+      for (const name of names) {
+        locked.set(name, await loadExactRawBoardYjsDocument(transaction, name, true));
+      }
+
+      const source = locked.get(input.sourceDocumentName) ?? null;
+      if (source?.revision !== input.expectedSourceRevision) {
+        throw new BoardYjsMigrationRevisionConflictError(input.sourceDocumentName);
+      }
+      const canonical = locked.get(input.canonicalDocumentName) ?? null;
+      if (input.sourceDocumentName !== input.canonicalDocumentName &&
+        (canonical?.revision ?? null) !== input.expectedCanonicalRevision) {
+        throw new BoardYjsMigrationRevisionConflictError(input.canonicalDocumentName);
+      }
+
+      if (input.preserveCanonical) {
+        if (!canonical || input.sourceDocumentName === input.canonicalDocumentName) {
+          throw new Error("preserveCanonical requires a distinct canonical document");
+        }
+      } else if (input.sourceDocumentName === input.canonicalDocumentName) {
+        await transaction`
+          UPDATE board_yjs_documents
+          SET snapshot = ${Buffer.from(input.canonicalSnapshot)}, updated_at = NOW()
+          WHERE name = ${input.canonicalDocumentName}
+        `;
+        await transaction`
+          DELETE FROM board_yjs_updates WHERE document_name = ${input.canonicalDocumentName}
+        `;
+        await syncBoardYjsReplicaWithSql(
+          transaction,
+          input.scope,
+          input.replica,
+          input.canonicalDocumentName,
+        );
+      } else {
+        const inserted = await transaction<readonly { name: string }[]>`
+          INSERT INTO board_yjs_documents (name, snapshot, updated_at)
+          VALUES (
+            ${input.canonicalDocumentName},
+            ${Buffer.from(input.canonicalSnapshot)},
+            NOW()
+          )
+          ON CONFLICT (name) DO NOTHING
+          RETURNING name
+        `;
+        if (inserted[0]?.name !== input.canonicalDocumentName) {
+          throw new BoardYjsMigrationRevisionConflictError(input.canonicalDocumentName);
+        }
+        await syncBoardYjsReplicaWithSql(
+          transaction,
+          input.scope,
+          input.replica,
+          input.canonicalDocumentName,
+        );
+      }
+
+      if (input.sourceDocumentName !== input.canonicalDocumentName) {
+        await transaction`
+          DELETE FROM board_yjs_documents WHERE name = ${input.sourceDocumentName}
+        `;
+      }
+    });
   }
 
   async storeBoardYjsSnapshot(documentName: string, snapshot: Uint8Array): Promise<void> {

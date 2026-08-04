@@ -20,6 +20,11 @@ import {
   upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
 import {
+  executeBoardYjsRunbookMigration,
+  type BoardYjsRunbookMigrationRequest,
+} from "./board_yjs_runbook_migration.js";
+import { getCanonicalRunbookDocumentName } from "./board_yjs_runbook_residue.js";
+import {
   moveBoardItemBetweenDocuments,
   type BoardMoveInput,
   type StagedTaskBoardMove,
@@ -52,6 +57,7 @@ export interface BoardYjsServiceConfig {
 export class BoardYjsService {
   private readonly hocuspocus: Hocuspocus | undefined;
   private readonly taskIdentityTails = new Map<string, Promise<void>>();
+  private readonly migratingDocumentNames = new Set<string>();
 
   constructor(private readonly config: BoardYjsServiceConfig) {
     if (config.hostMode !== "orch") return;
@@ -90,9 +96,14 @@ export class BoardYjsService {
       socket.close(1013, "board Yjs documents are hosted on orch");
       return;
     }
+    const documentName = getBoardYjsContainerDocumentName(container);
+    if (this.migratingDocumentNames.has(documentName)) {
+      socket.close(1013, "board Yjs document migration is in progress");
+      return;
+    }
     this.requireHocuspocus().handleConnection(socket, request, {
       ...container,
-      documentName: getBoardYjsContainerDocumentName(container),
+      documentName,
     });
   }
 
@@ -334,6 +345,23 @@ export class BoardYjsService {
       deleteMarkdownYjsDocument(doc, documentId);
       return true;
     });
+  }
+
+  async migrateRunbookResidue(input: BoardYjsRunbookMigrationRequest) {
+    const names = [input.documentName, getCanonicalRunbookDocumentName(input.documentName)];
+    if (names.some((name) => this.migratingDocumentNames.has(name))) {
+      throw new Error(`board Y.Doc migration already in progress: ${input.documentName}`);
+    }
+    for (const name of names) this.migratingDocumentNames.add(name);
+    try {
+      return await executeBoardYjsRunbookMigration({
+        request: input,
+        repository: this.config.repository,
+        hocuspocus: this.requireOrchHostMode(),
+      });
+    } finally {
+      for (const name of names) this.migratingDocumentNames.delete(name);
+    }
   }
 
   private async withDirectConnection<T>(

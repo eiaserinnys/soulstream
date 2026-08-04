@@ -131,6 +131,18 @@ const schemas = {
     container: containerSchema,
     documentId: z.string().min(1),
   }),
+  "migrate-runbook-residue": z.object({
+    documentName: z.string().refine(
+      (value) => value.startsWith("board:runbook:") ||
+        value.startsWith("board:task:") ||
+        value.startsWith("board:folder:") ||
+        value.startsWith("board-folder:"),
+      "documentName must be a board container document",
+    ),
+    planFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    opaqueBoardItemIds: z.array(z.string().startsWith("runbook:")),
+    approvedCollisionContentHash: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
+  }),
 } as const;
 
 export async function handleBoardYjsHostOperation(
@@ -256,6 +268,10 @@ async function dispatchBoardYjsHostOperation(
       await service.deleteMarkdownDocument(value.container, value.documentId);
       return { ok: true };
     }
+    case "migrate-runbook-residue":
+      return await service.migrateRunbookResidue(
+        input as z.infer<typeof schemas["migrate-runbook-residue"]>,
+      );
     default:
       throw new Error(`Unknown Board Yjs host operation: ${operation}`);
   }

@@ -3,6 +3,8 @@ import * as Y from "yjs";
 
 import { createBoardYDocSnapshot, readBoardYDocReplica } from "../src/board-yjs/board_yjs_model.js";
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
+import { computeBoardYjsRawRevision } from
+  "../src/board-yjs/board_yjs_raw_document.js";
 import {
   createLiveDbSqlResolver,
   type LivePostgresSql,
@@ -54,6 +56,80 @@ function createMockSql(resultFor?: (call: SqlCall) => readonly Record<string, un
 }
 
 describe("orch BoardYjsRepository", () => {
+  it("loads a legacy document by its exact raw name with pending updates", async () => {
+    const snapshot = Buffer.from([1, 2, 3]);
+    const first = Buffer.from([4]);
+    const second = Buffer.from([5]);
+    const { sql, calls } = createMockSql((call) => {
+      if (call.query.includes("FROM board_yjs_documents")) return [{ snapshot }];
+      if (call.query.includes("FROM board_yjs_updates")) {
+        return [{ update: first }, { update: second }];
+      }
+      return [];
+    });
+    const repository = new BoardYjsRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    const state = await repository.loadRawBoardYjsDocument("board:runbook:task-a");
+
+    expect(state).toEqual({
+      snapshot: new Uint8Array(snapshot),
+      updates: [new Uint8Array(first), new Uint8Array(second)],
+      revision: computeBoardYjsRawRevision(
+        new Uint8Array(snapshot),
+        [new Uint8Array(first), new Uint8Array(second)],
+      ),
+    });
+    expect(calls[0]?.query).toContain("REPEATABLE READ, READ ONLY");
+    expect(calls.slice(1).every((call) => call.inTransaction)).toBe(true);
+    expect(calls[1]?.values).toEqual(["board:runbook:task-a"]);
+    expect(calls[2]?.values).toEqual(["board:runbook:task-a"]);
+  });
+
+  it("rechecks a locked source revision before atomically writing and retiring it", async () => {
+    const sourceSnapshot = Buffer.from([1, 2, 3]);
+    const expectedRevision = computeBoardYjsRawRevision(
+      new Uint8Array(sourceSnapshot),
+      [],
+    );
+    const { sql, calls } = createMockSql((call) => {
+      if (call.query.includes("SELECT snapshot") &&
+        call.values[0] === "board:runbook:task-a") return [{ snapshot: sourceSnapshot }];
+      if (call.query.includes("RETURNING name")) return [{ name: "board:task:task-a" }];
+      return [];
+    });
+    const repository = new BoardYjsRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await repository.commitBoardYjsRunbookMigration({
+      sourceDocumentName: "board:runbook:task-a",
+      canonicalDocumentName: "board:task:task-a",
+      expectedSourceRevision: expectedRevision,
+      expectedCanonicalRevision: null,
+      canonicalSnapshot: new Uint8Array([9]),
+      scope: {
+        folderId: "folder-1",
+        containerKind: "task",
+        containerId: "task-a",
+      },
+      replica: { boardItems: [], markdownDocuments: [] },
+      preserveCanonical: false,
+    });
+
+    expect(calls.some((call) => call.query.includes("FOR UPDATE"))).toBe(true);
+    expect(calls.some((call) => call.query.includes("ON CONFLICT (name) DO NOTHING")))
+      .toBe(true);
+    expect(calls.some((call) =>
+      call.query.includes("DELETE FROM board_yjs_documents") &&
+      call.values.includes("board:runbook:task-a")
+    )).toBe(true);
+    expect(calls.every((call) => call.inTransaction)).toBe(true);
+  });
+
   it("reconciles one Y.Doc replica with transaction-scoped SET-DIFF and object JSONB", async () => {
     const { sql, calls, jsonValues } = createMockSql();
     const factory = vi.fn(() => sql);
