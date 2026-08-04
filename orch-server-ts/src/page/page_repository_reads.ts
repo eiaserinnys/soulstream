@@ -4,8 +4,6 @@ import type {
   BacklinkDto,
   BrowserBacklinkDto,
   BrowserBacklinkPageDto,
-  BrowserBlockDto,
-  BrowserBlockSearchDto,
   BrowserPageSearchDto,
   PageDto,
   PageLinkKind,
@@ -51,18 +49,6 @@ export class PageListCursorError extends Error {
 
 export class PageBrowserBacklinkCursorError extends Error {
   readonly code = "PAGE_BROWSER_BACKLINK_CURSOR_INVALID";
-}
-
-interface BrowserBlockRow extends Record<string, unknown> {
-  id: string;
-  page_id: string;
-  page_title: string;
-  parent_id: string | null;
-  position_key: string;
-  block_type: string;
-  text_plain: string;
-  properties: Record<string, unknown>;
-  collapsed: boolean;
 }
 
 interface BrowserBacklinkRow extends Record<string, unknown> {
@@ -148,53 +134,6 @@ export async function searchBrowserPages(
     LIMIT ${input.limit}
   `;
   return { items: rows.map((row) => ({ pageId: row.page_id, title: row.title })) };
-}
-
-export async function searchBrowserBlocks(
-  sql: PageReadQuerySql,
-  input: { query: string; limit: number },
-): Promise<BrowserBlockSearchDto> {
-  const prefix = escapeLikeQuery(input.query);
-  const rows = await sql<readonly {
-    block_id: string;
-    page_id: string;
-    page_title: string;
-    text_plain: string;
-  }[]>`
-    SELECT block.id AS block_id, block.page_id,
-           page.title AS page_title, block.text_plain
-    FROM blocks block
-    JOIN pages page ON page.id = block.page_id
-    WHERE page.archived = FALSE
-      AND lower(block.text_plain) LIKE (lower(${prefix}) || '%') ESCAPE '\\'
-    ORDER BY lower(block.text_plain) ASC, block.id ASC
-    LIMIT ${input.limit}
-  `;
-  return {
-    items: rows.map((row) => ({
-      blockId: row.block_id,
-      pageId: row.page_id,
-      pageTitle: row.page_title,
-      textPreview: preview(row.text_plain),
-    })),
-  };
-}
-
-export async function getBrowserBlock(
-  sql: PageReadQuerySql,
-  blockId: string,
-): Promise<BrowserBlockDto | null> {
-  const rows = await sql<readonly BrowserBlockRow[]>`
-    SELECT block.id, block.page_id, page.title AS page_title,
-           block.parent_id, block.position_key, block.block_type,
-           block.text_plain, block.properties, block.collapsed
-    FROM blocks block
-    JOIN pages page ON page.id = block.page_id
-    WHERE block.id = ${blockId}
-    LIMIT 1
-  `;
-  const row = rows[0];
-  return row ? browserBlockDto(row) : null;
 }
 
 export async function getBrowserBacklinks(
@@ -324,20 +263,6 @@ function escapeLikeQuery(query: string): string {
 
 function preview(text: string): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 160);
-}
-
-function browserBlockDto(row: BrowserBlockRow): BrowserBlockDto {
-  return {
-    id: row.id,
-    pageId: row.page_id,
-    pageTitle: row.page_title,
-    parentId: row.parent_id,
-    positionKey: row.position_key,
-    blockType: row.block_type,
-    text: row.text_plain,
-    properties: row.properties,
-    collapsed: row.collapsed,
-  };
 }
 
 function browserBacklinkDto(row: BrowserBacklinkRow): BrowserBacklinkDto {

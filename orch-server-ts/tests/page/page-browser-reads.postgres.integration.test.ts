@@ -50,18 +50,9 @@ describe("browser page reads PostgreSQL integration", () => {
   it("treats percent and underscore literally and excludes archived pages", async () => {
     await expect(repository.searchBrowserPages({ query: "100%_", limit: 20 }))
       .resolves.toEqual({ items: [{ pageId: "page-percent", title: "100%_ Real" }] });
-    await expect(repository.searchBrowserBlocks({ query: "100%_", limit: 20 }))
-      .resolves.toEqual({
-        items: [{
-          blockId: "literal-block",
-          pageId: "page-source",
-          pageTitle: "Source",
-          textPreview: "100%_ block",
-        }],
-      });
   });
 
-  it("uses both prefix indexes at the repository query boundary", async () => {
+  it("uses the page prefix index at the repository query boundary", async () => {
     await harness.sql.unsafe("SET enable_seqscan = off");
     const pagePlan = await harness.sql`
       EXPLAIN (COSTS OFF)
@@ -69,16 +60,7 @@ describe("browser page reads PostgreSQL integration", () => {
       WHERE archived = FALSE AND title_key LIKE (lower(${"100\\%\\_"}) || '%') ESCAPE '\\'
       ORDER BY title_key ASC, id ASC LIMIT 20
     `;
-    const blockPlan = await harness.sql`
-      EXPLAIN (COSTS OFF)
-      SELECT block.id FROM blocks block
-      JOIN pages page ON page.id = block.page_id
-      WHERE page.archived = FALSE
-        AND lower(block.text_plain) LIKE (lower(${"100\\%\\_"}) || '%') ESCAPE '\\'
-      ORDER BY lower(block.text_plain) ASC, block.id ASC LIMIT 20
-    `;
     expect(planText(pagePlan)).toContain("idx_pages_title_prefix");
-    expect(planText(blockPlan)).toContain("idx_blocks_text_prefix");
   });
 
   it("paginates duplicate timestamps without gaps or duplicates and survives deleted rows", async () => {

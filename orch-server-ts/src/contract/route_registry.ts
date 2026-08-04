@@ -169,20 +169,6 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
-    path: "/api/blocks/search",
-    name: "search_blocks",
-    authRequired: true,
-    family: "page_yjs",
-  },
-  {
-    methods: ["GET"],
-    path: "/api/blocks/{blockId}",
-    name: "read_block",
-    authRequired: true,
-    family: "page_yjs",
-  },
-  {
-    methods: ["GET"],
     path: "/api/pages/{pageId}/backlinks",
     name: "list_page_backlinks",
     authRequired: true,
@@ -471,7 +457,6 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (
     path === "/api/pages" ||
     path.startsWith("/api/pages/") ||
-    path.startsWith("/api/blocks/") ||
     path.startsWith("/api/planner/") ||
     path.startsWith("/api/page-yjs/") ||
     path.startsWith("/yjs/page/")

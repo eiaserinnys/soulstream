@@ -73,8 +73,6 @@ describe("production orchestrator entrypoint", () => {
     expect(application.app.hasRoute({ method: "GET", url: "/api/pages/search" })).toBe(true);
     expect(application.app.hasRoute({ method: "GET", url: "/api/pages/:pageId/backlinks" }))
       .toBe(true);
-    expect(application.app.hasRoute({ method: "GET", url: "/api/blocks/search" })).toBe(true);
-    expect(application.app.hasRoute({ method: "GET", url: "/api/blocks/:blockId" })).toBe(true);
     expect(application.app.hasRoute({ method: "POST", url: "/api/pages/daily" })).toBe(true);
     expect(application.app.hasRoute({ method: "POST", url: "/api/pages/:pageId/operations" }))
       .toBe(true);

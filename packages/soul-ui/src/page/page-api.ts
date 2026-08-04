@@ -1,8 +1,6 @@
 import type {
   BlockDto,
   BrowserBacklinkPageDto,
-  BrowserBlockDto,
-  BrowserBlockSearchDto,
   BrowserPageSearchDto,
   PageDto,
   PageLinkKind,
@@ -14,9 +12,6 @@ export type {
   BlockDto,
   BrowserBacklinkDto,
   BrowserBacklinkPageDto,
-  BrowserBlockDto,
-  BrowserBlockSearchDto,
-  BrowserBlockSearchItemDto,
   BrowserPageSearchDto,
   BrowserPageSearchItemDto,
   InitialTaskContext,
@@ -154,8 +149,6 @@ export interface TransferPageBlocksResponse {
 export interface PageApiClient {
   listPages(input?: { starred?: boolean; cursor?: string; limit?: number }): Promise<PageListDto>;
   searchPages(query: string, limit?: number): Promise<BrowserPageSearchDto>;
-  searchBlocks(query: string, limit?: number): Promise<BrowserBlockSearchDto>;
-  getBlock(blockId: string): Promise<BrowserBlockDto>;
   getBacklinks(pageId: string, input?: {
     kinds?: readonly PageLinkKind[];
     cursor?: string;
@@ -214,10 +207,6 @@ export function createPageApiClient(options: {
     },
     searchPages: async (query, limit = 20) =>
       await request<BrowserPageSearchDto>(searchPath("/api/pages/search", query, limit)),
-    searchBlocks: async (query, limit = 20) =>
-      await request<BrowserBlockSearchDto>(searchPath("/api/blocks/search", query, limit)),
-    getBlock: async (blockId) =>
-      await request<BrowserBlockDto>(`/api/blocks/${encodeURIComponent(blockId)}`),
     getBacklinks: async (pageId, input = {}) => {
       const query = new URLSearchParams();
       if (input.kinds !== undefined) query.set("kinds", input.kinds.join(","));

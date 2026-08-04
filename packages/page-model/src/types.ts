@@ -170,29 +170,6 @@ export interface BrowserPageSearchDto {
   items: BrowserPageSearchItemDto[];
 }
 
-export interface BrowserBlockSearchItemDto {
-  blockId: string;
-  pageId: string;
-  pageTitle: string;
-  textPreview: string;
-}
-
-export interface BrowserBlockSearchDto {
-  items: BrowserBlockSearchItemDto[];
-}
-
-export interface BrowserBlockDto {
-  id: string;
-  pageId: string;
-  pageTitle: string;
-  parentId: string | null;
-  positionKey: string;
-  blockType: PageBlockType;
-  text: string;
-  properties: Record<string, unknown>;
-  collapsed: boolean;
-}
-
 export interface BrowserBacklinkDto {
   id: string;
   sourcePageId: string;

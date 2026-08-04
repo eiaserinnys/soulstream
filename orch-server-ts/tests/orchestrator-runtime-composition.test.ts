@@ -561,8 +561,6 @@ function pageServiceDouble() {
     getBrowserPage: vi.fn().mockResolvedValue(result),
     getDailyPage: vi.fn().mockResolvedValue({ page: result.page, created: false }),
     searchBrowserPages: vi.fn().mockResolvedValue({ items: [] }),
-    searchBrowserBlocks: vi.fn().mockResolvedValue({ items: [] }),
-    getBrowserBlock: vi.fn().mockResolvedValue(null),
     getBrowserBacklinks: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     handleConnection: vi.fn(),
     assertWebsocketAuthConfigured: vi.fn(),
