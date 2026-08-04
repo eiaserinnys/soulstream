@@ -19,6 +19,7 @@ export const plannerRouteAuthRequirements = {
   "GET /api/planner/projects/{pageId}": true,
   "GET /api/planner/projects/{pageId}/tasks": true,
   "GET /api/planner/projects/{pageId}/documents": true,
+  "GET /api/planner/projects/{pageId}/legacy-sessions": true,
   "GET /api/planner/tasks/{pageId}/runs": true,
 } as const;
 
@@ -45,6 +46,9 @@ const projectQuery = z.object({
 });
 const projectTasksQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.projectTasks);
 const projectDocumentsQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.projectDocuments);
+const projectLegacySessionsQuery = cursorPageQuery(
+  PLANNER_READ_PAGE_LIMITS.projectLegacySessions,
+);
 const taskRunsQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.taskRuns);
 
 export function registerPlannerRoutes(
@@ -116,6 +120,24 @@ export function registerPlannerRoutes(
 
   registerProjectSliceRoute(app, options, "tasks");
   registerProjectSliceRoute(app, options, "documents");
+
+  app.get<{
+    Params: { pageId: string };
+    Querystring: { cursor?: string; limit?: string };
+  }>("/api/planner/projects/:pageId/legacy-sessions", async (request, reply) => {
+    if (!await options.resolveUser(request)) return unauthorized(reply);
+    const pageId = id.safeParse(request.params.pageId);
+    if (!pageId.success) return invalid(reply, pageId.error.message);
+    const query = projectLegacySessionsQuery.safeParse(request.query);
+    if (!query.success) return invalid(reply, query.error.message);
+    try {
+      return reply.send(
+        await options.provider.getProjectLegacySessions(pageId.data, query.data),
+      );
+    } catch (error) {
+      return failed(request, reply, error, "project-legacy-sessions");
+    }
+  });
 
   app.get<{
     Params: { pageId: string };

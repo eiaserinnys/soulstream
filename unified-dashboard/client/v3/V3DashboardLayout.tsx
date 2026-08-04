@@ -40,6 +40,7 @@ import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
 import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import { useProjectNavigationMutations } from "./use-project-navigation-mutations";
+import { useProjectLegacySessions } from "./use-project-legacy-sessions";
 import "./v3-dashboard-styles";
 export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
@@ -133,6 +134,7 @@ function V3DashboardContent() {
     refreshKeys: plannerInvalidationKeys,
     notify,
   });
+  const projectLegacySessions = useProjectLegacySessions({ dependencies: dataDependencies, projectPageId: selectedProjectId, folderMapped: selectedFolderId !== null, notify });
   const currentTasks = useMemo(
     () => [
       ...(daily.data?.tasks ?? []),
@@ -201,8 +203,9 @@ function V3DashboardContent() {
       ...currentTasks.flatMap((task) => task.sessionIds),
       ...(daily.data?.reviewSessionIds ?? []),
       ...runHistory.sessionIds,
+      ...(projectLegacySessions.state?.items.map((session) => session.agentSessionId) ?? []),
     ])].sort(),
-    [currentTasks, daily.data?.reviewSessionIds, runHistory.sessionIds],
+    [currentTasks, daily.data?.reviewSessionIds, projectLegacySessions.state?.items, runHistory.sessionIds],
   );
   const {
     sessions: targetedRunSessions,
@@ -429,7 +432,7 @@ function V3DashboardContent() {
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
             {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={createTask} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedProject ? (
-              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} onCreateTask={() => setCreateOpen(true)} />
+              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} legacySessions={projectLegacySessions} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onOpenSession={openSession} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} onCreateTask={() => setCreateOpen(true)} />
             ) : selectedFolderId ? (
               <ProjectFolderResolutionView state={resolution} title={selectedFolderName} onRetry={() => { void projectSelection.retry(); }} />
             ) : (

@@ -172,6 +172,10 @@ describe("planner routes", () => {
       items: [page("document")],
       next_cursor: null,
     });
+    vi.mocked(provider.getProjectLegacySessions).mockResolvedValueOnce({
+      items: [{ agentSessionId: "legacy-session", status: "completed", eventCount: 0 }],
+      next_cursor: "legacy-next",
+    });
     vi.mocked(provider.getTaskRuns).mockResolvedValueOnce({
       items: [{ agent_session_id: "session-a" }],
       next_cursor: "run-next",
@@ -185,11 +189,12 @@ describe("planner routes", () => {
     });
     try {
       const headers = { cookie: browserCookie };
-      const [starred, history, tasks, documents, runs] = await Promise.all([
+      const [starred, history, tasks, documents, legacySessions, runs] = await Promise.all([
         app.inject({ method: "GET", url: "/api/planner/starred-tasks?cursor=task-cursor&limit=25", headers }),
         app.inject({ method: "GET", url: "/api/planner/daily-history?before=2026-07-14&limit=2", headers }),
         app.inject({ method: "GET", url: "/api/planner/projects/project/tasks?cursor=task-cursor&limit=10", headers }),
         app.inject({ method: "GET", url: "/api/planner/projects/project/documents?limit=8", headers }),
+        app.inject({ method: "GET", url: "/api/planner/projects/project/legacy-sessions?cursor=legacy-cursor&limit=12", headers }),
         app.inject({ method: "GET", url: "/api/planner/tasks/task/runs?cursor=run-cursor&limit=20", headers }),
       ]);
 
@@ -197,11 +202,19 @@ describe("planner routes", () => {
       expect(history.json()).toEqual({ dates: ["2026-07-13", "2026-07-11"] });
       expect(tasks.json()).toMatchObject({ next_cursor: "task-next" });
       expect(documents.json()).toMatchObject({ items: [{ id: "document" }] });
+      expect(legacySessions.json()).toMatchObject({
+        items: [{ agentSessionId: "legacy-session" }],
+        next_cursor: "legacy-next",
+      });
       expect(runs.json()).toMatchObject({ total: 61, next_cursor: "run-next" });
       expect(provider.getStarredTasks).toHaveBeenCalledWith({ cursor: "task-cursor", limit: 25 });
       expect(provider.getDailyHistory).toHaveBeenCalledWith({ before: "2026-07-14", limit: 2 });
       expect(provider.getProjectTasks).toHaveBeenCalledWith("project", { cursor: "task-cursor", limit: 10 });
       expect(provider.getProjectDocuments).toHaveBeenCalledWith("project", { cursor: undefined, limit: 8 });
+      expect(provider.getProjectLegacySessions).toHaveBeenCalledWith("project", {
+        cursor: "legacy-cursor",
+        limit: 12,
+      });
       expect(provider.getTaskRuns).toHaveBeenCalledWith("task", { cursor: "run-cursor", limit: 20 });
     } finally {
       await app.close();
@@ -215,6 +228,7 @@ describe("planner routes", () => {
       project: { default: 20, max: 50 },
       projectTasks: { default: 20, max: 50 },
       projectDocuments: { default: 20, max: 50 },
+      projectLegacySessions: { default: 20, max: 50 },
       taskRuns: { default: 20, max: 50 },
     });
 
@@ -246,6 +260,10 @@ describe("planner routes", () => {
       {
         url: "/api/planner/projects/project/documents",
         limits: PLANNER_READ_PAGE_LIMITS.projectDocuments,
+      },
+      {
+        url: "/api/planner/projects/project/legacy-sessions",
+        limits: PLANNER_READ_PAGE_LIMITS.projectLegacySessions,
       },
       {
         url: "/api/planner/tasks/task/runs",
@@ -296,6 +314,14 @@ describe("planner routes", () => {
         limit: 20,
       });
       expect(provider.getProjectDocuments).toHaveBeenNthCalledWith(2, "project", {
+        cursor: undefined,
+        limit: 50,
+      });
+      expect(provider.getProjectLegacySessions).toHaveBeenNthCalledWith(1, "project", {
+        cursor: undefined,
+        limit: 20,
+      });
+      expect(provider.getProjectLegacySessions).toHaveBeenNthCalledWith(2, "project", {
         cursor: undefined,
         limit: 50,
       });
@@ -353,6 +379,7 @@ describe("planner routes", () => {
       "GET /api/planner/projects/{pageId}": true,
       "GET /api/planner/projects/{pageId}/tasks": true,
       "GET /api/planner/projects/{pageId}/documents": true,
+      "GET /api/planner/projects/{pageId}/legacy-sessions": true,
       "GET /api/planner/tasks/{pageId}/runs": true,
     });
   });
@@ -365,6 +392,7 @@ function providerDouble(): PlannerReadProvider & {
   getDailyHistory: ReturnType<typeof vi.fn>;
   getProjectTasks: ReturnType<typeof vi.fn>;
   getProjectDocuments: ReturnType<typeof vi.fn>;
+  getProjectLegacySessions: ReturnType<typeof vi.fn>;
   getTaskRuns: ReturnType<typeof vi.fn>;
 } {
   return {
@@ -374,6 +402,7 @@ function providerDouble(): PlannerReadProvider & {
     getDailyHistory: vi.fn(async () => ({ dates: [] })),
     getProjectTasks: vi.fn(async () => null),
     getProjectDocuments: vi.fn(async () => null),
+    getProjectLegacySessions: vi.fn(async () => ({ items: [], next_cursor: null })),
     getTaskRuns: vi.fn(async () => null),
   };
 }

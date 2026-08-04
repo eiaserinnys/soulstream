@@ -162,6 +162,30 @@ describe("planner repository", () => {
     expect(query).toContain("mounted_documents AS");
     expect(query).toContain("COALESCE((page.metadata->>'starred')::boolean, FALSE)");
   });
+
+  it("pages only direct project-folder sessions that have no task container", async () => {
+    const harness = createSqlHarness([[
+      sessionRow("legacy-a", "2026-07-14T00:00:00.000Z"),
+      sessionRow("legacy-b", "2026-07-13T00:00:00.000Z"),
+    ]]);
+    const repository = new PlannerRepository(resolverFor(harness.sql));
+
+    await expect(repository.getProjectLegacySessions("project", { limit: 1 }))
+      .resolves.toMatchObject({
+        items: [{ agentSessionId: "legacy-a", displayName: "legacy-a" }],
+        next_cursor: expect.any(String),
+      });
+
+    const query = normalizeSql(harness.calls[0]?.text);
+    expect(query).toContain("folder.project_page_id = ?");
+    expect(query).toContain("item.container_kind = 'folder'");
+    expect(query).toContain("item.container_id = folder.id");
+    expect(query).toContain("item.membership_kind = 'primary'");
+    expect(query).toContain("item.item_type = 'session'");
+    expect(query).toContain("task_item.container_kind = 'task'");
+    expect(query).toContain("ORDER BY session.updated_at DESC, session.session_id DESC");
+    expect(harness.calls[0]?.values).toContain(2);
+  });
 });
 
 function createSqlHarness(results: readonly (readonly Record<string, unknown>[])[]) {
@@ -194,5 +218,15 @@ function page(id: string) {
     metadata: {},
     created_at: "2026-07-14T00:00:00.000Z",
     updated_at: "2026-07-14T00:00:00.000Z",
+  };
+}
+
+function sessionRow(sessionId: string, updatedAt: string) {
+  return {
+    session_id: sessionId,
+    display_name: sessionId,
+    status: "completed",
+    updated_at: updatedAt,
+    updated_at_cursor: updatedAt,
   };
 }

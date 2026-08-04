@@ -185,6 +185,7 @@ function createInertPageYjsRoutes() {
       getProject: vi.fn(async () => null),
       getProjectTasks: vi.fn(async () => null),
       getProjectDocuments: vi.fn(async () => null),
+      getProjectLegacySessions: vi.fn(async () => ({ items: [], next_cursor: null })),
       getTaskRuns: vi.fn(async () => null),
     },
     createService: () => ({

@@ -14,6 +14,9 @@ describe("PR-CN planner polish contract", () => {
     expect(toolbar).not.toContain("onOpenNewTask");
     expect(views).toContain('label="아침 정리"');
     expect(views.match(/label="새 업무"/g)).toHaveLength(2);
+    expect(views).toContain("<h2>업무</h2>");
+    expect(views).not.toContain("역대 업무");
+    expect(layout).toContain("projectLegacySessions.state?.items.map");
     expect(layout).toContain("onOpenRitual={() => setRitualOpen(true)}");
     expect(navigation).toContain("<h2>중요 작업</h2>");
     expect(navigation).not.toContain("<h2>★ 작업</h2>");

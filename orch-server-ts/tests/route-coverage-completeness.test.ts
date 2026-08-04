@@ -38,6 +38,7 @@ describe("route coverage completeness gate", () => {
     "GET /api/planner/projects/{pageId}",
     "GET /api/planner/projects/{pageId}/tasks",
     "GET /api/planner/projects/{pageId}/documents",
+    "GET /api/planner/projects/{pageId}/legacy-sessions",
     "GET /api/planner/tasks/{pageId}/runs",
   ];
   const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";

@@ -850,6 +850,16 @@ export async function installV3VisualQaRoutes(
         documents: { items: empty ? [] : [pages.document, pages.documentTwo], next_cursor: null },
       });
     }
+    const plannerLegacySessionsMatch = /^\/api\/planner\/projects\/([^/]+)\/legacy-sessions$/.exec(path);
+    if (plannerLegacySessionsMatch && request.method() === "GET") {
+      const projectPageId = decodeURIComponent(plannerLegacySessionsMatch[1]);
+      return fulfillJson(route, {
+        items: projectPageId === pages.project.id
+          ? [{ ...outsideTaskSession, eventCount: 0 }]
+          : [],
+        next_cursor: null,
+      });
+    }
     const plannerProjectSliceMatch = /^\/api\/planner\/projects\/([^/]+)\/(tasks|documents)$/.exec(path);
     if (plannerProjectSliceMatch && request.method() === "GET") {
       return plannerProjectSliceMatch[2] === "tasks"

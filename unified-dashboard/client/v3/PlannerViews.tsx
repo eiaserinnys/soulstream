@@ -10,6 +10,7 @@ import {
   type ProjectPageSnapshot,
 } from "./project-page-details";
 import { ProjectContextEditor } from "./ProjectContextEditor";
+import { ProjectLegacySessionsSection } from "./ProjectLegacySessionsSection";
 import type {
   DailyPlannerData,
   PlannerTask,
@@ -21,6 +22,7 @@ import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { buildDocumentContextMenuActions } from "./context-menu-model";
 import { loadConfirmedResult } from "./planner-query-state";
 import type { SessionNodeConnectivity } from "./session-node-connectivity";
+import type { ProjectLegacySessionsController } from "./use-project-legacy-sessions";
 
 export type PlannerLoadState<T> =
   | { status: "loading"; data: T | null; message: null }
@@ -135,9 +137,11 @@ export function ProjectPlannerView({
   newDocumentTitle,
   tasksLoadingMore,
   documentsLoadingMore,
+  legacySessions,
   invalidationKey,
   onLoadMoreTasks,
   onLoadMoreDocuments,
+  onOpenSession,
   onBack,
   onOpenTask,
   onCompleteTask,
@@ -157,9 +161,11 @@ export function ProjectPlannerView({
   newDocumentTitle: string;
   tasksLoadingMore: boolean;
   documentsLoadingMore: boolean;
+  legacySessions: ProjectLegacySessionsController;
   invalidationKey: number;
   onLoadMoreTasks(): void;
   onLoadMoreDocuments(): void;
+  onOpenSession(session: SessionSummary): void;
   onBack(): void;
   onOpenTask(task: PlannerTask): void;
   onCompleteTask(task: PlannerTask): Promise<void>;
@@ -294,7 +300,7 @@ export function ProjectPlannerView({
         ) : null}
       </section>
       <div className="v3-section-head">
-        <h2>역대 업무</h2><span>{data?.tasks.length ?? 0}개</span>
+        <h2>업무</h2><span>{data?.tasks.length ?? 0}개</span>
         <span className="v3-spacer" />
         <DashboardIconCap className="v3-planner-head-action" label="새 업무" onClick={onCreateTask}>
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -327,6 +333,19 @@ export function ProjectPlannerView({
       ) : null}
       {state.status === "ready" && data?.tasks.length === 0 ? (
         <EmptyState text="이 프로젝트에 누적된 업무가 없습니다." />
+      ) : null}
+      {legacySessions.state ? (
+        <ProjectLegacySessionsSection
+          sessions={legacySessions.state.items}
+          liveSessions={sessions}
+          nodeConnectivity={nodeConnectivity}
+          loading={legacySessions.state.status === "loading"}
+          loadingMore={legacySessions.state.loadingMore}
+          error={legacySessions.state.message}
+          hasMore={Boolean(legacySessions.state.nextCursor)}
+          onLoadMore={() => { void legacySessions.loadMore(); }}
+          onOpenSession={onOpenSession}
+        />
       ) : null}
     </div>
   );

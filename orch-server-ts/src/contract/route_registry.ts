@@ -232,6 +232,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
+    path: "/api/planner/projects/{pageId}/legacy-sessions",
+    name: "list_project_planner_legacy_sessions",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
     path: "/api/planner/tasks/{pageId}/runs",
     name: "list_planner_task_runs",
     authRequired: true,

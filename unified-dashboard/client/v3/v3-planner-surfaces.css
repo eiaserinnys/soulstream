@@ -219,6 +219,14 @@
   padding: 0 2px;
 }
 
+.v3-project-legacy-sessions {
+  margin: 30px 0 0;
+}
+
+.v3-project-legacy-sessions .v3-run-list {
+  margin-top: 10px;
+}
+
 .v3-project-context {
   display: grid;
   gap: 10px;
