@@ -178,6 +178,7 @@ describe("live DB SSE replay snapshots", () => {
           predecessorSessionId: null,
           agentId: "agent-a",
           modelPreset: null,
+          modelLabel: null,
           model: null,
           agentName: "Agent A",
           agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",

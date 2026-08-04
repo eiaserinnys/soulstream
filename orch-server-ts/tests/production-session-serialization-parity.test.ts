@@ -25,6 +25,8 @@ const CLIENT_SESSION_FIELDS = {
   agentName: "서소영",
   agentPortraitUrl: "/api/nodes/node-a/agents/seosoyoung/portrait",
   backend: "codex",
+  modelPreset: "codex-5.6-sol",
+  modelLabel: "Codex - 5.6 Sol",
   userName: "서소영",
   userPortraitUrl: "/api/nodes/node-a/user/portrait",
 } as const;
@@ -63,6 +65,12 @@ describe("production session serialization parity", () => {
           portrait_url: "/api/agents/seosoyoung/portrait",
         }],
         user: { name: "서소영", hasPortrait: true },
+        model_presets: [{
+          id: "codex-5.6-sol",
+          label: "Codex - 5.6 Sol",
+          backend: "codex",
+          available: true,
+        }],
       }));
       ws.send(JSON.stringify({
         type: "sessions_update",
@@ -131,6 +139,8 @@ function sessionRow(): Record<string, unknown> {
     last_read_event_id: 41,
     caller_session_id: null,
     agent_id: "seosoyoung",
+    model_preset: "codex-5.6-sol",
+    model: "gpt-5.6-codex",
   };
 }
 

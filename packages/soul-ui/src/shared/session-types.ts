@@ -111,6 +111,8 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   backend?: string;
   /** 사용자가 선택한 모델 프리셋 ID. */
   modelPreset?: string | null;
+  /** 서버 model catalog에서 해석한 모델 프리셋 표시 라벨. */
+  modelLabel?: string | null;
   /** 세션 생성 시 프리셋에서 해석해 영속한 실제 모델 문자열. */
   model?: string | null;
   /** 이 세션을 띄운 발신 세션 ID (위임 세션이면 존재, 직접이면 undefined) */

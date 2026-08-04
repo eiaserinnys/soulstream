@@ -11,9 +11,10 @@ import {
   type MarkdownDocument,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { ChevronLeft, ChevronRight, Plus, SquarePen } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsDown, Plus, SquarePen } from "lucide-react";
 
 import { RichSessionRow } from "./RichSessionRow";
+import { loadMoreRunsPreservingScroll } from "./TaskRunHistory";
 import { fetchInlineMarkdown } from "./task-inline-board-api";
 import {
   buildTaskBoardResourceTabs,
@@ -33,11 +34,15 @@ export function TaskBoardResourcePane({
   sessionIds,
   sessions,
   runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
   activeSessionId,
   boardItems,
   openedResources,
   activeTabId,
   onOpenSession,
+  onLoadMoreRuns,
   onOpenDocument,
   onActiveTabChange,
   onNewSession,
@@ -48,11 +53,15 @@ export function TaskBoardResourcePane({
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
   activeSessionId: string | null;
   boardItems: readonly CatalogBoardItem[];
   openedResources: readonly TaskBoardResourceSelection[];
   activeTabId: string;
   onOpenSession(session: SessionSummary): void;
+  onLoadMoreRuns(): Promise<void>;
   onOpenDocument(documentId: string): void;
   onActiveTabChange(tabId: string): void;
   onNewSession?: () => void;
@@ -110,8 +119,12 @@ export function TaskBoardResourcePane({
             sessionIds={sessionIds}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
+            runHistoryTotal={runHistoryTotal}
+            runHistoryHasMore={runHistoryHasMore}
+            runHistoryLoading={runHistoryLoading}
             activeSessionId={activeSessionId}
             onOpenSession={onOpenSession}
+            onLoadMoreRuns={onLoadMoreRuns}
             onNewSession={onNewSession}
             onSessionContextMenu={onSessionContextMenu}
           />
@@ -225,16 +238,24 @@ function TaskBoardSessionTree({
   sessionIds,
   sessions,
   runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
   activeSessionId,
   onOpenSession,
+  onLoadMoreRuns,
   onNewSession,
   onSessionContextMenu,
 }: {
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
+  onLoadMoreRuns(): Promise<void>;
   onNewSession?: () => void;
   onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
@@ -246,7 +267,9 @@ function TaskBoardSessionTree({
     <div className="v3-task-board-session-list">
       <div className="v3-task-board-session-head">
         <strong>세션 히스토리</strong>
-        <span className="v3-task-board-session-count">{tree.length}회</span>
+        <span className="v3-task-board-session-count">
+          {runHistoryTotal > tree.length ? `${tree.length}/${runHistoryTotal}회` : `${tree.length}회`}
+        </span>
         {onNewSession ? (
           <DashboardIconCap label="새 세션" onClick={onNewSession}>
             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -268,6 +291,20 @@ function TaskBoardSessionTree({
           ))}
         </div>
       )}
+      {runHistoryHasMore ? (
+        <div className="v3-run-load-more">
+          <DashboardIconCap
+            label="이전 세션 더 보기"
+            data-testid="v3-task-board-load-more-runs"
+            disabled={runHistoryLoading}
+            onClick={(event) => {
+              void loadMoreRunsPreservingScroll(event.currentTarget, onLoadMoreRuns);
+            }}
+          >
+            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -283,7 +320,7 @@ function TaskBoardSessionNode({
   onOpenSession(session: SessionSummary): void;
   onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const failed = node.loadState === "failed";
   const loading = node.loadState === "loading";
   return (

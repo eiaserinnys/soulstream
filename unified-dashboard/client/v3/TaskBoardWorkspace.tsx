@@ -1,3 +1,5 @@
+// 500줄 예외: 보드 레이아웃·오버레이·세션 액션의 공존 계약을 소스 계약 테스트가 고정한다.
+// 이번 변경은 실행 이력 페이징 전달만 추가하며, 구조 분리는 별도 계약 마이그레이션이 필요하다.
 import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ChatView,
@@ -62,6 +64,9 @@ export function TaskBoardWorkspace({
   projectTitle,
   sessions,
   runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
   activeSession,
   chatInputDisabled,
   fileUploadUrl,
@@ -73,6 +78,7 @@ export function TaskBoardWorkspace({
   sessionDefaults,
   onClose,
   onOpenSession,
+  onLoadMoreRuns,
   onRenameSession,
   onDeleteSessions,
   onMoveSession,
@@ -83,6 +89,9 @@ export function TaskBoardWorkspace({
   projectTitle: string;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
   activeSession: SessionSummary | undefined;
   chatInputDisabled: boolean;
   fileUploadUrl: string | undefined;
@@ -94,6 +103,7 @@ export function TaskBoardWorkspace({
   sessionDefaults: PageSessionDefaults | null;
   onClose(): void;
   onOpenSession(session: SessionSummary): void;
+  onLoadMoreRuns(): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
@@ -431,11 +441,15 @@ export function TaskBoardWorkspace({
             sessionIds={task.sessionIds}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
+            runHistoryTotal={runHistoryTotal}
+            runHistoryHasMore={runHistoryHasMore}
+            runHistoryLoading={runHistoryLoading}
             activeSessionId={activeSessionKey}
             boardItems={boardItems}
             openedResources={resourceState.openedResources}
             activeTabId={resourceState.activeTabId}
             onOpenSession={openSession}
+            onLoadMoreRuns={onLoadMoreRuns}
             onOpenDocument={(documentId) => useDashboardStore.getState().setActiveBoardDocument(documentId)}
             onActiveTabChange={(activeTabId) => {
               setResourceState((current) => (
