@@ -20,10 +20,8 @@ import {
   findPageIdByDailyDate,
   findPageIdByTitle,
   getBrowserBacklinks,
-  getBrowserBlock,
   getPageBacklinks,
   listPages,
-  searchBrowserBlocks,
   searchBrowserPages,
   resolvePageSessionDefaults,
   type PageSessionDefaultsDto,
@@ -31,8 +29,6 @@ import {
 } from "./page_repository_reads.js";
 import type {
   BrowserBacklinkPageDto,
-  BrowserBlockDto,
-  BrowserBlockSearchDto,
   BrowserPageSearchDto,
   PageLinkKind,
   PageListDto,
@@ -196,17 +192,6 @@ export class PageRepository {
     limit: number;
   }): Promise<BrowserPageSearchDto> {
     return await searchBrowserPages(await this.resolveSql(), input);
-  }
-
-  async searchBrowserBlocks(input: {
-    query: string;
-    limit: number;
-  }): Promise<BrowserBlockSearchDto> {
-    return await searchBrowserBlocks(await this.resolveSql(), input);
-  }
-
-  async getBrowserBlock(blockId: string): Promise<BrowserBlockDto | null> {
-    return await getBrowserBlock(await this.resolveSql(), blockId);
   }
 
   async getBrowserBacklinks(input: {

@@ -9,8 +9,6 @@ describe("page API client", () => {
       .mockResolvedValueOnce(jsonResponse({ page: page(), blocks: [], state_vector: "AA==" }))
       .mockResolvedValueOnce(jsonResponse({ page: page(), created: false }))
       .mockResolvedValueOnce(jsonResponse({ items: [{ pageId: "page-1", title: "Page" }] }))
-      .mockResolvedValueOnce(jsonResponse({ items: [{ blockId: "block-1", pageId: "page-1", pageTitle: "Page", textPreview: "Block" }] }))
-      .mockResolvedValueOnce(jsonResponse({ id: "block-1", pageId: "page-1" }))
       .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: "next cursor" }))
       .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: null }));
     const client = createPageApiClient({ fetch });
@@ -19,8 +17,6 @@ describe("page API client", () => {
     await client.getPage("page/one");
     await client.getDailyPage("2026-07-12");
     await client.searchPages("Daily note", 12);
-    await client.searchBlocks("Decision", 8);
-    await client.getBlock("block/one");
     await client.getBacklinks("page/one", {
       kinds: ["mount", "block_ref"],
       cursor: "cursor 2",
@@ -45,21 +41,13 @@ describe("page API client", () => {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     });
-    expect(fetch).toHaveBeenNthCalledWith(5, "/api/blocks/search?q=Decision&limit=8", {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    expect(fetch).toHaveBeenNthCalledWith(6, "/api/blocks/block%2Fone", {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
     expect(fetch).toHaveBeenNthCalledWith(
-      7,
+      5,
       "/api/pages/page%2Fone/backlinks?kinds=mount%2Cblock_ref&cursor=cursor+2&limit=15",
       { credentials: "same-origin", headers: { Accept: "application/json" } },
     );
     expect(fetch).toHaveBeenNthCalledWith(
-      8,
+      6,
       "/api/pages/page%2Fone/backlinks?include_self=true",
       { credentials: "same-origin", headers: { Accept: "application/json" } },
     );

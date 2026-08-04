@@ -29,8 +29,6 @@ describe("route coverage completeness gate", () => {
     "GET /api/pages/{pageId}",
     "GET /api/pages/{pageId}/backlinks",
     "GET /api/pages/{pageId}/session-defaults",
-    "GET /api/blocks/search",
-    "GET /api/blocks/{blockId}",
     "POST /api/pages/block-transfers",
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
@@ -166,8 +164,6 @@ function createAllOptInRouteApp() {
       resolveBrowserUser: async () => ({ email: "user@example.com" }),
       browserReads: {
         searchBrowserPages: async () => ({ items: [] }),
-        searchBrowserBlocks: async () => ({ items: [] }),
-        getBrowserBlock: async () => null,
         getBrowserBacklinks: async () => ({ items: [], nextCursor: null }),
       },
       plannerReads: {

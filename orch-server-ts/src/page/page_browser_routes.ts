@@ -4,8 +4,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type {
   BrowserBacklinkPageDto,
-  BrowserBlockDto,
-  BrowserBlockSearchDto,
   BrowserPageSearchDto,
   PageLinkKind,
 } from "@soulstream/page-model";
@@ -36,8 +34,6 @@ export const pageBrowserRouteAuthRequirements = {
   "GET /api/pages/{pageId}": true,
   "GET /api/pages/{pageId}/session-defaults": true,
   "GET /api/pages/{pageId}/backlinks": true,
-  "GET /api/blocks/search": true,
-  "GET /api/blocks/{blockId}": true,
   "POST /api/pages/daily": true,
   "POST /api/pages/block-transfers": true,
   "POST /api/pages/{pageId}/operations": true,
@@ -70,8 +66,6 @@ export interface PageBrowserRouteOptions {
 
 export interface PageBrowserReads {
   searchBrowserPages(input: { query: string; limit: number }): Promise<BrowserPageSearchDto>;
-  searchBrowserBlocks(input: { query: string; limit: number }): Promise<BrowserBlockSearchDto>;
-  getBrowserBlock(blockId: string): Promise<BrowserBlockDto | null>;
   getBrowserBacklinks(input: {
     pageId: string;
     kinds: readonly PageLinkKind[];
@@ -178,39 +172,6 @@ export function registerPageBrowserRoutes(
       return routeError(request, reply, error, "page-search");
     }
   });
-
-  app.get("/api/blocks/search", async (request, reply) => {
-    const userId = await resolveUserId(request, options);
-    if (!userId) return unauthorized(reply);
-    const parsed = searchQuerySchema.safeParse(request.query);
-    if (!parsed.success) return invalid(reply, parsed.error.message);
-    try {
-      return reply.send(await options.reads.searchBrowserBlocks({
-        query: parsed.data.q,
-        limit: parsed.data.limit,
-      }));
-    } catch (error) {
-      return routeError(request, reply, error, "block-search");
-    }
-  });
-
-  app.get<{ Params: { blockId: string } }>(
-    "/api/blocks/:blockId",
-    async (request, reply) => {
-      const userId = await resolveUserId(request, options);
-      if (!userId) return unauthorized(reply);
-      const parsed = id.safeParse(request.params.blockId);
-      if (!parsed.success) return invalid(reply, parsed.error.message);
-      try {
-        const block = await options.reads.getBrowserBlock(parsed.data);
-        return block
-          ? reply.send(block)
-          : errorReply(reply, 404, "BLOCK_NOT_FOUND", `block not found: ${parsed.data}`);
-      } catch (error) {
-        return routeError(request, reply, error, "block-read");
-      }
-    },
-  );
 
   app.get<{ Params: { pageId: string } }>(
     "/api/pages/:pageId/session-defaults",

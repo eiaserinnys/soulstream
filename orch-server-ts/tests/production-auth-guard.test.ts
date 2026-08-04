@@ -81,8 +81,6 @@ describe("production auth guard", () => {
       ["GET", "/api/pages/:pageId"],
       ["GET", "/api/pages/search"],
       ["GET", "/api/pages/:pageId/backlinks"],
-      ["GET", "/api/blocks/search"],
-      ["GET", "/api/blocks/:blockId"],
       ["POST", "/api/pages/:pageId/operations"],
       ["PATCH", "/api/pages/:pageId/starred"],
     ] as const) {

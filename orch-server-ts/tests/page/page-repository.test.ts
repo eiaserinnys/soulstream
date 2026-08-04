@@ -239,14 +239,6 @@ describe("orch PageRepository", () => {
       if (call.query.includes("FROM pages") && call.query.includes("title_key LIKE")) {
         return [{ page_id: "page-1", title: "Page" }];
       }
-      if (call.query.includes("FROM blocks block") && call.query.includes("text_plain")) {
-        return [{
-          block_id: "block-1",
-          page_id: "page-1",
-          page_title: "Page",
-          text_plain: "Block text",
-        }];
-      }
       return [];
     });
     const repository = new PageRepository({
@@ -257,52 +249,9 @@ describe("orch PageRepository", () => {
     await expect(repository.searchBrowserPages({ query: "100%_", limit: 5 })).resolves.toEqual({
       items: [{ pageId: "page-1", title: "Page" }],
     });
-    await expect(repository.searchBrowserBlocks({ query: "Block", limit: 6 })).resolves.toEqual({
-      items: [{
-        blockId: "block-1",
-        pageId: "page-1",
-        pageTitle: "Page",
-        textPreview: "Block text",
-      }],
-    });
     expect(calls[0]?.query).toContain("title_key LIKE");
     expect(calls[0]?.query).toContain("ORDER BY title_key ASC, id ASC");
     expect(calls[0]?.values).toContain("100\\%\\_");
-    expect(calls[1]?.query).toContain("ORDER BY lower(block.text_plain) ASC, block.id ASC");
-  });
-
-  it("reads a single browser block and returns null when it is deleted", async () => {
-    const rows = [{
-      id: "block-1",
-      page_id: "page-1",
-      page_title: "Page",
-      parent_id: null,
-      position_key: "a",
-      block_type: "paragraph",
-      text_plain: "Block",
-      properties: {},
-      collapsed: false,
-    }];
-    let read = 0;
-    const { sql } = createMockSql((call) =>
-      call.query.includes("WHERE block.id") && read++ === 0 ? rows : []);
-    const repository = new PageRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-
-    await expect(repository.getBrowserBlock("block-1")).resolves.toEqual({
-      id: "block-1",
-      pageId: "page-1",
-      pageTitle: "Page",
-      parentId: null,
-      positionKey: "a",
-      blockType: "paragraph",
-      text: "Block",
-      properties: {},
-      collapsed: false,
-    });
-    await expect(repository.getBrowserBlock("deleted")).resolves.toBeNull();
   });
 
   it("paginates browser backlinks with source previews, nullable targets, and kind-bound cursors", async () => {

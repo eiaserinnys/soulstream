@@ -429,22 +429,6 @@ describe("browser page routes", () => {
       expect(pageSearch.statusCode).toBe(200);
       expect(service.searchBrowserPages).toHaveBeenCalledWith({ query: "Page", limit: 7 });
 
-      const blockSearch = await app.inject({
-        method: "GET",
-        url: "/api/blocks/search?q=%20Block%20",
-        headers: { cookie: browserCookie },
-      });
-      expect(blockSearch.statusCode).toBe(200);
-      expect(service.searchBrowserBlocks).toHaveBeenCalledWith({ query: "Block", limit: 20 });
-
-      const block = await app.inject({
-        method: "GET",
-        url: "/api/blocks/block-1",
-        headers: { cookie: browserCookie },
-      });
-      expect(block.statusCode).toBe(200);
-      expect(service.getBrowserBlock).toHaveBeenCalledWith("block-1");
-
       const backlinks = await app.inject({
         method: "GET",
         url: "/api/pages/page-1/backlinks?kinds=block_ref,mount,mount&cursor=cursor-1&limit=3",
@@ -488,8 +472,6 @@ describe("browser page routes", () => {
       for (const url of [
         "/api/pages/search?q=%20%20",
         `/api/pages/search?q=${"x".repeat(201)}`,
-        "/api/blocks/search?q=Block&limit=0",
-        "/api/blocks/search?q=Block&limit=51",
         "/api/pages/page-1/backlinks?kinds=unknown",
         "/api/pages/page-1/backlinks?kinds=",
         "/api/pages/page-1/backlinks?include_self=1",
@@ -512,13 +494,6 @@ describe("browser page routes", () => {
       });
       expect(invalidCursor.statusCode).toBe(422);
 
-      vi.mocked(service.getBrowserBlock).mockResolvedValueOnce(null);
-      const deletedBlock = await app.inject({
-        method: "GET",
-        url: "/api/blocks/deleted",
-        headers: { cookie: browserCookie },
-      });
-      expect(deletedBlock.statusCode).toBe(404);
     } finally {
       await app.close();
     }
@@ -531,8 +506,6 @@ describe("browser page routes", () => {
       "GET /api/pages/{pageId}": true,
       "GET /api/pages/{pageId}/session-defaults": true,
       "GET /api/pages/{pageId}/backlinks": true,
-      "GET /api/blocks/search": true,
-      "GET /api/blocks/{blockId}": true,
       "POST /api/pages/daily": true,
       "POST /api/pages/block-transfers": true,
       "POST /api/pages/{pageId}/operations": true,
@@ -564,8 +537,6 @@ type BrowserServiceDouble = PageBrowserRouteOptions["service"] & {
   mutatePage: ReturnType<typeof vi.fn>;
   transferBlocks: ReturnType<typeof vi.fn>;
   searchBrowserPages: ReturnType<typeof vi.fn>;
-  searchBrowserBlocks: ReturnType<typeof vi.fn>;
-  getBrowserBlock: ReturnType<typeof vi.fn>;
   getBrowserBacklinks: ReturnType<typeof vi.fn>;
   resolvePageSessionDefaults: ReturnType<typeof vi.fn>;
 };
@@ -595,20 +566,6 @@ function serviceDouble(): BrowserServiceDouble {
     transferBlocks: vi.fn().mockResolvedValue({ source: mutation, target: mutation, target_created: false }),
     searchBrowserPages: vi.fn().mockResolvedValue({
       items: [{ pageId: "page-1", title: "Page" }],
-    }),
-    searchBrowserBlocks: vi.fn().mockResolvedValue({
-      items: [{ blockId: "block-1", pageId: "page-1", pageTitle: "Page", textPreview: "Block" }],
-    }),
-    getBrowserBlock: vi.fn().mockResolvedValue({
-      id: "block-1",
-      pageId: "page-1",
-      pageTitle: "Page",
-      parentId: null,
-      positionKey: "a",
-      blockType: "paragraph",
-      text: "Block",
-      properties: {},
-      collapsed: false,
     }),
     getBrowserBacklinks: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     resolvePageSessionDefaults: vi.fn().mockResolvedValue(null),
