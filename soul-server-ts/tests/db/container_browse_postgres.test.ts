@@ -5,6 +5,8 @@ import {
   createContainerBrowseStore,
 } from "../../src/catalog/container_browse_service.js";
 import { SessionDB } from "../../src/db/session_db.js";
+import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
+import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
@@ -104,6 +106,9 @@ describePostgres("container browse PostgreSQL integration", () => {
       FROM generate_series(1, 2005) AS value
     `;
     const db = new SessionDB(sql);
+    db.configureFolderHost(
+      new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
+    );
     service = new ContainerBrowseService(createContainerBrowseStore(db));
   }, 45_000);
 
