@@ -59,6 +59,10 @@ import {
   type TaskRouteOptions,
 } from "./tasks/task_routes.js";
 import {
+  registerScheduleHostRoute,
+  type ScheduleHostRouteOptions,
+} from "./schedule/schedule_host_route.js";
+import {
   registerNodeAgentProfileRoutes,
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
@@ -180,6 +184,7 @@ export type CreateAppOptions = {
   cogitoRoutes?: CogitoRouteOptions;
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
   taskRoutes?: TaskRouteOptions;
+  scheduleHostRoutes?: ScheduleHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
 };
 
@@ -306,6 +311,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.taskRoutes !== undefined) {
     registerTaskRoutes(app, options.taskRoutes);
+  }
+  if (options.scheduleHostRoutes !== undefined) {
+    registerScheduleHostRoute(app, options.scheduleHostRoutes);
   }
   if (options.usageSummaryRoutes !== undefined) {
     registerUsageSummaryRoutes(app, options.usageSummaryRoutes);

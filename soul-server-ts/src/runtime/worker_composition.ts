@@ -34,6 +34,7 @@ import { TaskHandoffNotifier } from "../work-task/task_handoff_notifier.js";
 import { TaskService } from "../work-task/task_service.js";
 import { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
 import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
+import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
 import type { ChecklistTaskAdapter } from "../page/checklist_task_adapter.js";
 import type { ChecklistTaskReconciler } from "../page/checklist_task_reconciler.js";
@@ -42,6 +43,7 @@ import {
   SessionPageBindingService,
 } from "../page/session_page_binding_service.js";
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
+import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { buildServer, type ServerInstance } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
@@ -162,6 +164,7 @@ export async function composeWorkerRuntime(
     orch: orchProxyConfig,
     logger,
   });
+  db.configureFolderHost(new FolderHostClient({ orch: orchProxyConfig, logger }));
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
     repository: sessionPageBindingRepository,
@@ -248,6 +251,7 @@ export async function composeWorkerRuntime(
     claudeSessionClientRegistry,
     modelCatalog,
   );
+  db.configureScheduleHost(new ScheduleHostClient({ orch: orchProxyConfig, logger }));
   const scheduleService =
     new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({
@@ -275,6 +279,8 @@ export async function composeWorkerRuntime(
     orchProxyConfig,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
   });
+  const taskService = new TaskService({ orch: orchProxyConfig, logger });
+  db.configureTaskReader(taskService);
   const catalogService = new CatalogService(
     db,
     broadcaster,
@@ -282,7 +288,7 @@ export async function composeWorkerRuntime(
     folderProjectIdentityHost,
   );
   const taskHandoffNotifier = new TaskHandoffNotifier(
-    db.tasks(),
+    taskService,
     {
       send: (message) =>
         sendMessageToSession(
@@ -292,14 +298,7 @@ export async function composeWorkerRuntime(
     },
     logger,
   );
-  const taskService = new TaskService(
-    db,
-    broadcaster,
-    boardYjsService,
-    taskHandoffNotifier,
-    catalogService,
-    logger,
-  );
+  taskService.setHandoffNotifier(taskHandoffNotifier);
   const {
     checklistTaskAdapter,
     checklistTaskReconciler,

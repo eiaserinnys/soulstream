@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
+import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 
 interface MockCall {
   fragments: string[];
@@ -47,6 +48,12 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   });
 
   return { sql: fn as unknown as SqlClient, calls, begin: fn.begin };
+}
+
+function createFolderHostedDb(sql: SqlClient): SessionDB {
+  const db = new SessionDB(sql);
+  db.configureFolderHost(new FolderControlPlaneService(sql as never) as never);
+  return db;
 }
 
 describe("SessionDB.ensureStableSessionOrderIndex", () => {
@@ -758,7 +765,7 @@ describe("SessionDB.getSession", () => {
 describe("SessionDB folder ops (B-5)", () => {
   it("assignSessionToFolder → session_assign_folder(sessionId, folderId)", async () => {
     const { sql, calls } = createMockSql();
-    await new SessionDB(sql).assignSessionToFolder("sess-1", "folder-42");
+    await createFolderHostedDb(sql).assignSessionToFolder("sess-1", "folder-42");
     expect(calls).toHaveLength(1);
     expect(calls[0].values).toEqual(["sess-1", "folder-42"]);
     expect(calls[0].fragments.join("|")).toContain("session_assign_folder");
@@ -766,17 +773,17 @@ describe("SessionDB folder ops (B-5)", () => {
 
   it("assignSessionToFolder(folderId=null) → stored proc에 NULL 전달 (폴더 해제)", async () => {
     const { sql, calls } = createMockSql();
-    await new SessionDB(sql).assignSessionToFolder("sess-1", null);
+    await createFolderHostedDb(sql).assignSessionToFolder("sess-1", null);
     expect(calls[0].values).toEqual(["sess-1", null]);
   });
 
   it("getDefaultFolder(name) → folder_get_default 호출, 첫 행 반환 또는 null", async () => {
     const folderRow = { id: "default-claude", name: "⚙️ 클로드 코드 세션" };
     const { sql: foundSql } = createMockSql(() => [folderRow]);
-    expect(await new SessionDB(foundSql).getDefaultFolder("⚙️ 클로드 코드 세션")).toEqual(folderRow);
+    expect(await createFolderHostedDb(foundSql).getDefaultFolder("⚙️ 클로드 코드 세션")).toEqual(folderRow);
 
     const { sql: emptySql } = createMockSql(() => []);
-    expect(await new SessionDB(emptySql).getDefaultFolder("missing")).toBeNull();
+    expect(await createFolderHostedDb(emptySql).getDefaultFolder("missing")).toBeNull();
   });
 
   it("getCatalog → catalog cache 우선 + legacy read-only fallback으로 boardItems를 합성", async () => {
@@ -837,7 +844,7 @@ describe("SessionDB folder ops (B-5)", () => {
       }
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createFolderHostedDb(sql);
     const catalog = await db.getCatalog();
     const secondCatalog = await db.getCatalog();
 
@@ -1119,7 +1126,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
         archived: false,
       },
     ]);
-    const folders = await new SessionDB(sql).getAllFolders();
+    const folders = await createFolderHostedDb(sql).getAllFolders();
     expect(folders).toEqual([
       {
         id: "f1",
@@ -1140,20 +1147,20 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     ]);
   });
 
-  it("createFolder(parentFolderId) → folder_create 네 번째 인자로 부모 폴더 전달", async () => {
+  it("createFolder → identity host 우회를 명시적으로 거부", async () => {
     const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
 
-    await db.createFolder("child", "Child", 7, "parent");
+    await expect(db.createFolder("child", "Child", 7, "parent")).rejects.toThrow(
+      "folder creation must use identity host",
+    );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0].fragments.join("?")).toContain("folder_create");
-    expect(calls[0].values).toEqual(["child", "Child", 7, "parent"]);
+    expect(calls).toHaveLength(0);
   });
 
   it("updateFolder parent_folder_id=null → 루트 승격을 stored proc에 null로 전달", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = createFolderHostedDb(sql);
 
     await db.updateFolder("child", ["parent_folder_id"], [null]);
 

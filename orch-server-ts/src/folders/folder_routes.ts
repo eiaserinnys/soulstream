@@ -14,6 +14,8 @@ import {
 } from "./folder_route_access.js";
 import { registerFolderProjectIdentityHostRoute } from "./folder_project_identity_host_route.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
+import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
+import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
 
 export type { FolderAccess, FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
 
@@ -64,6 +66,7 @@ export type FolderRouteOptions = {
     "create" | "mutateFromFolder" | "backfillLegacyFolder"
   >;
   authBearerToken?: string;
+  controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 
 export class FolderRouteError extends Error {
@@ -103,6 +106,12 @@ export function registerFolderRoutes(
   if (options.projectIdentityService && options.authBearerToken) {
     registerFolderProjectIdentityHostRoute(app, {
       service: options.projectIdentityService,
+      authBearerToken: options.authBearerToken,
+    });
+  }
+  if (options.controlPlaneServiceProvider && options.authBearerToken) {
+    registerFolderControlPlaneHostRoute(app, {
+      serviceProvider: options.controlPlaneServiceProvider,
       authBearerToken: options.authBearerToken,
     });
   }

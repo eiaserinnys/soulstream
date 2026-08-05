@@ -1,4 +1,4 @@
-import type { SqlClient } from "../db/session_db.js";
+import type { SqlClient } from "./schedule_types.js";
 
 import type {
   CancelScheduleResult,
@@ -7,9 +7,9 @@ import type {
   SoulstreamSchedule,
   SoulstreamScheduleKind,
   SoulstreamScheduleStatus,
-} from "./schedule_models.js";
+} from "./schedule_types.js";
 
-interface ScheduleRow {
+interface ScheduleRow extends Record<string, unknown> {
   schedule_id: string;
   session_id: string;
   kind: SoulstreamScheduleKind;

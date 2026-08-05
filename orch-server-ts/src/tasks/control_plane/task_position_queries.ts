@@ -1,4 +1,4 @@
-import type { RepositorySql } from "../db/repositories/repository_helpers.js";
+import type { RepositorySql } from "./task_types.js";
 import { requireOne } from "./task_models.js";
 
 export async function resolveSectionPositionTx(

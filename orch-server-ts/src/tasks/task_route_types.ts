@@ -5,6 +5,7 @@ import type {
   BoardAccessFolderRecord,
 } from "../board/board_access.js";
 import type { TaskIdentityService } from "./task_identity_service.js";
+import type { TaskControlPlaneService } from "./task_control_plane_service.js";
 
 export type TaskFolderRecord = BoardAccessFolderRecord & {
   [key: string]: unknown;
@@ -110,6 +111,7 @@ export type TaskRouteOptions = {
     TaskIdentityService,
     "create" | "promoteExistingPage" | "mutateFromTask" | "backfillLegacyTask"
   >;
+  taskControlPlaneServiceProvider?: () => Promise<TaskControlPlaneService>;
   authBearerToken?: string;
 };
 

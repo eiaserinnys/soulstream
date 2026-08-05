@@ -49,6 +49,9 @@ import {
 } from "./runtime/live_provider_factory.js";
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
+import { createTaskControlPlaneServiceProvider } from "./tasks/task_control_plane_runtime.js";
+import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
+import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import {
@@ -316,6 +319,12 @@ export async function createLiveProductionApplication(
     folderProjectIdentityService,
     memoryStats,
     ephemeralLlmRoutes,
+    createTaskControlPlaneServiceProvider({
+      sqlResolver,
+      broadcaster: runtimeServices.sessionBroadcaster,
+    }),
+    createScheduleRepositoryProvider(sqlResolver),
+    createFolderControlPlaneServiceProvider(sqlResolver),
   ));
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
@@ -381,6 +390,9 @@ export function buildProductionRouteOptions(
   folderProjectIdentityService?: FolderProjectIdentityService,
   memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
   ephemeralLlmRoutes?: EphemeralLlmRouteOptions,
+  taskControlPlaneServiceProvider?: NonNullable<CreateAppOptions["taskRoutes"]>["taskControlPlaneServiceProvider"],
+  scheduleRepositoryProvider?: NonNullable<CreateAppOptions["scheduleHostRoutes"]>["repositoryProvider"],
+  folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
 ): CreateAppOptions {
   return {
     config,
@@ -409,6 +421,9 @@ export function buildProductionRouteOptions(
       ...(folderProjectIdentityService
         ? { projectIdentityService: folderProjectIdentityService }
         : {}),
+      ...(folderControlPlaneServiceProvider
+        ? { controlPlaneServiceProvider: folderControlPlaneServiceProvider }
+        : {}),
     },
     markdownDocumentRoutes: {
       ...providers.markdownDocumentRoutes,
@@ -431,7 +446,16 @@ export function buildProductionRouteOptions(
       ...providers.taskRoutes,
       authBearerToken: config.authBearerToken,
       ...(taskIdentityService ? { taskIdentityService } : {}),
+      ...(taskControlPlaneServiceProvider ? { taskControlPlaneServiceProvider } : {}),
     },
+    ...(scheduleRepositoryProvider
+      ? {
+          scheduleHostRoutes: {
+            repositoryProvider: scheduleRepositoryProvider,
+            authBearerToken: config.authBearerToken,
+          },
+        }
+      : {}),
     sessionActionCommandRoutes: providers.runtime.sessionActionCommandRoutes,
     sessionBackgroundScheduleRoutes:
       providers.runtime.sessionBackgroundScheduleRoutes,

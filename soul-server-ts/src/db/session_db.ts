@@ -6,16 +6,12 @@
 import postgres from "postgres";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
-import { TaskRepository } from "../work-task/task_repository.js";
-import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
+import type { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
-import {
-  CatalogRepository,
-  type CatalogSessionAssignmentRow,
-} from "./repositories/catalog_repository.js";
+import type { FolderHostClient } from "../folder/folder_host_client.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
 import { CustomViewRepository } from "./repositories/custom_view_repository.js";
@@ -33,7 +29,7 @@ import {
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
 
 export type * from "./session_db_types.js";
@@ -44,9 +40,9 @@ export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 export class SessionDB extends SupervisorSessionDbFacade {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
-  private taskRepository?: TaskRepository;
+  private taskReader?: { getTask(taskId: string): Promise<TaskSnapshot | null> };
   private customViewRepository?: CustomViewRepository;
-  private scheduleRepository?: SoulstreamScheduleRepository;
+  private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private checklistTaskProjectionRepository?: ChecklistTaskProjectionRepository;
   private sessionDeliveryRepository?: SessionDeliveryRepository;
@@ -54,7 +50,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private readonly sessionRepository: SessionRepository;
   private readonly sessionStoryRepository: SessionStoryReadRepository;
   private readonly boardRepository: BoardRepository;
-  private readonly catalogRepository: CatalogRepository;
+  private folderHost?: FolderHostClient;
   private readonly markdownDocumentRepository: MarkdownDocumentRepository;
   private readonly boardYjsRepository: BoardYjsRepository;
   private readonly eventRepository: EventRepository;
@@ -82,7 +78,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
     this.sessionRepository = new SessionRepository(this.sql);
     this.sessionStoryRepository = new SessionStoryReadRepository(this.sql);
     this.boardRepository = new BoardRepository(this.sql);
-    this.catalogRepository = new CatalogRepository(this.sql, this.boardRepository);
     this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
     this.boardYjsRepository = new BoardYjsRepository(this.sql);
     this.eventRepository = new EventRepository(this.sql);
@@ -104,9 +99,15 @@ export class SessionDB extends SupervisorSessionDbFacade {
     await this.sessionRepository.ensureStableSessionOrderIndex();
   }
 
-  tasks(): TaskRepository {
-    this.taskRepository ??= new TaskRepository(this.sql);
-    return this.taskRepository;
+  configureTaskReader(reader: { getTask(taskId: string): Promise<TaskSnapshot | null> }): void {
+    this.taskReader = reader;
+  }
+
+  tasks(): { getTask(taskId: string): Promise<TaskRow | null> } {
+    if (!this.taskReader) throw new Error("task reader host is not configured");
+    return {
+      getTask: async (taskId) => (await this.taskReader!.getTask(taskId))?.task ?? null,
+    };
   }
 
   customViews(): CustomViewRepository {
@@ -114,9 +115,13 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return this.customViewRepository;
   }
 
-  schedules(): SoulstreamScheduleRepository {
-    this.scheduleRepository ??= new SoulstreamScheduleRepository(this.sql);
-    return this.scheduleRepository;
+  configureScheduleHost(host: ScheduleHostClient): void {
+    this.scheduleHost = host;
+  }
+
+  schedules(): ScheduleHostClient {
+    if (!this.scheduleHost) throw new Error("schedule host is not configured");
+    return this.scheduleHost;
   }
 
   sessionPageBindings(): SessionPageBindingRepository {
@@ -236,15 +241,15 @@ export class SessionDB extends SupervisorSessionDbFacade {
     sessionId: string,
     folderId: string | null,
   ): Promise<void> {
-    await this.catalogRepository.assignSessionToFolder(sessionId, folderId);
+    await this.requireFolderHost().assignSessionToFolder(sessionId, folderId);
   }
 
   async getDefaultFolder(name: string): Promise<{ id: string; name: string } | null> {
-    return await this.catalogRepository.getDefaultFolder(name);
+    return await this.requireFolderHost().getDefaultFolder(name);
   }
 
   async getFolderById(folderId: string): Promise<FolderRow | null> {
-    return await this.catalogRepository.getFolderById(folderId);
+    return await this.requireFolderHost().getFolderById(folderId);
   }
 
   async getCatalog(): Promise<{
@@ -252,7 +257,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
     boardItems: CatalogBoardItemRow[];
   }> {
-    return await this.catalogRepository.getCatalog();
+    return await this.requireFolderHost().getCatalog();
   }
 
   invalidateBoardYjsCatalogCache(container?: string | BoardYjsContainerRef | null): void {
@@ -332,13 +337,13 @@ export class SessionDB extends SupervisorSessionDbFacade {
   }
 
   async getAllFolders(): Promise<FolderRow[]> {
-    return await this.catalogRepository.getAllFolders();
+    return await this.requireFolderHost().getAllFolders();
   }
 
   async getSessionAssignmentsByIds(
     sessionIds: readonly string[],
   ): Promise<CatalogSessionAssignmentRow[]> {
-    return await this.catalogRepository.getSessionAssignmentsByIds(sessionIds);
+    return await this.requireFolderHost().getSessionAssignmentsByIds(sessionIds);
   }
 
   async countEvents(sessionId: string): Promise<number> {
@@ -393,7 +398,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
     sortOrder: number,
     parentFolderId: string | null = null,
   ): Promise<void> {
-    await this.catalogRepository.createFolder(id, name, sortOrder, parentFolderId);
+    throw new Error(`folder creation must use identity host: ${id}:${name}:${sortOrder}:${parentFolderId ?? "root"}`);
   }
 
   async updateFolder(
@@ -401,7 +406,16 @@ export class SessionDB extends SupervisorSessionDbFacade {
     columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
     values: ReadonlyArray<string | null>,
   ): Promise<void> {
-    await this.catalogRepository.updateFolder(folderId, columns, values);
+    await this.requireFolderHost().updateFolder(folderId, columns, values);
+  }
+
+  configureFolderHost(host: FolderHostClient): void {
+    this.folderHost = host;
+  }
+
+  private requireFolderHost(): FolderHostClient {
+    if (!this.folderHost) throw new Error("folder host is not configured");
+    return this.folderHost;
   }
 
   async searchEvents(
