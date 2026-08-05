@@ -1,4 +1,3 @@
-import type { BoardYjsHostHttpClient } from "../board/board_yjs_host_proxy.js";
 import type { BoardAccess } from "../board/board_access.js";
 import type { CogitoSearchProvider } from "../cogito/cogito_routes.js";
 import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
@@ -77,7 +76,6 @@ export type LiveNodeHttpRequest = {
 };
 
 export type LiveNodeHttpClientBoundary = {
-  readonly boardYjsHostHttpClient: BoardYjsHostHttpClient;
   readonly requestNode: (
     request: LiveNodeHttpRequest,
   ) => Promise<LiveNodeHttpResponse>;

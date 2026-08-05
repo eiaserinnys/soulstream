@@ -16,7 +16,6 @@ describe("session action command runtime opt-in", () => {
     const disabled = createOrchestratorRuntimeComposition({
       config,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      boardYjsHostHttpClient: vi.fn(),
     });
 
     const disabledResponse = await disabled.app.inject({
@@ -35,7 +34,6 @@ describe("session action command runtime opt-in", () => {
       config,
       enableSessionActionCommandRoutes: true,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      boardYjsHostHttpClient: vi.fn(),
     });
 
     const enabledResponse = await enabled.app.inject({

@@ -158,7 +158,6 @@ describe("orch public page Yjs routes", () => {
       createService: (logger) => new BoardYjsService({
         repository: boardRepository,
         logger,
-        hostMode: "orch",
         auth: productionAuth(),
       }),
     });

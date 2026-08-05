@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BoardYjsService } from "../../src/collaboration/board_yjs_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { TaskHandoffNotifier } from "../../src/work-task/task_handoff_notifier.js";
 import { TaskVersionConflict } from "../../src/work-task/task_models.js";
@@ -11,6 +10,7 @@ import {
   resetTaskData,
   type TaskPostgresHarness,
 } from "./task_postgres_harness.js";
+import { OrchestratorBoardYjsTestPort } from "../fixtures/orchestrator_board_yjs_test_port.js";
 
 const hasPostgresTestBackend = hasTaskPostgresBackend;
 const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
@@ -18,7 +18,7 @@ const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
 describePostgres("TaskService PostgreSQL integration", () => {
   let harness: TaskPostgresHarness | undefined;
   let db: SessionDB;
-  let boardYjsService: BoardYjsService | undefined;
+  let boardYjsService: OrchestratorBoardYjsTestPort | undefined;
   let service: TaskService;
   let emitTaskUpdated: ReturnType<typeof vi.fn>;
   let emitCatalogUpdated: ReturnType<typeof vi.fn>;
@@ -43,7 +43,7 @@ describePostgres("TaskService PostgreSQL integration", () => {
     if (!harness) return;
     await boardYjsService?.close();
     await resetTaskData(harness.sql);
-    boardYjsService = createTestBoardYjsService(db);
+    boardYjsService = new OrchestratorBoardYjsTestPort(harness.sql);
     service = new TaskService(
       db,
       { emitTaskUpdated, emitCatalogUpdated },
@@ -1106,21 +1106,6 @@ function createSilentLogger() {
     fatal: vi.fn(),
     child: () => createSilentLogger(),
   };
-}
-
-function createTestBoardYjsService(db: SessionDB): BoardYjsService {
-  return new BoardYjsService({
-    db,
-    logger: createSilentLogger() as never,
-    nodeId: "test-node",
-    hostNodeId: "test-node",
-    isHost: true,
-    auth: {
-      authBearerToken: "",
-      environment: "development",
-      dashboardAuthEnabled: false,
-    },
-  });
 }
 
 async function waitForMockCall(mock: ReturnType<typeof vi.fn>): Promise<void> {

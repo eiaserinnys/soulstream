@@ -1,7 +1,3 @@
-import type {
-  BoardYjsHostHttpClient,
-  BoardYjsHostTarget,
-} from "../board/board_yjs_host_proxy.js";
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import type {
   LiveNodeHttpClientBoundary,
@@ -68,29 +64,8 @@ export function createLiveNodeHttpClientBoundary(
   const timeoutMs = normalizeTimeoutMs(options.timeoutMs);
 
   return {
-    boardYjsHostHttpClient: createBoardYjsHostHttpClient({
-      ...options,
-      fetch,
-      timeoutMs,
-    }),
     requestNode: (request) =>
       requestConnectedNode({ ...options, fetch, timeoutMs }, request),
-  };
-}
-
-function createBoardYjsHostHttpClient(
-  options: Required<CreateLiveNodeHttpClientBoundaryOptions>,
-): BoardYjsHostHttpClient {
-  return async (request) => {
-    assertFreshBoardTarget(options.registry, request.target);
-    return sendRequest(options, {
-      nodeId: request.target.nodeId,
-      connectionId: request.target.connectionId,
-      method: request.method,
-      url: request.url,
-      headers: request.headers,
-      body: request.body,
-    });
   };
 }
 
@@ -137,19 +112,6 @@ async function sendRequest(
   } finally {
     clearTimeout(timer);
   }
-}
-
-function assertFreshBoardTarget(
-  registry: LiveNodeHttpRegistry,
-  target: BoardYjsHostTarget,
-): void {
-  const node = registry.getConnectedNode(target.nodeId);
-  if (node?.connectionId === target.connectionId) return;
-  throw new LiveNodeHttpClientError(
-    "NODE_HTTP_TARGET_STALE",
-    `Board Yjs host target is stale: ${target.nodeId}`,
-    { nodeId: target.nodeId, connectionId: target.connectionId },
-  );
 }
 
 function assertAbsolutePath(request: LiveNodeHttpRequest): void {

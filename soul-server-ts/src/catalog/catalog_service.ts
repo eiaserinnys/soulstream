@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import type {
   BoardYjsContainerRef,
   CatalogBoardItemRow,
+  MarkdownDocumentRow,
   SessionDB,
 } from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
@@ -227,24 +228,12 @@ export class CatalogService {
 
   async deleteFolder(folderId: string): Promise<void> {
     assertMutableFolder(folderId, "deleted");
-    if (this.folderProjectIdentityHost) {
-      await this.folderProjectIdentityHost.archive({
-        folderId,
-        idempotencyKey: randomUUID(),
-      });
-      return;
+    if (!this.folderProjectIdentityHost) {
+      throw new Error("orchestrator folder project identity port is not configured");
     }
-    const { affectedSessions, deletedBoardItemIds } =
-      await this.db.deleteFolderWithCatalogDelta(folderId);
-    await this.broadcastCatalog({
-      sessionsDelta: Object.fromEntries(affectedSessions.map((session) => [
-        session.session_id,
-        {
-          folderId: null,
-          displayName: session.display_name,
-        },
-      ])),
-      deletedBoardItemIds,
+    await this.folderProjectIdentityHost.archive({
+      folderId,
+      idempotencyKey: randomUUID(),
     });
   }
 
@@ -260,7 +249,6 @@ export class CatalogService {
     for (const sessionId of sessionIds) {
       await this.db.assignSessionToFolder(sessionId, folderId);
     }
-    await this.db.ensureBoardItems();
     const movedBoardItems = (await Promise.all(
       sessionIds.map((sessionId) => this.db.getPrimarySessionBoardItem(sessionId)),
     )).filter((item): item is CatalogBoardItemRow => item !== null);
@@ -404,7 +392,10 @@ export class CatalogService {
     body?: string;
     x?: number;
     y?: number;
-  }): Promise<Awaited<ReturnType<SessionDB["createMarkdownDocument"]>>> {
+  }): Promise<{
+    document: MarkdownDocumentRow;
+    boardItem: CatalogBoardItemRow;
+  }> {
     return await this.boardItems.createMarkdownDocument(params);
   }
 

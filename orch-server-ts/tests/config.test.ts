@@ -18,7 +18,6 @@ describe("orch-server-ts config scaffold", () => {
   it("accepts explicit test config without reading production env", () => {
     expect(parseOrchServerConfig(explicitTestConfig)).toEqual({
       ...explicitTestConfig,
-      boardYjsHostMode: "node",
       trustProxy: "loopback",
     });
   });
@@ -52,7 +51,6 @@ describe("orch-server-ts config scaffold", () => {
       ATOM_API_KEY: "atom-key",
       ATOM_ROOT_NODE_ID: "root-node",
       AUTH_BEARER_TOKEN: "bearer-token",
-      BOARD_YJS_HOST_MODE: "orch",
       CORS_ALLOWED_ORIGINS: "https://one.example, https://two.example",
       GOOGLE_CLIENT_ID: "google-client",
       GOOGLE_CLIENT_SECRET: "google-secret",
@@ -92,7 +90,6 @@ describe("orch-server-ts config scaffold", () => {
       atom_api_key: "atom-key",
       atom_root_node_id: "root-node",
       auth_bearer_token: "bearer-token",
-      board_yjs_host_mode: "orch",
       cors_allowed_origins: ["https://one.example", "https://two.example"],
       google_client_id: "google-client",
       google_client_secret: "google-secret",
@@ -111,7 +108,6 @@ describe("orch-server-ts config scaffold", () => {
       environment: "production",
       databaseUrl: "postgres://orch@localhost/orch",
       authBearerToken: "bearer-token",
-      boardYjsHostMode: "orch",
       trustProxy: "loopback",
       r2_board_assets_access_key_id: "r2-access",
       r2_board_assets_secret_access_key: "r2-secret",
@@ -139,7 +135,6 @@ describe("orch-server-ts config scaffold", () => {
       atom_enabled: false,
       atom_root_node_id: null,
       auth_bearer_token: "",
-      board_yjs_host_mode: "node",
       cors_allowed_origins: [],
       google_client_id: "",
       jwt_secret: "",
@@ -184,10 +179,6 @@ describe("orch-server-ts config scaffold", () => {
       ...minimalEnvironment(),
       CORS_ALLOWED_ORIGINS: '["https://ok.example", 3]',
     })).toThrow(/CORS_ALLOWED_ORIGINS/);
-    expect(() => loadOrchServerEnvironment({
-      ...minimalEnvironment(),
-      BOARD_YJS_HOST_MODE: "worker",
-    })).toThrow(/BOARD_YJS_HOST_MODE/);
   });
 
   it("preserves the Python production CORS startup guard", () => {

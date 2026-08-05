@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CatalogBoardItemService } from "../../src/catalog/catalog_board_item_service.js";
-import { BoardYjsService } from "../../src/collaboration/board_yjs_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { TaskService } from "../../src/work-task/task_service.js";
 import { resolveDelegatedContainer } from "../../src/session_folder_fallback.js";
@@ -11,13 +10,14 @@ import {
   resetTaskData,
   type TaskPostgresHarness,
 } from "./task_postgres_harness.js";
+import { OrchestratorBoardYjsTestPort } from "../fixtures/orchestrator_board_yjs_test_port.js";
 
 const describePostgres = hasTaskPostgresBackend ? describe : describe.skip;
 
 describePostgres("Task creator enrollment", () => {
   let harness: TaskPostgresHarness | undefined;
   let db: SessionDB;
-  let boardYjsService: BoardYjsService | undefined;
+  let boardYjsService: OrchestratorBoardYjsTestPort | undefined;
   let emitTaskUpdated: ReturnType<typeof vi.fn>;
 
   beforeAll(async () => {
@@ -30,7 +30,7 @@ describePostgres("Task creator enrollment", () => {
     if (!harness) return;
     await boardYjsService?.close();
     await resetTaskData(harness.sql);
-    boardYjsService = createTestBoardYjsService(db);
+    boardYjsService = new OrchestratorBoardYjsTestPort(harness.sql);
     emitTaskUpdated.mockClear();
   }, 15_000);
 
@@ -186,21 +186,6 @@ function createSilentLogger() {
     fatal: vi.fn(),
     child: () => createSilentLogger(),
   };
-}
-
-function createTestBoardYjsService(db: SessionDB): BoardYjsService {
-  return new BoardYjsService({
-    db,
-    logger: createSilentLogger() as never,
-    nodeId: "test-node",
-    hostNodeId: "test-node",
-    isHost: true,
-    auth: {
-      authBearerToken: "",
-      environment: "development",
-      dashboardAuthEnabled: false,
-    },
-  });
 }
 
 async function getSessionBoardItem(sql: SqlClient, sessionId: string) {

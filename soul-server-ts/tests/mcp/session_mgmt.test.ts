@@ -102,7 +102,6 @@ function makeRuntime(
       getSession: vi.fn(async (sessionId: string) =>
         sessionId === "caller-sess-1" ? { folder_id: callerFolderId } : null,
       ),
-      ensureBoardItems: vi.fn(async () => undefined),
       getBoardItems: vi.fn(async () => callerBoardItems),
       resolveBoardYjsContainerScope: vi.fn(async (container) =>
         container.containerKind === "task"

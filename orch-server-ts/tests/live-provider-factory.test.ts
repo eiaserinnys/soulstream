@@ -567,7 +567,6 @@ function createLiveDependencies(): LiveProviderDependencies {
       },
     },
     nodeHttpClient: {
-      boardYjsHostHttpClient: vi.fn(async () => ({ statusCode: 200 })),
       requestNode: vi.fn(async () => ({ statusCode: 200 })),
     },
     pushRepository: {

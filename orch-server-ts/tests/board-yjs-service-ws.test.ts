@@ -23,31 +23,9 @@ afterEach(async () => {
 });
 
 describe("orch BoardYjsService", () => {
-  it("keeps direct mutation disabled in the default node mode", async () => {
-    const service = createService("node");
-    await expect(service.updateBoardItemPosition(
-      { containerKind: "folder", containerId: "folder-1" },
-      "markdown:doc-1",
-      10,
-      20,
-    )).rejects.toThrow(/only allowed when BOARD_YJS_HOST_MODE=orch/);
-    await service.close();
-  });
-
-  it("closes the public websocket with 1013 in node mode", async () => {
-    const app = createBoardApp("node");
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    try {
-      const close = await connectUntilClose(`${address.replace("http", "ws")}/yjs/folder-1`);
-      expect(close).toEqual({ code: 1013, reason: "board Yjs documents are hosted on orch" });
-    } finally {
-      await app.close();
-    }
-  });
-
   it("rejects a protocol document name that differs from the routed document", async () => {
     const repository = new MemoryBoardYjsRepository();
-    const app = createBoardApp("orch", repository);
+    const app = createBoardApp(repository);
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     try {
       const provider = connectProvider(
@@ -62,7 +40,7 @@ describe("orch BoardYjsService", () => {
   });
 
   it("executes direct mutations and preserves markdown content across containers in orch mode", async () => {
-    const service = createService("orch");
+    const service = createService();
     try {
       const created = await service.createMarkdownDocument({
         folderId: "folder-1",
@@ -106,7 +84,7 @@ describe("orch BoardYjsService", () => {
 
   it("completes the real HocuspocusProvider sync handshake and relays Y.Doc updates in orch mode", async () => {
     const repository = new MemoryBoardYjsRepository();
-    const app = createBoardApp("orch", repository);
+    const app = createBoardApp(repository);
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     try {
       const url = `${address.replace("http", "ws")}/yjs/folder-1`;
@@ -128,25 +106,22 @@ describe("orch BoardYjsService", () => {
 });
 
 function createBoardApp(
-  hostMode: "node" | "orch",
   repository = new MemoryBoardYjsRepository(),
 ) {
   const app = Fastify({ logger: false });
   registerBoardYjsRoutes(app, {
-    createService: (logger) => createService(hostMode, repository, logger),
+    createService: (logger) => createService(repository, logger),
   });
   return app;
 }
 
 function createService(
-  hostMode: "node" | "orch",
   repository = new MemoryBoardYjsRepository(),
   logger = silentLogger(),
 ) {
   return new BoardYjsService({
     repository,
     logger,
-    hostMode,
     auth: {
       authBearerToken: "wire-token",
       environment: "production",
@@ -184,14 +159,6 @@ function waitForSync(provider: HocuspocusProvider): Promise<void> {
       clearTimeout(timer);
       reject(new Error(reason));
     });
-  });
-}
-
-function connectUntilClose(url: string): Promise<{ code: number; reason: string }> {
-  return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url);
-    socket.once("error", reject);
-    socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));
   });
 }
 

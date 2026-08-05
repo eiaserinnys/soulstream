@@ -79,7 +79,7 @@ describe("node snapshot and stream route harness", () => {
       nodeId: "node-a",
       host: "127.0.0.1",
       port: 4105,
-      capabilities: { board_yjs_host: true },
+      capabilities: { execute_proxy: true },
       supportedBackends: ["claude", "codex"],
       connectedAt: "2023-11-14T22:13:20.000Z",
       sessionCount: 2,
@@ -219,7 +219,7 @@ function registration(nodeId: string): NodeRegistrationPayload {
     host: "127.0.0.1",
     port: 4105,
     agents: [],
-    capabilities: { board_yjs_host: true },
+    capabilities: { execute_proxy: true },
     supported_backends: ["claude", "codex"],
   };
 }

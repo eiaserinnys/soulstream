@@ -69,7 +69,6 @@ describe("worker composition boundary", () => {
   it("production supervisor composition keeps gate-OFF completion delivery DB-free and legacy-local", async () => {
     const env = parseEnv({
       SOULSTREAM_NODE_ID: "node-test",
-      BOARD_YJS_HOST_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
       DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
       CLAUDE_SESSION_RUNTIME_V2_ENABLED: "false",

@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BoardYjsService } from "../../src/collaboration/board_yjs_service.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import { ChecklistTaskAdapter } from "../../src/page/checklist_task_adapter.js";
 import { ChecklistTaskReconciler } from "../../src/page/checklist_task_reconciler.js";
@@ -12,13 +11,14 @@ import {
   resetTaskData,
   type TaskPostgresHarness,
 } from "../work-task/task_postgres_harness.js";
+import { OrchestratorBoardYjsTestPort } from "../fixtures/orchestrator_board_yjs_test_port.js";
 
 const describePostgres = hasTaskPostgresBackend ? describe : describe.skip;
 
 describePostgres("checklist production projection PostgreSQL integration", () => {
   let harness: TaskPostgresHarness | undefined;
   let db: SessionDB;
-  let boardYjsService: BoardYjsService | undefined;
+  let boardYjsService: OrchestratorBoardYjsTestPort | undefined;
   let service: TaskService;
 
   beforeAll(async () => {
@@ -29,7 +29,7 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
   beforeEach(async () => {
     await boardYjsService?.close();
     await resetTaskData(harness!.sql);
-    boardYjsService = createTestBoardYjsService(db);
+    boardYjsService = new OrchestratorBoardYjsTestPort(harness!.sql);
     service = new TaskService(
       db,
       { emitTaskUpdated: vi.fn(async () => undefined) },
@@ -251,21 +251,6 @@ function checklistBlock(properties: Record<string, unknown>) {
     properties,
     collapsed: false,
   };
-}
-
-function createTestBoardYjsService(db: SessionDB): BoardYjsService {
-  return new BoardYjsService({
-    db,
-    logger: createSilentLogger() as never,
-    nodeId: "test-node",
-    hostNodeId: "test-node",
-    isHost: true,
-    auth: {
-      authBearerToken: "",
-      environment: "development",
-      dashboardAuthEnabled: false,
-    },
-  });
 }
 
 function createSilentLogger() {

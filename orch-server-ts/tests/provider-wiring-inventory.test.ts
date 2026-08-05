@@ -239,8 +239,5 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("tasks:taskRoutes.provider")).toBe(
       "implemented",
     );
-    expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
-      "implemented",
-    );
   });
 });

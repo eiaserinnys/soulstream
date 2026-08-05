@@ -4,7 +4,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { CatalogService } from "../catalog/catalog_service.js";
-import { createBoardYjsRouting } from "../collaboration/board_yjs_routing.js";
+import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { Env } from "../config.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
@@ -144,25 +144,13 @@ export async function composeWorkerRuntime(
     dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
     jwtSecret: env.JWT_SECRET,
   };
-  const {
-    isBoardYjsHost,
-    localService: localBoardYjsService,
-    mutationPort: boardYjsService,
-  } = createBoardYjsRouting({
-    db,
-    logger,
-    auth: boardYjsAuth,
+  const boardYjsService = new BoardYjsHostClient({
     orch: orchProxyConfig,
-    nodeId: env.SOULSTREAM_NODE_ID,
-    hostNodeId: env.BOARD_YJS_HOST_NODE_ID,
+    logger,
   });
   logger.info(
-    {
-      nodeId: env.SOULSTREAM_NODE_ID,
-      boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
-      isBoardYjsHost,
-    },
-    "Board Yjs host routing initialized",
+    { nodeId: env.SOULSTREAM_NODE_ID },
+    "Board Yjs mutations delegated to orchestrator",
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient({ orch: orchProxyConfig, logger });
@@ -348,7 +336,6 @@ export async function composeWorkerRuntime(
   }
   const mcpRuntime: McpRuntime = {
     nodeId: env.SOULSTREAM_NODE_ID,
-    boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
     taskManager,
@@ -394,8 +381,6 @@ export async function composeWorkerRuntime(
           logger,
         }
       : undefined,
-    boardYjs: { service: localBoardYjsService },
-    boardYjsHost: { service: localBoardYjsService, auth: boardYjsAuth },
     task: {
       service: taskService,
       taskIdentityHost: taskIdentityHost,
@@ -412,7 +397,6 @@ export async function composeWorkerRuntime(
       {
         url: env.SOULSTREAM_UPSTREAM_URL,
         nodeId: env.SOULSTREAM_NODE_ID,
-        boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
         host: env.HOST,
         port: env.PORT,
         authBearerToken: env.AUTH_BEARER_TOKEN,

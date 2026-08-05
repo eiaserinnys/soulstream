@@ -8,10 +8,7 @@ import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js
 import type { AuthRouteOptions } from "../auth/auth_routes.js";
 import type { BoardAssetRouteOptions } from "../board/board_asset_routes.js";
 import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
-import type {
-  BoardYjsHostHttpClient,
-  BoardYjsHostProxyRouteOptions,
-} from "../board/board_yjs_host_proxy.js";
+import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchServerTsConfig } from "../config.js";
@@ -57,7 +54,6 @@ export type ShadowOrchestratorRuntimeProviders = {
   sessionHistoryProvider: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
-  boardYjsHostHttpClient: BoardYjsHostHttpClient;
   pageYjsRoutes: PageYjsRouteOptions;
 };
 
@@ -185,7 +181,7 @@ export const shadowRouteCompositionRequirements = [
     owner: "board.items",
     paths: ["boardItemRoutes.provider", "boardItemRoutes.accessProvider"],
   },
-  { owner: "board.yjs-host", paths: ["runtime.boardYjsHostHttpClient"] },
+  { owner: "board.yjs-host", paths: ["runtime"] },
   {
     owner: "cogito",
     paths: [

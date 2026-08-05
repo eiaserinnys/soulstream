@@ -4,9 +4,7 @@ import {
   createApp,
   loadContractFixtures,
   markdownDocumentRouteAuthRequirements,
-  type BoardYjsHostHttpClient,
 } from "../src/index.js";
-import type { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 import { MarkdownDocumentVersionConflictError } from "../src/board-yjs/markdown_document_version.js";
 import {
   config,
@@ -66,7 +64,7 @@ describe("markdown document and custom view route harness", () => {
   });
 
   it("rejects invalid create containers before provider or host access", async () => {
-    const { app, calls, httpClient } = createAppWithMarkdownDocuments({
+    const { app, calls, service } = createAppWithMarkdownDocuments({
       restricted: false,
     });
 
@@ -86,13 +84,13 @@ describe("markdown document and custom view route harness", () => {
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toEqual({ detail: "invalid board container" });
     expect(calls).toEqual([]);
-    expect(httpClient).not.toHaveBeenCalled();
+    expect(service.createMarkdownDocument).not.toHaveBeenCalled();
 
     await app.close();
   });
 
-  it("creates a folder-scoped document through the single board host with auth forwarding", async () => {
-    const { app, calls, connectionId, httpClient } = createAppWithMarkdownDocuments({
+  it("creates a folder-scoped document through the orchestrator-local service", async () => {
+    const { app, calls, service } = createAppWithMarkdownDocuments({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -114,34 +112,24 @@ describe("markdown document and custom view route harness", () => {
     });
 
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({ document: { id: "doc-1" } });
+    expect(response.json()).toMatchObject({ document: { id: "doc-1" } });
     expect(calls).toEqual([["listFolders"], ["access"]]);
-    expect(httpClient).toHaveBeenCalledWith({
-      method: fixture.proxy.method,
-      url: "http://localhost:4105/api/markdown-documents",
-      upstreamPath: fixture.proxy.upstreamPath,
-      headers: { authorization: "Bearer test-token" },
-      body: {
+    expect(service.createMarkdownDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
         folderId: "folder-a-child",
-        container: { kind: "folder", id: "folder-a-child" },
+        container: { containerKind: "folder", containerId: "folder-a-child" },
         title: "Note",
         body: "Body",
         x: 12,
         y: 34,
-      },
-      target: {
-        host: "localhost",
-        port: 4105,
-        nodeId: "board-host",
-        connectionId,
-      },
-    });
+      }),
+    );
 
     await app.close();
   });
 
   it("preserves body container while folderId wins access and payload folderId", async () => {
-    const { app, calls, httpClient } = createAppWithMarkdownDocuments({
+    const { app, calls, service } = createAppWithMarkdownDocuments({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -159,14 +147,12 @@ describe("markdown document and custom view route harness", () => {
 
     expect(response.statusCode).toBe(201);
     expect(calls).toEqual([["listFolders"], ["access"]]);
-    expect(httpClient).toHaveBeenCalledWith(
+    expect(service.createMarkdownDocument).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: {
-          folderId: "folder-a-child",
-          container: { kind: "task", id: "task-1" },
-          title: "Task note",
-          body: "",
-        },
+        folderId: "folder-a-child",
+        container: { containerKind: "task", containerId: "task-1" },
+        title: "Task note",
+        body: "",
       }),
     );
 
@@ -174,7 +160,7 @@ describe("markdown document and custom view route harness", () => {
   });
 
   it("resolves task container folder when create omits folderId", async () => {
-    const { app, calls, httpClient } = createAppWithMarkdownDocuments({
+    const { app, calls, service } = createAppWithMarkdownDocuments({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -194,12 +180,10 @@ describe("markdown document and custom view route harness", () => {
       ["listFolders"],
       ["access"],
     ]);
-    expect(httpClient).toHaveBeenCalledWith(
+    expect(service.createMarkdownDocument).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({
-          folderId: "folder-a",
-          container: { kind: "task", id: "task-1" },
-        }),
+        folderId: "folder-a",
+        container: { containerKind: "task", containerId: "task-1" },
       }),
     );
 
@@ -207,7 +191,7 @@ describe("markdown document and custom view route harness", () => {
   });
 
   it("returns container not found before host proxy when task source is missing", async () => {
-    const { app, calls, httpClient } = createAppWithMarkdownDocuments({
+    const { app, calls, service } = createAppWithMarkdownDocuments({
       restricted: false,
     });
 
@@ -225,7 +209,7 @@ describe("markdown document and custom view route harness", () => {
     expect(calls).toEqual([
       ["resolveContainer", { kind: "task", id: "missing" }],
     ]);
-    expect(httpClient).not.toHaveBeenCalled();
+    expect(service.createMarkdownDocument).not.toHaveBeenCalled();
 
     await app.close();
   });
@@ -257,7 +241,7 @@ describe("markdown document and custom view route harness", () => {
   });
 
   it("returns missing and denied read errors before proxying", async () => {
-    const { app, httpClient } = createAppWithMarkdownDocuments({
+    const { app, service } = createAppWithMarkdownDocuments({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -281,7 +265,7 @@ describe("markdown document and custom view route harness", () => {
     expect(deniedDocument.json()).toEqual({ detail: "Folder access denied" });
     expect(missingCustomView.statusCode).toBe(404);
     expect(missingCustomView.json()).toEqual({ detail: "Custom view not found" });
-    expect(httpClient).not.toHaveBeenCalled();
+    expect(service.createMarkdownDocument).not.toHaveBeenCalled();
 
     await app.close();
   });
@@ -313,7 +297,7 @@ describe("markdown document and custom view route harness", () => {
   });
 
   it("rejects update snake expected_version alias and null-only fields", async () => {
-    const { app, httpClient } = createAppWithMarkdownDocuments({
+    const { app, service } = createAppWithMarkdownDocuments({
       restricted: false,
     });
 
@@ -332,13 +316,13 @@ describe("markdown document and custom view route harness", () => {
     expect(snakeAlias.json()).toEqual({ detail: "expectedVersion must be a number" });
     expect(noFields.statusCode).toBe(400);
     expect(noFields.json()).toEqual({ detail: "No fields to update" });
-    expect(httpClient).not.toHaveBeenCalled();
+    expect(service.updateMarkdownDocument).not.toHaveBeenCalled();
 
     await app.close();
   });
 
   it("updates documents with supplied non-null fields only", async () => {
-    const { app, calls, httpClient } = createAppWithMarkdownDocuments({
+    const { app, calls, service } = createAppWithMarkdownDocuments({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -349,37 +333,30 @@ describe("markdown document and custom view route harness", () => {
       payload: { expectedVersion: 7, title: "New", body: null },
     });
 
-    expect(response.statusCode).toBe(201);
+    expect(response.statusCode).toBe(200);
     expect(calls).toEqual([
       ["getDocument", "doc/one"],
       ["listFolders"],
       ["access"],
     ]);
-    expect(httpClient).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "PUT",
-        upstreamPath: "/api/markdown-documents/doc%2Fone",
-        body: { expectedVersion: 7, title: "New" },
-      }),
+    expect(service.updateMarkdownDocument).toHaveBeenCalledWith(
+      { containerKind: "task", containerId: "task-1" },
+      "doc/one",
+      { expectedVersion: 7, title: "New" },
     );
 
     await app.close();
   });
 
-  it("updates and deletes documents through the local service in orchestrator host mode", async () => {
+  it("updates and deletes documents through the orchestrator-local service", async () => {
     const updateMarkdownDocument = vi.fn(async () => ({
       id: "doc/one", title: "New", body: "After", version: 8,
     }));
     const deleteMarkdownDocument = vi.fn(async () => undefined);
-    const service = { updateMarkdownDocument, deleteMarkdownDocument } as unknown as BoardYjsService;
-    const createService = vi.fn(() => service);
-    const httpClient = vi.fn();
     const { app } = createAppWithMarkdownDocuments(
       { restricted: false },
       {},
-      httpClient,
-      false,
-      { hostMode: "orch", createService },
+      { updateMarkdownDocument, deleteMarkdownDocument },
     );
 
     const update = await app.inject({
@@ -404,19 +381,17 @@ describe("markdown document and custom view route harness", () => {
       { containerKind: "task", containerId: "task-1" },
       "doc/one",
     );
-    expect(createService).toHaveBeenCalledTimes(1);
-    expect(httpClient).not.toHaveBeenCalled();
     await app.close();
   });
 
-  it("maps local markdown version conflicts to the public 409 contract", async () => {
-    const service = {
-      updateMarkdownDocument: vi.fn(async () => {
-        throw new MarkdownDocumentVersionConflictError("doc/one", 7, 8);
-      }),
-    } as unknown as BoardYjsService;
+  it("maps markdown version conflicts to the public 409 contract", async () => {
+    const updateMarkdownDocument = vi.fn(async () => {
+      throw new MarkdownDocumentVersionConflictError("doc/one", 7, 8);
+    });
     const { app } = createAppWithMarkdownDocuments(
-      { restricted: false }, {}, vi.fn(), false, { hostMode: "orch", service },
+      { restricted: false },
+      {},
+      { updateMarkdownDocument },
     );
 
     const response = await app.inject({
@@ -430,44 +405,14 @@ describe("markdown document and custom view route harness", () => {
     await app.close();
   });
 
-  it("deletes documents through the host and preserves non-JSON upstream responses", async () => {
-    const httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
-      statusCode: 418,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-      body: "deleted",
-    }));
-    const { app } = createAppWithMarkdownDocuments(
-      { restricted: false },
-      {},
-      httpClient,
-    );
-
-    const response = await app.inject({
-      method: "DELETE",
-      url: "/api/markdown-documents/doc%2Fone",
-    });
-
-    expect(response.statusCode).toBe(418);
-    expect(response.headers["content-type"]).toBe("text/plain; charset=utf-8");
-    expect(response.body).toBe("deleted");
-    expect(httpClient).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "DELETE",
-        upstreamPath: "/api/markdown-documents/doc%2Fone",
-      }),
-    );
-
-    await app.close();
-  });
-
-  it("maps markdown host request failure through the existing proxy envelope", async () => {
-    const httpClient: BoardYjsHostHttpClient = vi.fn(async () => {
+  it("maps orchestrator-local markdown failures through the host operation envelope", async () => {
+    const createMarkdownDocument = vi.fn(async () => {
       throw new Error("network down");
     });
     const { app } = createAppWithMarkdownDocuments(
       { restricted: false },
       {},
-      httpClient,
+      { createMarkdownDocument },
     );
 
     const response = await app.inject({
@@ -476,26 +421,21 @@ describe("markdown document and custom view route harness", () => {
       payload: { folderId: "folder-a", title: "Note" },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(500);
     expect(response.json()).toMatchObject({
       error: {
-        code: "BOARD_YJS_HOST_REQUEST_FAILED",
-        nodeId: "board-host",
+        code: "BOARD_YJS_HOST_OPERATION_FAILED",
       },
     });
 
     await app.close();
   });
 
-  it("can register markdown and board-yjs host proxy routes together without duplicates", async () => {
-    const { app, httpClient } = createAppWithMarkdownDocuments(
+  it("can register markdown and board-yjs host operation routes together without duplicates", async () => {
+    const { app } = createAppWithMarkdownDocuments(
       { restricted: false },
       {},
-      vi.fn(async () => ({
-        statusCode: 200,
-        headers: { "content-type": "application/json" },
-        body: { ok: true },
-      })),
+      {},
       true,
     );
 
@@ -505,15 +445,11 @@ describe("markdown document and custom view route harness", () => {
       url: "/api/markdown-documents",
       payload: { folderId: "folder-a", title: "Note" },
     });
-    const boardProxyResponse = await app.inject({
+    expect(markdownResponse.statusCode).toBe(201);
+    expect(app.hasRoute({
       method: "POST",
-      url: "/api/board-yjs/host/update",
-      payload: { update: "payload" },
-    });
-
-    expect(markdownResponse.statusCode).toBe(200);
-    expect(boardProxyResponse.statusCode).toBe(200);
-    expect(httpClient).toHaveBeenCalledTimes(2);
+      url: "/api/board-yjs/host/:operation",
+    })).toBe(true);
 
     await app.close();
   });

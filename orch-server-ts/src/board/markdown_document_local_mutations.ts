@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { randomUUID } from "node:crypto";
 
 import { MarkdownDocumentVersionConflictError } from "../board-yjs/markdown_document_version.js";
 import {
@@ -10,6 +11,37 @@ import type {
   MarkdownDocumentContainerKind,
   MarkdownDocumentRecord,
 } from "./markdown_document_routes.js";
+
+export async function createLocalMarkdownDocument(
+  app: FastifyInstance,
+  reply: FastifyReply,
+  hostProxy: BoardYjsHostProxyRouteOptions,
+  input: {
+    folderId: string;
+    container: { kind: MarkdownDocumentContainerKind; id: string };
+    title: string;
+    body: string;
+    x?: number;
+    y?: number;
+  },
+): Promise<FastifyReply> {
+  try {
+    const created = await resolveLocalBoardYjsService(app, hostProxy).createMarkdownDocument({
+      folderId: input.folderId,
+      container: {
+        containerKind: input.container.kind,
+        containerId: input.container.id,
+      },
+      title: input.title,
+      body: input.body,
+      ...(input.x !== undefined && input.y !== undefined ? { x: input.x, y: input.y } : {}),
+      documentId: randomUUID(),
+    });
+    return reply.code(201).send(created);
+  } catch (error) {
+    return sendBoardYjsHostProxyError(reply, error);
+  }
+}
 
 export async function updateLocalMarkdownDocument(
   app: FastifyInstance,

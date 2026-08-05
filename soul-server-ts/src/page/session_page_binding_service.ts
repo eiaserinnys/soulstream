@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
-import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
+import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import {
@@ -10,7 +10,10 @@ import {
   type TaskCreationHook,
   type TaskCreationHookParams,
 } from "../task/task_creation_hook.js";
-import { sessionBoardItemPosition } from "../task/task_session_position.js";
+import {
+  boardItemsInContainer,
+  sessionBoardItemPosition,
+} from "../task/task_session_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
 import {
@@ -261,7 +264,7 @@ export class SessionPageBindingService implements TaskCreationHook {
 export class SessionLegacyProjection implements LegacyProjectionPort {
   constructor(
     private readonly db: SessionDB,
-    private readonly boardYjsService: Pick<BoardYjsService, "upsertSessionBoardItem">,
+    private readonly boardYjsService: Pick<BoardYjsHostClient, "upsertSessionBoardItem">,
   ) {}
 
   async project(binding: SessionPageBindingRow): Promise<void> {
@@ -273,8 +276,8 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       const scope = await this.db.resolveBoardYjsContainerScope(container);
       if (!scope) throw new ManualRepairError(`stale legacy container: ${binding.legacy_container_id}`);
       await this.db.assignSessionToFolder(binding.session_id, scope.folderId);
-      const seed = await this.db.loadBoardYjsSeed(container);
-      const [x, y] = sessionBoardItemPosition(seed.boardItems, binding.session_id);
+      const boardItems = boardItemsInContainer(await this.db.getBoardItems(), container);
+      const [x, y] = sessionBoardItemPosition(boardItems, binding.session_id);
       await this.boardYjsService.upsertSessionBoardItem({
         folderId: scope.folderId,
         container,

@@ -85,10 +85,6 @@ export class BoardRepository {
     ));
   }
 
-  async ensureBoardItems(): Promise<void> {
-    await this.sql`SELECT board_seed_items()`;
-  }
-
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
     const rows = await this.sql<
       Array<{
@@ -434,17 +430,6 @@ export class BoardRepository {
     };
   }
 
-  async updateBoardItemPosition(
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void> {
-    await this.sql`
-      UPDATE board_items
-      SET x = ${x}, y = ${y}, updated_at = NOW()
-      WHERE id = ${boardItemId}
-    `;
-  }
 }
 
 function containerCacheKey(container: string | BoardYjsContainerRef): string {

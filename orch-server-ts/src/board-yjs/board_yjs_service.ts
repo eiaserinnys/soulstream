@@ -44,19 +44,17 @@ export interface BoardYjsServiceConfig {
   repository: BoardYjsPersistenceRepository;
   auth: BoardYjsAuthConfig;
   logger: FastifyBaseLogger;
-  hostMode: "node" | "orch";
   moveTaskBoardItem?: (
     input: BoardMoveInput & { idempotencyKey: string },
   ) => Promise<CatalogBoardItemRow>;
 }
 
 export class BoardYjsService {
-  private readonly hocuspocus: Hocuspocus | undefined;
+  private readonly hocuspocus: Hocuspocus;
   private readonly taskIdentityTails = new Map<string, Promise<void>>();
   private readonly documentMutationGate = new BoardYjsDocumentMutationGate();
 
   constructor(private readonly config: BoardYjsServiceConfig) {
-    if (config.hostMode !== "orch") return;
     const persistence = createBoardYjsPersistence(config.repository);
     this.hocuspocus = new Hocuspocus({
       name: "soulstream-board-yjs",
@@ -84,14 +82,6 @@ export class BoardYjsService {
     request: IncomingMessage,
     container: BoardYjsContainerRef,
   ): void {
-    if (this.config.hostMode !== "orch") {
-      this.config.logger.warn(
-        { hostMode: this.config.hostMode, container },
-        "rejected board Yjs websocket while orch hosting is disabled",
-      );
-      socket.close(1013, "board Yjs documents are hosted on orch");
-      return;
-    }
     const documentName = getBoardYjsContainerDocumentName(container);
     this.requireHocuspocus().handleConnection(socket, request, {
       ...container,
@@ -100,7 +90,6 @@ export class BoardYjsService {
   }
 
   async close(): Promise<void> {
-    if (!this.hocuspocus) return;
     await this.hocuspocus.hooks("onDestroy", { instance: this.hocuspocus });
     this.hocuspocus.closeConnections();
   }
@@ -114,8 +103,8 @@ export class BoardYjsService {
     container?: BoardYjsContainerRef;
     title: string;
     body: string;
-    x: number;
-    y: number;
+    x?: number;
+    y?: number;
     documentId: string;
   }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
     const scope = {
@@ -123,9 +112,12 @@ export class BoardYjsService {
       containerKind: input.container?.containerKind ?? "folder",
       containerId: input.container?.containerId ?? input.folderId,
     } as const;
-    return await this.withDirectContainerConnection(scope, (doc) =>
-      createMarkdownYjsDocument(doc, scope, input)
-    );
+    return await this.withDirectContainerConnection(scope, (doc) => {
+      const [x, y] = input.x !== undefined && input.y !== undefined
+        ? [input.x, input.y]
+        : nextBoardPosition(readBoardYDocReplica(scope, doc).boardItems);
+      return createMarkdownYjsDocument(doc, scope, { ...input, x, y });
+    });
   }
 
   async upsertSessionBoardItem(input: {
@@ -200,7 +192,7 @@ export class BoardYjsService {
       };
       const documentName = getBoardYjsContainerDocumentName(scope);
       return await this.documentMutationGate.withMutation([documentName], async () => {
-        const connection = await this.requireOrchHostMode().openDirectConnection(documentName, {
+        const connection = await this.hocuspocus.openDirectConnection(documentName, {
           ...scope,
           source: "task-identity",
         });
@@ -309,7 +301,7 @@ export class BoardYjsService {
       });
     }
     return await this.documentMutationGate.withMutation(moveDocumentNames(input), async () =>
-      await moveBoardItemBetweenDocuments(this.requireOrchHostMode(), input)
+      await moveBoardItemBetweenDocuments(this.hocuspocus, input)
     );
   }
 
@@ -319,7 +311,7 @@ export class BoardYjsService {
   ): Promise<CatalogBoardItemRow> {
     return await this.withTaskIdentityLock(input.boardItem.id, async () =>
       await this.documentMutationGate.withMutation(moveDocumentNames(input), async () =>
-        await withStagedTaskBoardMove(this.requireOrchHostMode(), input, persist)
+        await withStagedTaskBoardMove(this.hocuspocus, input, persist)
       )
     );
   }
@@ -358,7 +350,7 @@ export class BoardYjsService {
     const resolved = typeof container === "string" ? boardYjsFolderScope(container) : container;
     const documentName = getBoardYjsContainerDocumentName(resolved);
     return await this.documentMutationGate.withMutation([documentName], async () => {
-      const connection = await this.requireOrchHostMode().openDirectConnection(
+      const connection = await this.requireHocuspocus().openDirectConnection(
         documentName,
         { ...resolved, source: "server" },
       );
@@ -374,17 +366,7 @@ export class BoardYjsService {
     });
   }
 
-  private requireOrchHostMode(): Hocuspocus {
-    if (this.config.hostMode !== "orch") {
-      throw new Error(
-        "board Yjs direct document access is only allowed when BOARD_YJS_HOST_MODE=orch",
-      );
-    }
-    return this.requireHocuspocus();
-  }
-
   private requireHocuspocus(): Hocuspocus {
-    if (!this.hocuspocus) throw new Error("board Yjs Hocuspocus service is not active");
     return this.hocuspocus;
   }
 
@@ -401,6 +383,19 @@ export class BoardYjsService {
       release();
       if (this.taskIdentityTails.get(key) === tail) this.taskIdentityTails.delete(key);
     }
+  }
+}
+
+function nextBoardPosition(
+  boardItems: readonly { x: number; y: number }[],
+): [number, number] {
+  const occupied = new Set(boardItems.map((item) => `${item.x}:${item.y}`));
+  let index = 0;
+  while (true) {
+    const x = (index % 4) * 280;
+    const y = Math.floor(index / 4) * 160;
+    if (!occupied.has(`${x}:${y}`)) return [x, y];
+    index += 1;
   }
 }
 

@@ -5,7 +5,6 @@ import {
   createOrchestratorRuntimeComposition,
   loadContractFixtures,
   parseOrchServerConfig,
-  type BoardYjsHostHttpClient,
 } from "../src/index.js";
 import type { PageBrowserReads } from "../src/page/page_browser_routes.js";
 import type { PageYjsService } from "../src/page/page_service.js";
@@ -83,7 +82,7 @@ describe("orchestrator runtime composition harness", () => {
     await app.close();
   });
 
-  it("passes the page service route bundle through composition only in orch host mode", async () => {
+  it("passes the orchestrator-local page service route bundle through composition", async () => {
     const service = pageServiceDouble();
     const routeOptions = {
       authBearerToken: "test-token",
@@ -91,13 +90,8 @@ describe("orchestrator runtime composition harness", () => {
       browserReads: service,
       resolveBrowserUser: vi.fn(async () => ({ email: "user@example.com" })),
     };
-    expect(() => createOrchestratorRuntimeComposition({
-      config,
-      pageYjsRoutes: routeOptions,
-    })).toThrow("Page Yjs production routes require BOARD_YJS_HOST_MODE=orch");
-
     const runtime = createOrchestratorRuntimeComposition({
-      config: { ...config, boardYjsHostMode: "orch" },
+      config,
       boardYjsRoutes: {
         createService: () => ({
           handleConnection: vi.fn(),
@@ -137,7 +131,6 @@ describe("orchestrator runtime composition harness", () => {
         `runtime-${commandType}-${sequence}`,
       commandTimeoutMs: 1_000,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
 
@@ -214,7 +207,6 @@ describe("orchestrator runtime composition harness", () => {
       config,
       sessionSseInstanceId: "runtime-session-stream",
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
 
@@ -262,64 +254,6 @@ describe("orchestrator runtime composition harness", () => {
     await runtime.app.close();
   });
 
-  it("shares board host registration with the board-yjs proxy route and injectable client", async () => {
-    const httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
-      statusCode: 201,
-      headers: { "content-type": "application/json" },
-      body: { ok: true },
-    }));
-    const runtime = createOrchestratorRuntimeComposition({
-      config,
-      nowMs: () => 1_700_000_000_000,
-      loadSessionSnapshot: async () => ({ sessions: [] }),
-      boardYjsHostHttpClient: httpClient,
-      sseReplayOnlyForTests: true,
-    });
-
-    await runtime.app.ready();
-    const ws = await injectAuthenticatedWs(runtime.app);
-    ws.send(
-      JSON.stringify({
-        type: "node_register",
-        node_id: "board-host",
-        host: "127.0.0.1",
-        port: 4105,
-        agents: [],
-        capabilities: { board_yjs_host: true },
-      }),
-    );
-    await waitFor(() => runtime.registry.getConnectedNode("board-host") !== undefined);
-    const connectionId = requireDefined(
-      runtime.registry.getConnectedNode("board-host")?.connectionId,
-    );
-
-    const response = await runtime.app.inject({
-      method: "POST",
-      url: "/api/board-yjs/host/update",
-      headers: { authorization: "Bearer test-token" },
-      payload: { update: "payload" },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({ ok: true });
-    expect(httpClient).toHaveBeenCalledWith({
-      method: "POST",
-      url: "http://127.0.0.1:4105/api/internal/board-yjs/update",
-      upstreamPath: "/api/internal/board-yjs/update",
-      headers: { authorization: "Bearer test-token" },
-      body: { update: "payload" },
-      target: {
-        host: "127.0.0.1",
-        port: 4105,
-        nodeId: "board-host",
-        connectionId,
-      },
-    });
-
-    ws.terminate();
-    await runtime.app.close();
-  });
-
   it("shares SSE broadcasters and injectable snapshot loaders with the SSE routes", async () => {
     const loadSessionSnapshot = vi.fn(async () => ({
       sessions: [{ agent_session_id: "snapshot-session", title: "Snapshot" }],
@@ -329,7 +263,6 @@ describe("orchestrator runtime composition harness", () => {
       config,
       sessionSseInstanceId: "runtime-session-stream",
       loadSessionSnapshot,
-      boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
     runtime.sessionBroadcaster.append({
@@ -369,7 +302,6 @@ describe("orchestrator runtime composition harness", () => {
     const runtime = createOrchestratorRuntimeComposition({
       config,
       sessionSseInstanceId: "runtime-session-stream",
-      boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
 
@@ -429,7 +361,6 @@ describe("orchestrator runtime composition harness", () => {
     const runtime = createOrchestratorRuntimeComposition({
       config,
       nowMs: () => 1_700_000_000_000,
-      boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
       nodeStreamCloseAfterInitialSnapshot: true,
     });

@@ -96,7 +96,6 @@ function createNodeService(): BoardYjsService {
   return new BoardYjsService({
     repository: {} as never,
     logger: silentLogger(),
-    hostMode: "node",
     auth: {
       authBearerToken: "test-token",
       environment: "production",

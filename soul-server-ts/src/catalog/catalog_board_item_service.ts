@@ -77,39 +77,30 @@ export class CatalogBoardItemService {
     x: number,
     y: number,
   ): Promise<void> {
+    if (!this.boardYjsService) {
+      throw new Error("orchestrator Board Yjs mutation port is not configured");
+    }
     const snappedX = snapBoardPosition(x);
     const snappedY = snapBoardPosition(y);
-    if (this.boardYjsService) {
-      const boardItem = await this.db.getBoardItemById(boardItemId);
-      if (boardItem) {
-        await this.boardYjsService.updateBoardItemPosition(
-          {
-            containerKind: boardItem.containerKind ?? "folder",
-            containerId: boardItem.containerId ?? boardItem.folderId,
-          },
-          boardItemId,
-          snappedX,
-          snappedY,
-        );
-        await this.broadcastCatalog({
-          boardItems: [{
-            ...boardItem,
-            x: snappedX,
-            y: snappedY,
-          }],
-        });
-        return;
-      }
+    const boardItem = await this.db.getBoardItemById(boardItemId);
+    if (!boardItem) {
+      throw new Error(`board item not found: ${boardItemId}`);
     }
-    await this.db.ensureBoardItems();
-    await this.db.updateBoardItemPosition(
+    await this.boardYjsService.updateBoardItemPosition(
+      {
+        containerKind: boardItem.containerKind ?? "folder",
+        containerId: boardItem.containerId ?? boardItem.folderId,
+      },
       boardItemId,
       snappedX,
       snappedY,
     );
-    const updated = await this.db.getBoardItemById(boardItemId);
     await this.broadcastCatalog({
-      boardItems: updated ? [updated] : [],
+      boardItems: [{
+        ...boardItem,
+        x: snappedX,
+        y: snappedY,
+      }],
     });
   }
 
@@ -123,7 +114,6 @@ export class CatalogBoardItemService {
       throw new Error("board Yjs service is not configured");
     }
     assertSupportedMoveItemId(params.boardItemId);
-    await this.db.ensureBoardItems();
     const targetScope = await this.db.resolveBoardYjsContainerScope(params.target);
     if (!targetScope) {
       throw new Error(`target container not found: ${params.target.containerKind}:${params.target.containerId}`);
@@ -237,7 +227,10 @@ export class CatalogBoardItemService {
     body?: string;
     x?: number;
     y?: number;
-  }): Promise<Awaited<ReturnType<SessionDB["createMarkdownDocument"]>>> {
+  }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
+    if (!this.boardYjsService) {
+      throw new Error("orchestrator Board Yjs mutation port is not configured");
+    }
     const documentId = randomUUID();
     const container = params.container ?? {
       containerKind: "folder" as const,
@@ -246,20 +239,7 @@ export class CatalogBoardItemService {
     const [x, y] = params.x !== undefined && params.y !== undefined
       ? [snapBoardPosition(params.x), snapBoardPosition(params.y)]
       : await this.nextBoardPosition(params.folderId, container);
-    if (this.boardYjsService) {
-      const result = await this.boardYjsService.createMarkdownDocument({
-        documentId,
-        folderId: params.folderId,
-        container,
-        title: params.title,
-        body: params.body ?? "",
-        x,
-        y,
-      });
-      await this.broadcastCatalog({ boardItems: [result.boardItem] });
-      return result;
-    }
-    const result = await this.db.createMarkdownDocument({
+    const result = await this.boardYjsService.createMarkdownDocument({
       documentId,
       folderId: params.folderId,
       container,
@@ -283,61 +263,59 @@ export class CatalogBoardItemService {
     if (fields.title === undefined && fields.body === undefined) {
       return this.getMarkdownDocument(documentId);
     }
-    if (this.boardYjsService) {
-      const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
-      if (boardItem) {
-        const document = await this.boardYjsService.updateMarkdownDocument(
-          {
-            containerKind: boardItem.containerKind ?? "folder",
-            containerId: boardItem.containerId ?? boardItem.folderId,
-          },
-          documentId,
-          fields,
-        );
-        await this.broadcastCatalog({
-          boardItems: document
-            ? [{
-                ...boardItem,
-                metadata: {
-                  ...boardItem.metadata,
-                  title: document.title,
-                  preview: getMarkdownPreview(document.body),
-                  version: document.version,
-                },
-              }]
-            : [],
-        });
-        return document;
-      }
+    if (!this.boardYjsService) {
+      throw new Error("orchestrator Board Yjs mutation port is not configured");
     }
-    const document = await this.db.updateMarkdownDocument(documentId, fields);
     const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
+    if (!boardItem) {
+      if (await this.db.getMarkdownDocument(documentId)) {
+        throw new Error(`markdown document board item not found: ${documentId}`);
+      }
+      return null;
+    }
+    const document = await this.boardYjsService.updateMarkdownDocument(
+      {
+        containerKind: boardItem.containerKind ?? "folder",
+        containerId: boardItem.containerId ?? boardItem.folderId,
+      },
+      documentId,
+      fields,
+    );
     await this.broadcastCatalog({
-      boardItems: boardItem ? [boardItem] : [],
+      boardItems: document
+        ? [{
+            ...boardItem,
+            metadata: {
+              ...boardItem.metadata,
+              title: document.title,
+              preview: getMarkdownPreview(document.body),
+              version: document.version,
+            },
+          }]
+        : [],
     });
     return document;
   }
 
   async deleteMarkdownDocument(documentId: string): Promise<void> {
-    if (this.boardYjsService) {
-      const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
-      if (boardItem) {
-        await this.boardYjsService.deleteMarkdownDocument(
-          {
-            containerKind: boardItem.containerKind ?? "folder",
-            containerId: boardItem.containerId ?? boardItem.folderId,
-          },
-          documentId,
-        );
-        await this.broadcastCatalog({ deletedBoardItemIds: [boardItem.id] });
-        return;
-      }
+    if (!this.boardYjsService) {
+      throw new Error("orchestrator Board Yjs mutation port is not configured");
     }
     const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
-    await this.db.deleteMarkdownDocument(documentId);
-    await this.broadcastCatalog({
-      deletedBoardItemIds: boardItem ? [boardItem.id] : [],
-    });
+    if (!boardItem) {
+      if (await this.db.getMarkdownDocument(documentId)) {
+        throw new Error(`markdown document board item not found: ${documentId}`);
+      }
+      return;
+    }
+    await this.boardYjsService.deleteMarkdownDocument(
+      {
+        containerKind: boardItem.containerKind ?? "folder",
+        containerId: boardItem.containerId ?? boardItem.folderId,
+      },
+      documentId,
+    );
+    await this.broadcastCatalog({ deletedBoardItemIds: [boardItem.id] });
   }
 
   private async nextBoardPosition(
@@ -345,7 +323,6 @@ export class CatalogBoardItemService {
     container: BoardYjsContainerRef,
   ): Promise<[number, number]> {
     // Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
-    await this.db.ensureBoardItems();
     const occupied = new Set(
       (await this.db.getBoardItems())
         .filter((item) =>
