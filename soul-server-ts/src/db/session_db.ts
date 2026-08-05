@@ -4,16 +4,17 @@
  */
 
 import postgres from "postgres";
+import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
 import type { ScheduleHostClient } from "../schedule/schedule_host_client.js";
-import { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
+import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
-import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
-import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
+import type { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
+import type { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
 import { CustomViewRepository } from "./repositories/custom_view_repository.js";
 import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
@@ -26,7 +27,7 @@ import {
   type SessionSearchMetadata,
   type SessionTurnSummaryCounts,
 } from "./repositories/session_story_repository.js";
-import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
+import type { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
 import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
@@ -54,7 +55,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private readonly markdownDocumentRepository: MarkdownDocumentRepository;
   private readonly boardYjsRepository: BoardYjsRepository;
   private readonly eventRepository: EventRepository;
-  private readonly claudeTranscriptRepository: ClaudeTranscriptRepository;
+  private claudeTranscriptRepository?: ClaudeTranscriptRepository;
 
   /** @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열. 문자열이면 close 시 end. */
   constructor(sqlOrUrl: SqlClient | string) {
@@ -81,7 +82,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
     this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
     this.boardYjsRepository = new BoardYjsRepository(this.sql);
     this.eventRepository = new EventRepository(this.sql);
-    this.claudeTranscriptRepository = new ClaudeTranscriptRepository(this.sql);
   }
 
   async close(): Promise<void> {
@@ -119,13 +119,42 @@ export class SessionDB extends SupervisorSessionDbFacade {
     this.scheduleHost = host;
   }
 
+  configurePersistenceHosts(hosts: {
+    deliveries: SessionDeliveryRepository;
+    supervisors: Parameters<SupervisorSessionDbFacade["configureSupervisorHost"]>[0];
+    claudeRuntime: ClaudeBackgroundTaskRepository & ClaudeTranscriptRepository;
+    sessionPageBindings: SessionPageBindingRepository;
+  }): void {
+    this.configureSessionDeliveryHost(hosts.deliveries);
+    this.configureSupervisorHost(hosts.supervisors);
+    this.configureClaudeBackgroundTaskHost(hosts.claudeRuntime);
+    this.configureClaudeTranscriptHost(hosts.claudeRuntime);
+    this.configureSessionPageBindingHost(hosts.sessionPageBindings);
+  }
+
+  configureSessionDeliveryHost(host: SessionDeliveryRepository): void {
+    this.sessionDeliveryRepository = host;
+  }
+
+  configureClaudeBackgroundTaskHost(host: ClaudeBackgroundTaskRepository): void {
+    this.claudeBackgroundTaskRepository = host;
+  }
+
+  configureClaudeTranscriptHost(host: ClaudeTranscriptRepository): void {
+    this.claudeTranscriptRepository = host;
+  }
+
+  configureSessionPageBindingHost(host: SessionPageBindingRepository): void {
+    this.sessionPageBindingRepository = host;
+  }
+
   schedules(): ScheduleHostClient {
     if (!this.scheduleHost) throw new Error("schedule host is not configured");
     return this.scheduleHost;
   }
 
   sessionPageBindings(): SessionPageBindingRepository {
-    this.sessionPageBindingRepository ??= new SessionPageBindingRepository(this.sql);
+    if (!this.sessionPageBindingRepository) throw new Error("session page binding host is not configured");
     return this.sessionPageBindingRepository;
   }
 
@@ -135,12 +164,13 @@ export class SessionDB extends SupervisorSessionDbFacade {
   }
 
   sessionDeliveries(): SessionDeliveryRepository {
-    return this.sessionDeliveryRepository ??= new SessionDeliveryRepository(this.sql);
+    if (!this.sessionDeliveryRepository) throw new Error("session delivery host is not configured");
+    return this.sessionDeliveryRepository;
   }
 
   claudeBackgroundTasks(): ClaudeBackgroundTaskRepository {
-    return this.claudeBackgroundTaskRepository ??=
-      new ClaudeBackgroundTaskRepository(this.sql);
+    if (!this.claudeBackgroundTaskRepository) throw new Error("Claude runtime host is not configured");
+    return this.claudeBackgroundTaskRepository;
   }
 
   async registerSession(params: RegisterSessionParams): Promise<void> {
@@ -323,7 +353,24 @@ export class SessionDB extends SupervisorSessionDbFacade {
     offset: number;
     nodeId: string;
   }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }> {
-    return await this.sessionRepository.listSessionsForUpstreamDump(params);
+    const result = await this.sessionRepository.listSessionsForUpstreamDump(params);
+    const bindings = await this.sessionPageBindings().listForSessions(
+      result.sessions.map((session) => session.session_id),
+    );
+    const bySession = new Map(bindings.map((binding) => [binding.session_id, binding]));
+    return {
+      ...result,
+      sessions: result.sessions.map((session) => {
+        const binding = bySession.get(session.session_id);
+        return {
+          ...session,
+          binding_warnings: projectSessionBindingWarnings({
+            pageState: binding?.page_state ?? null,
+            legacyState: binding?.legacy_state ?? null,
+          }),
+        };
+      }),
+    };
   }
 
   async listRunningSessionsSummary(params: {
@@ -477,28 +524,33 @@ export class SessionDB extends SupervisorSessionDbFacade {
     key: ClaudeTranscriptKey,
     entries: ClaudeTranscriptEntry[],
   ): Promise<number> {
-    return await this.claudeTranscriptRepository.appendClaudeTranscriptEntries(key, entries);
+    return await this.claudeTranscripts().appendClaudeTranscriptEntries(key, entries);
   }
 
   async loadClaudeTranscriptEntries(
     key: ClaudeTranscriptKey,
   ): Promise<ClaudeTranscriptEntry[] | null> {
-    return await this.claudeTranscriptRepository.loadClaudeTranscriptEntries(key);
+    return await this.claudeTranscripts().loadClaudeTranscriptEntries(key);
   }
 
   async listClaudeTranscriptSessions(
     projectKey: string,
   ): Promise<ClaudeTranscriptSessionSummary[]> {
-    return await this.claudeTranscriptRepository.listClaudeTranscriptSessions(projectKey);
+    return await this.claudeTranscripts().listClaudeTranscriptSessions(projectKey);
   }
 
   async listClaudeTranscriptSubkeys(
     key: Pick<ClaudeTranscriptKey, "projectKey" | "sessionId">,
   ): Promise<string[]> {
-    return await this.claudeTranscriptRepository.listClaudeTranscriptSubkeys(key);
+    return await this.claudeTranscripts().listClaudeTranscriptSubkeys(key);
   }
 
   async deleteClaudeTranscript(key: ClaudeTranscriptKey): Promise<void> {
-    await this.claudeTranscriptRepository.deleteClaudeTranscript(key);
+    await this.claudeTranscripts().deleteClaudeTranscript(key);
+  }
+
+  private claudeTranscripts(): ClaudeTranscriptRepository {
+    if (!this.claudeTranscriptRepository) throw new Error("Claude runtime host is not configured");
+    return this.claudeTranscriptRepository;
   }
 }

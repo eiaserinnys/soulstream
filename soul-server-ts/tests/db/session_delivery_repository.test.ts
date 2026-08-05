@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import { SessionDeliveryRepository } from "../../src/db/repositories/session_delivery_repository.js";
+import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type {
   SessionDeliveryRow,
   SqlClient,

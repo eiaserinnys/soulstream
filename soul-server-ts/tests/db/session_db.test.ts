@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
+import { SupervisorRepository } from "../../../orch-server-ts/src/control_plane/repositories/supervisor_repository.js";
+import { ClaudeTranscriptRepository } from "../../../orch-server-ts/src/control_plane/repositories/claude_transcript_repository.js";
 
 interface MockCall {
   fragments: string[];
@@ -433,7 +435,7 @@ describe("SessionDB supervisor data layer", () => {
         gap_end: null,
       },
     ]);
-    const db = new SessionDB(sql);
+    const db = new SupervisorRepository(sql);
 
     const result = await db.appendSupervisorEvent({
       sourceNode: "node-a",
@@ -480,7 +482,7 @@ describe("SessionDB supervisor data layer", () => {
       },
     ]);
 
-    const rows = await new SessionDB(sql).readSupervisorEventsAfter(0, 10);
+    const rows = await new SupervisorRepository(sql).readSupervisorEventsAfter(0, 10);
 
     expect(calls[0].fragments.join("?")).toContain("supervisor_event_read_after");
     expect(calls[0].values).toEqual([0, 10]);
@@ -499,7 +501,7 @@ describe("SessionDB supervisor data layer", () => {
   it("getSupervisorEventHeadOffset → supervisor_events max offset", async () => {
     const { sql, calls } = createMockSql(() => [{ head: "123" }]);
 
-    const head = await new SessionDB(sql).getSupervisorEventHeadOffset();
+    const head = await new SupervisorRepository(sql).getSupervisorEventHeadOffset();
 
     expect(calls[0].fragments.join("?")).toContain('MAX("offset")');
     expect(head).toBe(123);
@@ -583,7 +585,7 @@ describe("SessionDB supervisor data layer", () => {
       }
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = new SupervisorRepository(sql);
 
     await expect(db.getSupervisorConsumerCursor("cluster-supervisor")).resolves.toBe(7);
     await expect(db.setSupervisorConsumerCursor("cluster-supervisor", 9)).resolves.toBe(9);
@@ -650,7 +652,7 @@ describe("SessionDB supervisor data layer", () => {
 describe("SessionDB Claude transcript mirror", () => {
   it("appendClaudeTranscriptEntries delegates JSON batch to stored proc", async () => {
     const { sql, calls } = createMockSql(() => [{ claude_transcript_append: 2 }]);
-    const db = new SessionDB(sql);
+    const db = new ClaudeTranscriptRepository(sql);
 
     const written = await db.appendClaudeTranscriptEntries(
       { projectKey: "project-a", sessionId: "claude-sess-1" },
@@ -676,7 +678,7 @@ describe("SessionDB Claude transcript mirror", () => {
 
   it("appendClaudeTranscriptEntries no-ops for empty batches", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new ClaudeTranscriptRepository(sql);
 
     const written = await db.appendClaudeTranscriptEntries(
       { projectKey: "project-a", sessionId: "claude-sess-1" },
@@ -689,7 +691,7 @@ describe("SessionDB Claude transcript mirror", () => {
 
   it("loadClaudeTranscriptEntries returns null when the store has no rows", async () => {
     const { sql, calls } = createMockSql(() => []);
-    const db = new SessionDB(sql);
+    const db = new ClaudeTranscriptRepository(sql);
 
     const entries = await db.loadClaudeTranscriptEntries({
       projectKey: "project-a",
@@ -707,7 +709,7 @@ describe("SessionDB Claude transcript mirror", () => {
       { entry: { type: "user", uuid: "u1" } },
       { entry: { type: "assistant", uuid: "a1" } },
     ]);
-    const db = new SessionDB(sql);
+    const db = new ClaudeTranscriptRepository(sql);
 
     await expect(
       db.loadClaudeTranscriptEntries({ projectKey: "project-a", sessionId: "claude-sess-1" }),
@@ -728,7 +730,7 @@ describe("SessionDB Claude transcript mirror", () => {
       }
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = new ClaudeTranscriptRepository(sql);
 
     await expect(db.listClaudeTranscriptSessions("project-a")).resolves.toEqual([
       { sessionId: "claude-sess-1", mtime: 1770000000000 },
@@ -1050,7 +1052,10 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
       return query.includes("SELECT COUNT(*) AS count") ? [{ count: "1" }] : [row];
     });
 
-    await expect(new SessionDB(sql).listSessionsForUpstreamDump({
+    const db = new SessionDB(sql);
+    const listForSessions = vi.fn(async () => []);
+    db.configureSessionPageBindingHost({ listForSessions } as never);
+    await expect(db.listSessionsForUpstreamDump({
       limit: 10_000,
       offset: 0,
       nodeId: "node-1",
@@ -1059,13 +1064,14 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0].fragments.join("?")).toContain("s.agent_id");
     expect(calls[0].fragments.join("?")).toContain("s.predecessor_session_id");
-    expect(calls[0].fragments.join("?")).toContain("session_page_bindings");
+    expect(calls[0].fragments.join("?")).not.toContain("session_page_bindings");
     expect(calls[0].fragments.join("?")).toContain("AS event_count");
     expect(calls[0].fragments.join("?")).not.toContain("SELECT *");
     expect(calls[0].fragments.join("?")).toContain("ORDER BY s.updated_at DESC, s.session_id DESC");
     expect(calls[0].values).toEqual(["node-1", 10_000, 0]);
     expect(calls[1].fragments.join("?")).toContain("SELECT COUNT(*) AS count");
     expect(calls[1].values).toEqual(["node-1"]);
+    expect(listForSessions).toHaveBeenCalledWith(["s1"]);
   });
 
   it("listRunningSessionsSummary → running 세션만 current session 제외 후 최신순으로 조회", async () => {

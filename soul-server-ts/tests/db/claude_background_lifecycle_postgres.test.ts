@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ClaudeBackgroundTaskRepository } from
-  "../../src/db/repositories/claude_background_task_repository.js";
+  "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
 import { SessionDeliveryRepository } from
-  "../../src/db/repositories/session_delivery_repository.js";
+  "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";

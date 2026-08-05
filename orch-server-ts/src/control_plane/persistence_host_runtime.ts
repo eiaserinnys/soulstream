@@ -1,0 +1,35 @@
+import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
+import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
+import type { SqlClient } from "./control_plane_types.js";
+import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
+import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
+import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
+import { SessionPageBindingRepository } from "./repositories/session_page_binding_repository.js";
+import { SupervisorRepository } from "./repositories/supervisor_repository.js";
+
+export interface PersistenceHostRepositories {
+  deliveries: SessionDeliveryRepository;
+  supervisors: SupervisorRepository;
+  claudeBackgroundTasks: ClaudeBackgroundTaskRepository;
+  claudeTranscripts: ClaudeTranscriptRepository;
+  sessionPageBindings: SessionPageBindingRepository;
+}
+
+export function createPersistenceHostRepositoryProvider(
+  sqlResolver: LiveDbSqlResolver,
+): () => Promise<PersistenceHostRepositories> {
+  const resolver = new BoardYjsSqlResolver(sqlResolver);
+  let repositories: PersistenceHostRepositories | undefined;
+  return async () => {
+    if (repositories) return repositories;
+    const sql = await resolver.resolveSql() as unknown as SqlClient;
+    repositories = {
+      deliveries: new SessionDeliveryRepository(sql),
+      supervisors: new SupervisorRepository(sql),
+      claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
+      claudeTranscripts: new ClaudeTranscriptRepository(sql),
+      sessionPageBindings: new SessionPageBindingRepository(sql),
+    };
+    return repositories;
+  };
+}
