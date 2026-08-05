@@ -137,7 +137,6 @@ ALLOWLIST = {
     "orch-server-ts/src/board-yjs/board_yjs_host_operations.ts": "legacy host payload reader",
     "orch-server-ts/tests/board-yjs-model-parity.test.ts": "legacy Y.Doc reader test",
     "soul-server-ts/src/collaboration/board_container_kind_compat.ts": "legacy container reader",
-    "soul-server-ts/src/collaboration/board_yjs_host_route.ts": "legacy host payload reader",
     "soul-server-ts/src/collaboration/board_yjs_model.ts": "legacy Y.Doc item reader",
     "soul-server-ts/tests/collaboration/board_yjs_model.test.ts": "legacy Y.Doc reader test",
 }

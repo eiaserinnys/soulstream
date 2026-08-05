@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  InMemoryNodeRegistry,
   BoardItemRouteError,
   boardItemRouteAuthRequirements,
   createApp,
@@ -9,9 +8,7 @@ import {
   parseOrchServerConfig,
   type BoardItemAccessProvider,
   type BoardItemRouteProvider,
-  type BoardYjsHostHttpClient,
   type BoardYjsHostProxyRouteOptions,
-  type NodeRegistrationPayload,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -54,23 +51,6 @@ type ProviderCall =
   | ["listBoardItems", unknown]
   | ["resolveContainer", unknown]
   | ["catalog"];
-
-function createRegistry(): InMemoryNodeRegistry {
-  return new InMemoryNodeRegistry({
-    nowMs: () => 1_700_000_000_000,
-  });
-}
-
-function registerBoardHost(registry: InMemoryNodeRegistry): string {
-  return registry.registerNode({
-    type: "node_register",
-    node_id: "board-host",
-    host: "localhost",
-    port: 4105,
-    agents: [],
-    capabilities: { board_yjs_host: true },
-  } satisfies NodeRegistrationPayload).node.connectionId;
-}
 
 function createHarness(overrides: Partial<BoardItemRouteProvider> = {}) {
   const calls: ProviderCall[] = [];
@@ -117,26 +97,24 @@ function createAccessProvider(
 function createAppWithBoardItems(
   access: { restricted: boolean; allowedFolderIds?: string[] },
   overrides: Partial<BoardItemRouteProvider> = {},
-  httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
-    statusCode: 200,
-    headers: { "content-type": "application/json" },
-    body: { ok: true },
-  })),
-  hostProxyOverrides: Partial<BoardYjsHostProxyRouteOptions> = {},
+  serviceOverrides: Record<string, unknown> = {},
 ) {
-  const registry = createRegistry();
-  const connectionId = registerBoardHost(registry);
   const harness = createHarness(overrides);
   const accessProvider = createAccessProvider(access, harness.calls);
+  const service = {
+    updateBoardItemPosition: vi.fn(async () => undefined),
+    moveBoardItemToContainer: vi.fn(async (input) => input.boardItem),
+    ...serviceOverrides,
+  } as unknown as NonNullable<BoardYjsHostProxyRouteOptions["service"]>;
   const app = createApp({
     config,
     boardItemRoutes: {
       provider: harness.provider,
       accessProvider,
-      hostProxy: { registry, httpClient, ...hostProxyOverrides },
+      hostProxy: { authBearerToken: "test-token", service },
     },
   });
-  return { app, calls: harness.calls, connectionId, httpClient };
+  return { app, calls: harness.calls, service };
 }
 
 describe("board item route harness", () => {
@@ -299,8 +277,8 @@ describe("board item route harness", () => {
     await app.close();
   });
 
-  it("proxies restricted position updates after source item access check", async () => {
-    const { app, calls, connectionId, httpClient } = createAppWithBoardItems({
+  it("updates restricted board positions locally after source item access check", async () => {
+    const { app, calls, service } = createAppWithBoardItems({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -317,44 +295,37 @@ describe("board item route harness", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
-    expect(calls).toEqual([["access"], ["catalog"]]);
-    expect(httpClient).toHaveBeenCalledWith({
-      method: "PATCH",
-      url: "http://localhost:4105/api/board-items/item%2Fone/position",
-      upstreamPath: "/api/board-items/item%2Fone/position",
-      headers: { authorization: "Bearer test-token" },
-      body: { x: 10.5, y: -3 },
-      target: {
-        host: "localhost",
-        port: 4105,
-        nodeId: "board-host",
-        connectionId,
-      },
-    });
+    expect(calls).toEqual([["access"], ["catalog"], ["catalog"]]);
+    expect(service.updateBoardItemPosition).toHaveBeenCalledWith(
+      { containerKind: "folder", containerId: "folder-a-child" },
+      "item/one",
+      10.5,
+      -3,
+    );
 
     await app.close();
   });
 
-  it("proxies unrestricted position updates without source lookup", async () => {
-    const { app, calls, httpClient } = createAppWithBoardItems({
+  it("updates unrestricted positions through the same local service", async () => {
+    const { app, calls, service } = createAppWithBoardItems({
       restricted: false,
     });
 
     const response = await app.inject({
       method: "PATCH",
-      url: "/api/board-items/missing/position",
+      url: "/api/board-items/item%2Fone/position",
       payload: { x: 1, y: 2 },
     });
 
     expect(response.statusCode).toBe(200);
-    expect(calls).toEqual([["access"]]);
-    expect(httpClient).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([["access"], ["catalog"]]);
+    expect(service.updateBoardItemPosition).toHaveBeenCalledTimes(1);
 
     await app.close();
   });
 
   it("returns Python-compatible 404 when restricted source item is absent", async () => {
-    const { app, httpClient } = createAppWithBoardItems(
+    const { app, service } = createAppWithBoardItems(
       {
         restricted: true,
         allowedFolderIds: ["folder-a"],
@@ -374,13 +345,13 @@ describe("board item route harness", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ detail: "Board item not found" });
-    expect(httpClient).not.toHaveBeenCalled();
+    expect(service.updateBoardItemPosition).not.toHaveBeenCalled();
 
     await app.close();
   });
 
   it("moves board items to containers with idempotency alias and optional coordinates", async () => {
-    const { app, calls, httpClient } = createAppWithBoardItems({
+    const { app, calls, service } = createAppWithBoardItems({
       restricted: true,
       allowedFolderIds: ["folder-a"],
     });
@@ -402,34 +373,24 @@ describe("board item route harness", () => {
       ["catalog"],
       ["resolveContainer", { kind: "task", id: "task-1" }],
     ]);
-    expect(httpClient).toHaveBeenCalledWith(
+    expect(service.moveBoardItemToContainer).toHaveBeenCalledWith(
       expect.objectContaining({
-        method: "PATCH",
-        upstreamPath: "/api/board-items/item%2Fone/container",
-        body: {
-          container: { kind: "task", id: "task-1" },
-          idempotencyKey: "idem-1",
-          x: 2,
-          y: 3,
-        },
+        targetScope: { folderId: "folder-a", containerKind: "task", containerId: "task-1" },
+        idempotencyKey: "idem-1",
+        position: { x: 2, y: 3 },
       }),
     );
 
     await app.close();
   });
 
-  it("moves board items through the local service in orchestrator host mode", async () => {
+  it("returns the board item produced by the orchestrator-local service", async () => {
     const moved = { ...boardItems[0], containerKind: "task", containerId: "task-1" };
     const moveBoardItemToContainer = vi.fn(async () => moved);
-    const httpClient = vi.fn();
     const { app } = createAppWithBoardItems(
       { restricted: false },
       {},
-      httpClient,
-      {
-        hostMode: "orch",
-        service: { moveBoardItemToContainer } as unknown as BoardYjsHostProxyRouteOptions["service"],
-      },
+      { moveBoardItemToContainer },
     );
 
     const response = await app.inject({
@@ -449,12 +410,11 @@ describe("board item route harness", () => {
       targetScope: { folderId: "folder-a", containerKind: "task", containerId: "task-1" },
       position: { x: 3, y: 4 },
     }));
-    expect(httpClient).not.toHaveBeenCalled();
     await app.close();
   });
 
   it("rejects partial container move coordinates before host proxy", async () => {
-    const { app, httpClient } = createAppWithBoardItems({ restricted: false });
+    const { app, service } = createAppWithBoardItems({ restricted: false });
 
     const response = await app.inject({
       method: "PATCH",
@@ -470,49 +430,31 @@ describe("board item route harness", () => {
     expect(response.json()).toEqual({
       detail: "x and y must be supplied together",
     });
-    expect(httpClient).not.toHaveBeenCalled();
+    expect(service.moveBoardItemToContainer).not.toHaveBeenCalled();
 
     await app.close();
   });
 
-  it("preserves non-JSON upstream position response", async () => {
-    const httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
-      statusCode: 418,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-      body: "teapot",
-    }));
-    const { app } = createAppWithBoardItems({ restricted: false }, {}, httpClient);
-
-    const response = await app.inject({
-      method: "PATCH",
-      url: "/api/board-items/item-1/position",
-      payload: { x: 1, y: 2 },
-    });
-
-    expect(response.statusCode).toBe(418);
-    expect(response.headers["content-type"]).toBe("text/plain; charset=utf-8");
-    expect(response.body).toBe("teapot");
-
-    await app.close();
-  });
-
-  it("maps host request failure to the existing board-yjs proxy error envelope", async () => {
-    const httpClient: BoardYjsHostHttpClient = vi.fn(async () => {
+  it("maps orchestrator-local mutation failures to the board-yjs error envelope", async () => {
+    const updateBoardItemPosition = vi.fn(async () => {
       throw new Error("network down");
     });
-    const { app } = createAppWithBoardItems({ restricted: false }, {}, httpClient);
+    const { app } = createAppWithBoardItems(
+      { restricted: false },
+      {},
+      { updateBoardItemPosition },
+    );
 
     const response = await app.inject({
       method: "PATCH",
-      url: "/api/board-items/item-1/position",
+      url: "/api/board-items/item%2Fone/position",
       payload: { x: 1, y: 2 },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(500);
     expect(response.json()).toMatchObject({
       error: {
-        code: "BOARD_YJS_HOST_REQUEST_FAILED",
-        nodeId: "board-host",
+        code: "BOARD_YJS_HOST_OPERATION_FAILED",
       },
     });
 

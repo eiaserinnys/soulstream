@@ -6,6 +6,22 @@ export interface PositionedBoardItem {
   y: number;
 }
 
+export interface ScopedBoardItem extends PositionedBoardItem {
+  folderId: string;
+  containerKind?: "folder" | "task" | null;
+  containerId?: string | null;
+}
+
+export function boardItemsInContainer<T extends ScopedBoardItem>(
+  boardItems: readonly T[],
+  container: { containerKind: "folder" | "task"; containerId: string },
+): T[] {
+  return boardItems.filter((item) =>
+    (item.containerKind ?? "folder") === container.containerKind
+    && (item.containerId ?? item.folderId) === container.containerId
+  );
+}
+
 /** Preserve an idempotently upserted session card; allocate only when absent. */
 export function sessionBoardItemPosition(
   boardItems: readonly PositionedBoardItem[],

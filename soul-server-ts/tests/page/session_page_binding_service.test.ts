@@ -414,9 +414,10 @@ describe("SessionLegacyProjection", () => {
     const db = {
       resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
       assignSessionToFolder: vi.fn(async () => undefined),
-      loadBoardYjsSeed: vi.fn(async () => ({
-        boardItems: [{ x: 0, y: 160 }, { x: 280, y: 160 }],
-      })),
+      getBoardItems: vi.fn(async () => [
+        { folderId: "root", containerKind: "task", containerId: "rb-1", x: 0, y: 160 },
+        { folderId: "root", containerKind: "task", containerId: "rb-1", x: 280, y: 160 },
+      ]),
     };
     const projection = new SessionLegacyProjection(
       db as never,
@@ -437,7 +438,16 @@ describe("SessionLegacyProjection", () => {
 
   it("preserves an existing session board item's coordinates across crash replay", async () => {
     const boardItems: Array<Record<string, unknown> & { x: number; y: number }> = [
-      { id: "other", itemId: "other", itemType: "session", x: 0, y: 160 },
+      {
+        id: "other",
+        folderId: "root",
+        containerKind: "task",
+        containerId: "rb-1",
+        itemId: "other",
+        itemType: "session",
+        x: 0,
+        y: 160,
+      },
     ];
     const calls: Array<{ x: number; y: number }> = [];
     const upsertSessionBoardItem = vi.fn(async (input: { sessionId: string; x: number; y: number }) => {
@@ -446,6 +456,9 @@ describe("SessionLegacyProjection", () => {
       if (existing) Object.assign(existing, { x: input.x, y: input.y });
       else boardItems.push({
         id: `session:${input.sessionId}`,
+        folderId: "root",
+        containerKind: "task",
+        containerId: "rb-1",
         itemId: input.sessionId,
         itemType: "session",
         x: input.x,
@@ -456,7 +469,7 @@ describe("SessionLegacyProjection", () => {
     const db = {
       resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
       assignSessionToFolder: vi.fn(async () => undefined),
-      loadBoardYjsSeed: vi.fn(async () => ({ boardItems: boardItems.map((item) => ({ ...item })) })),
+      getBoardItems: vi.fn(async () => boardItems.map((item) => ({ ...item }))),
     };
     const projection = new SessionLegacyProjection(db as never, { upsertSessionBoardItem } as never);
     const row = binding({

@@ -130,9 +130,6 @@ export async function createLiveProductionApplication(
   context: { readonly warn: (message: string) => void },
   overrides: LiveProductionApplicationOverrides = {},
 ): Promise<ProductionApplication> {
-  if (config.board_yjs_host_mode !== "orch") {
-    throw new Error("Page Yjs production assembly requires BOARD_YJS_HOST_MODE=orch");
-  }
   const appConfig = toOrchServerTsConfig(config);
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
@@ -187,7 +184,6 @@ export async function createLiveProductionApplication(
       createService: (logger) => boardYjsService ??= new BoardYjsService({
         repository: boardYjsRepository,
         logger,
-        hostMode: config.board_yjs_host_mode,
         moveTaskBoardItem: async (input) => {
           if (!taskIdentityService) throw new Error("Task identity service is not initialized");
           return await taskIdentityService.moveBoardItemToContainer(input);

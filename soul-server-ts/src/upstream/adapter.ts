@@ -27,7 +27,6 @@ const APP_HEARTBEAT_CLOSE_CODE = 1011;
 export interface UpstreamConfig {
   url: string;
   nodeId: string;
-  boardYjsHostNodeId?: string;
   host: string;
   port: number;
   authBearerToken: string;
@@ -157,7 +156,6 @@ export class UpstreamAdapter {
 
     const msg = buildRegistrationMsg({
       nodeId: this.config.nodeId,
-      boardYjsHostNodeId: this.config.boardYjsHostNodeId,
       host: this.config.host,
       port: this.config.port,
       userName: this.config.userName,
@@ -277,7 +275,6 @@ export class UpstreamAdapter {
       await this.send(
         buildRegistrationMsg({
           nodeId: this.config.nodeId,
-          boardYjsHostNodeId: this.config.boardYjsHostNodeId,
           host: this.config.host,
           port: this.config.port,
           userName: this.config.userName,

@@ -23,11 +23,6 @@ export interface CatalogSessionAssignmentRow {
   display_name: string | null;
 }
 
-export interface FolderDeletionCatalogDeltaRows {
-  affectedSessions: CatalogSessionAssignmentRow[];
-  deletedBoardItemIds: string[];
-}
-
 /** folder_get_all() returns SETOF folders, including the filtered archived column. */
 interface FolderGetAllRow extends FolderDataRow {
   archived: boolean;
@@ -164,36 +159,4 @@ export class CatalogRepository {
     `;
   }
 
-  async deleteFolderWithCatalogDelta(
-    folderId: string,
-  ): Promise<FolderDeletionCatalogDeltaRows> {
-    return await this.sql.begin(async (transaction) => {
-      const affectedSessions = await transaction<CatalogSessionAssignmentRow[]>`
-        UPDATE sessions
-        SET folder_id = NULL
-        WHERE folder_id = ${folderId}
-        RETURNING session_id, folder_id, display_name
-      `;
-      await transaction`
-        UPDATE folders
-        SET parent_folder_id = NULL
-        WHERE parent_folder_id = ${folderId}
-      `;
-      const deletedBoardItems = await transaction<Array<{ id: string }>>`
-        DELETE FROM board_items
-        WHERE folder_id = ${folderId}
-           OR (item_type = 'subfolder' AND item_id = ${folderId})
-        RETURNING id
-      `;
-      await transaction`
-        UPDATE folders
-        SET archived = TRUE
-        WHERE id = ${folderId}
-      `;
-      return {
-        affectedSessions,
-        deletedBoardItemIds: deletedBoardItems.map((row) => row.id),
-      };
-    });
-  }
 }

@@ -44,7 +44,6 @@ worker-only 노드 참조 정본은 **`install/haniel-soul-server-ts.example.yam
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `SOULSTREAM_NODE_ID` | ✅ | 노드 식별자 (예: `eias-shopping-ts`) |
-| `BOARD_YJS_HOST_NODE_ID` | ✅ | 보드 Y.Doc을 실제 호스팅하는 단일 TS 노드 ID |
 | `SOULSTREAM_UPSTREAM_URL` | ✅ | orch WS URL (예: `ws://eiaserinnys.me:5200/ws/node`) |
 | `DATABASE_URL` | ✅ | PostgreSQL connection URL |
 | `AUTH_BEARER_TOKEN` | ✅(production) | orch 인증 토큰 |

@@ -15,7 +15,6 @@ import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
 import {
   CatalogRepository,
   type CatalogSessionAssignmentRow,
-  type FolderDeletionCatalogDeltaRows,
 } from "./repositories/catalog_repository.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
@@ -34,7 +33,7 @@ import {
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
 import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
 
 export type * from "./session_db_types.js";
@@ -85,7 +84,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
     this.boardRepository = new BoardRepository(this.sql);
     this.catalogRepository = new CatalogRepository(this.sql, this.boardRepository);
     this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
-    this.boardYjsRepository = new BoardYjsRepository(this.sql, this.boardRepository);
+    this.boardYjsRepository = new BoardYjsRepository(this.sql);
     this.eventRepository = new EventRepository(this.sql);
     this.claudeTranscriptRepository = new ClaudeTranscriptRepository(this.sql);
   }
@@ -260,10 +259,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
     this.boardRepository.invalidateBoardYjsCatalogCache(container);
   }
 
-  async ensureBoardItems(): Promise<void> {
-    await this.boardRepository.ensureBoardItems();
-  }
-
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
     return await this.boardRepository.getBoardItems();
   }
@@ -288,95 +283,14 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return await this.boardRepository.getMarkdownDocumentBoardItem(documentId);
   }
 
-  async updateBoardItemPosition(
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void> {
-    await this.boardRepository.updateBoardItemPosition(boardItemId, x, y);
-  }
-
-  async createMarkdownDocument(params: {
-    documentId: string;
-    folderId: string;
-    container?: BoardYjsContainerRef | null;
-    title: string;
-    body: string;
-    x: number;
-    y: number;
-  }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
-    return await this.markdownDocumentRepository.createMarkdownDocument(params);
-  }
-
   async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
     return await this.markdownDocumentRepository.getMarkdownDocument(documentId);
-  }
-
-  async updateMarkdownDocument(
-    documentId: string,
-    fields: { title?: string; body?: string; expectedVersion: number },
-  ): Promise<MarkdownDocumentRow | null> {
-    return await this.markdownDocumentRepository.updateMarkdownDocument(documentId, fields);
-  }
-
-  async deleteMarkdownDocument(documentId: string): Promise<void> {
-    await this.markdownDocumentRepository.deleteMarkdownDocument(documentId);
-  }
-
-  async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
-    return await this.boardYjsRepository.getBoardYjsSnapshot(documentName);
-  }
-
-  async storeBoardYjsSnapshot(
-    documentName: string,
-    snapshot: Uint8Array,
-  ): Promise<void> {
-    await this.boardYjsRepository.storeBoardYjsSnapshot(documentName, snapshot);
-  }
-
-  async appendBoardYjsUpdate(
-    documentName: string,
-    update: Uint8Array,
-  ): Promise<void> {
-    await this.boardYjsRepository.appendBoardYjsUpdate(documentName, update);
-  }
-
-  async getBoardYjsUpdates(documentName: string): Promise<Uint8Array[]> {
-    return await this.boardYjsRepository.getBoardYjsUpdates(documentName);
-  }
-
-  async backfillTaskBoardItemsIntoBoardYjsSnapshot(
-    documentName: string,
-    container: string | BoardYjsContainerRef,
-    snapshot: Uint8Array,
-  ): Promise<Uint8Array> {
-    return await this.boardYjsRepository.backfillTaskBoardItemsIntoSnapshot(
-      documentName,
-      container,
-      snapshot,
-    );
   }
 
   async resolveBoardYjsContainerScope(
     container: string | BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope | null> {
     return await this.boardYjsRepository.resolveBoardYjsContainerScope(container);
-  }
-
-  async markBoardYjsDocumentSynced(documentName: string): Promise<void> {
-    await this.boardYjsRepository.markBoardYjsDocumentSynced(documentName);
-  }
-
-  async loadBoardYjsSeed(container: string | BoardYjsContainerRef): Promise<BoardYjsSeed> {
-    return await this.boardYjsRepository.loadBoardYjsSeed(container);
-  }
-
-  async syncBoardYjsReplica(
-    container: string | BoardYjsContainerRef,
-    replica: BoardYjsReplica,
-    documentName?: string,
-  ): Promise<void> {
-    await this.boardYjsRepository.syncBoardYjsReplica(container, replica, documentName);
   }
 
   async renameSession(
@@ -488,12 +402,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
     values: ReadonlyArray<string | null>,
   ): Promise<void> {
     await this.catalogRepository.updateFolder(folderId, columns, values);
-  }
-
-  async deleteFolderWithCatalogDelta(
-    folderId: string,
-  ): Promise<FolderDeletionCatalogDeltaRows> {
-    return await this.catalogRepository.deleteFolderWithCatalogDelta(folderId);
   }
 
   async searchEvents(

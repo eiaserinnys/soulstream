@@ -34,7 +34,7 @@ describe("shadow runtime composition", () => {
         } as unknown as ShadowOrchestratorProviderBundle,
       }),
     ).toThrowError(
-      /Missing shadow orchestrator route providers: .*admin\.users: adminUsersRoutes\.provider.*auth: authRoutes\.configProvider.*board\.yjs-host: runtime\.boardYjsHostHttpClient.*session\.history: runtime\.sessionHistoryProvider/s,
+      /Missing shadow orchestrator route providers: .*admin\.users: adminUsersRoutes\.provider.*auth: authRoutes\.configProvider.*session\.history: runtime\.sessionHistoryProvider/s,
     );
   });
 
@@ -139,7 +139,6 @@ function fastifyRegistrationMethod(entry: RouteRegistryEntry): string {
 function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
   return {
     runtime: {
-      boardYjsHostHttpClient: vi.fn(),
       loadSessionSnapshot: async () => ({ sessions: [] }),
       sessionHistoryProvider: createInertProvider(),
       sseReplayOnlyForTests: true,

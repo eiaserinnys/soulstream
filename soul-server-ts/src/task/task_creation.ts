@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
+import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -28,7 +28,10 @@ import {
   type TaskCreationHook,
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
-import { sessionBoardItemPosition } from "./task_session_position.js";
+import {
+  boardItemsInContainer,
+  sessionBoardItemPosition,
+} from "./task_session_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 
 export interface CreateTaskParams {
@@ -74,7 +77,7 @@ export interface CreateTaskParams {
 export interface TaskCreationDeps {
   nodeId: string;
   db: SessionDB;
-  boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">;
+  boardYjsService?: Pick<BoardYjsHostClient, "upsertSessionBoardItem">;
   broadcaster: SessionBroadcaster;
   logger: Logger;
   taskCreationHook?: TaskCreationHook;
@@ -302,8 +305,8 @@ export class TaskCreation {
         }
         await this.deps.db.assignSessionToFolder(sessionId, scope.folderId);
         assigned = scope.folderId;
-        const seed = await this.deps.db.loadBoardYjsSeed(container);
-        const [x, y] = sessionBoardItemPosition(seed.boardItems, sessionId);
+        const boardItems = boardItemsInContainer(await this.deps.db.getBoardItems(), container);
+        const [x, y] = sessionBoardItemPosition(boardItems, sessionId);
         await this.deps.boardYjsService?.upsertSessionBoardItem({
           folderId: scope.folderId,
           container,

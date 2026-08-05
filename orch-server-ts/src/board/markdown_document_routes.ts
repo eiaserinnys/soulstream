@@ -6,10 +6,10 @@ import {
   type BoardAccess,
 } from "./board_access.js";
 import {
-  proxyBoardYjsHostRequest,
   type BoardYjsHostProxyRouteOptions,
 } from "./board_yjs_host_proxy.js";
 import {
+  createLocalMarkdownDocument,
   deleteLocalMarkdownDocument,
   documentFolderId,
   publicMarkdownDocumentRecord,
@@ -146,11 +146,7 @@ export function registerMarkdownDocumentRoutes(
       payload.y = body.value.y;
     }
 
-    return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
-      method: "POST",
-      upstreamPath: "/api/markdown-documents",
-      body: payload,
-    });
+    return await createLocalMarkdownDocument(app, reply, options.hostProxy, payload);
   });
 
   app.get<{ Params: MarkdownDocumentParams }>(
@@ -204,21 +200,14 @@ export function registerMarkdownDocumentRoutes(
         return folderAccessDenied(reply);
       }
 
-      if ((options.hostProxy.hostMode ?? "node") === "orch") {
-        return await updateLocalMarkdownDocument(
-          app,
-          reply,
-          options.hostProxy,
-          existing,
-          documentId,
-          body.value,
-        );
-      }
-      return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
-        method: "PUT",
-        upstreamPath: `/api/markdown-documents/${encodeURIComponent(documentId)}`,
-        body: body.value,
-      });
+      return await updateLocalMarkdownDocument(
+        app,
+        reply,
+        options.hostProxy,
+        existing,
+        documentId,
+        body.value,
+      );
     },
   );
 
@@ -236,19 +225,13 @@ export function registerMarkdownDocumentRoutes(
         return folderAccessDenied(reply);
       }
 
-      if ((options.hostProxy.hostMode ?? "node") === "orch") {
-        return await deleteLocalMarkdownDocument(
-          app,
-          reply,
-          options.hostProxy,
-          existing,
-          documentId,
-        );
-      }
-      return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
-        method: "DELETE",
-        upstreamPath: `/api/markdown-documents/${encodeURIComponent(documentId)}`,
-      });
+      return await deleteLocalMarkdownDocument(
+        app,
+        reply,
+        options.hostProxy,
+        existing,
+        documentId,
+      );
     },
   );
 }

@@ -59,7 +59,7 @@ describe("live system config route provider adapter", () => {
       node_id: "node-b",
       host: "10.0.0.2",
       port: 4106,
-      capabilities: { board_yjs_host: true },
+      capabilities: { node_http: true },
     });
     registry.registerNode({
       type: "node_register",

@@ -2,7 +2,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
 import {
-  proxyBoardYjsHostRequest,
   sendBoardYjsHostProxyError,
   type BoardYjsHostProxyRouteOptions,
 } from "./board_yjs_host_proxy.js";
@@ -151,24 +150,17 @@ export function registerBoardItemRoutes(
         }
       }
 
-      if ((options.hostProxy.hostMode ?? "node") === "orch") {
-        try {
-          const snapshot = await options.provider.getCatalogSnapshot();
-          const boardItem = findBoardItem(snapshot.boardItems, boardItemId);
-          if (boardItem === undefined) return boardItemNotFound(reply);
-          await updateLocalBoardItemPosition(
-            app, options.hostProxy, boardItem, boardItemId, body.value.x, body.value.y,
-          );
-          return reply.send({ ok: true });
-        } catch (error) {
-          return sendBoardYjsHostProxyError(reply, error);
-        }
+      try {
+        const snapshot = await options.provider.getCatalogSnapshot();
+        const boardItem = findBoardItem(snapshot.boardItems, boardItemId);
+        if (boardItem === undefined) return boardItemNotFound(reply);
+        await updateLocalBoardItemPosition(
+          app, options.hostProxy, boardItem, boardItemId, body.value.x, body.value.y,
+        );
+        return reply.send({ ok: true });
+      } catch (error) {
+        return sendBoardYjsHostProxyError(reply, error);
       }
-      return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
-        method: "PATCH",
-        upstreamPath: `/api/board-items/${encodeURIComponent(boardItemId)}/position`,
-        body: body.value,
-      });
     },
   );
 
@@ -198,30 +190,23 @@ export function registerBoardItemRoutes(
         return folderAccessDenied(reply);
       }
 
-      if ((options.hostProxy.hostMode ?? "node") === "orch") {
-        try {
-          const position = body.value.x !== undefined && body.value.y !== undefined
-            ? { x: body.value.x, y: body.value.y }
-            : undefined;
-          const moved = await moveLocalBoardItem(
-            app,
-            options.hostProxy,
-            boardItem,
-            body.value.container,
-            targetFolderId.value,
-            position,
-            body.value.idempotencyKey,
-          );
-          return reply.send({ ok: true, boardItem: moved });
-        } catch (error) {
-          return sendBoardYjsHostProxyError(reply, error);
-        }
+      try {
+        const position = body.value.x !== undefined && body.value.y !== undefined
+          ? { x: body.value.x, y: body.value.y }
+          : undefined;
+        const moved = await moveLocalBoardItem(
+          app,
+          options.hostProxy,
+          boardItem,
+          body.value.container,
+          targetFolderId.value,
+          position,
+          body.value.idempotencyKey,
+        );
+        return reply.send({ ok: true, boardItem: moved });
+      } catch (error) {
+        return sendBoardYjsHostProxyError(reply, error);
       }
-      return proxyBoardYjsHostRequest(request, reply, options.hostProxy, {
-        method: "PATCH",
-        upstreamPath: `/api/board-items/${encodeURIComponent(boardItemId)}/container`,
-        body: body.value,
-      });
     },
   );
 }

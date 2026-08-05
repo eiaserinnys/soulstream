@@ -42,10 +42,7 @@ function makeHarness(options: {
     containerKind: "task",
     containerId: "rb-1",
   });
-  const loadBoardYjsSeed = vi.fn().mockResolvedValue({
-    boardItems: [],
-    markdownDocuments: [],
-  });
+  const getBoardItems = vi.fn().mockResolvedValue([]);
   const db = {
     registerSession,
     appendMetadata,
@@ -55,7 +52,7 @@ function makeHarness(options: {
     getSession,
     getPrimarySessionBoardItem,
     resolveBoardYjsContainerScope,
-    loadBoardYjsSeed,
+    getBoardItems,
   } as unknown as SessionDB;
 
   const upsertSessionBoardItem = vi.fn().mockResolvedValue({
@@ -107,7 +104,7 @@ function makeHarness(options: {
     getSession,
     getPrimarySessionBoardItem,
     resolveBoardYjsContainerScope,
-    loadBoardYjsSeed,
+    getBoardItems,
     upsertSessionBoardItem,
     emitCatalogUpdated,
     emitSessionCreated,
@@ -401,8 +398,8 @@ describe("TaskCreation", () => {
 
   it("places delegated task sessions through the task board Y-doc before catalog broadcast", async () => {
     const h = makeHarness();
-    h.loadBoardYjsSeed.mockResolvedValueOnce({
-      boardItems: [
+    h.getBoardItems.mockResolvedValueOnce(
+      [
         {
           id: "task:rb-1",
           folderId: "root",
@@ -426,8 +423,7 @@ describe("TaskCreation", () => {
           metadata: {},
         },
       ],
-      markdownDocuments: [],
-    });
+    );
 
     const task = await h.creation.createTask({
       agentSessionId: "sess-task",
@@ -443,10 +439,7 @@ describe("TaskCreation", () => {
       containerId: "rb-1",
     });
     expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-task", "root");
-    expect(h.loadBoardYjsSeed).toHaveBeenCalledWith({
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+    expect(h.getBoardItems).toHaveBeenCalledTimes(1);
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "root",
       container: { containerKind: "task", containerId: "rb-1" },
@@ -466,8 +459,8 @@ describe("TaskCreation", () => {
 
   it("preserves an existing delegated session card position during idempotent creation", async () => {
     const h = makeHarness();
-    h.loadBoardYjsSeed.mockResolvedValueOnce({
-      boardItems: [{
+    h.getBoardItems.mockResolvedValueOnce(
+      [{
         id: "session:sess-task",
         folderId: "root",
         containerKind: "task",
@@ -478,8 +471,7 @@ describe("TaskCreation", () => {
         y: 480,
         metadata: {},
       }],
-      markdownDocuments: [],
-    });
+    );
 
     await h.creation.createTask({
       agentSessionId: "sess-task",

@@ -1,16 +1,13 @@
 import { vi } from "vitest";
 
 import {
-  InMemoryNodeRegistry,
   MarkdownDocumentRouteError,
   createApp,
   parseOrchServerConfig,
-  type BoardYjsHostHttpClient,
   type BoardYjsHostProxyRouteOptions,
   type MarkdownDocumentAccessProvider,
   type MarkdownDocumentRecord,
   type MarkdownDocumentRouteProvider,
-  type NodeRegistrationPayload,
 } from "../src/index.js";
 
 export const config = parseOrchServerConfig({
@@ -49,38 +46,6 @@ type ProviderCall =
   | ["resolveContainer", unknown]
   | ["getDocument", string]
   | ["getCustomView", string];
-
-function createRegistry(): InMemoryNodeRegistry {
-  return new InMemoryNodeRegistry({
-    nowMs: () => 1_700_000_000_000,
-  });
-}
-
-function registerBoardHost(registry: InMemoryNodeRegistry): string {
-  registerNode(registry, "worker-node", 4106, false);
-  const oldConnectionId = registerNode(registry, "old-board-host", 4107, true);
-  registry.disconnectNode("old-board-host", {
-    connectionId: oldConnectionId,
-    reason: "network close",
-  });
-  return registerNode(registry, "board-host", 4105, true);
-}
-
-function registerNode(
-  registry: InMemoryNodeRegistry,
-  nodeId: string,
-  port: number,
-  isHost: boolean,
-): string {
-  return registry.registerNode({
-    type: "node_register",
-    node_id: nodeId,
-    host: "localhost",
-    port,
-    agents: [],
-    capabilities: { board_yjs_host: isHost },
-  } satisfies NodeRegistrationPayload).node.connectionId;
-}
 
 function createHarness(overrides: Partial<MarkdownDocumentRouteProvider> = {}) {
   const calls: ProviderCall[] = [];
@@ -128,19 +93,40 @@ function createAccessProvider(
 export function createAppWithMarkdownDocuments(
   access: { restricted: boolean; allowedFolderIds?: string[] },
   overrides: Partial<MarkdownDocumentRouteProvider> = {},
-  httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
-    statusCode: 201,
-    headers: { "content-type": "application/json" },
-    body: { document: { id: "doc-1" } },
-  })),
+  serviceOverrides: Record<string, unknown> = {},
   includeBoardYjsProxyRoutes = false,
   hostProxyOverrides: Partial<BoardYjsHostProxyRouteOptions> = {},
 ) {
-  const registry = createRegistry();
-  const connectionId = registerBoardHost(registry);
   const harness = createHarness(overrides);
   const accessProvider = createAccessProvider(access, harness.calls);
-  const hostProxy = { registry, httpClient, ...hostProxyOverrides };
+  const service = {
+    createMarkdownDocument: vi.fn(async (input) => ({
+      document: {
+        id: "doc-1",
+        folderId: input.folderId,
+        containerKind: input.container.containerKind,
+        containerId: input.container.containerId,
+        title: input.title,
+        body: input.body,
+        version: 1,
+      },
+      boardItem: { id: "markdown:doc-1" },
+    })),
+    updateMarkdownDocument: vi.fn(async () => ({
+      id: "doc/one",
+      folderId: "folder-a-child",
+      title: "New",
+      body: "Before",
+      version: 8,
+    })),
+    deleteMarkdownDocument: vi.fn(async () => undefined),
+    ...serviceOverrides,
+  } as unknown as NonNullable<BoardYjsHostProxyRouteOptions["service"]>;
+  const hostProxy = {
+    authBearerToken: "test-token",
+    service,
+    ...hostProxyOverrides,
+  };
   const app = createApp({
     config,
     ...(includeBoardYjsProxyRoutes ? { boardYjsHostProxyRoutes: hostProxy } : {}),
@@ -150,5 +136,5 @@ export function createAppWithMarkdownDocuments(
       hostProxy,
     },
   });
-  return { app, calls: harness.calls, connectionId, httpClient };
+  return { app, calls: harness.calls, service };
 }

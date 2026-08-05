@@ -3,10 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { createApp } from "../app.js";
 import type { OrchServerTsConfig } from "../config.js";
 import type { RouteOwnerManifest } from "../contract/route_owner_manifest.js";
-import type {
-  BoardYjsHostHttpClient,
-  BoardYjsHostProxyRouteOptions,
-} from "../board/board_yjs_host_proxy.js";
+import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
 import type { BoardYjsRouteOptions } from "../board-yjs/board_yjs_route.js";
 import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type {
@@ -80,7 +77,6 @@ export type OrchestratorRuntimeCompositionOptions = {
   sessionHistoryProvider?: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
-  boardYjsHostHttpClient?: BoardYjsHostHttpClient;
   boardYjsRoutes?: BoardYjsRouteOptions;
   pageYjsRoutes?: PageYjsRouteOptions;
   nodeHttpFetch?: LiveNodeHttpFetch;
@@ -124,14 +120,6 @@ export type OrchestratorRuntimeComposition = OrchestratorRuntimeServices & {
 export function createOrchestratorRuntimeServices(
   options: OrchestratorRuntimeCompositionOptions,
 ): OrchestratorRuntimeServices {
-  if (
-    options.pageYjsRoutes !== undefined &&
-    (options.config.boardYjsHostMode ?? "node") !== "orch"
-  ) {
-    throw new Error(
-      "Page Yjs production routes require BOARD_YJS_HOST_MODE=orch",
-    );
-  }
   const registry = options.registry ?? new InMemoryNodeRegistry({
     nowMs: options.nowMs,
     requestIdGenerator: options.requestIdGenerator,
@@ -243,10 +231,6 @@ export function createOrchestratorRuntimeServices(
       replayOnlyForTests: options.sseReplayOnlyForTests,
     },
     boardYjsHostProxyRoutes: {
-      registry,
-      httpClient:
-        options.boardYjsHostHttpClient ?? nodeHttpClient.boardYjsHostHttpClient,
-      hostMode: options.config.boardYjsHostMode ?? "node",
       authBearerToken: options.config.authBearerToken,
       ...(boardYjsRoutes === undefined
         ? {}

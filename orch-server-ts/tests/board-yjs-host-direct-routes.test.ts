@@ -12,13 +12,10 @@ import type {
   BoardYjsSeed,
 } from "../src/board-yjs/board_yjs_types.js";
 import {
-  InMemoryNodeRegistry,
   createOrchestratorRuntimeComposition,
   loadContractFixtures,
   parseOrchServerConfig,
   registerBoardYjsHostProxyRoutes,
-  resolveBoardYjsHostTarget,
-  type BoardYjsHostHttpClient,
 } from "../src/index.js";
 
 type ActualClient = Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -30,16 +27,6 @@ afterEach(() => {
 });
 
 describe("orch-local Board Yjs host operation routes", () => {
-  it("resolves orch mode to self without consulting zero or multiple host capabilities", () => {
-    const empty = createRegistry();
-    expect(resolveBoardYjsHostTarget(empty, "orch")).toEqual({ kind: "self" });
-
-    const duplicate = createRegistry();
-    registerNode(duplicate, "host-1", 4105, true);
-    registerNode(duplicate, "host-2", 4106, true);
-    expect(resolveBoardYjsHostTarget(duplicate, "orch")).toEqual({ kind: "self" });
-  });
-
   it("shares one BoardYjsService between local host operations and public websockets", async () => {
     const service = createServiceDouble();
     const createService = vi.fn(() => service);
@@ -48,7 +35,6 @@ describe("orch-local Board Yjs host operation routes", () => {
         environment: "test",
         databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
         authBearerToken: "test-token",
-        boardYjsHostMode: "orch",
       }),
       boardYjsRoutes: { createService },
     });
@@ -62,17 +48,12 @@ describe("orch-local Board Yjs host operation routes", () => {
   });
 
   it("replays all actual BoardYjsHostClient requests and preserves the internal route wire", async () => {
-    const registry = createRegistry();
-    const httpClient: BoardYjsHostHttpClient = vi.fn();
     const service = createServiceDouble();
     const app = Fastify({ logger: false });
     registerBoardYjsHostProxyRoutes(app, {
-      registry,
-      httpClient,
-      hostMode: "orch",
       authBearerToken: "test-token",
       service,
-    } as never);
+    });
     const requests = new Map<string, { headers: Record<string, string>; body: unknown }>();
     const wireResponses = new Map<string, { statusCode: number; body: unknown }>();
     vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
@@ -123,7 +104,6 @@ describe("orch-local Board Yjs host operation routes", () => {
           body: responseForOperation(item.operation),
         });
       }
-      expect(httpClient).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -132,9 +112,6 @@ describe("orch-local Board Yjs host operation routes", () => {
   it("requires the service bearer in orch mode and never accepts a dashboard cookie", async () => {
     const app = Fastify({ logger: false });
     registerBoardYjsHostProxyRoutes(app, {
-      registry: createRegistry(),
-      httpClient: vi.fn(),
-      hostMode: "orch",
       authBearerToken: "test-token",
       service: createServiceDouble(),
     } as never);
@@ -159,9 +136,6 @@ describe("orch-local Board Yjs host operation routes", () => {
   it("does not expose a live-host runbook residue migration operation", async () => {
     const app = Fastify({ logger: false });
     registerBoardYjsHostProxyRoutes(app, {
-      registry: createRegistry(),
-      httpClient: vi.fn(),
-      hostMode: "orch",
       authBearerToken: "test-token",
       service: createServiceDouble(),
     } as never);
@@ -183,9 +157,6 @@ describe("orch-local Board Yjs host operation routes", () => {
     vi.mocked(service.deleteMarkdownDocument).mockRejectedValueOnce(new Error("write failed"));
     const app = Fastify({ logger: false });
     registerBoardYjsHostProxyRoutes(app, {
-      registry: createRegistry(),
-      httpClient: vi.fn(),
-      hostMode: "orch",
       authBearerToken: "test-token",
       service,
     } as never);
@@ -228,9 +199,6 @@ describe("orch-local Board Yjs host operation routes", () => {
     const service = createRealService(repository);
     const app = Fastify({ logger: false });
     registerBoardYjsHostProxyRoutes(app, {
-      registry: createRegistry(),
-      httpClient: vi.fn(),
-      hostMode: "orch",
       authBearerToken: "test-token",
       service,
     } as never);
@@ -328,31 +296,10 @@ function createServiceDouble() {
   } as unknown as BoardYjsService;
 }
 
-function createRegistry(): InMemoryNodeRegistry {
-  return new InMemoryNodeRegistry({ nowMs: () => 1_700_000_000_000 });
-}
-
-function registerNode(
-  registry: InMemoryNodeRegistry,
-  nodeId: string,
-  port: number,
-  isHost: boolean,
-): void {
-  registry.registerNode({
-    type: "node_register",
-    node_id: nodeId,
-    host: "localhost",
-    port,
-    agents: [],
-    capabilities: { board_yjs_host: isHost },
-  });
-}
-
 function createRealService(repository: CapturingBoardYjsRepository): BoardYjsService {
   return new BoardYjsService({
     repository,
     logger: silentLogger() as FastifyBaseLogger,
-    hostMode: "orch",
     auth: {
       authBearerToken: "test-token",
       environment: "production",

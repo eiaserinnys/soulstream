@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
 import { parseEnv } from "../src/config.js";
-import { buildConfigReflection } from "../src/mcp/reflection/config_reflection.js";
-import type { McpRuntime } from "../src/mcp/runtime.js";
 
 describe("parseEnv", () => {
   const minimal = {
     SOULSTREAM_NODE_ID: "eias-shopping-ts",
-    BOARD_YJS_HOST_NODE_ID: "eias-shopping-ts",
     SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
     DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
   };
@@ -16,7 +13,6 @@ describe("parseEnv", () => {
   it("필수 키만 있으면 default들이 채워진다", () => {
     const env = parseEnv(minimal);
     expect(env.SOULSTREAM_NODE_ID).toBe("eias-shopping-ts");
-    expect(env.BOARD_YJS_HOST_NODE_ID).toBe("eias-shopping-ts");
     expect(env.AUTH_BEARER_TOKEN).toBe("");
     expect(env.HOST).toBe("127.0.0.1");
     expect(env.PORT).toBe(4205);
@@ -47,42 +43,7 @@ describe("parseEnv", () => {
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
     expect(() =>
       parseEnv({
-        BOARD_YJS_HOST_NODE_ID: "x",
         SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
-      }),
-    ).toThrow(ZodError);
-  });
-
-  it("BOARD_YJS_HOST_NODE_ID 부재 시 ZodError", () => {
-    const { BOARD_YJS_HOST_NODE_ID: _, ...rest } = minimal;
-    void _;
-    expect(() => parseEnv(rest)).toThrow(ZodError);
-  });
-
-  it("BOARD_YJS_HOST_NODE_ID=orch 특수값을 허용한다", () => {
-    const env = parseEnv({ ...minimal, BOARD_YJS_HOST_NODE_ID: "orch" });
-    expect(env.BOARD_YJS_HOST_NODE_ID).toBe("orch");
-  });
-
-  it("config reflection은 orch 특수값을 그대로 노출한다", () => {
-    const entries = buildConfigReflection({
-      nodeId: "eiaserinnys",
-      boardYjsHostNodeId: "orch",
-      agentsConfigPath: "/definitely/missing/agents.yaml",
-    } as McpRuntime);
-
-    expect(entries.find((entry) => entry.key === "BOARD_YJS_HOST_NODE_ID")).toMatchObject({
-      status: "present",
-      value: "orch",
-    });
-  });
-
-  it("SOULSTREAM_NODE_ID=orch는 예약 센티널 충돌로 거부한다", () => {
-    expect(() =>
-      parseEnv({
-        ...minimal,
-        SOULSTREAM_NODE_ID: "orch",
-        BOARD_YJS_HOST_NODE_ID: "orch",
       }),
     ).toThrow(ZodError);
   });

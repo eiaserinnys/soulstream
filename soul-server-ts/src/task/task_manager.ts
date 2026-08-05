@@ -19,7 +19,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
-import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
+import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -112,7 +112,7 @@ export class TaskManager {
      */
     contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
-    private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
+    private readonly boardYjsService?: Pick<BoardYjsHostClient, "upsertSessionBoardItem">,
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
