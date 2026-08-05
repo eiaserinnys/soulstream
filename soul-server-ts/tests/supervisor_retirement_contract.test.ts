@@ -17,6 +17,7 @@ const retiredSurfaceRoots = [
   "packages/wire-schema/src",
   "packages/wire-schema/generated",
   "unified-dashboard/client",
+  ".env.soul-server-ts.example",
 ];
 
 describe("retired runtime surface", () => {
