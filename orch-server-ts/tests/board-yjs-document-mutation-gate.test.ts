@@ -6,34 +6,7 @@ import { BoardYjsDocumentMutationGate } from
 import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 import type { CatalogBoardItemRow } from "../src/board-yjs/board_yjs_types.js";
 
-describe("Board Y.Doc migration/mutation gate", () => {
-  it("serializes a direct mutation behind migration so it cannot save a stale snapshot", async () => {
-    const gate = new BoardYjsDocumentMutationGate();
-    const migrationEntered = deferred<void>();
-    const releaseMigration = deferred<void>();
-    let persisted = "legacy";
-    let mutationObserved: string | null = null;
-
-    const migration = gate.withMigration(["board:task:task-a"], async () => {
-      migrationEntered.resolve();
-      await releaseMigration.promise;
-      persisted = "migrated";
-    });
-    await migrationEntered.promise;
-
-    const mutation = gate.withMutation(["board:task:task-a"], async () => {
-      mutationObserved = persisted;
-      persisted = `${persisted}+mutation`;
-    });
-    await Promise.resolve();
-    expect(mutationObserved).toBeNull();
-
-    releaseMigration.resolve();
-    await Promise.all([migration, mutation]);
-    expect(mutationObserved).toBe("migrated");
-    expect(persisted).toBe("migrated+mutation");
-  });
-
+describe("Board Y.Doc mutation gate", () => {
   it("blocks every Board Y.Doc mutation entry point at the same guard", async () => {
     const service = createNodeService();
     const deny = vi.fn(async () => {
@@ -42,8 +15,6 @@ describe("Board Y.Doc migration/mutation gate", () => {
     Object.assign(service as unknown as { documentMutationGate: unknown }, {
       documentMutationGate: {
         withMutation: deny,
-        withMigration: vi.fn(),
-        isMigrationActive: vi.fn(() => false),
       },
     });
 
@@ -133,16 +104,6 @@ function createNodeService(): BoardYjsService {
       verifyDashboardToken: vi.fn().mockResolvedValue(null),
     },
   });
-}
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
-  });
-  return { promise, resolve, reject };
 }
 
 function silentLogger(): FastifyBaseLogger {

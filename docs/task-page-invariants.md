@@ -25,6 +25,7 @@ Task는 Page를 대체하지 않는다. Task는 업무 상태와 체크리스트
 - Page 삭제 전에 Task identity·folder project identity 사용 여부를 모두 확인한다.
 - checklist 변경 뒤 outbox의 source hash와 processed hash가 수렴하는지 확인한다.
 - Y.Doc 이관 뒤 snapshot과 pending update를 합쳐 구 문서명·구 item type·구 source key가 모두 0인지 확인한다.
+- apply는 orch Board Y.Doc 호스트가 중지된 사용자 승인 운영 창에서만 실행한다. 로컬 health endpoint가 `ECONNREFUSED`가 아니면 DB 연결 전에 거부한다.
 - 이관 계획의 전체 콘텐츠 hash·opaque ID allowlist를 write 전에 검증하고, source/canonical revision을 row lock 아래 커밋 직전 재검사한다.
 - SQL 투영의 `board_items`, `board_yjs_catalog_cache`, `blocks`가 같은 Task 표기를 갖는지 확인하고, 모든 board item의 ID·container·type·source·좌표·metadata를 Y.Doc과 대조한다.
 

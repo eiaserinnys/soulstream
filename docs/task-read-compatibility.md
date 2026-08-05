@@ -36,7 +36,9 @@ Runbook에서 Task로 전환하는 동안 구 이름은 읽기 경계에서만 �
 
 ## Y.Doc 이관 게이트
 
-`migrate:ydoc-runbook-residue`는 기본이 읽기 전용 dry-run이며, `--apply`와 사용자 승인이 함께 있을 때만 Board Y.Doc mutation을 호출한다. 모든 문서는 dry-run의 전체 콘텐츠 hash·계획 fingerprint·opaque ID allowlist를 live write 전에 다시 검증한다. snapshot과 pending update는 같은 repeatable-read snapshot에서 캡처하고, 커밋 시 source/canonical row를 잠가 revision을 재검사한다. 저장 표현만 바뀌고 의미가 같은 경합은 문서 단위로 재시도하며, 의미가 달라지면 새 dry-run 승인을 요구한다.
+`migrate:ydoc-runbook-residue`는 기본이 읽기 전용 dry-run이다. apply는 사용자가 승인한 유지보수 창에서 orch Board Y.Doc 호스트를 먼저 중지한 뒤 `--apply --quiesced --orch-health-url=http://127.0.0.1:5200/api/health`를 함께 지정해야 한다. 로컬 health endpoint가 `ECONNREFUSED`가 아니거나 timeout·원격 네트워크 오류처럼 중지를 증명할 수 없는 상태면 DB 연결 전에 거부한다. 라이브 host API를 경유하는 apply 경로는 제공하지 않는다.
+
+quiesced preflight를 통과한 도구는 snapshot과 pending update를 격리 재합성하고 Yjs 구조 변환·재직렬화를 거쳐 정본 snapshot을 쓴다. 모든 문서는 dry-run의 전체 콘텐츠 hash·계획 fingerprint·opaque ID allowlist를 write 전에 다시 검증한다. 커밋 시 source/canonical row를 잠가 revision을 재검사하며, snapshot 교체·legacy 문서 제거·SQL 투영 동기화를 한 트랜잭션으로 처리한다. 의미가 달라졌으면 새 dry-run 승인을 요구한다.
 
 문서명 충돌 18건 중 콘텐츠가 동등하지 않은 문서는 자동 삭제하지 않는다. dry-run이 산출한 collision content hash를 사용자가 별도 JSON 목록으로 승인한 경우에만 canonical `board:task:` 문서를 유지하고 legacy shadow를 제거한다. 해당 `runbook:` board item ID 18개는 고정 allowlist로 보존하며, source에만 있는 opaque ID가 있으면 승인 hash와 무관하게 거부한다.
 

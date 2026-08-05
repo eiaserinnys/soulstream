@@ -1,5 +1,3 @@
-import type { Hocuspocus } from "@hocuspocus/server";
-
 import { parseBoardYjsDocumentName, readBoardYDocReplica } from "./board_yjs_model.js";
 import type { BoardYjsPersistenceRepository } from "./board_yjs_persistence.js";
 import { BoardYjsMigrationRevisionConflictError } from "./board_yjs_raw_document.js";
@@ -19,10 +17,9 @@ export interface BoardYjsRunbookMigrationRequest {
   approvedCollisionContentHash?: string | null;
 }
 
-export async function executeBoardYjsRunbookMigration(input: {
+export async function executeQuiescedBoardYjsRunbookMigration(input: {
   request: BoardYjsRunbookMigrationRequest;
   repository: BoardYjsPersistenceRepository;
-  hocuspocus: Hocuspocus;
 }): Promise<{
   sourceDocumentName: string;
   canonicalDocumentName: string;
@@ -32,7 +29,7 @@ export async function executeBoardYjsRunbookMigration(input: {
   targetEquivalent: boolean | null;
   attempts: number;
 }> {
-  const { request, repository, hocuspocus } = input;
+  const { request, repository } = input;
   if (!repository.loadRawBoardYjsDocument || !repository.commitBoardYjsRunbookMigration) {
     throw new Error("board Y.Doc runbook migration repository is not configured");
   }
@@ -55,8 +52,9 @@ export async function executeBoardYjsRunbookMigration(input: {
     if (!container) throw new Error(`invalid canonical board Y.Doc: ${canonicalDocumentName}`);
     const scope = await repository.resolveBoardYjsContainerScope(container);
     if (!scope) throw new Error(`board Y.Doc container not found: ${canonicalDocumentName}`);
-    await unloadInactiveDocuments(hocuspocus, [request.documentName, canonicalDocumentName]);
-
+    const committedDocument = computed.plan.targetCollision && canonical
+      ? recomposeBoardYjsRawDocument(canonical)
+      : computed.migratedDocument;
     try {
       await repository.commitBoardYjsRunbookMigration({
         sourceDocumentName: request.documentName,
@@ -65,7 +63,7 @@ export async function executeBoardYjsRunbookMigration(input: {
         expectedCanonicalRevision: canonical?.revision ?? null,
         canonicalSnapshot: computed.migratedSnapshot,
         scope,
-        replica: readBoardYDocReplica(scope, computed.migratedDocument),
+        replica: readBoardYDocReplica(scope, committedDocument),
         preserveCanonical: computed.plan.targetCollision,
       });
     } catch (error) {
@@ -126,27 +124,6 @@ function validateApprovedPlan(
       `non-equivalent canonical collision requires explicit content hash approval: ` +
         `${plan.collisionContentHash}`,
     );
-  }
-}
-
-async function unloadInactiveDocuments(
-  hocuspocus: Hocuspocus,
-  documentNames: readonly string[],
-): Promise<void> {
-  for (const documentName of new Set(documentNames)) {
-    if (hocuspocus.loadingDocuments.has(documentName) ||
-      hocuspocus.unloadingDocuments.has(documentName)) {
-      throw new Error(`board Y.Doc lifecycle is busy; retry later: ${documentName}`);
-    }
-    const document = hocuspocus.documents.get(documentName);
-    if (!document) continue;
-    if (document.getConnectionsCount() > 0) {
-      throw new Error(`board Y.Doc is active; retry after clients disconnect: ${documentName}`);
-    }
-    await hocuspocus.unloadDocument(document);
-    if (hocuspocus.documents.has(documentName)) {
-      throw new Error(`board Y.Doc has pending persistence; retry later: ${documentName}`);
-    }
   }
 }
 

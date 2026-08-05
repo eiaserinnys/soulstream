@@ -85,6 +85,12 @@ export class BoardYjsRepository {
         if (!canonical || input.sourceDocumentName === input.canonicalDocumentName) {
           throw new Error("preserveCanonical requires a distinct canonical document");
         }
+        await syncBoardYjsReplicaWithSql(
+          transaction,
+          input.scope,
+          input.replica,
+          input.canonicalDocumentName,
+        );
       } else if (input.sourceDocumentName === input.canonicalDocumentName) {
         await transaction`
           UPDATE board_yjs_documents

@@ -19,12 +19,7 @@ import {
   upsertCustomViewYjsBoardItem,
   upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
-import {
-  executeBoardYjsRunbookMigration,
-  type BoardYjsRunbookMigrationRequest,
-} from "./board_yjs_runbook_migration.js";
 import { BoardYjsDocumentMutationGate } from "./board_yjs_document_mutation_gate.js";
-import { getCanonicalRunbookDocumentName } from "./board_yjs_runbook_residue.js";
 import {
   moveBoardItemBetweenDocuments,
   type BoardMoveInput,
@@ -98,10 +93,6 @@ export class BoardYjsService {
       return;
     }
     const documentName = getBoardYjsContainerDocumentName(container);
-    if (this.documentMutationGate.isMigrationActive(documentName)) {
-      socket.close(1013, "board Yjs document migration is in progress");
-      return;
-    }
     this.requireHocuspocus().handleConnection(socket, request, {
       ...container,
       documentName,
@@ -353,17 +344,6 @@ export class BoardYjsService {
     });
   }
 
-  async migrateRunbookResidue(input: BoardYjsRunbookMigrationRequest) {
-    const names = [input.documentName, getCanonicalRunbookDocumentName(input.documentName)];
-    return await this.documentMutationGate.withMigration(names, async () =>
-      await executeBoardYjsRunbookMigration({
-        request: input,
-        repository: this.config.repository,
-        hocuspocus: this.requireOrchHostMode(),
-      })
-    );
-  }
-
   private async withDirectConnection<T>(
     folderId: string,
     callback: (doc: Y.Doc) => T,
@@ -446,6 +426,13 @@ function createBoardYjsAuthExtension(
   return {
     extensionName: "soulstream-board-yjs-auth",
     async onAuthenticate(payload: onAuthenticatePayload) {
+      const routedDocumentName = payload.context.documentName;
+      if (routedDocumentName !== payload.documentName) {
+        throw new Error(
+          `Board Y.Doc protocol document ${payload.documentName} ` +
+            `does not match routed document ${String(routedDocumentName)}`,
+        );
+      }
       const result = await authenticateBoardYjsConnection({
         token: payload.token,
         requestHeaders: payload.requestHeaders,

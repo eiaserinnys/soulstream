@@ -130,6 +130,47 @@ describe("orch BoardYjsRepository", () => {
     expect(calls.every((call) => call.inTransaction)).toBe(true);
   });
 
+  it("keeps an approved canonical collision and synchronizes its SQL projection atomically", async () => {
+    const sourceSnapshot = Buffer.from([1]);
+    const canonicalSnapshot = Buffer.from([2]);
+    const { sql, calls } = createMockSql((call) => {
+      if (!call.query.includes("SELECT snapshot")) return [];
+      if (call.values[0] === "board:runbook:task-a") return [{ snapshot: sourceSnapshot }];
+      if (call.values[0] === "board:task:task-a") return [{ snapshot: canonicalSnapshot }];
+      return [];
+    });
+    const repository = new BoardYjsRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await repository.commitBoardYjsRunbookMigration({
+      sourceDocumentName: "board:runbook:task-a",
+      canonicalDocumentName: "board:task:task-a",
+      expectedSourceRevision: computeBoardYjsRawRevision(
+        new Uint8Array(sourceSnapshot),
+        [],
+      ),
+      expectedCanonicalRevision: computeBoardYjsRawRevision(
+        new Uint8Array(canonicalSnapshot),
+        [],
+      ),
+      canonicalSnapshot: new Uint8Array([9]),
+      scope: { folderId: "folder-1", containerKind: "task", containerId: "task-a" },
+      replica: { boardItems: [], markdownDocuments: [] },
+      preserveCanonical: true,
+    });
+
+    expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_catalog_cache")))
+      .toBe(true);
+    expect(calls.some((call) => call.query.includes("RETURNING name"))).toBe(false);
+    expect(calls.some((call) =>
+      call.query.includes("DELETE FROM board_yjs_documents") &&
+      call.values.includes("board:runbook:task-a")
+    )).toBe(true);
+    expect(calls.every((call) => call.inTransaction)).toBe(true);
+  });
+
   it("reconciles one Y.Doc replica with transaction-scoped SET-DIFF and object JSONB", async () => {
     const { sql, calls, jsonValues } = createMockSql();
     const factory = vi.fn(() => sql);

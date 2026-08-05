@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import * as Y from "yjs";
 
+import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
+import { assertBoardYjsQuiescedApplyPreflight } from
+  "../src/board-yjs/board_yjs_quiesced_preflight.js";
+import { executeQuiescedBoardYjsRunbookMigration } from
+  "../src/board-yjs/board_yjs_runbook_migration.js";
 import {
   hasBoardYjsRunbookResidue,
   inspectBoardYjsRunbookResidue,
@@ -14,6 +19,7 @@ import {
 import { computeBoardYjsRawRevision } from
   "../src/board-yjs/board_yjs_raw_document.js";
 import type { BoardYjsRawDocument } from "../src/board-yjs/board_yjs_persistence.js";
+import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 
 interface DocumentRow {
   name: string;
@@ -29,8 +35,18 @@ interface UpdateRow {
 const apply = process.argv.includes("--apply");
 const summaryOnly = process.argv.includes("--summary");
 const approvedCollisionHashesPath = readOption("--approved-collision-hashes");
+await assertBoardYjsQuiescedApplyPreflight({
+  apply,
+  quiescedAcknowledged: process.argv.includes("--quiesced"),
+  orchHealthUrl: readOption("--orch-health-url") ??
+    process.env.ORCH_HEALTH_URL?.trim() ?? null,
+});
 const databaseUrl = requiredEnv("DATABASE_URL");
 const sql = postgres(databaseUrl, { max: 1 });
+const repository = new BoardYjsRepository({
+  resolveSql: async () => sql as unknown as LivePostgresSql,
+  close: async () => undefined,
+});
 
 try {
   const inventory = await sql.begin(async (transaction) => {
@@ -173,7 +189,10 @@ try {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
   if (!apply) {
-    process.stdout.write("Dry run only. Re-run with --apply only after explicit approval.\n");
+    process.stdout.write(
+      "Dry run only. Apply requires explicit approval, stopped orch, --apply --quiesced " +
+        "--orch-health-url=http://127.0.0.1:5200/api/health.\n",
+    );
   } else {
     assertSameStrings(opaqueAllowlist, committedAllowlist);
     const approvedCollisionHashes = await loadApprovedCollisionHashes(
@@ -188,37 +207,23 @@ try {
         `non-equivalent collision hashes require approval: ${JSON.stringify(missingApprovals)}`,
       );
     }
-    const orchBaseUrl = requiredEnv("ORCH_BASE_URL").replace(/\/$/, "");
-    const authBearerToken = requiredEnv("AUTH_BEARER_TOKEN");
     for (const entry of affected) {
-      const response = await fetch(
-        `${orchBaseUrl}/api/board-yjs/host/migrate-runbook-residue`,
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${authBearerToken}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            documentName: entry.sourceDocumentName,
-            planFingerprint: entry.planFingerprint,
-            opaqueBoardItemIds: entry.opaqueBoardItemIds,
-            approvedCollisionContentHash: entry.targetEquivalent === false
-              ? entry.collisionContentHash
-              : null,
-          }),
+      const result = await executeQuiescedBoardYjsRunbookMigration({
+        request: {
+          documentName: entry.sourceDocumentName,
+          planFingerprint: entry.planFingerprint,
+          opaqueBoardItemIds: entry.opaqueBoardItemIds,
+          approvedCollisionContentHash: entry.targetEquivalent === false
+            ? entry.collisionContentHash
+            : null,
         },
-      );
-      if (!response.ok) {
-        throw new Error(
-          `Y.Doc migration failed for ${entry.sourceDocumentName}: ` +
-            `${response.status} ${await response.text()}`,
-        );
-      }
+        repository,
+      });
       process.stdout.write(`${JSON.stringify({
         ok: true,
-        sourceDocumentName: entry.sourceDocumentName,
-        canonicalDocumentName: entry.canonicalDocumentName,
+        sourceDocumentName: result.sourceDocumentName,
+        canonicalDocumentName: result.canonicalDocumentName,
+        attempts: result.attempts,
       })}\n`);
     }
   }

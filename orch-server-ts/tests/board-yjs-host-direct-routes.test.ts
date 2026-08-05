@@ -156,6 +156,28 @@ describe("orch-local Board Yjs host operation routes", () => {
     }
   });
 
+  it("does not expose a live-host runbook residue migration operation", async () => {
+    const app = Fastify({ logger: false });
+    registerBoardYjsHostProxyRoutes(app, {
+      registry: createRegistry(),
+      httpClient: vi.fn(),
+      hostMode: "orch",
+      authBearerToken: "test-token",
+      service: createServiceDouble(),
+    } as never);
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/board-yjs/host/migrate-runbook-residue",
+        headers: { authorization: "Bearer test-token" },
+        payload: {},
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns the original 422 validation and 500 operation error envelopes", async () => {
     const service = createServiceDouble();
     vi.mocked(service.deleteMarkdownDocument).mockRejectedValueOnce(new Error("write failed"));
@@ -201,38 +223,6 @@ describe("orch-local Board Yjs host operation routes", () => {
     }
   });
 
-  it("exposes the approval-gated runbook residue migration through the host", async () => {
-    const service = createServiceDouble();
-    const app = Fastify({ logger: false });
-    registerBoardYjsHostProxyRoutes(app, {
-      registry: createRegistry(),
-      httpClient: vi.fn(),
-      hostMode: "orch",
-      authBearerToken: "test-token",
-      service,
-    } as never);
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/board-yjs/host/migrate-runbook-residue",
-        headers: { authorization: "Bearer test-token" },
-        payload: {
-          documentName: "board:runbook:task-a",
-          planFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          opaqueBoardItemIds: ["runbook:task-a"],
-        },
-      });
-      expect(response.statusCode).toBe(200);
-      expect(service.migrateRunbookResidue).toHaveBeenCalledWith({
-        documentName: "board:runbook:task-a",
-        planFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        opaqueBoardItemIds: ["runbook:task-a"],
-      });
-    } finally {
-      await app.close();
-    }
-  });
-
   it("reconciles board_items after an orch-local host operation", async () => {
     const repository = new CapturingBoardYjsRepository();
     const service = createRealService(repository);
@@ -261,7 +251,6 @@ describe("orch-local Board Yjs host operation routes", () => {
       await app.close();
     }
   });
-
 });
 
 async function loadActualBoardYjsHostClient(): Promise<new (config: unknown) => ActualClient> {
@@ -333,7 +322,6 @@ function createServiceDouble() {
     moveBoardItemToContainer: result("move-board-item-to-container"),
     updateMarkdownDocument: result("update-markdown-document"),
     deleteMarkdownDocument: result("delete-markdown-document"),
-    migrateRunbookResidue: result("migrate-runbook-residue"),
     handleConnection: vi.fn(),
     handleContainerConnection: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),

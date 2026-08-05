@@ -2,37 +2,17 @@ type Release = () => void;
 
 /**
  * Serializes every in-process mutation of a Board Y.Doc by document name.
- * Multi-document operations acquire names in lexical order, so moves and
- * migrations cannot deadlock while sharing the same exclusion boundary.
+ * Multi-document operations acquire names in lexical order, so direct and
+ * staged moves cannot deadlock while sharing the same exclusion boundary.
  */
 export class BoardYjsDocumentMutationGate {
   private readonly tails = new Map<string, Promise<void>>();
-  private readonly migrating = new Set<string>();
-
-  isMigrationActive(documentName: string): boolean {
-    return this.migrating.has(documentName);
-  }
 
   async withMutation<T>(
     documentNames: readonly string[],
     work: () => Promise<T>,
   ): Promise<T> {
     return await this.withLocks(documentNames, work);
-  }
-
-  async withMigration<T>(
-    documentNames: readonly string[],
-    work: () => Promise<T>,
-  ): Promise<T> {
-    const names = normalizeNames(documentNames);
-    return await this.withLocks(names, async () => {
-      for (const name of names) this.migrating.add(name);
-      try {
-        return await work();
-      } finally {
-        for (const name of names) this.migrating.delete(name);
-      }
-    });
   }
 
   private async withLocks<T>(

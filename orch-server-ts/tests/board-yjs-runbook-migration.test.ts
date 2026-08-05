@@ -1,4 +1,3 @@
-import type { Hocuspocus } from "@hocuspocus/server";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -13,7 +12,7 @@ import {
   BoardYjsMigrationRevisionConflictError,
   computeBoardYjsRawRevision,
 } from "../src/board-yjs/board_yjs_raw_document.js";
-import { executeBoardYjsRunbookMigration } from
+import { executeQuiescedBoardYjsRunbookMigration } from
   "../src/board-yjs/board_yjs_runbook_migration.js";
 import { createBoardYjsRunbookMigrationPlan } from
   "../src/board-yjs/board_yjs_runbook_plan.js";
@@ -32,14 +31,13 @@ describe("approval-gated board Y.Doc runbook migration", () => {
     );
     const plan = currentPlan(repository, "board:runbook:task-a");
 
-    await expect(executeBoardYjsRunbookMigration({
+    await expect(executeQuiescedBoardYjsRunbookMigration({
       request: {
         documentName: "board:runbook:task-a",
         planFingerprint: plan.planFingerprint,
         opaqueBoardItemIds: [],
       },
       repository,
-      hocuspocus: emptyHocuspocus(),
     })).rejects.toThrow("allowlist mismatch");
 
     expect(repository.commitCalls).toBe(0);
@@ -56,14 +54,13 @@ describe("approval-gated board Y.Doc runbook migration", () => {
     repository.injectRevisionRaceOnce = true;
     const plan = currentPlan(repository, "board-folder:folder-a");
 
-    const result = await executeBoardYjsRunbookMigration({
+    const result = await executeQuiescedBoardYjsRunbookMigration({
       request: {
         documentName: "board-folder:folder-a",
         planFingerprint: plan.planFingerprint,
         opaqueBoardItemIds: [],
       },
       repository,
-      hocuspocus: emptyHocuspocus(),
     });
 
     expect(result.attempts).toBe(2);
@@ -88,18 +85,17 @@ describe("approval-gated board Y.Doc runbook migration", () => {
     const plan = currentPlan(repository, "board:runbook:task-a");
     expect(plan.targetEquivalent).toBe(false);
 
-    await expect(executeBoardYjsRunbookMigration({
+    await expect(executeQuiescedBoardYjsRunbookMigration({
       request: {
         documentName: "board:runbook:task-a",
         planFingerprint: plan.planFingerprint,
         opaqueBoardItemIds: plan.opaqueBoardItemIds,
       },
       repository,
-      hocuspocus: emptyHocuspocus(),
     })).rejects.toThrow("requires explicit content hash approval");
     expect(repository.commitCalls).toBe(0);
 
-    const result = await executeBoardYjsRunbookMigration({
+    const result = await executeQuiescedBoardYjsRunbookMigration({
       request: {
         documentName: "board:runbook:task-a",
         planFingerprint: plan.planFingerprint,
@@ -107,7 +103,6 @@ describe("approval-gated board Y.Doc runbook migration", () => {
         approvedCollisionContentHash: plan.collisionContentHash,
       },
       repository,
-      hocuspocus: emptyHocuspocus(),
     });
     expect(result.targetCollision).toBe(true);
     expect(repository.documents.has("board:runbook:task-a")).toBe(false);
@@ -243,13 +238,4 @@ function snapshotWithItem(
     y: 0,
   });
   return Y.encodeStateAsUpdate(doc);
-}
-
-function emptyHocuspocus(): Hocuspocus {
-  return {
-    documents: new Map(),
-    loadingDocuments: new Map(),
-    unloadingDocuments: new Map(),
-    unloadDocument: async () => undefined,
-  } as unknown as Hocuspocus;
 }
