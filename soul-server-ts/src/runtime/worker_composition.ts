@@ -61,6 +61,8 @@ import {
 } from "./task_runtime_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
+import type { ClaudeRuntimeStartupRecovery } from
+  "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
 import { preflightPersistentRuntimeSchema } from "./worker_schema_preflight.js";
 export interface WorkerCompositionParams {
@@ -86,6 +88,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   checklistTaskAdapter: ChecklistTaskAdapter;
   checklistTaskReconciler: ChecklistTaskReconciler;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
+  claudeRuntimeStartupRecovery?: ClaudeRuntimeStartupRecovery;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 /** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
@@ -448,6 +451,9 @@ export async function composeWorkerRuntime(
     checklistTaskAdapter,
     checklistTaskReconciler,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
+    ...(claudeRuntime.startupRecovery
+      ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery }
+      : {}),
     createUpstreamAdapter,
   };
 }

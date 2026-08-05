@@ -18,6 +18,8 @@ import { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../task/queued_delivery_transcript_recovery.js";
+import { ClaudeRuntimeStartupRecovery } from
+  "./claude_runtime_startup_recovery.js";
 
 interface ComposeClaudeRuntimeParams {
   enabled: boolean;
@@ -41,6 +43,7 @@ export interface ClaudeRuntimeComposition {
   backgroundLifecycle?: ClaudeBackgroundTaskLifecycle;
   childCompletionConsumption?: ChildCompletionConsumptionRecorder;
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
+  startupRecovery?: ClaudeRuntimeStartupRecovery;
 }
 
 /** Keeps the persistent runtime object graph out of explicit kill-switch mode. */
@@ -71,25 +74,18 @@ export async function composeClaudeRuntime(
     },
     `queued-recovery:${params.sourceNode}:${randomUUID()}`,
   );
-  const reconciledDeliveries =
-    await queuedDeliveryRecovery.recoverAfterNodeRestart(params.sourceNode);
-  if (reconciledDeliveries > 0) {
-    params.logger.warn(
-      { count: reconciledDeliveries, nodeId: params.sourceNode },
-      "Reconciled queued deliveries after worker restart",
-    );
-  }
   const backgroundLifecycle = new ClaudeBackgroundTaskLifecycle({
     repository: params.db.claudeBackgroundTasks(),
     sourceNode: params.sourceNode,
   });
-  const recovered = await backgroundLifecycle.recoverAfterRestart();
-  if (recovered > 0) {
-    params.logger.warn(
-      { count: recovered, nodeId: params.sourceNode },
-      "Recovered in-flight Claude background tasks after worker restart",
-    );
-  }
+  const startupRecovery = new ClaudeRuntimeStartupRecovery({
+    recoverQueuedDeliveries: () =>
+      queuedDeliveryRecovery.recoverAfterNodeRestart(params.sourceNode),
+    recoverBackgroundTasks: () => backgroundLifecycle.recoverAfterRestart(),
+    logger: params.logger,
+    nodeId: params.sourceNode,
+  });
+  await startupRecovery.start();
   const registry = new ClaudeSessionClientRegistry(
     (sessionId) =>
       new ClaudeSdkClient(
@@ -115,5 +111,6 @@ export async function composeClaudeRuntime(
       deliveryRepository,
     ),
     queuedDeliveryRecovery,
+    startupRecovery,
   };
 }

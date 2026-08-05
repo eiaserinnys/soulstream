@@ -150,6 +150,14 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
+    if (runtime.claudeRuntimeStartupRecovery) {
+      const startupRecoveryDrain =
+        await runtime.claudeRuntimeStartupRecovery.stop(5_000);
+      logger.info(
+        { outcome: startupRecoveryDrain },
+        "Claude runtime startup recovery shutdown drain finished",
+      );
+    }
     if (runtime.completionDeliveryRecoveryWorker) {
       const deliveryDrain =
         await runtime.completionDeliveryRecoveryWorker.stop(5_000);
