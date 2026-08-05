@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import shlex
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,11 +23,14 @@ WORKER_MANIFEST_PATH = REPOSITORY_ROOT / "deploy" / "release-manifest-worker.jso
 STANDALONE_MANIFEST_PATH = (
     REPOSITORY_ROOT / "deploy" / "release-manifest-standalone.json"
 )
-DEPLOY_COMMAND = "pnpm --dir orch-server-ts run deploy:ydoc-runbook-residue --"
+DEPLOY_COMMAND = (
+    "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
+    "orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts"
+)
 
 
 class SoulstreamReleaseContractTest(unittest.TestCase):
-    def test_actual_manifests_scope_board_ydoc_migration_to_the_deploy_runner(
+    def test_actual_manifests_scope_board_ydoc_migration_to_the_central_manifest(
         self,
     ) -> None:
         central = ReleaseManifest.load(MANIFEST_PATH)
@@ -36,14 +41,29 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
             central.migration.apply.command,
             f"{DEPLOY_COMMAND} --migrate",
         )
-        for manifest in (central, worker, standalone):
-            verify = [
-                command
-                for command in manifest.post_start_verify
-                if command.name == "verify-board-yjs-runbook-residue"
-            ]
-            self.assertEqual(len(verify), 1)
-            self.assertEqual(verify[0].command, f"{DEPLOY_COMMAND} --verify")
+        central_verify = [
+            command
+            for command in central.post_start_verify
+            if command.name == "verify-board-yjs-runbook-residue"
+        ]
+        self.assertEqual(len(central_verify), 1)
+        self.assertEqual(central_verify[0].command, f"{DEPLOY_COMMAND} --verify")
+        for manifest in (worker, standalone):
+            self.assertNotIn(
+                "verify-board-yjs-runbook-residue",
+                {command.name for command in manifest.post_start_verify},
+            )
+
+    def test_actual_manifest_commands_do_not_use_bare_pnpm_or_tsx(self) -> None:
+        for path in (
+            MANIFEST_PATH,
+            WORKER_MANIFEST_PATH,
+            STANDALONE_MANIFEST_PATH,
+        ):
+            manifest = json.loads(path.read_text(encoding="utf8"))
+            for command in _find_commands(manifest):
+                with self.subTest(manifest=path.name, command=command):
+                    self.assertNotIn(shlex.split(command)[0], {"pnpm", "tsx"})
 
     def test_ydoc_migration_failure_reaches_previous_release_fallback(self) -> None:
         manifest = ReleaseManifest.load(MANIFEST_PATH)
@@ -130,6 +150,21 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
                     "rollback-previous-release",
                 ])
                 self.assertEqual(events.count("verify-release-health"), 2)
+
+
+def _find_commands(value: object) -> list[str]:
+    if isinstance(value, dict):
+        commands = (
+            [value["command"]] if isinstance(value.get("command"), str) else []
+        )
+        return commands + [
+            command
+            for child in value.values()
+            for command in _find_commands(child)
+        ]
+    if isinstance(value, list):
+        return [command for child in value for command in _find_commands(child)]
+    return []
 
 
 if __name__ == "__main__":
