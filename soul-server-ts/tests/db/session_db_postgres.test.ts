@@ -6,6 +6,10 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
+import { SessionPageBindingRepository } from
+  "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
+import { SupervisorRepository } from
+  "../../../orch-server-ts/src/control_plane/repositories/supervisor_repository.js";
 
 const TEST_DB_NAME = "session_db_supervisor_test";
 const TEST_USER = "session_db_supervisor_test";
@@ -23,6 +27,10 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     harness = await createHarness();
     await applySupervisorSchema(harness.sql);
     db = new SessionDB(harness.sql);
+    db.configureSessionPageBindingHost(
+      new SessionPageBindingRepository(harness.sql) as never,
+    );
+    db.configureSupervisorHost(new SupervisorRepository(harness.sql) as never);
   }, 45_000);
 
   beforeEach(async () => {
@@ -236,6 +244,9 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     `;
 
     const restarted = new SessionDB(harness!.sql);
+    restarted.configureSessionPageBindingHost(
+      new SessionPageBindingRepository(harness!.sql) as never,
+    );
     const responseLostRead = await restarted.listSessionsForUpstreamDump({
       limit: 10,
       offset: 0,

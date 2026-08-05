@@ -5,7 +5,7 @@ import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SessionDeliveryRepository } from
-  "../../src/db/repositories/session_delivery_repository.js";
+  "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { buildDeterministicDeliveryIdentity } from
   "../../src/task/delivery_identity.js";

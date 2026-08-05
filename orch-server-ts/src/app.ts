@@ -63,6 +63,10 @@ import {
   type ScheduleHostRouteOptions,
 } from "./schedule/schedule_host_route.js";
 import {
+  registerPersistenceHostRoutes,
+  type PersistenceHostRouteOptions,
+} from "./control_plane/persistence_host_routes.js";
+import {
   registerNodeAgentProfileRoutes,
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
@@ -185,6 +189,7 @@ export type CreateAppOptions = {
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
   taskRoutes?: TaskRouteOptions;
   scheduleHostRoutes?: ScheduleHostRouteOptions;
+  persistenceHostRoutes?: PersistenceHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
 };
 
@@ -314,6 +319,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.scheduleHostRoutes !== undefined) {
     registerScheduleHostRoute(app, options.scheduleHostRoutes);
+  }
+  if (options.persistenceHostRoutes !== undefined) {
+    registerPersistenceHostRoutes(app, options.persistenceHostRoutes);
   }
   if (options.usageSummaryRoutes !== undefined) {
     registerUsageSummaryRoutes(app, options.usageSummaryRoutes);

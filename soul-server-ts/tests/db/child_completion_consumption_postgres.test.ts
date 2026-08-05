@@ -8,6 +8,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB } from "../../src/db/session_db.js";
+import { SessionDeliveryRepository } from
+  "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildServer } from "../../src/server.js";
 import { ChildCompletionConsumptionRecorder } from
@@ -36,6 +38,9 @@ describePostgres("child completion observation PostgreSQL integration", () => {
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
     db = new SessionDB(harness.sql);
+    db.configureSessionDeliveryHost(
+      new SessionDeliveryRepository(harness.sql) as never,
+    );
     await harness.sql`
       INSERT INTO sessions (
         session_id, node_id, session_type, status, agent_id, caller_session_id

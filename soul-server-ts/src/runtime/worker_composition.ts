@@ -12,6 +12,12 @@ import { DefaultPageContextAssembler } from "../context/page_context_assembler.j
 import { HostPageContextRepository } from "../context/page_context_repository.js";
 import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
 import { CustomViewService } from "../custom_view/custom_view_service.js";
+import {
+  ClaudeRuntimeHostClient,
+  SessionDeliveryHostClient,
+  SessionPageBindingHostClient,
+  SupervisorHostClient,
+} from "../control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
@@ -140,6 +146,13 @@ export async function composeWorkerRuntime(
     modelCatalog,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
+  const claudeRuntimeHost = new ClaudeRuntimeHostClient({ orch: orchProxyConfig, logger });
+  db.configurePersistenceHosts({
+    deliveries: new SessionDeliveryHostClient({ orch: orchProxyConfig, logger }),
+    supervisors: new SupervisorHostClient({ orch: orchProxyConfig, logger }),
+    claudeRuntime: claudeRuntimeHost,
+    sessionPageBindings: new SessionPageBindingHostClient({ orch: orchProxyConfig, logger }),
+  });
   const boardYjsAuth = {
     authBearerToken: env.AUTH_BEARER_TOKEN,
     environment: env.ENVIRONMENT,

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { SessionDeliveryRepository } from "../../src/db/repositories/session_delivery_repository.js";
+import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
