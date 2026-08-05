@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SoulstreamScheduleRepository } from "../../src/schedule/schedule_repository.js";
+import { SoulstreamScheduleRepository } from "../../../orch-server-ts/src/schedule/schedule_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 
 interface MockCall {

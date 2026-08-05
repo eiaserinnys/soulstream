@@ -1,10 +1,3 @@
-import type { AppendEventParams, FolderRow } from "../db/session_db.js";
-import type {
-  CatalogBoardItemsDelta,
-  CatalogFolderRecord,
-  CatalogSessionsDelta,
-} from "../catalog/catalog_delta.js";
-import type { RepositorySql } from "../db/repositories/repository_helpers.js";
 import type {
   TaskItemStatus,
   TaskOperationActorKind,
@@ -12,32 +5,12 @@ import type {
   TaskSnapshot,
 } from "../db/session_db_types.js";
 
-import type { TaskRepository } from "./task_repository.js";
-
-export interface TaskDbPort {
-  tasks(): TaskRepository;
-  appendEventTx(sql: RepositorySql, params: AppendEventParams): Promise<number>;
-  getAllFolders(): Promise<FolderRow[]>;
-}
-
-export interface TaskBroadcasterPort {
-  emitTaskUpdated(
-    agentSessionId: string,
-    taskId: string,
-    boardItemId: string,
-  ): Promise<void>;
-  emitCatalogUpdated?(
-    folders: readonly CatalogFolderRecord[],
-    sessionsDelta: CatalogSessionsDelta,
-    boardItemsDelta: CatalogBoardItemsDelta,
-  ): Promise<void>;
-}
-
 export interface TaskMutationResult {
   snapshot: TaskSnapshot;
   operation: TaskOperationRow;
   eventId: number;
   idempotent?: boolean;
+  handoff?: TaskHandoffEvent;
 }
 
 export interface TaskActorParams {

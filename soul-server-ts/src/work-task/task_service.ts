@@ -1,174 +1,48 @@
-import { randomUUID } from "node:crypto";
-
-import { generateKeyBetween } from "@soulstream/fractional-position";
+import type { Logger } from "pino";
 
 import type {
-  CatalogBoardItemRow,
   TaskItemStatus,
   TaskSnapshot,
   TaskStatus,
 } from "../db/session_db_types.js";
-import {
-  boardItemsDelta,
-  serializeCatalogFolders,
-} from "../catalog/catalog_delta.js";
-
-import { assertTaskPatchHasFields, assigneeToFields, type TaskAssigneeInput } from "./task_models.js";
-import { TaskMutationCore } from "./task_mutation_core.js";
-import { enrollTaskCreatorSession, type TaskCreatorBoardItemMoverPort, type TaskCreatorEnrollmentLoggerPort } from "./task_creator_enrollment.js";
-import { itemPatchOperationType, taskPatchOperationType, sectionPatchOperationType } from "./task_operation_types.js";
-import { resolveItemPositionTx, resolveSectionPositionTx } from "./task_position_queries.js";
-import type { TaskRepository } from "./task_repository.js";
-import {
-  removeTaskBoardItemIfUnlinked,
-  resolveTaskIdempotent,
-  type TaskBoardYjsPort,
-  updateTaskBoardItemTitle,
-  upsertTaskBoardItem,
-} from "./task_board_items.js";
-import { mutateTaskCreation } from "./task_creation_mutation.js";
+import type { OrchProxyConfig } from "../mcp/runtime.js";
+import { TaskVersionConflict, type TaskAssigneeInput } from "./task_models.js";
 import type {
   TaskActorParams,
-  TaskBroadcasterPort,
-  TaskDbPort,
   TaskHandoffNotifierPort,
   TaskMutationResult,
 } from "./task_service_models.js";
 
-export type {
-  TaskActorParams,
-  TaskBroadcasterPort,
-  TaskDbPort,
-  TaskMutationResult,
-} from "./task_service_models.js";
+export type { TaskActorParams, TaskMutationResult } from "./task_service_models.js";
 
+/** Worker-side task facade. All persistence is owned by the orchestrator host. */
 export class TaskService {
-  private readonly repo: TaskRepository;
-  private readonly core: TaskMutationCore;
+  private handoffNotifier?: TaskHandoffNotifierPort;
 
-  constructor(
-    private readonly db: TaskDbPort,
-    private readonly broadcaster: TaskBroadcasterPort | undefined,
-    private readonly boardYjsService: TaskBoardYjsPort,
-    handoffNotifier?: TaskHandoffNotifierPort,
-    private readonly creatorBoardItemMover?: TaskCreatorBoardItemMoverPort,
-    private readonly logger?: TaskCreatorEnrollmentLoggerPort,
-  ) {
-    this.repo = db.tasks();
-    this.core = new TaskMutationCore(db, this.repo, broadcaster, handoffNotifier);
+  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
+
+  setHandoffNotifier(notifier: TaskHandoffNotifierPort): void {
+    this.handoffNotifier = notifier;
   }
+
   async getTask(taskId: string): Promise<TaskSnapshot | null> {
-    return await this.repo.getSnapshot(taskId);
+    return await this.request("get_task", { taskId });
   }
-  async listTasks(params: {
-    folderId: string;
-    includeArchived?: boolean;
-    limit?: number;
-  }) {
-    return await this.repo.listTasks(params);
+
+  async listTasks(params: { folderId: string; includeArchived?: boolean; limit?: number }) {
+    return await this.request("list_tasks", params);
   }
 
   async listMyTurnItems(params: { userId?: string | null; limit?: number } = {}) {
-    return await this.repo.listMyTurnItems(params);
+    return await this.request("list_my_turn_items", params);
   }
 
   async listOperations(taskId: string, limit?: number) {
-    return await this.repo.listOperations(taskId, limit);
+    return await this.request("list_operations", { taskId, limit });
   }
 
-  async createTask(params: Omit<TaskActorParams, "actorSessionId"> & {
-    actorSessionId: string | null;
-    taskId?: string;
-    folderId: string;
-    title: string;
-    x?: number;
-    y?: number;
-    idempotencyKey?: string | null;
-    enrollCreator?: boolean;
-  }): Promise<TaskMutationResult> {
-    const taskId = params.taskId ?? randomUUID();
-    const boardItemId = `task:${taskId}`;
-    const x = params.x ?? 0;
-    const y = params.y ?? 0;
-    const idempotent = await resolveTaskIdempotent(this.repo, params.idempotencyKey);
-    if (idempotent) return idempotent;
-    const boardItem = await upsertTaskBoardItem(this.boardYjsService, {
-      folderId: params.folderId,
-      boardItemId,
-      taskId,
-      title: params.title,
-      x,
-      y,
-    });
-    let result: TaskMutationResult;
-    try {
-      result = await mutateTaskCreation(this.core, this.repo, {
-        ...params,
-        taskId,
-        boardItemId,
-        x,
-        y,
-      });
-    } catch (err) {
-      await removeTaskBoardItemIfUnlinked(this.repo, this.boardYjsService, {
-        folderId: params.folderId,
-        boardItemId,
-        taskId,
-      }).catch(() => undefined);
-      throw err;
-    }
-    if (params.enrollCreator !== false && params.actorSessionId !== null) {
-      await enrollTaskCreatorSession({
-        mover: this.creatorBoardItemMover, logger: this.logger,
-        actorSessionId: params.actorSessionId, taskId,
-      });
-    }
-    await this.broadcastCatalog([boardItem]);
-    return result;
-  }
-
-  async patchTask(params: TaskActorParams & {
-    taskId: string;
-    expectedVersion: number;
-    title?: string;
-    archived?: boolean;
-    reason?: string | null;
-    idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
-    assertTaskPatchHasFields("task", { title: params.title, archived: params.archived });
-    const result = await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "task",
-      targetId: params.taskId,
-      operationType: taskPatchOperationType(params.archived),
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: { title: params.title, archived: params.archived },
-      preflight: (sql) =>
-        this.repo.assertTaskVersionTx(sql, params.taskId, params.expectedVersion),
-      apply: async (sql) => {
-        await this.repo.patchTaskTx(
-          sql,
-          params.taskId,
-          { title: params.title, archived: params.archived },
-          params.expectedVersion,
-        );
-      },
-    });
-    let boardItem: CatalogBoardItemRow | undefined;
-    if (params.title !== undefined) {
-      boardItem = await updateTaskBoardItemTitle(
-        this.repo,
-        this.boardYjsService,
-        params.taskId,
-        params.title,
-      );
-    }
-    if (params.title !== undefined || params.archived !== undefined) {
-      await this.broadcastCatalog(boardItem ? [boardItem] : []);
-    }
-    return result;
+  async listAgentSubscriberSessionIds(taskId: string): Promise<string[]> {
+    return await this.request("list_agent_subscribers", { taskId });
   }
 
   async setTaskStatus(params: TaskActorParams & {
@@ -178,18 +52,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    return await this.core.setTaskStatus(params);
-  }
-
-  private async broadcastCatalog(
-    changedBoardItems: readonly CatalogBoardItemRow[] = [],
-  ): Promise<void> {
-    if (!this.broadcaster?.emitCatalogUpdated) return;
-    await this.broadcaster.emitCatalogUpdated(
-      serializeCatalogFolders(await this.db.getAllFolders()),
-      {},
-      boardItemsDelta(changedBoardItems),
-    );
+    return await this.mutate("set_task_status", params);
   }
 
   async createSection(params: TaskActorParams & {
@@ -201,33 +64,7 @@ export class TaskService {
     beforeSectionId?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    const sectionId = params.sectionId ?? randomUUID();
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "section",
-      targetId: sectionId,
-      operationType: "create_task_section",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      payload: {
-        title: params.title,
-        after_section_id: params.afterSectionId ?? null,
-        before_section_id: params.beforeSectionId ?? null,
-        assignee: params.assignee ?? null,
-      },
-      apply: async (sql, eventId) => {
-        const bounds = await resolveSectionPositionTx(sql, params.taskId, params);
-        await this.repo.createSectionTx(sql, {
-          id: sectionId,
-          taskId: params.taskId,
-          title: params.title,
-          positionKey: generateKeyBetween(bounds.lower, bounds.upper),
-          assignee: assigneeToFields(params.assignee),
-          actorSessionId: params.actorSessionId,
-          eventId,
-        });
-      },
-    });
+    return await this.mutate("create_section", params);
   }
 
   async patchSection(params: TaskActorParams & {
@@ -240,39 +77,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    const assigneeFields =
-      Object.prototype.hasOwnProperty.call(params, "assignee")
-        ? assigneeToFields(params.assignee)
-        : {};
-    assertTaskPatchHasFields("section", { title: params.title, archived: params.archived, ...assigneeFields });
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "section",
-      targetId: params.sectionId,
-      operationType: sectionPatchOperationType(params.archived),
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: {
-        title: params.title,
-        archived: params.archived,
-        assignee: params.assignee ?? null,
-      },
-      preflight: async (sql) => {
-        await this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId);
-        await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
-      },
-      apply: async (sql, eventId) => {
-        await this.repo.patchSectionTx(
-          sql,
-          params.sectionId,
-          { title: params.title, archived: params.archived, ...assigneeFields },
-          params.expectedVersion,
-          params.actorSessionId,
-          eventId,
-        );
-      },
-    });
+    return await this.mutate("patch_section", params);
   }
 
   async setSectionAssignee(params: TaskActorParams & {
@@ -283,30 +88,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "section",
-      targetId: params.sectionId,
-      operationType: "set_task_section_assignee",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: { assignee: params.assignee ?? null },
-      preflight: async (sql) => {
-        await this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId);
-        await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
-      },
-      apply: async (sql, eventId) => {
-        await this.repo.patchSectionTx(
-          sql,
-          params.sectionId,
-          assigneeToFields(params.assignee),
-          params.expectedVersion,
-          params.actorSessionId,
-          eventId,
-        );
-      },
-    });
+    return await this.mutate("set_section_assignee", params);
   }
 
   async moveSection(params: TaskActorParams & {
@@ -318,34 +100,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "section",
-      targetId: params.sectionId,
-      operationType: "move_task_section",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: {
-        after_section_id: params.afterSectionId ?? null,
-        before_section_id: params.beforeSectionId ?? null,
-      },
-      preflight: async (sql) => {
-        await this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId);
-        await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
-      },
-      apply: async (sql, eventId) => {
-        const bounds = await resolveSectionPositionTx(sql, params.taskId, params);
-        await this.repo.patchSectionTx(
-          sql,
-          params.sectionId,
-          { position_key: generateKeyBetween(bounds.lower, bounds.upper) },
-          params.expectedVersion,
-          params.actorSessionId,
-          eventId,
-        );
-      },
-    });
+    return await this.mutate("move_section", params);
   }
 
   async createItem(params: TaskActorParams & {
@@ -359,38 +114,7 @@ export class TaskService {
     beforeItemId?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    const itemId = params.itemId ?? randomUUID();
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "item",
-      targetId: itemId,
-      operationType: "create_task_item",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      payload: {
-        section_id: params.sectionId,
-        title: params.title,
-        how_to: params.howTo ?? "",
-        assignee: params.assignee ?? null,
-      },
-      preflight: (sql) =>
-        this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId),
-      apply: async (sql, eventId) => {
-        const bounds = await resolveItemPositionTx(sql, params.sectionId, params);
-        await this.repo.createItemTx(sql, {
-          id: itemId,
-          sectionId: params.sectionId,
-          title: params.title,
-          howTo: params.howTo ?? "",
-          positionKey: generateKeyBetween(bounds.lower, bounds.upper),
-          assignee: assigneeToFields(params.assignee),
-          actorKind: params.actorKind ?? "agent",
-          actorSessionId: params.actorSessionId,
-          actorUserId: params.actorUserId ?? null,
-          eventId,
-        });
-      },
-    });
+    return await this.mutate("create_item", params);
   }
 
   async patchItem(params: TaskActorParams & {
@@ -404,40 +128,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    const assigneeFields =
-      Object.prototype.hasOwnProperty.call(params, "assignee")
-        ? assigneeToFields(params.assignee)
-        : {};
-    assertTaskPatchHasFields("item", { title: params.title, howTo: params.howTo, archived: params.archived, ...assigneeFields });
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "item",
-      targetId: params.itemId,
-      operationType: itemPatchOperationType(params.archived),
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: {
-        title: params.title,
-        how_to: params.howTo,
-        archived: params.archived,
-        assignee: params.assignee ?? null,
-      },
-      preflight: async (sql) => {
-        await this.repo.assertItemBelongsToTaskTx(sql, params.itemId, params.taskId);
-        await this.repo.assertItemVersionTx(sql, params.itemId, params.expectedVersion);
-      },
-      apply: async (sql, eventId) => {
-        await this.repo.patchItemTx(
-          sql,
-          params.itemId,
-          { title: params.title, how_to: params.howTo, archived: params.archived, ...assigneeFields },
-          params.expectedVersion,
-          params.actorSessionId,
-          eventId,
-        );
-      },
-    });
+    return await this.mutate("patch_item", params);
   }
 
   async setItemAssignee(params: TaskActorParams & {
@@ -448,30 +139,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    return await this.core.mutate({
-      taskId: params.taskId,
-      targetKind: "item",
-      targetId: params.itemId,
-      operationType: "set_task_item_assignee",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: { assignee: params.assignee ?? null },
-      preflight: async (sql) => {
-        await this.repo.assertItemBelongsToTaskTx(sql, params.itemId, params.taskId);
-        await this.repo.assertItemVersionTx(sql, params.itemId, params.expectedVersion);
-      },
-      apply: async (sql, eventId) => {
-        await this.repo.patchItemTx(
-          sql,
-          params.itemId,
-          assigneeToFields(params.assignee),
-          params.expectedVersion,
-          params.actorSessionId,
-          eventId,
-        );
-      },
-    });
+    return await this.mutate("set_item_assignee", params);
   }
 
   async moveItem(params: TaskActorParams & {
@@ -484,7 +152,7 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    return await this.core.moveItem(params);
+    return await this.mutate("move_item", params);
   }
 
   async setItemStatus(params: TaskActorParams & {
@@ -494,6 +162,104 @@ export class TaskService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<TaskMutationResult> {
-    return await this.core.setItemStatus(params);
+    return await this.mutate("set_item_status", params);
   }
+
+  private async mutate(operation: string, input: object): Promise<TaskMutationResult> {
+    const actor = input as { actorKind?: unknown };
+    const result = await this.request<TaskMutationResult>(operation, {
+      ...input,
+      actorKind: actor.actorKind ?? "agent",
+    });
+    if (result.handoff) {
+      try {
+        this.handoffNotifier?.notifyHumanHandoff(result.handoff);
+      } catch (error) {
+        this.config.logger.warn({ err: error, operation }, "task handoff notifier failed");
+      }
+    }
+    return result;
+  }
+
+  private async request<T = unknown>(operation: string, input: object): Promise<T> {
+    const response = await fetch(
+      `${this.config.orch.baseUrl}/api/tasks/host/${encodeURIComponent(operation)}`,
+      {
+        method: "POST",
+        headers: { ...this.config.orch.headers, "content-type": "application/json" },
+        body: JSON.stringify(snakeCase(input)),
+      },
+    );
+    if (!response.ok) {
+      const failure = await responseError(response);
+      if (response.status === 409 && isVersionConflictDetails(failure.details)) {
+        throw new TaskVersionConflict(
+          failure.details.targetKind,
+          failure.details.targetId,
+          failure.details.expectedVersion,
+          failure.details.actualVersion,
+        );
+      }
+      const error = Object.assign(new Error(`task host ${operation} failed: ${failure.message}`), {
+        statusCode: response.status,
+      });
+      this.config.logger.warn(
+        { operation, status: response.status, message: failure.message },
+        "task control-plane host request failed",
+      );
+      throw error;
+    }
+    return await response.json() as T;
+  }
+}
+
+function snakeCase(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(snakeCase);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .map(([key, child]) => [snakeKey(key), snakeCase(child)]),
+  );
+}
+
+function snakeKey(key: string): string {
+  return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+async function responseError(
+  response: Response,
+): Promise<{ message: string; details?: Record<string, unknown> }> {
+  const text = await response.text();
+  if (!text) return { message: `${response.status} ${response.statusText}` };
+  try {
+    const detail = (JSON.parse(text) as {
+      detail?: { error?: { message?: unknown; details?: unknown } };
+    }).detail;
+    if (typeof detail?.error?.message === "string") {
+      const details = detail.error.details;
+      return {
+        message: detail.error.message,
+        ...(details && typeof details === "object" && !Array.isArray(details)
+          ? { details: details as Record<string, unknown> }
+          : {}),
+      };
+    }
+  } catch {
+    return { message: text };
+  }
+  return { message: text };
+}
+
+function isVersionConflictDetails(value: Record<string, unknown> | undefined): value is {
+  targetKind: "task" | "section" | "item";
+  targetId: string;
+  expectedVersion: number;
+  actualVersion: number;
+} {
+  return value !== undefined
+    && (value.targetKind === "task" || value.targetKind === "section" || value.targetKind === "item")
+    && typeof value.targetId === "string"
+    && typeof value.expectedVersion === "number"
+    && typeof value.actualVersion === "number";
 }

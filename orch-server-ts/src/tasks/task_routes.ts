@@ -12,6 +12,7 @@ import {
   sendTaskRouteError,
 } from "./task_mutation_proxy.js";
 import { registerTaskIdentityHostRoute } from "./task_identity_host_route.js";
+import { registerTaskControlPlaneHostRoute } from "./task_control_plane_host_route.js";
 import { registerTaskLegacyHttpCompatibility } from "./task_legacy_http_compat.js";
 import {
   resolveItemActorSessionId,
@@ -74,6 +75,12 @@ export function registerTaskRoutes(
   if (options.taskIdentityService && options.authBearerToken) {
     registerTaskIdentityHostRoute(app, {
       service: options.taskIdentityService,
+      authBearerToken: options.authBearerToken,
+    });
+  }
+  if (options.taskControlPlaneServiceProvider && options.authBearerToken) {
+    registerTaskControlPlaneHostRoute(app, {
+      serviceProvider: options.taskControlPlaneServiceProvider,
       authBearerToken: options.authBearerToken,
     });
   }

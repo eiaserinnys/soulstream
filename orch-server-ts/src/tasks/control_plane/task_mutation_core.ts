@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import type { RepositorySql } from "../db/repositories/repository_helpers.js";
+import type { RepositorySql } from "./task_types.js";
 import type {
   TaskItemStatus,
   TaskOperationRow,
@@ -10,7 +10,7 @@ import type {
   TaskOperationTargetKind,
   TaskSnapshot,
   TaskStatus,
-} from "../db/session_db_types.js";
+} from "./task_types.js";
 
 import { TaskVersionConflict } from "./task_models.js";
 import { resolveItemPositionTx } from "./task_position_queries.js";
@@ -19,9 +19,8 @@ import type {
   TaskActorParams,
   TaskBroadcasterPort,
   TaskDbPort,
-  TaskHandoffNotifierPort,
   TaskMutationResult,
-} from "./task_service_models.js";
+} from "./task_types.js";
 
 export interface TaskMutateParams {
   taskId: string;
@@ -61,7 +60,6 @@ export class TaskMutationCore {
     private readonly db: TaskDbPort,
     private readonly repo: TaskRepository,
     private readonly broadcaster?: TaskBroadcasterPort,
-    private readonly handoffNotifier?: TaskHandoffNotifierPort,
   ) {}
 
   async mutate(params: TaskMutateParams): Promise<TaskMutationResult> {
@@ -202,14 +200,14 @@ export class TaskMutationCore {
       });
     });
 
-    const result = {
+    const result: TaskMutationResult = {
       snapshot: await this.requireSnapshot(taskId),
       operation,
       eventId: eventId ?? 0,
     };
     await this.broadcastMutation(params.actorSessionId, result);
     if (shouldNotifyHandoff) {
-      this.notifyHumanHandoff(result);
+      result.handoff = this.handoffEvent(result);
     }
     return result;
   }
@@ -403,26 +401,21 @@ export class TaskMutationCore {
     );
   }
 
-  private notifyHumanHandoff(result: TaskMutationResult): void {
-    if (!this.handoffNotifier) return;
+  private handoffEvent(result: TaskMutationResult): TaskMutationResult["handoff"] {
     const item = result.snapshot.items.find(
       (candidate) => candidate.id === result.operation.target_id,
     );
-    if (!item || !isTerminalHandoffStatus(item.status)) return;
-    try {
-      this.handoffNotifier.notifyHumanHandoff({
-        taskId: result.snapshot.task.id,
-        taskTitle: result.snapshot.task.title,
-        boardItemId: result.snapshot.task.board_item_id,
-        itemId: item.id,
-        itemTitle: item.title,
-        status: item.status,
-        operationId: result.operation.id,
-        eventId: result.eventId,
-      });
-    } catch {
-      // The concrete notifier owns logging. A handoff wake must never fail the mutation.
-    }
+    if (!item || !isTerminalHandoffStatus(item.status)) return undefined;
+    return {
+      taskId: result.snapshot.task.id,
+      taskTitle: result.snapshot.task.title,
+      boardItemId: result.snapshot.task.board_item_id,
+      itemId: item.id,
+      itemTitle: item.title,
+      status: item.status,
+      operationId: result.operation.id,
+      eventId: result.eventId,
+    };
   }
 
 }

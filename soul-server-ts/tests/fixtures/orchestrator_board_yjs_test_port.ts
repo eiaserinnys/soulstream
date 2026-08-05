@@ -6,7 +6,18 @@ import type {
   MarkdownDocumentRow,
   SqlClient,
 } from "../../src/db/session_db.js";
-import type { TaskBoardYjsPort } from "../../src/work-task/task_board_items.js";
+interface TaskBoardYjsPort {
+  upsertTaskBoardItem(input: {
+    folderId: string;
+    boardItemId: string;
+    taskId: string;
+    title: string;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<unknown>;
+  removeTaskBoardItem(folderId: string, boardItemId: string): Promise<void>;
+}
 
 /**
  * PostgreSQL integration-test double for the orchestrator-owned mutation port.

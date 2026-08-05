@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
+import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
 
 interface MockCall {
   fragments: string[];
@@ -36,6 +38,14 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
     }
   });
   return { sql: fn as unknown as SqlClient, calls };
+}
+
+function createSessionDb(sql: SqlClient): SessionDB {
+  const db = new SessionDB(sql);
+  db.configureFolderHost(
+    new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
+  );
+  return db;
 }
 
 function createBroadcasterMock() {
@@ -117,7 +127,7 @@ describe("CatalogService.listFolders", () => {
         archived: false,
       },
     ]);
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
     const folders = await svc.listFolders();
@@ -137,31 +147,9 @@ describe("CatalogService.listFolders", () => {
 });
 
 describe("CatalogService.createFolder", () => {
-  it("folder_create 호출 + broadcastCatalog", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    const folder = await svc.createFolder("새 폴더", 5, "parent");
-    expect(folder.name).toBe("새 폴더");
-    expect(folder.sortOrder).toBe(5);
-    expect(folder.parentFolderId).toBe("parent");
-    expect(folder.id).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(folder.settings).toEqual({});
-
-    const folderCreateCall = calls.find((c) =>
-      c.fragments.join("|").includes("folder_create"),
-    );
-    expect(folderCreateCall).toBeDefined();
-    expect(folderCreateCall!.values).toEqual([folder.id, "새 폴더", 5, "parent"]);
-
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-  });
-
   it("uses the orch identity host for MCP create/rename/delete without a local DB fallback", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const identityId = "00000000-0000-4000-8000-0000000000af";
     const host = {
@@ -205,7 +193,7 @@ describe("CatalogService.listChildFolders", () => {
       { id: "child-b", name: "Child B", sort_order: 2, settings: {}, parent_folder_id: "root" },
       { id: "grand", name: "Grand", sort_order: 3, settings: {}, parent_folder_id: "child-a" },
     ]);
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -229,7 +217,7 @@ describe("CatalogService.browseFolder", () => {
       }
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     vi.spyOn(db, "getFolderById").mockResolvedValue({
       id: "root",
       name: "Root",
@@ -355,7 +343,7 @@ describe("CatalogService.browseFolder", () => {
       if (call.fragments.join("|").includes("folder_get_all")) return [];
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -377,7 +365,7 @@ describe("CatalogService.setFolderParent", () => {
       if (text.includes("catalog_get_sessions")) return [];
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -395,7 +383,7 @@ describe("CatalogService.setFolderParent", () => {
 
   it("자기 자신을 parent로 지정하면 DB update 전에 거부", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -413,7 +401,7 @@ describe("CatalogService.setFolderParent", () => {
         ];
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -423,7 +411,7 @@ describe("CatalogService.setFolderParent", () => {
 
   it("시스템 폴더 move는 DB update 전에 거부", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -435,7 +423,7 @@ describe("CatalogService.setFolderParent", () => {
 describe("CatalogService.renameFolder", () => {
   it("folder_update(columns=['name'], values=[name]) + broadcast", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -451,7 +439,7 @@ describe("CatalogService.renameFolder", () => {
 
   it("시스템 폴더 rename은 DB update 전에 거부", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -463,7 +451,7 @@ describe("CatalogService.renameFolder", () => {
 describe("CatalogService.deleteFolder", () => {
   it("시스템 폴더 delete는 DB delete 전에 거부", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -476,7 +464,7 @@ describe("CatalogService.deleteFolder", () => {
 describe("CatalogService.moveSessionsToFolder", () => {
   it("세션마다 session_assign_folder 호출 후 1회 broadcast", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -505,7 +493,7 @@ describe("CatalogService.moveSessionsToFolder", () => {
 
   it("folderId=null → 폴더 해제 (각 호출에 null 전달)", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -1018,7 +1006,7 @@ describe("CatalogService board items", () => {
 describe("CatalogService.renameSession", () => {
   it("db.renameSession + broadcast", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -1042,7 +1030,7 @@ describe("CatalogService.renameSession", () => {
 describe("CatalogService.deleteSession", () => {
   it("db.deleteSession + broadcastCatalog + emitSessionDeleted", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated, emitSessionDeleted } =
       createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
@@ -1066,7 +1054,7 @@ describe("CatalogService.deleteSession", () => {
 describe("CatalogService.getFolderSystemPrompt", () => {
   it("폴더 부재 → throw", async () => {
     const { sql } = createMockSql(() => []);
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
     await expect(svc.getFolderSystemPrompt("missing")).rejects.toThrow(
@@ -1083,7 +1071,7 @@ describe("CatalogService.getFolderSystemPrompt", () => {
         settings: { folderPrompt: "당신은 도우미입니다" },
       },
     ]);
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
     expect(await svc.getFolderSystemPrompt("f1")).toBe("당신은 도우미입니다");
@@ -1093,7 +1081,7 @@ describe("CatalogService.getFolderSystemPrompt", () => {
     const { sql } = createMockSql(() => [
       { id: "f1", name: "F1", sort_order: 0, settings: { otherKey: "x" } },
     ]);
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
     expect(await svc.getFolderSystemPrompt("f1")).toBeNull();
@@ -1120,7 +1108,7 @@ describe("CatalogService.setFolderSystemPrompt", () => {
       if (text.includes("catalog_get_sessions")) return [];
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -1150,7 +1138,7 @@ describe("CatalogService.setFolderSystemPrompt", () => {
       if (text.includes("catalog_get_sessions")) return [];
       return [];
     });
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -1167,7 +1155,7 @@ describe("CatalogService.setFolderSystemPrompt", () => {
 describe("CatalogService.broadcastCatalog", () => {
   it("emits folder-only changes with both empty delta keys and no catalog-wide scans", async () => {
     const { sql, calls } = setupSqlWithCatalog();
-    const db = new SessionDB(sql);
+    const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 

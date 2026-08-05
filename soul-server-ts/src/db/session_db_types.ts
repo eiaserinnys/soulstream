@@ -47,6 +47,12 @@ export interface FolderRow {
   created_at?: Date | string;
 }
 
+export interface CatalogSessionAssignmentRow {
+  session_id: string;
+  folder_id: string | null;
+  display_name: string | null;
+}
+
 export interface CatalogFolderRow {
   id: string;
   name: string;

@@ -2,16 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const REPOSITORY_SOURCE = readFileSync(
-  new URL("../../src/db/repositories/catalog_repository.ts", import.meta.url),
+  new URL("../../../orch-server-ts/src/folders/folder_control_plane_service.ts", import.meta.url),
   "utf8",
 );
 
-describe("catalog repository row mapping contract", () => {
-  it("keeps getFolderById SELECT columns aligned with FolderDataRow and toFolderRow", () => {
-    const rowContract = capture(REPOSITORY_SOURCE, /interface FolderDataRow\s*\{([\s\S]*?)\n\}/);
+describe("folder control-plane row mapping contract", () => {
+  it("keeps getFolderById SELECT columns aligned with folderFromRow", () => {
     const mapper = capture(
       REPOSITORY_SOURCE,
-      /function toFolderRow\(row: FolderDataRow\): FolderRow \{([\s\S]*?)\n\}/,
+      /function folderFromRow\(row: FolderDbRow\): FolderRow \{([\s\S]*?)\n\}/,
     );
     const getFolderById = capture(
       REPOSITORY_SOURCE,
@@ -19,9 +18,6 @@ describe("catalog repository row mapping contract", () => {
     );
     const selectColumns = capture(getFolderById, /SELECT([\s\S]*?)FROM folders/);
 
-    const contractFields = [...rowContract.matchAll(/^\s+([a-z_][a-z0-9_]*):/gm)]
-      .map((match) => match[1])
-      .sort();
     const mapperFields = [...new Set(
       [...mapper.matchAll(/\brow\.([a-z_][a-z0-9_]*)/g)].map((match) => match[1]),
     )].sort();
@@ -31,8 +27,7 @@ describe("catalog repository row mapping contract", () => {
       .filter(Boolean)
       .sort();
 
-    expect(mapperFields).toEqual(contractFields);
-    expect(selectedFields).toEqual(contractFields);
+    expect(selectedFields).toEqual(mapperFields);
   });
 });
 

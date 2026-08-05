@@ -16,7 +16,7 @@ import {
   type ScheduleListResponse,
   type SoulstreamSchedule,
 } from "./schedule_models.js";
-import type { SoulstreamScheduleRepository } from "./schedule_repository.js";
+import type { ScheduleHostClient } from "./schedule_host_client.js";
 
 const SCHEDULE_TOOL_NAMES = new Set([
   "ScheduleWakeup",
@@ -28,7 +28,7 @@ const SCHEDULE_TOOL_NAMES = new Set([
 export class SoulstreamScheduleService {
   constructor(
     private readonly db: Pick<
-      SoulstreamScheduleRepository,
+      ScheduleHostClient,
       | "createSchedule"
       | "listSchedules"
       | "cancelSchedule"
