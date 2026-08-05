@@ -7,6 +7,8 @@ import { registerScheduleHostRoute } from "../src/schedule/schedule_host_route.j
 import type { SoulstreamScheduleRepository } from "../src/schedule/schedule_repository.js";
 import { registerTaskControlPlaneHostRoute } from "../src/tasks/task_control_plane_host_route.js";
 import type { TaskControlPlaneService } from "../src/tasks/task_control_plane_service.js";
+import { registerPersistenceHostRoutes } from "../src/control_plane/persistence_host_routes.js";
+import type { PersistenceHostRepositories } from "../src/control_plane/persistence_host_runtime.js";
 
 const token = "service-token";
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -221,5 +223,98 @@ describe("control-plane host routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toBeNull();
+  });
+
+  it("keeps current-supervisor resolution and delivery claim in one host operation", async () => {
+    const claimForCurrentSupervisor = vi.fn(async () => ({
+      delivery_id: "delivery-1",
+      created_at: new Date("2026-08-05T10:00:00.000Z"),
+    }));
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        deliveries: { claimForCurrentSupervisor },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-deliveries/host/claim_for_current_supervisor",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: ["delivery-1", "cluster", "worker-1", 15000] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(claimForCurrentSupervisor).toHaveBeenCalledWith(
+      "delivery-1",
+      "cluster",
+      "worker-1",
+      15000,
+    );
+    expect(response.json().delivery_id).toBe("delivery-1");
+  });
+
+  it("revives nested background terminal timestamps before the atomic repository call", async () => {
+    const terminalize = vi.fn(async (input: unknown) => ({ accepted: false, row: input }));
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeBackgroundTasks: { terminalize },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/terminalize_background_task",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        args: [{
+          source_node: "node-1",
+          session_id: "session-1",
+          task_id: "task-1",
+          status: "completed",
+          close_reason: "done",
+          terminal_revision: "1",
+          observed_at: "2026-08-05T10:00:00.000Z",
+          delivery: {
+            delivery_id: "delivery-1",
+            relation_key: "relation-1",
+            intent: "runtime_followup",
+            source: "claude",
+            payload_hash: "hash",
+            payload: {},
+            created_at: "2026-08-05T10:00:00.000Z",
+          },
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const input = terminalize.mock.calls[0]?.[0] as { observedAt: unknown; delivery: { createdAt: unknown } };
+    expect(input.observedAt).toBeInstanceOf(Date);
+    expect(input.delivery.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects persistence operations outside the explicit whitelist", async () => {
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({}) as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-deliveries/host/query",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: ["SELECT 1"] },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().detail.error.code).toBe("HOST_OPERATION_NOT_FOUND");
   });
 });

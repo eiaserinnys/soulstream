@@ -52,6 +52,7 @@ import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js"
 import { createTaskControlPlaneServiceProvider } from "./tasks/task_control_plane_runtime.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
+import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import {
@@ -325,6 +326,7 @@ export async function createLiveProductionApplication(
     }),
     createScheduleRepositoryProvider(sqlResolver),
     createFolderControlPlaneServiceProvider(sqlResolver),
+    createPersistenceHostRepositoryProvider(sqlResolver),
   ));
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
@@ -393,6 +395,7 @@ export function buildProductionRouteOptions(
   taskControlPlaneServiceProvider?: NonNullable<CreateAppOptions["taskRoutes"]>["taskControlPlaneServiceProvider"],
   scheduleRepositoryProvider?: NonNullable<CreateAppOptions["scheduleHostRoutes"]>["repositoryProvider"],
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
+  persistenceRepositoryProvider?: NonNullable<CreateAppOptions["persistenceHostRoutes"]>["repositoryProvider"],
 ): CreateAppOptions {
   return {
     config,
@@ -452,6 +455,14 @@ export function buildProductionRouteOptions(
       ? {
           scheduleHostRoutes: {
             repositoryProvider: scheduleRepositoryProvider,
+            authBearerToken: config.authBearerToken,
+          },
+        }
+      : {}),
+    ...(persistenceRepositoryProvider
+      ? {
+          persistenceHostRoutes: {
+            repositoryProvider: persistenceRepositoryProvider,
             authBearerToken: config.authBearerToken,
           },
         }

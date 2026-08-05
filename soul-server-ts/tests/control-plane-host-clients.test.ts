@@ -5,6 +5,10 @@ import { FolderHostClient } from "../src/folder/folder_host_client.js";
 import { ScheduleHostClient } from "../src/schedule/schedule_host_client.js";
 import { TaskVersionConflict } from "../src/work-task/task_models.js";
 import { TaskService } from "../src/work-task/task_service.js";
+import {
+  ClaudeRuntimeHostClient,
+  SessionDeliveryHostClient,
+} from "../src/control_plane/persistence_host_clients.js";
 
 const logger = { warn: vi.fn() } as unknown as Logger;
 const orch = { baseUrl: "https://orch.example", headers: { authorization: "Bearer token" } };
@@ -111,5 +115,83 @@ describe("worker control-plane host clients", () => {
       session_id: "session-1",
       folder_id: "folder-1",
     });
+  });
+
+  it("routes the supervisor claim as one explicit delivery host call and revives row dates", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        args: ["delivery-1", "cluster", "worker-1", 15000],
+      });
+      return new Response(JSON.stringify({
+        delivery_id: "delivery-1",
+        created_at: "2026-08-05T10:00:00.000Z",
+        next_attempt_at: "2026-08-05T10:01:00.000Z",
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDeliveryHostClient({ orch, logger });
+
+    const row = await client.claimForCurrentSupervisor(
+      "delivery-1",
+      "cluster",
+      "worker-1",
+      15_000,
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/session-deliveries/host/claim_for_current_supervisor",
+    );
+    expect(row?.created_at).toBeInstanceOf(Date);
+    expect(row?.next_attempt_at).toBeInstanceOf(Date);
+  });
+
+  it("serializes background terminalize and its delivery identity in one request", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.args[0]).toMatchObject({
+        source_node: "node-1",
+        session_id: "session-1",
+        task_id: "task-1",
+        terminal_revision: "1",
+        delivery: {
+          delivery_id: "delivery-1",
+          relation_key: "relation-1",
+          payload_hash: "hash",
+        },
+      });
+      return new Response(JSON.stringify({
+        accepted: false,
+        row: {
+          source_node: "node-1",
+          session_id: "session-1",
+          task_id: "task-1",
+          created_at: "2026-08-05T10:00:00.000Z",
+        },
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ClaudeRuntimeHostClient({ orch, logger });
+
+    const result = await client.terminalize({
+      sourceNode: "node-1",
+      sessionId: "session-1",
+      taskId: "task-1",
+      status: "completed",
+      closeReason: "done",
+      terminalRevision: "1",
+      delivery: {
+        deliveryId: "delivery-1",
+        relationKey: "relation-1",
+        intent: "runtime_followup",
+        source: "claude",
+        payloadHash: "hash",
+        payload: {},
+      },
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/terminalize_background_task",
+    );
+    expect(result.row.created_at).toBeInstanceOf(Date);
   });
 });
