@@ -13,8 +13,16 @@ const MIGRATION_SCRIPT_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/migrate.mjs",
   import.meta.url,
 ));
+const BACKUP_SCRIPT_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/scripts/backup.mjs",
+  import.meta.url,
+));
 const PAGE_MODEL_MIGRATION_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/032_page_block_model.sql",
+  import.meta.url,
+));
+const SUPERVISOR_RETIREMENT_MIGRATION_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/053_retire_supervisor.sql",
   import.meta.url,
 ));
 const YAML_PATH = fileURLToPath(
@@ -71,6 +79,9 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: string | null;
         transcript_table: string | null;
         transcript_function_count: string | number;
+        supervisor_table_count: string | number;
+        supervisor_function_count: string | number;
+        supervisor_role_column_count: string | number;
         migration_count: string | number;
       }>>`
         SELECT
@@ -81,6 +92,29 @@ describe("apply-schema.mjs", () => {
             FROM pg_proc
             WHERE proname = 'claude_transcript_append'
           ) AS transcript_function_count,
+          (
+            SELECT COUNT(*)::int
+            FROM pg_class
+            WHERE relname IN (
+              'supervisor_events',
+              'supervisor_source_cursors',
+              'supervisor_consumers',
+              'supervisor_registry'
+            )
+              AND relkind IN ('r', 'p')
+          ) AS supervisor_table_count,
+          (
+            SELECT COUNT(*)::int
+            FROM pg_proc
+            WHERE proname LIKE 'supervisor_%'
+          ) AS supervisor_function_count,
+          (
+            SELECT COUNT(*)::int
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'session_deliveries'
+              AND column_name = 'supervisor_role'
+          ) AS supervisor_role_column_count,
           (SELECT COUNT(*)::int FROM schema_migrations) AS migration_count
       `;
 
@@ -88,7 +122,10 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
-        migration_count: 53,
+        supervisor_table_count: 0,
+        supervisor_function_count: 0,
+        supervisor_role_column_count: 0,
+        migration_count: 54,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -282,6 +319,142 @@ describe("apply-schema.mjs", () => {
   });
 
   itWithDocker(
+    "removes legacy supervisor DB surfaces while preserving transcript and normal delivery",
+    async () => {
+      const { url } = await startPostgres();
+      const cwd = writeEnv(url);
+      expect(runApplySchema(cwd).status).toBe(0);
+
+      const sql = postgres(url, { max: 1, idle_timeout: 1 });
+      try {
+        await sql.unsafe(`
+          ALTER TABLE session_deliveries ADD COLUMN supervisor_role TEXT;
+
+          CREATE TABLE supervisor_events (
+            source_node TEXT,
+            source_session_id TEXT,
+            source_event_id INTEGER,
+            inserted_at TIMESTAMPTZ
+          );
+          CREATE TABLE supervisor_source_cursors (source_node TEXT);
+          CREATE TABLE supervisor_consumers (supervisor_id TEXT);
+          CREATE TABLE supervisor_registry (role TEXT, last_seen_at TIMESTAMPTZ);
+
+          CREATE INDEX idx_supervisor_events_source
+            ON supervisor_events (source_node, source_session_id, source_event_id);
+          CREATE INDEX idx_supervisor_events_inserted_at
+            ON supervisor_events (inserted_at DESC);
+          CREATE INDEX idx_supervisor_registry_last_seen
+            ON supervisor_registry (last_seen_at DESC);
+
+          CREATE FUNCTION supervisor_event_append(TEXT, TEXT, INTEGER, TEXT, TEXT, TIMESTAMPTZ)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_event_read_after(BIGINT, INTEGER)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_source_cursor_set(
+            TEXT, TEXT, INTEGER, INTEGER, INTEGER, INTEGER
+          ) RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_source_cursor_get(TEXT, TEXT)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_source_cursor_recompute(TEXT, TEXT)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_consumer_cursor_set(TEXT, BIGINT)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_consumer_cursor_get(TEXT)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_set_wake_dispatch_state(
+            TEXT, TEXT, TEXT, INTEGER, TEXT, TIMESTAMPTZ
+          ) RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_record_usage_delta(
+            TEXT, BIGINT, INTEGER, TIMESTAMPTZ
+          ) RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_touch(TEXT, TIMESTAMPTZ)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_upsert(
+            TEXT, TEXT, BIGINT, BIGINT, TEXT, BIGINT, INTEGER, TIMESTAMPTZ
+          ) RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_get(TEXT)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_list()
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+          CREATE FUNCTION supervisor_registry_delete(TEXT)
+            RETURNS INTEGER LANGUAGE sql AS 'SELECT 1';
+
+          INSERT INTO session_deliveries (
+            delivery_id, relation_key, intent, source, payload_hash, supervisor_role
+          ) VALUES
+            ('delivery-normal', 'relation-normal', 'completion_notification', 'test', 'hash-1', NULL),
+            ('delivery-supervisor', 'relation-supervisor', 'runtime_followup', 'test', 'hash-2', 'cluster');
+        `);
+
+        await sql.unsafe(readFileSync(SUPERVISOR_RETIREMENT_MIGRATION_PATH, "utf8"));
+
+        const rows = await sql<Array<{
+          supervisor_table_count: number;
+          supervisor_index_count: number;
+          supervisor_function_count: number;
+          supervisor_role_column_count: number;
+          normal_delivery_count: number;
+          supervisor_delivery_count: number;
+          transcript_table: string | null;
+          transcript_function_count: number;
+        }>>`
+          SELECT
+            (
+              SELECT COUNT(*)::int FROM pg_class
+              WHERE relname IN (
+                'supervisor_events', 'supervisor_source_cursors',
+                'supervisor_consumers', 'supervisor_registry'
+              ) AND relkind IN ('r', 'p')
+            ) AS supervisor_table_count,
+            (
+              SELECT COUNT(*)::int FROM pg_class
+              WHERE relname IN (
+                'idx_supervisor_events_source', 'idx_supervisor_events_inserted_at',
+                'idx_supervisor_registry_last_seen'
+              ) AND relkind = 'i'
+            ) AS supervisor_index_count,
+            (
+              SELECT COUNT(*)::int FROM pg_proc WHERE proname LIKE 'supervisor_%'
+            ) AS supervisor_function_count,
+            (
+              SELECT COUNT(*)::int FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'session_deliveries'
+                AND column_name = 'supervisor_role'
+            ) AS supervisor_role_column_count,
+            (
+              SELECT COUNT(*)::int FROM session_deliveries
+              WHERE delivery_id = 'delivery-normal'
+            ) AS normal_delivery_count,
+            (
+              SELECT COUNT(*)::int FROM session_deliveries
+              WHERE delivery_id = 'delivery-supervisor'
+            ) AS supervisor_delivery_count,
+            to_regclass('public.claude_transcript_entries')::text AS transcript_table,
+            (
+              SELECT COUNT(*)::int FROM pg_proc
+              WHERE proname = 'claude_transcript_append'
+            ) AS transcript_function_count
+        `;
+        expect(rows[0]).toEqual({
+          supervisor_table_count: 0,
+          supervisor_index_count: 0,
+          supervisor_function_count: 0,
+          supervisor_role_column_count: 0,
+          normal_delivery_count: 1,
+          supervisor_delivery_count: 0,
+          transcript_table: "claude_transcript_entries",
+          transcript_function_count: 1,
+        });
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    },
+    90_000,
+  );
+
+  itWithDocker(
     "applies runtime migrations after the published 044@45 baseline once",
     async () => {
       const { url } = await startPostgres();
@@ -291,6 +464,7 @@ describe("apply-schema.mjs", () => {
       const sql = postgres(url, { max: 2, idle_timeout: 1 });
       try {
         await resetToPreRuntimeMigrationState(sql);
+        const gatedEnvironment = prepareRollbackUnsafeGates(cwd);
         const baseline = await sql<Array<{
           migration_id: string;
           ordinal: number;
@@ -305,8 +479,8 @@ describe("apply-schema.mjs", () => {
         }]);
 
         const [left, right] = await Promise.all([
-          runMigrationAsync(cwd, "apply"),
-          runMigrationAsync(cwd, "apply"),
+          runMigrationAsync(cwd, "apply", gatedEnvironment),
+          runMigrationAsync(cwd, "apply", gatedEnvironment),
         ]);
         expect(left.status).toBe(0);
         expect(right.status).toBe(0);
@@ -364,6 +538,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 53,
             applied_kind: "migration",
           },
+          {
+            migration_id: "053_retire_supervisor.sql",
+            ordinal: 54,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -386,14 +565,14 @@ describe("apply-schema.mjs", () => {
           session_digests: "session_digests",
         });
 
-        const repeated = runMigration(cwd, "apply");
+        const repeated = runMigration(cwd, "apply", gatedEnvironment);
         expect(repeated.status).toBe(0);
         expect(repeated.stdout).toContain('"pending":[]');
         expectNoSecretLeak(repeated);
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":53');
+        expect(verified.stdout).toContain('"ledger_count":54');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });
@@ -416,8 +595,9 @@ describe("apply-schema.mjs", () => {
           CREATE VIEW session_deliveries AS
           SELECT 'incompatible-object'::text AS delivery_id
         `);
+        const gatedEnvironment = prepareRollbackUnsafeGates(cwd);
 
-        const failed = runMigration(cwd, "apply");
+        const failed = runMigration(cwd, "apply", gatedEnvironment);
         expect(failed.status).not.toBe(0);
         expect(failed.stderr).toContain('"status":"error"');
         expectNoSecretLeak(failed);
@@ -575,11 +755,15 @@ function runApplySchema(cwd: string) {
   });
 }
 
-function runMigration(cwd: string, mode: "apply" | "verify") {
+function runMigration(
+  cwd: string,
+  mode: "apply" | "verify",
+  extraEnvironment: Record<string, string> = {},
+) {
   return spawnSync(process.execPath, [MIGRATION_SCRIPT_PATH, mode], {
     cwd,
     encoding: "utf8",
-    env: minimalEnv(),
+    env: minimalEnv(extraEnvironment),
     timeout: 30_000,
   });
 }
@@ -587,11 +771,12 @@ function runMigration(cwd: string, mode: "apply" | "verify") {
 async function runMigrationAsync(
   cwd: string,
   mode: "apply" | "verify",
+  extraEnvironment: Record<string, string> = {},
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [MIGRATION_SCRIPT_PATH, mode], {
       cwd,
-      env: minimalEnv(),
+      env: minimalEnv(extraEnvironment),
     });
     let stdout = "";
     let stderr = "";
@@ -630,12 +815,49 @@ async function resetToPreRuntimeMigrationState(
   `);
 }
 
-function minimalEnv(): NodeJS.ProcessEnv {
+function minimalEnv(extraEnvironment: Record<string, string> = {}): NodeJS.ProcessEnv {
   return {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
     TMPDIR: process.env.TMPDIR ?? tmpdir(),
+    ...extraEnvironment,
   };
+}
+
+function prepareRollbackUnsafeGates(cwd: string): Record<string, string> {
+  const backupDirectory = join(cwd, "backup");
+  const fencePath = join(cwd, "cluster-write-fence.json");
+  writeFileSync(fencePath, `${JSON.stringify({
+    schema_version: "soulstream.cluster-write-fence.v1",
+    status: "verified",
+    release_id: "fresh-install-test",
+    target_head: "integration-test-head",
+    writer_nodes: ["test-writer"],
+    fenced_nodes: ["test-writer"],
+    active_writer_count: 0,
+  }, null, 2)}\n`, "utf8");
+  const environment = {
+    HANIEL_BACKUP_DIR: backupDirectory,
+    HANIEL_TARGET_HEAD: "integration-test-head",
+    SOULSTREAM_CLUSTER_WRITE_FENCE_PATH: fencePath,
+  };
+  const created = spawnSync(process.execPath, [BACKUP_SCRIPT_PATH, "create"], {
+    cwd,
+    encoding: "utf8",
+    env: minimalEnv(environment),
+    timeout: 30_000,
+  });
+  expect(created.status).toBe(0);
+  expectNoSecretLeak(created);
+  const verified = spawnSync(process.execPath, [BACKUP_SCRIPT_PATH, "verify"], {
+    cwd,
+    encoding: "utf8",
+    env: minimalEnv(environment),
+    timeout: 30_000,
+  });
+  expect(verified.status).toBe(0);
+  expectNoSecretLeak(verified);
+  return environment;
 }
 
 function writeEnv(databaseUrl: string): string {

@@ -137,7 +137,7 @@ describe("orch-server-ts contract fixture reader", () => {
       "p_dedupe_key TEXT DEFAULT NULL",
     );
     expect(functions.get("board_item_get_all")?.returns).toContain("container_kind TEXT");
-    expect(functions.get("supervisor_event_append")?.returns).toContain("gap_start INTEGER");
+    expect([...functions.keys()].filter((name) => name.startsWith("supervisor_"))).toEqual([]);
   });
 
   it("starts with a planning-only route owner manifest, not a production split owner map", () => {

@@ -35,6 +35,10 @@ describe("retired runtime surface", () => {
       matches = result.stdout ?? "";
     }
 
-    expect(matches).toBe("");
+    const forbiddenMatches = matches
+      .split("\n")
+      .filter(Boolean)
+      .filter((line) => !line.endsWith('migrationId: "053_retire_supervisor.sql",'));
+    expect(forbiddenMatches).toEqual([]);
   });
 });
