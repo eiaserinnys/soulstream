@@ -234,6 +234,13 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const retirementMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/053_retire_supervisor.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
@@ -248,6 +255,7 @@ describe("session_deliveries migration safety", () => {
     expect(manifest).toContain(
       "047_session_delivery_relation_consumptions.sql",
     );
+    expect(manifest).toContain("053_retire_supervisor.sql");
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(deliveryMigration).toContain("ON DELETE SET NULL");
@@ -268,6 +276,14 @@ describe("session_deliveries migration safety", () => {
       "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
     );
     expect(relationConsumptionMigration).not.toContain("REFERENCES sessions");
+    expect(retirementMigration).toContain(
+      "DELETE FROM session_deliveries\nWHERE supervisor_role IS NOT NULL",
+    );
+    expect(retirementMigration).toContain("DROP COLUMN IF EXISTS supervisor_role");
+    expect(retirementMigration).toContain("DROP TABLE IF EXISTS supervisor_registry");
+    expect(retirementMigration).toContain(
+      "DROP FUNCTION IF EXISTS supervisor_event_append",
+    );
     expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );
@@ -275,16 +291,10 @@ describe("session_deliveries migration safety", () => {
     expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
     );
-    expect(schema).toContain("ADD COLUMN IF NOT EXISTS supervisor_role TEXT");
+    expect(schema).not.toContain("supervisor_role");
     expect(schema).toContain("ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ");
     expect(schema).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
-    expect(schema).not.toContain("supervisor_epoch");
-    const supervisorUpsert = schema.slice(
-      schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_upsert("),
-      schema.indexOf("CREATE OR REPLACE FUNCTION supervisor_registry_get("),
-    );
-    expect(supervisorUpsert).not.toContain("supervisor target change requires epoch increase");
-    expect(supervisorUpsert).not.toContain("pg_advisory_xact_lock");
+    expect(schema).not.toContain("supervisor_");
   });
 });

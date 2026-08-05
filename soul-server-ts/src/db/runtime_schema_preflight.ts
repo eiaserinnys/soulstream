@@ -59,6 +59,11 @@ export const REQUIRED_RUNTIME_MIGRATIONS: readonly RequiredRuntimeMigration[] = 
     migrationId: "052_session_review_state_filter.sql",
     checksum: "c322b6f27de5e2df26e030caa6a150322cc64ddbc1dee605cd88231d204a3377",
   },
+  {
+    ordinal: 54,
+    migrationId: "053_retire_supervisor.sql",
+    checksum: "0a8fa2d2265c286ba477ccddb6a17ccbf00d3d14defcd6aa93459ed3cc84096f",
+  },
 ] as const;
 
 interface AppliedMigrationRow {
@@ -73,7 +78,7 @@ export async function assertRuntimeSchemaReady(sql: SqlClient): Promise<void> {
     rows = await sql<AppliedMigrationRow[]>`
       SELECT ordinal, migration_id, checksum
       FROM schema_migrations
-      WHERE ordinal BETWEEN 45 AND 53
+      WHERE ordinal BETWEEN 45 AND 54
       ORDER BY ordinal
     `;
   } catch (error) {

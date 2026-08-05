@@ -57,7 +57,31 @@ describe.sequential("versioned migration runner", () => {
       await seedCurrentTask(sql);
       await sql`DROP TABLE schema_migrations`;
 
-      const first = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "apply");
+      const backupDirectory = join(cwd, "backup");
+      const fencePath = join(cwd, "cluster-write-fence.json");
+      writeVerifiedFence(fencePath);
+      const gatedEnvironment = {
+        ...serviceEnvironment,
+        HANIEL_BACKUP_DIR: backupDirectory,
+        HANIEL_TARGET_HEAD: "integration-test-head",
+        SOULSTREAM_CLUSTER_WRITE_FENCE_PATH: fencePath,
+      };
+      const backup = runWithEnv(BACKUP, REPOSITORY_ROOT, gatedEnvironment, "create");
+      expect(backup.status).toBe(0);
+      expectNoSecret(backup);
+      const verified = runWithEnv(BACKUP, REPOSITORY_ROOT, gatedEnvironment, "verify");
+      expect(verified.status).toBe(0);
+      expectNoSecret(verified);
+      expect(JSON.parse(readFileSync(join(backupDirectory, "database-backup.json"), "utf8")))
+        .toMatchObject({
+          status: "verified",
+          target_head: "integration-test-head",
+          destructive_pending: ["053_retire_supervisor.sql"],
+          rollback_unsafe_pending: ["053_retire_supervisor.sql"],
+        });
+      expect(existsSync(join(backupDirectory, "database.dump"))).toBe(true);
+
+      const first = runWithEnv(MIGRATE, REPOSITORY_ROOT, gatedEnvironment, "apply");
       expect(first.status).toBe(0);
       expectNoSecret(first);
 
@@ -75,7 +99,7 @@ describe.sequential("versioned migration runner", () => {
             WHERE migration_id = '042_runbook_to_task.sql') AS migration_042_kind
       `;
       expect(rows[0]).toMatchObject({
-        migration_count: 53,
+        migration_count: 54,
         operation_count: 1,
         applied_kind_count: 2,
         applied_kind: "bootstrap",
@@ -83,32 +107,12 @@ describe.sequential("versioned migration runner", () => {
         migration_042_kind: "bootstrap",
       });
 
-      const repeated = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "apply");
+      const repeated = runWithEnv(MIGRATE, REPOSITORY_ROOT, gatedEnvironment, "apply");
       expect(repeated.status).toBe(0);
       const afterRetry = await sql`
         SELECT COUNT(*)::int AS count FROM schema_migrations
       `;
-      expect(afterRetry[0].count).toBe(53);
-
-      const backupDirectory = join(cwd, "backup");
-      const backupEnvironment = {
-        ...serviceEnvironment,
-        HANIEL_BACKUP_DIR: backupDirectory,
-        HANIEL_TARGET_HEAD: "integration-test-head",
-      };
-      const backup = runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "create");
-      expect(backup.status).toBe(0);
-      expectNoSecret(backup);
-      const verified = runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "verify");
-      expect(verified.status).toBe(0);
-      expectNoSecret(verified);
-      expect(JSON.parse(readFileSync(join(backupDirectory, "database-backup.json"), "utf8")))
-        .toMatchObject({
-          status: "verified_not_required",
-          target_head: "integration-test-head",
-          destructive_pending: [],
-        });
-      expect(existsSync(join(backupDirectory, "database.dump"))).toBe(false);
+      expect(afterRetry[0].count).toBe(54);
     } finally {
       await sql.end({ timeout: 5 });
     }
@@ -140,6 +144,18 @@ async function seedCurrentTask(sql: ReturnType<typeof postgres>) {
       'create_task', 'system'
     )
   `;
+}
+
+function writeVerifiedFence(path: string) {
+  writeFileSync(path, `${JSON.stringify({
+    schema_version: "soulstream.cluster-write-fence.v1",
+    status: "verified",
+    release_id: "integration-test",
+    target_head: "integration-test-head",
+    writer_nodes: ["test-writer"],
+    fenced_nodes: ["test-writer"],
+    active_writer_count: 0,
+  }, null, 2)}\n`, "utf8");
 }
 
 function runWithEnv(
