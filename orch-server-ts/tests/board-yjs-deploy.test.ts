@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +9,21 @@ import {
   "../src/board-yjs/board_yjs_runbook_deploy.js";
 
 describe("board Y.Doc runbook deployment node guard", () => {
+  it("selects the apply path from the committed approval file", () => {
+    const approvals = JSON.parse(readFileSync(
+      new URL("../scripts/ydoc-runbook-collision-approvals.json", import.meta.url),
+      "utf8",
+    )) as string[];
+
+    expect(approvals).toHaveLength(18);
+    expect(new Set(approvals).size).toBe(18);
+    expect(decideBoardYjsRunbookDeployAction({
+      nodeId: "eiaserinnys",
+      mode: "migrate",
+      approvedCollisionHashCount: approvals.length,
+    })).toEqual({ action: "run", reason: "approved" });
+  });
+
   it("skips without a child command on non-central nodes", () => {
     expect(decideBoardYjsRunbookDeployAction({
       nodeId: "eias-linegames",
