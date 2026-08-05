@@ -31,14 +31,13 @@ import type { SessionDeliveryRepository } from "./repositories/session_delivery_
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
 import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
-import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
 
 export type * from "./session_db_types.js";
 
 /** 표시 이름 하위 호환 export. 기본 폴더 식별 정본은 system_folders.ts의 id 상수다. */
 export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
-export class SessionDB extends SupervisorSessionDbFacade {
+export class SessionDB {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
   private taskReader?: { getTask(taskId: string): Promise<TaskSnapshot | null> };
@@ -72,7 +71,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
       ownsSql = false;
     }
 
-    super(sql);
     this.sql = sql;
     this.ownsSql = ownsSql;
 
@@ -121,12 +119,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   configurePersistenceHosts(hosts: {
     deliveries: SessionDeliveryRepository;
-    supervisors: Parameters<SupervisorSessionDbFacade["configureSupervisorHost"]>[0];
     claudeRuntime: ClaudeBackgroundTaskRepository & ClaudeTranscriptRepository;
     sessionPageBindings: SessionPageBindingRepository;
   }): void {
     this.configureSessionDeliveryHost(hosts.deliveries);
-    this.configureSupervisorHost(hosts.supervisors);
     this.configureClaudeBackgroundTaskHost(hosts.claudeRuntime);
     this.configureClaudeTranscriptHost(hosts.claudeRuntime);
     this.configureSessionPageBindingHost(hosts.sessionPageBindings);

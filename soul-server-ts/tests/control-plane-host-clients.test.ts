@@ -7,7 +7,6 @@ import { TaskVersionConflict } from "../src/work-task/task_models.js";
 import { TaskService } from "../src/work-task/task_service.js";
 import {
   ClaudeRuntimeHostClient,
-  SessionDeliveryHostClient,
 } from "../src/control_plane/persistence_host_clients.js";
 
 const logger = { warn: vi.fn() } as unknown as Logger;
@@ -115,34 +114,6 @@ describe("worker control-plane host clients", () => {
       session_id: "session-1",
       folder_id: "folder-1",
     });
-  });
-
-  it("routes the supervisor claim as one explicit delivery host call and revives row dates", async () => {
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      expect(JSON.parse(String(init?.body))).toEqual({
-        args: ["delivery-1", "cluster", "worker-1", 15000],
-      });
-      return new Response(JSON.stringify({
-        delivery_id: "delivery-1",
-        created_at: "2026-08-05T10:00:00.000Z",
-        next_attempt_at: "2026-08-05T10:01:00.000Z",
-      }), { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new SessionDeliveryHostClient({ orch, logger });
-
-    const row = await client.claimForCurrentSupervisor(
-      "delivery-1",
-      "cluster",
-      "worker-1",
-      15_000,
-    );
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://orch.example/api/session-deliveries/host/claim_for_current_supervisor",
-    );
-    expect(row?.created_at).toBeInstanceOf(Date);
-    expect(row?.next_attempt_at).toBeInstanceOf(Date);
   });
 
   it("serializes background terminalize and its delivery identity in one request", async () => {

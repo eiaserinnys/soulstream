@@ -1,21 +1,5 @@
 import { z } from "zod";
 
-import {
-  DEFAULT_HARD_TOKEN_THRESHOLD,
-  DEFAULT_HANDOVER_MIN_INTERVAL_MS,
-  DEFAULT_SOFT_TOKEN_THRESHOLD,
-} from "./supervisor/handover_policy.js";
-
-const csvStringList = z
-  .string()
-  .default("")
-  .transform((v) =>
-    v
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-  );
-
 /**
  * 환경 변수 스키마. design-principles §4(명시적 실패) — 필수 키 default 없음.
  * 선택 키는 zod default로 명시. 코드의 `process.env.X ?? "default"` 안티패턴 금지.
@@ -138,13 +122,6 @@ export const EnvSchema = z
      */
     MCP_PATH: z.string().default("/mcp"),
     /**
-     * MCP tool surface profile. supervisor_readonly is for Supervisor sessions:
-     * mutation tools are hidden from listTools and blocked at execution time.
-     */
-    MCP_TOOL_PROFILE: z
-      .enum(["default", "supervisor_readonly"])
-      .default("default"),
-    /**
      * MCP 호출에 bearer auth 강제. superRefine으로 production + MCP_ENABLED일 때 강제.
      */
     MCP_REQUIRE_AUTH: z
@@ -164,62 +141,6 @@ export const EnvSchema = z
           .map((s) => s.trim())
           .filter(Boolean),
       ),
-    /**
-     * Supervisor activation. true면 durable event ingest, supervisor session boot,
-     * wake/watchdog consumption을 함께 시작한다.
-     */
-    SUPERVISOR_ENABLED: z
-      .union([z.literal("true"), z.literal("false")])
-      .default("false")
-      .transform((v) => v === "true"),
-    /**
-     * Supervisor durable event ingest만 별도 활성화한다. supervisor가 꺼진 동안에도
-     * backlog를 쌓아 두고 싶을 때만 opt-in한다.
-     */
-    SUPERVISOR_EVENT_INGEST_ENABLED: z
-      .union([z.literal("true"), z.literal("false")])
-      .default("false")
-      .transform((v) => v === "true"),
-    /**
-     * Supervisor role ids. Each value must match an agents.yaml profile id.
-     * The DB supervisor_registry role uses the same string as its canonical key.
-     */
-    SUPERVISOR_ROLES: csvStringList,
-    /** Optional target board folder for bootstrapped supervisor sessions. */
-    SUPERVISOR_FOLDER_ID: z.string().min(1).optional(),
-    SUPERVISOR_WAKE_DEBOUNCE_MS: z.coerce.number().int().positive().default(250),
-    SUPERVISOR_WAKE_BATCH_LIMIT: z.coerce.number().int().positive().default(100),
-    SUPERVISOR_SOFT_TOKEN_THRESHOLD: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(DEFAULT_SOFT_TOKEN_THRESHOLD),
-    SUPERVISOR_HARD_TOKEN_THRESHOLD: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(DEFAULT_HARD_TOKEN_THRESHOLD),
-    SUPERVISOR_HANDOVER_MIN_INTERVAL_MS: z.coerce
-      .number()
-      .int()
-      .nonnegative()
-      .default(DEFAULT_HANDOVER_MIN_INTERVAL_MS),
-    SUPERVISOR_HANDOVER_DRAIN_LIMIT: z.coerce.number().int().positive().default(100),
-    SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(20),
-    SUPERVISOR_WATCHDOG_INTERVAL_MS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(60_000),
-    SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(5 * 60_000),
   })
   .superRefine((env, ctx) => {
     // 1) production에서는 AUTH_BEARER_TOKEN 강제 (기존, 유지). design-principles §4.
@@ -263,21 +184,6 @@ export const EnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ["JWT_SECRET"],
         message: "JWT_SECRET is required when GOOGLE_CLIENT_ID enables dashboard auth",
-      });
-    }
-    if (env.SUPERVISOR_ENABLED && env.SUPERVISOR_ROLES.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["SUPERVISOR_ROLES"],
-        message: "SUPERVISOR_ROLES is required when SUPERVISOR_ENABLED=true",
-      });
-    }
-    if (env.SUPERVISOR_HARD_TOKEN_THRESHOLD < env.SUPERVISOR_SOFT_TOKEN_THRESHOLD) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["SUPERVISOR_HARD_TOKEN_THRESHOLD"],
-        message:
-          "SUPERVISOR_HARD_TOKEN_THRESHOLD must be greater than or equal to SUPERVISOR_SOFT_TOKEN_THRESHOLD",
       });
     }
   });

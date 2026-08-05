@@ -9,10 +9,6 @@ import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { startServer } from "./server.js";
-import {
-  startConfiguredSupervisors,
-  validateConfiguredSupervisors,
-} from "./supervisor/activation.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // legacy `.env`와 분리하여 SOULSTREAM_NODE_ID 충돌을 막는다.
@@ -103,18 +99,6 @@ async function main(): Promise<void> {
 
   const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
   const hasCodexBackend = agentRegistry.supportedBackends().includes("codex");
-  const supervisorActivationConfig = {
-    enabled: env.SUPERVISOR_ENABLED,
-    roles: env.SUPERVISOR_ROLES,
-    folderId: env.SUPERVISOR_FOLDER_ID,
-  };
-  try {
-    validateConfiguredSupervisors(supervisorActivationConfig, agentRegistry);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Supervisor startup validation failed: ${message}`);
-    process.exit(1);
-  }
   if (hasClaudeBackend && !env.CLAUDE_AUTH_TOKEN_PATH) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
@@ -163,38 +147,9 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
-  if (env.SUPERVISOR_ENABLED) {
-    try {
-      const supervisorActivation = await startConfiguredSupervisors({
-        config: supervisorActivationConfig,
-        agentRegistry,
-        db: runtime.db,
-        taskManager: runtime.taskManager,
-        taskExecutor: runtime.taskExecutor,
-        logger,
-      });
-      for (const result of supervisorActivation) {
-        if (!result.role || result.status === "disabled") continue;
-        runtime.supervisorWakeScheduler?.markSnapshotPending(result.role);
-        try {
-          await runtime.supervisorWakeScheduler?.flush(result.role);
-        } catch (err) {
-          logger.warn({ err, role: result.role }, "Supervisor cold-start snapshot wake failed");
-        }
-      }
-      logger.info({ supervisorActivation }, "Supervisor activation completed");
-    } catch (err) {
-      logger.fatal({ err }, "Supervisor activation failed");
-      process.exit(1);
-    }
-  }
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
-    if (runtime.supervisorWatchdogInterval) {
-      clearInterval(runtime.supervisorWatchdogInterval);
-    }
-    runtime.supervisorWakeScheduler?.dispose();
     if (runtime.completionDeliveryRecoveryWorker) {
       const deliveryDrain =
         await runtime.completionDeliveryRecoveryWorker.stop(5_000);

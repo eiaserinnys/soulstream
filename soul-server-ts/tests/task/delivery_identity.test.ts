@@ -7,14 +7,14 @@ import {
 } from "../../src/task/delivery_identity.js";
 
 describe("delivery identity", () => {
-  it("keeps one semantic relation stable when a supervisor target is replaced", () => {
+  it("keeps one semantic relation stable when a delivery target is replaced", () => {
     const original = buildDeterministicDeliveryIdentity({
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-old",
       relationKey: "child_session:child-1:42",
       intent: "completion_notification",
     });
     const replacement = buildDeterministicDeliveryIdentity({
-      targetSessionId: "supervisor-new",
+      targetSessionId: "caller-new",
       relationKey: "child_session:child-1:42",
       intent: "completion_notification",
     });

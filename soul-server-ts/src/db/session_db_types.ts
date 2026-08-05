@@ -10,7 +10,6 @@ import type {
   DeliveryIntent,
   DeliveryState,
 } from "../task/delivery_contract.js";
-import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
 
 export type SessionType = "claude" | "llm";
 
@@ -328,7 +327,6 @@ export interface SessionDeliveryRow {
   producer_terminal_revision: string | null;
   parent_delivery_id: string | null;
   caller_turn_id: string | null;
-  supervisor_role: string | null;
   payload_hash: string;
   payload: Record<string, unknown>;
   state: DeliveryState;
@@ -359,7 +357,6 @@ export interface RegisterSessionDeliveryParams {
   producerTerminalRevision?: string | null;
   parentDeliveryId?: string | null;
   callerTurnId?: string | null;
-  supervisorRole?: string | null;
   payloadHash: string;
   payload: Record<string, unknown>;
   createdAt?: Date;
@@ -571,74 +568,6 @@ export interface TaskMyTurnItemRow {
   effective_assignee_user_id: string | null;
 }
 
-export interface AppendSupervisorEventParams {
-  sourceNode: string;
-  sourceSessionId: string;
-  sourceEventId: number;
-  eventType: string;
-  payload: Record<string, unknown>;
-  createdAt: Date;
-}
-
-export interface SupervisorAppendResult {
-  offset: number;
-  inserted: boolean;
-  contiguousUpto: number;
-  highestSeenEventId: number;
-  gapStart: number | null;
-  gapEnd: number | null;
-}
-
-export interface SupervisorEventRow {
-  offset: number;
-  sourceNode: string;
-  sourceSessionId: string;
-  sourceEventId: number;
-  eventType: string;
-  payload: Record<string, unknown>;
-  createdAt: Date;
-  insertedAt: Date;
-}
-
-export interface SupervisorSourceCursorRow {
-  sourceNode: string;
-  sourceSessionId: string;
-  contiguousUpto: number;
-  highestSeenEventId: number;
-  gapStart: number | null;
-  gapEnd: number | null;
-  updatedAt: Date;
-}
-
-export interface SupervisorRegistryUpsertParams {
-  role: string;
-  activeSessionId: string | null;
-  epoch: number;
-  cursorOffset: number;
-  handoverState: string;
-  cumulativeTokens: number;
-  compactionCount: number;
-  lastSeenAt: Date | null;
-}
-
-export interface SupervisorRegistryRow extends SupervisorRegistryUpsertParams {
-  wakeDispatchState?: SupervisorWakeDispatchState;
-  wakeLastSignature?: string | null;
-  wakeRepeatCount?: number;
-  wakeBlockedReason?: string | null;
-  wakeBlockedAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface SupervisorWakeDispatchStateParams {
-  role: string;
-  state: SupervisorWakeDispatchState;
-  lastSignature?: string | null;
-  repeatCount: number;
-  blockedReason?: string | null;
-  blockedAt?: Date | null;
-}
 
 export interface ClaudeTranscriptKey {
   projectKey: string;

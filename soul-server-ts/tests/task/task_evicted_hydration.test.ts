@@ -169,13 +169,6 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
           items: [{ role: "user", content: "hello" }],
         },
       },
-      {
-        type: "completion_target",
-        value: {
-          kind: "supervisor_role",
-          supervisor_role: "ariella-ashwood-codex",
-        },
-      },
       { type: "caller_info", value: {} },
     ];
 
@@ -192,7 +185,6 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.agentsPreviousResponseId).toBe("resp-1");
     expect(task?.agentsConversationId).toBe("conv-1");
     expect(task?.agentsSessionItems).toEqual([{ role: "user", content: "hello" }]);
-    expect(task?.completionSupervisorRole).toBe("ariella-ashwood-codex");
   });
 
   it("normalizes non-array metadata to an empty array while preserving caller extraction behavior", () => {

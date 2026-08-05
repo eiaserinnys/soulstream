@@ -31,7 +31,6 @@ export type DeliveryMetadataWireFields = {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
-  supervisor_role?: string;
   delivery_lease_owner?: string;
 };
 
@@ -161,7 +160,6 @@ function parseDeliveryMetadata(
     ["parent_delivery_id", "parentDeliveryId"],
     ["caller_turn_id", "callerTurnId"],
     ["created_at", "createdAt"],
-    ["supervisor_role", "supervisorRole"],
     ["delivery_lease_owner", "deliveryLeaseOwner"],
   ] as const;
   const value: DeliveryMetadataWireFields = {};

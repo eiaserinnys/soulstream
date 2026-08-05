@@ -83,12 +83,6 @@ describe("CogitoHealthPanelContent", () => {
               activeTaskCount: 1,
               tasksByStatus: { running: 1 },
               dependencies: [{ name: "database", status: "ok" }],
-              supervisorWake: {
-                status: "partial",
-                total: 2,
-                blockedCount: 1,
-                blockedRoles: ["ariela_codex"],
-              },
             },
             warnings: [],
           },

@@ -8,29 +8,26 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { SessionPageBindingRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
-import { SupervisorRepository } from
-  "../../../orch-server-ts/src/control_plane/repositories/supervisor_repository.js";
 
-const TEST_DB_NAME = "session_db_supervisor_test";
-const TEST_USER = "session_db_supervisor_test";
-const TEST_PASSWORD = "session_db_supervisor_secret";
+const TEST_DB_NAME = "session_db_integration_test";
+const TEST_USER = "session_db_integration_test";
+const TEST_PASSWORD = "session_db_integration_secret";
 
 const hasPostgresTestBackend =
   Boolean(process.env.TEST_DATABASE_URL?.trim()) || hasDockerBinary();
 const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
 
-describePostgres("SessionDB supervisor PostgreSQL integration", () => {
+describePostgres("SessionDB PostgreSQL integration", () => {
   let harness: PostgresHarness | undefined;
   let db: SessionDB;
 
   beforeAll(async () => {
     harness = await createHarness();
-    await applySupervisorSchema(harness.sql);
+    await applyCurrentSchema(harness.sql);
     db = new SessionDB(harness.sql);
     db.configureSessionPageBindingHost(
       new SessionPageBindingRepository(harness.sql) as never,
     );
-    db.configureSupervisorHost(new SupervisorRepository(harness.sql) as never);
   }, 45_000);
 
   beforeEach(async () => {
@@ -55,7 +52,7 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
         ('sess-old', ${oldUpdatedAt}, 'claude', 'completed')
     `;
 
-    await applySupervisorSchema(harness!.sql);
+    await applyCurrentSchema(harness!.sql);
 
     const firstPage = await harness!.sql<Array<{ session_id: string }>>`
       SELECT session_id FROM session_get_all(NULL, 2, 0)
@@ -319,67 +316,6 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     );
   }, 45_000);
 
-  it("reads supervisor event head offset and related supervisor state on live PostgreSQL", async () => {
-    const now = new Date("2026-06-09T00:00:00Z");
-
-    const first = await db.appendSupervisorEvent({
-      sourceNode: "node-a",
-      sourceSessionId: "sess-a",
-      sourceEventId: 1,
-      eventType: "text_delta",
-      payload: { text: "one" },
-      createdAt: now,
-    });
-    const second = await db.appendSupervisorEvent({
-      sourceNode: "node-a",
-      sourceSessionId: "sess-a",
-      sourceEventId: 2,
-      eventType: "complete",
-      payload: { ok: true },
-      createdAt: now,
-    });
-
-    await expect(db.getSupervisorEventHeadOffset()).resolves.toBe(second.offset);
-
-    const events = await db.readSupervisorEventsAfter(first.offset - 1, 10);
-    expect(events.map((event) => event.offset)).toEqual([first.offset, second.offset]);
-    expect(events.map((event) => event.eventType)).toEqual(["text_delta", "complete"]);
-
-    await expect(db.getSupervisorConsumerCursor("cluster")).resolves.toBe(0);
-    await expect(db.setSupervisorConsumerCursor("cluster", second.offset)).resolves.toBe(
-      second.offset,
-    );
-    await expect(db.getSupervisorConsumerCursor("cluster")).resolves.toBe(second.offset);
-
-    const registry = await db.upsertSupervisorRegistry({
-      role: "cluster",
-      activeSessionId: "sess-supervisor",
-      epoch: 1,
-      cursorOffset: second.offset,
-      handoverState: "idle_pending",
-      cumulativeTokens: 0,
-      compactionCount: 0,
-      lastSeenAt: now,
-    });
-    expect(registry.cursorOffset).toBe(second.offset);
-    expect(registry.wakeDispatchState).toBe("active");
-
-    const blocked = await db.setSupervisorWakeDispatchState({
-      role: "cluster",
-      state: "blocked",
-      lastSignature: "snapshot:cluster:0:2",
-      repeatCount: 1,
-      blockedReason: "test block",
-      blockedAt: now,
-    });
-    expect(blocked).toMatchObject({
-      role: "cluster",
-      wakeDispatchState: "blocked",
-      wakeLastSignature: "snapshot:cluster:0:2",
-      wakeRepeatCount: 1,
-      wakeBlockedReason: "test block",
-    });
-  });
 });
 
 function hasDockerBinary(): boolean {
@@ -446,23 +382,12 @@ async function connect(url: string, containerId: string | undefined): Promise<Po
   };
 }
 
-async function applySupervisorSchema(sql: SqlClient): Promise<void> {
+async function applyCurrentSchema(sql: SqlClient): Promise<void> {
   const schemaSql = readFileSync(
     fileURLToPath(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url)),
     "utf8",
   );
-  const migration022Sql = readFileSync(
-    fileURLToPath(
-      new URL(
-        "../../../packages/db-schema/sql/migrations/022_supervisor_wake_dispatch_state.sql",
-        import.meta.url,
-      ),
-    ),
-    "utf8",
-  );
   await sql.unsafe(schemaSql);
-  await sql.unsafe(migration022Sql);
-  await sql.unsafe(migration022Sql);
 }
 
 async function assertSafeExternalDatabase(url: string): Promise<void> {

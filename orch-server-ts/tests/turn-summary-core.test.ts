@@ -338,7 +338,7 @@ describe("turn summary child process env", () => {
 });
 
 describe("Codex turn summary provider", () => {
-  it("resolves the supervisor-safe HOME install when PATH is narrow", () => {
+  it("resolves the process-manager-safe HOME install when PATH is narrow", () => {
     const home = mkdtempSync(join(tmpdir(), "turn-summary-codex-home-"));
     tempDirs.push(home);
     const bin = join(home, ".local", "bin");
@@ -349,7 +349,7 @@ describe("Codex turn summary provider", () => {
 
     expect(resolveCodexCliPath({
       HOME: home,
-      PATH: join(home, "supervisor-bin"),
+      PATH: join(home, "process-manager-bin"),
     })).toEqual({
       path: codexPath,
       source: "HOME_LOCAL_BIN",

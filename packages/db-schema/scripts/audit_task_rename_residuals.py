@@ -120,7 +120,6 @@ ALLOWLIST = {
     "packages/wire-schema/src/upstream.schema.json": "legacy wire consumer schema",
     "packages/wire-schema/tests/test_schema_valid.py": "legacy wire consumer inventory test",
     "soul-server-ts/src/mcp/tools/task_legacy_read_compat.ts": "three declared legacy MCP reads",
-    "soul-server-ts/src/supervisor/wake_classification.ts": "legacy wire consumer classification",
     "soul-server-ts/src/work-task/task_legacy_http_compat.ts": "explicit 410 for legacy worker writes",
     "soul-server-ts/tests/mcp/task.test.ts": "legacy MCP compatibility test",
     "soul-server-ts/tests/work-task/task_http_route.test.ts": "legacy HTTP 410 test",

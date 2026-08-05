@@ -40,13 +40,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
   beforeEach(async () => {
     await harness.sql`DELETE FROM session_delivery_notification_outbox`;
     await harness.sql`DELETE FROM session_deliveries`;
-    await harness.sql`DELETE FROM supervisor_registry`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
       INSERT INTO sessions (session_id, node_id, session_type, status, agent_id)
       VALUES
-        ('supervisor-old', 'node-test', 'claude', 'completed', 'ariella'),
-        ('supervisor-new', 'node-test', 'claude', 'completed', 'ariella'),
+        ('caller-session', 'node-test', 'claude', 'completed', 'caller'),
         ('child-session', 'node-test', 'claude', 'completed', 'worker')
     `;
   });
@@ -55,78 +53,12 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
-  it("preserves a durable delivery when its target session is deleted and retargets it", async () => {
-    await register("delivery-delete", "relation-delete", {
-      targetSessionId: "supervisor-old",
-      supervisorRole: "ariella",
-    });
-
-    await harness.sql`DELETE FROM sessions WHERE session_id = 'supervisor-old'`;
-    expect(await repository.get("delivery-delete")).toMatchObject({
-      state: "pending",
-      target_session_id: null,
-    });
-
-    await setSupervisor("supervisor-new");
-    await expect(repository.claimForCurrentSupervisor(
-      "delivery-delete",
-      "ariella",
-      "worker-current",
-    )).resolves.toMatchObject({
-      state: "claimed",
-      target_session_id: "supervisor-new",
-      lease_owner: "worker-current",
-    });
-  });
-
-  it("sees a committed handover after a row-lock wait before resolving and claiming", async () => {
-    await register("delivery-handover", "relation-handover", {
-      supervisorRole: "ariella",
-    });
-    await setSupervisor("supervisor-old");
-
-    const blocker = harness.createPeer();
-    const handover = harness.createPeer();
-    const locked = deferred<void>();
-    const release = deferred<void>();
-    const blockingTransaction = blocker.begin(async (transaction) => {
-      await transaction`
-        SELECT 1 FROM session_deliveries
-        WHERE delivery_id = 'delivery-handover'
-        FOR UPDATE
-      `;
-      locked.resolve();
-      await release.promise;
-    });
-    await locked.promise;
-
-    const claiming = repository.claimForCurrentSupervisor(
-      "delivery-handover",
-      "ariella",
-      "worker-handover",
-    );
-    await nextMacrotask();
-    await handover`
-      UPDATE supervisor_registry
-      SET active_session_id = 'supervisor-new', updated_at = NOW()
-      WHERE role = 'ariella'
-    `;
-    release.resolve();
-    await blockingTransaction;
-
-    await expect(claiming).resolves.toMatchObject({
-      state: "claimed",
-      target_session_id: "supervisor-new",
-    });
-  });
-
   it("uses SKIP LOCKED across workers", async () => {
-    await setSupervisor("supervisor-old");
     await register("delivery-locked", "relation-locked", {
-      supervisorRole: "ariella",
+      targetSessionId: "caller-session",
     });
     await register("delivery-free", "relation-free", {
-      supervisorRole: "ariella",
+      targetSessionId: "caller-session",
     });
 
     const blocker = harness.createPeer();
@@ -155,11 +87,9 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
   });
 
   it("backs off a due targetless poison row before claiming the healthy row behind it", async () => {
-    await register("delivery-poison", "relation-poison", {
-      supervisorRole: "missing-supervisor",
-    });
+    await register("delivery-poison", "relation-poison");
     await register("delivery-healthy", "relation-healthy", {
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
     });
     await harness.sql`
       UPDATE session_deliveries
@@ -228,13 +158,10 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         FROM information_schema.columns
         WHERE table_schema = ${upgradeSchema}
           AND table_name = 'session_deliveries'
-          AND column_name IN ('supervisor_role', 'dispatching_at')
+          AND column_name = 'dispatching_at'
         ORDER BY column_name
       `;
-      expect(columns.map((row) => row.column_name)).toEqual([
-        "dispatching_at",
-        "supervisor_role",
-      ]);
+      expect(columns.map((row) => row.column_name)).toEqual(["dispatching_at"]);
 
       await upgradeSql`
         INSERT INTO sessions (session_id) VALUES ('upgrade-target')
@@ -246,7 +173,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
           relation_key,
           intent,
           source,
-          supervisor_role,
           payload_hash,
           state,
           dispatching_at
@@ -256,19 +182,17 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
           'upgrade-relation',
           'completion_notification',
           'completion_notifier',
-          'ariella',
           'upgrade-hash',
           'dispatching',
           NOW()
         )
       `;
       await expect(upgradeSql`
-        SELECT state, supervisor_role, dispatching_at IS NOT NULL AS has_dispatching_at
+        SELECT state, dispatching_at IS NOT NULL AS has_dispatching_at
         FROM session_deliveries
         WHERE delivery_id = 'upgrade-delivery'
       `).resolves.toMatchObject([{
         state: "dispatching",
-        supervisor_role: "ariella",
         has_dispatching_at: true,
       }]);
     } finally {
@@ -278,11 +202,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
   it("recovers an expired crash lease and fences the old worker from dispatch", async () => {
     await register("delivery-crash", "relation-crash", {
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
     });
     await repository.claimForTarget(
       "delivery-crash",
-      "supervisor-old",
+      "caller-session",
       "worker-dead",
       15_000,
     );
@@ -332,11 +256,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ] as const;
     for (const boundary of crashBoundaries) {
       await register(boundary.deliveryId, boundary.relation, {
-        targetSessionId: "supervisor-old",
+        targetSessionId: "caller-session",
       });
       await repository.claimForTarget(
         boundary.deliveryId,
-        "supervisor-old",
+        "caller-session",
         `dead:${boundary.deliveryId}`,
       );
       await repository.beginDispatch(
@@ -456,59 +380,13 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       .toHaveLength(1);
   });
 
-  it("periodically requeues a queued delivery after supervisor handover and targets the current supervisor once", async () => {
-    await setSupervisor("supervisor-old");
-    await register("delivery-queued-handover", "relation-queued-handover", {
-      supervisorRole: "ariella",
-    });
-    await repository.claimForCurrentSupervisor(
-      "delivery-queued-handover",
-      "ariella",
-      "worker-old",
-    );
-    await repository.beginDispatch("delivery-queued-handover", "worker-old");
-    await repository.markQueued("delivery-queued-handover", "worker-old");
-    await setSupervisor("supervisor-new");
-
-    const targets: string[] = [];
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository,
-      dispatch: async (params) => {
-        targets.push(params.agentSessionId);
-        const won = await repository.beginDispatch(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-        if (!won) throw new Error("dispatch lease lost");
-        await repository.markQueued(params.deliveryId!, params.deliveryLeaseOwner);
-        await repository.markDelivered(params.deliveryId!, "event:handover");
-      },
-      logger: { error() {}, warn() {} },
-      sourceNode: "node-test",
-      queuedDeliveryRecovery: makeQueuedRecovery(
-        "queued-handover",
-        async () => ({ kind: "absent", inputUuid: "not-persisted" }),
-      ),
-    }, "handover-recovery");
-
-    await coordinator.recoverPending(10);
-    await coordinator.recoverPending(10);
-
-    expect(targets).toEqual(["supervisor-new"]);
-    await expect(repository.get("delivery-queued-handover")).resolves.toMatchObject({
-      state: "delivered",
-      target_session_id: "supervisor-new",
-      caller_turn_id: "event:handover",
-    });
-  });
-
   it("settles a queued delivery from the transcript without replaying its SDK input", async () => {
     await register("delivery-transcript", "relation-transcript", {
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
     });
     await repository.claimForTarget(
       "delivery-transcript",
-      "supervisor-old",
+      "caller-session",
       "worker-before-crash",
     );
     await repository.beginDispatch(
@@ -553,11 +431,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
   it("keeps an accepted SDK input queued while its assistant transcript is pending", async () => {
     await register("delivery-input-pending", "relation-input-pending", {
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
     });
     await repository.claimForTarget(
       "delivery-input-pending",
-      "supervisor-old",
+      "caller-session",
       "worker-before-crash",
     );
     await repository.beginDispatch(
@@ -589,11 +467,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
   it("rolls ledger and notification outbox forward atomically", async () => {
     await register("delivery-outbox", "relation-outbox", {
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
     });
     await repository.claimForTarget(
       "delivery-outbox",
-      "supervisor-old",
+      "caller-session",
       "worker-outbox",
     );
     await repository.beginDispatch("delivery-outbox", "worker-outbox");
@@ -612,7 +490,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-outbox",
       leaseOwner: "worker-outbox",
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
       disposition: "queued",
       payload: { text: "done" },
     })).rejects.toThrow("injected outbox failure");
@@ -631,7 +509,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-outbox",
       leaseOwner: "worker-outbox",
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-session",
       disposition: "queued",
       payload: { text: "done" },
     })).resolves.toMatchObject({ state: "queued" });
@@ -649,7 +527,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     relationKey: string,
     options: {
       targetSessionId?: string;
-      supervisorRole?: string;
     } = {},
   ): Promise<void> {
     await repository.register({
@@ -663,21 +540,9 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       producerKind: "child_session",
       producerId: "child-session",
       producerTerminalRevision: relationKey,
-      supervisorRole: options.supervisorRole,
       payloadHash: `hash-${relationKey}`,
       payload: { text: "done", user: "agent" },
     });
-  }
-
-  async function setSupervisor(sessionId: string): Promise<void> {
-    await harness.sql`
-      INSERT INTO supervisor_registry (
-        role, active_session_id, epoch, cursor_offset, handover_state,
-        cumulative_tokens, compaction_count
-      ) VALUES ('ariella', ${sessionId}, 1, 0, 'idle', 0, 0)
-      ON CONFLICT (role) DO UPDATE
-      SET active_session_id = EXCLUDED.active_session_id, updated_at = NOW()
-    `;
   }
 
   function makeQueuedRecovery(
@@ -704,10 +569,6 @@ function deferred<T>(): {
     resolve = candidate;
   });
   return { promise, resolve };
-}
-
-async function nextMacrotask(): Promise<void> {
-  await new Promise((resolve) => setImmediate(resolve));
 }
 
 function hasDockerBinary(): boolean {

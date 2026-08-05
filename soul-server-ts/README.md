@@ -57,9 +57,6 @@ worker-only 노드 참조 정본은 **`install/haniel-soul-server-ts.example.yam
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | ❌ (default 300000) | runtime v2에서 foreground 종료 후 idle Query 회수 유예 |
 | `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | ❌ (default 16) | runtime v2 worker별 persistent Query 상한 |
 | `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | ❌ (default 1800000) | runtime v2 foreground 턴 상한. legacy `SESSION_TIMEOUT_SECONDS=1800` 경계를 보존 |
-| `SUPERVISOR_ENABLED` | ❌ (default false) | supervisor 세션 부팅, wake, watchdog 활성화. true면 event ingest도 함께 켜짐 |
-| `SUPERVISOR_EVENT_INGEST_ENABLED` | ❌ (default false) | supervisor 세션은 켜지 않고 durable event ingest만 별도로 켤 때 사용 |
-
 ### Claude session runtime v2 기본 활성화와 kill-switch
 
 `CLAUDE_SESSION_RUNTIME_V2_ENABLED`는 미설정 시 `true`다. 전 노드는 같은 코드를 배포하면

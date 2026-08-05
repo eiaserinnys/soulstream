@@ -1,7 +1,6 @@
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
-import type { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
   CommandDispatchError,
   type CommandHandlerMap,
@@ -37,27 +36,13 @@ interface InterveneCmd extends CommandLike {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
-  supervisor_role?: string;
   delivery_lease_owner?: string;
-}
-
-interface SupervisorInterveneCmd extends CommandLike {
-  type: "supervisor_intervene";
-  role?: string;
-  expected_epoch?: number;
-  expectedEpoch?: number;
-  text: string;
-  user?: string;
-  caller_info?: CallerInfo;
-  attachment_paths?: string[];
-  extra_context_items?: ContextItem[];
 }
 
 interface InterventionCommandFamilyDeps {
   send: SendFn;
   deliveryCommands: DeliveryCommands;
   taskRuntimeCommands: TaskRuntimeCommands;
-  supervisorDirectTargetGuard?: SupervisorDirectTargetGuard;
 }
 
 export function createInterventionCommandFamily(
@@ -68,8 +53,6 @@ export function createInterventionCommandFamily(
     approve_tool: (cmd) => handleToolApproval(deps, cmd as ToolApprovalCommand),
     reject_tool: (cmd) => handleToolApproval(deps, cmd as ToolApprovalCommand),
     intervene: (cmd) => handleIntervene(deps, cmd as InterveneCmd),
-    supervisor_intervene: (cmd) =>
-      handleSupervisorIntervene(deps, cmd as SupervisorInterveneCmd),
   };
 }
 
@@ -140,7 +123,6 @@ async function handleIntervene(
 
   let result;
   try {
-    await deps.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
     result = await deps.taskRuntimeCommands.intervene({
       agentSessionId: sessionId,
       text: cmd.text,
@@ -157,7 +139,6 @@ async function handleIntervene(
       parentDeliveryId: cmd.parent_delivery_id,
       callerTurnId: cmd.caller_turn_id,
       deliveryCreatedAt: cmd.created_at,
-      supervisorRole: cmd.supervisor_role,
       deliveryLeaseOwner: cmd.delivery_lease_owner,
     });
   } catch (err) {
@@ -169,45 +150,5 @@ async function handleIntervene(
     // ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지) — orch _send_command 미사용 경로.
     return;
   }
-  await deps.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
-}
-
-async function handleSupervisorIntervene(
-  deps: InterventionCommandFamilyDeps,
-  cmd: SupervisorInterveneCmd,
-): Promise<void> {
-  if (!cmd.role || !cmd.text) {
-    throw new CommandDispatchError("supervisor_intervene requires role and text");
-  }
-  if (!deps.supervisorDirectTargetGuard) {
-    throw new CommandDispatchError("supervisor_intervene requires SessionDB");
-  }
-
-  let sessionId;
-  try {
-    sessionId = await deps.supervisorDirectTargetGuard.resolveActiveSession({
-      role: cmd.role,
-      expectedEpoch: cmd.expectedEpoch ?? cmd.expected_epoch,
-    });
-  } catch (err) {
-    throw new CommandDispatchError(err instanceof Error ? err.message : String(err));
-  }
-
-  let result;
-  try {
-    result = await deps.taskRuntimeCommands.intervene({
-      agentSessionId: sessionId,
-      text: cmd.text,
-      user: cmd.user ?? "supervisor",
-      callerInfo: cmd.caller_info,
-      attachmentPaths: cmd.attachment_paths,
-      extraContextItems: cmd.extra_context_items,
-    });
-  } catch (err) {
-    throw new CommandDispatchError(err instanceof Error ? err.message : String(err));
-  }
-
-  const requestId = cmd.requestId ?? cmd.request_id ?? "";
-  if (!requestId) return;
   await deps.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
 }

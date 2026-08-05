@@ -23,7 +23,6 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget,
-      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -76,7 +75,6 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget: vi.fn(),
-      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -123,7 +121,6 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
-      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -164,7 +161,6 @@ describe("TaskDeliveryLedgerGate", () => {
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
-      claimForCurrentSupervisor: vi.fn(),
       beginDispatch: vi.fn().mockResolvedValue(null),
       get: vi.fn().mockResolvedValue(row(deliveryId, "consumed")),
       markQueued: vi.fn(),
@@ -186,46 +182,4 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
-  it("admits a supervisor delivery only when the atomic claim resolves the requested target", async () => {
-    const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-    const pending = row(deliveryId, "pending");
-    const claimForCurrentSupervisor = vi.fn().mockResolvedValue({
-      ...pending,
-      state: "claimed",
-      target_session_id: "supervisor-current",
-    });
-    const gate = new TaskDeliveryLedgerGate(true, {
-      register: vi.fn().mockResolvedValue({
-        row: pending,
-        inserted: true,
-        conflict: false,
-      }),
-      claimForTarget: vi.fn(),
-      claimForCurrentSupervisor,
-      beginDispatch: vi.fn(),
-      get: vi.fn(),
-      markQueued: vi.fn(),
-      markDelivered: vi.fn(),
-      markUncertain: vi.fn(),
-      markConsumed: vi.fn(),
-      markConsumedByRelation: vi.fn(),
-      recordRelationConsumed: vi.fn(),
-    });
-
-    await expect(gate.admit({
-      agentSessionId: "supervisor-current",
-      text: "done",
-      user: "agent",
-      deliveryId,
-      deliveryIntent: "completion_notification",
-      completionId: "completion-1",
-      relationKey: "child:1",
-      supervisorRole: "ariella",
-    })).resolves.toMatchObject({ kind: "admitted" });
-    expect(claimForCurrentSupervisor).toHaveBeenCalledWith(
-      deliveryId,
-      "ariella",
-      expect.stringMatching(/^route:/),
-    );
-  });
 });

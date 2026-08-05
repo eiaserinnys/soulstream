@@ -22,7 +22,6 @@ import type {
 export interface DurableCompletionInput {
   targetSessionId: string;
   sourceSessionId: string;
-  supervisorRole?: string;
   terminalRevision: string;
   text: string;
   callerInfo: CallerInfo;
@@ -34,15 +33,11 @@ type CompletionDeliveryRepository = Pick<
   | "register"
   | "get"
   | "claimForTarget"
-  | "claimForCurrentSupervisor"
   | "claimRecoverableCompletionDeliveries"
   | "deferPending"
   | "retryLeasedDelivery"
   | "releaseExpiredDeliveryLeases"
-> & Partial<Pick<
-  SessionDeliveryRepository,
-  "repairInferredSupervisorCompletionTargets"
->>;
+>;
 
 export interface CompletionDeliveryCoordinatorDeps {
   repository: CompletionDeliveryRepository;
@@ -58,8 +53,8 @@ export interface CompletionDeliveryCoordinatorDeps {
 /**
  * Durable owner of completion delivery admission.
  *
- * Registration always precedes supervisor resolution. A failed lookup therefore
- * leaves a replayable `pending` row instead of losing the finalizer's only call.
+ * Registration always precedes target claiming, so a transient failure leaves a
+ * replayable `pending` row instead of losing the finalizer's only call.
  */
 export class CompletionDeliveryCoordinator {
   private readonly workerId: string;
@@ -108,14 +103,6 @@ export class CompletionDeliveryCoordinator {
           queuedBefore: new Date(now - this.queuedRecoveryMaxAgeMs),
         }, limit);
       }
-      const repaired =
-        await this.deps.repository.repairInferredSupervisorCompletionTargets?.() ?? 0;
-      if (repaired > 0) {
-        this.deps.logger.warn(
-          { count: repaired },
-          "Reclassified inferred supervisor completion deliveries to their direct callers",
-        );
-      }
       await this.deps.repository.releaseExpiredDeliveryLeases();
       rows = await this.deps.repository.claimRecoverableCompletionDeliveries(
         this.workerId,
@@ -135,19 +122,12 @@ export class CompletionDeliveryCoordinator {
     try {
       const current = await this.deps.repository.get(deliveryId);
       if (!current || !isRecoverable(current)) return;
-      const claimed = current.supervisor_role
-        ? await this.deps.repository.claimForCurrentSupervisor(
-            deliveryId,
-            current.supervisor_role,
-            this.workerId,
-            this.leaseMs,
-          )
-        : await this.deps.repository.claimForTarget(
-            deliveryId,
-            requiredTarget(current),
-            this.workerId,
-            this.leaseMs,
-          );
+      const claimed = await this.deps.repository.claimForTarget(
+        deliveryId,
+        requiredTarget(current),
+        this.workerId,
+        this.leaseMs,
+      );
       if (!claimed) {
         await this.deps.repository.deferPending(
           deliveryId,
@@ -204,7 +184,7 @@ function buildCompletionRegistration(
   });
   return {
     deliveryId: identity.deliveryId,
-    targetSessionId: input.supervisorRole ? null : input.targetSessionId,
+    targetSessionId: input.targetSessionId,
     sourceSessionId: input.sourceSessionId,
     relationKey,
     completionId: identity.completionId,
@@ -213,7 +193,6 @@ function buildCompletionRegistration(
     producerKind: "child_session",
     producerId: input.sourceSessionId,
     producerTerminalRevision: input.terminalRevision,
-    supervisorRole: input.supervisorRole,
     payloadHash: canonical.payloadHash,
     payload: canonical.payload,
     createdAt: input.createdAt,
@@ -242,7 +221,6 @@ function toInterventionParams(
     callerTurnId: row.caller_turn_id ?? undefined,
     followupTaskIds: message.followupTaskIds,
     deliveryCreatedAt: row.created_at.toISOString(),
-    supervisorRole: row.supervisor_role ?? undefined,
     deliveryLeaseOwner: leaseOwner,
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,

@@ -66,7 +66,6 @@ export interface InterventionMessage {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
-  supervisorRole?: string;
   deliveryLeaseOwner?: string;
   followupAttempt?: number;
   followupKey?: string;
@@ -256,11 +255,6 @@ export interface Task {
 
   callerSessionId?: string;
   callerInfo?: CallerInfo;
-  /**
-   * Explicit completion control metadata captured when the child is created.
-   * caller_info.source=agent is identity only and must never populate this field.
-   */
-  completionSupervisorRole?: string;
   /** false면 위임 완료 시 caller 세션 completion relay를 발화하지 않는다. 기본 true. */
   notifyCompletion?: boolean;
   /** sessions.metadata JSONB array와 session_created.session.metadata에 싣는 세션 메타데이터. */
@@ -328,15 +322,12 @@ export interface Task {
   result?: string;
   error?: string;
 
-  /** Supervisor Phase A: terminal reason is finalized once by TaskLifecycleTransition. */
+  /** Terminal reason is finalized once by TaskLifecycleTransition. */
   terminationReason?: TerminationReason;
   terminationDetail?: string | null;
   pendingTerminationHint?: PendingTerminationHint;
   pendingTerminationDetail?: string | null;
   terminationEventRecorded?: boolean;
-  /** Supervisor usage normalization state. Runtime-only, never serialized to DB. */
-  supervisorUsageTotals?: Record<string, number>;
-
   /** Claude Agent SDK 장기 실행 runtime 상태. */
   claudeRuntime?: ClaudeRuntimeState;
 

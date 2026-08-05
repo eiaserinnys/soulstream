@@ -57,12 +57,6 @@ describe("summarizeCogitoHealth", () => {
                           database: "ok",
                           orchestrator: "unavailable",
                         },
-                        supervisor_wake: {
-                          status: "partial",
-                          total: 2,
-                          blocked_count: 1,
-                          blocked_roles: ["ariela_codex"],
-                        },
                       },
                     },
                   },
@@ -102,12 +96,6 @@ describe("summarizeCogitoHealth", () => {
           { name: "database", status: "ok" },
           { name: "orchestrator", status: "unavailable" },
         ],
-        supervisorWake: {
-          status: "partial",
-          total: 2,
-          blockedCount: 1,
-          blockedRoles: ["ariela_codex"],
-        },
       },
     });
     const renderedPayload = JSON.stringify(summary);

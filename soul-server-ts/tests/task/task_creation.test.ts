@@ -12,9 +12,6 @@ const silentLogger = pino({ level: "silent" });
 function makeHarness(options: {
   logger?: typeof silentLogger;
   taskCreationHook?: TaskCreationHook;
-  resolveCompletionSupervisorRole?: (
-    callerSessionId: string,
-  ) => Promise<string | undefined>;
 } = {}) {
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const appendMetadata = vi.fn().mockResolvedValue(1);
@@ -88,9 +85,6 @@ function makeHarness(options: {
     rememberTask: (task) => {
       tasks.set(task.agentSessionId, task);
     },
-    ...(options.resolveCompletionSupervisorRole
-      ? { resolveCompletionSupervisorRole: options.resolveCompletionSupervisorRole }
-      : {}),
   });
 
   return {
@@ -112,63 +106,6 @@ function makeHarness(options: {
 }
 
 describe("TaskCreation", () => {
-  it("captures explicit supervisor control at creation instead of inferring it at completion", async () => {
-    const resolveCompletionSupervisorRole = vi.fn()
-      .mockResolvedValue("ariella-ashwood-codex");
-    const h = makeHarness({ resolveCompletionSupervisorRole });
-
-    const task = await h.creation.createTask({
-      agentSessionId: "sess-supervisor-child",
-      prompt: "delegated work",
-      profileId: "worker",
-      callerSessionId: "supervisor-current",
-      callerInfo: {
-        source: "agent",
-        agent_id: "ariella-ashwood-codex",
-      },
-    });
-
-    expect(resolveCompletionSupervisorRole).toHaveBeenCalledWith(
-      "supervisor-current",
-    );
-    expect(task.completionSupervisorRole).toBe("ariella-ashwood-codex");
-    expect(h.appendMetadata).toHaveBeenCalledWith(
-      "sess-supervisor-child",
-      {
-        type: "completion_target",
-        value: {
-          kind: "supervisor_role",
-          supervisor_role: "ariella-ashwood-codex",
-        },
-      },
-    );
-  });
-
-  it("records ordinary source=agent delegation as a direct completion target", async () => {
-    const resolveCompletionSupervisorRole = vi.fn().mockResolvedValue(undefined);
-    const h = makeHarness({ resolveCompletionSupervisorRole });
-
-    const task = await h.creation.createTask({
-      agentSessionId: "sess-ordinary-child",
-      prompt: "delegated work",
-      profileId: "worker",
-      callerSessionId: "ordinary-agent-caller",
-      callerInfo: {
-        source: "agent",
-        agent_id: "seosoyoung-opus",
-      },
-    });
-
-    expect(task.completionSupervisorRole).toBeUndefined();
-    expect(h.appendMetadata).toHaveBeenCalledWith(
-      "sess-ordinary-child",
-      {
-        type: "completion_target",
-        value: { kind: "direct_session" },
-      },
-    );
-  });
-
   it("runs the binding hook after durable registration and metadata but before remembering or projection", async () => {
     const order: string[] = [];
     const taskCreationHook: TaskCreationHook = {

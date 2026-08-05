@@ -91,7 +91,6 @@ function admitted(
       producer_terminal_revision: null,
       parent_delivery_id: null,
       caller_turn_id: null,
-      supervisor_role: null,
       lease_owner: "test-route",
       created_at: new Date("2026-07-26T00:00:00.000Z"),
       payload: {
@@ -114,7 +113,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       makeSubject([task]);
     const onResume = vi.fn();
     const context = [
-      { key: "supervisor", label: "Supervisor", content: "fresh context" },
+      { key: "review", label: "Review", content: "fresh context" },
     ];
 
     await expect(route.addIntervention({

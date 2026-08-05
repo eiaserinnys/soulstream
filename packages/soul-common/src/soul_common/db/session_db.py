@@ -24,13 +24,11 @@ from soul_common.db.postgres.viewport import PostgresViewportMixin
 from soul_common.db.postgres.folders import PostgresFolderMixin
 from soul_common.db.postgres.tasks import PostgresTaskMixin
 from soul_common.db.postgres.search import PostgresSearchMixin
-from soul_common.db.postgres.supervisor import PostgresSupervisorMixin
 
 logger = logging.getLogger(__name__)
 
 
 class PostgresSessionDB(
-    PostgresSupervisorMixin,
     PostgresSessionCRUDMixin,
     PostgresEventMixin,
     PostgresViewportMixin,

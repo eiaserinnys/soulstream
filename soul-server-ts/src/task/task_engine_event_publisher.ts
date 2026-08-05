@@ -2,42 +2,23 @@ import type { Logger } from "pino";
 
 import {
   clearEventPersistenceInternals,
-  extractTimestamp,
   type PersistEventResult,
   shouldPersistEvent,
   type EventPersistence,
 } from "../db/event_persistence.js";
-import type { SessionDB, SupervisorRegistryRow } from "../db/session_db.js";
+import type { SessionDB } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import {
-  evaluateSupervisorHandover,
-  type SupervisorHandoverPolicyOptions,
-} from "../supervisor/handover_policy.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
 import { recordTerminationHint } from "./task_termination.js";
-import { supervisorUsageDeltaForEvent } from "./supervisor_usage.js";
-
-const SUPERVISOR_HEARTBEAT_TOUCH_MIN_INTERVAL_MS = 15_000;
 
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
   db: SessionDB;
   logger: Logger;
   persistence: EventPersistence;
-  sourceNode?: string;
-  supervisorWakeScheduler?: {
-    ingest(eventType: string): Promise<{ scheduled: boolean }>;
-  };
-  supervisorHandoverRunner?: {
-    run(registry: SupervisorRegistryRow): Promise<void>;
-  };
-  supervisorHandoverPolicy?: Pick<
-    SupervisorHandoverPolicyOptions,
-    "softTokenThreshold" | "hardTokenThreshold"
-  >;
 }
 
 /**
@@ -47,8 +28,6 @@ export interface TaskEngineEventPublisherDeps {
  * have separate publishers. This class only handles events yielded by EnginePort.
  */
 export class TaskEngineEventPublisher {
-  private readonly supervisorHeartbeatTouchedAtMs = new Map<string, number>();
-
   constructor(private readonly deps: TaskEngineEventPublisherDeps) {}
 
   async publishEngineEvent(task: Task, event: SSEEventPayload): Promise<void> {
@@ -61,16 +40,6 @@ export class TaskEngineEventPublisher {
     this.captureFatalEngineError(task, event, eventType);
     const persistedEvent = await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
-    await this.appendSupervisorEventIfNeeded(task, event, eventType, persistedEvent);
-    const usageRecorded = persistedEvent?.inserted === false
-      ? false
-      : await this.recordSupervisorUsageDelta(task, event, eventType);
-    await this.touchSupervisorHeartbeatIfNeeded(
-      task,
-      eventType,
-      usageRecorded,
-      persistedEvent,
-    );
     await this.handleSideEffects(task, event, eventType, persistedEvent);
   }
 
@@ -229,147 +198,4 @@ export class TaskEngineEventPublisher {
     }
   }
 
-  private async appendSupervisorEventIfNeeded(
-    task: Task,
-    event: SSEEventPayload,
-    eventType: string,
-    persistedEvent: PersistEventResult | null,
-  ): Promise<void> {
-    const eventId = persistedEvent?.inserted === true ? persistedEvent.eventId : null;
-    if (!eventId || !this.deps.sourceNode) return;
-    try {
-      await this.deps.db.appendSupervisorEvent({
-        sourceNode: this.deps.sourceNode,
-        sourceSessionId: task.agentSessionId,
-        sourceEventId: eventId,
-        eventType,
-        payload: event as unknown as Record<string, unknown>,
-        createdAt: extractTimestamp(event) ?? new Date(),
-      });
-      await this.deps.supervisorWakeScheduler?.ingest(eventType);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, eventId, eventType },
-        "appendSupervisorEvent failed",
-      );
-    }
-  }
-
-  private async recordSupervisorUsageDelta(
-    task: Task,
-    event: SSEEventPayload,
-    eventType: string,
-  ): Promise<boolean> {
-    const { tokenDelta, compactionDelta } = supervisorUsageDeltaForEvent(task, event);
-    if (tokenDelta <= 0 && compactionDelta <= 0) return false;
-    if (!task.profileId) return false;
-
-    try {
-      const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
-      if (!registry) return false;
-      if (!isActiveSupervisorTask(task, registry)) return false;
-      const updatedRegistry = await this.deps.db.recordSupervisorUsageDelta({
-        role: task.profileId,
-        tokenDelta,
-        compactionDelta,
-        lastSeenAt: new Date(),
-      });
-      this.supervisorHeartbeatTouchedAtMs.set(task.profileId, Date.now());
-      if (!updatedRegistry) return true;
-      await this.applySupervisorHandoverState(task, updatedRegistry, eventType);
-      return true;
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType, role: task.profileId },
-        "recordSupervisorUsageDelta failed",
-      );
-      return false;
-    }
-  }
-
-  private async touchSupervisorHeartbeatIfNeeded(
-    task: Task,
-    eventType: string,
-    usageRecorded: boolean,
-    persistedEvent: PersistEventResult | null,
-  ): Promise<void> {
-    if (persistedEvent?.inserted === false) return;
-    if (usageRecorded) return;
-    if (!task.profileId) return;
-
-    const nowMs = Date.now();
-    const lastTouchedAt = this.supervisorHeartbeatTouchedAtMs.get(task.profileId);
-    if (
-      lastTouchedAt !== undefined &&
-      nowMs - lastTouchedAt < SUPERVISOR_HEARTBEAT_TOUCH_MIN_INTERVAL_MS
-    ) {
-      return;
-    }
-
-    const lastSeenAt = new Date(nowMs);
-    try {
-      const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
-      if (!registry) {
-        this.supervisorHeartbeatTouchedAtMs.set(task.profileId, nowMs);
-        return;
-      }
-      if (!isActiveSupervisorTask(task, registry)) return;
-      await this.deps.db.touchSupervisorRegistry(
-        task.profileId,
-        lastSeenAt,
-      );
-      this.supervisorHeartbeatTouchedAtMs.set(task.profileId, nowMs);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType, role: task.profileId },
-        "touchSupervisorRegistry failed",
-      );
-    }
-  }
-
-  private async applySupervisorHandoverState(
-    task: Task,
-    registry: Awaited<ReturnType<SessionDB["recordSupervisorUsageDelta"]>>,
-    eventType: string,
-  ): Promise<void> {
-    if (typeof registry.cumulativeTokens !== "number") return;
-    const decision = evaluateSupervisorHandover(
-      registry,
-      {
-        idle: eventType === "complete" && task.interventionQueue.length === 0,
-        atTurnBoundary: eventType === "complete",
-      },
-      {
-        ...this.deps.supervisorHandoverPolicy,
-        minIntervalMs: 0,
-      },
-    );
-    if (decision.state === "handover_running" && this.deps.supervisorHandoverRunner) {
-      await this.deps.supervisorHandoverRunner.run(registry);
-      return;
-    }
-    const nextState = supervisorPendingState(decision.state, registry.handoverState);
-    if (!decision.changed || nextState === registry.handoverState) return;
-    await this.deps.db.upsertSupervisorRegistry({
-      role: registry.role,
-      activeSessionId: registry.activeSessionId,
-      epoch: registry.epoch,
-      cursorOffset: registry.cursorOffset,
-      handoverState: nextState,
-      cumulativeTokens: registry.cumulativeTokens,
-      compactionCount: registry.compactionCount,
-      lastSeenAt: registry.lastSeenAt,
-    });
-  }
-}
-
-function supervisorPendingState(nextState: string, currentState: string): string {
-  if (nextState !== "handover_running") return nextState;
-  if (currentState === "hard_pending") return "hard_pending";
-  if (currentState === "idle_pending") return "idle_pending";
-  return "hard_pending";
-}
-
-function isActiveSupervisorTask(task: Task, registry: SupervisorRegistryRow): boolean {
-  return registry.activeSessionId === task.agentSessionId;
 }

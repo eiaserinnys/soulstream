@@ -26,7 +26,6 @@ function deliveryRow(
     producer_terminal_revision: "42",
     parent_delivery_id: null,
     caller_turn_id: null,
-    supervisor_role: null,
     payload_hash: "hash-1",
     payload: { text: "done" },
     state: "pending",
@@ -134,30 +133,6 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("target_session_id");
     expect(calls[0].query).toContain("state = 'claimed'");
     expect(calls[0].query).toContain("state = 'pending'");
-  });
-
-  it("resolves and claims the current supervisor in one atomic statement", async () => {
-    const claimed = deliveryRow({
-      target_session_id: "supervisor-current",
-      supervisor_role: "ariella",
-      state: "claimed",
-    });
-    const { sql, calls } = createMockSql([
-      [deliveryRow({ supervisor_role: "ariella" })],
-      [{ active_session_id: "supervisor-current" }],
-      [claimed],
-    ]);
-    const repository = new SessionDeliveryRepository(sql);
-
-    await expect(repository.claimForCurrentSupervisor(
-      claimed.delivery_id,
-      "ariella",
-    )).resolves.toEqual(claimed);
-
-    expect(calls[0].query).toContain("FOR UPDATE");
-    expect(calls[1].query).toContain("FROM supervisor_registry AS registry");
-    expect(calls[1].query).toContain("registry.active_session_id");
-    expect(calls[2].query).toContain("state = 'pending'");
   });
 
   it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {

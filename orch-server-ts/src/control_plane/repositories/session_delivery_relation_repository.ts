@@ -41,7 +41,7 @@ export async function registerSessionDelivery(
         delivery_id, target_session_id, source_session_id, relation_key,
         completion_id, intent, source, producer_kind, producer_id,
         producer_terminal_revision, parent_delivery_id, caller_turn_id,
-        supervisor_role, payload_hash, payload, state, created_at, updated_at,
+        payload_hash, payload, state, created_at, updated_at,
         consumed_at
       ) VALUES (
         ${params.deliveryId}, ${params.targetSessionId ?? null},
@@ -50,7 +50,7 @@ export async function registerSessionDelivery(
         ${params.producerKind ?? null}, ${params.producerId ?? null},
         ${params.producerTerminalRevision ?? null},
         ${params.parentDeliveryId ?? null}, ${params.callerTurnId ?? null},
-        ${params.supervisorRole ?? null}, ${params.payloadHash},
+        ${params.payloadHash},
         ${transaction.json(asPostgresJsonValue(params.payload))},
         ${consumption ? "consumed" : "pending"}, ${createdAt}, ${createdAt},
         ${consumption?.consumed_at ?? null}

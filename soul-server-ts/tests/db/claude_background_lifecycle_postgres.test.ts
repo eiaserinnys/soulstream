@@ -39,7 +39,6 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     await harness.sql`DELETE FROM session_delivery_notification_outbox`;
     await harness.sql`DELETE FROM session_deliveries`;
     await harness.sql`DELETE FROM claude_background_tasks`;
-    await harness.sql`DELETE FROM supervisor_registry`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
       INSERT INTO sessions (session_id, session_type, status, agent_id)

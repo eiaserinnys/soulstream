@@ -9,7 +9,7 @@ export interface DeterministicDeliveryIdentity {
 }
 
 export function buildDeterministicDeliveryIdentity(params: {
-  /** Routing target is deliberately not identity: supervisors may be replaced. */
+  /** Routing target is deliberately not part of the immutable delivery identity. */
   targetSessionId: string;
   relationKey: string;
   intent: DeliveryIntent;

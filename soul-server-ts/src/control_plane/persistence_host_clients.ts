@@ -2,7 +2,6 @@ import type { Logger } from "pino";
 
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
-  AppendSupervisorEventParams,
   ClaudeTranscriptEntry,
   ClaudeTranscriptKey,
   ClaudeTranscriptSessionSummary,
@@ -16,12 +15,6 @@ import type {
   SessionDeliveryNotificationOutboxRow,
   SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
-  SupervisorAppendResult,
-  SupervisorEventRow,
-  SupervisorRegistryRow,
-  SupervisorRegistryUpsertParams,
-  SupervisorSourceCursorRow,
-  SupervisorWakeDispatchStateParams,
 } from "../db/session_db_types.js";
 
 type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
@@ -144,17 +137,11 @@ export class SessionDeliveryHostClient {
   claimForTarget(deliveryId: string, targetSessionId: string, leaseOwner = "legacy", leaseMs = 15_000): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "claim_for_target", [deliveryId, targetSessionId, leaseOwner, leaseMs]);
   }
-  claimForCurrentSupervisor(deliveryId: string, supervisorRole: string, leaseOwner = "legacy", leaseMs = 15_000): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "claim_for_current_supervisor", [deliveryId, supervisorRole, leaseOwner, leaseMs]);
-  }
   beginDispatch(deliveryId: string, leaseOwner?: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "begin_dispatch", [deliveryId, leaseOwner]);
   }
   claimRecoverableCompletionDeliveries(leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {
     return this.transport.request("session-deliveries", "claim_recoverable_completion_deliveries", [leaseOwner, limit, leaseMs]);
-  }
-  repairInferredSupervisorCompletionTargets(): Promise<number> {
-    return this.transport.request("session-deliveries", "repair_inferred_supervisor_completion_targets", []);
   }
   deferPending(deliveryId: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "defer_pending", [deliveryId, error, nextAttemptAt]);
@@ -179,53 +166,6 @@ export class SessionDeliveryHostClient {
   }
   markUncertain(deliveryId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_uncertain", [deliveryId]);
-  }
-}
-
-export class SupervisorHostClient {
-  private readonly transport: PersistenceHostTransport;
-  constructor(config: HostClientConfig) { this.transport = new PersistenceHostTransport(config); }
-  appendSupervisorEvent(params: AppendSupervisorEventParams): Promise<SupervisorAppendResult> {
-    return this.transport.request("supervisors", "append_event", [params]);
-  }
-  readSupervisorEventsAfter(afterOffset = 0, limit = 100): Promise<SupervisorEventRow[]> {
-    return this.transport.request("supervisors", "read_events_after", [afterOffset, limit]);
-  }
-  getSupervisorEventHeadOffset(): Promise<number> {
-    return this.transport.request("supervisors", "get_event_head_offset", []);
-  }
-  getSupervisorSourceCursor(sourceNode: string, sourceSessionId: string): Promise<SupervisorSourceCursorRow | null> {
-    return this.transport.request("supervisors", "get_source_cursor", [sourceNode, sourceSessionId]);
-  }
-  setSupervisorSourceCursor(params: { sourceNode: string; sourceSessionId: string; contiguousUpto: number; highestSeenEventId: number; gapStart?: number | null; gapEnd?: number | null }): Promise<SupervisorSourceCursorRow> {
-    return this.transport.request("supervisors", "set_source_cursor", [params]);
-  }
-  getSupervisorConsumerCursor(supervisorId: string): Promise<number> {
-    return this.transport.request("supervisors", "get_consumer_cursor", [supervisorId]);
-  }
-  setSupervisorConsumerCursor(supervisorId: string, cursorOffset: number): Promise<number> {
-    return this.transport.request("supervisors", "set_consumer_cursor", [supervisorId, cursorOffset]);
-  }
-  setSupervisorWakeDispatchState(params: SupervisorWakeDispatchStateParams): Promise<SupervisorRegistryRow> {
-    return this.transport.request("supervisors", "set_wake_dispatch_state", [params]);
-  }
-  upsertSupervisorRegistry(params: SupervisorRegistryUpsertParams): Promise<SupervisorRegistryRow> {
-    return this.transport.request("supervisors", "upsert_registry", [params]);
-  }
-  getSupervisorRegistry(role: string): Promise<SupervisorRegistryRow | null> {
-    return this.transport.request("supervisors", "get_registry", [role]);
-  }
-  listSupervisorRegistries(): Promise<SupervisorRegistryRow[]> {
-    return this.transport.request("supervisors", "list_registries", []);
-  }
-  touchSupervisorRegistry(role: string, lastSeenAt: Date): Promise<SupervisorRegistryRow | null> {
-    return this.transport.request("supervisors", "touch_registry", [role, lastSeenAt]);
-  }
-  recordSupervisorUsageDelta(params: { role: string; tokenDelta: number; compactionDelta?: number; lastSeenAt?: Date | null }): Promise<SupervisorRegistryRow> {
-    return this.transport.request("supervisors", "record_usage_delta", [params]);
-  }
-  deleteSupervisorRegistry(role: string): Promise<boolean> {
-    return this.transport.request("supervisors", "delete_registry", [role]);
   }
 }
 
