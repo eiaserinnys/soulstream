@@ -2,7 +2,10 @@ import { Buffer } from "node:buffer";
 
 import * as Y from "yjs";
 
-import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
+import type {
+  LiveDbSqlResolver,
+  LivePostgresSql,
+} from "../runtime/live_db_sql.js";
 import {
   getBoardYjsContainerDocumentName,
   normalizeBoardYjsDocumentName,
@@ -14,6 +17,7 @@ import {
   BoardYjsSqlResolver,
   type BoardYjsQuerySql,
 } from "./board_yjs_sql.js";
+import { syncBoardYjsReplicaWithSql } from "./board_yjs_replica_sync.js";
 import {
   type BoardYjsRawDocument,
   type BoardYjsRunbookMigrationCommit,
@@ -32,12 +36,13 @@ import type {
   MarkdownDocumentRow,
 } from "./board_yjs_types.js";
 
-const BOARD_ITEMS_ADVISORY_LOCK_KEY = "soulstream:board_items";
-
 export class BoardYjsRepository {
   private readonly sqlResolver: BoardYjsSqlResolver;
 
-  constructor(resolver: LiveDbSqlResolver) {
+  constructor(
+    resolver: LiveDbSqlResolver,
+    private readonly migrationTransactionSql: BoardYjsQuerySql | null = null,
+  ) {
     this.sqlResolver = new BoardYjsSqlResolver(resolver);
   }
 
@@ -52,6 +57,13 @@ export class BoardYjsRepository {
   }
 
   async loadRawBoardYjsDocument(documentName: string): Promise<BoardYjsRawDocument | null> {
+    if (this.migrationTransactionSql) {
+      return await loadExactRawBoardYjsDocument(
+        this.migrationTransactionSql,
+        documentName,
+        false,
+      );
+    }
     const sql = await this.sqlResolver.resolveSql();
     return await sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
@@ -60,8 +72,7 @@ export class BoardYjsRepository {
   }
 
   async commitBoardYjsRunbookMigration(input: BoardYjsRunbookMigrationCommit): Promise<void> {
-    const sql = await this.sqlResolver.resolveSql();
-    await sql.begin(async (transaction) => {
+    await this.withMigrationTransaction(async (transaction) => {
       const names = [...new Set([
         input.sourceDocumentName,
         input.canonicalDocumentName,
@@ -136,6 +147,22 @@ export class BoardYjsRepository {
     });
   }
 
+  async runBoardYjsRunbookMigrationTransaction<T>(
+    operation: (repository: BoardYjsRepository) => Promise<T>,
+  ): Promise<T> {
+    if (this.migrationTransactionSql) {
+      throw new Error("nested board Y.Doc migration transactions are not allowed");
+    }
+    const sql = await this.sqlResolver.resolveSql();
+    return await sql.begin(async (transaction) => {
+      await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+      return await operation(new BoardYjsRepository({
+        resolveSql: async () => transaction as unknown as LivePostgresSql,
+        close: async () => undefined,
+      }, transaction));
+    });
+  }
+
   async storeBoardYjsSnapshot(documentName: string, snapshot: Uint8Array): Promise<void> {
     const sql = await this.sqlResolver.resolveSql();
     const canonicalName = canonicalBoardYjsDocumentName(documentName);
@@ -187,7 +214,7 @@ export class BoardYjsRepository {
         containerId: container.containerId,
       };
     }
-    const sql = await this.sqlResolver.resolveSql();
+    const sql = this.migrationTransactionSql ?? await this.sqlResolver.resolveSql();
     const rows = await sql<readonly { folder_id: string }[]>`
       SELECT bi.folder_id
       FROM tasks r
@@ -199,6 +226,16 @@ export class BoardYjsRepository {
     return folderId
       ? { folderId, containerKind: container.containerKind, containerId: container.containerId }
       : null;
+  }
+
+  private async withMigrationTransaction<T>(
+    operation: (transaction: BoardYjsQuerySql) => Promise<T>,
+  ): Promise<T> {
+    if (this.migrationTransactionSql) {
+      return await operation(this.migrationTransactionSql);
+    }
+    const sql = await this.sqlResolver.resolveSql();
+    return await sql.begin(operation);
   }
 
   async markBoardYjsDocumentSynced(documentName: string): Promise<void> {
@@ -317,86 +354,6 @@ export class BoardYjsRepository {
     `;
     return rows[0]?.synced === true;
   }
-}
-
-export async function syncBoardYjsReplicaWithSql(
-  sql: BoardYjsQuerySql,
-  scope: BoardYjsContainerScope,
-  replica: BoardYjsReplica,
-  documentName: string,
-): Promise<void> {
-    await sql`SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)`;
-    const boardItemIds = replica.boardItems.map((item) => item.id);
-    if (boardItemIds.length === 0) {
-      await sql`
-        DELETE FROM board_items
-        WHERE container_kind = ${scope.containerKind}
-          AND container_id = ${scope.containerId}
-      `;
-    } else {
-      await sql`
-        DELETE FROM board_items
-        WHERE container_kind = ${scope.containerKind}
-          AND container_id = ${scope.containerId}
-          AND id <> ALL(${sql.array(boardItemIds)})
-      `;
-    }
-    for (const item of replica.boardItems) {
-      await sql`
-        INSERT INTO board_items (
-          id, folder_id, container_kind, container_id, membership_kind,
-          source_task_item_id, item_type, item_id, x, y, metadata, updated_at
-        ) VALUES (
-          ${item.id}, ${scope.folderId}, ${scope.containerKind}, ${scope.containerId},
-          ${item.membershipKind ?? "primary"}, ${item.sourceTaskItemId ?? null},
-          ${item.itemType}, ${item.itemId}, ${item.x}, ${item.y},
-          ${sql.json(item.metadata ?? {})}::jsonb, NOW()
-        )
-        ON CONFLICT (id) DO UPDATE
-        SET folder_id = EXCLUDED.folder_id,
-            container_kind = EXCLUDED.container_kind,
-            container_id = EXCLUDED.container_id,
-            membership_kind = EXCLUDED.membership_kind,
-            source_task_item_id = EXCLUDED.source_task_item_id,
-            item_type = EXCLUDED.item_type,
-            item_id = EXCLUDED.item_id,
-            x = EXCLUDED.x,
-            y = EXCLUDED.y,
-            metadata = EXCLUDED.metadata,
-            updated_at = EXCLUDED.updated_at
-      `;
-    }
-    for (const document of replica.markdownDocuments) {
-      await sql`
-        INSERT INTO markdown_documents (id, title, body, version, updated_at)
-        VALUES (${document.id}, ${document.title}, ${document.body}, ${document.version}, NOW())
-        ON CONFLICT (id) DO UPDATE
-        SET title = EXCLUDED.title,
-            body = EXCLUDED.body,
-            version = EXCLUDED.version,
-            updated_at = EXCLUDED.updated_at
-      `;
-    }
-    await sql`
-      INSERT INTO board_yjs_catalog_cache (
-        folder_id, container_kind, container_id, board_items, markdown_documents, updated_at
-      ) VALUES (
-        ${scope.folderId}, ${scope.containerKind}, ${scope.containerId},
-        ${sql.json(replica.boardItems)}::jsonb,
-        ${sql.json(replica.markdownDocuments)}::jsonb,
-        NOW()
-      )
-      ON CONFLICT (container_kind, container_id) DO UPDATE
-      SET board_items = EXCLUDED.board_items,
-          folder_id = EXCLUDED.folder_id,
-          markdown_documents = EXCLUDED.markdown_documents,
-          updated_at = EXCLUDED.updated_at
-    `;
-    await sql`
-      UPDATE board_yjs_documents
-      SET synced_at = COALESCE(synced_at, NOW())
-      WHERE name = ${documentName}
-    `;
 }
 
 interface BoardItemDbRow extends Record<string, unknown> {

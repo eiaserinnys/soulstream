@@ -17,6 +17,28 @@ export interface BoardYjsRunbookMigrationRequest {
   approvedCollisionContentHash?: string | null;
 }
 
+export async function executeQuiescedBoardYjsRunbookMigrationBatch(input: {
+  requests: readonly BoardYjsRunbookMigrationRequest[];
+  repository: BoardYjsPersistenceRepository;
+}): Promise<Array<Awaited<ReturnType<typeof executeQuiescedBoardYjsRunbookMigration>>>> {
+  if (input.requests.length === 0) return [];
+  if (!input.repository.runBoardYjsRunbookMigrationTransaction) {
+    throw new Error("board Y.Doc migration repository requires a transaction boundary");
+  }
+  return await input.repository.runBoardYjsRunbookMigrationTransaction(
+    async (transactionRepository) => {
+      const results = [];
+      for (const request of input.requests) {
+        results.push(await executeQuiescedBoardYjsRunbookMigration({
+          request,
+          repository: transactionRepository,
+        }));
+      }
+      return results;
+    },
+  );
+}
+
 export async function executeQuiescedBoardYjsRunbookMigration(input: {
   request: BoardYjsRunbookMigrationRequest;
   repository: BoardYjsPersistenceRepository;

@@ -14,6 +14,7 @@
     "plan:task-project-mount-backfill": "tsx scripts/plan-task-project-mount-backfill.ts",
     "migrate:ydoc-runbook-residue": "tsx scripts/migrate-board-yjs-runbook-residue.ts",
     "verify:ydoc-runbook-residue": "tsx scripts/verify-board-yjs-runbook-residue.ts",
+    "deploy:ydoc-runbook-residue": "tsx scripts/deploy-board-yjs-runbook-residue.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",

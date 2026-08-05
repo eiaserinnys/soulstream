@@ -24,10 +24,19 @@ export interface BoardYjsRunbookMigrationPlan {
   planFingerprint: string;
   targetCollision: boolean;
   targetEquivalent: boolean | null;
+  collisionDifferences: BoardYjsCollisionDifference[] | null;
   opaqueBoardItemIds: string[];
   opaqueBoardItemIdsPreserved: boolean;
   before: BoardYjsRunbookResidue;
   after: BoardYjsRunbookResidue;
+}
+
+export interface BoardYjsCollisionDifference {
+  surface: "board_item" | "markdown_body";
+  id: string;
+  path: string;
+  legacyValue: string;
+  canonicalValue: string;
 }
 
 export interface ComputedBoardYjsRunbookMigrationPlan {
@@ -71,6 +80,7 @@ export function createBoardYjsRunbookMigrationPlan(input: {
   let canonicalContentHash: string | null = null;
   let canonicalMigratedContentHash: string | null = null;
   let canonicalOpaqueBoardItemIds: string[] = [];
+  let collisionDifferences: BoardYjsCollisionDifference[] | null = null;
 
   if (targetCollision && input.canonical) {
     const canonicalDocument = recomposeBoardYjsRawDocument(input.canonical);
@@ -81,6 +91,10 @@ export function createBoardYjsRunbookMigrationPlan(input: {
     );
     canonicalMigratedContentHash = hashBoardYjsDocument(canonicalDocument);
     canonicalOpaqueBoardItemIds = canonicalMigration.after.opaqueBoardItemIds;
+    collisionDifferences = describeBoardYjsCollision(
+      migratedDocument,
+      canonicalDocument,
+    );
   }
 
   const sourceOpaqueBoardItemIds = migration.after.opaqueBoardItemIds;
@@ -128,6 +142,7 @@ export function createBoardYjsRunbookMigrationPlan(input: {
       planFingerprint: hashStableValue(fingerprintInput),
       targetCollision,
       targetEquivalent,
+      collisionDifferences,
       opaqueBoardItemIds,
       opaqueBoardItemIdsPreserved,
       before,
@@ -136,6 +151,95 @@ export function createBoardYjsRunbookMigrationPlan(input: {
     migratedDocument: canonicalDocument,
     migratedSnapshot,
   };
+}
+
+function describeBoardYjsCollision(
+  legacy: Y.Doc,
+  canonical: Y.Doc,
+): BoardYjsCollisionDifference[] {
+  const differences: BoardYjsCollisionDifference[] = [];
+  const legacyItems = legacy.getMap<unknown>(BOARD_ITEMS_MAP);
+  const canonicalItems = canonical.getMap<unknown>(BOARD_ITEMS_MAP);
+  const itemIds = [...new Set([...legacyItems.keys(), ...canonicalItems.keys()])].sort();
+  for (const id of itemIds) {
+    appendValueDifferences({
+      surface: "board_item",
+      id,
+      path: "",
+      legacy: legacyItems.has(id) ? legacyItems.get(id) : MISSING,
+      canonical: canonicalItems.has(id) ? canonicalItems.get(id) : MISSING,
+      differences,
+    });
+  }
+
+  const legacyBodies = legacy.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
+  const canonicalBodies = canonical.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
+  const bodyIds = [...new Set([...legacyBodies.keys(), ...canonicalBodies.keys()])].sort();
+  for (const id of bodyIds) {
+    appendValueDifferences({
+      surface: "markdown_body",
+      id,
+      path: "text",
+      legacy: legacyBodies.has(id) ? legacyBodies.get(id)?.toString() : MISSING,
+      canonical: canonicalBodies.has(id) ? canonicalBodies.get(id)?.toString() : MISSING,
+      differences,
+    });
+  }
+  return differences;
+}
+
+const MISSING = Symbol("missing");
+
+function appendValueDifferences(input: {
+  surface: BoardYjsCollisionDifference["surface"];
+  id: string;
+  path: string;
+  legacy: unknown | typeof MISSING;
+  canonical: unknown | typeof MISSING;
+  differences: BoardYjsCollisionDifference[];
+}): void {
+  if (input.legacy !== MISSING && input.canonical !== MISSING &&
+    isPlainRecord(input.legacy) && isPlainRecord(input.canonical)) {
+    const keys = [...new Set([
+      ...Object.keys(input.legacy),
+      ...Object.keys(input.canonical),
+    ])].sort();
+    for (const key of keys) {
+      appendValueDifferences({
+        ...input,
+        path: input.path ? `${input.path}.${key}` : key,
+        legacy: key in input.legacy ? input.legacy[key] : MISSING,
+        canonical: key in input.canonical ? input.canonical[key] : MISSING,
+      });
+    }
+    return;
+  }
+  const legacyValue = describeValue(input.legacy);
+  const canonicalValue = describeValue(input.canonical);
+  if (legacyValue === canonicalValue) return;
+  input.differences.push({
+    surface: input.surface,
+    id: input.id,
+    path: input.path || "(value)",
+    legacyValue,
+    canonicalValue,
+  });
+}
+
+function describeValue(value: unknown | typeof MISSING): string {
+  if (value === MISSING) return "(missing)";
+  const serialized = JSON.stringify(sortValue(value)) ?? "undefined";
+  if (serialized.length <= 240) return serialized;
+  return JSON.stringify({
+    preview: `${serialized.slice(0, 200)}…`,
+    serializedLength: serialized.length,
+    sha256: createHash("sha256").update(serialized).digest("hex"),
+  });
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype;
 }
 
 export function hashBoardYjsDocument(doc: Y.Doc): string {

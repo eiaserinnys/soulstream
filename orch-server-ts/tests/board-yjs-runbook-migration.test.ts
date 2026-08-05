@@ -12,7 +12,10 @@ import {
   BoardYjsMigrationRevisionConflictError,
   computeBoardYjsRawRevision,
 } from "../src/board-yjs/board_yjs_raw_document.js";
-import { executeQuiescedBoardYjsRunbookMigration } from
+import {
+  executeQuiescedBoardYjsRunbookMigration,
+  executeQuiescedBoardYjsRunbookMigrationBatch,
+} from
   "../src/board-yjs/board_yjs_runbook_migration.js";
 import { createBoardYjsRunbookMigrationPlan } from
   "../src/board-yjs/board_yjs_runbook_plan.js";
@@ -23,6 +26,79 @@ import type {
 } from "../src/board-yjs/board_yjs_types.js";
 
 describe("approval-gated board Y.Doc runbook migration", () => {
+  it("commits every document in one transaction", async () => {
+    const repository = new MigrationRepositoryDouble();
+    repository.documents.set(
+      "board-folder:folder-a",
+      rawDocument(snapshotWithItem("session:a", "session-a", "runbook")),
+    );
+    repository.documents.set(
+      "board-folder:folder-b",
+      rawDocument(snapshotWithItem("session:b", "session-b", "runbook")),
+    );
+    const requests = ["board-folder:folder-a", "board-folder:folder-b"].map(
+      (documentName) => {
+        const plan = currentPlan(repository, documentName);
+        return {
+          documentName,
+          planFingerprint: plan.planFingerprint,
+          opaqueBoardItemIds: plan.opaqueBoardItemIds,
+        };
+      },
+    );
+
+    await executeQuiescedBoardYjsRunbookMigrationBatch({ requests, repository });
+
+    expect(repository.transactionCalls).toBe(1);
+    expect(repository.commitCalls).toBe(2);
+  });
+
+  it("rolls back every document when a later document fails", async () => {
+    const repository = new MigrationRepositoryDouble();
+    repository.documents.set(
+      "board-folder:folder-a",
+      rawDocument(snapshotWithItem("session:a", "session-a", "runbook")),
+    );
+    repository.documents.set(
+      "board-folder:folder-b",
+      rawDocument(snapshotWithItem("session:b", "session-b", "runbook")),
+    );
+    const before = new Map(repository.documents);
+    const first = currentPlan(repository, "board-folder:folder-a");
+    const second = currentPlan(repository, "board-folder:folder-b");
+
+    await expect(executeQuiescedBoardYjsRunbookMigrationBatch({
+      requests: [
+        {
+          documentName: first.sourceDocumentName,
+          planFingerprint: first.planFingerprint,
+          opaqueBoardItemIds: first.opaqueBoardItemIds,
+        },
+        {
+          documentName: second.sourceDocumentName,
+          planFingerprint: "stale-fingerprint",
+          opaqueBoardItemIds: second.opaqueBoardItemIds,
+        },
+      ],
+      repository,
+    })).rejects.toThrow("plan fingerprint mismatch");
+
+    expect(repository.transactionCalls).toBe(1);
+    expect(repository.documents).toEqual(before);
+  });
+
+  it("treats an empty migration batch as a successful no-op", async () => {
+    const repository = new MigrationRepositoryDouble();
+
+    await expect(executeQuiescedBoardYjsRunbookMigrationBatch({
+      requests: [],
+      repository,
+    })).resolves.toEqual([]);
+
+    expect(repository.transactionCalls).toBe(0);
+    expect(repository.commitCalls).toBe(0);
+  });
+
   it("leaves the canonical document untouched when preflight validation fails", async () => {
     const repository = new MigrationRepositoryDouble();
     repository.documents.set(
@@ -84,6 +160,15 @@ describe("approval-gated board Y.Doc runbook migration", () => {
     );
     const plan = currentPlan(repository, "board:runbook:task-a");
     expect(plan.targetEquivalent).toBe(false);
+    expect(plan.collisionDifferences).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        surface: "board_item",
+        id: "runbook:task-a",
+        path: "item_id",
+        legacyValue: '"legacy"',
+        canonicalValue: '"canonical"',
+      }),
+    ]));
 
     await expect(executeQuiescedBoardYjsRunbookMigration({
       request: {
@@ -140,9 +225,24 @@ describe("board Y.Doc projection verification", () => {
 });
 
 class MigrationRepositoryDouble {
-  readonly documents = new Map<string, BoardYjsRawDocument>();
+  documents = new Map<string, BoardYjsRawDocument>();
   commitCalls = 0;
+  transactionCalls = 0;
   injectRevisionRaceOnce = false;
+
+  async runBoardYjsRunbookMigrationTransaction<T>(
+    operation: (repository: MigrationRepositoryDouble) => Promise<T>,
+  ): Promise<T> {
+    this.transactionCalls += 1;
+    const committedDocuments = this.documents;
+    this.documents = new Map(committedDocuments);
+    try {
+      return await operation(this);
+    } catch (error) {
+      this.documents = committedDocuments;
+      throw error;
+    }
+  }
 
   async loadRawBoardYjsDocument(name: string): Promise<BoardYjsRawDocument | null> {
     return this.documents.get(name) ?? null;

@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 import postgres from "postgres";
 import * as Y from "yjs";
@@ -6,7 +8,7 @@ import * as Y from "yjs";
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
 import { assertBoardYjsQuiescedApplyPreflight } from
   "../src/board-yjs/board_yjs_quiesced_preflight.js";
-import { executeQuiescedBoardYjsRunbookMigration } from
+import { executeQuiescedBoardYjsRunbookMigrationBatch } from
   "../src/board-yjs/board_yjs_runbook_migration.js";
 import {
   hasBoardYjsRunbookResidue,
@@ -14,12 +16,15 @@ import {
 } from "../src/board-yjs/board_yjs_runbook_residue.js";
 import {
   createBoardYjsRunbookMigrationPlan,
+  type BoardYjsCollisionDifference,
   type BoardYjsRunbookMigrationPlan,
 } from "../src/board-yjs/board_yjs_runbook_plan.js";
 import { computeBoardYjsRawRevision } from
   "../src/board-yjs/board_yjs_raw_document.js";
 import type { BoardYjsRawDocument } from "../src/board-yjs/board_yjs_persistence.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
+import { BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID } from
+  "../src/board-yjs/board_yjs_runbook_deploy.js";
 
 interface DocumentRow {
   name: string;
@@ -34,7 +39,21 @@ interface UpdateRow {
 
 const apply = process.argv.includes("--apply");
 const summaryOnly = process.argv.includes("--summary");
+const collisionDetails = process.argv.includes("--collision-details");
 const approvedCollisionHashesPath = readOption("--approved-collision-hashes");
+loadDeploymentEnvironmentIfPresent();
+if (apply) {
+  const nodeId = requiredEnv("SOULSTREAM_NODE_ID");
+  if (nodeId !== BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID) {
+    process.stdout.write(`${JSON.stringify({
+      event: "board_yjs_runbook_migration",
+      status: "skipped",
+      reason: "non_central_node",
+      nodeId,
+    })}\n`);
+    process.exit(0);
+  }
+}
 await assertBoardYjsQuiescedApplyPreflight({
   apply,
   quiescedAcknowledged: process.argv.includes("--quiesced"),
@@ -177,6 +196,9 @@ try {
       equivalent: entry.targetEquivalent,
       collisionContentHash: entry.collisionContentHash,
       planFingerprint: entry.planFingerprint,
+      differenceCount: entry.collisionDifferences?.length ?? 0,
+      differenceSummary: summarizeCollisionDifferences(entry.collisionDifferences ?? []),
+      ...(collisionDetails ? { differences: entry.collisionDifferences } : {}),
     })),
     collisionPolicy: "non-equivalent targets require an explicitly approved content hash",
     opaqueBoardItemIds: opaqueAllowlist,
@@ -207,18 +229,18 @@ try {
         `non-equivalent collision hashes require approval: ${JSON.stringify(missingApprovals)}`,
       );
     }
-    for (const entry of affected) {
-      const result = await executeQuiescedBoardYjsRunbookMigration({
-        request: {
-          documentName: entry.sourceDocumentName,
-          planFingerprint: entry.planFingerprint,
-          opaqueBoardItemIds: entry.opaqueBoardItemIds,
-          approvedCollisionContentHash: entry.targetEquivalent === false
-            ? entry.collisionContentHash
-            : null,
-        },
-        repository,
-      });
+    const results = await executeQuiescedBoardYjsRunbookMigrationBatch({
+      requests: affected.map((entry) => ({
+        documentName: entry.sourceDocumentName,
+        planFingerprint: entry.planFingerprint,
+        opaqueBoardItemIds: entry.opaqueBoardItemIds,
+        approvedCollisionContentHash: entry.targetEquivalent === false
+          ? entry.collisionContentHash
+          : null,
+      })),
+      repository,
+    });
+    for (const result of results) {
       process.stdout.write(`${JSON.stringify({
         ok: true,
         sourceDocumentName: result.sourceDocumentName,
@@ -235,6 +257,12 @@ function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function loadDeploymentEnvironmentIfPresent(): void {
+  const serviceCwd = process.env.HANIEL_SERVICE_CWD?.trim() || process.cwd();
+  const path = resolve(serviceCwd, ".env.soul-server-ts");
+  if (existsSync(path)) process.loadEnvFile(path);
 }
 
 function readOption(name: string): string | null {
@@ -267,4 +295,44 @@ function assertSameStrings(actual: readonly string[], expected: readonly string[
 
 function sameStrings(actual: readonly string[], expected: readonly string[]): boolean {
   return JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort());
+}
+
+function summarizeCollisionDifferences(differences: readonly BoardYjsCollisionDifference[]) {
+  const groups = new Map<string, {
+    surface: BoardYjsCollisionDifference["surface"];
+    path: string;
+    ids: Set<string>;
+    examples: Array<Pick<
+      BoardYjsCollisionDifference,
+      "id" | "legacyValue" | "canonicalValue"
+    >>;
+  }>();
+  for (const difference of differences) {
+    const key = `${difference.surface}:${difference.path}`;
+    const group = groups.get(key) ?? {
+      surface: difference.surface,
+      path: difference.path,
+      ids: new Set<string>(),
+      examples: [],
+    };
+    group.ids.add(difference.id);
+    if (group.examples.length < 3) {
+      group.examples.push({
+        id: difference.id,
+        legacyValue: difference.legacyValue,
+        canonicalValue: difference.canonicalValue,
+      });
+    }
+    groups.set(key, group);
+  }
+  return [...groups.values()]
+    .sort((left, right) =>
+      `${left.surface}:${left.path}`.localeCompare(`${right.surface}:${right.path}`)
+    )
+    .map((group) => ({
+      surface: group.surface,
+      path: group.path,
+      affectedIds: group.ids.size,
+      examples: group.examples,
+    }));
 }

@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 import {
   syncBoardYjsReplicaWithSql,
-} from "../board-yjs/board_yjs_repository.js";
+} from "../board-yjs/board_yjs_replica_sync.js";
 import {
   BoardYjsSqlResolver,
 } from "../board-yjs/board_yjs_sql.js";
