@@ -10,13 +10,14 @@ describe("buildFetchSessionsUrl", () => {
     expect(
       buildFetchSessionsUrl("/api/sessions", {
         sessionType: "claude",
+        reviewState: "needs_review",
         offset: 50,
         limit: 25,
         folderId: "folder A/B",
         feedOnly: true,
       }),
     ).toBe(
-      "/api/sessions?session_type=claude&offset=50&limit=25&folder_id=folder+A%2FB&feed_only=true",
+      "/api/sessions?session_type=claude&review_state=needs_review&offset=50&limit=25&folder_id=folder+A%2FB&feed_only=true",
     );
   });
 

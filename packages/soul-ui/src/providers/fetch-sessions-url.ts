@@ -9,6 +9,7 @@ export function buildFetchSessionsUrl(
     params.append("session_id", sessionId);
   }
   if (options?.sessionType) params.set("session_type", options.sessionType);
+  if (options?.reviewState) params.set("review_state", options.reviewState);
   if (options?.offset != null && options.offset > 0) {
     params.set("offset", String(options.offset));
   }

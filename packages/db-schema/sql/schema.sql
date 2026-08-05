@@ -1457,6 +1457,9 @@ BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
         q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
     END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'review_state' THEN
+        q := q || ' AND s.review_state = ' || quote_literal(p_filters->>'review_state');
+    END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'search' THEN
         q := q || ' AND (' ||
             'COALESCE(s.display_name, '''') ILIKE ' ||
@@ -1512,6 +1515,9 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
         q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'review_state' THEN
+        q := q || ' AND s.review_state = ' || quote_literal(p_filters->>'review_state');
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'search' THEN
         q := q || ' AND (' ||

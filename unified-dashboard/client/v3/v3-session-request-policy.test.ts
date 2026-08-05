@@ -17,4 +17,16 @@ describe("v3 session request policy", () => {
     expect(planeSource).toMatch(/sessionIds,/);
     expect(`${layoutSource}\n${planeSource}`).not.toMatch(/sessionScope\s*:\s*["']all["']/);
   });
+
+  it("loads the canonical review queue separately from the recent-session window", () => {
+    const layoutSource = readFileSync(LAYOUT_PATH, "utf8");
+    const planeSource = readFileSync(LIVE_PLANE_PATH, "utf8");
+
+    expect(planeSource).toMatch(/reviewState\s*:\s*["']needs_review["']/);
+    expect(planeSource).toMatch(/limit\s*:\s*0/);
+    expect(planeSource).toMatch(
+      /event\.type === ["']stream_meta["'][\s\S]*reviewQueue\.refetch\(\)/,
+    );
+    expect(layoutSource).toMatch(/reviewCount=\{reviewSessions\.length\}/);
+  });
 });

@@ -163,6 +163,20 @@ async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_session_review_filter_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("052_session_review_state_filter.sql")
+    schema_sql = _schema_sql()
+
+    for signature in [
+        "CREATE OR REPLACE FUNCTION session_get_all(",
+        "CREATE OR REPLACE FUNCTION session_count(",
+    ]:
+        function_sql = _function_sql(migration_sql, signature)
+        assert function_sql in schema_sql
+        assert "p_filters ? 'review_state'" in function_sql
+        assert "s.review_state" in function_sql
+
+
 async def test_session_predecessor_migration_contract_is_mirrored_in_schema_sql():
     migration_sql = _migration_sql("040_session_predecessor.sql")
     schema_sql = _schema_sql()
@@ -1162,6 +1176,20 @@ async def test_session_get_all_and_count(test_db):
     # count
     count = await test_db.fetchval("SELECT session_count($1::jsonb)", filters)
     assert count >= 3
+
+    # 검수 상태 필터는 최신순 페이지 창과 독립적으로 정확한 멤버십을 반환한다.
+    await test_db.execute(
+        "UPDATE sessions SET review_state = 'needs_review' WHERE session_id = 'sa-2'"
+    )
+    review_filters = json.dumps({"review_state": "needs_review"})
+    rows = await test_db.fetch(
+        "SELECT * FROM session_get_all($1::jsonb)", review_filters
+    )
+    assert [row["session_id"] for row in rows] == ["sa-2"]
+    count = await test_db.fetchval(
+        "SELECT session_count($1::jsonb)", review_filters
+    )
+    assert count == 1
 
     # limit/offset
     rows = await test_db.fetch("SELECT * FROM session_get_all(NULL, 2, 0)")

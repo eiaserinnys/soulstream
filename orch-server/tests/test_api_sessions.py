@@ -130,6 +130,33 @@ class TestListSessions:
             offset=0, limit=50, feed_only=True
         )
 
+    async def test_review_state_filter_passes_to_db_without_pagination(
+        self, client, mock_db
+    ):
+        """검수 대기는 최신 세션 창이 아니라 review_state 정본을 전량 조회한다."""
+        mock_db.get_all_sessions.return_value = ([], 0)
+
+        resp = await client.get(
+            "/api/sessions?review_state=needs_review&limit=0"
+        )
+
+        assert resp.status_code == 200
+        mock_db.get_all_sessions.assert_called_once_with(
+            offset=0,
+            limit=0,
+            review_state="needs_review",
+        )
+
+    async def test_review_state_filter_rejects_unknown_value(
+        self, client, mock_db
+    ):
+        """review_state 경계에서 저장 불가능한 값을 거부한다."""
+
+        resp = await client.get("/api/sessions?review_state=unknown")
+
+        assert resp.status_code == 422
+        mock_db.get_all_sessions.assert_not_called()
+
 
 class TestCreateSession:
     """POST /api/sessions tests."""

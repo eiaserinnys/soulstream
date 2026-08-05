@@ -10,7 +10,7 @@ paths remain auditable; shared policy logic lives in dashboard_access.py.
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from starlette.websockets import WebSocketDisconnect
@@ -164,6 +164,9 @@ def create_sessions_router(
         folderId: Optional[str] = Query(None),
         folder_id: Optional[str] = Query(None),
         session_type: Optional[str] = Query(None),
+        review_state: Optional[
+            Literal["not_required", "needs_review", "acknowledged"]
+        ] = Query(None),
         feed_only: bool = Query(False),
         offset: int = Query(0, ge=0),
         limit: int = Query(50, ge=0, le=200),
@@ -172,8 +175,8 @@ def create_sessions_router(
         """세션 목록 조회.
 
         신규 클라이언트는 snake_case `offset`, `limit`, `folder_id`,
-        `feed_only`, `session_type`을 사용한다. 기존 dashboard cursor/folderId
-        호출은 호환 입력으로 유지한다.
+        `feed_only`, `session_type`, `review_state`를 사용한다. 기존 dashboard
+        cursor/folderId 호출은 호환 입력으로 유지한다.
         """
         resolved_offset = offset
         if cursor:
@@ -201,6 +204,8 @@ def create_sessions_router(
         query_kwargs: dict = {"offset": resolved_offset, "limit": limit}
         if session_type is not None:
             query_kwargs["session_type"] = session_type
+        if review_state is not None:
+            query_kwargs["review_state"] = review_state
         if resolved_folder_id is not None:
             query_kwargs["folder_id"] = resolved_folder_id
         if feed_only:

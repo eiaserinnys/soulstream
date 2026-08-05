@@ -5,7 +5,12 @@
  * Soul Server API + SSE 스트림을 통한 실시간 업데이트.
  */
 
-import type { SessionSummary, EventTreeNode, SoulSSEEvent } from "@shared/types";
+import type {
+  SessionSummary,
+  EventTreeNode,
+  ReviewState,
+  SoulSSEEvent,
+} from "@shared/types";
 
 // === Provider 인터페이스 ===
 
@@ -15,6 +20,8 @@ export interface FetchSessionsOptions {
   sessionIds?: readonly string[];
   /** 세션 타입 필터 */
   sessionType?: string;
+  /** 검수 상태 필터 */
+  reviewState?: ReviewState;
   /** 페이지네이션 오프셋 (0-based) */
   offset?: number;
   /** 페이지 크기 */
