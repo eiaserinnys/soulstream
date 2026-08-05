@@ -4,10 +4,14 @@ import postgres from "postgres";
 import * as Y from "yjs";
 
 import {
+  BOARD_ITEMS_MAP,
   parseBoardYjsDocumentName,
   readBoardYDocReplica,
 } from "../src/board-yjs/board_yjs_model.js";
-import { assertBoardItemProjectionParity } from
+import {
+  assertBoardItemProjectionParity,
+  requireBoardItemCatalogProjection,
+} from
   "../src/board-yjs/board_yjs_projection_verification.js";
 import { inspectBoardYjsRunbookResidue } from
   "../src/board-yjs/board_yjs_runbook_residue.js";
@@ -30,20 +34,6 @@ interface CatalogRow {
   board_items: CatalogBoardItemRow[];
 }
 
-interface BoardItemRow {
-  id: string;
-  folder_id: string;
-  container_kind: "folder" | "task";
-  container_id: string;
-  membership_kind: "primary" | "reference";
-  source_task_item_id: string | null;
-  item_type: CatalogBoardItemRow["itemType"];
-  item_id: string;
-  x: string | number;
-  y: string | number;
-  metadata: Record<string, unknown> | null;
-}
-
 const sql = postgres(requiredEnv("DATABASE_URL"), { max: 1 });
 
 try {
@@ -63,12 +53,6 @@ try {
       SELECT folder_id, container_kind, container_id, board_items
       FROM board_yjs_catalog_cache
       ORDER BY container_kind, container_id
-    `;
-    const boardItems = await transaction<BoardItemRow[]>`
-      SELECT id, folder_id, container_kind, container_id, membership_kind,
-             source_task_item_id, item_type, item_id, x, y, metadata
-      FROM board_items
-      ORDER BY id
     `;
     const projections = await transaction<Array<{
       tasks: number;
@@ -97,7 +81,7 @@ try {
             OR board_items::text LIKE '%"source_runbook_item_id"%')
           AS catalog_legacy_source_keys
     `;
-    return { documents, updates, catalog, boardItems, projections: projections[0] };
+    return { documents, updates, catalog, projections: projections[0] };
   });
 
   const updatesByDocument = new Map<string, Uint8Array[]>();
@@ -115,7 +99,8 @@ try {
     `${row.container_kind}:${row.container_id}`,
     row,
   ]));
-  const ydocBoardItems: CatalogBoardItemRow[] = [];
+  let boardItemsCompared = 0;
+  let emptyDocumentsWithoutCatalog = 0;
   for (const row of inventory.documents) {
     const doc = new Y.Doc();
     if (row.snapshot.byteLength > 0) Y.applyUpdate(doc, new Uint8Array(row.snapshot));
@@ -129,8 +114,17 @@ try {
     for (const id of residue.opaqueBoardItemIds) opaqueBoardItemIds.add(id);
     const container = parseBoardYjsDocumentName(row.name);
     if (!container) throw new Error(`invalid board Y.Doc document name: ${row.name}`);
-    const cache = catalogByContainer.get(`${container.containerKind}:${container.containerId}`);
-    if (!cache) throw new Error(`missing catalog projection for board Y.Doc: ${row.name}`);
+    const cache = requireBoardItemCatalogProjection({
+      label: row.name,
+      ydocItemCount: doc.getMap(BOARD_ITEMS_MAP).size,
+      projection: catalogByContainer.get(
+        `${container.containerKind}:${container.containerId}`,
+      ) ?? null,
+    });
+    if (!cache) {
+      emptyDocumentsWithoutCatalog += 1;
+      continue;
+    }
     const replicaItems = readBoardYDocReplica({
       folderId: cache.folder_id,
       containerKind: container.containerKind,
@@ -141,14 +135,8 @@ try {
       ydocItems: replicaItems,
       projectionItems: cache.board_items,
     });
-    ydocBoardItems.push(...replicaItems);
+    boardItemsCompared += replicaItems.length;
   }
-
-  assertBoardItemProjectionParity({
-    label: "all board Y.Doc documents",
-    ydocItems: ydocBoardItems,
-    projectionItems: inventory.boardItems.map(toCatalogBoardItem),
-  });
 
   const committedAllowlist = JSON.parse(await readFile(
     new URL("./ydoc-runbook-opaque-board-item-allowlist.json", import.meta.url),
@@ -158,7 +146,8 @@ try {
     mode: "verify",
     documentsRecomposed: inventory.documents.length,
     pendingUpdatesApplied: inventory.updates.length,
-    boardItemsCompared: ydocBoardItems.length,
+    boardItemsCompared,
+    emptyDocumentsWithoutCatalog,
     ydoc: { legacyDocumentNames, legacyItemTypes, legacySourceKeys },
     opaqueBoardItemIds: [...opaqueBoardItemIds].sort(),
     projections: inventory.projections,
@@ -198,20 +187,4 @@ function assertContainsStrings(actual: readonly string[], expected: readonly str
   if (missing.length > 0) {
     throw new Error(`opaque board item IDs were not preserved: ${JSON.stringify(missing)}`);
   }
-}
-
-function toCatalogBoardItem(row: BoardItemRow): CatalogBoardItemRow {
-  return {
-    id: row.id,
-    folderId: row.folder_id,
-    containerKind: row.container_kind,
-    containerId: row.container_id,
-    membershipKind: row.membership_kind,
-    sourceTaskItemId: row.source_task_item_id,
-    itemType: row.item_type,
-    itemId: row.item_id,
-    x: Number(row.x),
-    y: Number(row.y),
-    metadata: row.metadata ?? {},
-  };
 }

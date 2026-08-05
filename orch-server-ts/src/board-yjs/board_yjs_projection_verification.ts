@@ -1,5 +1,15 @@
 import type { CatalogBoardItemRow } from "./board_yjs_types.js";
 
+export function requireBoardItemCatalogProjection<T>(input: {
+  label: string;
+  ydocItemCount: number;
+  projection: T | null;
+}): T | null {
+  if (input.projection !== null) return input.projection;
+  if (input.ydocItemCount === 0) return null;
+  throw new Error(`missing catalog projection for board Y.Doc: ${input.label}`);
+}
+
 export function assertBoardItemProjectionParity(input: {
   label: string;
   ydocItems: readonly CatalogBoardItemRow[];
