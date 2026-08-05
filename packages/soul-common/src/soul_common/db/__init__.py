@@ -1,4 +1,4 @@
-"""soul_common.db: 세션 저장소 (PostgreSQL / SQLite)"""
+"""soul_common.db: PostgreSQL 세션 저장소."""
 
 from soul_common.db.session_db_base import (
     SessionDBBase,
@@ -11,13 +11,11 @@ from soul_common.db.session_db_base import (
     ViewportProtocol,
 )
 from soul_common.db.session_db import PostgresSessionDB
-from soul_common.db.sqlite_session_db import SqliteSessionDB
 
 __all__ = [
     "SessionDBBase",
     "extract_searchable_text",
     "PostgresSessionDB",
-    "SqliteSessionDB",
     # 도메인 Protocol
     "SessionCRUDProtocol",
     "EventProtocol",
