@@ -36,9 +36,15 @@ Runbook에서 Task로 전환하는 동안 구 이름은 읽기 경계에서만 �
 
 ## Y.Doc 이관 게이트
 
-`migrate:ydoc-runbook-residue`는 기본이 읽기 전용 dry-run이다. apply는 사용자가 승인한 유지보수 창에서 orch Board Y.Doc 호스트를 먼저 중지한 뒤 `--apply --quiesced --orch-health-url=http://127.0.0.1:5200/api/health`를 함께 지정해야 한다. 로컬 health endpoint가 `ECONNREFUSED`가 아니거나 timeout·원격 네트워크 오류처럼 중지를 증명할 수 없는 상태면 DB 연결 전에 거부한다. 라이브 host API를 경유하는 apply 경로는 제공하지 않는다.
+`migrate:ydoc-runbook-residue`는 기본이 읽기 전용 dry-run이다. apply는 Haniel release manifest의 migration 단계가 orch Board Y.Doc 호스트를 중지한 뒤 `--apply --quiesced --orch-health-url=http://127.0.0.1:5200/api/health`를 함께 지정하여 실행한다. 로컬 health endpoint가 `ECONNREFUSED`가 아니거나 timeout·원격 네트워크 오류처럼 중지를 증명할 수 없는 상태면 DB 연결 전에 거부한다. 라이브 host API를 경유하는 apply 경로는 제공하지 않는다.
 
-quiesced preflight를 통과한 도구는 snapshot과 pending update를 격리 재합성하고 Yjs 구조 변환·재직렬화를 거쳐 정본 snapshot을 쓴다. 모든 문서는 dry-run의 전체 콘텐츠 hash·계획 fingerprint·opaque ID allowlist를 write 전에 다시 검증한다. 커밋 시 source/canonical row를 잠가 revision을 재검사하며, snapshot 교체·legacy 문서 제거·SQL 투영 동기화를 한 트랜잭션으로 처리한다. 의미가 달라졌으면 새 dry-run 승인을 요구한다.
+배포 래퍼와 이관 스크립트는 모두 `SOULSTREAM_NODE_ID=eiaserinnys`를 요구한다. worker·standalone manifest의 post-start 검증은 비중앙 노드에서 자식 migration·검증 명령을 실행하지 않고 `non_central_node` skip 감사 레코드 한 줄만 남긴다. 감사 이력은 Haniel의 release backup 디렉터리 `board-yjs-runbook-migration.jsonl`에 SQL migration ledger와 분리하여 누적한다.
+
+충돌 승인 정본은 `orch-server-ts/scripts/ydoc-runbook-collision-approvals.json`이다. 빈 배열이면 중앙 배포도 read-only dry-run 보고만 남기고 성공한다. 18개 승인 hash를 모두 채운 커밋이 배포될 때만 apply와 엄격 post-start 검증을 실행한다. 1~17개처럼 부분 승인된 파일은 배포 전에 거부한다.
+
+quiesced preflight를 통과한 도구는 snapshot과 pending update를 격리 재합성하고 Yjs 구조 변환·재직렬화를 거쳐 정본 snapshot을 쓴다. 모든 문서는 dry-run의 전체 콘텐츠 hash·계획 fingerprint·opaque ID allowlist를 write 전에 다시 검증한다. 전체 대상 문서의 source/canonical row를 한 PostgreSQL 트랜잭션 안에서 잠가 revision을 재검사하며, 모든 snapshot 교체·legacy 문서 제거·SQL 투영 동기화를 전부 커밋하거나 전부 롤백한다. 의미가 달라졌으면 새 dry-run 승인을 요구한다.
+
+Y.Doc apply 실패는 Haniel 배포 실패로 전파된다. 트랜잭션이 원상태로 롤백된 뒤 기존 roll-forward 및 previous-release recovery 계약이 서비스를 복구한다. 별도의 Y.Doc 복구 명령이나 SQL migration ledger 행은 만들지 않는다.
 
 문서명 충돌 18건 중 콘텐츠가 동등하지 않은 문서는 자동 삭제하지 않는다. dry-run이 산출한 collision content hash를 사용자가 별도 JSON 목록으로 승인한 경우에만 canonical `board:task:` 문서를 유지하고 legacy shadow를 제거한다. 해당 `runbook:` board item ID 18개는 고정 allowlist로 보존하며, source에만 있는 opaque ID가 있으면 승인 hash와 무관하게 거부한다.
 

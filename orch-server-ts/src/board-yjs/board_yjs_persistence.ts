@@ -41,6 +41,9 @@ export interface BoardYjsPersistenceRepository {
   invalidateBoardYjsCatalogCache?(container: BoardYjsContainerScope): void;
   loadRawBoardYjsDocument?(documentName: string): Promise<BoardYjsRawDocument | null>;
   commitBoardYjsRunbookMigration?(input: BoardYjsRunbookMigrationCommit): Promise<void>;
+  runBoardYjsRunbookMigrationTransaction?<T>(
+    operation: (repository: BoardYjsPersistenceRepository) => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface BoardYjsRawDocument {
