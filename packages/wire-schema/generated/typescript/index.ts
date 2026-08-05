@@ -1182,7 +1182,7 @@ export interface Intervene {
   requestId?: string;
   attachment_paths?: string[];
   /**
-   * Supervisor/live intervention ride-along context items.
+   * Live intervention ride-along context items.
    */
   extra_context_items?: {
     [k: string]: unknown;
@@ -1202,10 +1202,6 @@ export interface Intervene {
   parent_delivery_id?: string;
   caller_turn_id?: string;
   created_at?: string;
-  /**
-   * Supervisor registry role resolved atomically when the durable delivery is claimed.
-   */
-  supervisor_role?: string;
   /**
    * Opaque recovery lease token fencing one delivery attempt.
    */

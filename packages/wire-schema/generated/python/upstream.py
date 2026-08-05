@@ -450,7 +450,6 @@ class Intervene(TypedDict):
     parent_delivery_id: NotRequired[str]
     caller_turn_id: NotRequired[str]
     created_at: NotRequired[str]
-    supervisor_role: NotRequired[str]
     delivery_lease_owner: NotRequired[str]
 
 

@@ -120,56 +120,6 @@ export class SessionDeliveryRepository {
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
-  /**
-   * Resolves the active supervisor and claims the durable delivery in one
-   * transaction. The delivery row is locked before a fresh READ COMMITTED
-   * supervisor lookup, so a handover committed during the wait is observed.
-   * Dispatching/terminal rows remain immutable.
-   */
-  async claimForCurrentSupervisor(
-    deliveryId: string,
-    supervisorRole: string,
-    leaseOwner = "legacy",
-    leaseMs = 15_000,
-  ): Promise<SessionDeliveryRow | null> {
-    return await this.sql.begin(async (transaction) => {
-      const locked = await transaction<SessionDeliveryRow[]>`
-        SELECT *
-        FROM session_deliveries
-        WHERE delivery_id = ${deliveryId}
-          AND state = 'pending'
-          AND supervisor_role = ${supervisorRole}
-        FOR UPDATE
-      `;
-      if (!locked[0]) return null;
-      const targets = await transaction<Array<{ active_session_id: string }>>`
-        SELECT registry.active_session_id
-        FROM supervisor_registry AS registry
-        JOIN sessions AS target
-          ON target.session_id = registry.active_session_id
-        WHERE registry.role = ${supervisorRole}
-          AND registry.active_session_id IS NOT NULL
-        FOR KEY SHARE OF registry
-      `;
-      const target = targets[0]?.active_session_id;
-      if (!target) return null;
-      const rows = await transaction<SessionDeliveryRow[]>`
-        UPDATE session_deliveries
-        SET
-          target_session_id = ${target},
-          state = 'claimed',
-          claimed_at = NOW(),
-          lease_owner = ${leaseOwner},
-          lease_expires_at = NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
-          updated_at = NOW()
-        WHERE delivery_id = ${deliveryId}
-          AND state = 'pending'
-        RETURNING *
-      `;
-      return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
-    });
-  }
-
   async beginDispatch(
     deliveryId: string,
     leaseOwner?: string,
@@ -183,15 +133,6 @@ export class SessionDeliveryRepository {
         AND (
           delivery.lease_expires_at IS NULL
           OR delivery.lease_expires_at > NOW()
-        )
-        AND (
-          delivery.supervisor_role IS NULL
-          OR EXISTS (
-            SELECT 1
-            FROM supervisor_registry AS registry
-            WHERE registry.role = delivery.supervisor_role
-              AND registry.active_session_id = delivery.target_session_id
-          )
         )
       RETURNING delivery.*
     `;
@@ -226,18 +167,7 @@ export class SessionDeliveryRepository {
       const claimed: SessionDeliveryRow[] = [];
       for (const row of due) {
         let targetSessionId = row.target_session_id;
-        if (row.supervisor_role) {
-          const targets = await transaction<Array<{ active_session_id: string }>>`
-            SELECT registry.active_session_id
-            FROM supervisor_registry AS registry
-            JOIN sessions AS target
-              ON target.session_id = registry.active_session_id
-            WHERE registry.role = ${row.supervisor_role}
-              AND registry.active_session_id IS NOT NULL
-            FOR KEY SHARE OF registry
-          `;
-          targetSessionId = targets[0]?.active_session_id ?? null;
-        } else if (targetSessionId) {
+        if (targetSessionId) {
           const targets = await transaction<Array<{ session_id: string }>>`
             SELECT session_id FROM sessions
             WHERE session_id = ${targetSessionId}
@@ -248,10 +178,6 @@ export class SessionDeliveryRepository {
           await transaction`
             UPDATE session_deliveries
             SET
-              target_session_id = CASE
-                WHEN supervisor_role IS NULL THEN target_session_id
-                ELSE NULL
-              END,
               attempt_count = attempt_count + 1,
               next_attempt_at = NOW()
                 + LEAST(
@@ -285,44 +211,6 @@ export class SessionDeliveryRepository {
     });
   }
 
-  /**
-   * v2 초기 릴리스는 caller_info.source=agent만으로 supervisor_role을 추론했다.
-   * 실제 registry row가 없는 ordinary delegation만 구조적 caller_session_id로
-   * 되돌려 같은 delivery identity를 복구한다. 명시 supervisor delivery는 건드리지 않는다.
-   */
-  async repairInferredSupervisorCompletionTargets(): Promise<number> {
-    const rows = await this.sql<Array<{ delivery_id: string }>>`
-      UPDATE session_deliveries AS delivery
-      SET
-        target_session_id = source.caller_session_id,
-        supervisor_role = NULL,
-        next_attempt_at = NOW(),
-        last_error = 'reclassified_direct_agent_caller',
-        updated_at = NOW()
-      FROM sessions AS source
-      WHERE delivery.source_session_id = source.session_id
-        AND delivery.intent = 'completion_notification'
-        AND delivery.source = 'completion_notifier'
-        AND delivery.state = 'pending'
-        AND delivery.target_session_id IS NULL
-        AND delivery.supervisor_role IS NOT NULL
-        AND delivery.last_error = 'no_current_target'
-        AND source.caller_session_id IS NOT NULL
-        AND EXISTS (
-          SELECT 1
-          FROM sessions AS target
-          WHERE target.session_id = source.caller_session_id
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM supervisor_registry AS registry
-          WHERE registry.role = delivery.supervisor_role
-        )
-      RETURNING delivery.delivery_id
-    `;
-    return rows.length;
-  }
-
   async deferPending(
     deliveryId: string,
     error: string,
@@ -331,10 +219,6 @@ export class SessionDeliveryRepository {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
       SET
-        target_session_id = CASE
-          WHEN supervisor_role IS NULL THEN target_session_id
-          ELSE NULL
-        END,
         attempt_count = attempt_count + 1,
         next_attempt_at = ${nextAttemptAt},
         last_error = ${error},
@@ -356,10 +240,6 @@ export class SessionDeliveryRepository {
       UPDATE session_deliveries
       SET
         state = 'pending',
-        target_session_id = CASE
-          WHEN supervisor_role IS NULL THEN target_session_id
-          ELSE NULL
-        END,
         lease_owner = NULL,
         lease_expires_at = NULL,
         attempt_count = attempt_count + 1,
@@ -379,10 +259,6 @@ export class SessionDeliveryRepository {
       UPDATE session_deliveries
       SET
         state = 'pending',
-        target_session_id = CASE
-          WHEN supervisor_role IS NULL THEN target_session_id
-          ELSE NULL
-        END,
         lease_owner = NULL,
         lease_expires_at = NULL,
         attempt_count = attempt_count + 1,

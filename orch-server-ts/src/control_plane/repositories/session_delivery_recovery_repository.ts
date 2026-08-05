@@ -134,31 +134,6 @@ export class SessionDeliveryRecoveryRepository {
                   FROM sessions AS target
                   WHERE target.session_id = delivery.target_session_id
                 )
-                OR (
-                  delivery.supervisor_role IS NOT NULL
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM supervisor_registry AS registry
-                    WHERE registry.role = delivery.supervisor_role
-                      AND registry.active_session_id = delivery.target_session_id
-                  )
-                  AND (
-                    EXISTS (
-                      SELECT 1
-                      FROM sessions AS target
-                      WHERE target.session_id = delivery.target_session_id
-                        AND target.node_id = ${scan?.recoveryNodeId ?? null}
-                    )
-                    OR NOT EXISTS (
-                      SELECT 1
-                      FROM sessions AS target
-                      JOIN soulstream_node_heartbeats AS heartbeat
-                        ON heartbeat.node_id = target.node_id
-                      WHERE target.session_id = delivery.target_session_id
-                        AND heartbeat.last_seen_at >= ${scan?.staleNodeBefore ?? null}
-                    )
-                  )
-                )
                 OR EXISTS (
                   SELECT 1
                   FROM sessions AS target

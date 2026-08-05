@@ -16,7 +16,6 @@ import {
   ClaudeRuntimeHostClient,
   SessionDeliveryHostClient,
   SessionPageBindingHostClient,
-  SupervisorHostClient,
 } from "../control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
@@ -57,9 +56,9 @@ import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
 import {
-  composeSupervisorRuntime,
-  type SupervisorComposition,
-} from "./supervisor_composition.js";
+  composeTaskRuntime,
+  type TaskRuntimeComposition,
+} from "./task_runtime_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -72,7 +71,7 @@ export interface WorkerCompositionParams {
   codexCliPath?: CodexCliPathResolution;
   modelCatalog?: ModelCatalog;
 }
-export interface WorkerComposition extends SupervisorComposition {
+export interface WorkerComposition extends TaskRuntimeComposition {
   db: SessionDB;
   server: ServerInstance;
   taskManager: TaskManager;
@@ -149,7 +148,6 @@ export async function composeWorkerRuntime(
   const claudeRuntimeHost = new ClaudeRuntimeHostClient({ orch: orchProxyConfig, logger });
   db.configurePersistenceHosts({
     deliveries: new SessionDeliveryHostClient({ orch: orchProxyConfig, logger }),
-    supervisors: new SupervisorHostClient({ orch: orchProxyConfig, logger }),
     claudeRuntime: claudeRuntimeHost,
     sessionPageBindings: new SessionPageBindingHostClient({ orch: orchProxyConfig, logger }),
   });
@@ -219,7 +217,7 @@ export async function composeWorkerRuntime(
         persistence,
       })
     : undefined;
-  let supervisor!: SupervisorComposition, taskManager!: TaskManager;
+  let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
         enabled: true,
@@ -244,7 +242,7 @@ export async function composeWorkerRuntime(
           for (const payload of mapClaudeClientEvent(event)) {
             if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
             await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
-            await supervisor.claudeRuntimeTaskFollowup.collectDetached(task, payload);
+            await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload);
           }
         },
       })
@@ -277,7 +275,7 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
-  supervisor = composeSupervisorRuntime({
+  taskRuntime = composeTaskRuntime({
     env,
     db,
     logger,
@@ -305,7 +303,7 @@ export async function composeWorkerRuntime(
     {
       send: (message) =>
         sendMessageToSession(
-          { taskManager, onResume: supervisor.onResume, logger, orch: orchProxyConfig },
+          { taskManager, onResume: taskRuntime.onResume, logger, orch: orchProxyConfig },
           message,
         ),
     },
@@ -351,7 +349,7 @@ export async function composeWorkerRuntime(
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
     taskManager,
-    taskExecutor: supervisor.taskExecutor,
+    taskExecutor: taskRuntime.taskExecutor,
     ...(claudeRuntime.childCompletionConsumption
       ? { childCompletionConsumption: claudeRuntime.childCompletionConsumption }
       : {}),
@@ -364,7 +362,6 @@ export async function composeWorkerRuntime(
     checklistTaskAdapter,
     customViewService,
     logger,
-    mcpToolProfile: env.MCP_TOOL_PROFILE,
     orch: orchProxyConfig,
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
@@ -420,7 +417,7 @@ export async function composeWorkerRuntime(
       {
         agentRegistry,
         taskManager,
-        taskExecutor: supervisor.taskExecutor,
+        taskExecutor: taskRuntime.taskExecutor,
         attachmentStore,
         claudeAuth,
         sessionDb: db,
@@ -436,7 +433,7 @@ export async function composeWorkerRuntime(
   };
 
   return {
-    ...supervisor,
+    ...taskRuntime,
     db,
     server,
     taskManager,

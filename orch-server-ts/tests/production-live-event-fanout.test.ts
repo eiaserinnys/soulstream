@@ -303,9 +303,6 @@ describe("production live event fanout", () => {
         database.queries.some((query) => query.includes("FROM push_tokens"))
       );
       await application.closeResources();
-      expect(database.queries).not.toContainEqual(
-        expect.stringContaining("supervisor_event_append"),
-      );
       observedConsumers.add("push-notifier");
       expect([...observedConsumers].sort()).toEqual([
         "node-stream",

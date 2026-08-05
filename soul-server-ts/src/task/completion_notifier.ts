@@ -63,7 +63,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     private readonly logger: Logger,
     private readonly orch?: OrchProxyConfig,
     fetchImpl?: typeof fetch,
-    private readonly supervisorRegistry?: Pick<
+    private readonly sessionLookup?: Pick<
       SessionDB,
       "getSession"
     >,
@@ -115,7 +115,6 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       await this.durableCoordinator.enqueue({
         targetSessionId: callerSessionId,
         sourceSessionId: childId,
-        supervisorRole: task.completionSupervisorRole,
         terminalRevision: String(task.lastEventId),
         text,
         callerInfo,
@@ -168,9 +167,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   }
 
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
-    if (!this.supervisorRegistry) return true;
+    if (!this.sessionLookup) return true;
     try {
-      const row = await this.supervisorRegistry.getSession(callerSessionId);
+      const row = await this.sessionLookup.getSession(callerSessionId);
       return !row?.node_id || row.node_id === this.nodeId;
     } catch (err) {
       if (this.deliveryV2Enabled) throw err;
@@ -266,7 +265,6 @@ export class TaskCompletionNotifier implements CompletionNotifier {
             parent_delivery_id: params.parentDeliveryId,
             caller_turn_id: params.callerTurnId,
             created_at: params.deliveryCreatedAt,
-            supervisor_role: params.supervisorRole,
             delivery_lease_owner: params.deliveryLeaseOwner,
           }
         : {}),

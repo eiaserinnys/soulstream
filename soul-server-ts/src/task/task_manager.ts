@@ -133,23 +133,6 @@ export class TaskManager {
       rememberTask: (task) => {
         this.tasks.set(task.agentSessionId, task);
       },
-      ...(deliveryRuntimeV2Enabled
-        ? {
-            resolveCompletionSupervisorRole: async (callerSessionId: string) => {
-              const activeRoles = (await db.listSupervisorRegistries())
-                .filter((registry) => registry.activeSessionId === callerSessionId)
-                .map((registry) => registry.role);
-              if (activeRoles.length === 1) return activeRoles[0];
-              if (activeRoles.length > 1) {
-                logger.warn(
-                  { callerSessionId, activeRoles },
-                  "Completion supervisor control is ambiguous — preserving direct caller routing",
-                );
-              }
-              return undefined;
-            },
-        }
-        : {}),
     });
     const lifecycleTransition = new TaskLifecycleTransition({
       db,

@@ -144,7 +144,6 @@ describe("TaskCompletionNotifier.notify", () => {
       vi.fn(),
       {
         getSession,
-        getSupervisorRegistry: vi.fn(),
       } as never,
       false,
     );
@@ -155,7 +154,7 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
   });
 
-  it("v2는 supervisor 조회보다 먼저 durable identity를 등록한 뒤 현재 target을 전달한다", async () => {
+  it("v2는 durable identity를 등록한 뒤 직접 지정된 target에 전달한다", async () => {
     const tm = makeTaskManagerStub();
     let stored: Record<string, unknown> | undefined;
     const calls: string[] = [];
@@ -175,7 +174,6 @@ describe("TaskCompletionNotifier.notify", () => {
           producer_terminal_revision: params.producerTerminalRevision,
           parent_delivery_id: null,
           caller_turn_id: null,
-          supervisor_role: params.supervisorRole,
           payload_hash: params.payloadHash,
           payload: params.payload,
           state: "pending",
@@ -190,21 +188,20 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForCurrentSupervisor: vi.fn(async (
+      claimForTarget: vi.fn(async (
         _deliveryId: string,
-        _supervisorRole: string,
+        targetSessionId: string,
         leaseOwner: string,
       ) => {
-        calls.push("claim-current");
+        calls.push("claim-target");
         stored = {
           ...stored,
-          target_session_id: "supervisor-current",
+          target_session_id: targetSessionId,
           state: "claimed",
           lease_owner: leaseOwner,
         };
         return stored;
       }),
-      claimForTarget: vi.fn(),
       claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
       deferPending: vi.fn(),
       retryLeasedDelivery: vi.fn(),
@@ -227,31 +224,29 @@ describe("TaskCompletionNotifier.notify", () => {
 
     await notifier.notify(makeChild({
       lastEventId: 42,
-      callerSessionId: "supervisor-old",
+      callerSessionId: "caller-current",
       callerInfo: {
         source: "agent",
-        agent_id: "ariella-ashwood-codex",
+        agent_id: "seosoyoung-opus",
       },
-      completionSupervisorRole: "ariella-ashwood-codex",
     }));
     const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
 
     expect(params).toMatchObject({
-      agentSessionId: "supervisor-current",
+      agentSessionId: "caller-current",
       deliveryIntent: "completion_notification",
       source: "completion_notifier",
       producerTerminalRevision: "42",
       relationKey: "child_session:child-sess-1:42",
-      supervisorRole: "ariella-ashwood-codex",
     });
     expect(params.deliveryId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(params.completionId).toMatch(/^completion:/);
-    expect(calls).toEqual(["register", "claim-current"]);
+    expect(calls).toEqual(["register", "claim-target"]);
   });
 
-  it("v2 일반 agent caller는 supervisor로 추측하지 않고 실제 caller에 1회 전달한다", async () => {
+  it("v2 일반 agent caller는 실제 caller에 1회 전달한다", async () => {
     const tm = makeTaskManagerStub();
     let stored: Record<string, unknown> | undefined;
     const repository = {
@@ -269,7 +264,6 @@ describe("TaskCompletionNotifier.notify", () => {
           producer_terminal_revision: params.producerTerminalRevision,
           parent_delivery_id: null,
           caller_turn_id: null,
-          supervisor_role: params.supervisorRole,
           payload_hash: params.payloadHash,
           payload: params.payload,
           state: "pending",
@@ -284,7 +278,6 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForCurrentSupervisor: vi.fn(),
       claimForTarget: vi.fn(async (
         _deliveryId: string,
         targetSessionId: string,
@@ -327,7 +320,6 @@ describe("TaskCompletionNotifier.notify", () => {
       },
     }));
 
-    expect(repository.claimForCurrentSupervisor).not.toHaveBeenCalled();
     expect(repository.claimForTarget).toHaveBeenCalledWith(
       expect.any(String),
       "ordinary-agent-caller",
@@ -337,7 +329,6 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
     expect(tm.addIntervention.mock.calls[0]![0]).toMatchObject({
       agentSessionId: "ordinary-agent-caller",
-      supervisorRole: undefined,
       deliveryIntent: "completion_notification",
     });
   });
@@ -362,7 +353,6 @@ describe("TaskCompletionNotifier.notify", () => {
           producer_terminal_revision: params.producerTerminalRevision,
           parent_delivery_id: null,
           caller_turn_id: null,
-          supervisor_role: params.supervisorRole,
           payload_hash: params.payloadHash,
           payload: params.payload,
           state: "pending",
@@ -377,7 +367,6 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForCurrentSupervisor: vi.fn(),
       claimForTarget: vi.fn(async (
         _deliveryId: string,
         targetSessionId: string,
@@ -477,7 +466,6 @@ describe("TaskCompletionNotifier.notify", () => {
       completionId: relayedBodies[0]?.completion_id,
       relationKey: "child_session:child-sess-1:44",
       producerTerminalRevision: "44",
-      supervisorRole: undefined,
       deliveryLeaseOwner: relayedBodies[0]?.delivery_lease_owner,
       callerInfo: {
         source: "agent",
@@ -509,7 +497,7 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("1b. gate OFF는 supervisor metadata가 있어도 기존 caller로 그대로 보낸다", async () => {
+  it("1b. gate OFF도 기존 caller로 그대로 보낸다", async () => {
     const tm = makeTaskManagerStub();
     const registry = makeAgentRegistry();
     const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
@@ -526,31 +514,31 @@ describe("TaskCompletionNotifier.notify", () => {
     );
 
     await notifier.notify(makeChild({
-      callerSessionId: "supervisor-old",
+      callerSessionId: "caller-old",
       callerInfo: {
         source: "agent",
-        agent_id: "ariella-ashwood-codex",
+        agent_id: "seosoyoung-opus",
       },
     }));
 
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
-    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("supervisor-old");
+    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("caller-old");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("v2 target claim 실패는 durable pending을 남기고 같은 identity로 recovery한다", async () => {
     const tm = makeTaskManagerStub();
     let stored: Record<string, unknown> | undefined;
-    const claimForCurrentSupervisor = vi.fn()
-      .mockRejectedValueOnce(new Error("temporary registry failure"))
+    const claimForTarget = vi.fn()
+      .mockRejectedValueOnce(new Error("temporary target claim failure"))
       .mockImplementation(async (
         _deliveryId: string,
-        _supervisorRole: string,
+        targetSessionId: string,
         leaseOwner: string,
       ) => {
         stored = {
           ...stored,
-          target_session_id: "supervisor-current",
+          target_session_id: targetSessionId,
           state: "claimed",
           lease_owner: leaseOwner,
         };
@@ -571,7 +559,6 @@ describe("TaskCompletionNotifier.notify", () => {
           producer_terminal_revision: params.producerTerminalRevision,
           parent_delivery_id: null,
           caller_turn_id: null,
-          supervisor_role: params.supervisorRole,
           payload_hash: params.payloadHash,
           payload: params.payload,
           state: "pending",
@@ -586,12 +573,11 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForCurrentSupervisor,
-      claimForTarget: vi.fn(),
+      claimForTarget,
       claimRecoverableCompletionDeliveries: vi.fn(async (leaseOwner: string) => {
         stored = {
           ...stored,
-          target_session_id: "supervisor-current",
+          target_session_id: "caller-old",
           state: "claimed",
           lease_owner: leaseOwner,
         };
@@ -617,12 +603,11 @@ describe("TaskCompletionNotifier.notify", () => {
     );
 
     await notifier.notify(makeChild({
-      callerSessionId: "supervisor-old",
+      callerSessionId: "caller-old",
       callerInfo: {
         source: "agent",
-        agent_id: "ariella-ashwood-codex",
+        agent_id: "seosoyoung-opus",
       },
-      completionSupervisorRole: "ariella-ashwood-codex",
     }));
 
     expect(tm.addIntervention).not.toHaveBeenCalled();

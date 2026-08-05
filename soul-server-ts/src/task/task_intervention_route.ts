@@ -46,7 +46,6 @@ export interface AddInterventionParams {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
-  supervisorRole?: string;
   deliveryLeaseOwner?: string;
   followupAttempt?: number;
   followupKey?: string;
@@ -120,7 +119,6 @@ export class TaskInterventionRoute {
       parentDeliveryId: params.parentDeliveryId,
       callerTurnId: params.callerTurnId,
       deliveryCreatedAt: params.deliveryCreatedAt,
-      supervisorRole: params.supervisorRole,
       deliveryLeaseOwner: params.deliveryLeaseOwner,
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,
@@ -286,7 +284,6 @@ function hydrateStoredDeliveryMessage(
     parentDeliveryId: row.parent_delivery_id ?? undefined,
     callerTurnId: row.caller_turn_id ?? undefined,
     deliveryCreatedAt: row.created_at.toISOString(),
-    supervisorRole: row.supervisor_role ?? undefined,
     deliveryLeaseOwner: row.lease_owner ?? undefined,
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,

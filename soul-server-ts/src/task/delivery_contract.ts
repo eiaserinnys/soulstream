@@ -39,7 +39,6 @@ export interface DeliveryMetadata {
   parentDeliveryId?: string;
   callerTurnId?: string;
   createdAt?: string;
-  supervisorRole?: string;
   deliveryLeaseOwner?: string;
 }
 

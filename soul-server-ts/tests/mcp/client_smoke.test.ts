@@ -19,9 +19,7 @@ import { AgentRegistry } from "../../src/agent_registry.js";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
-import type { SupervisorHostClient } from "../../src/control_plane/persistence_host_clients.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
-import { SupervisorRepository } from "../../../orch-server-ts/src/control_plane/repositories/supervisor_repository.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildServer } from "../../src/server.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -376,9 +374,6 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
   const db = new SessionDB(sql);
   db.configureFolderHost(
     new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
-  );
-  db.configureSupervisorHost(
-    new SupervisorRepository(sql as never) as unknown as SupervisorHostClient,
   );
   const broadcaster = {
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),

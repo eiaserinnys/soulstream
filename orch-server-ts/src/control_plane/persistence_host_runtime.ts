@@ -5,11 +5,9 @@ import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { SessionPageBindingRepository } from "./repositories/session_page_binding_repository.js";
-import { SupervisorRepository } from "./repositories/supervisor_repository.js";
 
 export interface PersistenceHostRepositories {
   deliveries: SessionDeliveryRepository;
-  supervisors: SupervisorRepository;
   claudeBackgroundTasks: ClaudeBackgroundTaskRepository;
   claudeTranscripts: ClaudeTranscriptRepository;
   sessionPageBindings: SessionPageBindingRepository;
@@ -25,7 +23,6 @@ export function createPersistenceHostRepositoryProvider(
     const sql = await resolver.resolveSql() as unknown as SqlClient;
     repositories = {
       deliveries: new SessionDeliveryRepository(sql),
-      supervisors: new SupervisorRepository(sql),
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
       claudeTranscripts: new ClaudeTranscriptRepository(sql),
       sessionPageBindings: new SessionPageBindingRepository(sql),

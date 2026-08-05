@@ -22,7 +22,7 @@ describe("getFolderNameSortKey", () => {
     expect(getFolderNameSortKey("👧🏻 서소영")).toBe("서소영");
     expect(getFolderNameSortKey("🗯️ 채널 개입")).toBe("채널 개입");
     expect(getFolderNameSortKey("👩‍💻 Development")).toBe("Development");
-    expect(getFolderNameSortKey("📋🤖  Supervisors")).toBe("Supervisors");
+    expect(getFolderNameSortKey("📋🤖  Agents")).toBe("Agents");
   });
 
   it("keeps names that start with Korean, English, or digits unchanged", () => {

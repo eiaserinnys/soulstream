@@ -20,7 +20,6 @@ import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
-import type { McpToolProfile } from "./tool_access.js";
 
 export interface OrchProxyConfig {
   /** http[s]://host[:port] base. ws→http 변환 후. */
@@ -51,8 +50,6 @@ export interface McpRuntime {
   pageHostClient?: PageYjsHostClient;
   checklistTaskAdapter?: ChecklistTaskAdapter;
   logger: Logger;
-  /** default = full tool surface. supervisor_readonly hides and blocks mutation tools. */
-  mcpToolProfile?: McpToolProfile;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */
   orch?: OrchProxyConfig;
 }

@@ -387,7 +387,7 @@ describe("TaskRuntimeCommands.intervene", () => {
   it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
     const resumedTask = makeTask({ agentSessionId: "sess-resume", profileId: codexAgent.id });
     const extraContextItems = [
-      { key: "supervisor", label: "Supervisor", content: "fresh context" },
+      { key: "review", label: "Review", content: "fresh context" },
     ];
     const addIntervention = vi.fn(async (_params, onResume) => {
       onResume(resumedTask);

@@ -225,37 +225,6 @@ describe("control-plane host routes", () => {
     expect(response.json()).toBeNull();
   });
 
-  it("keeps current-supervisor resolution and delivery claim in one host operation", async () => {
-    const claimForCurrentSupervisor = vi.fn(async () => ({
-      delivery_id: "delivery-1",
-      created_at: new Date("2026-08-05T10:00:00.000Z"),
-    }));
-    const app = Fastify();
-    apps.push(app);
-    registerPersistenceHostRoutes(app, {
-      authBearerToken: token,
-      repositoryProvider: async () => ({
-        deliveries: { claimForCurrentSupervisor },
-      }) as unknown as PersistenceHostRepositories,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/session-deliveries/host/claim_for_current_supervisor",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { args: ["delivery-1", "cluster", "worker-1", 15000] },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(claimForCurrentSupervisor).toHaveBeenCalledWith(
-      "delivery-1",
-      "cluster",
-      "worker-1",
-      15000,
-    );
-    expect(response.json().delivery_id).toBe("delivery-1");
-  });
-
   it("revives nested background terminal timestamps before the atomic repository call", async () => {
     const terminalize = vi.fn(async (input: unknown) => ({ accepted: false, row: input }));
     const app = Fastify();

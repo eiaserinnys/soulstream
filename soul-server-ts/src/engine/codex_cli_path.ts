@@ -23,7 +23,7 @@ const WINDOWS_SPAWNABLE_EXTENSIONS = [".cmd", ".exe", ".bat", ".com"] as const;
  * Resolve the target-node Codex CLI executable used by both SDK exec mode and
  * app-server mode.
  *
- * The TS service often runs under a supervisor with a narrower PATH than an
+ * The TS service often runs under a process manager with a narrower PATH than an
  * interactive shell. Codex is commonly installed in ~/.npm-global/bin on those
  * nodes, so relying on process PATH or the SDK's bundled binary can select the
  * wrong executable. Local and remote session creation converge before this

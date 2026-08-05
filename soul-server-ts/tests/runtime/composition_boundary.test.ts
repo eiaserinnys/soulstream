@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import pino from "pino";
 import { vi } from "vitest";
 
-import { composeSupervisorRuntime } from "../../src/runtime/supervisor_composition.js";
+import { composeTaskRuntime } from "../../src/runtime/task_runtime_composition.js";
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
 import { composeChecklistTaskProjection } from "../../src/runtime/checklist_task_composition.js";
 import { parseEnv } from "../../src/config.js";
@@ -20,21 +20,21 @@ function source(relativePath: string): string {
 }
 
 describe("worker composition boundary", () => {
-  it("exports explicit worker and supervisor composition roots", () => {
+  it("exports explicit worker and task composition roots", () => {
     expect(composeWorkerRuntime).toBeTypeOf("function");
-    expect(composeSupervisorRuntime).toBeTypeOf("function");
+    expect(composeTaskRuntime).toBeTypeOf("function");
   });
 
   it("keeps process lifecycle in main and dependency construction in composition modules", () => {
     const main = source("main.ts");
     const workerComposition = source("runtime/worker_composition.ts");
-    const supervisorComposition = source("runtime/supervisor_composition.ts");
+    const taskComposition = source("runtime/task_runtime_composition.ts");
 
     expect(main).toContain("composeWorkerRuntime");
     expect(main).toContain('process.once("SIGTERM"');
     expect(main).not.toMatch(/new (SessionDB|TaskManager|TaskExecutor|TaskService)\b/);
     expect(workerComposition).toMatch(/new (SessionDB|TaskManager|TaskService)\b/);
-    expect(supervisorComposition).toContain("new TaskExecutor");
+    expect(taskComposition).toContain("new TaskExecutor");
   });
 
   it("loads the model catalog at startup and warns only profiles missing default_preset", () => {
@@ -66,7 +66,7 @@ describe("worker composition boundary", () => {
     expect(composeChecklistTaskProjection).toBeTypeOf("function");
   });
 
-  it("production supervisor composition keeps gate-OFF completion delivery DB-free and legacy-local", async () => {
+  it("production task composition keeps gate-OFF completion delivery DB-free and legacy-local", async () => {
     const env = parseEnv({
       SOULSTREAM_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
@@ -105,13 +105,14 @@ describe("worker composition boundary", () => {
       finishDispatch: vi.fn(),
       failDispatch: vi.fn(),
     };
-    const composition = composeSupervisorRuntime({
+    const composition = composeTaskRuntime({
       env,
       db,
       logger: pino({ level: "silent" }),
       agentRegistry: { get: vi.fn() } as never,
       taskManager,
       engineFactory: vi.fn() as never,
+      modelCatalog: { resolve: vi.fn() } as never,
       contextBuilder: {} as never,
       persistence: {} as never,
       broadcaster: {} as never,
@@ -198,11 +199,11 @@ describe("worker composition boundary", () => {
   });
 
   it("starts delivery recovery only after the crash-resume executor is bound", () => {
-    const supervisorComposition = source("runtime/supervisor_composition.ts");
-    const executorIndex = supervisorComposition.indexOf(
+    const taskComposition = source("runtime/task_runtime_composition.ts");
+    const executorIndex = taskComposition.indexOf(
       "taskExecutor = new TaskExecutor(",
     );
-    const recoveryIndex = supervisorComposition.indexOf(
+    const recoveryIndex = taskComposition.indexOf(
       "completionDeliveryRecoveryWorker?.start();",
     );
 
@@ -232,7 +233,7 @@ describe("worker composition boundary", () => {
       "main.ts",
       "runtime/worker_composition.ts",
       "runtime/worker_schema_preflight.ts",
-      "runtime/supervisor_composition.ts",
+      "runtime/task_runtime_composition.ts",
       "context/context_builder.ts",
       "context/context_builder_helpers.ts",
       "context/page_context_resolver.ts",

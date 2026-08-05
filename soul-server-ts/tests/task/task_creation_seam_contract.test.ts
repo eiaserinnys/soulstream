@@ -22,9 +22,7 @@ describe("TaskCreationHook production seam", () => {
     const entrypoints = [
       "mcp/tools/session_mgmt.ts",
       "upstream/task_runtime_commands.ts",
-      "supervisor/activation.ts",
       "llm/executor.ts",
-      "runtime/supervisor_composition.ts",
     ];
     for (const path of entrypoints) {
       expect(source(path), path).toContain(".createTask(");

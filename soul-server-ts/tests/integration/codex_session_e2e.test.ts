@@ -166,7 +166,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     expect(ack?.agentSessionId).toBe("sess-e2e-1");
 
     // event envelopes — B-5: 첫 envelope는 user_message(초기 영속화), 그 다음 codexEvents,
-    // 마지막은 Supervisor termination_reason 정본 session_ended.
+    // 마지막은 termination_reason 정본 session_ended.
     const envelopes = orchReceived.filter((m) => m.type === "event");
     expect(envelopes.length).toBe(codexEvents.length + 2);  // +user_message + session_ended
     expect((envelopes[0].event as Record<string, unknown>).type).toBe("user_message");

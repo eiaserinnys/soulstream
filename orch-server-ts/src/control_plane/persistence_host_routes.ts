@@ -21,10 +21,8 @@ const deliveryOperations = {
   record_observed_child_completions: ["deliveries", null, "recordObservedChildCompletions"],
   claim: ["deliveries", null, "claim"],
   claim_for_target: ["deliveries", null, "claimForTarget"],
-  claim_for_current_supervisor: ["deliveries", null, "claimForCurrentSupervisor"],
   begin_dispatch: ["deliveries", null, "beginDispatch"],
   claim_recoverable_completion_deliveries: ["deliveries", null, "claimRecoverableCompletionDeliveries"],
-  repair_inferred_supervisor_completion_targets: ["deliveries", null, "repairInferredSupervisorCompletionTargets"],
   defer_pending: ["deliveries", null, "deferPending"],
   retry_leased_delivery: ["deliveries", null, "retryLeasedDelivery"],
   release_expired_delivery_leases: ["deliveries", null, "releaseExpiredDeliveryLeases"],
@@ -42,23 +40,6 @@ const deliveryOperations = {
   claim_recoverable_queued: ["deliveries", "recovery", "claimRecoverableQueued"],
   mark_delivered_from_transcript: ["deliveries", "recovery", "markDeliveredFromTranscript"],
   defer_queued_transcript_check: ["deliveries", "recovery", "deferQueuedTranscriptCheck"],
-} as const satisfies Record<string, OperationTarget>;
-
-const supervisorOperations = {
-  append_event: ["supervisors", null, "appendSupervisorEvent"],
-  read_events_after: ["supervisors", null, "readSupervisorEventsAfter"],
-  get_event_head_offset: ["supervisors", null, "getSupervisorEventHeadOffset"],
-  get_source_cursor: ["supervisors", null, "getSupervisorSourceCursor"],
-  set_source_cursor: ["supervisors", null, "setSupervisorSourceCursor"],
-  get_consumer_cursor: ["supervisors", null, "getSupervisorConsumerCursor"],
-  set_consumer_cursor: ["supervisors", null, "setSupervisorConsumerCursor"],
-  set_wake_dispatch_state: ["supervisors", null, "setSupervisorWakeDispatchState"],
-  upsert_registry: ["supervisors", null, "upsertSupervisorRegistry"],
-  get_registry: ["supervisors", null, "getSupervisorRegistry"],
-  list_registries: ["supervisors", null, "listSupervisorRegistries"],
-  touch_registry: ["supervisors", null, "touchSupervisorRegistry"],
-  record_usage_delta: ["supervisors", null, "recordSupervisorUsageDelta"],
-  delete_registry: ["supervisors", null, "deleteSupervisorRegistry"],
 } as const satisfies Record<string, OperationTarget>;
 
 const claudeRuntimeOperations = {
@@ -88,7 +69,6 @@ export function registerPersistenceHostRoutes(
   options: PersistenceHostRouteOptions,
 ): void {
   registerDomain(app, options, "session-deliveries", deliveryOperations);
-  registerDomain(app, options, "supervisors", supervisorOperations);
   registerDomain(app, options, "claude-runtime", claudeRuntimeOperations);
   registerDomain(app, options, "session-page-bindings", pageBindingOperations);
 }

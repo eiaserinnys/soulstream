@@ -177,7 +177,6 @@ function parseDeliveryMetadata(
     ["parent_delivery_id", "parentDeliveryId"],
     ["caller_turn_id", "callerTurnId"],
     ["created_at", "createdAt"],
-    ["supervisor_role", "supervisorRole"],
     ["delivery_lease_owner", "deliveryLeaseOwner"],
   ] as const;
   const value: DeliveryMetadataWireFields = {};

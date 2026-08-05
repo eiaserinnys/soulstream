@@ -16,7 +16,6 @@ import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
-import { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
   AgentConfigCommands,
   type AgentConfigCommandHandler,
@@ -104,9 +103,6 @@ export class CommandDispatcher {
       logger,
       modelCatalog,
     });
-    const supervisorDirectTargetGuard = sessionDb
-      ? new SupervisorDirectTargetGuard({ db: sessionDb, taskManager })
-      : undefined;
     const attachmentCommands = new AttachmentCommands(attachmentStore);
     const sessionListCommands = new SessionListCommands(sessionDb, nodeId);
     const claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
@@ -145,7 +141,6 @@ export class CommandDispatcher {
         send,
         deliveryCommands,
         taskRuntimeCommands,
-        supervisorDirectTargetGuard,
       }),
       ...createClaudeRuntimeCommandFamily({ send, claudeRuntimeCommands }),
       ...createRealtimeCommandFamily({ send, realtimeCommands }),

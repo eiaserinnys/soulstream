@@ -660,7 +660,7 @@
         },
         "extra_context_items": {
           "type": "array",
-          "description": "Supervisor/live intervention ride-along context items.",
+          "description": "Live intervention ride-along context items.",
           "items": { "type": "object", "additionalProperties": true }
         },
         "caller_info": { "type": "object", "additionalProperties": true },
@@ -684,10 +684,6 @@
         "parent_delivery_id": { "type": "string" },
         "caller_turn_id": { "type": "string" },
         "created_at": { "type": "string", "format": "date-time" },
-        "supervisor_role": {
-          "type": "string",
-          "description": "Supervisor registry role resolved atomically when the durable delivery is claimed."
-        },
         "delivery_lease_owner": {
           "type": "string",
           "description": "Opaque recovery lease token fencing one delivery attempt."

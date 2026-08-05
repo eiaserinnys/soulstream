@@ -23,7 +23,7 @@ export type DeliveryLedgerAdmission =
 
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
-  "register" | "claimForTarget" | "claimForCurrentSupervisor" | "beginDispatch" | "get"
+  "register" | "claimForTarget" | "beginDispatch" | "get"
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
   | "recordRelationConsumed"
@@ -74,14 +74,13 @@ export class TaskDeliveryLedgerGate {
     if (registered.row.state === "claimed") {
       if (
         registered.row.target_session_id !== params.agentSessionId ||
-        registered.row.supervisor_role !== (params.supervisorRole ?? null) ||
         !params.deliveryLeaseOwner ||
         registered.row.lease_owner !== params.deliveryLeaseOwner
       ) {
         return {
           kind: "suppressed",
           deliveryId: registered.row.delivery_id,
-          reason: "supervisor_handover_retry",
+          reason: "delivery_target_changed",
         };
       }
       return {
@@ -98,38 +97,17 @@ export class TaskDeliveryLedgerGate {
       };
     }
 
-    const claimed =
-      params.supervisorRole !== undefined
-        ? await repository.claimForCurrentSupervisor(
-            registered.row.delivery_id,
-            params.supervisorRole,
-            params.deliveryLeaseOwner ?? `route:${randomUUID()}`,
-          )
-        : await repository.claimForTarget(
-            registered.row.delivery_id,
-            params.agentSessionId,
-            params.deliveryLeaseOwner ?? `route:${randomUUID()}`,
-          );
+    const claimed = await repository.claimForTarget(
+      registered.row.delivery_id,
+      params.agentSessionId,
+      params.deliveryLeaseOwner ?? `route:${randomUUID()}`,
+    );
     if (!claimed) {
       const current = await repository.get(registered.row.delivery_id);
       return {
         kind: "suppressed",
         deliveryId: registered.row.delivery_id,
-        reason:
-          params.supervisorRole !== undefined &&
-          current?.state === "pending"
-            ? "supervisor_handover_retry"
-            : "concurrent_claim",
-      };
-    }
-    if (
-      params.supervisorRole !== undefined &&
-      claimed.target_session_id !== params.agentSessionId
-    ) {
-      return {
-        kind: "suppressed",
-        deliveryId: claimed.delivery_id,
-        reason: "supervisor_handover_retry",
+        reason: current?.state === "pending" ? "target_unavailable" : "concurrent_claim",
       };
     }
     return { kind: "admitted", deliveryId: claimed.delivery_id, row: claimed };
@@ -144,14 +122,10 @@ export class TaskDeliveryLedgerGate {
       admission.row.lease_owner ?? undefined,
     );
     if (!dispatching) {
-      const current = await this.requireRepository().get(admission.deliveryId);
       return {
         kind: "suppressed",
         deliveryId: admission.deliveryId,
-        reason:
-          current?.state === "claimed" && current.supervisor_role !== null
-            ? "supervisor_handover_retry"
-            : "delivery_consumed_before_dispatch",
+        reason: "delivery_consumed_before_dispatch",
       };
     }
     return { ...admission, row: dispatching };
@@ -372,7 +346,6 @@ function buildRegistration(
     producerTerminalRevision: params.producerTerminalRevision,
     parentDeliveryId: params.parentDeliveryId,
     callerTurnId: params.callerTurnId,
-    supervisorRole: params.supervisorRole,
     payloadHash: canonical.payloadHash,
     payload: canonical.payload,
     createdAt: parseCreatedAt(params.deliveryCreatedAt),

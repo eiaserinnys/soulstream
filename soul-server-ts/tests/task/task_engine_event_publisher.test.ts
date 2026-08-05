@@ -36,29 +36,7 @@ function makePublisherDeps() {
   } as unknown as EventPersistence;
 
   const setClaudeSessionId = vi.fn(async () => undefined);
-  const appendSupervisorEvent = vi.fn(async () => ({
-    offset: 1,
-    inserted: true,
-    contiguousUpto: 1,
-    highestSeenEventId: 1,
-    gapStart: null,
-    gapEnd: null,
-  }));
-  const getSupervisorRegistry = vi.fn(async () => null);
-  const touchSupervisorRegistry = vi.fn(async () => null);
-  const recordSupervisorUsageDelta = vi.fn(async () => undefined);
-  const upsertSupervisorRegistry = vi.fn(async () => undefined);
-  const db = {
-    setClaudeSessionId,
-    appendSupervisorEvent,
-    getSupervisorRegistry,
-    touchSupervisorRegistry,
-    recordSupervisorUsageDelta,
-    upsertSupervisorRegistry,
-  } as unknown as SessionDB;
-  const supervisorWakeScheduler = {
-    ingest: vi.fn(async () => ({ scheduled: true })),
-  };
+  const db = { setClaudeSessionId } as unknown as SessionDB;
 
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broadcaster = {
@@ -78,12 +56,6 @@ function makePublisherDeps() {
     logger,
     persistEventWithResult,
     persistence,
-    getSupervisorRegistry,
-    appendSupervisorEvent,
-    recordSupervisorUsageDelta,
-    supervisorWakeScheduler,
-    touchSupervisorRegistry,
-    upsertSupervisorRegistry,
     setClaudeSessionId,
   };
 }
@@ -122,47 +94,14 @@ describe("TaskEngineEventPublisher", () => {
     );
   });
 
-  it("appends persisted events to supervisor_events and schedules wake routing", async () => {
-    const deps = makePublisherDeps();
-    const publisher = new TaskEngineEventPublisher({
-      ...deps,
-      sourceNode: "node-1",
-      supervisorWakeScheduler: deps.supervisorWakeScheduler,
-    });
-    const task = makeTask();
-    const event = {
-      type: "assistant_message",
-      content: "hello",
-      timestamp: 1,
-    } as SSEEventPayload;
-
-    await publisher.publishEngineEvent(task, event);
-
-    expect(deps.appendSupervisorEvent).toHaveBeenCalledWith({
-      sourceNode: "node-1",
-      sourceSessionId: "sess-1",
-      sourceEventId: 42,
-      eventType: "assistant_message",
-      payload: event,
-      createdAt: new Date(1000),
-    });
-    expect(deps.supervisorWakeScheduler.ingest).toHaveBeenCalledWith(
-      "assistant_message",
-    );
-  });
-
   it("broadcasts duplicate engine events with the existing event id without repeating side effects", async () => {
     const deps = makePublisherDeps();
     deps.persistEventWithResult.mockResolvedValueOnce({
       eventId: 12,
       inserted: false,
     });
-    const publisher = new TaskEngineEventPublisher({
-      ...deps,
-      sourceNode: "node-1",
-      supervisorWakeScheduler: deps.supervisorWakeScheduler,
-    });
-    const task = makeTask({ lastEventId: 99, profileId: "ariela_codex" });
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ lastEventId: 99 });
     const event = {
       type: "assistant_message",
       content: "resume replay",
@@ -176,82 +115,7 @@ describe("TaskEngineEventPublisher", () => {
     expect((event as Record<string, unknown>)._event_id).toBe(12);
     expect((event as Record<string, unknown>)._dedupe_key).toBeUndefined();
     expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
-    expect(deps.appendSupervisorEvent).not.toHaveBeenCalled();
-    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
-    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
     expect(deps.handleSideEffects).not.toHaveBeenCalled();
-  });
-
-  it("touches supervisor heartbeat for non-usage activity events", async () => {
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValueOnce({
-      role: "ariela_codex",
-      activeSessionId: "sess-1",
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({ profileId: "ariela_codex" });
-    const event = {
-      type: "assistant_message",
-      content: "still working",
-      timestamp: 1,
-    } as SSEEventPayload;
-
-    await publisher.publishEngineEvent(task, event);
-
-    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ariela_codex");
-    expect(deps.touchSupervisorRegistry).toHaveBeenCalledWith(
-      "ariela_codex",
-      expect.any(Date),
-    );
-    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
-  });
-
-  it("does not touch supervisor heartbeat for stale sessions of the same role", async () => {
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValueOnce({
-      role: "ariela_codex",
-      activeSessionId: "supervisor-current",
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({
-      agentSessionId: "supervisor-old",
-      profileId: "ariela_codex",
-    });
-    const event = {
-      type: "assistant_message",
-      content: "stale session output",
-      timestamp: 1,
-    } as SSEEventPayload;
-
-    await publisher.publishEngineEvent(task, event);
-
-    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ariela_codex");
-    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
-  });
-
-  it("skips heartbeat touch for non-supervisor profiles and throttles registry checks", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date(1_000));
-      const deps = makePublisherDeps();
-      const publisher = new TaskEngineEventPublisher(deps);
-      const task = makeTask({ profileId: "ordinary-agent" });
-      const event = {
-        type: "assistant_message",
-        content: "still working",
-        timestamp: 1,
-      } as SSEEventPayload;
-
-      await publisher.publishEngineEvent(task, event);
-      await publisher.publishEngineEvent(task, event);
-      await vi.advanceTimersByTimeAsync(15_000);
-      await publisher.publishEngineEvent(task, event);
-
-      expect(deps.getSupervisorRegistry).toHaveBeenCalledTimes(2);
-      expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("captures only the first session id and still publishes every session event", async () => {
@@ -353,245 +217,6 @@ describe("TaskEngineEventPublisher", () => {
     );
   });
 
-  it("records complete usage delta for registered supervisor profile", async () => {
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValueOnce({
-      role: "ariela_codex",
-      activeSessionId: "sess-1",
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({ profileId: "ariela_codex" });
-    const event = {
-      type: "complete",
-      usage: {
-        input_tokens: 11,
-        output_tokens: 13,
-        cache_creation_input_tokens: 2,
-        cache_read_input_tokens: 3,
-      },
-      timestamp: 2,
-    } as unknown as SSEEventPayload;
-
-    await publisher.publishEngineEvent(task, event);
-
-    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ariela_codex");
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenCalledWith({
-      role: "ariela_codex",
-      tokenDelta: 29,
-      compactionDelta: 0,
-      lastSeenAt: expect.any(Date),
-    });
-    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
-    expect(deps.recordSupervisorUsageDelta.mock.invocationCallOrder[0]).toBeLessThan(
-      deps.handleSideEffects.mock.invocationCallOrder[0],
-    );
-  });
-
-  it("does not record usage delta for stale supervisor sessions", async () => {
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValue({
-      role: "ariela_codex",
-      activeSessionId: "supervisor-current",
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({
-      agentSessionId: "supervisor-old",
-      profileId: "ariela_codex",
-    });
-
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      usage: { input_tokens: 10, output_tokens: 5 },
-      timestamp: 2,
-    } as unknown as SSEEventPayload);
-
-    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
-    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
-  });
-
-  it("records only new complete usage for a repeated Codex turn id", async () => {
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValue({
-      role: "ariela_codex",
-      activeSessionId: "sess-1",
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({ profileId: "ariela_codex" });
-
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      turn_id: "turn-1",
-      usage: { input_tokens: 10, output_tokens: 5 },
-      timestamp: 2,
-    } as unknown as SSEEventPayload);
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      turn_id: "turn-1",
-      usage: { input_tokens: 10, output_tokens: 5 },
-      timestamp: 3,
-    } as unknown as SSEEventPayload);
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      turn_id: "turn-1",
-      usage: { input_tokens: 12, output_tokens: 8 },
-      timestamp: 4,
-    } as unknown as SSEEventPayload);
-
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenCalledTimes(2);
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(1, {
-      role: "ariela_codex",
-      tokenDelta: 15,
-      compactionDelta: 0,
-      lastSeenAt: expect.any(Date),
-    });
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(2, {
-      role: "ariela_codex",
-      tokenDelta: 5,
-      compactionDelta: 0,
-      lastSeenAt: expect.any(Date),
-    });
-  });
-
-  it("records Claude compact count and context usage delta", async () => {
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValue({
-      role: "ariela_claude",
-      activeSessionId: "sess-1",
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({ profileId: "ariela_claude" });
-
-    await publisher.publishEngineEvent(task, {
-      type: "context_usage",
-      used_tokens: 100,
-      timestamp: 2,
-    } as unknown as SSEEventPayload);
-    await publisher.publishEngineEvent(task, {
-      type: "context_usage",
-      used_tokens: 140,
-      timestamp: 3,
-    } as unknown as SSEEventPayload);
-    await publisher.publishEngineEvent(task, {
-      type: "compact",
-      timestamp: 4,
-    } as unknown as SSEEventPayload);
-
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenCalledTimes(3);
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(1, {
-      role: "ariela_claude",
-      tokenDelta: 100,
-      compactionDelta: 0,
-      lastSeenAt: expect.any(Date),
-    });
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(2, {
-      role: "ariela_claude",
-      tokenDelta: 40,
-      compactionDelta: 0,
-      lastSeenAt: expect.any(Date),
-    });
-    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(3, {
-      role: "ariela_claude",
-      tokenDelta: 0,
-      compactionDelta: 1,
-      lastSeenAt: expect.any(Date),
-    });
-  });
-
-  it("persists supervisor hard pending state without marking handover_running from publisher", async () => {
-    const now = new Date("2026-06-07T00:00:00.000Z");
-    const deps = makePublisherDeps();
-    deps.getSupervisorRegistry.mockResolvedValue({
-      role: "ariela_codex",
-      activeSessionId: "sess-1",
-    } as never);
-    deps.recordSupervisorUsageDelta.mockResolvedValueOnce({
-      role: "ariela_codex",
-      activeSessionId: "sess-supervisor",
-      epoch: 4,
-      cursorOffset: 11,
-      handoverState: "idle",
-      cumulativeTokens: 1_500_001,
-      compactionCount: 0,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
-    } as never);
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({ profileId: "ariela_codex" });
-
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      turn_id: "turn-hard",
-      usage: { input_tokens: 10 },
-      timestamp: 2,
-    } as unknown as SSEEventPayload);
-
-    expect(deps.upsertSupervisorRegistry).toHaveBeenCalledWith({
-      role: "ariela_codex",
-      activeSessionId: "sess-supervisor",
-      epoch: 4,
-      cursorOffset: 11,
-      handoverState: "hard_pending",
-      cumulativeTokens: 1_500_001,
-      compactionCount: 0,
-      lastSeenAt: now,
-    });
-  });
-
-  it("runs supervisor handover runner when a trigger is ready and runner is injected", async () => {
-    const now = new Date("2026-06-07T00:00:00.000Z");
-    const deps = makePublisherDeps();
-    const registry = {
-      role: "ariela_codex",
-      activeSessionId: "sess-supervisor",
-      epoch: 4,
-      cursorOffset: 11,
-      handoverState: "idle",
-      cumulativeTokens: 1_500_001,
-      compactionCount: 0,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-    deps.getSupervisorRegistry.mockResolvedValue({
-      role: "ariela_codex",
-      activeSessionId: "sess-1",
-    } as never);
-    deps.recordSupervisorUsageDelta.mockResolvedValueOnce(registry as never);
-    const supervisorHandoverRunner = {
-      run: vi.fn(async () => undefined),
-    };
-    const publisher = new TaskEngineEventPublisher({
-      ...deps,
-      supervisorHandoverRunner,
-    });
-    const task = makeTask({ profileId: "ariela_codex" });
-
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      turn_id: "turn-hard",
-      usage: { input_tokens: 10 },
-      timestamp: 2,
-    } as unknown as SSEEventPayload);
-
-    expect(supervisorHandoverRunner.run).toHaveBeenCalledWith(registry);
-    expect(deps.upsertSupervisorRegistry).not.toHaveBeenCalled();
-  });
-
-  it("does not record complete usage when profile is not a supervisor registry", async () => {
-    const deps = makePublisherDeps();
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask({ profileId: "ordinary-agent" });
-
-    await publisher.publishEngineEvent(task, {
-      type: "complete",
-      usage: { input_tokens: 11, output_tokens: 13 },
-      timestamp: 2,
-    } as unknown as SSEEventPayload);
-
-    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ordinary-agent");
-    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
-  });
 
   it("records credential_alert as a pending limit_hit termination hint only", async () => {
     const deps = makePublisherDeps();

@@ -126,7 +126,6 @@ describe("session action command HTTP route harness", () => {
         parent_delivery_id: "delivery-parent",
         caller_turn_id: "turn-3",
         created_at: "2026-07-26T00:00:00.000Z",
-        supervisor_role: "ariella",
         delivery_lease_owner: "completion:node-a",
       },
     });
@@ -152,7 +151,6 @@ describe("session action command HTTP route harness", () => {
       parent_delivery_id: "delivery-parent",
       caller_turn_id: "turn-3",
       created_at: "2026-07-26T00:00:00.000Z",
-      supervisor_role: "ariella",
       delivery_lease_owner: "completion:node-a",
     });
 

@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
-import { CompletionDeliveryCoordinator } from "../../src/task/completion_delivery_coordinator.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import {
@@ -30,14 +29,13 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
   beforeEach(async () => {
     await harness.sql`DELETE FROM session_delivery_relation_consumptions`;
     await harness.sql`DELETE FROM session_deliveries`;
-    await harness.sql`DELETE FROM supervisor_registry`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
       INSERT INTO sessions (session_id, session_type, status, agent_id)
       VALUES
-        ('supervisor-old', 'claude', 'completed', 'ariella'),
-        ('supervisor-mid', 'claude', 'completed', 'ariella'),
-        ('supervisor-new', 'claude', 'completed', 'ariella'),
+        ('caller-old', 'claude', 'completed', 'ariella'),
+        ('caller-mid', 'claude', 'completed', 'ariella'),
+        ('caller-new', 'claude', 'completed', 'ariella'),
         ('child-session', 'claude', 'completed', 'worker')
     `;
   });
@@ -48,7 +46,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("serializes consume-first, dispatch-first, and queued-first on the real row", async () => {
     await register("delivery-consume-first", "relation-consume-first");
-    await repository.claimForTarget("delivery-consume-first", "supervisor-old");
+    await repository.claimForTarget("delivery-consume-first", "caller-old");
 
     let blockedDispatch!: ReturnType<SessionDeliveryRepository["beginDispatch"]>;
     await peer.begin(async (transaction) => {
@@ -72,7 +70,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     expect((await repository.get("delivery-consume-first"))?.state).toBe("consumed");
 
     await register("delivery-dispatch-first", "relation-dispatch-first");
-    await repository.claimForTarget("delivery-dispatch-first", "supervisor-old");
+    await repository.claimForTarget("delivery-dispatch-first", "caller-old");
     let blockedConsume!: ReturnType<
       SessionDeliveryRepository["markConsumedByRelation"]
     >;
@@ -99,7 +97,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       .toBe("dispatching");
 
     await register("delivery-queued-first", "relation-queued-first");
-    await repository.claimForTarget("delivery-queued-first", "supervisor-old");
+    await repository.claimForTarget("delivery-queued-first", "caller-old");
     let blockedQueuedConsume!: ReturnType<
       SessionDeliveryRepository["markConsumedByRelation"]
     >;
@@ -127,165 +125,10 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     expect((await repository.get("delivery-queued-first"))?.state).toBe("queued");
   });
 
-  it("persists before the supervisor exists and recovers exactly once to the current supervisor", async () => {
-    let delivered = 0;
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository,
-      dispatch: async (params) => {
-        const won = await repository.beginDispatch(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-        if (!won) throw new Error("dispatch lease lost");
-        delivered += 1;
-        await repository.markQueued(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-      },
-      logger: silentLogger(),
-    });
-
-    await coordinator.enqueue(completionInput());
-    const pending = await repository.getByRelation("child_session:child-session:42");
-    expect(pending).toMatchObject({
-      state: "pending",
-      target_session_id: null,
-    });
-    expect(delivered).toBe(0);
-
-    await insertSupervisor("supervisor-new", 5);
-    await makeDeliveriesDue();
-    await coordinator.recoverPending();
-    await coordinator.recoverPending();
-
-    expect(delivered).toBe(1);
-    expect(await repository.get(pending!.delivery_id)).toMatchObject({
-      state: "queued",
-      target_session_id: "supervisor-new",
-    });
-  });
-
-  it("repairs legacy inferred-supervisor pending rows to the structural caller", async () => {
-    await harness.sql`
-      UPDATE sessions
-      SET caller_session_id = 'supervisor-old'
-      WHERE session_id = 'child-session'
-    `;
-    await repository.register({
-      deliveryId: "delivery-inferred-agent-caller",
-      targetSessionId: null,
-      sourceSessionId: "child-session",
-      relationKey: "child_session:child-session:legacy",
-      completionId: "completion:legacy",
-      intent: "completion_notification",
-      source: "completion_notifier",
-      producerKind: "child_session",
-      producerId: "child-session",
-      producerTerminalRevision: "legacy",
-      supervisorRole: "seosoyoung-opus",
-      payloadHash: "hash-legacy",
-      payload: {
-        text: "done",
-        user: "agent",
-        caller_info: { source: "agent", agent_id: "worker" },
-      },
-    });
-    await harness.sql`
-      UPDATE session_deliveries
-      SET last_error = 'no_current_target'
-      WHERE delivery_id = 'delivery-inferred-agent-caller'
-    `;
-
-    await expect(repository.repairInferredSupervisorCompletionTargets())
-      .resolves.toBe(1);
-    await expect(repository.get("delivery-inferred-agent-caller")).resolves.toMatchObject({
-      state: "pending",
-      target_session_id: "supervisor-old",
-      supervisor_role: null,
-      last_error: "reclassified_direct_agent_caller",
-    });
-
-    let delivered = 0;
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository,
-      dispatch: async (params) => {
-        const dispatching = await repository.beginDispatch(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-        if (!dispatching) throw new Error("dispatch lease lost");
-        delivered += 1;
-        await repository.markQueued(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-      },
-      logger: silentLogger(),
-    });
-    await coordinator.recoverPending();
-    await coordinator.recoverPending();
-
-    expect(delivered).toBe(1);
-    await expect(repository.get("delivery-inferred-agent-caller")).resolves.toMatchObject({
-      state: "queued",
-      target_session_id: "supervisor-old",
-      supervisor_role: null,
-    });
-  });
-
-  it("survives consecutive handovers with one durable effect and no stale claim", async () => {
-    await insertSupervisor("supervisor-old", 1);
-    const dispatchTargets: string[] = [];
-    let delivered = 0;
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository,
-      dispatch: async (params) => {
-        dispatchTargets.push(params.agentSessionId);
-        if (dispatchTargets.length === 1) {
-          await updateSupervisor("supervisor-mid", 2);
-        } else if (dispatchTargets.length === 2) {
-          await updateSupervisor("supervisor-new", 3);
-        }
-        const won = await repository.beginDispatch(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-        if (!won) throw new Error("supervisor changed before dispatch");
-        delivered += 1;
-        await repository.markQueued(
-          params.deliveryId!,
-          params.deliveryLeaseOwner,
-        );
-      },
-      logger: silentLogger(),
-    });
-
-    await coordinator.enqueue(completionInput());
-    await makeDeliveriesDue();
-    await coordinator.recoverPending();
-    await makeDeliveriesDue();
-    await coordinator.recoverPending();
-    await makeDeliveriesDue();
-    await coordinator.recoverPending();
-
-    expect(dispatchTargets).toEqual([
-      "supervisor-old",
-      "supervisor-mid",
-      "supervisor-new",
-    ]);
-    expect(delivered).toBe(1);
-    expect(await repository.getByRelation("child_session:child-session:42"))
-      .toMatchObject({
-        state: "queued",
-        target_session_id: "supervisor-new",
-      });
-  });
-
   it("suppresses an already-consumed PostgreSQL row before queue, resume, wake, or publish", async () => {
     const gate = new TaskDeliveryLedgerGate(true, repository);
     const params = {
-      agentSessionId: "supervisor-old",
+      agentSessionId: "caller-old",
       text: "done",
       user: "agent",
       deliveryId: "delivery-consumed-e2e",
@@ -295,7 +138,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       relationKey: "relation-consumed-e2e",
     };
     await gate.recordInlineConsumed(params, {
-      agentSessionId: "supervisor-old",
+      agentSessionId: "caller-old",
       prompt: "",
       status: "completed",
       lastEventId: 9,
@@ -344,7 +187,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       completionId,
       relationKey,
     }, {
-      agentSessionId: "supervisor-old",
+      agentSessionId: "caller-old",
       prompt: "delegate",
       status: "running",
       lastEventId: 44,
@@ -370,7 +213,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       sessionNotificationPublisher: { publish },
     });
     const params = {
-      agentSessionId: "supervisor-old",
+      agentSessionId: "caller-old",
       text: "late duplicate",
       user: "agent",
       deliveryId: "delivery-late-child-notifier",
@@ -386,7 +229,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
     expect(await repository.getRelationConsumption(relationKey)).toMatchObject({
       completion_id: completionId,
-      caller_session_id: "supervisor-old",
+      caller_session_id: "caller-old",
       consumed_turn_id: "event:44",
     });
     expect(await repository.get(params.deliveryId)).toMatchObject({
@@ -407,7 +250,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const completionId = "completion-concurrent-inline";
     const registration = {
       deliveryId: "delivery-concurrent-inline",
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-old",
       sourceSessionId: "child-session",
       relationKey,
       completionId,
@@ -422,7 +265,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       writer.recordRelationConsumed({
         relationKey,
         completionId,
-        callerSessionId: "supervisor-old",
+        callerSessionId: "caller-old",
         consumedTurnId: "event:55",
       }),
     ]);
@@ -432,14 +275,14 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
     expect(await repository.getRelationConsumption(relationKey)).toMatchObject({
       completion_id: completionId,
-      caller_session_id: "supervisor-old",
+      caller_session_id: "caller-old",
     });
   });
 
   async function register(deliveryId: string, relationKey: string): Promise<void> {
     await repository.register({
       deliveryId,
-      targetSessionId: "supervisor-old",
+      targetSessionId: "caller-old",
       relationKey,
       completionId: `completion-${relationKey}`,
       intent: "completion_notification",
@@ -449,43 +292,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   }
 
-  async function insertSupervisor(sessionId: string, epoch: number): Promise<void> {
-    await harness.sql`
-      INSERT INTO supervisor_registry (
-        role, active_session_id, epoch, cursor_offset, handover_state,
-        cumulative_tokens, compaction_count
-      ) VALUES ('ariella', ${sessionId}, ${epoch}, 0, 'idle', 0, 0)
-    `;
-  }
-
-  async function updateSupervisor(sessionId: string, epoch: number): Promise<void> {
-    await peer`
-      UPDATE supervisor_registry
-      SET active_session_id = ${sessionId}, epoch = ${epoch}, updated_at = NOW()
-      WHERE role = 'ariella'
-    `;
-  }
-
-  async function makeDeliveriesDue(): Promise<void> {
-    await harness.sql`
-      UPDATE session_deliveries
-      SET next_attempt_at = NOW()
-      WHERE state = 'pending'
-    `;
-  }
 });
-
-function completionInput() {
-  return {
-    targetSessionId: "supervisor-old",
-    sourceSessionId: "child-session",
-    supervisorRole: "ariella",
-    terminalRevision: "42",
-    text: "done",
-    callerInfo: { source: "agent", agent_id: "ariella" },
-    createdAt: new Date("2026-07-26T00:00:00Z"),
-  };
-}
 
 function silentLogger() {
   return {
