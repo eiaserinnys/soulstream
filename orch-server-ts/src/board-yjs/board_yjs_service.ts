@@ -19,6 +19,7 @@ import {
   upsertCustomViewYjsBoardItem,
   upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
+import { BoardYjsDocumentMutationGate } from "./board_yjs_document_mutation_gate.js";
 import {
   moveBoardItemBetweenDocuments,
   type BoardMoveInput,
@@ -52,6 +53,7 @@ export interface BoardYjsServiceConfig {
 export class BoardYjsService {
   private readonly hocuspocus: Hocuspocus | undefined;
   private readonly taskIdentityTails = new Map<string, Promise<void>>();
+  private readonly documentMutationGate = new BoardYjsDocumentMutationGate();
 
   constructor(private readonly config: BoardYjsServiceConfig) {
     if (config.hostMode !== "orch") return;
@@ -90,9 +92,10 @@ export class BoardYjsService {
       socket.close(1013, "board Yjs documents are hosted on orch");
       return;
     }
+    const documentName = getBoardYjsContainerDocumentName(container);
     this.requireHocuspocus().handleConnection(socket, request, {
       ...container,
-      documentName: getBoardYjsContainerDocumentName(container),
+      documentName,
     });
   }
 
@@ -190,46 +193,47 @@ export class BoardYjsService {
     replica: ReturnType<typeof readBoardYDocReplica>;
   }) => Promise<T>): Promise<T> {
     return await this.withTaskIdentityLock(input.folderId, async () => {
-      const hocuspocus = this.requireOrchHostMode();
       const scope = {
         folderId: input.folderId,
         containerKind: "folder" as const,
         containerId: input.folderId,
       };
       const documentName = getBoardYjsContainerDocumentName(scope);
-      const connection = await hocuspocus.openDirectConnection(documentName, {
-        ...scope,
-        source: "task-identity",
+      return await this.documentMutationGate.withMutation([documentName], async () => {
+        const connection = await this.requireOrchHostMode().openDirectConnection(documentName, {
+          ...scope,
+          source: "task-identity",
+        });
+        try {
+          const live = connection.document as unknown as Y.Doc | null;
+          if (!live) throw new Error(`board Y.Doc direct connection closed: ${documentName}`);
+          const staged = new Y.Doc();
+          Y.applyUpdate(staged, Y.encodeStateAsUpdate(live));
+          upsertTaskYjsBoardItem(staged, {
+            folderId: input.folderId,
+            boardItemId: input.boardItemId,
+            taskId: input.taskId,
+            title: input.title,
+            x: input.x,
+            y: input.y,
+            metadata: { archived: input.archived },
+          });
+          const update = Y.encodeStateAsUpdate(staged, Y.encodeStateVector(live));
+          const snapshot = Y.encodeStateAsUpdate(staged);
+          const result = await persist({
+            documentName,
+            scope,
+            snapshot,
+            replica: readBoardYDocReplica(scope, staged),
+          });
+          await connection.transact((document) => {
+            Y.applyUpdate(document as unknown as Y.Doc, update);
+          });
+          return result;
+        } finally {
+          await connection.disconnect();
+        }
       });
-      try {
-        const live = connection.document as unknown as Y.Doc | null;
-        if (!live) throw new Error(`board Y.Doc direct connection closed: ${documentName}`);
-        const staged = new Y.Doc();
-        Y.applyUpdate(staged, Y.encodeStateAsUpdate(live));
-        upsertTaskYjsBoardItem(staged, {
-          folderId: input.folderId,
-          boardItemId: input.boardItemId,
-          taskId: input.taskId,
-          title: input.title,
-          x: input.x,
-          y: input.y,
-          metadata: { archived: input.archived },
-        });
-        const update = Y.encodeStateAsUpdate(staged, Y.encodeStateVector(live));
-        const snapshot = Y.encodeStateAsUpdate(staged);
-        const result = await persist({
-          documentName,
-          scope,
-          snapshot,
-          replica: readBoardYDocReplica(scope, staged),
-        });
-        await connection.transact((document) => {
-          Y.applyUpdate(document as unknown as Y.Doc, update);
-        });
-        return result;
-      } finally {
-        await connection.disconnect();
-      }
     });
   }
 
@@ -304,7 +308,9 @@ export class BoardYjsService {
         idempotencyKey: input.idempotencyKey,
       });
     }
-    return await moveBoardItemBetweenDocuments(this.requireOrchHostMode(), input);
+    return await this.documentMutationGate.withMutation(moveDocumentNames(input), async () =>
+      await moveBoardItemBetweenDocuments(this.requireOrchHostMode(), input)
+    );
   }
 
   async withTaskBoardMoveApplication(
@@ -312,7 +318,9 @@ export class BoardYjsService {
     persist: (application: StagedTaskBoardMove) => Promise<void>,
   ): Promise<CatalogBoardItemRow> {
     return await this.withTaskIdentityLock(input.boardItem.id, async () =>
-      await withStagedTaskBoardMove(this.requireOrchHostMode(), input, persist)
+      await this.documentMutationGate.withMutation(moveDocumentNames(input), async () =>
+        await withStagedTaskBoardMove(this.requireOrchHostMode(), input, persist)
+      )
     );
   }
 
@@ -347,21 +355,23 @@ export class BoardYjsService {
     container: string | BoardYjsContainerRef,
     callback: (doc: Y.Doc) => T,
   ): Promise<T> {
-    const hocuspocus = this.requireOrchHostMode();
     const resolved = typeof container === "string" ? boardYjsFolderScope(container) : container;
-    const connection = await hocuspocus.openDirectConnection(
-      getBoardYjsContainerDocumentName(resolved),
-      { ...resolved, source: "server" },
-    );
-    try {
-      let result: T | undefined;
-      await connection.transact((document) => {
-        result = callback(document as unknown as Y.Doc);
-      });
-      return result as T;
-    } finally {
-      await connection.disconnect();
-    }
+    const documentName = getBoardYjsContainerDocumentName(resolved);
+    return await this.documentMutationGate.withMutation([documentName], async () => {
+      const connection = await this.requireOrchHostMode().openDirectConnection(
+        documentName,
+        { ...resolved, source: "server" },
+      );
+      try {
+        let result: T | undefined;
+        await connection.transact((document) => {
+          result = callback(document as unknown as Y.Doc);
+        });
+        return result as T;
+      } finally {
+        await connection.disconnect();
+      }
+    });
   }
 
   private requireOrchHostMode(): Hocuspocus {
@@ -394,6 +404,21 @@ export class BoardYjsService {
   }
 }
 
+function moveDocumentNames(input: BoardMoveInput): string[] {
+  const source = {
+    containerKind: input.boardItem.containerKind ?? "folder",
+    containerId: input.boardItem.containerId ?? input.boardItem.folderId,
+  } as const;
+  const target = {
+    containerKind: input.targetScope.containerKind,
+    containerId: input.targetScope.containerId,
+  };
+  return [
+    getBoardYjsContainerDocumentName(source),
+    getBoardYjsContainerDocumentName(target),
+  ];
+}
+
 function createBoardYjsAuthExtension(
   auth: BoardYjsAuthConfig,
   logger: FastifyBaseLogger,
@@ -401,6 +426,13 @@ function createBoardYjsAuthExtension(
   return {
     extensionName: "soulstream-board-yjs-auth",
     async onAuthenticate(payload: onAuthenticatePayload) {
+      const routedDocumentName = payload.context.documentName;
+      if (routedDocumentName !== payload.documentName) {
+        throw new Error(
+          `Board Y.Doc protocol document ${payload.documentName} ` +
+            `does not match routed document ${String(routedDocumentName)}`,
+        );
+      }
       const result = await authenticateBoardYjsConnection({
         token: payload.token,
         requestHeaders: payload.requestHeaders,

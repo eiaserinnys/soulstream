@@ -45,6 +45,22 @@ describe("orch BoardYjsService", () => {
     }
   });
 
+  it("rejects a protocol document name that differs from the routed document", async () => {
+    const repository = new MemoryBoardYjsRepository();
+    const app = createBoardApp("orch", repository);
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      const provider = connectProvider(
+        `${address.replace("http", "ws")}/yjs/folder-1`,
+        "board-folder:folder-2",
+      );
+      await expect(waitForSync(provider)).rejects.toThrow("permission-denied");
+      expect(repository.snapshots.has("board-folder:folder-2")).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("executes direct mutations and preserves markdown content across containers in orch mode", async () => {
     const service = createService("orch");
     try {
@@ -140,10 +156,13 @@ function createService(
   });
 }
 
-function connectProvider(url: string): HocuspocusProvider {
+function connectProvider(
+  url: string,
+  name = "board-folder:folder-1",
+): HocuspocusProvider {
   const configuration = {
     url,
-    name: "board-folder:folder-1",
+    name,
     document: new Y.Doc(),
     token: "wire-token",
     WebSocketPolyfill: WebSocket,

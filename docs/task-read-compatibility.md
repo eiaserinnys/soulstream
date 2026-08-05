@@ -22,6 +22,34 @@ Runbook에서 Task로 전환하는 동안 구 이름은 읽기 경계에서만 �
 4. MCP·HTTP legacy read 요청, `runbook_updated` 수신, 구 container·Y.Doc 값 발견, DB compatibility view 조회를 배포 기록에 함께 남겨야 한다.
 5. 제거 범위와 관측 증거에 대한 별도 사용자 승인을 받은 후속 PR이어야 한다.
 
+## 관측 계획
+
+호환 제거 판단은 지침 전환이 배포된 뒤 한 번의 full release boundary가 지난 시점에 다시 한다. 그때 `tool_start` 이벤트에서 `get_runbook`, `list_runbooks`, `list_runbook_operations`를 재계수하고, 보존 HTTP 로그와 세션 이벤트에서 `/api/runbooks`와 `runbook_updated`를 함께 확인한다.
+
+운영 PostgreSQL에는 현재 `pg_stat_statements`가 없다. 이번 변경은 운영 설정을 바꾸지 않는다. DB view 네 개의 대체 증거는 다음 소비자 inventory로 남긴다.
+
+- 제품 SQL: `orch-server-ts`, `soul-server-ts`, `packages/soul-common`의 실행 쿼리
+- 배치·마이그레이션: `packages/db-schema/scripts`, Haniel soulstream hook
+- 외부 SQL: 운영에 등록된 서비스와 수동 운영 런북
+
+각 범위에서 `runbooks`, `runbook_sections`, `runbook_items`, `runbook_operations` 조회가 없음을 같은 기준 커밋에서 검색하고, 결과와 관측 기간을 분석 캐시에 기록한다. inventory가 닫히지 않으면 view 제거 승인을 요청하지 않는다.
+
+## Y.Doc 이관 게이트
+
+`migrate:ydoc-runbook-residue`는 기본이 읽기 전용 dry-run이다. apply는 사용자가 승인한 유지보수 창에서 orch Board Y.Doc 호스트를 먼저 중지한 뒤 `--apply --quiesced --orch-health-url=http://127.0.0.1:5200/api/health`를 함께 지정해야 한다. 로컬 health endpoint가 `ECONNREFUSED`가 아니거나 timeout·원격 네트워크 오류처럼 중지를 증명할 수 없는 상태면 DB 연결 전에 거부한다. 라이브 host API를 경유하는 apply 경로는 제공하지 않는다.
+
+quiesced preflight를 통과한 도구는 snapshot과 pending update를 격리 재합성하고 Yjs 구조 변환·재직렬화를 거쳐 정본 snapshot을 쓴다. 모든 문서는 dry-run의 전체 콘텐츠 hash·계획 fingerprint·opaque ID allowlist를 write 전에 다시 검증한다. 커밋 시 source/canonical row를 잠가 revision을 재검사하며, snapshot 교체·legacy 문서 제거·SQL 투영 동기화를 한 트랜잭션으로 처리한다. 의미가 달라졌으면 새 dry-run 승인을 요구한다.
+
+문서명 충돌 18건 중 콘텐츠가 동등하지 않은 문서는 자동 삭제하지 않는다. dry-run이 산출한 collision content hash를 사용자가 별도 JSON 목록으로 승인한 경우에만 canonical `board:task:` 문서를 유지하고 legacy shadow를 제거한다. 해당 `runbook:` board item ID 18개는 고정 allowlist로 보존하며, source에만 있는 opaque ID가 있으면 승인 hash와 무관하게 거부한다.
+
+이관 뒤 `verify:ydoc-runbook-residue`가 snapshot과 pending update를 재합성해 다음을 모두 0으로 확인해야 한다.
+
+- `board:runbook:` 문서명
+- `item_type=runbook`
+- `source_runbook_item_id`와 `sourceRunbookItemId`
+- SQL 투영의 runbook item·source key와 `runbook_ref`
+- 각 Y.Doc board item과 `board_yjs_catalog_cache`·`board_items`의 ID·container·type·source·좌표·metadata
+
 Phase 번호만을 근거로 이 파일이나 호환 구현을 삭제하는 변경은 계약 위반이다. 잔존 감사와 계약 테스트는 이 문서 및 모든 호환 경계 파일의 존재를 강제한다.
 
 ## 배포 순서

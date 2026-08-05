@@ -39,6 +39,25 @@ export interface BoardYjsPersistenceRepository {
     documentName?: string,
   ): Promise<void>;
   invalidateBoardYjsCatalogCache?(container: BoardYjsContainerScope): void;
+  loadRawBoardYjsDocument?(documentName: string): Promise<BoardYjsRawDocument | null>;
+  commitBoardYjsRunbookMigration?(input: BoardYjsRunbookMigrationCommit): Promise<void>;
+}
+
+export interface BoardYjsRawDocument {
+  snapshot: Uint8Array;
+  updates: Uint8Array[];
+  revision: string;
+}
+
+export interface BoardYjsRunbookMigrationCommit {
+  sourceDocumentName: string;
+  canonicalDocumentName: string;
+  expectedSourceRevision: string;
+  expectedCanonicalRevision: string | null;
+  canonicalSnapshot: Uint8Array;
+  scope: BoardYjsContainerScope;
+  replica: BoardYjsReplica;
+  preserveCanonical: boolean;
 }
 
 export interface BoardYjsPersistence {

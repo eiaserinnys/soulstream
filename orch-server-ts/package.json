@@ -12,6 +12,8 @@
     "plan:page-yjs-snapshot-repair": "tsx scripts/plan-page-yjs-snapshot-repair.ts",
     "plan:task-crud-sync-audit": "tsx scripts/plan-task-crud-sync-audit.ts",
     "plan:task-project-mount-backfill": "tsx scripts/plan-task-project-mount-backfill.ts",
+    "migrate:ydoc-runbook-residue": "tsx scripts/migrate-board-yjs-runbook-residue.ts",
+    "verify:ydoc-runbook-residue": "tsx scripts/verify-board-yjs-runbook-residue.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",

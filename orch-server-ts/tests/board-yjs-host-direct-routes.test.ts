@@ -156,6 +156,28 @@ describe("orch-local Board Yjs host operation routes", () => {
     }
   });
 
+  it("does not expose a live-host runbook residue migration operation", async () => {
+    const app = Fastify({ logger: false });
+    registerBoardYjsHostProxyRoutes(app, {
+      registry: createRegistry(),
+      httpClient: vi.fn(),
+      hostMode: "orch",
+      authBearerToken: "test-token",
+      service: createServiceDouble(),
+    } as never);
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/board-yjs/host/migrate-runbook-residue",
+        headers: { authorization: "Bearer test-token" },
+        payload: {},
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns the original 422 validation and 500 operation error envelopes", async () => {
     const service = createServiceDouble();
     vi.mocked(service.deleteMarkdownDocument).mockRejectedValueOnce(new Error("write failed"));
