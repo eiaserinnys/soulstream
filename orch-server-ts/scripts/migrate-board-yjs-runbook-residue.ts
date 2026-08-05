@@ -8,7 +8,10 @@ import * as Y from "yjs";
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
 import { assertBoardYjsQuiescedApplyPreflight } from
   "../src/board-yjs/board_yjs_quiesced_preflight.js";
-import { executeQuiescedBoardYjsRunbookMigrationBatch } from
+import {
+  assertBoardYjsRunbookMigrationBatchAllowlist,
+  executeQuiescedBoardYjsRunbookMigrationBatch,
+} from
   "../src/board-yjs/board_yjs_runbook_migration.js";
 import {
   hasBoardYjsRunbookResidue,
@@ -216,7 +219,11 @@ try {
         "--orch-health-url=http://127.0.0.1:5200/api/health.\n",
     );
   } else {
-    assertSameStrings(opaqueAllowlist, committedAllowlist);
+    assertBoardYjsRunbookMigrationBatchAllowlist({
+      affectedDocumentCount: affected.length,
+      actualOpaqueBoardItemIds: opaqueAllowlist,
+      committedOpaqueBoardItemIds: committedAllowlist,
+    });
     const approvedCollisionHashes = await loadApprovedCollisionHashes(
       approvedCollisionHashesPath,
     );
@@ -280,17 +287,6 @@ async function loadApprovedCollisionHashes(path: string | null): Promise<Set<str
     throw new Error("approved collision hashes must be a JSON array of SHA-256 strings");
   }
   return new Set(parsed);
-}
-
-function assertSameStrings(actual: readonly string[], expected: readonly string[]): void {
-  const left = [...actual].sort();
-  const right = [...expected].sort();
-  if (JSON.stringify(left) !== JSON.stringify(right)) {
-    throw new Error(
-      `opaque board item allowlist mismatch: expected ${JSON.stringify(right)}, ` +
-        `received ${JSON.stringify(left)}`,
-    );
-  }
 }
 
 function sameStrings(actual: readonly string[], expected: readonly string[]): boolean {

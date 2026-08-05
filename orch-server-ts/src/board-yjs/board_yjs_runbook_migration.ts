@@ -17,6 +17,22 @@ export interface BoardYjsRunbookMigrationRequest {
   approvedCollisionContentHash?: string | null;
 }
 
+export function assertBoardYjsRunbookMigrationBatchAllowlist(input: {
+  affectedDocumentCount: number;
+  actualOpaqueBoardItemIds: readonly string[];
+  committedOpaqueBoardItemIds: readonly string[];
+}): void {
+  if (input.affectedDocumentCount === 0) return;
+  const actual = [...input.actualOpaqueBoardItemIds].sort();
+  const committed = [...input.committedOpaqueBoardItemIds].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(committed)) {
+    throw new Error(
+      `opaque board item allowlist mismatch: expected ${JSON.stringify(committed)}, ` +
+        `received ${JSON.stringify(actual)}`,
+    );
+  }
+}
+
 export async function executeQuiescedBoardYjsRunbookMigrationBatch(input: {
   requests: readonly BoardYjsRunbookMigrationRequest[];
   repository: BoardYjsPersistenceRepository;

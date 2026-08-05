@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -13,6 +15,7 @@ import {
   computeBoardYjsRawRevision,
 } from "../src/board-yjs/board_yjs_raw_document.js";
 import {
+  assertBoardYjsRunbookMigrationBatchAllowlist,
   executeQuiescedBoardYjsRunbookMigration,
   executeQuiescedBoardYjsRunbookMigrationBatch,
 } from
@@ -95,6 +98,37 @@ describe("approval-gated board Y.Doc runbook migration", () => {
       repository,
     })).resolves.toEqual([]);
 
+    expect(repository.transactionCalls).toBe(0);
+    expect(repository.commitCalls).toBe(0);
+  });
+
+  it("keeps a zero-residue deployment a no-op with committed approvals", async () => {
+    const opaqueAllowlist = JSON.parse(readFileSync(
+      new URL("../scripts/ydoc-runbook-opaque-board-item-allowlist.json", import.meta.url),
+      "utf8",
+    )) as string[];
+    const collisionApprovals = JSON.parse(readFileSync(
+      new URL("../scripts/ydoc-runbook-collision-approvals.json", import.meta.url),
+      "utf8",
+    )) as string[];
+    const repository = new MigrationRepositoryDouble();
+
+    expect(opaqueAllowlist).toHaveLength(18);
+    expect(collisionApprovals).toHaveLength(18);
+    expect(() => assertBoardYjsRunbookMigrationBatchAllowlist({
+      affectedDocumentCount: 0,
+      actualOpaqueBoardItemIds: [],
+      committedOpaqueBoardItemIds: opaqueAllowlist,
+    })).not.toThrow();
+    expect(() => assertBoardYjsRunbookMigrationBatchAllowlist({
+      affectedDocumentCount: 1,
+      actualOpaqueBoardItemIds: [],
+      committedOpaqueBoardItemIds: opaqueAllowlist,
+    })).toThrow("opaque board item allowlist mismatch");
+    await expect(executeQuiescedBoardYjsRunbookMigrationBatch({
+      requests: [],
+      repository,
+    })).resolves.toEqual([]);
     expect(repository.transactionCalls).toBe(0);
     expect(repository.commitCalls).toBe(0);
   });
