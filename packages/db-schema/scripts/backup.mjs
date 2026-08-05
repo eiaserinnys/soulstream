@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -54,8 +56,18 @@ async function databasePlan(databaseUrl) {
   }
 }
 
-export function validateBackupArchive(metadata, bytes, toc) {
-  if (sha256(bytes) !== metadata.dump_sha256) {
+/**
+ * Streams the archive through sha256 so multi-GiB dumps never enter memory
+ * (fs.readFile rejects files over 2 GiB — observed on a 2.8 GiB production dump).
+ */
+export async function sha256File(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+export function validateBackupArchiveDigest(metadata, digest, toc) {
+  if (digest !== metadata.dump_sha256) {
     throw new Error("database dump checksum differs");
   }
   const tocEntries = toc.split("\n").filter((line) => line && !line.startsWith(";")).length;
@@ -63,6 +75,11 @@ export function validateBackupArchive(metadata, bytes, toc) {
     throw new Error("pg_restore list does not contain a credible database archive");
   }
   return tocEntries;
+}
+
+/** In-memory compatibility wrapper for small archives and existing tests. */
+export function validateBackupArchive(metadata, bytes, toc) {
+  return validateBackupArchiveDigest(metadata, sha256(bytes), toc);
 }
 
 export async function createBackup(
@@ -110,7 +127,6 @@ export async function createBackup(
     { env: cli.env },
     spawn,
   );
-  const bytes = await readFile(dumpPath);
   const size = (await stat(dumpPath)).size;
   if (size === 0) throw new Error("pg_dump produced an empty file");
   const metadata = {
@@ -121,7 +137,7 @@ export async function createBackup(
     created_at: new Date().toISOString(),
     dump_file: DUMP_NAME,
     dump_bytes: size,
-    dump_sha256: sha256(bytes),
+    dump_sha256: await sha256File(dumpPath),
     schema_state: plan.state,
     pending_migrations: plan.pending.map((item) => item.id),
     destructive_pending: destructive,
@@ -177,9 +193,8 @@ export async function verifyBackup(
   }
 
   const dumpPath = resolve(deploy.backupDirectory, metadata.dump_file);
-  const bytes = await readFile(dumpPath);
   const toc = runPostgresCommand("pg_restore", ["--list", dumpPath], { env }, spawn);
-  const tocEntries = validateBackupArchive(metadata, bytes, toc);
+  const tocEntries = validateBackupArchiveDigest(metadata, await sha256File(dumpPath), toc);
 
   const plan = await planRead(databaseUrl);
   const pending = plan.pending.map((item) => item.id);
@@ -226,7 +241,6 @@ export async function restoreBackup(
   }
 
   const dumpPath = resolve(deploy.backupDirectory, metadata.dump_file);
-  const bytes = await readFile(dumpPath);
   const cli = postgresCli(databaseUrl, env);
   const toc = runPostgresCommand(
     "pg_restore",
@@ -234,7 +248,7 @@ export async function restoreBackup(
     { env: cli.env },
     spawn,
   );
-  validateBackupArchive(metadata, bytes, toc);
+  validateBackupArchiveDigest(metadata, await sha256File(dumpPath), toc);
   runPostgresCommand(
     "pg_restore",
     [
