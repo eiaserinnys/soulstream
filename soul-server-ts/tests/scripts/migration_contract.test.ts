@@ -98,8 +98,21 @@ describe("versioned migration contract", () => {
     );
 
     expect(standalone.environment_service).toBe("soul-server-ts");
-    expect(standalone.migration).toEqual(cluster.migration);
-    expect(standalone.post_start_verify).toEqual(cluster.post_start_verify);
+    expect(standalone.migration).toEqual({
+      ...cluster.migration,
+      apply: {
+        name: "apply-migrations",
+        command: "node packages/db-schema/scripts/migrate.mjs apply",
+        timeout_seconds: 300,
+      },
+    });
+    expect(standalone.post_start_verify).toEqual(cluster.post_start_verify.slice(0, -1));
+    expect(cluster.post_start_verify.at(-1)).toEqual({
+      name: "verify-board-yjs-runbook-residue",
+      command: "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
+        + "orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --verify",
+      timeout_seconds: 300,
+    });
   });
   it("loads release settings from the declared Haniel service cwd", () => {
     expect(deploymentEnvironmentPath(
@@ -114,10 +127,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(52);
+    expect(migrations).toHaveLength(53);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "051_session_digests.sql",
+      "052_session_review_state_filter.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -126,12 +139,13 @@ describe("versioned migration contract", () => {
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
     ]);
-    expect(migrations.slice(0, -10).every(
+    expect(migrations.slice(0, -11).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-10).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-11).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
@@ -188,6 +202,7 @@ describe("versioned migration contract", () => {
       "049_external_llm_actor.sql",
       "050_session_id_search_indexed.sql",
       "051_session_digests.sql",
+      "052_session_review_state_filter.sql",
     ]);
   });
 
@@ -207,6 +222,7 @@ describe("versioned migration contract", () => {
       "049_external_llm_actor.sql",
       "050_session_id_search_indexed.sql",
       "051_session_digests.sql",
+      "052_session_review_state_filter.sql",
     ]);
   });
 

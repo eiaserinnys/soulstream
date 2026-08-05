@@ -88,7 +88,7 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
-        migration_count: 52,
+        migration_count: 53,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -359,6 +359,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 52,
             applied_kind: "migration",
           },
+          {
+            migration_id: "052_session_review_state_filter.sql",
+            ordinal: 53,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -388,7 +393,7 @@ describe("apply-schema.mjs", () => {
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":52');
+        expect(verified.stdout).toContain('"ledger_count":53');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });
@@ -514,7 +519,8 @@ describe("apply-schema.mjs", () => {
     );
     expect(manifest.environment_service).toBe("soulstream-orch-server");
     expect(manifest.migration.apply.command).toBe(
-      "node packages/db-schema/scripts/migrate.mjs apply",
+      "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
+      + "orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --migrate",
     );
     expect(fixture.services["soulstream-soul-server-ts"].after).toEqual([
       "soulstream-orch-server",
