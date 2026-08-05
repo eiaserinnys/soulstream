@@ -11,11 +11,6 @@
       "name": "verify-release-health",
       "command": "node soul-server-ts/scripts/verify-release-health.mjs",
       "timeout_seconds": 300
-    },
-    {
-      "name": "verify-board-yjs-runbook-residue",
-      "command": "pnpm --dir orch-server-ts run deploy:ydoc-runbook-residue -- --verify",
-      "timeout_seconds": 300
     }
   ],
   "recovery": {

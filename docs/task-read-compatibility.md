@@ -38,7 +38,9 @@ Runbook에서 Task로 전환하는 동안 구 이름은 읽기 경계에서만 �
 
 `migrate:ydoc-runbook-residue`는 기본이 읽기 전용 dry-run이다. apply는 Haniel release manifest의 migration 단계가 orch Board Y.Doc 호스트를 중지한 뒤 `--apply --quiesced --orch-health-url=http://127.0.0.1:5200/api/health`를 함께 지정하여 실행한다. 로컬 health endpoint가 `ECONNREFUSED`가 아니거나 timeout·원격 네트워크 오류처럼 중지를 증명할 수 없는 상태면 DB 연결 전에 거부한다. 라이브 host API를 경유하는 apply 경로는 제공하지 않는다.
 
-배포 래퍼와 이관 스크립트는 모두 `SOULSTREAM_NODE_ID=eiaserinnys`를 요구한다. worker·standalone manifest의 post-start 검증은 비중앙 노드에서 자식 migration·검증 명령을 실행하지 않고 `non_central_node` skip 감사 레코드 한 줄만 남긴다. 감사 이력은 Haniel의 release backup 디렉터리 `board-yjs-runbook-migration.jsonl`에 SQL migration ledger와 분리하여 누적한다.
+Haniel release manifest 명령은 비-shell spawn 계약이므로 bare `pnpm`·`tsx`를 금지하고, `node`와 저장소 안의 실제 JavaScript 진입점을 직접 지정한다.
+
+Y.Doc migrate·verify 명령은 중앙 `release-manifest.json`에만 존재하고 worker·standalone manifest에는 싣지 않는다. 배포 래퍼와 이관 스크립트의 `SOULSTREAM_NODE_ID=eiaserinnys` 가드는 중앙 경로의 이중 방어로 유지한다. 중앙 실행 감사 이력은 Haniel의 release backup 디렉터리 `board-yjs-runbook-migration.jsonl`에 SQL migration ledger와 분리하여 누적한다.
 
 충돌 승인 정본은 `orch-server-ts/scripts/ydoc-runbook-collision-approvals.json`이다. 빈 배열이면 중앙 배포도 read-only dry-run 보고만 남기고 성공한다. 18개 승인 hash를 모두 채운 커밋이 배포될 때만 apply와 엄격 post-start 검증을 실행한다. 1~17개처럼 부분 승인된 파일은 배포 전에 거부한다.
 

@@ -21,7 +21,7 @@
     },
     "apply": {
       "name": "apply-migrations-and-board-yjs-residue",
-      "command": "pnpm --dir orch-server-ts run deploy:ydoc-runbook-residue -- --migrate",
+      "command": "node orch-server-ts/node_modules/tsx/dist/cli.mjs orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --migrate",
       "timeout_seconds": 300
     }
   },
@@ -38,7 +38,7 @@
     },
     {
       "name": "verify-board-yjs-runbook-residue",
-      "command": "pnpm --dir orch-server-ts run deploy:ydoc-runbook-residue -- --verify",
+      "command": "node orch-server-ts/node_modules/tsx/dist/cli.mjs orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --verify",
       "timeout_seconds": 300
     }
   ],
