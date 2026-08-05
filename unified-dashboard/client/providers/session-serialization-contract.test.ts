@@ -82,6 +82,23 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     expect(result).toMatchObject({ total: 250, hasMore: false });
   });
 
+  it("requests the full canonical review queue without recent-window pagination", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ sessions: [], total: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OrchestratorSessionProvider().fetchSessions({
+      reviewState: "needs_review",
+      limit: 0,
+    });
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "https://example.test");
+    expect(url.searchParams.get("review_state")).toBe("needs_review");
+    expect(url.searchParams.get("limit")).toBe("0");
+  });
+
   it("preserves awaySummary for the run history summary toggle", async () => {
     vi.stubGlobal(
       "fetch",

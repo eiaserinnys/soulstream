@@ -229,12 +229,13 @@ class PostgresSessionCRUDMixin:
         folder_id: Optional[str] = None,
         node_id: Optional[str] = None,
         status: Optional[Union[str, list[str]]] = None,
+        review_state: Optional[str] = None,
         feed_only: bool = False,
     ) -> tuple[list[dict], int]:
         """세션 목록 조회.
 
-        feed_only는 PostgresSessionCRUDMixin 전용 파라미터이다.
-        SessionDBBase ABC에는 이 파라미터가 없으며, 이는 기존 정책
+        feed_only와 review_state는 PostgresSessionCRUDMixin 전용 파라미터이다.
+        SessionDBBase ABC에는 이 파라미터들이 없으며, 이는 기존 정책
         ("구현 전용 확장은 ABC에 포함하지 않는다")을 따른 것이다.
         """
         # 필터를 JSONB dict으로 직렬화
@@ -247,6 +248,8 @@ class PostgresSessionCRUDMixin:
             filters["node_id"] = node_id
         if status is not None:
             filters["status"] = status
+        if review_state is not None:
+            filters["review_state"] = review_state
         if feed_only:
             filters["feed_only"] = True
         filters_json = json.dumps(filters) if filters else None
