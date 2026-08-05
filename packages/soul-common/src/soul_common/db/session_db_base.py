@@ -1,10 +1,9 @@
 """
 SessionDB 공용 인터페이스 및 유틸리티
 
-두 SessionDB 구현(PostgresSessionDB, SqliteSessionDB)의 인터페이스를 정본화하고,
-완전히 동일한 코드를 공용 모듈로 추출한다.
+PostgresSessionDB의 인터페이스를 정본화하고, 공용 타입과 유틸리티를 제공한다.
 
-모든 SessionDB 구현은 SessionDBBase를 상속하여 인터페이스 일관성을 보장한다.
+PostgresSessionDB는 SessionDBBase를 상속하여 인터페이스 일관성을 보장한다.
 """
 
 import json
@@ -378,7 +377,7 @@ class SearchProtocol(Protocol):
 
 @runtime_checkable
 class ViewportProtocol(Protocol):
-    """뷰포트 API (PostgreSQL 전용, SQLite는 NotImplementedError)"""
+    """뷰포트 API."""
 
     async def update_subtree_heights(
         self,
