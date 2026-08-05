@@ -195,20 +195,37 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
-          Write-Host "=== haniel-run.log ==="
-          if (Test-Path "C:\soulstream-test\logs\haniel-run.log") {
-            Get-Content "C:\soulstream-test\logs\haniel-run.log" -Tail 60
-          } else { Write-Host "(not found)" }
-          Write-Host "=== haniel-run.log.err ==="
-          if (Test-Path "C:\soulstream-test\logs\haniel-run.log.err") {
-            Get-Content "C:\soulstream-test\logs\haniel-run.log.err" -Tail 30
-          } else { Write-Host "(not found)" }
-          Write-Host "=== .env.soul-server-ts ==="
-          if (Test-Path "C:\soulstream-test\soulstream\.env.soul-server-ts") {
-            Get-Content "C:\soulstream-test\soulstream\.env.soul-server-ts"
-          } else { Write-Host "(not found)" }
+          $logDir = "C:\soulstream-test\logs"
+          Write-Host "=== Log inventory: $logDir ==="
+          if (Test-Path $logDir) {
+            $logFiles = Get-ChildItem -LiteralPath $logDir -File -Recurse |
+              Sort-Object FullName
+            $logFiles |
+              Select-Object FullName, Length, LastWriteTimeUtc |
+              Format-Table -AutoSize
+            foreach ($logFile in $logFiles) {
+              Write-Host "=== $($logFile.FullName) (last 400 lines) ==="
+              Get-Content -LiteralPath $logFile.FullName -Tail 400 -ErrorAction Continue
+            }
+          } else {
+            Write-Host "(log directory not found)"
+          }
+
+          $serviceLog = Join-Path $logDir "soul-server-ts.log"
+          if (-not (Test-Path $serviceLog)) {
+            Write-Host "soul-server-ts.log was not captured"
+          }
           Write-Host "=== Processes ==="
           Get-Process | Where-Object { $_.ProcessName -match "node|haniel" } | Format-Table Name, Id, CPU
+
+      - name: Upload service logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-installer-service-logs
+          path: C:\soulstream-test\logs\
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Print service info
         shell: pwsh
