@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const SOURCE_ROOT = fileURLToPath(new URL("../../src", import.meta.url));
 const DIRECT_READ_PATTERN = /\b(?:FROM|JOIN)\s+(?:sessions|events|session_digests)\b|\b(?:session_get|session_list_summary|event_count|event_read|event_read_one|event_stream_raw|event_search|session_id_search)\s*\(/gi;
+const DIRECT_SQL_PATTERN = /\b(?:this\.)?sql(?:<[^`]+>)?\s*`/g;
 
 describe("worker session-data read boundary", () => {
   it("keeps every direct session, event, and story read out of worker code", () => {
@@ -24,6 +25,27 @@ describe("worker session-data read boundary", () => {
       "page/checklist_task_projection_repository.ts::from sessions": 1,
       "page/checklist_task_projection_repository.ts::join sessions": 2,
     });
+  });
+
+  it("keeps every direct SQL module inside the Phase 6 or Phase 12 inventory", () => {
+    const matches = new Set<string>();
+    for (const file of walkTypescriptFiles(SOURCE_ROOT)) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      if (DIRECT_SQL_PATTERN.test(source)) matches.add(relative(SOURCE_ROOT, file));
+      DIRECT_SQL_PATTERN.lastIndex = 0;
+    }
+
+    expect([...matches].sort()).toEqual([
+      "db/repositories/board_repository.ts",
+      "db/repositories/board_yjs_repository.ts",
+      "db/repositories/custom_view_repository.ts",
+      "db/repositories/event_repository.ts",
+      "db/repositories/markdown_document_repository.ts",
+      "db/repositories/session_repository.ts",
+      "db/runtime_schema_preflight.ts",
+      "db/session_db.ts",
+      "page/checklist_task_projection_repository.ts",
+    ]);
   });
 });
 

@@ -156,7 +156,7 @@ describe("NodeEventIngressController", () => {
     expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
   });
 
-  it("rejects a serialized batch larger than 256 KiB", async () => {
+  it("rejects a multi-event batch larger than 256 KiB", async () => {
     const commitBatch = vi.fn();
     const sent: Array<Record<string, unknown>> = [];
     const close = vi.fn();
@@ -166,7 +166,32 @@ describe("NodeEventIngressController", () => {
       close,
     });
     const oversized = batch(1);
-    oversized.events[0]!.payload = { content: "x".repeat(256 * 1024) };
+    oversized.events[0]!.payload = { content: "x".repeat(130 * 1024) };
+    oversized.events.push({
+      ...oversized.events[0]!,
+      source_seq: 2,
+      payload: { content: "x".repeat(130 * 1024) },
+    });
+
+    controller.enqueue(oversized as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(commitBatch).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({ status: 400, code: "EVENT_INGRESS_INVALID" });
+    expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
+  });
+
+  it("rejects a single event larger than 2 MiB", async () => {
+    const commitBatch = vi.fn();
+    const sent: Array<Record<string, unknown>> = [];
+    const close = vi.fn();
+    const controller = createController({
+      committer: { commitBatch },
+      send: (frame: Record<string, unknown>) => sent.push(frame),
+      close,
+    });
+    const oversized = batch(1);
+    oversized.events[0]!.payload = { content: "x".repeat(2 * 1024 * 1024) };
 
     controller.enqueue(oversized as unknown as Record<string, unknown>);
     await controller.drain();
