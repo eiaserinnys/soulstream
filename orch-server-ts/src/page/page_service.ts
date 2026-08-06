@@ -357,9 +357,9 @@ export class PageYjsService {
   }
 
   handleConnection(socket: WebSocket, request: IncomingMessage, pageId: string): void {
+    socket.pause();
     void this.openConnection(socket, request, pageId);
   }
-
   assertWebsocketAuthConfigured(): void {
     if (this.config.auth === undefined) {
       throw new Error("Page Yjs websocket authentication is not configured");
@@ -405,15 +405,16 @@ export class PageYjsService {
       if (!snapshot) throw new Error(`page snapshot missing: ${pageId}`);
       readPageYDocReplica(pageId, this.decodeSnapshot(snapshot));
       this.hocuspocus.handleConnection(socket, request, { pageId, documentName });
+      socket.resume();
     } catch (error) {
       this.config.logger?.error(
         { err: error, pageId },
         "Page Yjs websocket rejected invalid document",
       );
+      socket.resume();
       socket.close(1008, "invalid page document");
     }
   }
-
   private async resolveIdempotent(
     idempotencyKey: string,
   ): Promise<PageServiceMutationResult | null> {
