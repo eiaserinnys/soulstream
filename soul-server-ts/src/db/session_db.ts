@@ -1,7 +1,8 @@
 /**
  * SessionDB — worker persistence facade. Session/event/story reads cross the
- * orchestrator host boundary; worker-local SQL remains for writes and the
- * board/markdown/projection surfaces scheduled for the next cutover.
+ * orchestrator host boundary. Worker-local SQL remains only for the
+ * board/markdown/custom-view/checklist surfaces in Phase 6 and the runtime
+ * schema/index bootstrap scheduled for Phase 12.
  */
 
 import postgres from "postgres";

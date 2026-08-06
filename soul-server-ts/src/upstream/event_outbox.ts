@@ -10,6 +10,7 @@ import { join } from "node:path";
 
 export const EVENT_OUTBOX_MAX_BATCH_EVENTS = 64;
 export const EVENT_OUTBOX_MAX_BATCH_BYTES = 256 * 1024;
+export const EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES = 2 * 1024 * 1024;
 export const EVENT_OUTBOX_COMPACT_ROWS = 1_000;
 export const EVENT_OUTBOX_COMPACT_BYTES = 8 * 1024 * 1024;
 
@@ -152,13 +153,20 @@ export class EventOutbox {
           ...candidateArray.slice(1),
         ];
         const frame = buildBatch(this.metadata.stream_id, candidate);
-        if (Buffer.byteLength(JSON.stringify(frame), "utf8") > EVENT_OUTBOX_MAX_BATCH_BYTES) {
+        const frameBytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+        if (frameBytes > EVENT_OUTBOX_MAX_BATCH_BYTES) {
+          if (
+            selected.length === 0
+            && frameBytes <= EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES
+          ) {
+            selected.push(record);
+          }
           break;
         }
         selected.push(record);
       }
       if (selected.length === 0) {
-        throw new Error("event outbox record exceeds 256 KiB batch contract");
+        throw new Error("event outbox record exceeds 2 MiB single-event contract");
       }
       return buildBatch(
         this.metadata.stream_id,
@@ -331,8 +339,11 @@ export function computeEventOutboxPayloadHash(
 
 function assertSingleRecordFits(record: EventOutboxRecord): void {
   const frame = buildBatch(record.stream_id, [record]);
-  if (Buffer.byteLength(JSON.stringify(frame), "utf8") > EVENT_OUTBOX_MAX_BATCH_BYTES) {
-    throw new Error("event payload exceeds 256 KiB ingress batch contract");
+  if (
+    Buffer.byteLength(JSON.stringify(frame), "utf8")
+    > EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES
+  ) {
+    throw new Error("event payload exceeds 2 MiB ingress single-event contract");
   }
 }
 

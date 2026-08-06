@@ -1,6 +1,7 @@
 export const EVENT_INGRESS_PROTOCOL_VERSION = 1;
 export const EVENT_INGRESS_MAX_EVENTS = 64;
-export const EVENT_INGRESS_MAX_FRAME_BYTES = 256 * 1024;
+export const EVENT_INGRESS_MAX_BATCH_FRAME_BYTES = 256 * 1024;
+export const EVENT_INGRESS_MAX_SINGLE_EVENT_FRAME_BYTES = 2 * 1024 * 1024;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -82,8 +83,17 @@ export function parseEventAppendBatch(
   if (frame.events.length > EVENT_INGRESS_MAX_EVENTS) {
     throw new EventIngressValidationError("event_append_batch exceeds 64 events");
   }
-  if (Buffer.byteLength(JSON.stringify(frame), "utf8") > EVENT_INGRESS_MAX_FRAME_BYTES) {
-    throw new EventIngressValidationError("event_append_batch exceeds 256 KiB");
+  const frameBytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+  if (
+    frameBytes > EVENT_INGRESS_MAX_BATCH_FRAME_BYTES
+    && (
+      frame.events.length !== 1
+      || frameBytes > EVENT_INGRESS_MAX_SINGLE_EVENT_FRAME_BYTES
+    )
+  ) {
+    throw new EventIngressValidationError(
+      "event_append_batch exceeds 256 KiB batch or 2 MiB single-event limit",
+    );
   }
 
   const events = frame.events.map((value, index) => {

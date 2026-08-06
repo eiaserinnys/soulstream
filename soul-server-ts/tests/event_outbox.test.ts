@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   EVENT_OUTBOX_COMPACT_BYTES,
   EVENT_OUTBOX_COMPACT_ROWS,
+  EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES,
   computeEventOutboxPayloadHash,
   EventOutbox,
   type EventOutboxRecord,
@@ -89,6 +90,34 @@ describe("EventOutbox", () => {
     expect(Buffer.byteLength(JSON.stringify(first), "utf8")).toBeLessThanOrEqual(256 * 1024);
   });
 
+  it("sends a measured oversized event alone and resumes normal batching after ACK", async () => {
+    const directory = await temporaryDirectory();
+    const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
+    const records = [measuredPeakRecord(streamId, 1), record(streamId, 2)];
+    await writeFixture(directory, streamId, records, 0);
+    const outbox = await EventOutbox.open(directory);
+
+    const first = await outbox.readBatch();
+    expect(first?.events.map((item) => item.source_seq)).toEqual([1]);
+    expect(Buffer.byteLength(JSON.stringify(first), "utf8")).toBeGreaterThan(256 * 1024);
+    expect(Buffer.byteLength(JSON.stringify(first), "utf8")).toBeLessThanOrEqual(2 * 1024 * 1024);
+
+    await outbox.acknowledge(streamId, 1);
+    expect((await outbox.readBatch())?.events.map((item) => item.source_seq)).toEqual([2]);
+  });
+
+  it("rejects an event whose single-event frame exceeds 2 MiB before durable append", async () => {
+    const directory = await temporaryDirectory();
+    const outbox = await EventOutbox.open(directory);
+
+    await expect(outbox.append(eventInput("x".repeat(EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES))))
+      .rejects.toThrow("event payload exceeds 2 MiB ingress single-event contract");
+
+    expect(await outbox.readBatch()).toBeNull();
+    expect(JSON.parse(await readFile(join(directory, "metadata.json"), "utf8")))
+      .toEqual({ stream_id: outbox.streamId, next_seq: 1, acked_seq: 0 });
+  });
+
   it("compacts an acknowledged 1,000-row prefix with real files", async () => {
     const directory = await temporaryDirectory();
     const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
@@ -160,6 +189,21 @@ function largeRecord(streamId: string, sourceSeq: number): EventOutboxRecord {
     session_id: "session-a",
     event_type: "assistant_message",
     payload: { type: "assistant_message", content: "x".repeat(245 * 1024) },
+    searchable_text: null,
+    created_at: "2026-08-06T00:00:00.000Z",
+    semantic_dedupe_key: null,
+    session_effect: null,
+  };
+  return { ...unsigned, payload_hash: computeEventOutboxPayloadHash(unsigned) };
+}
+
+function measuredPeakRecord(streamId: string, sourceSeq: number): EventOutboxRecord {
+  const unsigned = {
+    stream_id: streamId,
+    source_seq: sourceSeq,
+    session_id: "session-a",
+    event_type: "assistant_message",
+    payload: { type: "assistant_message", content: "x".repeat(1_387_278) },
     searchable_text: null,
     created_at: "2026-08-06T00:00:00.000Z",
     semantic_dedupe_key: null,
