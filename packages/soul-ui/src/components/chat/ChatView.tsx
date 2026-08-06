@@ -47,6 +47,7 @@ import { useGlassSurface } from "../LiquidGlassProvider";
 import { resolveChatTypography } from "../../lib/chat-typography";
 import { SessionModelPresetBadge } from "../SessionModelPresetBadge";
 import { SessionStoryDisclosure } from "../SessionStoryDisclosure";
+import { buildChatTimelineItems } from "./ChatView.thinking-indicator";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -97,19 +98,24 @@ export function ChatView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
+  const chatStatus = activeSessionSummary?.status ?? "unknown";
+  const timelineItems = useMemo(
+    () => buildChatTimelineItems(grouped, messages, chatStatus),
+    [grouped, messages, chatStatus],
+  );
   const { firstItemIndex, recordFirstVisibleKey } =
     useChatLogicalInsertionCoordinate(
-      grouped,
+      timelineItems,
       activeSessionKey,
       chatPrependedCount,
     );
   const bottomScrollLocation = useMemo(
-    () => getBottomScrollLocation(grouped.length),
-    [grouped.length],
+    () => getBottomScrollLocation(timelineItems.length),
+    [timelineItems.length],
   );
   const initialTopMostItemIndex = useMemo(
-    () => getInitialTopMostItemIndex(grouped.length),
-    [grouped.length],
+    () => getInitialTopMostItemIndex(timelineItems.length),
+    [timelineItems.length],
   );
 
   // === Follow mode ===
@@ -119,7 +125,7 @@ export function ChatView({
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
-  const prevVisibleItemsRef = useRef(grouped);
+  const prevVisibleItemsRef = useRef(timelineItems);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
@@ -129,7 +135,7 @@ export function ChatView({
     scheduleVisuallyFirstItem,
   } = useChatViewportRetention({
     activeSessionKey,
-    grouped,
+    grouped: timelineItems,
     firstItemIndex,
     isFollowing,
     recordFirstVisibleKey,
@@ -200,9 +206,9 @@ export function ChatView({
     prevTreeVersion.current = treeVersion;
     const visibleItemsChanged = !areMessageGroupsRenderEqual(
       prevVisibleItemsRef.current,
-      grouped,
+      timelineItems,
     );
-    prevVisibleItemsRef.current = grouped;
+    prevVisibleItemsRef.current = timelineItems;
     // 미로딩 anchor summary와 duplicate/reload는 treeVersion만 바꿀 수 있다.
     // 실제 렌더 행의 reference가 그대로면 follow 좌표와 banner를 건드리지 않는다.
     // 반대로 text_delta는 key와 행 수가 같아도 reference가 바뀌므로 follow를 유지한다.
@@ -214,7 +220,7 @@ export function ChatView({
     if (
       bottomScrollLocation !== null &&
       (isInitialBottomFocusPending ||
-        shouldScrollToBottomOnTreeChange(isFollowingRef.current, grouped.length))
+        shouldScrollToBottomOnTreeChange(isFollowingRef.current, timelineItems.length))
     ) {
       requestAnimationFrame(() => {
         scrollToBottomWithBehavior("auto");
@@ -224,12 +230,12 @@ export function ChatView({
       });
       return;
     }
-    if (!isFollowingRef.current && grouped.length > 0) {
+    if (!isFollowingRef.current && timelineItems.length > 0) {
       setShowNewMessage(true);
     }
   }, [
     treeVersion,
-    grouped,
+    timelineItems,
     bottomScrollLocation,
     activeSessionKey,
     scrollToBottomWithBehavior,
@@ -249,15 +255,15 @@ export function ChatView({
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤.
   // 하이라이트는 itemsRendered 콜백에서 DOM 쿼리 후 적용.
   useEffect(() => {
-    if (!focusEventId || grouped.length === 0) return;
-    const targetIndex = findFocusIndex(grouped, focusEventId);
+    if (!focusEventId || timelineItems.length === 0) return;
+    const targetIndex = findFocusIndex(timelineItems, focusEventId);
     if (targetIndex < 0) return; // 다음 treeVersion tick에서 재시도
     virtuosoRef.current?.scrollToIndex({
       index: targetIndex + firstItemIndex,
       align: "center",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusEventId, treeVersion, grouped, firstItemIndex]);
+  }, [focusEventId, treeVersion, timelineItems, firstItemIndex]);
 
   const scrollToBottom = useCallback(() => {
     scrollToBottomWithBehavior("smooth");
@@ -311,7 +317,6 @@ export function ChatView({
     activeSessionSummary?.lastMessage?.preview ||
     activeSessionSummary?.prompt ||
     activeSessionKey;
-  const chatStatus = activeSessionSummary?.status ?? "unknown";
   const chatStatusConfig = CHAT_STATUS_TONE_CONFIG[chatStatus] ?? CHAT_STATUS_TONE_CONFIG.unknown;
 
   return (
@@ -353,24 +358,24 @@ export function ChatView({
           <SessionStoryDisclosure sessionId={activeSessionKey} />
         </div>
       )}
-      {messages.length === 0 && !history.loading && (
+      {timelineItems.length === 0 && !history.loading && (
         <div className="p-5 text-center text-muted-foreground text-sm">
           Waiting for events...
         </div>
       )}
       {/* 빈 세션의 초기 로딩만 외부에 표시한다. 메시지가 있으면 header를 Virtuoso 안에 둔다. */}
-      {messages.length === 0 && history.loading && (
+      {timelineItems.length === 0 && history.loading && (
         <div className="p-2 text-center text-muted-foreground text-sm">
           Loading earlier messages...
         </div>
       )}
 
-      {messages.length > 0 && (
+      {timelineItems.length > 0 && (
         <Virtuoso
           key={activeSessionKey}
           ref={virtuosoRef}
           scrollerRef={bindScrollerElement}
-          data={grouped}
+          data={timelineItems}
           firstItemIndex={firstItemIndex}
           initialTopMostItemIndex={initialTopMostItemIndex}
           alignToBottom

@@ -12,7 +12,7 @@
  * 순수 함수로 분리하여 단위 테스트를 먼저 고정한 뒤 ChatView 본체를 재작성한다.
  */
 
-import type { MessageOrGroup } from "../../lib/grouping";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 /** virtuoso 권장 패턴: 큰 시작 인덱스에서 prepend 때마다 차감 */
 export const START_INDEX = 10_000;
@@ -25,7 +25,8 @@ export const computeFirstItemIndex = (prependedCount: number): number =>
   START_INDEX - prependedCount;
 
 /** Virtuoso와 viewport 보정이 공유하는 안정 키. */
-export function messageOrGroupKey(item: MessageOrGroup): string {
+export function messageOrGroupKey(item: ChatTimelineItem): string {
+  if (item.type === "thinking-indicator") return "chat-thinking-indicator";
   if (item.type === "summary-group") return messageOrGroupKey(item.anchor);
   return item.type === "tool-group"
     ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
@@ -39,13 +40,16 @@ export function messageOrGroupKey(item: MessageOrGroup): string {
  * 사용해, 숨겨진 summary/duplicate와 실제 렌더 갱신을 구분한다.
  */
 export function areMessageGroupsRenderEqual(
-  previous: MessageOrGroup[],
-  next: MessageOrGroup[],
+  previous: ChatTimelineItem[],
+  next: ChatTimelineItem[],
 ): boolean {
   if (previous.length !== next.length) return false;
   return previous.every((item, index) => {
     const nextItem = next[index];
     if (item.type !== nextItem?.type) return false;
+    if (item.type === "thinking-indicator" && nextItem.type === "thinking-indicator") {
+      return true;
+    }
     if (item.type === "single" && nextItem.type === "single") {
       return item.msg === nextItem.msg;
     }
@@ -111,11 +115,12 @@ export function getBottomScrollLocation(
  * - `tool-group`: messages 중 하나라도 위 조건 충족
  */
 export const findFocusIndex = (
-  grouped: MessageOrGroup[],
+  grouped: ChatTimelineItem[],
   focusEventId: number | null,
 ): number => {
   if (focusEventId == null) return -1;
   return grouped.findIndex((item) => {
+    if (item.type === "thinking-indicator") return false;
     if (item.type === "summary-group") {
       return findFocusIndex(
         [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))],

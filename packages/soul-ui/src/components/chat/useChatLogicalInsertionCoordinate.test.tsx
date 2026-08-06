@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../../lib/flatten-tree";
 import type { MessageOrGroup } from "../../lib/grouping";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 import { useChatLogicalInsertionCoordinate } from "./useChatLogicalInsertionCoordinate";
 
 function row(key: string): MessageOrGroup {
@@ -24,7 +25,7 @@ function row(key: string): MessageOrGroup {
 }
 
 interface HarnessProps {
-  grouped: MessageOrGroup[];
+  grouped: ChatTimelineItem[];
   sessionKey: string;
   prependedCount: number;
 }
@@ -94,5 +95,17 @@ describe("useChatLogicalInsertionCoordinate reset boundaries", () => {
       sessionKey: "s2",
       prependedCount: 1,
     }).firstItemIndex).toBe(9_999);
+  });
+
+  it("마지막 생각 중 행의 표시 전환은 prepend 좌표를 움직이지 않는다", () => {
+    const original = [row("row-100")];
+    const initial = render({ grouped: original, sessionKey: "s1", prependedCount: 0 });
+    initial.recordFirstVisibleKey("row-100");
+
+    expect(render({
+      grouped: [...original, { type: "thinking-indicator" }],
+      sessionKey: "s1",
+      prependedCount: 0,
+    }).firstItemIndex).toBe(10_000);
   });
 });

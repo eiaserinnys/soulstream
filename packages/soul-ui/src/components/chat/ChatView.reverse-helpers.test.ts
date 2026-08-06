@@ -74,6 +74,16 @@ describe("stable viewport key helpers", () => {
     };
     expect(messageOrGroupKey(single)).toBe("node-10");
     expect(messageOrGroupKey(group)).toBe("tg-tool-12");
+    expect(messageOrGroupKey({ type: "thinking-indicator" })).toBe("chat-thinking-indicator");
+  });
+
+  it("생각 중 행은 같은 안정 행으로 비교한다", () => {
+    expect(
+      areMessageGroupsRenderEqual(
+        [{ type: "thinking-indicator" }],
+        [{ type: "thinking-indicator" }],
+      ),
+    ).toBe(true);
   });
 
   it("숨겨진 이벤트처럼 같은 message reference면 렌더 무변화로 판정한다", () => {
@@ -143,5 +153,9 @@ describe("findFocusIndex", () => {
 
   it("빈 배열에 대해 -1", () => {
     expect(findFocusIndex([], 100)).toBe(-1);
+  });
+
+  it("생각 중 행은 이벤트 포커스 대상에서 제외한다", () => {
+    expect(findFocusIndex([{ type: "thinking-indicator" }], 100)).toBe(-1);
   });
 });

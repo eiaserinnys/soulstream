@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import type { MessageOrGroup } from "../../lib/grouping";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 import {
   computeFirstItemIndex,
   countInsertedRowsBeforeKey,
@@ -20,7 +20,7 @@ interface LogicalCoordinate {
  * key 앞의 논리 삽입은 ChatView 경계의 이 훅에서만 계산한다.
  */
 export function useChatLogicalInsertionCoordinate(
-  grouped: MessageOrGroup[],
+  grouped: ChatTimelineItem[],
   sessionKey: string | null,
   prependedCount: number,
 ): {
