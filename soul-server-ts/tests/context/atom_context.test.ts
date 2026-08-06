@@ -202,6 +202,7 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
           nodeId: "11111111-2222-3333-4444-555555555555",
           depth: 1,
           titlesOnly: true,
+          includeIds: false,
           limit: 2,
         },
         {
@@ -220,7 +221,9 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
     expect(out).toContain("depth=4, titles_only=false");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("titles_only=true");
+    expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("include_ids=false");
     expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("limit=2");
+    expect(fetchMock.mock.calls[1]?.[0]?.toString()).toContain("include_ids=true");
     expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("titles_only=true");
     expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("limit=");
   });

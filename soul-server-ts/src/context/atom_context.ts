@@ -31,6 +31,7 @@ export interface AtomContextSpec {
   nodeId: string;
   depth: number;
   titlesOnly: boolean;
+  includeIds?: boolean;
   limit?: number;
 }
 
@@ -77,10 +78,17 @@ export async function fetchAtomContext(
   titlesOnly: boolean,
   logger: AtomContextLogger,
   limit?: number,
+  includeIds?: boolean,
 ): Promise<string | null> {
   const markdown = await fetchAtomMarkdown(
     config,
-    { nodeId, depth, titlesOnly, ...(limit !== undefined ? { limit } : {}) },
+    {
+      nodeId,
+      depth,
+      titlesOnly,
+      ...(limit !== undefined ? { limit } : {}),
+      ...(includeIds !== undefined ? { includeIds } : {}),
+    },
     logger,
   );
   return markdown === null ? null : formatAtomContext(markdown);
@@ -120,7 +128,7 @@ async function fetchAtomMarkdown(
   );
   url.searchParams.set("depth", String(spec.depth));
   url.searchParams.set("max_chars", "50000");
-  url.searchParams.set("include_ids", "true");
+  url.searchParams.set("include_ids", String(spec.includeIds ?? true));
   if (spec.titlesOnly) url.searchParams.set("titles_only", "true");
   if (spec.limit !== undefined) url.searchParams.set("limit", String(spec.limit));
 

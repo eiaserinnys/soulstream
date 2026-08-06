@@ -256,13 +256,19 @@ describe("AgentConfigService", () => {
 
   it("sets atom_contexts and can roll back the applied config", async () => {
     const nodeId = "11111111-2222-3333-4444-555555555555";
+    const defaultIdsNodeId = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     const applied = await service.setAgentAtomContexts("codex-default", [
-      { node_id: nodeId, depth: 2, titles_only: true },
+      { node_id: nodeId, depth: 2, titles_only: true, include_ids: false },
+      { node_id: defaultIdsNodeId, depth: 3, titles_only: false },
     ]);
 
     expect(registry.get("codex-default")?.atom_contexts).toEqual([
-      { node_id: nodeId, depth: 2, titles_only: true },
+      { node_id: nodeId, depth: 2, titles_only: true, include_ids: false },
+      { node_id: defaultIdsNodeId, depth: 3, titles_only: false },
     ]);
+    const saved = fs.readFileSync(configPath, "utf-8");
+    expect(saved).toContain("include_ids: false");
+    expect(saved.match(/include_ids:/g)).toHaveLength(1);
 
     await service.rollback(applied.snapshotPath ?? "");
 

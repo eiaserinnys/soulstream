@@ -148,7 +148,7 @@ describe("AgentProfileSchema", () => {
     ).toThrow(ZodError);
   });
 
-  it("atom_contexts는 node_id/depth/titles_only를 파싱한다", () => {
+  it("atom_contexts는 node_id/depth/titles_only/include_ids를 파싱한다", () => {
     const parsed = AgentProfileSchema.parse({
       id: "a",
       name: "A",
@@ -159,6 +159,7 @@ describe("AgentProfileSchema", () => {
           node_id: "11111111-2222-3333-4444-555555555555",
           depth: 2,
           titles_only: true,
+          include_ids: false,
         },
       ],
     });
@@ -167,6 +168,7 @@ describe("AgentProfileSchema", () => {
         node_id: "11111111-2222-3333-4444-555555555555",
         depth: 2,
         titles_only: true,
+        include_ids: false,
       },
     ]);
   });
@@ -563,6 +565,7 @@ agents:
       - node_id: 11111111-2222-3333-4444-555555555555
         depth: 2
         titles_only: true
+        include_ids: false
 `;
     withTempYaml(yaml, (p) => {
       const r = loadAgentRegistry(p);
@@ -571,6 +574,7 @@ agents:
           node_id: "11111111-2222-3333-4444-555555555555",
           depth: 2,
           titles_only: true,
+          include_ids: false,
         },
       ]);
     });

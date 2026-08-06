@@ -799,6 +799,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
           node_id: "11111111-2222-3333-4444-555555555555",
           depth: 2,
           titles_only: true,
+          include_ids: false,
         },
       ],
     };
@@ -809,6 +810,9 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     );
     const ctx = await cb.build(makeTask({ systemPrompt: "task system" }), agent);
     expect(ctx.effectiveSystemPrompt).toContain("# agent atom");
+    expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]?.toString()).toContain(
+      "include_ids=false",
+    );
     expect(ctx.effectiveSystemPrompt?.startsWith("# atom 트리 | 드릴다운:")).toBe(true);
     expect(ctx.effectiveSystemPrompt).toContain("\n\nfolder prompt\n\ntask system");
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
