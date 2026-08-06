@@ -103,76 +103,6 @@ describe("SessionDB.ensureStableSessionOrderIndex", () => {
   });
 });
 
-describe("SessionDB.appendEvent", () => {
-  it("반환 event_id를 number로 파싱", async () => {
-    const { sql, calls } = createMockSql(() => [{ event_append: 7 }]);
-    const db = new SessionDB(sql);
-    const createdAt = new Date();
-    const id = await db.appendEvent({
-      sessionId: "sess-1",
-      eventType: "text_delta",
-      payload: '{"type":"text_delta"}',
-      searchableText: "hi",
-      createdAt,
-      dedupeKey: "claude-sdk:assistant:msg-1:0",
-    });
-    expect(id).toBe(7);
-    expect(calls[0].values).toEqual([
-      "sess-1",
-      "text_delta",
-      '{"type":"text_delta"}',
-      "hi",
-      createdAt,
-      "claude-sdk:assistant:msg-1:0",
-    ]);
-  });
-
-
-  it("반환에 event_append 키 없으면 throw", async () => {
-    const { sql } = createMockSql(() => [{}]);
-    const db = new SessionDB(sql);
-    await expect(
-      db.appendEvent({
-        sessionId: "sess-1",
-        eventType: "text_delta",
-        payload: "{}",
-        searchableText: "",
-        createdAt: new Date(),
-      }),
-    ).rejects.toThrow(/event_append returned non-number/);
-  });
-
-  it("appendEventTx는 전달받은 tx scope sql로 event_append를 호출", async () => {
-    const { sql, calls } = createMockSql(() => [{ event_append: 11 }]);
-    const db = new SessionDB(sql);
-    const createdAt = new Date("2026-06-16T10:00:00Z");
-
-    let eventId = 0;
-    await sql.begin(async (txSql) => {
-      eventId = await db.appendEventTx(txSql, {
-        sessionId: "sess-task",
-        eventType: "task_operation",
-        payload: '{"type":"task_operation"}',
-        searchableText: "task operation",
-        createdAt,
-        dedupeKey: "task:op-1",
-      });
-    });
-
-    expect(eventId).toBe(11);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].inTransaction).toBe(true);
-    expect(calls[0].values).toEqual([
-      "sess-task",
-      "task_operation",
-      '{"type":"task_operation"}',
-      "task operation",
-      createdAt,
-      "task:op-1",
-    ]);
-  });
-});
-
 describe("SessionDB Claude transcript mirror", () => {
   it("appendClaudeTranscriptEntries delegates JSON batch to stored proc", async () => {
     const { sql, calls } = createMockSql(() => [{ claude_transcript_append: 2 }]);
@@ -427,40 +357,29 @@ describe("SessionDB folder ops (B-5)", () => {
 
 describe("SessionDB.getPrimarySessionBoardItem", () => {
   it("getPrimarySessionBoardItem → primary session membership을 normalized board item으로 반환", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      const query = call.fragments.join("?");
-      if (query.includes("FROM board_items")) {
-        return [
-          {
-            id: "session:s1",
-            folder_id: "f1",
-            container_kind: "task",
-            container_id: "rb-1",
-            membership_kind: "primary",
-            source_task_item_id: "rb-item-1",
-            item_type: "session",
-            item_id: "s1",
-            x: "32",
-            y: "64",
-            metadata: {},
-            created_at: "2026-07-07T00:00:00.000Z",
-            updated_at: "2026-07-07T00:00:00.000Z",
-          },
-        ];
-      }
-      return [];
-    });
+    const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
+    const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
+      id: "session:s1",
+      folderId: "f1",
+      containerKind: "task",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceTaskItemId: "rb-item-1",
+      itemType: "session",
+      itemId: "s1",
+      x: 32,
+      y: 64,
+      metadata: {},
+      createdAt: "2026-07-07T00:00:00.000Z",
+      updatedAt: "2026-07-07T00:00:00.000Z",
+    });
+    db.configureBoardProjectionHost({ getPrimarySessionBoardItem } as never);
 
     const item = await db.getPrimarySessionBoardItem("s1");
 
-    expect(calls).toHaveLength(1);
-    const query = calls[0].fragments.join("?");
-    expect(query).toContain("FROM board_items");
-    expect(query).toContain("item_type = 'session'");
-    expect(query).toContain("item_id =");
-    expect(query).toContain("membership_kind = 'primary'");
-    expect(calls[0].values).toEqual(["s1"]);
+    expect(getPrimarySessionBoardItem).toHaveBeenCalledWith("s1");
+    expect(calls).toHaveLength(0);
     expect(item).toEqual({
       id: "session:s1",
       folderId: "f1",
@@ -479,10 +398,14 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
   });
 
   it("getPrimarySessionBoardItem → row 없음이면 null", async () => {
-    const { sql } = createMockSql();
+    const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
+    const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
+    db.configureBoardProjectionHost({ getPrimarySessionBoardItem } as never);
 
     await expect(db.getPrimarySessionBoardItem("missing")).resolves.toBeNull();
+    expect(getPrimarySessionBoardItem).toHaveBeenCalledWith("missing");
+    expect(calls).toHaveLength(0);
   });
 });
 

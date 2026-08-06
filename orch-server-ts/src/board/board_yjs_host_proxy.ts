@@ -5,11 +5,13 @@ import {
   type BoardYjsHostOperationOptions,
 } from "../board-yjs/board_yjs_host_operations.js";
 import type { BoardYjsService } from "../board-yjs/board_yjs_service.js";
+import type { BoardProjectionHost } from "../board-yjs/board_projection_types.js";
 
 export type BoardYjsHostProxyRouteOptions = {
   authBearerToken: string;
   service?: BoardYjsService;
   createService?: (logger: FastifyInstance["log"]) => BoardYjsService;
+  projectionHost?: BoardProjectionHost;
 };
 
 const localBoardYjsServices = new WeakMap<
@@ -42,6 +44,7 @@ function resolveLocalOperationOptions(
 ): BoardYjsHostOperationOptions {
   return {
     service: resolveLocalBoardYjsService(app, options),
+    projectionHost: options.projectionHost,
     authBearerToken: options.authBearerToken,
   };
 }

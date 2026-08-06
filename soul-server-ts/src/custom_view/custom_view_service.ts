@@ -14,28 +14,22 @@ import {
   type CatalogFolderRecord,
   type CatalogSessionsDelta,
 } from "../catalog/catalog_delta.js";
-import type {
-  CustomViewRepository,
-  CustomViewWithBoardItem,
-} from "../db/repositories/custom_view_repository.js";
 import {
   CustomViewRevisionConflictError,
-} from "../db/repositories/custom_view_repository.js";
-import type { AppendEventParams } from "../db/session_db_types.js";
-import type { RepositorySql } from "../db/repositories/repository_helpers.js";
+  type CustomViewProjectionHost,
+  type CustomViewWithBoardItem,
+} from "./custom_view_contract.js";
 
 export { CustomViewRevisionConflictError };
 
 export interface CustomViewDbPort {
-  customViews(): CustomViewRepository;
-  appendEventTx(sql: RepositorySql, params: AppendEventParams): Promise<number>;
   getAllFolders(): Promise<FolderRow[]>;
+}
+
+export interface CustomViewBoardYjsPort extends CustomViewProjectionHost {
   resolveBoardYjsContainerScope(
     container: BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope | null>;
-}
-
-export interface CustomViewBoardYjsPort {
   upsertCustomViewBoardItem(input: {
     folderId: string;
     container: BoardYjsContainerRef;
@@ -78,15 +72,11 @@ export interface CustomViewActor {
 }
 
 export class CustomViewService {
-  private readonly repo: CustomViewRepository;
-
   constructor(
     private readonly db: CustomViewDbPort,
     private readonly boardYjsService: CustomViewBoardYjsPort,
     private readonly broadcaster?: CustomViewBroadcasterPort,
-  ) {
-    this.repo = db.customViews();
-  }
+  ) {}
 
   async createCustomView(params: CustomViewActor & {
     container: BoardYjsContainerRef;
@@ -98,7 +88,7 @@ export class CustomViewService {
   }): Promise<CustomViewMutationResult> {
     const scope = await this.requireContainerScope(params.container);
     const customViewId = customViewIdForIdempotencyKey(params.idempotencyKey);
-    const existing = await this.repo.getCustomView(customViewId);
+    const existing = await this.boardYjsService.getCustomView(customViewId);
     if (existing) {
       return { ...existing, idempotent: true };
     }
@@ -118,29 +108,14 @@ export class CustomViewService {
       y: params.y ?? 0,
     });
     try {
-      let customView!: CustomViewRow;
-      let eventId: number | null = null;
-      await this.repo.transaction(async (sql) => {
-        eventId = params.actorSessionId
-          ? await this.appendEvent(sql, {
-              actorSessionId: params.actorSessionId,
-              eventType: "custom_view_created",
-              customViewId,
-              boardItemId,
-              revision: 1,
-              idempotencyKey: params.idempotencyKey,
-              searchableText: `custom view created ${title}`,
-            })
-          : null;
-        customView = await this.repo.createCustomViewTx(sql, {
-          id: customViewId,
-          boardItemId,
-          title,
-          html,
-          actorKind: params.actorKind,
-          actorSessionId: params.actorSessionId,
-          eventId,
-        });
+      const { customView, eventId } = await this.boardYjsService.createCustomViewRecord({
+        id: customViewId,
+        boardItemId,
+        title,
+        html,
+        actorKind: params.actorKind,
+        actorSessionId: params.actorSessionId,
+        idempotencyKey: params.idempotencyKey,
       });
       const result = { customView, boardItem, eventId };
       await this.broadcast(params.actorSessionId, result);
@@ -159,37 +134,23 @@ export class CustomViewService {
     title?: string | null;
     idempotencyKey: string;
   }): Promise<CustomViewMutationResult> {
-    const existing = await this.repo.getCustomView(params.customViewId);
+    const existing = await this.boardYjsService.getCustomView(params.customViewId);
     if (!existing) throw new Error(`custom view not found: ${params.customViewId}`);
     if (isIdempotentPatchRetry(existing.customView, params)) {
       return { ...existing, idempotent: true };
     }
 
-    let customView!: CustomViewRow;
-    let eventId: number | null = null;
-    await this.repo.transaction(async (sql) => {
-      eventId = params.actorSessionId
-        ? await this.appendEvent(sql, {
-            actorSessionId: params.actorSessionId,
-            eventType: "custom_view_updated",
-            customViewId: params.customViewId,
-            boardItemId: existing.boardItem.id,
-            revision: params.expectedRevision + 1,
-            idempotencyKey: params.idempotencyKey,
-            searchableText: `custom view updated ${params.customViewId}`,
-          })
-        : null;
-      customView = await this.repo.patchCustomViewTx(sql, {
-        customViewId: params.customViewId,
-        expectedRevision: params.expectedRevision,
-        html: params.html,
-        ...(Object.prototype.hasOwnProperty.call(params, "title")
-          ? { title: params.title ?? null }
-          : {}),
-        actorKind: params.actorKind,
-        actorSessionId: params.actorSessionId,
-        eventId,
-      });
+    const { customView, eventId } = await this.boardYjsService.patchCustomViewRecord({
+      customViewId: params.customViewId,
+      boardItemId: existing.boardItem.id,
+      expectedRevision: params.expectedRevision,
+      html: params.html,
+      ...(Object.prototype.hasOwnProperty.call(params, "title")
+        ? { title: params.title ?? null }
+        : {}),
+      actorKind: params.actorKind,
+      actorSessionId: params.actorSessionId,
+      idempotencyKey: params.idempotencyKey,
     });
 
     const boardItem = await this.boardYjsService.upsertCustomViewBoardItem({
@@ -213,7 +174,7 @@ export class CustomViewService {
   }
 
   async getCustomView(customViewId: string): Promise<CustomViewWithBoardItem | null> {
-    return await this.repo.getCustomView(customViewId);
+    return await this.boardYjsService.getCustomView(customViewId);
   }
 
   async listCustomViews(params: {
@@ -222,43 +183,17 @@ export class CustomViewService {
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]> {
     await this.requireContainerScope(params.container);
-    return await this.repo.listCustomViews(params);
+    return await this.boardYjsService.listCustomViews(params);
   }
 
   private async requireContainerScope(
     container: BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope> {
-    const scope = await this.db.resolveBoardYjsContainerScope(container);
+    const scope = await this.boardYjsService.resolveBoardYjsContainerScope(container);
     if (!scope) {
       throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
     }
     return scope;
-  }
-
-  private async appendEvent(
-    sql: RepositorySql,
-    params: {
-      actorSessionId: string;
-      eventType: "custom_view_created" | "custom_view_updated";
-      customViewId: string;
-      boardItemId: string;
-      revision: number;
-      idempotencyKey: string;
-      searchableText: string;
-    },
-  ): Promise<number> {
-    return await this.db.appendEventTx(sql, {
-      sessionId: params.actorSessionId,
-      eventType: params.eventType,
-      payload: JSON.stringify({
-        custom_view_id: params.customViewId,
-        board_item_id: params.boardItemId,
-        revision: params.revision,
-      }),
-      searchableText: params.searchableText,
-      createdAt: new Date(),
-      dedupeKey: params.idempotencyKey,
-    });
   }
 
   private async broadcast(

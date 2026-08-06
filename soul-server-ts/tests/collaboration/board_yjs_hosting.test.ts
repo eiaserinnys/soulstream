@@ -81,6 +81,57 @@ describe("board Yjs orchestrator delegation", () => {
       y: 240,
     });
   });
+
+  it("worker projection reads and checklist leases use the same explicit host route", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [],
+        total: 0,
+        counts: {
+          session: 0,
+          markdown: 0,
+          subfolder: 0,
+          asset: 0,
+          frame: 0,
+          task: 0,
+          custom_view: 0,
+        },
+        scan: null,
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new BoardYjsHostClient({
+      orch: {
+        baseUrl: "http://orch.local",
+        headers: { authorization: "Bearer test-token" },
+      },
+      logger: createSilentLogger() as never,
+    });
+
+    await client.listContainerItems({
+      container: { containerKind: "task", containerId: "task-1" },
+      query: null,
+      includeArchived: false,
+      itemTypes: null,
+      limit: 20,
+      cursor: 0,
+    });
+    await client.claimDue("node-1", 20, 30_000);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://orch.local/api/board-yjs/host/list-container-items",
+      "http://orch.local/api/board-yjs/host/claim-checklist-task-projections",
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1]![1]!.body as string)).toEqual({
+      nodeId: "node-1",
+      limit: 20,
+      leaseMs: 30_000,
+    });
+  });
 });
 
 function collectTypeScriptFiles(directory: string): string[] {

@@ -1,8 +1,7 @@
 /**
  * SessionDB — worker persistence facade. Session/event/story reads cross the
- * orchestrator host boundary. Worker-local SQL remains only for the
- * board/markdown/custom-view/checklist surfaces in Phase 6 and the runtime
- * schema/index bootstrap scheduled for Phase 12.
+ * orchestrator host boundary. Worker-local SQL remains only for the runtime
+ * pool/schema/index bootstrap scheduled for Phase 12.
  */
 
 import postgres from "postgres";
@@ -19,15 +18,11 @@ import type {
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
-import { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
-import { BoardRepository } from "./repositories/board_repository.js";
-import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
+import type { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
+import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import type { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
-import { CustomViewRepository } from "./repositories/custom_view_repository.js";
-import { EventRepository } from "./repositories/event_repository.js";
-import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
 import {
   type SessionDigestSearchMatch,
@@ -38,8 +33,7 @@ import {
 } from "./session_story_types.js";
 import type { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
-import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -50,19 +44,14 @@ export class SessionDB {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
   private taskReader?: { getTask(taskId: string): Promise<TaskSnapshot | null> };
-  private customViewRepository?: CustomViewRepository;
   private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
-  private checklistTaskProjectionRepository?: ChecklistTaskProjectionRepository;
+  private boardProjectionHost?: BoardYjsHostClient;
   private sessionDeliveryRepository?: SessionDeliveryRepository;
   private claudeBackgroundTaskRepository?: ClaudeBackgroundTaskRepository;
   private readonly sessionRepository: SessionRepository;
   private sessionDataHost?: SessionDataHost;
-  private readonly boardRepository: BoardRepository;
   private folderHost?: FolderHostClient;
-  private readonly markdownDocumentRepository: MarkdownDocumentRepository;
-  private readonly boardYjsRepository: BoardYjsRepository;
-  private readonly eventRepository: EventRepository;
   private claudeTranscriptRepository?: ClaudeTranscriptRepository;
 
   /** @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열. 문자열이면 close 시 end. */
@@ -84,10 +73,6 @@ export class SessionDB {
     this.ownsSql = ownsSql;
 
     this.sessionRepository = new SessionRepository(this.sql);
-    this.boardRepository = new BoardRepository(this.sql);
-    this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
-    this.boardYjsRepository = new BoardYjsRepository(this.sql);
-    this.eventRepository = new EventRepository(this.sql);
   }
 
   async close(): Promise<void> {
@@ -114,11 +99,6 @@ export class SessionDB {
     return {
       getTask: async (taskId) => (await this.taskReader!.getTask(taskId))?.task ?? null,
     };
-  }
-
-  customViews(): CustomViewRepository {
-    this.customViewRepository ??= new CustomViewRepository(this.sql);
-    return this.customViewRepository;
   }
 
   configureScheduleHost(host: ScheduleHostClient): void {
@@ -158,6 +138,10 @@ export class SessionDB {
     this.sessionDataHost = host;
   }
 
+  configureBoardProjectionHost(host: BoardYjsHostClient): void {
+    this.boardProjectionHost = host;
+  }
+
   schedules(): ScheduleHostClient {
     if (!this.scheduleHost) throw new Error("schedule host is not configured");
     return this.scheduleHost;
@@ -169,8 +153,7 @@ export class SessionDB {
   }
 
   checklistTaskProjections(): ChecklistTaskProjectionRepository {
-    this.checklistTaskProjectionRepository ??= new ChecklistTaskProjectionRepository(this.sql);
-    return this.checklistTaskProjectionRepository;
+    return this.requireBoardProjectionHost();
   }
 
   sessionDeliveries(): SessionDeliveryRepository {
@@ -254,42 +237,38 @@ export class SessionDB {
     return await this.requireFolderHost().getCatalog();
   }
 
-  invalidateBoardYjsCatalogCache(container?: string | BoardYjsContainerRef | null): void {
-    this.boardRepository.invalidateBoardYjsCatalogCache(container);
-  }
-
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
-    return await this.boardRepository.getBoardItems();
+    return await this.requireBoardProjectionHost().getBoardItems();
   }
 
   listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult> {
-    return this.boardRepository.listContainerItems(params);
+    return this.requireBoardProjectionHost().listContainerItems(params);
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
-    return await this.boardRepository.getBoardItemById(boardItemId);
+    return await this.requireBoardProjectionHost().getBoardItemById(boardItemId);
   }
 
   async getBoardItemIdsForSession(sessionId: string): Promise<string[]> {
-    return await this.boardRepository.getBoardItemIdsForSession(sessionId);
+    return await this.requireBoardProjectionHost().getBoardItemIdsForSession(sessionId);
   }
 
   async getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null> {
-    return await this.boardRepository.getPrimarySessionBoardItem(sessionId);
+    return await this.requireBoardProjectionHost().getPrimarySessionBoardItem(sessionId);
   }
 
   async getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null> {
-    return await this.boardRepository.getMarkdownDocumentBoardItem(documentId);
+    return await this.requireBoardProjectionHost().getMarkdownDocumentBoardItem(documentId);
   }
 
   async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
-    return await this.markdownDocumentRepository.getMarkdownDocument(documentId);
+    return await this.requireBoardProjectionHost().getMarkdownDocument(documentId);
   }
 
   async resolveBoardYjsContainerScope(
     container: string | BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope | null> {
-    return await this.boardYjsRepository.resolveBoardYjsContainerScope(container);
+    return await this.requireBoardProjectionHost().resolveBoardYjsContainerScope(container);
   }
 
   async listSessionsSummary(params: {
@@ -436,17 +415,6 @@ export class SessionDB {
     return await this.requireSessionDataHost().getResumeContext(sessionId, limit);
   }
 
-  async appendEvent(params: AppendEventParams): Promise<number> {
-    return await this.eventRepository.appendEvent(params);
-  }
-
-  async appendEventTx(
-    sql: RepositorySql,
-    params: AppendEventParams,
-  ): Promise<number> {
-    return await this.eventRepository.appendEventTx(sql, params);
-  }
-
   async appendClaudeTranscriptEntries(
     key: ClaudeTranscriptKey,
     entries: ClaudeTranscriptEntry[],
@@ -484,5 +452,10 @@ export class SessionDB {
   private requireSessionDataHost(): SessionDataHost {
     if (!this.sessionDataHost) throw new Error("session data host is not configured");
     return this.sessionDataHost;
+  }
+
+  private requireBoardProjectionHost(): BoardYjsHostClient {
+    if (!this.boardProjectionHost) throw new Error("board projection host is not configured");
+    return this.boardProjectionHost;
   }
 }

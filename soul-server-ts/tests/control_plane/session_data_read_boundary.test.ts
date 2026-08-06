@@ -19,15 +19,10 @@ describe("worker session-data read boundary", () => {
       }
     }
 
-    expect(Object.fromEntries([...matches].sort())).toEqual({
-      "db/repositories/board_repository.ts::from events": 2,
-      "db/repositories/board_repository.ts::join sessions": 2,
-      "page/checklist_task_projection_repository.ts::from sessions": 1,
-      "page/checklist_task_projection_repository.ts::join sessions": 2,
-    });
+    expect(Object.fromEntries([...matches].sort())).toEqual({});
   });
 
-  it("keeps every direct SQL module inside the Phase 6 or Phase 12 inventory", () => {
+  it("keeps every direct SQL module inside the Phase 12 inventory", () => {
     const matches = new Set<string>();
     for (const file of walkTypescriptFiles(SOURCE_ROOT)) {
       const source = stripComments(readFileSync(file, "utf8"));
@@ -36,15 +31,9 @@ describe("worker session-data read boundary", () => {
     }
 
     expect([...matches].sort()).toEqual([
-      "db/repositories/board_repository.ts",
-      "db/repositories/board_yjs_repository.ts",
-      "db/repositories/custom_view_repository.ts",
-      "db/repositories/event_repository.ts",
-      "db/repositories/markdown_document_repository.ts",
       "db/repositories/session_repository.ts",
       "db/runtime_schema_preflight.ts",
       "db/session_db.ts",
-      "page/checklist_task_projection_repository.ts",
     ]);
   });
 });

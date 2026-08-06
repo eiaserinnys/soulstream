@@ -5,6 +5,7 @@ import type { OrchServerTsConfig } from "../config.js";
 import type { RouteOwnerManifest } from "../contract/route_owner_manifest.js";
 import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
 import type { BoardYjsRouteOptions } from "../board-yjs/board_yjs_route.js";
+import type { BoardProjectionHost } from "../board-yjs/board_projection_types.js";
 import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type {
   NodeCommandClock,
@@ -78,6 +79,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
   boardYjsRoutes?: BoardYjsRouteOptions;
+  boardProjectionHost?: BoardProjectionHost;
   pageYjsRoutes?: PageYjsRouteOptions;
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
@@ -239,6 +241,9 @@ export function createOrchestratorRuntimeServices(
       ...(boardYjsRoutes === undefined
         ? {}
         : { createService: boardYjsRoutes.createService }),
+      ...(options.boardProjectionHost === undefined
+        ? {}
+        : { projectionHost: options.boardProjectionHost }),
     },
     ...(boardYjsRoutes === undefined
       ? {}

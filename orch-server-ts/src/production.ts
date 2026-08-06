@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { createApp, type CreateAppOptions } from "./app.js";
 import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
+import { createBoardProjectionHost } from "./board-yjs/board_projection_host.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
 import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_identity_repository.js";
@@ -153,6 +154,7 @@ export async function createLiveProductionApplication(
     applyEventSessionEffect,
   );
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
+  const boardProjectionHost = createBoardProjectionHost(sqlResolver, boardYjsRepository);
   const pageRepository = new PageRepository(sqlResolver);
   const taskIdentityRepository = new SqlTaskIdentityRepository(sqlResolver);
   const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
@@ -219,6 +221,7 @@ export async function createLiveProductionApplication(
         },
       }),
     },
+    boardProjectionHost,
     pageYjsRoutes: {
       authBearerToken: config.auth_bearer_token,
       browserReads: pageRepository,

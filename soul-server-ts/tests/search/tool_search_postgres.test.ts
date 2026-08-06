@@ -8,6 +8,7 @@ import {
   type FullSchemaPostgresHarness,
 } from "../db/full_schema_postgres_harness.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
+import { appendTestEvent } from "../helpers/append_test_event.js";
 
 const describePostgres = hasFullSchemaPostgresBackend ? describe : describe.skip;
 
@@ -35,7 +36,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
   }, 15_000);
 
   it("persists synthetic tool events and finds both through searchSessionEvents", async () => {
-    await db.appendEvent({
+    await appendTestEvent(harness!.sql, {
       sessionId: "tool-search-session",
       eventType: "tool_start",
       payload: JSON.stringify({
@@ -46,7 +47,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
       searchableText: "mcp/atom/search_cards 침몰선 설계 project/lore",
       createdAt: new Date(),
     });
-    await db.appendEvent({
+    await appendTestEvent(harness!.sql, {
       sessionId: "tool-search-session",
       eventType: "tool_result",
       payload: JSON.stringify({

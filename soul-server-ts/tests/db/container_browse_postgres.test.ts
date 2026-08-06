@@ -12,6 +12,7 @@ import {
   hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
+import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
 const describePostgres = hasFullSchemaPostgresBackend ? describe : describe.skip;
 
@@ -106,6 +107,7 @@ describePostgres("container browse PostgreSQL integration", () => {
       FROM generate_series(1, 2005) AS value
     `;
     const db = new SessionDB(sql);
+    configureTestBoardProjectionReadHost(db, sql);
     db.configureFolderHost(
       new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
     );

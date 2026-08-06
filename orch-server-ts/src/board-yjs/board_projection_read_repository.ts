@@ -1,155 +1,48 @@
+import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
+import { BoardYjsSqlResolver } from "./board_yjs_sql.js";
 import type {
-  BoardYjsContainerRef,
-  BoardItemType,
-  CatalogBoardItemRow,
-  CatalogFolderRow,
+  BoardItemDbRow,
+  ContainerItemDbRow,
+  MarkdownDbRow,
+} from "./board_projection_serialization.js";
+import {
+  toCatalogBoardItemRow,
+  toContainerItemRecord,
+  toMarkdownDocumentRow,
+} from "./board_projection_serialization.js";
+import type {
   ListContainerItemsParams,
   ListContainerItemsResult,
-  SqlClient,
-} from "../session_db_types.js";
-import {
-  parseCatalogBoardItems,
-  toCatalogBoardItemRow,
-} from "./repository_helpers.js";
-import {
-  type ContainerItemDbRow,
-  toContainerItemRecord,
-} from "./container_item_repository_helpers.js";
+} from "./board_projection_types.js";
+import type {
+  CatalogBoardItemRow,
+  MarkdownDocumentRow,
+} from "./board_yjs_types.js";
 
-export class BoardRepository {
-  private readonly boardYjsCatalogCache = new Map<string, CatalogBoardItemRow[]>();
+export class BoardProjectionReadRepository {
+  private readonly sqlResolver: BoardYjsSqlResolver;
 
-  constructor(private readonly sql: SqlClient) {}
-
-  invalidateBoardYjsCatalogCache(container?: string | BoardYjsContainerRef | null): void {
-    if (container) {
-      this.boardYjsCatalogCache.delete(containerCacheKey(container));
-      return;
-    }
-    this.boardYjsCatalogCache.clear();
-  }
-
-  async getCatalogBoardItemsForCatalog(
-    folders: readonly CatalogFolderRow[],
-  ): Promise<CatalogBoardItemRow[]> {
-    const folderIds = folders.map((folder) => folder.id);
-    if (folderIds.length === 0) return [];
-
-    const cachedRows = await this.sql<
-      Array<{ container_id: string; board_items: unknown }>
-    >`
-      SELECT container_id, board_items
-      FROM board_yjs_catalog_cache
-      WHERE container_kind = 'folder'
-        AND container_id = ANY(${this.sql.array(folderIds)})
-    `;
-    const result: CatalogBoardItemRow[] = [];
-    const cachedFolderIds = new Set<string>();
-    for (const row of cachedRows) {
-      cachedFolderIds.add(row.container_id);
-      result.push(...parseCatalogBoardItems(row.board_items));
-    }
-
-    const missingFolderIds = folderIds.filter((folderId) => !cachedFolderIds.has(folderId));
-    if (missingFolderIds.length > 0) {
-      const legacyRows = await this.sql<
-        Array<{
-          id: string;
-          folder_id: string;
-          item_type: BoardItemType;
-          item_id: string;
-          x: string | number;
-          y: string | number;
-          metadata: unknown;
-          container_kind?: "folder" | "task" | null;
-          container_id?: string | null;
-          membership_kind?: "primary" | "reference" | null;
-          source_task_item_id?: string | null;
-          created_at: Date | string | null;
-          updated_at: Date | string | null;
-        }>
-      >`
-        SELECT *
-        FROM board_items
-        WHERE container_kind = 'folder'
-          AND container_id = ANY(${this.sql.array(missingFolderIds)})
-      `;
-      result.push(...legacyRows.map(toCatalogBoardItemRow));
-    }
-
-    return result.sort((a, b) => (
-      a.folderId.localeCompare(b.folderId) ||
-      a.y - b.y ||
-      a.x - b.x ||
-      a.id.localeCompare(b.id)
-    ));
+  constructor(resolver: LiveDbSqlResolver) {
+    this.sqlResolver = new BoardYjsSqlResolver(resolver);
   }
 
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
-    const rows = await this.sql<
-      Array<{
-        id: string;
-        folder_id: string;
-        item_type: BoardItemType;
-        item_id: string;
-        x: string | number;
-        y: string | number;
-        metadata: unknown;
-        container_kind?: "folder" | "task" | null;
-        container_id?: string | null;
-        membership_kind?: "primary" | "reference" | null;
-        source_task_item_id?: string | null;
-        created_at: Date | string | null;
-        updated_at: Date | string | null;
-      }>
-    >`SELECT * FROM board_item_get_all()`;
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly BoardItemDbRow[]>`SELECT * FROM board_item_get_all()`;
     return rows.map(toCatalogBoardItemRow);
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
-    const rows = await this.sql<
-      Array<{
-        id: string;
-        folder_id: string;
-        item_type: BoardItemType;
-        item_id: string;
-        x: string | number;
-        y: string | number;
-        metadata: unknown;
-        container_kind?: "folder" | "task" | null;
-        container_id?: string | null;
-        membership_kind?: "primary" | "reference" | null;
-        source_task_item_id?: string | null;
-        created_at: Date | string | null;
-        updated_at: Date | string | null;
-      }>
-    >`
-      SELECT *
-      FROM board_items
-      WHERE id = ${boardItemId}
-      LIMIT 1
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly BoardItemDbRow[]>`
+      SELECT * FROM board_items WHERE id = ${boardItemId} LIMIT 1
     `;
     return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
   }
 
   async getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null> {
-    const rows = await this.sql<
-      Array<{
-        id: string;
-        folder_id: string;
-        item_type: BoardItemType;
-        item_id: string;
-        x: string | number;
-        y: string | number;
-        metadata: unknown;
-        container_kind?: "folder" | "task" | null;
-        container_id?: string | null;
-        membership_kind?: "primary" | "reference" | null;
-        source_task_item_id?: string | null;
-        created_at: Date | string | null;
-        updated_at: Date | string | null;
-      }>
-    >`
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly BoardItemDbRow[]>`
       SELECT *
       FROM board_items
       WHERE item_type = 'session'
@@ -160,35 +53,22 @@ export class BoardRepository {
     return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
   }
 
-  async getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null> {
-    const rows = await this.sql<
-      Array<{
-        id: string;
-        folder_id: string;
-        item_type: BoardItemType;
-        item_id: string;
-        x: string | number;
-        y: string | number;
-        metadata: unknown;
-        container_kind?: "folder" | "task" | null;
-        container_id?: string | null;
-        membership_kind?: "primary" | "reference" | null;
-        source_task_item_id?: string | null;
-        created_at: Date | string | null;
-        updated_at: Date | string | null;
-      }>
-    >`
+  async getMarkdownDocumentBoardItem(
+    documentId: string,
+  ): Promise<CatalogBoardItemRow | null> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly BoardItemDbRow[]>`
       SELECT *
       FROM board_items
-      WHERE item_type = ${"markdown"}
-        AND item_id = ${documentId}
+      WHERE item_type = 'markdown' AND item_id = ${documentId}
       LIMIT 1
     `;
     return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
   }
 
   async getBoardItemIdsForSession(sessionId: string): Promise<string[]> {
-    const rows = await this.sql<Array<{ id: string }>>`
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly { id: string }[]>`
       SELECT id
       FROM board_items
       WHERE item_type = 'session' AND item_id = ${sessionId}
@@ -197,13 +77,22 @@ export class BoardRepository {
     return rows.map((row) => row.id);
   }
 
+  async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly MarkdownDbRow[]>`
+      SELECT * FROM markdown_documents WHERE id = ${documentId}
+    `;
+    return rows[0] ? toMarkdownDocumentRow(rows[0]) : null;
+  }
+
   async listContainerItems(
     params: ListContainerItemsParams,
   ): Promise<ListContainerItemsResult> {
+    const sql = await this.sqlResolver.resolveSql();
     const itemTypes = params.itemTypes ?? [];
     const scanLimit = params.scanLimit ?? null;
     const scanCandidateLimit = scanLimit == null ? 0 : scanLimit + 1;
-    const rows = await this.sql<ContainerItemDbRow[]>`
+    const rows = await sql<readonly ContainerItemDbRow[]>`
       WITH search_candidates AS MATERIALIZED (
         SELECT
           bi.id,
@@ -309,14 +198,10 @@ export class BoardRepository {
           ON bi.item_type = 'subfolder' AND sf.id = bi.item_id
         WHERE bi.container_kind = ${params.container.containerKind}
           AND bi.container_id = ${params.container.containerId}
-          AND (${itemTypes.length === 0} OR bi.item_type = ANY(${this.sql.array(itemTypes)}))
+          AND (${itemTypes.length === 0} OR bi.item_type = ANY(${sql.array(itemTypes)}))
           AND (
             ${scanLimit}::INTEGER IS NULL
-            OR EXISTS (
-              SELECT 1
-              FROM search_window sw
-              WHERE sw.id = bi.id
-            )
+            OR EXISTS (SELECT 1 FROM search_window sw WHERE sw.id = bi.id)
           )
       ),
       filtered AS (
@@ -429,10 +314,4 @@ export class BoardRepository {
           },
     };
   }
-
-}
-
-function containerCacheKey(container: string | BoardYjsContainerRef): string {
-  if (typeof container === "string") return `folder:${container}`;
-  return `${container.containerKind}:${container.containerId}`;
 }

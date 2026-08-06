@@ -5,6 +5,8 @@ import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
+import { CustomViewRevisionConflictError } from
+  "../src/board-yjs/board_projection_types.js";
 import type {
   BoardYjsContainerRef,
   BoardYjsContainerScope,
@@ -133,6 +135,96 @@ describe("orch-local Board Yjs host operation routes", () => {
     }
   });
 
+  it("dispatches projection reads through the authenticated local host allowlist", async () => {
+    const projectionHost = {
+      listContainerItems: vi.fn(async () => ({
+        items: [],
+        total: 0,
+        counts: {
+          session: 0,
+          markdown: 0,
+          subfolder: 0,
+          asset: 0,
+          frame: 0,
+          task: 0,
+          custom_view: 0,
+        },
+        scan: null,
+      })),
+    };
+    const app = Fastify({ logger: false });
+    registerBoardYjsHostProxyRoutes(app, {
+      authBearerToken: "test-token",
+      service: createServiceDouble(),
+      projectionHost: projectionHost as never,
+    });
+    const payload = {
+      container: { containerKind: "task", containerId: "task-1" },
+      query: null,
+      includeArchived: false,
+      itemTypes: null,
+      limit: 50,
+      cursor: 0,
+    };
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/board-yjs/host/list-container-items",
+        headers: { authorization: "Bearer test-token" },
+        payload,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ items: [], total: 0 });
+      expect(projectionHost.listContainerItems).toHaveBeenCalledWith(payload);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns a structured 409 when custom-view revision CAS fails", async () => {
+    const projectionHost = {
+      patchCustomViewRecord: vi.fn(async () => {
+        throw new CustomViewRevisionConflictError("cv-1", 3, 5);
+      }),
+    };
+    const app = Fastify({ logger: false });
+    registerBoardYjsHostProxyRoutes(app, {
+      authBearerToken: "test-token",
+      service: createServiceDouble(),
+      projectionHost: projectionHost as never,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/board-yjs/host/patch-custom-view-record",
+        headers: { authorization: "Bearer test-token" },
+        payload: {
+          customViewId: "cv-1",
+          boardItemId: "custom_view:cv-1",
+          expectedRevision: 3,
+          html: "<main></main>",
+          actorKind: "agent",
+          actorSessionId: "sess-actor",
+          idempotencyKey: "custom-view:patch:cv-1",
+        },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        detail: {
+          error: {
+            code: "CUSTOM_VIEW_REVISION_CONFLICT",
+            message: "custom view revision conflict for cv-1: expected 3, actual 5",
+            customViewId: "cv-1",
+            expectedRevision: 3,
+            actualRevision: 5,
+          },
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("does not expose a live-host runbook residue migration operation", async () => {
     const app = Fastify({ logger: false });
     registerBoardYjsHostProxyRoutes(app, {
@@ -226,10 +318,23 @@ async function loadActualBoardYjsHostClient(): Promise<new (config: unknown) => 
     "../../soul-server-ts/src/collaboration/board_yjs_host_client.ts",
     import.meta.url,
   );
+  const contractUrl = new URL(
+    "../../soul-server-ts/src/custom_view/custom_view_contract.ts",
+    import.meta.url,
+  );
+  const contractSource = await readFile(contractUrl, "utf8");
+  const contractOutput = ts.transpileModule(contractSource, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const contractModuleUrl =
+    `data:text/javascript;base64,${Buffer.from(contractOutput).toString("base64")}`;
   const source = await readFile(sourceUrl, "utf8");
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
+  }).outputText.replace(
+    "../custom_view/custom_view_contract.js",
+    contractModuleUrl,
+  );
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`;
   const loaded = await import(moduleUrl) as { BoardYjsHostClient: new (config: unknown) => ActualClient };
   return loaded.BoardYjsHostClient;

@@ -21,11 +21,7 @@ const PERSISTENT_PUBLISHER_SURFACES = {
   schedule: ["schedule/schedule_service.ts"],
 } as const;
 
-const DIRECT_EVENT_APPEND_INVENTORY = {
-  "custom_view/custom_view_service.ts": 3,
-  "db/repositories/event_repository.ts": 1,
-  "db/session_db.ts": 2,
-};
+const DIRECT_EVENT_APPEND_INVENTORY = {};
 
 const WIRE_EVENT_ENVELOPE_INVENTORY = {
   "task/task_engine_event_publisher.ts": 1,
