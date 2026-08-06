@@ -57,6 +57,9 @@ install:
         - key: DATABASE_URL
           prompt: "PostgreSQL 연결 URL"
           default: __DATABASE_URL__
+        - key: EVENT_OUTBOX_DIR
+          prompt: "노드 로컬 durable event outbox 디렉터리"
+          default: __INSTALL_DIR__/cache/event-outbox
         - key: AUTH_BEARER_TOKEN
           prompt: "오케스트레이터 인증 토큰 (로컬 개발은 공백 가능)"
           default: __AUTH_BEARER_TOKEN__

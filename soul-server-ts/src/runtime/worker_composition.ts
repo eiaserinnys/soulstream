@@ -55,6 +55,8 @@ import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
+import { EventOutbox } from "../upstream/event_outbox.js";
+import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import {
   composeTaskRuntime,
   type TaskRuntimeComposition,
@@ -89,6 +91,8 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   checklistTaskReconciler: ChecklistTaskReconciler;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   claudeRuntimeStartupRecovery?: ClaudeRuntimeStartupRecovery;
+  eventOutbox: EventOutbox;
+  eventOutboxPump: EventOutboxPump;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 /** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
@@ -118,6 +122,10 @@ export async function composeWorkerRuntime(
     { store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) },
     logger,
   );
+  const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
+  const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
+    logger.error({ error }, "Durable event outbox pump failed");
+  });
   const db = new SessionDB(env.DATABASE_URL);
   await preflightPersistentRuntimeSchema(db, env.CLAUDE_SESSION_RUNTIME_V2_ENABLED);
   ensureStableSessionOrderIndexInBackground(db, logger);
@@ -430,6 +438,7 @@ export async function composeWorkerRuntime(
         scheduleCommands: scheduleService,
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
+        eventOutboxPump,
       },
     );
     return upstreamAdapter;
@@ -454,6 +463,8 @@ export async function composeWorkerRuntime(
     ...(claudeRuntime.startupRecovery
       ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery }
       : {}),
+    eventOutbox,
+    eventOutboxPump,
     createUpstreamAdapter,
   };
 }

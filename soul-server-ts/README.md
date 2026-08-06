@@ -46,6 +46,7 @@ worker-only 노드 참조 정본은 **`install/haniel-soul-server-ts.example.yam
 | `SOULSTREAM_NODE_ID` | ✅ | 노드 식별자 (예: `eias-shopping-ts`) |
 | `SOULSTREAM_UPSTREAM_URL` | ✅ | orch WS URL (예: `ws://eiaserinnys.me:5200/ws/node`) |
 | `DATABASE_URL` | ✅ | PostgreSQL connection URL |
+| `EVENT_OUTBOX_DIR` | ✅ | semantic event 재시도용 노드 로컬 JSONL outbox. 코드 fallback 없음 |
 | `AUTH_BEARER_TOKEN` | ✅(production) | orch 인증 토큰 |
 | `HOST` | ❌ (default 127.0.0.1) | fastify HTTP bind |
 | `PORT` | ❌ (code default 4205; standalone `.env.soul-server-ts.example` sets 3105) | fastify HTTP 포트 |

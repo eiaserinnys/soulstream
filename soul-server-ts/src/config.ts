@@ -56,6 +56,11 @@ export const EnvSchema = z
         "DATABASE_URL must be postgres:// or postgresql://",
       ),
     /**
+     * Semantic event durable retry buffer. No code fallback: every worker node
+     * must pre-seed an explicit node-local directory before this release starts.
+     */
+    EVENT_OUTBOX_DIR: z.string().min(1, "EVENT_OUTBOX_DIR required"),
+    /**
      * agent_registry yaml 경로 (Phase B-3).
      * Haniel cwd `services/soulstream/` 기준 상대 경로 default — `.env.soul-server-ts`
      * dotenv 로딩과 같은 cwd 협약. 운영에서 변경 시 절대 경로 설정.

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 113개 $defs (wire 53 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 115개 $defs (wire 55 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -9,6 +9,8 @@ export type SoulstreamUpstreamProtocol =
   | AppHeartbeatPong
   | SessionCreated
   | SessionEventEnvelope
+  | EventAppendBatch
+  | EventAppendAck
   | SessionsUpdate
   | HealthStatus
   | SessionUpdated
@@ -857,6 +859,81 @@ export interface SSEEventAssistantError {
 export interface SSEEventAwaySummary {
   type: "away_summary";
   content: string;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: durable JSONL outbox의 semantic event batch. 연결에 등록된 node_id가 송신자 정본이다.
+ */
+export interface EventAppendBatch {
+  type: "event_append_batch";
+  protocol_version: 1;
+  stream_id: string;
+  first_seq: number;
+  /**
+   * @minItems 1
+   * @maxItems 64
+   */
+  events: [
+    {
+      stream_id: string;
+      source_seq: number;
+      session_id: string;
+      event_type: string;
+      payload: unknown;
+      searchable_text: string | null;
+      created_at: string;
+      semantic_dedupe_key: string | null;
+      /**
+       * Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.
+       */
+      session_effect: {
+        kind: "last_message" | "set_backend_session_id" | "terminal_transition" | "append_metadata";
+        [k: string]: unknown;
+      } | null;
+      payload_hash: string;
+    },
+    ...{
+      stream_id: string;
+      source_seq: number;
+      session_id: string;
+      event_type: string;
+      payload: unknown;
+      searchable_text: string | null;
+      created_at: string;
+      semantic_dedupe_key: string | null;
+      /**
+       * Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.
+       */
+      session_effect: {
+        kind: "last_message" | "set_backend_session_id" | "terminal_transition" | "append_metadata";
+        [k: string]: unknown;
+      } | null;
+      payload_hash: string;
+    }[]
+  ];
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: batch 전체 commit과 broadcast 시도 뒤 반환하는 durable ACK.
+ */
+export interface EventAppendAck {
+  type: "event_append_ack";
+  stream_id: string;
+  acked_through: number;
+  /**
+   * @minItems 1
+   * @maxItems 64
+   */
+  events: [
+    {
+      source_seq: number;
+      event_id: number;
+    },
+    ...{
+      source_seq: number;
+      event_id: number;
+    }[]
+  ];
   [k: string]: unknown;
 }
 /**

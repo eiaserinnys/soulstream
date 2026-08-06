@@ -71,6 +71,7 @@ describe("worker composition boundary", () => {
       SOULSTREAM_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
       DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
+      EVENT_OUTBOX_DIR: "/tmp/soulstream-event-outbox-test",
       CLAUDE_SESSION_RUNTIME_V2_ENABLED: "false",
     });
     const getSession = vi.fn(async () => {

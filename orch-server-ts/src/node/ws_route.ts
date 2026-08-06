@@ -14,6 +14,11 @@ import type {
 } from "./transport_hub.js";
 import { verifyNodeWsBearer } from "./ws_auth.js";
 import { registerWebsocketPlugin } from "../websocket_plugin.js";
+import {
+  NodeEventIngressController,
+  type NodeEventIngressCommitter,
+} from "./event_ingress_controller.js";
+import { isEventAppendBatchFrame } from "./event_ingress_types.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
@@ -25,6 +30,7 @@ export type NodeWsRouteOptions = {
   registry: InMemoryNodeRegistry;
   transportHub?: NodeCommandTransportHub;
   eventSink?: NodeRegistryEventSink;
+  eventIngress?: NodeEventIngressCommitter;
   registrationTimeoutMs?: number;
 };
 
@@ -67,6 +73,8 @@ export function registerNodeWsRoute(
         send: (data) => socket.send(data),
       };
       let attachment: NodeCommandTransportAttachment | undefined;
+      let registeredSource: { nodeId: string; connectionId: string } | undefined;
+      let ingressController: NodeEventIngressController | undefined;
       let finalized = false;
       let registrationTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -85,6 +93,8 @@ export function registerNodeWsRoute(
         }, "Node WebSocket disconnected");
         detachTransport(options.transportHub, attachment);
         attachment = undefined;
+        ingressController?.stop();
+        ingressController = undefined;
         emitEvents(
           options.eventSink,
           eventsFromControllerCloseResult(controller.close(reason)),
@@ -125,7 +135,30 @@ export function registerNodeWsRoute(
           return;
         }
 
+        if (
+          options.eventIngress !== undefined
+          && registeredSource !== undefined
+          && isEventAppendBatchFrame(parsed.frame)
+        ) {
+          ingressController ??= createEventIngressController({
+            app,
+            socket,
+            source: registeredSource,
+            options,
+            committer: options.eventIngress,
+            closeAndFinalize,
+          });
+          ingressController.enqueue(parsed.frame);
+          return;
+        }
+
         const result = controller.handleFrame(parsed.frame);
+        if (result.type === "registered") {
+          registeredSource = {
+            nodeId: result.nodeId,
+            connectionId: result.connectionId,
+          };
+        }
         if (result.type === "registered" && options.transportHub !== undefined) {
           clearRegistrationTimer();
           for (const event of result.events) {
@@ -178,6 +211,31 @@ export function registerNodeWsRoute(
         );
       });
     });
+  });
+}
+
+function createEventIngressController(input: {
+  app: FastifyInstance;
+  socket: { send(data: string): void };
+  source: { nodeId: string; connectionId: string };
+  options: NodeWsRouteOptions;
+  committer: NodeEventIngressCommitter;
+  closeAndFinalize(code: number, reason: string, cleanupReason?: string): void;
+}): NodeEventIngressController {
+  const { app, socket, source, options, committer, closeAndFinalize } = input;
+  return new NodeEventIngressController({
+    ...source,
+    committer,
+    isCurrentConnection: () =>
+      options.registry.getConnectedNode(source.nodeId)?.connectionId === source.connectionId,
+    receiveCommittedEvent: (message) =>
+      options.registry.receiveNodeMessage(source, message),
+    publish: (events) => emitEvents(options.eventSink, events),
+    send: (frame) => socket.send(JSON.stringify(frame)),
+    close: (code, reason) => closeAndFinalize(code, reason, "event_ingress_error"),
+    logError: (error, message) => {
+      app.log.error({ error, nodeId: source.nodeId }, message);
+    },
   });
 }
 

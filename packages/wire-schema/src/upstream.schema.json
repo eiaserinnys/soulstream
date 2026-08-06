@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 113개 $defs (wire 53 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 115개 $defs (wire 55 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -255,6 +255,83 @@
             { "$ref": "#/$defs/SSEEventAssistantError" },
             { "$ref": "#/$defs/SSEEventAwaySummary" }
           ]
+        }
+      }
+    },
+    "EventAppendBatch": {
+      "type": "object",
+      "description": "노드→orch: durable JSONL outbox의 semantic event batch. 연결에 등록된 node_id가 송신자 정본이다.",
+      "required": ["type", "protocol_version", "stream_id", "first_seq", "events"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "event_append_batch" },
+        "protocol_version": { "const": 1 },
+        "stream_id": { "type": "string", "format": "uuid" },
+        "first_seq": { "type": "integer", "minimum": 1 },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": [
+              "stream_id", "source_seq", "session_id", "event_type", "payload",
+              "searchable_text", "created_at", "semantic_dedupe_key", "session_effect",
+              "payload_hash"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "stream_id": { "type": "string", "format": "uuid" },
+              "source_seq": { "type": "integer", "minimum": 1 },
+              "session_id": { "type": "string", "minLength": 1 },
+              "event_type": { "type": "string", "minLength": 1 },
+              "payload": {},
+              "searchable_text": { "type": ["string", "null"] },
+              "created_at": { "type": "string", "format": "date-time" },
+              "semantic_dedupe_key": { "type": ["string", "null"] },
+              "session_effect": {
+                "type": ["object", "null"],
+                "description": "Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.",
+                "required": ["kind"],
+                "additionalProperties": true,
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "last_message", "set_backend_session_id",
+                      "terminal_transition", "append_metadata"
+                    ]
+                  }
+                }
+              },
+              "payload_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "EventAppendAck": {
+      "type": "object",
+      "description": "orch→노드: batch 전체 commit과 broadcast 시도 뒤 반환하는 durable ACK.",
+      "required": ["type", "stream_id", "acked_through", "events"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "event_append_ack" },
+        "stream_id": { "type": "string", "format": "uuid" },
+        "acked_through": { "type": "integer", "minimum": 1 },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["source_seq", "event_id"],
+            "additionalProperties": false,
+            "properties": {
+              "source_seq": { "type": "integer", "minimum": 1 },
+              "event_id": { "type": "integer", "minimum": 1 }
+            }
+          }
         }
       }
     },
@@ -2027,6 +2104,8 @@
     { "$ref": "#/$defs/AppHeartbeatPong" },
     { "$ref": "#/$defs/SessionCreated" },
     { "$ref": "#/$defs/SessionEventEnvelope" },
+    { "$ref": "#/$defs/EventAppendBatch" },
+    { "$ref": "#/$defs/EventAppendAck" },
     { "$ref": "#/$defs/SessionsUpdate" },
     { "$ref": "#/$defs/HealthStatus" },
     { "$ref": "#/$defs/SessionUpdated" },

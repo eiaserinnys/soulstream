@@ -23,6 +23,10 @@ import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
+import {
+  EventIngressRepository,
+  LiveEventIngressSqlProvider,
+} from "./node/event_ingress_repository.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
   PushNotifier,
@@ -139,6 +143,9 @@ export async function createLiveProductionApplication(
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
   const registry = new InMemoryNodeRegistry();
+  const eventIngressRepository = new EventIngressRepository(
+    new LiveEventIngressSqlProvider(sqlResolver),
+  );
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const pageRepository = new PageRepository(sqlResolver);
   const taskIdentityRepository = new SqlTaskIdentityRepository(sqlResolver);
@@ -173,6 +180,7 @@ export async function createLiveProductionApplication(
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
+    eventIngress: eventIngressRepository,
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,

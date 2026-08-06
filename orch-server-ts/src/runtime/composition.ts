@@ -82,6 +82,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
   additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
+  eventIngress?: NodeWsRouteOptions["eventIngress"];
   sessionForegroundObservers?: SessionHistoryRouteOptions["foregroundObservers"];
 };
 
@@ -166,6 +167,9 @@ export function createOrchestratorRuntimeServices(
         createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
         ...(options.additionalNodeEventSinks ?? []),
       ),
+      ...(options.eventIngress === undefined
+        ? {}
+        : { eventIngress: options.eventIngress }),
     },
     nodeSnapshotRoutes: {
       snapshotService: nodeSnapshotService,

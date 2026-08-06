@@ -17,6 +17,7 @@ import { CommandDispatcher } from "./dispatcher.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
+import type { EventOutboxPump } from "./event_outbox_pump.js";
 
 const APP_HEARTBEAT_PING = "app_heartbeat_ping";
 const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
@@ -51,6 +52,7 @@ export interface UpstreamDependencies {
   scheduleCommands?: ClaudeRuntimeScheduleCommands;
   deliveryV2Enabled?: boolean;
   modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
+  eventOutboxPump?: EventOutboxPump;
 }
 
 /**
@@ -126,6 +128,7 @@ export class UpstreamAdapter {
   async shutdown(): Promise<void> {
     this.running = false;
     this.stopAppHeartbeat();
+    this.deps.eventOutboxPump?.disconnect();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
     }
@@ -246,6 +249,10 @@ export class UpstreamAdapter {
           if (await this.handleAppHeartbeatMessage(cmd)) {
             return;
           }
+          if (this.deps.eventOutboxPump?.isAck(cmd)) {
+            await this.deps.eventOutboxPump.handleAck(cmd);
+            return;
+          }
           await this.dispatcher.dispatch(cmd);
         } catch (err) {
           this.logger.error({ err }, "Dispatcher threw");
@@ -255,6 +262,7 @@ export class UpstreamAdapter {
         ws.off("message", onMessage);
         ws.off("error", onError);
         this.stopAppHeartbeat();
+        this.deps.eventOutboxPump?.disconnect();
         this.logger.info({ code, reason: reason.toString("utf-8") }, "Upstream connection closed");
         resolve();
       };
@@ -262,6 +270,7 @@ export class UpstreamAdapter {
         ws.off("message", onMessage);
         ws.off("close", onClose);
         this.stopAppHeartbeat();
+        this.deps.eventOutboxPump?.disconnect();
         this.logger.warn({ err }, "WebSocket error during serve");
         resolve();
       };
@@ -284,6 +293,9 @@ export class UpstreamAdapter {
           logger: this.logger,
         }),
       );
+      this.deps.eventOutboxPump?.connect(async (batch) => {
+        await this.sendOnSocket(ws, batch);
+      });
       // orch-server-ts는 heartbeat ping을 먼저 보내지 않으므로, 허브 ping을 기다리지 않고
       // 등록 직후 노드 쪽에서 능동 시작해야 half-open 연결(원격 서버 리셋 등)을 감지할 수 있다.
       // 양쪽 orch(Python/TS) 모두 노드발 ping에 pong으로 응답한다.
@@ -291,6 +303,7 @@ export class UpstreamAdapter {
       await this.sendInitialSessions();
       await servePromise;
     } finally {
+      this.deps.eventOutboxPump?.disconnect();
       if (this.ws === ws) {
         this.ws = null;
       }

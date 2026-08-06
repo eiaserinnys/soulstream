@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 113개 $defs (wire 53 + SSE event 60)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 115개 $defs (wire 55 + SSE event 60)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -52,6 +52,8 @@ def test_schema_has_all_message_types() -> None:
         "AppHeartbeatPong",
         "SessionCreated",
         "SessionEventEnvelope",
+        "EventAppendBatch",
+        "EventAppendAck",
         "SessionsUpdate",
         "HealthStatus",
         "SessionUpdated",
@@ -101,7 +103,7 @@ def test_schema_has_all_message_types() -> None:
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
     }
-    assert len(wire_types) == 53
+    assert len(wire_types) == 55
 
     sse_types = {
         "SSEEventInit",
@@ -259,6 +261,8 @@ def test_oneof_covers_all_wire_messages() -> None:
         "AppHeartbeatPong",
         "SessionCreated",
         "SessionEventEnvelope",
+        "EventAppendBatch",
+        "EventAppendAck",
         "SessionsUpdate",
         "HealthStatus",
         "SessionUpdated",
