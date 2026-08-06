@@ -8,6 +8,7 @@ import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { SessionDB } from "../src/db/session_db.js";
+import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -21,6 +22,7 @@ function makeDeps(
     agents?: AgentProfile[];
     runningCount?: number;
     sessionDb?: SessionDB;
+    eventOutboxPump?: EventOutboxPump;
   } = {},
 ) {
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
@@ -41,7 +43,13 @@ function makeDeps(
   const taskExecutor = {
     startExecution: () => undefined,
   } as unknown as TaskExecutor;
-  return { agentRegistry, taskManager, taskExecutor, sessionDb: opts.sessionDb };
+  return {
+    agentRegistry,
+    taskManager,
+    taskExecutor,
+    sessionDb: opts.sessionDb,
+    eventOutboxPump: opts.eventOutboxPump,
+  };
 }
 
 interface MockOrch {
@@ -186,6 +194,46 @@ describe("UpstreamAdapter", () => {
       { id: "codex-default", name: "Codex Default", backend: "codex", portrait_url: "" },
     ]);
 
+    await adapter.shutdown();
+  });
+
+  it("node_register 뒤 outbox pump를 연결하고 event_append_ack를 전용 처리한다", async () => {
+    const handleAck = vi.fn(async () => undefined);
+    const connect = vi.fn();
+    const pump = {
+      connect,
+      disconnect: vi.fn(),
+      isAck: (value: unknown) =>
+        Boolean(value && typeof value === "object"
+          && (value as Record<string, unknown>).type === "event_append_ack"),
+      handleAck,
+    } as unknown as EventOutboxPump;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({ eventOutboxPump: pump }),
+    );
+
+    void adapter.run();
+    await waitFor(() => connect.mock.calls.length === 1);
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "event_append_ack",
+      stream_id: "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10",
+      acked_through: 1,
+      events: [{ source_seq: 1, event_id: 9 }],
+    }));
+    await waitFor(() => handleAck.mock.calls.length === 1);
+
+    expect(handleAck).toHaveBeenCalledWith(expect.objectContaining({ acked_through: 1 }));
     await adapter.shutdown();
   });
 

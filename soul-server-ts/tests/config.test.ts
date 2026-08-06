@@ -8,6 +8,7 @@ describe("parseEnv", () => {
     SOULSTREAM_NODE_ID: "eias-shopping-ts",
     SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
     DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
+    EVENT_OUTBOX_DIR: "/tmp/soulstream-event-outbox-test",
   };
 
   it("필수 키만 있으면 default들이 채워진다", () => {
@@ -24,6 +25,7 @@ describe("parseEnv", () => {
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
+    expect(env.EVENT_OUTBOX_DIR).toBe("/tmp/soulstream-event-outbox-test");
     expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(true);
   });
 
@@ -92,6 +94,12 @@ describe("parseEnv", () => {
   // Phase B-3 — DATABASE_URL + AGENTS_CONFIG_PATH
   it("DATABASE_URL 부재 시 ZodError", () => {
     const { DATABASE_URL: _, ...rest } = minimal;
+    void _;
+    expect(() => parseEnv(rest)).toThrow(ZodError);
+  });
+
+  it("EVENT_OUTBOX_DIR는 fallback 없이 필수다", () => {
+    const { EVENT_OUTBOX_DIR: _, ...rest } = minimal;
     void _;
     expect(() => parseEnv(rest)).toThrow(ZodError);
   });

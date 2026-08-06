@@ -9,6 +9,7 @@ import {
   parseOrchServerConfig,
   type NodeRegistryEvent,
 } from "../src/index.js";
+import type { EventAppendBatch } from "../src/node/event_ingress_types.js";
 
 const explicitTestConfig = parseOrchServerConfig({
   environment: "test",
@@ -196,6 +197,64 @@ describe("Node WS Fastify route harness", () => {
       status: "disconnected",
     });
 
+    await app.close();
+  });
+
+  it("routes event_append_batch through the dedicated async ingress before ACK", async () => {
+    const { registry, sessionCache } = createRegistry();
+    const eventSink = vi.fn();
+    const commitBatch = vi.fn(async (_nodeId: string, batch: EventAppendBatch) =>
+      batch.events.map((envelope) => ({
+      envelope,
+      eventId: 73,
+      duplicateReceipt: false,
+      })));
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: {
+        registry,
+        eventSink,
+        eventIngress: { commitBatch },
+      },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    ws.send(JSON.stringify(fixture.registration));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    const ackMessage = waitForMessage(ws);
+    ws.send(JSON.stringify({
+      type: "event_append_batch",
+      protocol_version: 1,
+      stream_id: "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10",
+      first_seq: 1,
+      events: [{
+        stream_id: "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10",
+        source_seq: 1,
+        session_id: "sess-ingress",
+        event_type: "assistant_message",
+        payload: { type: "assistant_message", content: "committed" },
+        searchable_text: "committed",
+        created_at: "2026-08-06T00:00:00.000Z",
+        semantic_dedupe_key: null,
+        session_effect: null,
+        payload_hash: "a".repeat(64),
+      }],
+    }));
+
+    await expect(ackMessage).resolves.toBe(JSON.stringify({
+      type: "event_append_ack",
+      stream_id: "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10",
+      acked_through: 1,
+      events: [{ source_seq: 1, event_id: 73 }],
+    }));
+    expect(commitBatch).toHaveBeenCalledWith("fake-node", expect.objectContaining({ first_seq: 1 }));
+    expect(sessionCache.findSession("sess-ingress")?.lastEventId).toBe(73);
+    expect(eventSink.mock.calls.at(-1)?.[0]).toEqual([
+      expect.objectContaining({ type: "node_session_event", nodeId: "fake-node" }),
+    ]);
+
+    ws.terminate();
     await app.close();
   });
 

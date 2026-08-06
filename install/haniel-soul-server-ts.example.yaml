@@ -56,6 +56,9 @@ install:
         - key: DATABASE_URL
           prompt: "PostgreSQL 연결 URL (운영 .env에서 확인 — public repo에 default 박지 않음)"
           # default 키 *제거* — soul-server-ts와 versioned migrator가 같은 필수 DB 정본을 사용
+        - key: EVENT_OUTBOX_DIR
+          prompt: "노드 로컬 durable event outbox 디렉터리"
+          default: .local/event-outbox
         - key: HOST
           default: 127.0.0.1
         - key: PORT

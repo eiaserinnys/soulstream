@@ -78,6 +78,7 @@ describe("apply-schema.mjs", () => {
       const rows = await sql<Array<{
         heartbeat_table: string | null;
         transcript_table: string | null;
+        event_ingress_receipts_table: string | null;
         transcript_function_count: string | number;
         supervisor_table_count: string | number;
         supervisor_function_count: string | number;
@@ -87,6 +88,8 @@ describe("apply-schema.mjs", () => {
         SELECT
           to_regclass('public.soulstream_node_heartbeats')::text AS heartbeat_table,
           to_regclass('public.claude_transcript_entries')::text AS transcript_table,
+          to_regclass('public.event_ingress_receipts')::text
+            AS event_ingress_receipts_table,
           (
             SELECT COUNT(*)::int
             FROM pg_proc
@@ -121,11 +124,12 @@ describe("apply-schema.mjs", () => {
       expect(rows[0]).toMatchObject({
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
+        event_ingress_receipts_table: "event_ingress_receipts",
         transcript_function_count: 1,
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 54,
+        migration_count: 55,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -543,6 +547,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 54,
             applied_kind: "migration",
           },
+          {
+            migration_id: "054_event_ingress_receipts.sql",
+            ordinal: 55,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -572,7 +581,7 @@ describe("apply-schema.mjs", () => {
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":54');
+        expect(verified.stdout).toContain('"ledger_count":55');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });
@@ -647,6 +656,7 @@ describe("apply-schema.mjs", () => {
     );
     expect(service.hooks.post_pull).not.toContain("apply-schema.mjs");
     expect(envConfig.keys.map((entry) => entry.key)).toContain("DATABASE_URL");
+    expect(envConfig.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
   });
 
   it("keeps standalone initialization separate from normal service starts", () => {
@@ -663,6 +673,8 @@ describe("apply-schema.mjs", () => {
       "node soul-server-ts/scripts/verify-migrations.mjs",
     );
     expect(service.hooks.pre_start).not.toContain("apply-schema.mjs");
+    const standaloneEnv = parsed.install.configs["soul-server-ts-env"];
+    expect(standaloneEnv.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
     expect(installer).toContain("Push-Location $monoRepoDir");
     expect(installer).toContain(
       'node "packages/db-schema/scripts/migrate.mjs" initialize',
@@ -738,6 +750,11 @@ interface HanielSoulServerTsExample {
 
 interface HanielStandaloneTemplate {
   repos: { soulstream: { release_manifest: string } };
+  install: {
+    configs: {
+      "soul-server-ts-env": { keys: Array<{ key: string }> };
+    };
+  };
   services: {
     "soul-server-ts": {
       ready: string;
