@@ -1,12 +1,13 @@
 /**
- * EventPersistence — SSE event → DB + 부수효과 처리 (Phase B-3 + F-3A 후속 사이클).
+ * EventPersistence — SSE event → durable orch ingress + 부수효과 처리.
  *
  * Python `service/event_persistence.py`의 *구조* 참조 (정본 둘 안티패턴 회피).
  * TS 측은 Codex 흐름에 한정 — metadata_extractor·away_summary는 본 PR 범위 외.
  *
  * 책임:
- *   1. persistEvent: semantic/debug events만 event_append stored proc 호출 → 새 event_id 반환
- *   2. handleSideEffects: last_message DB 갱신 + emit_session_message_updated wire 발행
+ *   1. enqueueEvent: semantic/debug events를 worker JSONL outbox에 fsync append
+ *   2. waitForSessionAck: turn/terminal 경계에서 orch commit ACK 대기
+ *   3. handleSideEffects: last_message DB 갱신 + emit_session_message_updated wire 발행
  *      (F-3A) + task.lastAssistantText 누적
  */
 
@@ -15,6 +16,11 @@ import type { Logger } from "pino";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "../task/task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import type {
+  EventOutbox,
+  EventOutboxRecord,
+} from "../upstream/event_outbox.js";
+import type { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 
 import type { SessionDB } from "./session_db.js";
 import {
@@ -28,11 +34,6 @@ const LAST_MESSAGE_PREVIEW_LIMIT = 200;
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 
 export { sanitizeJsonText, sanitizeJsonValue, truncateJsonText };
-
-export interface PersistEventResult {
-  eventId: number;
-  inserted: boolean;
-}
 
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
@@ -56,56 +57,72 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
 const TRANSIENT_TEXT_EVENT_TYPES = new Set(["text_start", "text_delta", "text_end"]);
 
 export class EventPersistence {
+  private readonly latestPendingAckBySession = new Map<
+    string,
+    EventOutboxRecord
+  >();
+
   constructor(
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
+    private readonly outbox: Pick<EventOutbox, "append">,
+    private readonly outboxPump: Pick<EventOutboxPump, "waitForAcknowledgement">,
   ) {}
 
   /**
-   * 이벤트를 DB에 영속화. 반환 event_id를 호출자가 task.lastEventId에 박는다.
-   * text lifecycle 이벤트와 `_live_only` 이벤트는 생성 중 wire 전용이므로 호출자가
-   * persist 전에 건너뛰어야 한다.
-   *
-   * @returns 새 events.id (1-based).
+   * Persistent 이벤트를 worker의 durable JSONL outbox에 넣는다.
+   * 반환은 로컬 transport 좌표이며 DB event ID가 아니다.
    */
-  async persistEvent(
+  async enqueueEvent(
     sessionId: string,
     event: SSEEventPayload,
-  ): Promise<number> {
-    return (await this.persistEventWithResult(sessionId, event)).eventId;
-  }
-
-  async persistEventWithResult(
-    sessionId: string,
-    event: SSEEventPayload,
-  ): Promise<PersistEventResult> {
+  ): Promise<EventOutboxRecord> {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
     }
     const dedupeKey = extractInternalDedupeKey(event);
-    if (dedupeKey) {
-      const existingEventId = await this.db.findEventIdByDedupeKey(sessionId, dedupeKey);
-      if (existingEventId !== null) {
-        return { eventId: existingEventId, inserted: false };
-      }
-    }
     const safeEvent = stripInternalPersistenceFields(
       sanitizeJsonValue(event),
     ) as SSEEventPayload;
     const eventType = (safeEvent as { type: string }).type;
-    const payload = JSON.stringify(safeEvent);
     const searchable = extractSearchableText(safeEvent);
     const createdAt = extractTimestamp(event) ?? new Date();
-    const eventId = await this.db.appendEvent({
-      sessionId,
-      eventType,
-      payload,
-      searchableText: searchable,
-      createdAt,
-      dedupeKey,
+    const record = await this.outbox.append({
+      session_id: sessionId,
+      event_type: eventType,
+      payload: safeEvent,
+      searchable_text: searchable,
+      created_at: createdAt.toISOString(),
+      semantic_dedupe_key: dedupeKey,
+      session_effect: null,
     });
-    return { eventId, inserted: true };
+    this.latestPendingAckBySession.set(sessionId, record);
+    return record;
+  }
+
+  async enqueueEventAndWaitForSessionAck(
+    sessionId: string,
+    event: SSEEventPayload,
+  ): Promise<{ record: EventOutboxRecord; eventId: number }> {
+    const record = await this.enqueueEvent(sessionId, event);
+    const eventId = await this.outboxPump.waitForAcknowledgement(record);
+    this.clearPendingAckTarget(sessionId, record.source_seq);
+    return { record, eventId };
+  }
+
+  async waitForSessionAck(sessionId: string): Promise<number | null> {
+    const record = this.latestPendingAckBySession.get(sessionId);
+    if (!record) return null;
+    const eventId = await this.outboxPump.waitForAcknowledgement(record);
+    this.clearPendingAckTarget(sessionId, record.source_seq);
+    return eventId;
+  }
+
+  private clearPendingAckTarget(sessionId: string, sourceSeq: number): void {
+    if (this.latestPendingAckBySession.get(sessionId)?.source_seq === sourceSeq) {
+      this.latestPendingAckBySession.delete(sessionId);
+    }
   }
 
   /**

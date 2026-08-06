@@ -60,9 +60,7 @@ export class AutoResumeTransition {
           contextItems: message.context,
         });
     if (userMessageEvent) {
-      await persistUserMessageEvent(task, userMessageEvent, this.deps, {
-        failOnError: true,
-      });
+      await persistUserMessageEvent(task, userMessageEvent, this.deps);
     }
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {

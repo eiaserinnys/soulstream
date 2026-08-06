@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { SessionDB } from "../db/session_db.js";
+import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { Task } from "./task_models.js";
@@ -21,6 +22,7 @@ interface TaskLifecycleTransitionDeps {
   db: SessionDB;
   broadcaster: SessionBroadcaster;
   logger: Logger;
+  persistence?: EventPersistence;
 }
 
 interface FinalStateLogMessages {
@@ -134,7 +136,7 @@ export class TaskLifecycleTransition {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
     if (termination.newlyFinalized && !task.terminationEventRecorded) {
-      await this.persistAndBroadcastSessionEnded(task, messages);
+      await this.enqueueAndAwaitSessionEnded(task);
     }
 
     try {
@@ -162,37 +164,17 @@ export class TaskLifecycleTransition {
     }
   }
 
-  private async persistAndBroadcastSessionEnded(
-    task: Task,
-    messages: FinalStateLogMessages,
-  ): Promise<void> {
+  private async enqueueAndAwaitSessionEnded(task: Task): Promise<void> {
+    if (!this.deps.persistence) {
+      throw new Error("session_ended durable event persistence is required");
+    }
     const event = buildSessionEndedEvent(task);
-    try {
-      const eventId = await this.deps.db.appendEvent({
-        sessionId: task.agentSessionId,
-        eventType: "session_ended",
-        payload: JSON.stringify(event),
-        searchableText: "",
-        createdAt: task.completedAt ?? new Date(),
-      });
-      task.lastEventId = eventId;
-      (event as Record<string, unknown>)._event_id = eventId;
-      task.terminationEventRecorded = true;
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        messages.db,
-      );
-    }
-
-    try {
-      await this.deps.broadcaster.emitEventEnvelope(task.agentSessionId, event);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        messages.broadcast,
-      );
-    }
+    const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
+      task.agentSessionId,
+      event,
+    );
+    task.lastEventId = eventId;
+    task.terminationEventRecorded = true;
   }
 
 }

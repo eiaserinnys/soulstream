@@ -43,9 +43,9 @@ export class SoulstreamScheduleService {
       | "finishScheduleDispatch"
       | "failScheduleDispatch"
     >,
-    private readonly broadcaster: SessionBroadcaster,
+    _broadcaster: SessionBroadcaster,
     private readonly persistence: EventPersistence,
-    private readonly logger: Logger,
+    _logger: Logger,
   ) {}
 
   handlesTool(toolName: string): boolean {
@@ -367,16 +367,7 @@ export class SoulstreamScheduleService {
     const event = kind === "updated"
       ? scheduleToUpdatedEvent(schedule)
       : scheduleToDeletedEvent(schedule);
-    try {
-      const eventId = await this.persistence.persistEvent(schedule.sessionId, event);
-      (event as Record<string, unknown>)._event_id = eventId;
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
-        "schedule event persistence failed",
-      );
-    }
-    await this.broadcaster.emitEventEnvelope(schedule.sessionId, event);
+    await this.persistence.enqueueEvent(schedule.sessionId, event);
   }
 }
 

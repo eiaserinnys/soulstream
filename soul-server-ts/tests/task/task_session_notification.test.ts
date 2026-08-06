@@ -28,11 +28,12 @@ function makeMessage(): InterventionMessage {
   };
 }
 
-function makeSubject(inserted: boolean) {
+function makeSubject() {
   const persistence = {
-    persistEventWithResult: vi.fn().mockResolvedValue({
-      eventId: 41,
-      inserted,
+    enqueueEvent: vi.fn().mockResolvedValue({ source_seq: 41 }),
+    enqueueEventAndWaitForSessionAck: vi.fn().mockResolvedValue({
+      record: { source_seq: 41 },
+      eventId: 1041,
     }),
     handleSideEffects: vi.fn().mockResolvedValue(undefined),
   };
@@ -48,13 +49,13 @@ function makeSubject(inserted: boolean) {
 }
 
 describe("SessionNotificationPublisher", () => {
-  it("persists and broadcasts the first canonical completion notification", async () => {
-    const { publisher, persistence, broadcaster } = makeSubject(true);
+  it("durably enqueues the canonical completion notification without worker broadcast", async () => {
+    const { publisher, persistence, broadcaster } = makeSubject();
     const task = makeTask();
 
     await publisher.publish(task, makeMessage(), "queued");
 
-    expect(persistence.persistEventWithResult).toHaveBeenCalledWith(
+    expect(persistence.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       task.agentSessionId,
       expect.objectContaining({
         type: "session_notification",
@@ -64,22 +65,28 @@ describe("SessionNotificationPublisher", () => {
           "session_notification:99999999-9999-4999-8999-999999999999",
       }),
     );
-    expect(task.lastEventId).toBe(41);
+    expect(task.lastEventId).toBe(1041);
     expect(persistence.handleSideEffects).toHaveBeenCalledTimes(1);
-    expect(broadcaster.emitEventEnvelope).toHaveBeenCalledTimes(1);
+    expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("does not rebroadcast or reproject a dedupe conflict", async () => {
-    const { publisher, persistence, broadcaster } = makeSubject(false);
+  it("keeps a durably enqueued notification accepted when preview projection fails", async () => {
+    const { publisher, persistence, broadcaster } = makeSubject();
+    persistence.handleSideEffects.mockRejectedValueOnce(new Error("preview down"));
 
-    await publisher.publish(makeTask(), makeMessage(), "auto_resume");
+    await expect(publisher.publish(
+      makeTask(),
+      makeMessage(),
+      "auto_resume",
+    )).resolves.toBe(true);
 
-    expect(persistence.handleSideEffects).not.toHaveBeenCalled();
+    expect(persistence.enqueueEventAndWaitForSessionAck).toHaveBeenCalledTimes(1);
+    expect(persistence.handleSideEffects).toHaveBeenCalledTimes(1);
     expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("rejects a non-notification intent at the event boundary", async () => {
-    const { publisher } = makeSubject(true);
+    const { publisher } = makeSubject();
 
     await expect(publisher.publish(
       makeTask(),
@@ -89,8 +96,8 @@ describe("SessionNotificationPublisher", () => {
   });
 
   it("isolates notification persistence failure after delivery without broadcasting", async () => {
-    const { publisher, persistence, broadcaster } = makeSubject(true);
-    persistence.persistEventWithResult.mockRejectedValueOnce(
+    const { publisher, persistence, broadcaster } = makeSubject();
+    persistence.enqueueEventAndWaitForSessionAck.mockRejectedValueOnce(
       new Error("notification store unavailable"),
     );
 

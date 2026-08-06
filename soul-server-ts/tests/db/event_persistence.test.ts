@@ -10,6 +10,8 @@ import {
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import type { Task } from "../../src/task/task_models.js";
+import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
+import type { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -44,7 +46,121 @@ function makeMockBroadcaster() {
   };
 }
 
+function makeMockIngress() {
+  const record: EventOutboxRecord = {
+    stream_id: "stream-1",
+    source_seq: 7,
+    session_id: "sess-1",
+    event_type: "assistant_message",
+    payload: { type: "assistant_message", content: "hi" },
+    searchable_text: "hi",
+    created_at: "2024-11-15T22:26:40.000Z",
+    semantic_dedupe_key: null,
+    session_effect: null,
+    payload_hash: "a".repeat(64),
+  };
+  const append = vi.fn().mockResolvedValue(record);
+  const waitForAcknowledgement = vi.fn().mockResolvedValue(42);
+  return {
+    outbox: { append },
+    pump: { waitForAcknowledgement } as unknown as EventOutboxPump,
+    append,
+    waitForAcknowledgement,
+    record,
+  };
+}
+
+function makeEventPersistence(db: SessionDB, broadcaster: SessionBroadcaster) {
+  const ingress = makeMockIngress();
+  return new EventPersistence(
+    db,
+    broadcaster,
+    silentLogger,
+    ingress.outbox,
+    ingress.pump,
+  );
+}
+
 const silentLogger = pino({ level: "silent" });
+
+describe("EventPersistence durable ingress", () => {
+  it("sanitizes and fsync-enqueues persistent events without direct event DB calls", async () => {
+    const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+    const event = {
+      type: "assistant_message",
+      content: "hi",
+      timestamp: 1731700000,
+      _dedupe_key: "claude-sdk:assistant:msg-1:0",
+    } as unknown as SSEEventPayload;
+
+    await expect(ep.enqueueEvent("sess-1", event)).resolves.toBe(ingress.record);
+
+    expect(ingress.append).toHaveBeenCalledWith({
+      session_id: "sess-1",
+      event_type: "assistant_message",
+      payload: {
+        type: "assistant_message",
+        content: "hi",
+        timestamp: 1731700000,
+      },
+      searchable_text: "hi",
+      created_at: "2024-11-15T19:46:40.000Z",
+      semantic_dedupe_key: "claude-sdk:assistant:msg-1:0",
+      session_effect: null,
+    });
+    expect(appendEvent).not.toHaveBeenCalled();
+    expect(findEventIdByDedupeKey).not.toHaveBeenCalled();
+  });
+
+  it("returns the exact DB event id only after the session ACK barrier", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueEventAndWaitForSessionAck(
+      "sess-1",
+      { type: "assistant_message", content: "hi" } as unknown as SSEEventPayload,
+    )).resolves.toEqual({ record: ingress.record, eventId: 42 });
+    expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
+  });
+
+  it("waits for the last event enqueued for the session at the turn boundary", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+    await ep.enqueueEvent(
+      "sess-1",
+      { type: "assistant_message", content: "hi" } as unknown as SSEEventPayload,
+    );
+
+    await expect(ep.waitForSessionAck("sess-1")).resolves.toBe(42);
+    expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
+    await expect(ep.waitForSessionAck("sess-1")).resolves.toBeNull();
+  });
+});
 
 describe("extractSearchableText", () => {
   it("text_delta는 durable 검색 대상이 아니다", () => {
@@ -83,11 +199,18 @@ describe("extractSearchableText", () => {
 
 });
 
-describe("EventPersistence.persistEvent", () => {
-  it("live-only event는 DB 저장 대상이 아니다", async () => {
+describe("EventPersistence transient boundary", () => {
+  it("live-only event는 durable outbox 대상이 아니다", async () => {
     const { db, appendEvent } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
     const event = {
       type: "text_delta",
       text: "partial",
@@ -96,94 +219,31 @@ describe("EventPersistence.persistEvent", () => {
 
     expect(isLiveOnlyEvent(event)).toBe(true);
     expect(shouldPersistEvent(event)).toBe(false);
-    await expect(ep.persistEvent("sess-1", event)).rejects.toThrow(
+    await expect(ep.enqueueEvent("sess-1", event)).rejects.toThrow(
       /transient live events must not be persisted/,
     );
+    expect(ingress.append).not.toHaveBeenCalled();
     expect(appendEvent).not.toHaveBeenCalled();
   });
 
-  it("text lifecycle event는 _live_only가 없어도 DB 저장 대상이 아니다", async () => {
+  it("text lifecycle event는 _live_only가 없어도 durable outbox 대상이 아니다", async () => {
     const { db, appendEvent } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
     const event = { type: "text_delta", text: "partial" } as SSEEventPayload;
 
     expect(shouldPersistEvent(event)).toBe(false);
-    await expect(ep.persistEvent("sess-1", event)).rejects.toThrow(
+    await expect(ep.enqueueEvent("sess-1", event)).rejects.toThrow(
       /transient live events must not be persisted/,
     );
-    expect(appendEvent).not.toHaveBeenCalled();
-  });
-
-  it("appendEvent에 type/payload/searchable/timestamp 전달, event_id 반환", async () => {
-    const { db, appendEvent } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
-    const event = {
-      type: "assistant_message",
-      content: "hi",
-      timestamp: 1731700000,
-    } as unknown as SSEEventPayload;
-    const id = await ep.persistEvent("sess-1", event);
-    expect(id).toBe(42);
-    expect(appendEvent).toHaveBeenCalledTimes(1);
-    const arg = appendEvent.mock.calls[0][0];
-    expect(arg.sessionId).toBe("sess-1");
-    expect(arg.eventType).toBe("assistant_message");
-    expect(JSON.parse(arg.payload)).toEqual(event);
-    expect(arg.searchableText).toBe("hi");
-    expect(arg.createdAt).toBeInstanceOf(Date);
-    expect(arg.createdAt.getTime()).toBe(1731700000 * 1000);
-  });
-
-  it("timestamp 부재 시 호출 시점 now", async () => {
-    const { db, appendEvent } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
-    await ep.persistEvent("sess-1", { type: "tool_start" } as SSEEventPayload);
-    const arg = appendEvent.mock.calls[0][0];
-    expect(arg.createdAt).toBeInstanceOf(Date);
-  });
-  it("uses internal dedupe key for append but strips it from the stored payload", async () => {
-    const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
-    const event = {
-      type: "assistant_message",
-      content: "hi",
-      _dedupe_key: "claude-sdk:assistant:msg-1:0",
-    } as unknown as SSEEventPayload;
-
-    const result = await ep.persistEventWithResult("sess-1", event);
-
-    expect(result).toEqual({ eventId: 42, inserted: true });
-    expect(findEventIdByDedupeKey).toHaveBeenCalledWith(
-      "sess-1",
-      "claude-sdk:assistant:msg-1:0",
-    );
-    const arg = appendEvent.mock.calls[0][0];
-    expect(arg.dedupeKey).toBe("claude-sdk:assistant:msg-1:0");
-    expect(JSON.parse(arg.payload)).toEqual({
-      type: "assistant_message",
-      content: "hi",
-    });
-  });
-
-  it("returns existing event id for duplicate dedupe keys without appending", async () => {
-    const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
-    findEventIdByDedupeKey.mockResolvedValue(17);
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
-    const event = {
-      type: "assistant_message",
-      content: "hi",
-      _dedupe_key: "claude-sdk:assistant:msg-1:0",
-    } as unknown as SSEEventPayload;
-
-    await expect(ep.persistEventWithResult("sess-1", event)).resolves.toEqual({
-      eventId: 17,
-      inserted: false,
-    });
+    expect(ingress.append).not.toHaveBeenCalled();
     expect(appendEvent).not.toHaveBeenCalled();
   });
 });
@@ -192,7 +252,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("text_delta는 last_message 없이 task.lastAssistantText만 갱신", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -206,7 +266,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("progress는 last_message 없이 task.lastProgressText만 갱신", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -220,7 +280,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("text_end (text 없음) — last_message 갱신 안 함 + lastAssistantText 변경 안 함", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask({ lastAssistantText: "previous" });
     await ep.handleSideEffects(
       "sess-1",
@@ -234,7 +294,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("prompt_suggestion은 영속 대상이지만 last_message와 lastAssistantText는 건드리지 않는다", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask({ lastAssistantText: "previous" });
     await ep.handleSideEffects(
       "sess-1",
@@ -248,7 +308,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("legacy cumulative text_delta는 매번 덮어쓴다", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -273,7 +333,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("app-server text_delta chunk는 text_start 이후 누적한다", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask({ lastAssistantText: "previous turn" });
     await ep.handleSideEffects(
       "sess-1",
@@ -307,7 +367,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("assistant_message is the persisted final assistant text for preview/search/push state", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask({ lastAssistantText: "Hel" });
     const event = {
       type: "assistant_message",
@@ -332,7 +392,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("preview 200자 cap preserves surrogate pairs", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const long = `${"a".repeat(199)}😀tail`;
     await ep.handleSideEffects(
       "sess-1",
@@ -353,7 +413,7 @@ describe("EventPersistence.handleSideEffects", () => {
     const updateLastMessage = vi.fn().mockRejectedValue(new Error("db down"));
     const db = { appendEvent, updateLastMessage } as unknown as SessionDB;
     const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     await expect(
       ep.handleSideEffects(
         "sess-1",
@@ -377,7 +437,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("F-3A T2: preview 있을 때 emitSessionMessageUpdated 호출 (Python L141-221 정합)", async () => {
     const { db } = makeMockDB();
     const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask({
       status: "running",
       lastEventId: 5,
@@ -410,7 +470,7 @@ describe("EventPersistence.handleSideEffects", () => {
   it("F-3A T3: preview 없는 이벤트 (text_start/text_end/session 등) — broadcaster 호출 안 함", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
 
     for (const ev of [
       { type: "text_start", timestamp: 1 },
@@ -432,7 +492,7 @@ describe("EventPersistence.handleSideEffects", () => {
         .fn()
         .mockRejectedValue(new Error("wire down")),
     } as unknown as SessionBroadcaster;
-    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const ep = makeEventPersistence(db, broadcaster);
     const task = makeTask();
 
     await expect(

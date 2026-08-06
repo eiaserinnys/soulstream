@@ -57,6 +57,97 @@ describe("EventOutboxPump", () => {
 
     expect(secondConnection[0]).toEqual(firstConnection[0]);
   });
+
+  it("returns the orchestrator event id only after the durable ACK", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("one"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+
+    const acknowledged = pump.waitForAcknowledgement(record);
+    await expect(Promise.race([
+      acknowledged.then(() => "acknowledged"),
+      Promise.resolve("pending"),
+    ])).resolves.toBe("pending");
+
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: record.source_seq,
+      events: [{ source_seq: record.source_seq, event_id: 9031 }],
+    });
+
+    await expect(acknowledged).resolves.toBe(9031);
+  });
+
+  it("keeps an exact ACK result when the ACK arrives before the barrier is installed", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("one"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: record.source_seq,
+      events: [{ source_seq: record.source_seq, event_id: 9031 }],
+    });
+
+    await expect(pump.waitForAcknowledgement(record)).resolves.toBe(9031);
+  });
+
+  it("keeps the exact earlier ACK when one batch contains two events for the same session", async () => {
+    const outbox = await createOutbox();
+    const first = await outbox.append(eventInput("one"));
+    const second = await outbox.append(eventInput("two"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: second.source_seq,
+      events: [
+        { source_seq: first.source_seq, event_id: 9031 },
+        { source_seq: second.source_seq, event_id: 9032 },
+      ],
+    });
+
+    await expect(Promise.race([
+      pump.waitForAcknowledgement(first),
+      Promise.resolve("pending"),
+    ])).resolves.toBe(9031);
+    await expect(pump.waitForAcknowledgement(second)).resolves.toBe(9032);
+  });
+
+  it("keeps the session barrier pending across disconnect and retry", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("one"));
+    const firstConnection: EventOutboxBatch[] = [];
+    const secondConnection: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => firstConnection.push(batch));
+    await waitFor(() => firstConnection.length === 1);
+
+    const acknowledged = pump.waitForAcknowledgement(record);
+    pump.disconnect();
+    pump.connect(async (batch) => secondConnection.push(batch));
+    await waitFor(() => secondConnection.length === 1);
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: record.source_seq,
+      events: [{ source_seq: record.source_seq, event_id: 9031 }],
+    });
+
+    await expect(acknowledged).resolves.toBe(9031);
+  });
 });
 
 async function createOutbox(): Promise<EventOutbox> {

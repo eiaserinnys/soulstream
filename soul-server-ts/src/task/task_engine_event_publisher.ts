@@ -2,7 +2,6 @@ import type { Logger } from "pino";
 
 import {
   clearEventPersistenceInternals,
-  type PersistEventResult,
   shouldPersistEvent,
   type EventPersistence,
 } from "../db/event_persistence.js";
@@ -38,9 +37,11 @@ export class TaskEngineEventPublisher {
     this.captureCompactReinjectionNeed(task, eventType);
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
-    const persistedEvent = await this.persistEventIfNeeded(task, event, eventType);
-    await this.broadcastEvent(task, event, eventType);
-    await this.handleSideEffects(task, event, eventType, persistedEvent);
+    const persistent = await this.enqueuePersistentEventIfNeeded(task, event);
+    if (!persistent) {
+      await this.broadcastTransientEvent(task, event, eventType);
+    }
+    await this.handleSideEffects(task, event, eventType);
   }
 
   private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
@@ -110,49 +111,24 @@ export class TaskEngineEventPublisher {
     }
   }
 
-  private async persistEventIfNeeded(
+  private async enqueuePersistentEventIfNeeded(
     task: Task,
     event: SSEEventPayload,
-    eventType: string,
-  ): Promise<PersistEventResult | null> {
-    // `_live_only` chunks are generation-time wire events. Persisting them would
-    // duplicate the final assistant_message in DB history.
+  ): Promise<boolean> {
     if (!shouldPersistEvent(event)) {
       clearEventPersistenceInternals(event);
-      return null;
+      return false;
     }
 
     try {
-      const persistence = this.deps.persistence as EventPersistence & {
-        persistEventWithResult?: (
-          sessionId: string,
-          event: SSEEventPayload,
-        ) => Promise<PersistEventResult>;
-      };
-      const persisted = persistence.persistEventWithResult
-        ? await persistence.persistEventWithResult(task.agentSessionId, event)
-        : {
-            eventId: await persistence.persistEvent(task.agentSessionId, event),
-            inserted: true,
-          };
-      if (persisted.inserted) {
-        task.lastEventId = persisted.eventId;
-      }
-      // Ride-along contract: orch SSE extracts event._event_id as the wire id.
-      (event as Record<string, unknown>)._event_id = persisted.eventId;
-      return persisted;
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType },
-        "persistEvent failed",
-      );
-      return null;
+      await this.deps.persistence.enqueueEvent(task.agentSessionId, event);
+      return true;
     } finally {
       clearEventPersistenceInternals(event);
     }
   }
 
-  private async broadcastEvent(
+  private async broadcastTransientEvent(
     task: Task,
     event: SSEEventPayload,
     eventType: string,
@@ -181,9 +157,7 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
-    persistedEvent: PersistEventResult | null,
   ): Promise<void> {
-    if (persistedEvent?.inserted === false) return;
     try {
       await this.deps.persistence.handleSideEffects(
         task.agentSessionId,

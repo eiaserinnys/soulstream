@@ -18,11 +18,11 @@ export interface ResponseEventPublisherDeps {
 }
 
 /**
- * Owns persistence and broadcast for user response resolution events.
+ * Owns durable ingress and ACK ordering for user response resolution events.
  *
  * These events are emitted after an external input or approval has already been
  * accepted by the engine. Public API result shapes stay outside this publisher; this
- * publisher owns event construction, `_event_id` ride-along, and failure isolation.
+ * publisher owns event construction and the DB event ID barrier.
  */
 export class ResponseEventPublisher {
   constructor(private readonly deps: ResponseEventPublisherDeps) {}
@@ -31,7 +31,7 @@ export class ResponseEventPublisher {
     task: Task,
     requestId: string,
   ): Promise<number | undefined> {
-    return await this.persistAndBroadcast({
+    return await this.enqueueAndWait({
       task,
       event: {
         type: "input_request_responded",
@@ -41,10 +41,6 @@ export class ResponseEventPublisher {
       persistenceFailure: {
         context: { requestId },
         message: "input_request_responded persistence failed",
-      },
-      broadcastFailure: {
-        context: { requestId },
-        message: "input_request_responded broadcast failed",
       },
     });
   }
@@ -65,72 +61,49 @@ export class ResponseEventPublisher {
       event.message = params.message;
     }
 
-    return await this.persistAndBroadcast({
+    return await this.enqueueAndWait({
       task,
       event,
       persistenceFailure: {
         context: { approvalId: params.approvalId },
         message: "tool_approval_resolved persistence failed",
       },
-      broadcastFailure: {
-        context: { approvalId: params.approvalId },
-        message: "tool_approval_resolved broadcast failed",
-      },
     });
   }
 
-  private async persistAndBroadcast(params: {
+  private async enqueueAndWait(params: {
     task: Task;
     event: Record<string, unknown>;
     persistenceFailure: ResponseEventFailureLog;
-    broadcastFailure: ResponseEventFailureLog;
   }): Promise<number | undefined> {
     const { task, event } = params;
-    let eventId: number | undefined;
-
-    if (this.deps.persistence) {
-      try {
-        eventId = await this.deps.persistence.persistEvent(
-          task.agentSessionId,
-          event as SSEEventPayload,
-        );
-        task.lastEventId = eventId;
-        event._event_id = eventId;
-        await this.deps.persistence.handleSideEffects(
-          task.agentSessionId,
-          event as SSEEventPayload,
-          task,
-        );
-      } catch (err) {
-        this.deps.logger.warn(
-          {
-            err,
-            sessionId: task.agentSessionId,
-            ...params.persistenceFailure.context,
-          },
-          params.persistenceFailure.message,
-        );
-        eventId = undefined;
-      }
+    if (!this.deps.persistence) {
+      throw new Error("response durable event persistence is required");
     }
 
     try {
-      await this.deps.broadcaster.emitEventEnvelope(
+      const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
         task.agentSessionId,
         event as SSEEventPayload,
       );
+      task.lastEventId = eventId;
+      await this.deps.persistence.handleSideEffects(
+        task.agentSessionId,
+        event as SSEEventPayload,
+        task,
+      );
+      return eventId;
     } catch (err) {
       this.deps.logger.warn(
         {
           err,
           sessionId: task.agentSessionId,
-          ...params.broadcastFailure.context,
+          ...params.persistenceFailure.context,
         },
-        params.broadcastFailure.message,
+        params.persistenceFailure.message,
       );
+      throw err;
     }
-
-    return eventId;
   }
 }
 

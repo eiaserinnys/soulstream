@@ -301,7 +301,7 @@ function makeService(repo: SoulstreamScheduleRepository): SoulstreamScheduleServ
   return new SoulstreamScheduleService(
     repo,
     { emitEventEnvelope: vi.fn(async () => undefined) } as never,
-    { persistEvent: vi.fn(async () => 1) } as never,
+    { enqueueEvent: vi.fn(async () => ({ source_seq: 1 })) } as never,
     logger,
   );
 }

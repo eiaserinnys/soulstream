@@ -1,11 +1,7 @@
-import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { EventPersistence } from "../../src/db/event_persistence.js";
 import { SessionDB } from "../../src/db/session_db.js";
-import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { searchSessionEvents } from "../../src/search/session_search.js";
-import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
@@ -17,7 +13,6 @@ const describePostgres = hasFullSchemaPostgresBackend ? describe : describe.skip
 describePostgres("tool event PostgreSQL search integration", () => {
   let harness: FullSchemaPostgresHarness | undefined;
   let db: SessionDB;
-  let persistence: EventPersistence;
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
@@ -31,11 +26,6 @@ describePostgres("tool event PostgreSQL search integration", () => {
         'roselin_codex', NOW(), NOW()
       )
     `;
-    persistence = new EventPersistence(
-      db,
-      {} as SessionBroadcaster,
-      pino({ level: "silent" }),
-    );
   }, 45_000);
 
   afterAll(async () => {
@@ -43,23 +33,29 @@ describePostgres("tool event PostgreSQL search integration", () => {
   }, 15_000);
 
   it("persists synthetic tool events and finds both through searchSessionEvents", async () => {
-    await persistence.persistEvent(
-      "tool-search-session",
-      {
+    await db.appendEvent({
+      sessionId: "tool-search-session",
+      eventType: "tool_start",
+      payload: JSON.stringify({
         type: "tool_start",
         tool_name: "mcp/atom/search_cards",
         tool_input: { query: "침몰선 설계", path: "project/lore" },
-      } as unknown as SSEEventPayload,
-    );
-    await persistence.persistEvent(
-      "tool-search-session",
-      {
+      }),
+      searchableText: "mcp/atom/search_cards 침몰선 설계 project/lore",
+      createdAt: new Date(),
+    });
+    await db.appendEvent({
+      sessionId: "tool-search-session",
+      eventType: "tool_result",
+      payload: JSON.stringify({
         type: "tool_result",
         tool_name: "mcp/atom/search_cards",
         result: "침몰선 설계 카드를 찾았습니다 foundmarker",
         is_error: false,
-      } as unknown as SSEEventPayload,
-    );
+      }),
+      searchableText: "mcp/atom/search_cards 침몰선 설계 카드를 찾았습니다 foundmarker",
+      createdAt: new Date(),
+    });
 
     const starts = await searchSessionEvents(db, {
       query: "project/lore",

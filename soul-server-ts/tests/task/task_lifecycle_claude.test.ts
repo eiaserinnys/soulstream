@@ -24,7 +24,6 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { ClaudeEngineAdapter } from "../../src/engine/claude_adapter.js";
 import type { ClaudeClient, ClaudeRunOptions } from "../../src/engine/claude_adapter.js";
@@ -38,6 +37,8 @@ import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const silentLogger: Logger = pino({ level: "silent" });
 
@@ -63,10 +64,8 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makeMocks() {
-  let nextEventId = 0;
-  const persistEvent = vi.fn(async () => ++nextEventId);
-  const handleSideEffects = vi.fn(async () => undefined);
-  const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
+  const persistenceDouble = makeEventPersistenceTestDouble();
+  const { persistence, enqueueEvent: persistEvent } = persistenceDouble;
 
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const setClaudeSessionId = vi.fn().mockResolvedValue(undefined);
@@ -185,8 +184,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("claude-sess-x");
 
-    // emit된 event 중 complete가 정확히 1회
-    const completeCalls = mocks.emitEventEnvelope.mock.calls.filter(
+    const completeCalls = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "complete",
     );
     expect(completeCalls).toHaveLength(1);
@@ -254,7 +252,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(task.status).toBe("completed");
     expect(turn).toBe(2);
     // complete 정확히 2회 (각 turn 종료마다)
-    const completeCalls = mocks.emitEventEnvelope.mock.calls.filter(
+    const completeCalls = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "complete",
     );
     expect(completeCalls).toHaveLength(2);
@@ -419,7 +417,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       "Continue from where you left off.",
     ]);
     expect(task.interventionQueue).toEqual([]);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
+    expect(mocks.persistEvent).toHaveBeenCalledWith(
       "sess-lc",
       expect.objectContaining({
         type: "assistant_message",
@@ -464,7 +462,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    const suggestionCalls = mocks.emitEventEnvelope.mock.calls.filter(
+    const suggestionCalls = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "prompt_suggestion",
     );
     expect(suggestionCalls).toHaveLength(1);
@@ -500,15 +498,15 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    // assistant_error는 wire에 발행되지만 task lifecycle을 중단하지 않음
-    const errCalls = mocks.emitEventEnvelope.mock.calls.filter(
+    // assistant_error는 durable ingress에 기록되지만 task lifecycle을 중단하지 않음
+    const errCalls = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "assistant_error",
     );
     expect(errCalls).toHaveLength(1);
     expect((errCalls[0]![1] as { error_type: string }).error_type).toBe("billing_error");
     expect(task.status).toBe("completed");
     // fatal=true generic error event는 발행되지 않음 (assistant_error로 분리됨)
-    const fatalErrorCalls = mocks.emitEventEnvelope.mock.calls.filter((c) => {
+    const fatalErrorCalls = mocks.persistEvent.mock.calls.filter((c) => {
       const evt = c[1] as { type: string; fatal?: boolean };
       return evt.type === "error" && evt.fatal === true;
     });

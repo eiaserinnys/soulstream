@@ -7,7 +7,7 @@ import type { ScheduleCreateInput, SoulstreamSchedule } from "../../src/schedule
 const logger = pino({ level: "silent" });
 
 describe("SoulstreamScheduleService", () => {
-  it("stores ScheduleWakeup as a durable one-shot schedule and emits the schedule wire event", async () => {
+  it("stores ScheduleWakeup and enqueues its persistent event without worker broadcast", async () => {
     const db = makeDb();
     const { service, broadcaster, persistence } = makeService(db);
     const now = new Date("2026-01-01T00:00:00Z");
@@ -33,20 +33,14 @@ describe("SoulstreamScheduleService", () => {
     expect(input.nextRunAt.toISOString()).toBe("2026-01-01T00:01:30.000Z");
     expect(input.runOnceAt?.toISOString()).toBe("2026-01-01T00:01:30.000Z");
     expect(schedule.nextRunAt).toBe("2026-01-01T00:01:30.000Z");
-    expect(persistence.persistEvent).toHaveBeenCalledWith(
+    expect(persistence.enqueueEvent).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({
         type: "claude_runtime_schedule_updated",
         schedule_id: schedule.scheduleId,
       }),
     );
-    expect(broadcaster.emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({
-        type: "claude_runtime_schedule_updated",
-        _event_id: 42,
-      }),
-    );
+    expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("accepts absolute wakeup timestamps and numeric string delays without using Claude's native scheduler", async () => {
@@ -199,9 +193,9 @@ describe("SoulstreamScheduleService", () => {
     expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("marks due schedules without an owner node as orphaned and broadcasts the state", async () => {
+  it("marks due schedules without an owner node and durably enqueues the state", async () => {
     const db = makeDb();
-    const { service, broadcaster } = makeService(db);
+    const { service, broadcaster, persistence } = makeService(db);
     db.markOrphanDueSchedules.mockResolvedValueOnce([
       makeSchedule({ scheduleId: "orphan-1", status: "orphaned" }),
     ]);
@@ -220,18 +214,19 @@ describe("SoulstreamScheduleService", () => {
       limit: 10,
       error: "scheduled session owner node is not connected",
     });
-    expect(broadcaster.emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistence.enqueueEvent).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({
         type: "claude_runtime_schedule_updated",
         status: "orphaned",
       }),
     );
+    expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("restores orphaned schedules for live owner nodes and broadcasts the state", async () => {
+  it("restores orphaned schedules and durably enqueues the state", async () => {
     const db = makeDb();
-    const { service, broadcaster } = makeService(db);
+    const { service, broadcaster, persistence } = makeService(db);
     db.restoreOrphanSchedulesForLiveNodes.mockResolvedValueOnce([
       makeSchedule({ scheduleId: "orphan-1", status: "active", lastError: null }),
     ]);
@@ -247,19 +242,20 @@ describe("SoulstreamScheduleService", () => {
       staleBefore: new Date("2025-12-31T23:55:00Z"),
       limit: 10,
     });
-    expect(broadcaster.emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistence.enqueueEvent).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({
         type: "claude_runtime_schedule_updated",
         status: "active",
       }),
     );
+    expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });
 });
 
 function makeService(db = makeDb()) {
   const broadcaster = { emitEventEnvelope: vi.fn(async () => undefined) };
-  const persistence = { persistEvent: vi.fn(async () => 42) };
+  const persistence = { enqueueEvent: vi.fn(async () => ({ source_seq: 42 })) };
   const service = new SoulstreamScheduleService(
     db as never,
     broadcaster as never,
