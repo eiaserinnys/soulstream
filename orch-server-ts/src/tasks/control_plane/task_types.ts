@@ -2,9 +2,7 @@ import type {
   BoardYjsQuerySql,
 } from "../../board-yjs/board_yjs_sql.js";
 
-export type RepositorySql = BoardYjsQuerySql & {
-  (value: Record<string, unknown>): unknown;
-};
+export type RepositorySql = BoardYjsQuerySql;
 export type SqlClient = RepositorySql & {
   begin<T>(callback: (sql: RepositorySql) => Promise<T>): Promise<T>;
 };

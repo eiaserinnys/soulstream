@@ -5,6 +5,7 @@ import type {
   LiveDbSqlResolver,
   LivePostgresSql,
 } from "../runtime/live_db_sql.js";
+import { createPostgresQueryAdapter } from "../runtime/postgres_query_adapter.js";
 import {
   parsePageYjsDocumentName,
 } from "./page_yjs_model.js";
@@ -420,14 +421,7 @@ function createPageSqlAdapter(sql: LivePostgresSql): PageSql {
 
 function createPageQueryAdapter(sql: LivePostgresSql): PageQuerySql {
   assertPageCapableQuerySql(sql);
-  const query = async <T extends readonly Record<string, unknown>[]>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T> => await sql(strings, ...values) as T;
-  return Object.assign(query, {
-    json: (value: unknown) => sql.json(value),
-    array: (values: readonly unknown[]) => sql.array(values),
-  }) as PageQuerySql;
+  return createPostgresQueryAdapter(sql);
 }
 
 function assertPageCapableSql(sql: LivePostgresSql): asserts sql is PageCapableSql {

@@ -1,15 +1,9 @@
 import { Buffer } from "node:buffer";
 
+import type { PostgresQuerySql } from "../runtime/postgres_query_adapter.js";
 import type { PageYjsReplica } from "./page_yjs_model.js";
 
-export type PageQuerySql = {
-  <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T>;
-  readonly json: (value: unknown) => unknown;
-  readonly array: (values: readonly unknown[]) => unknown;
-};
+export type PageQuerySql = PostgresQuerySql;
 
 export interface MutationProvenance {
   actorSessionId: string | null;

@@ -3,10 +3,14 @@ import postgres from "postgres";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 
 export type LivePostgresSql = {
-  (
+  <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
     strings: TemplateStringsArray,
     ...values: unknown[]
-  ): readonly Record<string, unknown>[] | Promise<readonly Record<string, unknown>[]>;
+  ): T | Promise<T>;
+  <T extends Record<string, unknown>>(
+    value: T,
+    ...columns: Array<Extract<keyof T, string>>
+  ): unknown;
   readonly json: (value: unknown) => unknown;
   readonly listen?: (
     channel: string,

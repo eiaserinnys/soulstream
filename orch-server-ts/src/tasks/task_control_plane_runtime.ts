@@ -6,7 +6,6 @@ import type {
 } from "../sse/replay_broadcaster.js";
 import { TaskControlPlaneService } from "./task_control_plane_service.js";
 import type { TaskDbPort } from "./control_plane/task_types.js";
-import type { SqlClient } from "./control_plane/task_types.js";
 
 export function createTaskControlPlaneServiceProvider(options: {
   sqlResolver: LiveDbSqlResolver;
@@ -34,7 +33,7 @@ export function createTaskControlPlaneServiceProvider(options: {
         return eventId;
       },
     };
-    service = new TaskControlPlaneService(sql as unknown as SqlClient, db, {
+    service = new TaskControlPlaneService(sql, db, {
       async emitTaskUpdated(_actorSessionId, taskId, boardItemId) {
         options.broadcaster.append({ type: "task_updated", taskId, boardItemId });
       },
