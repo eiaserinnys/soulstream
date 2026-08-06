@@ -11,7 +11,7 @@ import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 export const silentLogger = pino({ level: "silent" });
 
 export function makeLlmHarness(adapter?: LlmAdapter) {
-  let eventId = 0;
+  let sourceSeq = 0;
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const updateSession = vi.fn().mockResolvedValue(undefined);
@@ -27,9 +27,20 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     });
   const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
   const appendEvent = vi.fn().mockImplementation(async () => {
-    eventId += 1;
-    return eventId;
+    throw new Error("worker publishers must not write session events directly");
   });
+  const outboxAppend = vi.fn().mockImplementation(async (input: Record<string, unknown>) => {
+    sourceSeq += 1;
+    return {
+      stream_id: "stream-llm-test",
+      source_seq: sourceSeq,
+      ...input,
+      payload_hash: `${sourceSeq}`.padStart(64, "0"),
+    };
+  });
+  const waitForAcknowledgement = vi.fn().mockImplementation(
+    async (record: { source_seq: number }) => record.source_seq,
+  );
   const updateLastMessage = vi.fn().mockResolvedValue(undefined);
 
   const db = {
@@ -51,8 +62,20 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     { get: () => undefined } as unknown as AgentRegistry,
     "test-node",
   );
-  const persistence = new EventPersistence(db, broadcaster, silentLogger);
-  const taskManager = new TaskManager("test-node", db, broadcaster, silentLogger);
+  const persistence = new EventPersistence(
+    db,
+    broadcaster,
+    silentLogger,
+    { append: outboxAppend } as never,
+    { waitForAcknowledgement } as never,
+  );
+  const taskManager = new TaskManager(
+    "test-node",
+    db,
+    broadcaster,
+    silentLogger,
+    persistence,
+  );
 
   return {
     adapter: adapter ?? new MockLlmAdapter(),
@@ -69,6 +92,8 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
       getFolderById,
       getCatalog,
       appendEvent,
+      outboxAppend,
+      waitForAcknowledgement,
       updateLastMessage,
     },
   };

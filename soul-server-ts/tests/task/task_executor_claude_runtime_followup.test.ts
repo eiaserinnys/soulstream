@@ -2,7 +2,6 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import {
@@ -13,6 +12,8 @@ import {
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -37,17 +38,17 @@ function makeTask(): Task {
 }
 
 function makeMocks() {
-  let nextEventId = 0;
-  const persistEvent = vi.fn(async () => ++nextEventId);
-  const handleSideEffects = vi.fn(async (_sessionId: string, event: SSEEventPayload, task: Task) => {
-    if (event.type === "text_delta" && typeof event.text === "string") {
-      task.lastAssistantText = event.text;
-    }
-    if (event.type === "assistant_message" && typeof event.content === "string") {
-      task.lastAssistantText = event.content;
-    }
-  });
-  const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
+  const persistenceDouble = makeEventPersistenceTestDouble(
+    async (_sessionId: string, event: SSEEventPayload, task: Task) => {
+      if (event.type === "text_delta" && typeof event.text === "string") {
+        task.lastAssistantText = event.text;
+      }
+      if (event.type === "assistant_message" && typeof event.content === "string") {
+        task.lastAssistantText = event.content;
+      }
+    },
+  );
+  const { persistence } = persistenceDouble;
 
   const db = {
     updateSession: vi.fn().mockResolvedValue(undefined),
@@ -58,7 +59,12 @@ function makeMocks() {
     emitSessionUpdated: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
 
-  return { persistence, db, broadcaster };
+  return {
+    persistence,
+    enqueueEvent: persistenceDouble.enqueueEvent,
+    db,
+    broadcaster,
+  };
 }
 
 describe("TaskExecutor Claude runtime task follow-up", () => {
@@ -449,13 +455,13 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       }),
       "repeated_response",
     );
-    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+    const errorPersist = mocks.enqueueEvent.mock.calls.find(
       (call) =>
         (call[1] as { type: string }).type === "error" &&
         (call[1] as { error_code?: string }).error_code ===
           "claude_runtime_followup_stalled",
     );
-    expect(errorBroadcast).toBeUndefined();
+    expect(errorPersist).toBeUndefined();
     expect(task.lastAssistantText).toBe("recovered after retry");
   });
 
@@ -631,13 +637,13 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       }),
       "repeated_response",
     );
-    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+    const errorPersist = mocks.enqueueEvent.mock.calls.find(
       (call) =>
         (call[1] as { type: string }).type === "error" &&
         (call[1] as { error_code?: string }).error_code ===
           "claude_runtime_followup_stalled",
     );
-    expect(errorBroadcast).toBeUndefined();
+    expect(errorPersist).toBeUndefined();
     expect(task.status).toBe("completed");
   });
 
@@ -771,13 +777,13 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     await task.executionPromise;
 
     expect(followup.queueFallback).not.toHaveBeenCalled();
-    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+    const errorPersist = mocks.enqueueEvent.mock.calls.find(
       (call) =>
         (call[1] as { type: string }).type === "error" &&
         (call[1] as { error_code?: string }).error_code ===
           "claude_runtime_followup_stalled",
     );
-    expect(errorBroadcast?.[1]).toMatchObject({
+    expect(errorPersist?.[1]).toMatchObject({
       type: "error",
       fatal: true,
       recoverable: true,
@@ -837,13 +843,13 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       expect(task.status).toBe("error");
     });
 
-    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+    const errorPersist = mocks.enqueueEvent.mock.calls.find(
       (call) =>
         (call[1] as { type: string }).type === "error" &&
         (call[1] as { error_code?: string }).error_code ===
           "claude_runtime_followup_stalled",
     );
-    expect(errorBroadcast?.[1]).toMatchObject({
+    expect(errorPersist?.[1]).toMatchObject({
       type: "error",
       fatal: true,
       recoverable: true,
@@ -886,12 +892,12 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     await executor.failScheduledClaudeRuntimeFollowupsForShutdown();
 
     expect(task.status).toBe("error");
-    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+    const errorPersist = mocks.enqueueEvent.mock.calls.find(
       (call) =>
         (call[1] as { error_code?: string }).error_code ===
         "claude_runtime_followup_stalled",
     );
-    expect(errorBroadcast?.[1]).toMatchObject({
+    expect(errorPersist?.[1]).toMatchObject({
       type: "error",
       fatal: true,
       recoverable: true,
@@ -934,13 +940,13 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+    const errorPersist = mocks.enqueueEvent.mock.calls.find(
       (call) =>
         (call[1] as { type: string }).type === "error" &&
         (call[1] as { error_code?: string }).error_code ===
           "claude_runtime_followup_enqueue_failed",
     );
-    expect(errorBroadcast?.[1]).toMatchObject({
+    expect(errorPersist?.[1]).toMatchObject({
       type: "error",
       fatal: false,
       error_code: "claude_runtime_followup_enqueue_failed",

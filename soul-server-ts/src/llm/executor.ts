@@ -56,7 +56,7 @@ export class LlmExecutor {
       callerInfo,
     });
 
-    await this.persistAndBroadcast(task, {
+    await this.enqueueEvent(task, {
       type: "user_message",
       timestamp: Date.now() / 1000,
       user: request.client_id ?? "llm",
@@ -78,7 +78,7 @@ export class LlmExecutor {
       });
       const usage = toUsage(result);
 
-      await this.persistAndBroadcast(task, {
+      await this.enqueueEvent(task, {
         type: "assistant_message",
         timestamp: Date.now() / 1000,
         content: result.content,
@@ -113,7 +113,7 @@ export class LlmExecutor {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await this.persistAndBroadcast(task, {
+      await this.enqueueEvent(task, {
         type: "error",
         timestamp: Date.now() / 1000,
         message,
@@ -132,32 +132,19 @@ export class LlmExecutor {
     }
   }
 
-  private async persistAndBroadcast(
+  private async enqueueEvent(
     task: Task,
     event: Record<string, unknown>,
   ): Promise<void> {
-    const eventId = await this.params.persistence.persistEvent(
+    await this.params.persistence.enqueueEvent(
       task.agentSessionId,
       event as SSEEventPayload,
     );
-    task.lastEventId = eventId;
-    event._event_id = eventId;
     await this.params.persistence.handleSideEffects(
       task.agentSessionId,
       event as SSEEventPayload,
       task,
     );
-    try {
-      await this.params.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-    } catch (err) {
-      this.params.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType: event.type },
-        "LLM event broadcast failed",
-      );
-    }
   }
 }
 

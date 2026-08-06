@@ -1,0 +1,87 @@
+import { vi } from "vitest";
+
+import type { EventPersistence } from "../../src/db/event_persistence.js";
+import type { SSEEventPayload } from "../../src/engine/protocol.js";
+import type { Task } from "../../src/task/task_models.js";
+import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
+
+export function makeEventPersistenceTestDouble(
+  sideEffect?: (
+    sessionId: string,
+    event: SSEEventPayload,
+    task: Task,
+  ) => Promise<void>,
+) {
+  let sourceSeq = 0;
+  const latestBySession = new Map<string, number>();
+  const enqueueEvent = vi.fn(
+    async (sessionId: string, event: SSEEventPayload): Promise<unknown> => {
+      sourceSeq += 1;
+      latestBySession.set(sessionId, sourceSeq);
+      return makeRecord(sourceSeq, sessionId, event);
+    },
+  );
+  const waitForSessionAck = vi.fn(
+    async (sessionId: string): Promise<number | null> => latestBySession.get(sessionId) ?? null,
+  );
+  const enqueueEventAndWaitForSessionAck = vi.fn(
+    async (sessionId: string, event: SSEEventPayload) => {
+      const result = await enqueueEvent(sessionId, event);
+      const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
+      latestBySession.delete(sessionId);
+      return {
+        record: isRecord(result)
+          ? result as unknown as EventOutboxRecord
+          : makeRecord(eventId, sessionId, event),
+        eventId,
+      };
+    },
+  );
+  const handleSideEffects = vi.fn(
+    sideEffect ?? (async () => undefined),
+  );
+  const persistence = {
+    enqueueEvent,
+    enqueueEventAndWaitForSessionAck,
+    waitForSessionAck,
+    handleSideEffects,
+  } as unknown as EventPersistence;
+
+  return {
+    persistence,
+    enqueueEvent,
+    enqueueEventAndWaitForSessionAck,
+    waitForSessionAck,
+    handleSideEffects,
+  };
+}
+
+function makeRecord(
+  sourceSeq: number,
+  sessionId: string,
+  event: SSEEventPayload,
+): EventOutboxRecord {
+  return {
+    stream_id: "stream-test",
+    source_seq: sourceSeq,
+    session_id: sessionId,
+    event_type: event.type,
+    payload: event,
+    searchable_text: null,
+    created_at: new Date().toISOString(),
+    semantic_dedupe_key: null,
+    session_effect: null,
+    payload_hash: `${sourceSeq}`.padStart(64, "0"),
+  };
+}
+
+function eventIdFromResult(result: unknown, fallback: number | undefined): number {
+  if (typeof result === "number") return result;
+  if (isRecord(result) && typeof result.source_seq === "number") return result.source_seq;
+  if (fallback !== undefined) return fallback;
+  throw new Error("event persistence test double received no event ID");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}

@@ -81,20 +81,32 @@ function createBroker(opts: {
   const row = opts.row === undefined ? sessionRow() : opts.row;
   const selectedProfile = opts.profile ?? profile;
   const getSession = vi.fn(async () => row);
-  const persistEvent = vi.fn(async () => 7);
+  const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+    record: { source_seq: 1 },
+    eventId: 7,
+  }));
   const handleSideEffects = vi.fn(async () => undefined);
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broker = new RealtimeBroker({
     agentRegistry: new AgentRegistry([selectedProfile]),
     db: { getSession } as unknown as SessionDB,
-    persistence: { persistEvent, handleSideEffects } as unknown as EventPersistence,
+    persistence: {
+      enqueueEventAndWaitForSessionAck,
+      handleSideEffects,
+    } as unknown as EventPersistence,
     broadcaster: { emitEventEnvelope } as unknown as SessionBroadcaster,
     logger,
     processEnv: opts.env ?? { OPENAI_REALTIME_TEST_KEY: "sk-test" },
     fetch: opts.fetch,
     modelCatalog: opts.modelCatalog,
   });
-  return { broker, getSession, persistEvent, handleSideEffects, emitEventEnvelope };
+  return {
+    broker,
+    getSession,
+    enqueueEventAndWaitForSessionAck,
+    handleSideEffects,
+    emitEventEnvelope,
+  };
 }
 
 describe("RealtimeBroker.createCall", () => {
@@ -106,7 +118,7 @@ describe("RealtimeBroker.createCall", () => {
       headers: { get: (name: string) => name.toLowerCase() === "location" ? "/v1/realtime/calls/call_123" : null },
       text: async () => "answer-sdp",
     }));
-    const { broker, persistEvent, emitEventEnvelope } = createBroker({ fetch });
+    const { broker, enqueueEventAndWaitForSessionAck, emitEventEnvelope } = createBroker({ fetch });
 
     const result = await broker.createCall({
       agentSessionId: "sess-rt",
@@ -135,14 +147,11 @@ describe("RealtimeBroker.createCall", () => {
       instructions: "Talk briefly.",
       audio: { output: { voice: "alloy" } },
     });
-    expect(persistEvent).toHaveBeenCalledWith(
+    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-rt",
       expect.objectContaining({ type: "realtime_status", status: "connected" }),
     );
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-rt",
-      expect.objectContaining({ type: "realtime_status", _event_id: 7 }),
-    );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("fails explicitly when provider api_key_env is missing from process env", async () => {
@@ -162,7 +171,10 @@ describe("RealtimeBroker.createCall", () => {
     const broker = new RealtimeBroker({
       agentRegistry: new AgentRegistry([claudeProfile]),
       db: { getSession: vi.fn(async () => sessionRow({ agent_id: "claude-agent" })) } as unknown as SessionDB,
-      persistence: { persistEvent: vi.fn(), handleSideEffects: vi.fn() } as unknown as EventPersistence,
+      persistence: {
+        enqueueEventAndWaitForSessionAck: vi.fn(),
+        handleSideEffects: vi.fn(),
+      } as unknown as EventPersistence,
       broadcaster: { emitEventEnvelope: vi.fn() } as unknown as SessionBroadcaster,
       logger,
       processEnv: { OPENAI_REALTIME_TEST_KEY: "sk-test" },
@@ -232,7 +244,7 @@ describe("RealtimeBroker.createCall", () => {
 
 describe("RealtimeBroker.relayEvent", () => {
   it("maps final user transcript to realtime_transcript", async () => {
-    const { broker, persistEvent } = createBroker();
+    const { broker, enqueueEventAndWaitForSessionAck } = createBroker();
     const result = await broker.relayEvent({
       agentSessionId: "sess-rt",
       callId: "call_123",
@@ -248,7 +260,7 @@ describe("RealtimeBroker.relayEvent", () => {
       normalizedType: "realtime_transcript",
       eventId: 7,
     });
-    expect(persistEvent).toHaveBeenCalledWith(
+    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-rt",
       expect.objectContaining({
         type: "realtime_transcript",
@@ -262,7 +274,7 @@ describe("RealtimeBroker.relayEvent", () => {
 
 describe("RealtimeBroker.resolveToolApproval", () => {
   it("persists resolved approval and returns data-channel decision event", async () => {
-    const { broker, persistEvent } = createBroker();
+    const { broker, enqueueEventAndWaitForSessionAck } = createBroker();
     const result = await broker.resolveToolApproval({
       agentSessionId: "sess-rt",
       approvalId: "approval-1",
@@ -277,7 +289,7 @@ describe("RealtimeBroker.resolveToolApproval", () => {
       decision: "rejected",
       message: "no",
     });
-    expect(persistEvent).toHaveBeenCalledWith(
+    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-rt",
       expect.objectContaining({
         type: "tool_approval_resolved",

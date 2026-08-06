@@ -50,23 +50,14 @@ export async function persistUserMessageEvent(
   task: Task,
   event: Record<string, unknown>,
   deps: UserMessageEventPublisherDeps,
-  options: { failOnError: boolean },
 ): Promise<void> {
-  if (!deps.persistence) return;
-  try {
-    const eventId = await deps.persistence.persistEvent(
-      task.agentSessionId,
-      event as SSEEventPayload,
-    );
-    task.lastEventId = eventId;
-    event._event_id = eventId;
-  } catch (err) {
-    deps.logger.warn(
-      { err, sessionId: task.agentSessionId },
-      "user_message persistEvent failed",
-    );
-    if (options.failOnError) throw err;
+  if (!deps.persistence) {
+    throw new Error("user_message durable event persistence is required");
   }
+  await deps.persistence.enqueueEvent(
+    task.agentSessionId,
+    event as SSEEventPayload,
+  );
 }
 
 export async function finishUserMessageEvent(
@@ -74,18 +65,6 @@ export async function finishUserMessageEvent(
   event: Record<string, unknown>,
   deps: UserMessageEventPublisherDeps,
 ): Promise<void> {
-  try {
-    await deps.broadcaster.emitEventEnvelope(
-      task.agentSessionId,
-      event as SSEEventPayload,
-    );
-  } catch (err) {
-    deps.logger.warn(
-      { err, sessionId: task.agentSessionId },
-      "user_message broadcast failed",
-    );
-  }
-
   if (!deps.persistence) return;
   try {
     await deps.persistence.handleSideEffects(

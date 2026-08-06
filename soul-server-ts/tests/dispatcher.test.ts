@@ -19,6 +19,8 @@ import { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
 import type { SessionBroadcaster } from "../src/upstream/session_broadcaster.js";
 
+import { makeEventPersistenceTestDouble } from "./task/event_persistence_test_double.js";
+
 const silentLogger = pino({ level: "silent" });
 
 const codexAgent: AgentProfile = {
@@ -847,12 +849,13 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     const broadcaster = {
       emitSessionUpdated: vi.fn(async () => undefined),
     } as unknown as SessionBroadcaster;
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const taskManager = new TaskManager(
       "eiaserinnys",
       db,
       broadcaster,
       silentLogger,
-      undefined,
+      persistenceDouble.persistence,
       undefined,
       registry,
     );
@@ -894,6 +897,10 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       termination_detail: null,
       review_state: "not_required",
     });
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({ type: "user_message", text: "이어가" }),
+    );
     expect(startExecution).toHaveBeenCalledTimes(1);
     const [resumedTask, agent] = startExecution.mock.calls[0] as [Task, AgentProfile];
     expect(agent).toBe(prodClaudeAgent);

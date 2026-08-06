@@ -22,8 +22,8 @@ export interface TaskInitialMessagePublisherDeps {
  * Owns first-turn system/user message event construction and side effects.
  *
  * TaskExecutor keeps first-turn prompt composition. This publisher keeps the
- * Python-parity wire payload keys, `_event_id` ride-along, and failure isolation
- * for the events that enter the timeline before the engine turn starts.
+ * Python-parity payload keys and durable ingress for events that enter the
+ * timeline before the engine turn starts.
  */
 export class TaskInitialMessagePublisher {
   constructor(private readonly deps: TaskInitialMessagePublisherDeps) {}
@@ -38,7 +38,7 @@ export class TaskInitialMessagePublisher {
       attachmentPaths: task.attachmentPaths,
       contextItems: ctx ? ctx.combinedContextItems : task.contextItems,
     });
-    await persistUserMessageEvent(task, event, this.deps, { failOnError: false });
+    await persistUserMessageEvent(task, event, this.deps);
     await finishUserMessageEvent(task, event, this.deps);
   }
 
@@ -51,30 +51,9 @@ export class TaskInitialMessagePublisher {
       type: "system_message",
       text: effectiveSystemPrompt,
     };
-    try {
-      const eventId = await this.deps.persistence.persistEvent(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-      task.lastEventId = eventId;
-      event._event_id = eventId;
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "system_message persistEvent failed",
-      );
-    }
-
-    try {
-      await this.deps.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "system_message broadcast failed",
-      );
-    }
+    await this.deps.persistence.enqueueEvent(
+      task.agentSessionId,
+      event as SSEEventPayload,
+    );
   }
 }

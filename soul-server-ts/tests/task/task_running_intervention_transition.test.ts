@@ -5,6 +5,8 @@ import { RunningInterventionTransition } from "../../src/task/task_running_inter
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
+
 const silentLogger = pino({ level: "silent" });
 
 function makeRunningTask(overrides: Partial<Task> = {}): Task {
@@ -43,9 +45,11 @@ describe("RunningInterventionTransition", () => {
       } as unknown as Task["engine"],
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await expect(
@@ -58,13 +62,14 @@ describe("RunningInterventionTransition", () => {
 
     expect(interruptForSteer).toHaveBeenCalledTimes(1);
     expect(steerActiveTurn).not.toHaveBeenCalled();
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "intervention_sent",
         text: "redirect the active turn",
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
       {
         text: "redirect the active turn",
@@ -87,9 +92,11 @@ describe("RunningInterventionTransition", () => {
         interruptForSteer,
       } as unknown as Task["engine"],
     });
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await expect(
@@ -113,9 +120,11 @@ describe("RunningInterventionTransition", () => {
       } as unknown as Task["engine"],
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await expect(
@@ -130,7 +139,7 @@ describe("RunningInterventionTransition", () => {
       prompt: "reach the active turn\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
     });
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "intervention_sent",
@@ -138,6 +147,7 @@ describe("RunningInterventionTransition", () => {
         attachments: ["/tmp/a.png"],
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
   });
 
@@ -158,9 +168,11 @@ describe("RunningInterventionTransition", () => {
       } as unknown as Task["engine"],
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
       liveRetryDelayMs: 25,
       sleep,
     });
@@ -171,10 +183,11 @@ describe("RunningInterventionTransition", () => {
 
     expect(sleep).toHaveBeenCalledWith(25);
     expect(steerActiveTurn).toHaveBeenCalledTimes(2);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "intervention_sent", text: "safe boundary" }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
   });
 
@@ -194,9 +207,11 @@ describe("RunningInterventionTransition", () => {
       } as unknown as Task["engine"],
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
       liveRetryDelayMs: 0,
     });
 
@@ -205,13 +220,14 @@ describe("RunningInterventionTransition", () => {
     ).resolves.toEqual({ queued: true, queuePosition: 1 });
 
     expect(steerActiveTurn).toHaveBeenCalledTimes(2);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "intervention_sent",
         text: "queue after unsafe boundary",
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
       { text: "queue after unsafe boundary", user: "alice" },
     ]);
@@ -220,9 +236,11 @@ describe("RunningInterventionTransition", () => {
   it("falls back to the next-turn queue when the engine has no live delivery surface", async () => {
     const task = makeRunningTask();
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await expect(
@@ -233,13 +251,14 @@ describe("RunningInterventionTransition", () => {
       }),
     ).resolves.toEqual({ queued: true, queuePosition: 1 });
 
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "intervention_sent",
         text: "next turn only",
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
       {
         text: "next turn only",
@@ -254,9 +273,11 @@ describe("RunningInterventionTransition", () => {
       interventionQueue: [{ text: "first", user: "bob" }],
     });
     const callerInfo = { source: "slack", display_name: "Alice" };
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await expect(
@@ -284,9 +305,11 @@ describe("RunningInterventionTransition", () => {
   it("can defer durable callers without mutating the queue", async () => {
     const task = makeRunningTask();
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await expect(
@@ -318,7 +341,7 @@ describe("RunningInterventionTransition", () => {
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
       persistence: {
-        persistEvent: vi.fn().mockRejectedValue(new Error("events DB unavailable")),
+        enqueueEvent: vi.fn().mockRejectedValue(new Error("events DB unavailable")),
         handleSideEffects: vi.fn(),
       } as never,
     });
@@ -349,9 +372,11 @@ describe("RunningInterventionTransition", () => {
       } as unknown as Task["engine"],
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
       liveRetryDelayMs: 10,
       sleep,
     });

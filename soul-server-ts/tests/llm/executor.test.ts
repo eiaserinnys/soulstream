@@ -43,7 +43,8 @@ describe("LlmExecutor", () => {
       }),
     );
     expect(harness.mocks.getFolderById).toHaveBeenCalledWith("llm");
-    expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.outboxAppend).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.appendEvent).not.toHaveBeenCalled();
     expect(harness.mocks.updateSession).toHaveBeenCalledWith(
       response.session_id,
       expect.objectContaining({
@@ -170,7 +171,8 @@ describe("LlmExecutor", () => {
     ).rejects.toThrow(/rate limited/);
 
     const sessionId = harness.mocks.registerSession.mock.calls[0]?.[0].sessionId;
-    expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.outboxAppend).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.appendEvent).not.toHaveBeenCalled();
     expect(harness.mocks.updateSession).toHaveBeenCalledWith(
       sessionId,
       expect.objectContaining({

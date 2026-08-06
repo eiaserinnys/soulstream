@@ -44,38 +44,36 @@ export class SessionNotificationPublisher {
       _dedupe_key: `session_notification:${message.deliveryId}`,
     };
 
-    let shouldBroadcast = true;
-    if (this.deps.persistence) {
-      try {
-        const persisted = await this.deps.persistence.persistEventWithResult(
-          task.agentSessionId,
-          event,
-        );
-        task.lastEventId = persisted.eventId;
-        (event as Record<string, unknown>)._event_id = persisted.eventId;
-        shouldBroadcast = persisted.inserted;
-        if (persisted.inserted) {
-          await this.deps.persistence.handleSideEffects(
-            task.agentSessionId,
-            event,
-            task,
-          );
-        }
-      } catch (err) {
-        this.deps.logger.warn(
-          { err, sessionId: task.agentSessionId, deliveryId: message.deliveryId },
-          "session_notification persistence failed after delivery; ledger state retained",
-        );
-        return false;
-      }
+    if (!this.deps.persistence) {
+      this.deps.logger.warn(
+        { sessionId: task.agentSessionId, deliveryId: message.deliveryId },
+        "session_notification durable event persistence is unavailable",
+      );
+      return false;
     }
-    if (!shouldBroadcast) return true;
     try {
-      await this.deps.broadcaster.emitEventEnvelope(task.agentSessionId, event);
+      const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
+        task.agentSessionId,
+        event,
+      );
+      task.lastEventId = eventId;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, deliveryId: message.deliveryId },
-        "session_notification broadcast failed",
+        "session_notification persistence failed after delivery; ledger state retained",
+      );
+      return false;
+    }
+    try {
+      await this.deps.persistence.handleSideEffects(
+        task.agentSessionId,
+        event,
+        task,
+      );
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, deliveryId: message.deliveryId },
+        "session_notification handleSideEffects failed after durable enqueue",
       );
     }
     return true;

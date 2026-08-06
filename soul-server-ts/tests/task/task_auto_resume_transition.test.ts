@@ -11,6 +11,8 @@ import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
+
 const silentLogger = pino({ level: "silent" });
 
 function makeTerminalTask(overrides: Partial<Task> = {}): Task {
@@ -47,7 +49,7 @@ describe("AutoResumeTransition", () => {
       expect(task.interventionQueue).toHaveLength(1);
       expect(fields).toEqual({
         status: "running",
-        last_event_id: 101,
+        last_event_id: 7,
         termination_reason: null,
         termination_detail: null,
         review_state: "not_required",
@@ -55,8 +57,8 @@ describe("AutoResumeTransition", () => {
     });
     const db = { appendMetadata, updateSession } as unknown as SessionDB;
 
-    const persistEvent = vi.fn(async (_sessionId, event) => {
-      order.push("persistEvent");
+    const enqueueEvent = vi.fn(async (_sessionId, event) => {
+      order.push("enqueueEvent");
       expect(event).toMatchObject({
         type: "user_message",
         user: "Alice",
@@ -65,15 +67,15 @@ describe("AutoResumeTransition", () => {
         attachments: ["/tmp/a.png"],
       });
       expect((event as Record<string, unknown>)._event_id).toBeUndefined();
-      return 101;
+      return { source_seq: 1 };
     });
     const handleSideEffects = vi.fn(async (_sessionId, event, handledTask) => {
       order.push("handleSideEffects");
       expect(handledTask).toBe(task);
-      expect(task.lastEventId).toBe(101);
-      expect((event as Record<string, unknown>)._event_id).toBe(101);
+      expect(task.lastEventId).toBe(7);
+      expect((event as Record<string, unknown>)._event_id).toBeUndefined();
     });
-    const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
+    const persistence = { enqueueEvent, handleSideEffects } as unknown as EventPersistence;
 
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const emitSessionUpdated = vi.fn(async (updatedTask) => {
@@ -116,7 +118,7 @@ describe("AutoResumeTransition", () => {
 
     expect(order).toEqual([
       "appendMetadata",
-      "persistEvent",
+      "enqueueEvent",
       "handleSideEffects",
       "updateSession",
       "emitSessionUpdated",
@@ -126,16 +128,9 @@ describe("AutoResumeTransition", () => {
     expect(task.clientId).toBe("alice");
     expect(task.callerInfo).toBe(callerInfo);
     expect(task.attachmentPaths).toEqual(["/tmp/a.png"]);
-    expect(persistEvent).toHaveBeenCalledTimes(1);
+    expect(enqueueEvent).toHaveBeenCalledTimes(1);
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "s1",
-      expect.objectContaining({
-        type: "user_message",
-        text: "resume text",
-        _event_id: 101,
-      }),
-    );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.metadata).toContainEqual({ type: "caller_info", value: callerInfo });
     expect(appendMetadata).toHaveBeenCalledWith("s1", {
       type: "caller_info",
@@ -145,7 +140,7 @@ describe("AutoResumeTransition", () => {
 
   it("rejects auto-resume before changing task state when user_message persistence fails", async () => {
     const task = makeTerminalTask({ status: "interrupted" });
-    const persistEvent = vi.fn().mockRejectedValue(new Error("events DB unavailable"));
+    const enqueueEvent = vi.fn().mockRejectedValue(new Error("events DB unavailable"));
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const updateSession = vi.fn().mockResolvedValue(undefined);
     const onResume = vi.fn();
@@ -157,7 +152,7 @@ describe("AutoResumeTransition", () => {
       } as unknown as SessionBroadcaster,
       logger: silentLogger,
       persistence: {
-        persistEvent,
+        enqueueEvent,
         handleSideEffects: vi.fn(),
       } as unknown as EventPersistence,
     });
@@ -208,11 +203,9 @@ describe("AutoResumeTransition", () => {
       terminationEventRecorded: true,
     });
     const updateSession = vi.fn().mockResolvedValue(undefined);
-    const appendEvent = vi.fn().mockResolvedValue(12);
     const db = {
       appendMetadata: vi.fn(),
       updateSession,
-      appendEvent,
     } as unknown as SessionDB;
     const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -220,15 +213,18 @@ describe("AutoResumeTransition", () => {
       emitEventEnvelope,
       emitSessionUpdated,
     } as unknown as SessionBroadcaster;
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const autoResume = new AutoResumeTransition({
       db,
       broadcaster,
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
     const lifecycle = new TaskLifecycleTransition({
       db,
       broadcaster,
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await autoResume.resume(task, { text: "retry", user: "u" }, vi.fn());
@@ -246,25 +242,17 @@ describe("AutoResumeTransition", () => {
     expect(task.terminationReason).toBe("limit_hit");
     expect(task.terminationDetail).toBe("fresh limit");
     expect(task.terminationEventRecorded).toBe(true);
-    expect(appendEvent).toHaveBeenCalledTimes(1);
-    expect(appendEvent).toHaveBeenCalledWith({
-      sessionId: "s1",
-      eventType: "session_ended",
-      payload: expect.stringContaining('"termination_reason":"limit_hit"'),
-      searchableText: "",
-      createdAt: task.completedAt,
-    });
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "session_ended",
         termination_reason: "limit_hit",
-        _event_id: 12,
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(updateSession).toHaveBeenLastCalledWith("s1", {
       status: "error",
-      last_event_id: 12,
+      last_event_id: task.lastEventId,
       termination_reason: "limit_hit",
       termination_detail: "fresh limit",
       review_state: "acknowledged",
@@ -287,6 +275,9 @@ describe("AutoResumeTransition", () => {
       engine,
       executionPromise: Promise.resolve(),
     });
+    const persistenceDouble = makeEventPersistenceTestDouble(async () => {
+      order.push("handleSideEffects");
+    });
 
     const transition = new AutoResumeTransition({
       db: {
@@ -302,6 +293,7 @@ describe("AutoResumeTransition", () => {
         }),
       } as unknown as SessionBroadcaster,
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
     const onResume = vi.fn((resumedTask: Task) => {
       order.push("onResume");
@@ -321,7 +313,13 @@ describe("AutoResumeTransition", () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(task.engine).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
-    expect(order).toEqual(["close", "updateSession", "emitSessionUpdated", "onResume"]);
+    expect(order).toEqual([
+      "close",
+      "handleSideEffects",
+      "updateSession",
+      "emitSessionUpdated",
+      "onResume",
+    ]);
   });
 
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {
@@ -331,10 +329,12 @@ describe("AutoResumeTransition", () => {
     });
     const updateSession = vi.fn().mockResolvedValue(undefined);
     const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new AutoResumeTransition({
       db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
       broadcaster: { emitSessionUpdated } as unknown as SessionBroadcaster,
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
     });
 
     await transition.resume(task, { text: "follow up", user: "human" }, vi.fn());
@@ -371,6 +371,7 @@ describe("AutoResumeTransition", () => {
     };
     const agentRegistry = { get: vi.fn().mockReturnValue(agent) } as unknown as AgentRegistry;
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new AutoResumeTransition({
       db: { updateSession: vi.fn(), appendMetadata: vi.fn() } as unknown as SessionDB,
       broadcaster: {
@@ -378,6 +379,7 @@ describe("AutoResumeTransition", () => {
         emitSessionUpdated: vi.fn(),
       } as unknown as SessionBroadcaster,
       logger: silentLogger,
+      persistence: persistenceDouble.persistence,
       contextBuilder,
       agentRegistry,
     });
@@ -393,7 +395,7 @@ describe("AutoResumeTransition", () => {
     );
 
     expect(buildResumeContextItems).not.toHaveBeenCalled();
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "user_message",
@@ -401,6 +403,7 @@ describe("AutoResumeTransition", () => {
         context: [contextItem],
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.contextItems).toEqual([contextItem]);
   });
 });

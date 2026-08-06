@@ -24,8 +24,11 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeMocks() {
   const updateSession = vi.fn().mockResolvedValue(undefined);
-  const appendEvent = vi.fn().mockResolvedValue(8);
-  const db = { updateSession, appendEvent } as unknown as SessionDB;
+  const db = { updateSession } as unknown as SessionDB;
+  const enqueueEventAndWaitForSessionAck = vi.fn().mockResolvedValue({
+    record: { source_seq: 8 },
+    eventId: 8,
+  });
 
   const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
   const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -35,12 +38,13 @@ function makeMocks() {
     db,
     broadcaster,
     logger: silentLogger,
+    persistence: { enqueueEventAndWaitForSessionAck } as never,
   });
 
   return {
     transition,
     updateSession,
-    appendEvent,
+    enqueueEventAndWaitForSessionAck,
     emitSessionUpdated,
     emitEventEnvelope,
   };
@@ -107,32 +111,24 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     );
   });
 
-  it("emits session_ended once when finalizing a completed task", async () => {
-    const { transition, appendEvent, emitEventEnvelope } = makeMocks();
+  it("enqueues and ACKs session_ended once when finalizing a completed task", async () => {
+    const { transition, enqueueEventAndWaitForSessionAck, emitEventEnvelope } = makeMocks();
     const task = makeTask();
 
     await transition.finalizeExternalTask(task, { result: "done" });
     await transition.persistExecutorFinalState(task);
 
     expect(task.terminationReason).toBe("completed_ok");
-    expect(appendEvent).toHaveBeenCalledTimes(1);
-    expect(appendEvent).toHaveBeenCalledWith({
-      sessionId: "sess-1",
-      eventType: "session_ended",
-      payload: expect.stringContaining('"termination_reason":"completed_ok"'),
-      searchableText: "",
-      createdAt: task.completedAt,
-    });
-    expect(emitEventEnvelope).toHaveBeenCalledTimes(1);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
+    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledTimes(1);
+    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({
         type: "session_ended",
         status: "completed",
         termination_reason: "completed_ok",
-        _event_id: 8,
       }),
     );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("lets completed_ok outrank a prior limit_hit hint", async () => {

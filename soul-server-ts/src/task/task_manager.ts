@@ -100,10 +100,7 @@ export class TaskManager {
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
-    /**
-     * intervention_sent 영속화에 사용. undefined일 때 영속화는 skip
-     * (legacy 호출자·테스트 환경 호환 — broadcast만 발행).
-     */
+    /** Persistent publisher의 durable outbox ingress. 누락 시 발행 경로가 명시적으로 실패한다. */
     persistence?: EventPersistence,
     /**
      * Phase A context 정본 진입점 (atom d7a1ad86 차단):
@@ -138,6 +135,7 @@ export class TaskManager {
       db,
       broadcaster,
       logger,
+      persistence,
     });
     this.lifecycleRoute = new TaskLifecycleRoute({
       getTask: (sessionId) => this.tasks.get(sessionId),

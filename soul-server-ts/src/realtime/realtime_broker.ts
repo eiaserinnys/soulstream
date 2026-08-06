@@ -258,34 +258,21 @@ export class RealtimeBroker {
     event: SSEEventPayload,
   ): Promise<number | undefined> {
     const task = taskFromSessionRow(row);
-    let eventId: number | undefined;
     try {
-      eventId = await this.deps.persistence.persistEvent(row.session_id, event);
+      const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
+        row.session_id,
+        event,
+      );
       task.lastEventId = eventId;
-      (event as Record<string, unknown>)._event_id = eventId;
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: row.session_id, eventType: (event as { type?: string }).type },
-        "realtime persistEvent failed",
-      );
-    }
-    try {
-      await this.deps.broadcaster.emitEventEnvelope(row.session_id, event);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: row.session_id, eventType: (event as { type?: string }).type },
-        "realtime emitEventEnvelope failed",
-      );
-    }
-    try {
       await this.deps.persistence.handleSideEffects(row.session_id, event, task);
+      return eventId;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: row.session_id, eventType: (event as { type?: string }).type },
-        "realtime handleSideEffects failed",
+        "realtime durable event ingress failed",
       );
+      throw err;
     }
-    return eventId;
   }
 }
 

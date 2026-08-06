@@ -79,7 +79,7 @@ export class TaskExecutor {
   constructor(
     private readonly engineFactory: EngineFactory,
     db: SessionDB,
-    persistence: EventPersistence,
+    private readonly persistence: EventPersistence,
     broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     /**
@@ -107,6 +107,7 @@ export class TaskExecutor {
       db,
       broadcaster,
       logger: this.logger,
+      persistence,
     });
     this.executorFinalizer = new TaskExecutorFinalizer({
       lifecycleTransition: this.lifecycleTransition,
@@ -268,6 +269,12 @@ export class TaskExecutor {
         } catch (err) {
           await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
+        }
+        const lastAcknowledgedEventId = await this.persistence.waitForSessionAck(
+          task.agentSessionId,
+        );
+        if (lastAcknowledgedEventId !== null) {
+          task.lastEventId = lastAcknowledgedEventId;
         }
         await this.flushClaudeRuntimeTaskFollowups(task);
         const followupStalled = await this.handleClaudeRuntimeFollowupStall(

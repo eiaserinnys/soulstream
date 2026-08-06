@@ -18,23 +18,23 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makeSubject(options: {
-  persistEvent?: ReturnType<typeof vi.fn>;
+  enqueueEvent?: ReturnType<typeof vi.fn>;
   handleSideEffects?: ReturnType<typeof vi.fn>;
   emitEventEnvelope?: ReturnType<typeof vi.fn>;
 } = {}) {
-  const persistEvent = options.persistEvent ?? vi.fn().mockResolvedValue(77);
+  const enqueueEvent = options.enqueueEvent ?? vi.fn().mockResolvedValue({ source_seq: 77 });
   const handleSideEffects = options.handleSideEffects ?? vi.fn().mockResolvedValue(undefined);
   const emitEventEnvelope = options.emitEventEnvelope ?? vi.fn().mockResolvedValue(undefined);
   const logger = { warn: vi.fn() } as unknown as Logger;
   const publisher = new TaskInitialMessagePublisher({
     broadcaster: { emitEventEnvelope } as never,
     logger,
-    persistence: { persistEvent, handleSideEffects } as never,
+    persistence: { enqueueEvent, handleSideEffects } as never,
   });
 
   return {
     publisher,
-    persistEvent,
+    enqueueEvent,
     handleSideEffects,
     emitEventEnvelope,
     logger,
@@ -51,7 +51,7 @@ describe("TaskInitialMessagePublisher", () => {
     vi.useRealTimers();
   });
 
-  it("publishes system_message before user_message with Python parity payload keys", async () => {
+  it("durably enqueues system_message before user_message without worker broadcast", async () => {
     const task = makeTask({
       callerInfo: {
         source: "agent",
@@ -62,14 +62,11 @@ describe("TaskInitialMessagePublisher", () => {
     });
     const {
       publisher,
-      persistEvent,
+      enqueueEvent,
       handleSideEffects,
       emitEventEnvelope,
     } = makeSubject({
-      persistEvent: vi.fn(async (_sessionId, event) => {
-        expect((event as Record<string, unknown>)._event_id).toBeUndefined();
-        return ((event as { type: string }).type === "system_message") ? 10 : 11;
-      }),
+      enqueueEvent: vi.fn(async () => ({ source_seq: 11 })),
     });
 
     await publisher.publishInitialMessages(task, {
@@ -78,16 +75,15 @@ describe("TaskInitialMessagePublisher", () => {
       assembledPrompt: "사용자 요청",
     });
 
-    expect(persistEvent.mock.calls.map((c) => (c[1] as { type: string }).type)).toEqual([
+    expect(enqueueEvent.mock.calls.map((c) => (c[1] as { type: string }).type)).toEqual([
       "system_message",
       "user_message",
     ]);
-    expect(persistEvent.mock.calls[0][1]).toEqual({
+    expect(enqueueEvent.mock.calls[0][1]).toEqual({
       type: "system_message",
       text: "system prompt",
-      _event_id: 10,
     });
-    expect(persistEvent.mock.calls[1][1]).toEqual({
+    expect(enqueueEvent.mock.calls[1][1]).toEqual({
       type: "user_message",
       user: "로젤린",
       text: "사용자 요청",
@@ -95,39 +91,35 @@ describe("TaskInitialMessagePublisher", () => {
       caller_info: task.callerInfo,
       attachments: ["/tmp/incoming/sess/a.png"],
       context: [{ key: "atom_context", label: "atom", content: "# tree" }],
-      _event_id: 11,
     });
-    expect(task.lastEventId).toBe(11);
-    expect(emitEventEnvelope.mock.calls.map((c) => (c[1] as { type: string }).type)).toEqual([
-      "system_message",
-      "user_message",
-    ]);
+    expect(task.lastEventId).toBe(3);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
     expect(handleSideEffects).toHaveBeenCalledWith(
       "sess-initial",
-      expect.objectContaining({ type: "user_message", _event_id: 11 }),
+      expect.objectContaining({ type: "user_message" }),
       task,
     );
   });
 
   it("skips system_message and omits optional user_message keys when inputs are absent", async () => {
     const task = makeTask();
-    const { publisher, persistEvent, emitEventEnvelope } = makeSubject();
+    const { publisher, enqueueEvent, emitEventEnvelope } = makeSubject();
 
     await publisher.publishInitialMessages(task, {
       combinedContextItems: [],
       assembledPrompt: "사용자 요청",
     });
 
-    expect(persistEvent).toHaveBeenCalledTimes(1);
-    expect(persistEvent.mock.calls[0][1]).toEqual({
+    expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    expect(enqueueEvent.mock.calls[0][1]).toEqual({
       type: "user_message",
       user: "unknown",
       text: "사용자 요청",
       timestamp: 1779505200,
-      _event_id: 77,
     });
-    const userEvent = emitEventEnvelope.mock.calls[0][1] as Record<string, unknown>;
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    const userEvent = enqueueEvent.mock.calls[0][1] as Record<string, unknown>;
     expect(userEvent.caller_info).toBeUndefined();
     expect(userEvent.attachments).toBeUndefined();
     expect(userEvent.context).toBeUndefined();
@@ -137,11 +129,11 @@ describe("TaskInitialMessagePublisher", () => {
     const assembledPrompt =
       "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘.";
     const task = makeTask({ prompt: assembledPrompt });
-    const { publisher, persistEvent } = makeSubject();
+    const { publisher, enqueueEvent } = makeSubject();
 
     await publisher.publishInitialMessages(task);
 
-    expect(persistEvent).toHaveBeenCalledWith(
+    expect(enqueueEvent).toHaveBeenCalledWith(
       "sess-initial",
       expect.objectContaining({
         type: "user_message",
@@ -158,105 +150,70 @@ describe("TaskInitialMessagePublisher", () => {
         { key: "handover", label: "Handover", content: "done" },
       ],
     });
-    const { publisher, persistEvent, emitEventEnvelope } = makeSubject();
+    const { publisher, enqueueEvent, emitEventEnvelope } = makeSubject();
 
     await publisher.publishInitialMessages(task);
 
-    expect(persistEvent).toHaveBeenCalledWith(
+    expect(enqueueEvent).toHaveBeenCalledWith(
       "sess-initial",
       expect.objectContaining({
         type: "user_message",
         context: [{ key: "handover", label: "Handover", content: "done" }],
       }),
     );
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-initial",
-      expect.objectContaining({
-        type: "user_message",
-        context: [{ key: "handover", label: "Handover", content: "done" }],
-      }),
-    );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("isolates system_message persistence failure and still publishes user_message", async () => {
+  it("stops the initial turn when system_message durable enqueue fails", async () => {
     const task = makeTask();
     const {
       publisher,
-      persistEvent,
+      enqueueEvent,
       handleSideEffects,
       emitEventEnvelope,
       logger,
     } = makeSubject({
-      persistEvent: vi
+      enqueueEvent: vi
         .fn()
-        .mockRejectedValueOnce(new Error("system db down"))
-        .mockResolvedValueOnce(42),
+        .mockRejectedValueOnce(new Error("outbox down")),
     });
 
-    await publisher.publishInitialMessages(task, {
+    await expect(publisher.publishInitialMessages(task, {
       effectiveSystemPrompt: "system prompt",
       combinedContextItems: [],
       assembledPrompt: "사용자 요청",
-    });
+    })).rejects.toThrow("outbox down");
 
-    expect(persistEvent).toHaveBeenCalledTimes(2);
-    expect(task.lastEventId).toBe(42);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-initial",
-      { type: "system_message", text: "system prompt" },
-    );
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-initial",
-      expect.objectContaining({ type: "user_message", _event_id: 42 }),
-    );
-    expect(handleSideEffects).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "sess-initial" }),
-      "system_message persistEvent failed",
-    );
+    expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    expect(task.lastEventId).toBe(3);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(handleSideEffects).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it("isolates user_message persistence, broadcast, and side-effect failures independently", async () => {
+  it("stops the initial turn when user_message durable enqueue fails", async () => {
     const task = makeTask();
     const {
       publisher,
-      persistEvent,
+      enqueueEvent,
       handleSideEffects,
       emitEventEnvelope,
       logger,
     } = makeSubject({
-      persistEvent: vi.fn().mockRejectedValue(new Error("user db down")),
+      enqueueEvent: vi.fn().mockRejectedValue(new Error("outbox down")),
       emitEventEnvelope: vi.fn().mockRejectedValue(new Error("wire down")),
       handleSideEffects: vi.fn().mockRejectedValue(new Error("side effect down")),
     });
 
-    await publisher.publishInitialMessages(task);
+    await expect(publisher.publishInitialMessages(task)).rejects.toThrow("outbox down");
 
     expect(task.lastEventId).toBe(3);
-    expect(persistEvent).toHaveBeenCalledWith(
+    expect(enqueueEvent).toHaveBeenCalledWith(
       "sess-initial",
       expect.not.objectContaining({ _event_id: expect.anything() }),
     );
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-initial",
-      expect.not.objectContaining({ _event_id: expect.anything() }),
-    );
-    expect(handleSideEffects).toHaveBeenCalledWith(
-      "sess-initial",
-      expect.not.objectContaining({ _event_id: expect.anything() }),
-      task,
-    );
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "sess-initial" }),
-      "user_message persistEvent failed",
-    );
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "sess-initial" }),
-      "user_message broadcast failed",
-    );
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "sess-initial" }),
-      "user_message handleSideEffects failed",
-    );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(handleSideEffects).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

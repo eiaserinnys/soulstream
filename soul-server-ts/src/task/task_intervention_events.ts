@@ -40,7 +40,6 @@ export async function publishInterventionSent(
 ): Promise<void> {
   const interventionEvent = buildInterventionSentEvent(message);
   await persistIntervention(task, interventionEvent, deps);
-  await broadcastIntervention(task, interventionEvent, deps);
 }
 
 async function persistIntervention(
@@ -48,14 +47,14 @@ async function persistIntervention(
   interventionEvent: Record<string, unknown>,
   deps: InterventionEventPublisherDeps,
 ): Promise<void> {
-  if (!deps.persistence) return;
+  if (!deps.persistence) {
+    throw new Error("intervention_sent durable event persistence is required");
+  }
   try {
-    const eventId = await deps.persistence.persistEvent(
+    await deps.persistence.enqueueEvent(
       task.agentSessionId,
       interventionEvent as SSEEventPayload,
     );
-    task.lastEventId = eventId;
-    interventionEvent._event_id = eventId;
   } catch (err) {
     deps.logger.warn(
       { err, sessionId: task.agentSessionId },
@@ -74,24 +73,6 @@ async function persistIntervention(
     deps.logger.warn(
       { err, sessionId: task.agentSessionId },
       "intervention_sent handleSideEffects failed",
-    );
-  }
-}
-
-async function broadcastIntervention(
-  task: Task,
-  interventionEvent: Record<string, unknown>,
-  deps: InterventionEventPublisherDeps,
-): Promise<void> {
-  try {
-    await deps.broadcaster.emitEventEnvelope(
-      task.agentSessionId,
-      interventionEvent as SSEEventPayload,
-    );
-  } catch (err) {
-    deps.logger.warn(
-      { err, sessionId: task.agentSessionId },
-      "intervention_sent broadcast failed",
     );
   }
 }

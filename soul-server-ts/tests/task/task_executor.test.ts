@@ -2,7 +2,6 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
   EngineExecuteParams,
@@ -18,6 +17,8 @@ import { TaskDeliveryTurnReceipt } from
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -69,17 +70,17 @@ function makeTask(): Task {
 }
 
 function makeMocks() {
-  let nextEventId = 0;
-  const persistEvent = vi.fn(async () => ++nextEventId);
-  const handleSideEffects = vi.fn(async (_sessionId: string, event: SSEEventPayload, task: Task) => {
-    if (event.type === "text_delta" && typeof event.text === "string") {
-      task.lastAssistantText = event.text;
-    }
-    if (event.type === "assistant_message" && typeof event.content === "string") {
-      task.lastAssistantText = event.content;
-    }
-  });
-  const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
+  const persistenceDouble = makeEventPersistenceTestDouble(
+    async (_sessionId: string, event: SSEEventPayload, task: Task) => {
+      if (event.type === "text_delta" && typeof event.text === "string") {
+        task.lastAssistantText = event.text;
+      }
+      if (event.type === "assistant_message" && typeof event.content === "string") {
+        task.lastAssistantText = event.content;
+      }
+    },
+  );
+  const { persistence, enqueueEvent: persistEvent, handleSideEffects } = persistenceDouble;
 
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const setClaudeSessionId = vi.fn().mockResolvedValue(undefined);
@@ -94,6 +95,9 @@ function makeMocks() {
     db,
     broadcaster,
     persistEvent,
+    waitForSessionAck: persistenceDouble.waitForSessionAck,
+    enqueueEventAndWaitForSessionAck:
+      persistenceDouble.enqueueEventAndWaitForSessionAck,
     handleSideEffects,
     updateSession,
     setClaudeSessionId,
@@ -408,7 +412,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
   });
 
-  it("정상 흐름: durable 이벤트만 persist + 모든 이벤트 broadcast/side effect + 완료 후 session_updated", async () => {
+  it("정상 흐름: persistent 이벤트는 ingress, transient 이벤트만 wire + 완료 후 session_updated", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-1" } as SSEEventPayload,
@@ -430,10 +434,9 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // B-5: user_message + session + assistant_message만 durable 저장.
-    // text_delta/text_end는 live transport 전용이라 persist하지 않는다.
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(6);
+    // user_message + session + assistant_message + session_ended만 durable 저장.
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(2);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(5);
 
     // 첫 persistEvent는 user_message 영속화
@@ -443,14 +446,14 @@ describe("TaskExecutor.startExecution", () => {
     });
 
     expect(task.status).toBe("completed");
-    expect(task.lastEventId).toBe(3);
+    expect(task.lastEventId).toBe(4);
     expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.engine).toBeUndefined();
 
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
-      last_event_id: 3,
+      last_event_id: 4,
       termination_reason: "completed_ok",
     }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
@@ -515,25 +518,23 @@ describe("TaskExecutor.startExecution", () => {
     expect(persistedTypes).toEqual([
       "user_message",
       "assistant_message",
+      "session_ended",
     ]);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(7);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(4);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
     const broadcastEventIds = mocks.emitEventEnvelope.mock.calls.map(
       (c) => (c[1] as Record<string, unknown>)._event_id,
     );
     expect(broadcastEventIds).toEqual([
-      1,
       undefined,
       undefined,
-      undefined,
-      2,
       undefined,
       undefined,
     ]);
-    expect(task.lastEventId).toBe(2);
+    expect(task.lastEventId).toBe(3);
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
-      last_event_id: 2,
+      last_event_id: 3,
       termination_reason: "completed_ok",
     }));
   });
@@ -637,7 +638,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "claude-sess-1");
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
-      last_event_id: 4,
+      last_event_id: 5,
       termination_reason: "completed_ok",
     }));
   });
@@ -702,7 +703,7 @@ describe("TaskExecutor.startExecution", () => {
     task.profileId = "agent-openai";
     executor.startExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
 
-    await waitFor(() => mocks.emitEventEnvelope.mock.calls.some(
+    await waitFor(() => mocks.persistEvent.mock.calls.some(
       (c) => (c[1] as { type: string }).type === "tool_approval_requested",
     ));
     const approvalResult = await (task.engine as EnginePort & SupportsToolApproval)
@@ -834,7 +835,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalled();
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
-      last_event_id: 2,  // B-5: user_message(1) + session(2)
+      last_event_id: 3,  // user_message + session + session_ended
       termination_reason: "unknown",
     }));
   });
@@ -873,7 +874,7 @@ describe("TaskExecutor.startExecution", () => {
     });
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
-      last_event_id: 2,
+      last_event_id: 3,
       termination_reason: "error_aborted",
     }));
   });
@@ -1037,7 +1038,7 @@ describe("TaskExecutor.startExecution", () => {
     });
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
-      last_event_id: 7,
+      last_event_id: 8,
       termination_reason: "error_aborted",
     }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
@@ -1099,7 +1100,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(pendingAfterTurnError).toBeUndefined();
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
-      last_event_id: 2,
+      last_event_id: 3,
       termination_reason: "completed_ok",
     }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
@@ -1164,17 +1165,9 @@ describe("TaskExecutor.startExecution", () => {
       recovery_hint: expect.stringContaining("Send another message"),
       error_code: "claude_runtime_pending_after_turn",
     });
-    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+    expect(mocks.emitEventEnvelope.mock.calls.some(
       (call) => (call[1] as { type: string }).type === "error",
-    );
-    expect(errorBroadcast?.[1]).toMatchObject({
-      type: "error",
-      fatal: true,
-      recoverable: true,
-      recovery_hint: expect.stringContaining("Send another message"),
-      error_code: "claude_runtime_pending_after_turn",
-      _event_id: expect.any(Number),
-    });
+    )).toBe(false);
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
       last_event_id: expect.any(Number),
@@ -1183,7 +1176,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
-  it("persistEvent 실패는 격리 (계속 진행)", async () => {
+  it("persistent ingress 실패는 turn을 중단하고 terminal error를 남긴다", async () => {
     const mocks = makeMocks();
     mocks.persistEvent.mockImplementationOnce(async () => {
       throw new Error("db down");
@@ -1205,12 +1198,10 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // 첫 persistEvent throw(user_message 영속화)에도 status=completed (격리)
-    // user_message(1, throw) + assistant_message(2) + complete(3) = 3건 호출
-    expect(task.status).toBe("completed");
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
-    // emitEventEnvelope는 user_message + 2건 = 3건 (persistEvent throw에도 broadcast는 호출됨)
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(4);
+    expect(task.status).toBe("error");
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(2);
+    expect((mocks.persistEvent.mock.calls[1][1] as SSEEventPayload).type).toBe("session_ended");
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("session 이벤트의 session_id가 task.codexThreadId에 박힘 (1회만)", async () => {
@@ -1287,7 +1278,7 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(task.status).toBe("completed");
     // user_message(1) + assistant_message + complete = 3건 (첫 handleSideEffects throw에도 다음 이벤트 진행)
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(3);
   });
 
@@ -1317,7 +1308,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("thr-codex-1");  // 메모리 박기는 throw 전에 완료
     // user_message(1) + session(2) + assistant_message(3) = 3건 durable 저장
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
     expect(mocks.emitSessionUpdated).toHaveBeenCalled();
   });
 
@@ -1405,7 +1396,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.interventionQueue).toEqual([]);
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
-      last_event_id: 0,
+      last_event_id: 1,
       termination_reason: "unknown",
     }));
     const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
@@ -2146,12 +2137,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const compactBroadcast = mocks.emitEventEnvelope.mock.calls.find(
       (call) => (call[1] as { type: string }).type === "compact",
     );
-    expect(compactBroadcast?.[1]).toMatchObject({
-      type: "compact",
-      trigger: "auto",
-      message: "context compacted",
-      _event_id: expect.any(Number),
-    });
+    expect(compactBroadcast).toBeUndefined();
   });
 
   it("compact 후 첫 queued intervention만 full context/systemPrompt를 재주입한다", async () => {
@@ -2237,15 +2223,9 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-// ride-along 5자리: `_event_id` envelope 운반 (Ft1NJquP — Python `task_executor.py:248` 정합)
-describe("TaskExecutor engine event publishing — _event_id ride-along (Python L248 정합)", () => {
-  // 분석 캐시 `20260518-1338-codex-live-event-id-race.md`: persistEvent에서 받은 id를 event dict에
-  // `_event_id`로 박은 뒤 broadcast. orch session_events.py가 SSE id로 추출하여 대시보드
-  // tree-placer가 dedup·순서 보장. 누락 시 모든 live 이벤트가 eventId=0으로 같은 키 취급되어
-  // text_start skip → text_delta/end 미박힘 (라이브 결함 root cause).
-
-  it("매 event broadcast envelope에 _event_id가 박힌다 (persistEvent eventId 정합)", async () => {
-    const mocks = makeMocks();  // persistEvent가 nextEventId++ 반환
+describe("TaskExecutor engine event publishing — durable ingress / transient wire split", () => {
+  it("persistent 이벤트는 ingress에만, text lifecycle은 ID 없는 wire에만 둔다", async () => {
+    const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-x" } as SSEEventPayload,
       { type: "text_start", timestamp: 1 } as SSEEventPayload,
@@ -2259,24 +2239,26 @@ describe("TaskExecutor engine event publishing — _event_id ride-along (Python 
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // user_message + 6 turn events = 7 emit
-    const emitCalls = mocks.emitEventEnvelope.mock.calls;
-    const eventIdsByType = new Map(
-      emitCalls.map((call) => {
-        const payload = call[1] as Record<string, unknown>;
-        return [payload.type, payload._event_id];
-      }),
+    const persistedTypes = mocks.persistEvent.mock.calls.map(
+      (call) => (call[1] as { type: string }).type,
     );
-    expect(eventIdsByType.get("user_message")).toEqual(expect.any(Number));
-    expect(eventIdsByType.get("session")).toEqual(expect.any(Number));
-    expect(eventIdsByType.get("text_start")).toBeUndefined();
-    expect(eventIdsByType.get("text_delta")).toBeUndefined();
-    expect(eventIdsByType.get("prompt_suggestion")).toEqual(expect.any(Number));
-    expect(eventIdsByType.get("credential_alert")).toEqual(expect.any(Number));
-    expect(eventIdsByType.get("complete")).toEqual(expect.any(Number));
+    expect(persistedTypes).toEqual([
+      "user_message",
+      "session",
+      "prompt_suggestion",
+      "credential_alert",
+      "complete",
+      "session_ended",
+    ]);
+    expect(mocks.emitEventEnvelope.mock.calls.map(
+      (call) => (call[1] as { type: string }).type,
+    )).toEqual(["text_start", "text_delta"]);
+    expect(mocks.emitEventEnvelope.mock.calls.every(
+      (call) => (call[1] as Record<string, unknown>)._event_id === undefined,
+    )).toBe(true);
   });
 
-  it("persistEvent throw → _event_id 미박힘 + broadcast는 계속 (격리)", async () => {
+  it("persistent ingress 실패는 해당 turn을 중단하고 terminal event로 닫는다", async () => {
     const mocks = makeMocks();
     // user_message persist는 성공, 첫 turn event persist는 실패하도록 시뮬레이션
     let callCount = 0;
@@ -2294,18 +2276,11 @@ describe("TaskExecutor engine event publishing — _event_id ride-along (Python 
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // assistant_message는 persist throw — _event_id 없음. complete는 성공 — _event_id 있음.
-    const assistantCall = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "assistant_message",
-    );
-    expect(assistantCall).toBeDefined();
-    expect((assistantCall![1] as Record<string, unknown>)._event_id).toBeUndefined();
-
-    const completeCall = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "complete",
-    );
-    expect(completeCall).toBeDefined();
-    expect((completeCall![1] as Record<string, unknown>)._event_id).toEqual(expect.any(Number));
+    expect(task.status).toBe("error");
+    expect(mocks.persistEvent.mock.calls.map(
+      (call) => (call[1] as { type: string }).type,
+    )).toEqual(["user_message", "assistant_message", "session_ended"]);
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
 });
 
@@ -2313,7 +2288,7 @@ describe("TaskExecutor engine event publishing — _event_id ride-along (Python 
 // 본 describe는 contextBuilder 미주입(legacy) 흐름. system_message·user_message.context는
 // 별 describe(`TaskExecutor initial message publishing with contextBuilder`)에서 검증.
 describe("TaskExecutor initial message publishing — contextBuilder 미주입 (legacy)", () => {
-  it("첫 turn 진입 전 user_message가 persistEvent + broadcast + handleSideEffects 모두 수행", async () => {
+  it("첫 turn 진입 전 user_message가 durable ingress + side effect를 수행", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-x" } as SSEEventPayload,
@@ -2337,10 +2312,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
       display_name: "Alice",
     });
 
-    // broadcast도 첫 envelope로
-    const firstEnvelope = mocks.emitEventEnvelope.mock.calls[0];
-    expect(firstEnvelope[0]).toBe("sess-1");
-    expect((firstEnvelope[1] as Record<string, unknown>).type).toBe("user_message");
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("caller_info 미설정 → user 필드는 'unknown', caller_info 키 미박음", async () => {
@@ -2379,7 +2351,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     expect(first.context).toEqual([{ key: "visible", label: "Visible", content: "keep" }]);
   });
 
-  it("persistEvent throw 시 격리 — engine.execute는 정상 진행", async () => {
+  it("user_message ingress 실패 시 engine을 시작하지 않고 terminal error로 닫는다", async () => {
     const mocks = makeMocks();
     mocks.persistEvent.mockImplementationOnce(async () => {
       throw new Error("user_message db down");
@@ -2392,7 +2364,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const task = makeTask();
     executor.startExecution(task, agent);
     await task.executionPromise;
-    expect(task.status).toBe("completed");  // user_message 실패에도 task 정상 진행
+    expect(task.status).toBe("error");
   });
 
   it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → 접수 시 기록된 user_message를 중복 발행하지 않는다", async () => {
@@ -2574,23 +2546,14 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     const calls = mocks.persistEvent.mock.calls;
     const sysCall = calls.find((c) => (c[1] as { type: string }).type === "system_message");
     expect(sysCall).toBeDefined();
-    // ride-along 5자리 — persist 직후 _event_id가 박히고 mock은 reference 저장이므로
-    // strict equal에 _event_id가 포함됨. Python `task_executor.py:141` 정합.
     expect(sysCall![1]).toEqual({
       type: "system_message",
       text: "you are codex",
-      _event_id: expect.any(Number),
     });
-    // broadcast envelope도 strict equal — 영속과 wire 양쪽에서 형상 정합 (_event_id 포함)
     const sysEnvelope = mocks.emitEventEnvelope.mock.calls.find(
       (c) => (c[1] as { type: string }).type === "system_message",
     );
-    expect(sysEnvelope).toBeDefined();
-    expect(sysEnvelope![1]).toEqual({
-      type: "system_message",
-      text: "you are codex",
-      _event_id: expect.any(Number),
-    });
+    expect(sysEnvelope).toBeUndefined();
   });
 
   it("effectiveSystemPrompt 없음 → system_message 영속화 skip (Python L134 가드 정합)", async () => {

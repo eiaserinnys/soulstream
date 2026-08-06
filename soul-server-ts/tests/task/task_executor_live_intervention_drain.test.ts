@@ -2,13 +2,14 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -33,18 +34,11 @@ function makeTask(): Task {
 }
 
 function makeMocks() {
-  let nextEventId = 0;
-  const persistedEvents: SSEEventPayload[] = [];
-  const persistEvent = vi.fn(async (_sessionId: string, event: SSEEventPayload) => {
-    persistedEvents.push(event);
-    return ++nextEventId;
-  });
-  const handleSideEffects = vi.fn(async (_sessionId: string, event: SSEEventPayload, task: Task) => {
+  const persistenceDouble = makeEventPersistenceTestDouble(async (_sessionId, event, task) => {
     if (event.type === "assistant_message" && typeof event.content === "string") {
       task.lastAssistantText = event.content;
     }
   });
-  const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
 
   const db = {
     updateSession: vi.fn().mockResolvedValue(undefined),
@@ -55,7 +49,7 @@ function makeMocks() {
     emitSessionUpdated: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
 
-  return { persistence, db, broadcaster, persistedEvents };
+  return { ...persistenceDouble, db, broadcaster };
 }
 
 describe("TaskExecutor query-per-turn intervention queue", () => {
@@ -131,10 +125,10 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
     expect(task.status).toBe("completed");
     expect(task.lastAssistantText).toBe("second turn done");
 
-    const persistedIntervention = mocks.persistedEvents.find(
-      (event) => event.type === "intervention_sent",
+    const persistedIntervention = mocks.enqueueEvent.mock.calls.find(
+      (call) => (call[1] as SSEEventPayload).type === "intervention_sent",
     );
-    expect(persistedIntervention).toMatchObject({
+    expect(persistedIntervention?.[1]).toMatchObject({
       type: "intervention_sent",
       text: "same turn intervention",
       user: "alice",
@@ -143,14 +137,13 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       context: [{ title: "Trace", body: "line 1" }],
     });
     expect(
-      mocks.persistedEvents.filter((event) => event.type === "intervention_sent"),
+      mocks.enqueueEvent.mock.calls.filter(
+        (call) => (call[1] as SSEEventPayload).type === "intervention_sent",
+      ),
     ).toHaveLength(1);
-    expect(mocks.broadcaster.emitEventEnvelope).toHaveBeenCalledWith(
+    expect(mocks.broadcaster.emitEventEnvelope).not.toHaveBeenCalledWith(
       "sess-1",
-      expect.objectContaining({
-        type: "intervention_sent",
-        text: "same turn intervention",
-      }),
+      expect.objectContaining({ type: "intervention_sent" }),
     );
   });
 });

@@ -1,14 +1,14 @@
 /**
- * Phase B-3 통합 테스트 — mock orch ws + fake EnginePort + mock postgres → end-to-end create_session.
+ * Phase 11 통합 테스트 — mock orch ws + fake EnginePort + mock outbox/postgres.
  *
  * 흐름: dispatcher.dispatch(create_session) → task_manager.createTask → task_executor.startExecution
- *  → engine.execute drain → 매 event마다 persistEvent + emitEventEnvelope + handleSideEffects
+ *  → engine.execute drain → persistent event는 outbox, transient event는 worker WS
  *  → 완료 시 session_updated broadcast
  *
  * 검증:
  *   - session_register stored proc 호출 (DB)
  *   - session_created wire 발행 (orch)
- *   - SSE event envelope 시퀀스 발행 (live text lifecycle + durable assistant_message)
+ *   - live event envelope과 durable outbox 이벤트의 분리
  *   - session_updated wire 발행 (완료 시)
  *   - lastAssistantText 누적
  */
@@ -77,6 +77,23 @@ function makeFakeEngine(events: SSEEventPayload[]): EnginePort {
   };
 }
 
+function makeEventOutboxHarness() {
+  let sourceSeq = 0;
+  const append = vi.fn(async (input: Record<string, unknown>) => {
+    sourceSeq += 1;
+    return {
+      stream_id: "stream-e2e",
+      source_seq: sourceSeq,
+      ...input,
+      payload_hash: `${sourceSeq}`.padStart(64, "0"),
+    };
+  });
+  const waitForAcknowledgement = vi.fn(
+    async (record: { source_seq: number }) => record.source_seq,
+  );
+  return { append, waitForAcknowledgement };
+}
+
 describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
   it("정상 흐름 — session_created + event envelopes + session_updated 시퀀스", async () => {
     // mock orch — broadcast 메시지 캡처
@@ -112,8 +129,21 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     ];
 
     const broadcaster = new SessionBroadcaster(send, registry, "eias-shopping-ts");
-    const persistence = new EventPersistence(db, broadcaster, silentLogger);
-    const taskManager = new TaskManager("eias-shopping-ts", db, broadcaster, silentLogger);
+    const outbox = makeEventOutboxHarness();
+    const persistence = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      { append: outbox.append } as never,
+      { waitForAcknowledgement: outbox.waitForAcknowledgement } as never,
+    );
+    const taskManager = new TaskManager(
+      "eias-shopping-ts",
+      db,
+      broadcaster,
+      silentLogger,
+      persistence,
+    );
 
     const factory = vi.fn(() => makeFakeEngine(codexEvents));
     const taskExecutor = new TaskExecutor(
@@ -165,19 +195,26 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     const ack = orchReceived.find((m) => m.type === "session_created" && m.requestId === "req-1");
     expect(ack?.agentSessionId).toBe("sess-e2e-1");
 
-    // event envelopes — B-5: 첫 envelope는 user_message(초기 영속화), 그 다음 codexEvents,
-    // 마지막은 termination_reason 정본 session_ended.
+    // Worker WS에는 text lifecycle transient 이벤트만 직접 실린다.
     const envelopes = orchReceived.filter((m) => m.type === "event");
-    expect(envelopes.length).toBe(codexEvents.length + 2);  // +user_message + session_ended
-    expect((envelopes[0].event as Record<string, unknown>).type).toBe("user_message");
-    expect((envelopes[1].event as Record<string, unknown>).type).toBe("session");
-    expect((envelopes[2].event as Record<string, unknown>).type).toBe("text_start");
-    expect((envelopes[3].event as Record<string, unknown>).type).toBe("text_delta");
-    expect((envelopes[4].event as Record<string, unknown>).type).toBe("text_delta");
-    expect((envelopes[5].event as Record<string, unknown>).type).toBe("text_end");
-    expect((envelopes[6].event as Record<string, unknown>).type).toBe("assistant_message");
-    expect((envelopes[7].event as Record<string, unknown>).type).toBe("complete");
-    expect((envelopes[8].event as Record<string, unknown>).type).toBe("session_ended");
+    expect(envelopes.map((item) => (item.event as Record<string, unknown>).type)).toEqual([
+      "text_start",
+      "text_delta",
+      "text_delta",
+      "text_end",
+    ]);
+
+    // Persistent 이벤트는 전부 outbox에 들어가고 worker가 DB나 event wire를 우회하지 않는다.
+    const durableTypes = outbox.append.mock.calls.map(
+      ([input]) => (input as Record<string, unknown>).event_type,
+    );
+    expect(durableTypes).toEqual([
+      "user_message",
+      "session",
+      "assistant_message",
+      "complete",
+      "session_ended",
+    ]);
 
     // session_updated 완료 시 1회 (status=completed)
     const updated = orchReceived.filter((m) => m.type === "session_updated");
@@ -189,9 +226,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     // === ASSERT — DB stored proc 호출 ===
     const procNames = dbCalls.map((c) => c.fragments.join("?"));
     expect(procNames.some((p) => p.includes("session_register"))).toBe(true);
-    // B-5: user_message + session + assistant_message + complete + session_ended만 durable 저장.
-    // text_start/text_delta/text_end는 live transport 전용이라 event_append를 호출하지 않는다.
-    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(5);
+    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(0);
     expect(procNames.some((p) => p.includes("session_update"))).toBe(true);
 
     // F-3B: session_set_claude_id 1회 호출 (thread id 영속화)
@@ -226,8 +261,15 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     const db = new SessionDBClass(sql);
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(send, registry, "n");
-    const persistence = new EventPersistence(db, broadcaster, silentLogger);
-    const taskManager = new TaskManager("n", db, broadcaster, silentLogger);
+    const outbox = makeEventOutboxHarness();
+    const persistence = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      { append: outbox.append } as never,
+      { waitForAcknowledgement: outbox.waitForAcknowledgement } as never,
+    );
+    const taskManager = new TaskManager("n", db, broadcaster, silentLogger, persistence);
     const factory = vi.fn();
     const taskExecutor = new TaskExecutor(factory, db, persistence, broadcaster, silentLogger);
     const dispatcher = new CommandDispatcher(

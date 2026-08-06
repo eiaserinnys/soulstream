@@ -145,7 +145,13 @@ export async function composeWorkerRuntime(
     await upstreamAdapter.sendBroadcast(data);
   };
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
-  const persistence = new EventPersistence(db, broadcaster, logger);
+  const persistence = new EventPersistence(
+    db,
+    broadcaster,
+    logger,
+    eventOutbox,
+    eventOutboxPump,
+  );
   const realtimeBroker = new RealtimeBroker({
     agentRegistry,
     db,
