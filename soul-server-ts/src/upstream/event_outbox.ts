@@ -13,10 +13,36 @@ export const EVENT_OUTBOX_MAX_BATCH_BYTES = 256 * 1024;
 export const EVENT_OUTBOX_COMPACT_ROWS = 1_000;
 export const EVENT_OUTBOX_COMPACT_BYTES = 8 * 1024 * 1024;
 
-export type EventOutboxSessionEffect = {
-  kind: "last_message" | "set_backend_session_id" | "terminal_transition" | "append_metadata";
-  [key: string]: unknown;
+export type SessionLastMessage = {
+  type: string;
+  preview: string;
+  timestamp: string;
 };
+
+export type EventOutboxSessionEffect =
+  | {
+      kind: "last_message";
+      last_message: SessionLastMessage;
+      updated_at: string;
+    }
+  | {
+      kind: "set_backend_session_id";
+      backend_session_id: string;
+    }
+  | {
+      kind: "terminal_transition";
+      status: string;
+      termination_reason: string;
+      termination_detail: string | null;
+      review_state: string;
+      updated_at: string;
+    }
+  | {
+      kind: "append_metadata";
+      entry: Record<string, unknown>;
+      updated_at: string;
+      replace_existing_type?: string;
+    };
 
 export type EventOutboxRecord = {
   stream_id: string;

@@ -850,6 +850,15 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       emitSessionUpdated: vi.fn(async () => undefined),
     } as unknown as SessionBroadcaster;
     const persistenceDouble = makeEventPersistenceTestDouble();
+    const sessionMutations = {
+      registerSession: vi.fn(),
+      transitionSession: vi.fn(async (id, fields) => {
+        await updateSession(id, fields);
+      }),
+      renameSession: vi.fn(),
+      deleteSession: vi.fn(),
+      acknowledgeReview: vi.fn(),
+    };
     const taskManager = new TaskManager(
       "eiaserinnys",
       db,
@@ -858,6 +867,12 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       persistenceDouble.persistence,
       undefined,
       registry,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      sessionMutations as never,
     );
     const startExecution = vi.fn();
     const dispatcher = new CommandDispatcher(
@@ -892,7 +907,6 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     expect(getSession).toHaveBeenCalledWith(sessionId);
     expect(updateSession).toHaveBeenCalledWith(sessionId, {
       status: "running",
-      last_event_id: 581,
       termination_reason: null,
       termination_detail: null,
       review_state: "not_required",

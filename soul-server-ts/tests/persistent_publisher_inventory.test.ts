@@ -33,6 +33,18 @@ const WIRE_EVENT_ENVELOPE_INVENTORY = {
   "upstream/session_broadcaster.ts": 3,
 };
 
+const FORBIDDEN_SESSION_MUTATION_PROCEDURES = [
+  "session_register_with_model_preset",
+  "session_acknowledge_review",
+  "session_set_claude_id",
+  "session_update_last_message",
+  "session_append_metadata",
+  "session_apply_metadata_entry",
+  "session_rename",
+  "session_delete",
+  "session_update",
+] as const;
+
 describe("persistent publisher inventory", () => {
   it("keeps all nine publisher surfaces on the durable outbox ingress", () => {
     expect(Object.keys(PERSISTENT_PUBLISHER_SURFACES)).toHaveLength(9);
@@ -56,10 +68,27 @@ describe("persistent publisher inventory", () => {
   it("keeps direct event envelopes limited to classified transient publishers", () => {
     expect(countCallSites("emitEventEnvelope")).toEqual(WIRE_EVENT_ENVELOPE_INVENTORY);
   });
+
+  it("keeps every session mutation stored procedure out of worker source", () => {
+    for (const procedure of FORBIDDEN_SESSION_MUTATION_PROCEDURES) {
+      expect(countProcedureCalls(procedure), procedure).toEqual({});
+    }
+  });
 });
 
 function readSource(path: string): string {
   return readFileSync(join(SRC_ROOT, path), "utf8");
+}
+
+function countProcedureCalls(procedure: string): Record<string, number> {
+  const result: Record<string, number> = {};
+  const pattern = new RegExp(`\\b${procedure}\\s*\\(`, "g");
+  for (const path of listTypeScriptFiles(SRC_ROOT)) {
+    const source = readFileSync(path, "utf8");
+    const count = source.match(pattern)?.length ?? 0;
+    if (count > 0) result[relative(SRC_ROOT, path)] = count;
+  }
+  return result;
 }
 
 function countCallSites(symbol: string): Record<string, number> {

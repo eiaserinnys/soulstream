@@ -64,6 +64,14 @@ const pageBindingOperations = {
   mark_failure: ["sessionPageBindings", null, "markFailure"],
 } as const satisfies Record<string, OperationTarget>;
 
+const sessionDataOperations = {
+  register_session: ["sessionMutations", null, "registerSession"],
+  transition_session: ["sessionMutations", null, "transitionSession"],
+  rename_session: ["sessionMutations", null, "renameSession"],
+  delete_session: ["sessionMutations", null, "deleteSession"],
+  acknowledge_review: ["sessionMutations", null, "acknowledgeReview"],
+} as const satisfies Record<string, OperationTarget>;
+
 export function registerPersistenceHostRoutes(
   app: FastifyInstance,
   options: PersistenceHostRouteOptions,
@@ -71,6 +79,7 @@ export function registerPersistenceHostRoutes(
   registerDomain(app, options, "session-deliveries", deliveryOperations);
   registerDomain(app, options, "claude-runtime", claudeRuntimeOperations);
   registerDomain(app, options, "session-page-bindings", pageBindingOperations);
+  registerDomain(app, options, "session-data", sessionDataOperations);
 }
 
 function registerDomain(
@@ -99,9 +108,10 @@ function registerDomain(
         return reply.send(result ?? null);
       } catch (error) {
         request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
+        const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
         return errorReply(
           reply,
-          500,
+          typeof statusCode === "number" ? statusCode : 500,
           "HOST_OPERATION_FAILED",
           error instanceof Error ? error.message : "Persistence host operation failed",
         );

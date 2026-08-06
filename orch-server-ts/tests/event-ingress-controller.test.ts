@@ -74,6 +74,68 @@ describe("NodeEventIngressController", () => {
     expect(close).toHaveBeenCalledWith(1008, "event ingress protocol conflict");
   });
 
+  it("publishes the committed session effect before sending the ACK", async () => {
+    const order: string[] = [];
+    const value = batch(1);
+    value.events[0]!.session_effect = {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed",
+      termination_detail: null,
+      review_state: "not_required",
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const received: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        received.push(message);
+        return [];
+      },
+      publish: () => order.push("publish"),
+      send: () => order.push("ack"),
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(received).toEqual([
+      expect.objectContaining({ type: "event", agentSessionId: "session-a" }),
+      {
+        type: "session_updated",
+        agentSessionId: "session-a",
+        status: "completed",
+        termination_reason: "completed",
+        termination_detail: null,
+        review_state: "not_required",
+        updated_at: "2026-08-06T00:00:00.000Z",
+        last_event_id: 101,
+      },
+    ]);
+    expect(order.at(-1)).toBe("ack");
+  });
+
+  it("rejects malformed typed effects before the repository", async () => {
+    const commitBatch = vi.fn();
+    const close = vi.fn();
+    const controller = createController({ committer: { commitBatch }, close });
+    const invalid = batch(1) as unknown as Record<string, unknown>;
+    const events = invalid.events as Array<Record<string, unknown>>;
+    events[0]!.session_effect = { kind: "set_backend_session_id" };
+
+    controller.enqueue(invalid);
+    await controller.drain();
+
+    expect(commitBatch).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
+  });
+
   it("rejects non-contiguous batches before calling the repository", async () => {
     const commitBatch = vi.fn();
     const sent: Array<Record<string, unknown>> = [];

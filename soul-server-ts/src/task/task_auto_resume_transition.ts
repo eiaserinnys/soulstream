@@ -5,6 +5,7 @@ import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
@@ -20,6 +21,7 @@ export type AutoResumeCallback = (task: Task) => void;
 
 export interface AutoResumeTransitionDeps {
   db: SessionDB;
+  sessionMutations: SessionMutationHost;
   broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
@@ -33,8 +35,8 @@ export interface AutoResumeTransitionDeps {
  * Owns the ordered side effects that turn a completed/error/interrupted task
  * back into a running task for the next user turn:
  * resume capability validation -> caller metadata promotion -> user_message
- * persistence -> task state transition -> user_message broadcast -> DB status
- * update -> session_updated -> executor resume callback.
+ * persistence -> task state transition -> user_message broadcast -> host status
+ * transition -> session_updated -> executor resume callback.
  */
 export class AutoResumeTransition {
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
@@ -46,6 +48,7 @@ export class AutoResumeTransition {
     options: { publishUserMessage?: boolean } = {},
   ): Promise<{ autoResumed: true }> {
     this.requireResumableProfile(task);
+    const transitionRevision = task.lastEventId;
     await this.awaitExecutionDrain(task);
     await this.closeStaleEngine(task);
     await this.promoteCallerInfo(task, message.callerInfo);
@@ -66,7 +69,7 @@ export class AutoResumeTransition {
     if (userMessageEvent) {
       await finishUserMessageEvent(task, userMessageEvent, this.deps);
     }
-    await this.updateSessionStatus(task);
+    await this.updateSessionStatus(task, transitionRevision);
     await this.broadcastSessionUpdated(task);
 
     onResume(task);
@@ -118,8 +121,15 @@ export class AutoResumeTransition {
     if (!entry) return;
     task.callerInfo = callerInfo;
     task.metadata = [...(task.metadata ?? []), entry];
+    if (!this.deps.persistence) {
+      this.deps.logger.warn(
+        { sessionId: task.agentSessionId },
+        "caller_info metadata effect unavailable — continuing auto-resume",
+      );
+      return;
+    }
     try {
-      await this.deps.db.appendMetadata(task.agentSessionId, entry);
+      await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -128,21 +138,17 @@ export class AutoResumeTransition {
     }
   }
 
-  private async updateSessionStatus(task: Task): Promise<void> {
-    try {
-      await this.deps.db.updateSession(task.agentSessionId, {
+  private async updateSessionStatus(task: Task, transitionRevision: number): Promise<void> {
+    await this.deps.sessionMutations.transitionSession(
+      task.agentSessionId,
+      {
         status: "running",
-        last_event_id: task.lastEventId,
         termination_reason: null,
         termination_detail: null,
         review_state: task.reviewState,
-      });
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "DB updateSession failed in auto-resume",
-      );
-    }
+      },
+      `transition_session:${task.agentSessionId}:resume:${transitionRevision}`,
+    );
   }
 
   private async broadcastSessionUpdated(task: Task): Promise<void> {

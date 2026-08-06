@@ -33,6 +33,14 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
+function mutationHost(updateSession: ReturnType<typeof vi.fn>) {
+  return {
+    transitionSession: async (sessionId: string, fields: unknown) => {
+      await updateSession(sessionId, fields);
+    },
+  } as never;
+}
+
 describe("AutoResumeTransition", () => {
   it("promotes resume message into task state, queues it, updates DB, broadcasts session_updated, and resumes", async () => {
     const order: string[] = [];
@@ -49,7 +57,6 @@ describe("AutoResumeTransition", () => {
       expect(task.interventionQueue).toHaveLength(1);
       expect(fields).toEqual({
         status: "running",
-        last_event_id: 7,
         termination_reason: null,
         termination_detail: null,
         review_state: "not_required",
@@ -75,7 +82,11 @@ describe("AutoResumeTransition", () => {
       expect(task.lastEventId).toBe(7);
       expect((event as Record<string, unknown>)._event_id).toBeUndefined();
     });
-    const persistence = { enqueueEvent, handleSideEffects } as unknown as EventPersistence;
+    const persistence = {
+      enqueueEvent,
+      handleSideEffects,
+      enqueueMetadataEffect: appendMetadata,
+    } as unknown as EventPersistence;
 
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const emitSessionUpdated = vi.fn(async (updatedTask) => {
@@ -96,6 +107,7 @@ describe("AutoResumeTransition", () => {
 
     const transition = new AutoResumeTransition({
       db,
+      sessionMutations: mutationHost(updateSession),
       broadcaster,
       logger: silentLogger,
       persistence,
@@ -146,6 +158,7 @@ describe("AutoResumeTransition", () => {
     const onResume = vi.fn();
     const transition = new AutoResumeTransition({
       db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
+      sessionMutations: mutationHost(updateSession),
       broadcaster: {
         emitEventEnvelope,
         emitSessionUpdated: vi.fn(),
@@ -175,6 +188,7 @@ describe("AutoResumeTransition", () => {
     const onResume = vi.fn();
     const transition = new AutoResumeTransition({
       db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
+      sessionMutations: mutationHost(updateSession),
       broadcaster: {
         emitEventEnvelope,
         emitSessionUpdated: vi.fn(),
@@ -216,13 +230,12 @@ describe("AutoResumeTransition", () => {
     const persistenceDouble = makeEventPersistenceTestDouble();
     const autoResume = new AutoResumeTransition({
       db,
+      sessionMutations: mutationHost(updateSession),
       broadcaster,
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
     });
     const lifecycle = new TaskLifecycleTransition({
-      db,
-      broadcaster,
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
     });
@@ -234,7 +247,6 @@ describe("AutoResumeTransition", () => {
 
     expect(updateSession).toHaveBeenNthCalledWith(1, "s1", {
       status: "running",
-      last_event_id: 7,
       termination_reason: null,
       termination_detail: null,
       review_state: "not_required",
@@ -248,15 +260,13 @@ describe("AutoResumeTransition", () => {
         type: "session_ended",
         termination_reason: "limit_hit",
       }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        termination_reason: "limit_hit",
+      }),
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
-    expect(updateSession).toHaveBeenLastCalledWith("s1", {
-      status: "error",
-      last_event_id: task.lastEventId,
-      termination_reason: "limit_hit",
-      termination_detail: "fresh limit",
-      review_state: "acknowledged",
-    });
+    expect(updateSession).toHaveBeenCalledTimes(1);
   });
 
   it("clears a stale drained engine before resuming the next user turn", async () => {
@@ -286,6 +296,9 @@ describe("AutoResumeTransition", () => {
           order.push("updateSession");
         }),
       } as unknown as SessionDB,
+      sessionMutations: {
+        transitionSession: async () => { order.push("updateSession"); },
+      } as never,
       broadcaster: {
         emitEventEnvelope: vi.fn(),
         emitSessionUpdated: vi.fn(async () => {
@@ -332,6 +345,7 @@ describe("AutoResumeTransition", () => {
     const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new AutoResumeTransition({
       db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
+      sessionMutations: mutationHost(updateSession),
       broadcaster: { emitSessionUpdated } as unknown as SessionBroadcaster,
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
@@ -374,6 +388,7 @@ describe("AutoResumeTransition", () => {
     const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new AutoResumeTransition({
       db: { updateSession: vi.fn(), appendMetadata: vi.fn() } as unknown as SessionDB,
+      sessionMutations: mutationHost(vi.fn()),
       broadcaster: {
         emitEventEnvelope,
         emitSessionUpdated: vi.fn(),

@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDB } from "../../src/db/session_db.js";
+import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
@@ -24,10 +24,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makeDeps() {
-  const updateSession = vi.fn(async () => undefined);
-  const db = { updateSession } as unknown as SessionDB;
+  const enqueueMetadataEffect = vi.fn(async () => null);
+  const persistence = { enqueueMetadataEffect } as unknown as EventPersistence;
   const logger = { warn: vi.fn() } as unknown as Logger;
-  return { db, logger, updateSession };
+  return { persistence, logger, enqueueMetadataEffect };
 }
 
 describe("TaskAgentsSnapshotPersistence", () => {
@@ -73,9 +73,11 @@ describe("TaskAgentsSnapshotPersistence", () => {
         },
       },
     ]);
-    expect(deps.updateSession).toHaveBeenCalledWith("sess-1", {
-      metadata: task.metadata,
-    });
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledWith(
+      "sess-1",
+      task.metadata?.at(-1),
+      { replaceExistingType: "agents_run_state" },
+    );
   });
 
   it("stores nullable run-state metadata values while clearing runtime fields", async () => {
@@ -117,7 +119,7 @@ describe("TaskAgentsSnapshotPersistence", () => {
 
   it("keeps in-memory run-state metadata when DB update fails", async () => {
     const deps = makeDeps();
-    deps.updateSession.mockRejectedValueOnce(new Error("db down"));
+    deps.enqueueMetadataEffect.mockRejectedValueOnce(new Error("db down"));
     const persistence = new TaskAgentsSnapshotPersistence(deps);
     const task = makeTask();
 
@@ -173,9 +175,11 @@ describe("TaskAgentsSnapshotPersistence", () => {
         },
       },
     ]);
-    expect(deps.updateSession).toHaveBeenCalledWith("sess-1", {
-      metadata: task.metadata,
-    });
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledWith(
+      "sess-1",
+      task.metadata?.at(-1),
+      { replaceExistingType: "agents_session_items" },
+    );
   });
 
   it("ignores non-openai-agents snapshots", async () => {
@@ -199,7 +203,7 @@ describe("TaskAgentsSnapshotPersistence", () => {
     });
     expect(task.agentsRunState).toBeUndefined();
     expect(task.agentsSessionItems).toBeUndefined();
-    expect(deps.updateSession).not.toHaveBeenCalled();
+    expect(deps.enqueueMetadataEffect).not.toHaveBeenCalled();
     expect(deps.logger.warn).not.toHaveBeenCalled();
   });
 });

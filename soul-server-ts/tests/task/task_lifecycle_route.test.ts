@@ -1,7 +1,6 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import {
   TaskLifecycleRoute,
@@ -32,7 +31,6 @@ function makeRoute(
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
   const deleteSession = vi.fn().mockResolvedValue(undefined);
-  const db = { deleteSession } as unknown as SessionDB;
 
   const emitSessionDeleted = vi.fn().mockResolvedValue(undefined);
   const broadcaster = { emitSessionDeleted } as unknown as SessionBroadcaster;
@@ -54,7 +52,7 @@ function makeRoute(
       tasks.delete(sessionId);
     },
     lifecycleTransition,
-    db,
+    sessionMutations: { deleteSession } as never,
     broadcaster,
     logger: silentLogger,
     closeSessionRuntime,
@@ -138,31 +136,29 @@ describe("TaskLifecycleRoute.deleteTask", () => {
 
     expect(tasks.has("s1")).toBe(false);
     expect(lifecycleTransition.interruptAndDrain).toHaveBeenCalledWith(task);
-    expect(deleteSession).toHaveBeenCalledWith("s1");
+    expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
     expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
     expect(events).toEqual([
       "interrupt",
       "close-runtime",
-      "forget",
       "delete",
+      "forget",
       "broadcast",
     ]);
   });
 
-  it("treats missing sessions as no-op and isolates delete side-effect failures", async () => {
+  it("treats missing sessions as no-op and retains the task when host deletion fails", async () => {
     const task = makeTask({ agentSessionId: "s1" });
     const { route, tasks, deleteSession, emitSessionDeleted } = makeRoute([task]);
     deleteSession.mockRejectedValueOnce(new Error("db down"));
-    emitSessionDeleted.mockRejectedValueOnce(new Error("ws down"));
-
     await expect(route.deleteTask("missing")).resolves.toBeUndefined();
     expect(deleteSession).not.toHaveBeenCalled();
     expect(emitSessionDeleted).not.toHaveBeenCalled();
 
-    await expect(route.deleteTask("s1")).resolves.toBeUndefined();
-    expect(tasks.has("s1")).toBe(false);
-    expect(deleteSession).toHaveBeenCalledWith("s1");
-    expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
+    await expect(route.deleteTask("s1")).rejects.toThrow("db down");
+    expect(tasks.has("s1")).toBe(true);
+    expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
+    expect(emitSessionDeleted).not.toHaveBeenCalled();
   });
 });
 

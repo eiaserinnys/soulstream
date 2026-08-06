@@ -22,16 +22,28 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("publishInterventionSent", () => {
-  it("persists intervention_sent with safe JSON and surrogate-safe last_message preview", async () => {
+  it("persists intervention_sent with a surrogate-safe atomic last_message effect", async () => {
     const logger = {
       warn: vi.fn(),
       debug: vi.fn(),
     } as unknown as Logger;
-    const append = vi.fn(async (record: { payload: Record<string, unknown> }) => {
+    const append = vi.fn(async (record: {
+      payload: Record<string, unknown>;
+      session_effect: Record<string, unknown> | null;
+    }) => {
       const payload = JSON.stringify(record.payload);
       expect(payload).not.toContain("\\ud83d");
       expect(payload).not.toContain("followupTaskIds");
       expect(record.payload.text).toBe(`${"a".repeat(199)}�tail`);
+      expect(record.session_effect).toMatchObject({
+        kind: "last_message",
+        last_message: {
+          type: "intervention_sent",
+          preview: `${"a".repeat(199)}�`,
+          timestamp: expect.any(String),
+        },
+        updated_at: expect.any(String),
+      });
       return {
         stream_id: "stream-1",
         source_seq: 42,
@@ -45,12 +57,9 @@ describe("publishInterventionSent", () => {
         payload_hash: "a".repeat(64),
       };
     });
-    const updateLastMessage = vi.fn().mockResolvedValue(undefined);
-    const db = { updateLastMessage } as unknown as SessionDB;
-    const emitSessionMessageUpdated = vi.fn().mockResolvedValue(undefined);
+    const db = {} as SessionDB;
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const broadcaster = {
-      emitSessionMessageUpdated,
       emitEventEnvelope,
     } as unknown as SessionBroadcaster;
     const persistence = new EventPersistence(
@@ -73,23 +82,6 @@ describe("publishInterventionSent", () => {
     );
 
     expect(append).toHaveBeenCalledTimes(1);
-    expect(updateLastMessage).toHaveBeenCalledWith("sess-1", {
-      type: "intervention_sent",
-      preview: `${"a".repeat(199)}�`,
-      timestamp: expect.any(String),
-    });
-    expect(emitSessionMessageUpdated).toHaveBeenCalledWith(
-      "sess-1",
-      "running",
-      expect.any(String),
-      {
-        type: "intervention_sent",
-        preview: `${"a".repeat(199)}�`,
-        timestamp: expect.any(String),
-      },
-      0,
-      0,
-    );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });

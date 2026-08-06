@@ -397,7 +397,10 @@ export class UpstreamAdapter {
 
     try {
       const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
-      await this.send(await commands.listSessions({ requestId: "" }));
+      const runningSessionIds = this.deps.taskManager.listTasks()
+        .filter((task) => task.status === "running")
+        .map((task) => task.agentSessionId);
+      await this.send(await commands.listSessions({ requestId: "", runningSessionIds }));
     } catch (err) {
       this.logger.warn({ err }, "initial sessions_update failed");
     }

@@ -6,6 +6,7 @@ import { TaskCreation } from "../../src/task/task_creation.js";
 import type { TaskCreationHook } from "../../src/task/task_creation_hook.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import type { EventPersistence } from "../../src/db/event_persistence.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -77,6 +78,8 @@ function makeHarness(options: {
   const creation = new TaskCreation({
     nodeId: "node-1",
     db,
+    sessionMutations: { registerSession } as never,
+    persistence: { enqueueMetadataEffect: appendMetadata } as unknown as EventPersistence,
     boardYjsService: { upsertSessionBoardItem },
     broadcaster,
     logger: options.logger ?? silentLogger,
@@ -227,11 +230,12 @@ describe("TaskCreation", () => {
         reviewRequired: true,
         reviewState: "not_required",
       }),
+      "register_session:sess-1",
     );
     expect(h.appendMetadata).toHaveBeenCalledWith("sess-1", {
       type: "caller_info",
       value: { source: "slack", display_name: "Alice" },
-    });
+    }, { waitForAck: true });
     expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-42");
     expect(h.getFolderById).not.toHaveBeenCalled();
     expect(h.emitCatalogUpdated).toHaveBeenCalledWith(
@@ -276,18 +280,21 @@ describe("TaskCreation", () => {
         agent_id: "coordinator",
       }),
     });
-    expect(h.registerSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: "sess-fire-and-forget",
-      callerSessionId: null,
-      notifyCompletion: false,
-    }));
+    expect(h.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-fire-and-forget",
+        callerSessionId: null,
+        notifyCompletion: false,
+      }),
+      "register_session:sess-fire-and-forget",
+    );
     expect(h.appendMetadata).toHaveBeenCalledWith("sess-fire-and-forget", {
       type: "caller_info",
       value: expect.objectContaining({
         source: "agent",
         agent_id: "coordinator",
       }),
-    });
+    }, { waitForAck: true });
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       container: { containerKind: "task", containerId: "rb-1" },
       sessionId: "sess-fire-and-forget",

@@ -1,36 +1,10 @@
 import type {
-  LastMessageRow,
   ListSessionSummaryRow,
-  RegisterSessionParams,
   RunningSessionSummaryRow,
   SessionRow,
-  SessionUpdateFields,
   SqlClient,
   UpstreamSessionDumpRow,
-  AcknowledgeReviewOutcome,
 } from "../session_db_types.js";
-
-/**
- * `session_update` stored procedure 화이트리스트 (schema.sql L257-262).
- *
- * 위반 키 포함 시 stored proc이 RAISE EXCEPTION — TS는 진입 가드로 같은 검증을
- * 미리 수행하여 runtime 폭발을 명시 throw로 격상.
- */
-const SESSION_UPDATE_ALLOWED = new Set([
-  "folder_id",
-  "display_name",
-  "status",
-  "prompt",
-  "client_id",
-  "last_message",
-  "metadata",
-  "was_running_at_shutdown",
-  "last_event_id",
-  "last_read_event_id",
-  "termination_reason",
-  "termination_detail",
-  "review_state",
-]);
 
 export class SessionRepository {
   constructor(private readonly sql: SqlClient) {}
@@ -55,155 +29,11 @@ export class SessionRepository {
     `;
   }
 
-  /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */
-  async registerSession(params: RegisterSessionParams): Promise<void> {
-    await this.sql`
-      SELECT session_register_with_model_preset(
-        ${params.sessionId},
-        ${params.nodeId},
-        ${params.agentId},
-        ${params.claudeSessionId},
-        ${params.sessionType},
-        ${params.prompt},
-        ${params.clientId},
-        ${params.status},
-        ${params.createdAt},
-        ${params.updatedAt},
-        ${params.callerSessionId},
-        ${params.notifyCompletion ?? true},
-        ${params.reviewRequired ?? false},
-        ${params.reviewState ?? "not_required"},
-        ${params.predecessorSessionId ?? null},
-        ${params.modelPreset ?? null},
-        ${params.model ?? null}
-      )
-    `;
-  }
-
-  async acknowledgeSessionReview(
-    sessionId: string,
-  ): Promise<AcknowledgeReviewOutcome> {
-    const rows = await this.sql<Array<{ outcome: AcknowledgeReviewOutcome }>>`
-      SELECT session_acknowledge_review(${sessionId}, ${new Date()}) AS outcome
-    `;
-    return rows[0]?.outcome ?? "not_found";
-  }
-
-  async updateSession(
-    sessionId: string,
-    fields: SessionUpdateFields,
-  ): Promise<void> {
-    const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-    if (entries.length === 0) return;
-
-    const columns: string[] = [];
-    const values: (string | null)[] = [];
-
-    for (const [col, val] of entries) {
-      if (!SESSION_UPDATE_ALLOWED.has(col)) {
-        throw new Error(
-          `SessionDB.updateSession: column "${col}" not in session_update whitelist`,
-        );
-      }
-      columns.push(col);
-      values.push(stringifyForStoredProc(col, val));
-    }
-
-    await this.sql`
-      SELECT session_update(
-        ${sessionId},
-        ${this.sql.array(columns)},
-        ${this.sql.array(values)},
-        ${new Date()}
-      )
-    `;
-  }
-
-  async interruptRunningSessionsForNode(nodeId: string): Promise<number> {
-    const rows = await this.sql<Array<{ interrupted_count: string | number }>>`
-      WITH updated AS (
-        UPDATE sessions
-        SET status = 'interrupted',
-            was_running_at_shutdown = FALSE,
-            termination_reason = 'unknown',
-            review_state = CASE
-              WHEN review_required THEN 'needs_review'
-              ELSE 'not_required'
-            END,
-            updated_at = NOW()
-        WHERE node_id = ${nodeId}
-          AND status = 'running'
-        RETURNING 1
-      )
-      SELECT COUNT(*) AS interrupted_count FROM updated
-    `;
-    return Number(rows[0]?.interrupted_count ?? 0);
-  }
-
-  async setClaudeSessionId(
-    sessionId: string,
-    claudeSessionId: string,
-  ): Promise<void> {
-    await this.sql`
-      SELECT session_set_claude_id(${sessionId}, ${claudeSessionId})
-    `;
-  }
-
-  async updateLastMessage(
-    sessionId: string,
-    lastMessage: LastMessageRow,
-  ): Promise<void> {
-    await this.sql`
-      SELECT session_update_last_message(
-        ${sessionId},
-        ${JSON.stringify(lastMessage)},
-        ${new Date()}
-      )
-    `;
-  }
-
   async getSession(sessionId: string): Promise<SessionRow | null> {
     const rows = await this.sql<SessionRow[]>`
       SELECT * FROM session_get(${sessionId})
     `;
     return rows[0] ?? null;
-  }
-
-  async deleteSession(sessionId: string): Promise<void> {
-    await this.sql`SELECT session_delete(${sessionId})`;
-  }
-
-  async appendMetadata(
-    sessionId: string,
-    entry: Record<string, unknown>,
-  ): Promise<number> {
-    const now = new Date();
-    const entryJson = JSON.stringify([entry]);
-    const searchable = `${String(entry.type ?? "")}: ${String(entry.value ?? "")} ${String(entry.label ?? "")}`;
-    const eventPayload = JSON.stringify({
-      type: "metadata",
-      metadata_type: entry.type,
-      value: entry.value,
-      label: entry.label,
-    });
-    const rows = await this.sql<{ session_append_metadata: number }[]>`
-      SELECT session_append_metadata(
-        ${sessionId},
-        ${entryJson},
-        ${"metadata"},
-        ${eventPayload},
-        ${searchable},
-        ${now}
-      )
-    `;
-    return rows[0]?.session_append_metadata ?? 0;
-  }
-
-  async renameSession(
-    sessionId: string,
-    displayName: string | null,
-  ): Promise<void> {
-    await this.sql`SELECT session_rename(${sessionId}, ${displayName})`;
   }
 
   async listSessionsSummary(params: {
@@ -368,17 +198,4 @@ export class SessionRepository {
       total,
     };
   }
-}
-
-/**
- * stored proc은 모든 컬럼을 TEXT[]로 받음 — JSON·boolean·integer 변환 책임은 호출자.
- */
-function stringifyForStoredProc(col: string, val: unknown): string | null {
-  if (val === null) return null;
-  if (col === "last_message" || col === "metadata") {
-    return JSON.stringify(val);
-  }
-  if (typeof val === "boolean") return val ? "true" : "false";
-  if (typeof val === "number") return String(val);
-  return String(val);
 }

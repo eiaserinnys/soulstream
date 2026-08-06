@@ -107,16 +107,17 @@ describe("Phase 3 first-turn page context integration", () => {
       logger,
     });
     const db = {
-      registerSession: vi.fn(async () => { order.push("register"); }),
-      appendMetadata: vi.fn(async () => 1),
       assignSessionToFolder: vi.fn(async () => { order.push("folder"); }),
       getFolderById: vi.fn(async () => ({ id: "folder-1" })),
       getCatalog: vi.fn(async () => ({ folders: [], sessions: {} })),
     } as unknown as SessionDB;
+    const registerSession = vi.fn(async () => { order.push("register"); });
     const tasks = new Map<string, Task>();
     const creation = new TaskCreation({
       nodeId: "node-1",
       db,
+      sessionMutations: { registerSession } as never,
+      persistence: { enqueueMetadataEffect: vi.fn().mockResolvedValue(1) } as never,
       broadcaster: {
         emitCatalogUpdated: vi.fn(async () => undefined),
         emitSessionCreated: vi.fn(async () => { order.push("created"); }),
@@ -168,10 +169,13 @@ describe("Phase 3 first-turn page context integration", () => {
     });
     await contextPromise;
 
-    expect(db.registerSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: "sess-first-turn",
-      nodeId: "node-1",
-    }));
+    expect(registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-first-turn",
+        nodeId: "node-1",
+      }),
+      "register_session:sess-first-turn",
+    );
     expect(order.indexOf("register")).toBeLessThan(order.indexOf("bind"));
     expect(order.indexOf("bind")).toBeLessThan(order.indexOf("start"));
     expect(blocks[1]).toMatchObject({

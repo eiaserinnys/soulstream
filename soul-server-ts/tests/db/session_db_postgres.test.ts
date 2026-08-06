@@ -8,6 +8,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { SessionPageBindingRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
+import { SessionMutationRepository } from
+  "../../../orch-server-ts/src/control_plane/repositories/session_mutation_repository.js";
 
 const TEST_DB_NAME = "session_db_integration_test";
 const TEST_USER = "session_db_integration_test";
@@ -20,6 +22,7 @@ const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
 describePostgres("SessionDB PostgreSQL integration", () => {
   let harness: PostgresHarness | undefined;
   let db: SessionDB;
+  let sessionMutations: SessionMutationRepository;
 
   beforeAll(async () => {
     harness = await createHarness();
@@ -28,11 +31,13 @@ describePostgres("SessionDB PostgreSQL integration", () => {
     db.configureSessionPageBindingHost(
       new SessionPageBindingRepository(harness.sql) as never,
     );
+    sessionMutations = new SessionMutationRepository(harness.sql as never);
   }, 45_000);
 
   beforeEach(async () => {
     if (!harness) return;
     await harness.sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_updated_at_session_id`;
+    await harness.sql`DELETE FROM session_mutation_receipts`;
     await harness.sql`DELETE FROM sessions`;
   }, 15_000);
 
@@ -163,7 +168,8 @@ describePostgres("SessionDB PostgreSQL integration", () => {
 
   it("keeps review registration, terminal, restart, and acknowledge transitions consistent", async () => {
     const now = new Date("2026-07-12T00:00:00Z");
-    await db.registerSession({
+    await sessionMutations.registerSession({
+      idempotencyKey: "register:sess-review",
       sessionId: "sess-review",
       nodeId: "node-review",
       agentId: "codex-default",
@@ -175,26 +181,42 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       createdAt: now,
       updatedAt: now,
       callerSessionId: null,
+      predecessorSessionId: null,
       reviewRequired: true,
       reviewState: "not_required",
     });
 
-    await db.updateSession("sess-review", {
-      status: "completed",
-      review_state: "needs_review",
+    await sessionMutations.transitionSession({
+      idempotencyKey: "transition:sess-review:completed",
+      sessionId: "sess-review",
+      fields: { status: "completed", reviewState: "needs_review" },
+      updatedAt: new Date("2026-07-12T00:01:00Z"),
     });
-    await expect(db.acknowledgeSessionReview("sess-review")).resolves.toBe(
+    await expect(sessionMutations.acknowledgeReview({
+      idempotencyKey: "ack:sess-review:1",
+      sessionId: "sess-review",
+      updatedAt: new Date("2026-07-12T00:02:00Z"),
+    })).resolves.toBe(
       "acknowledged",
     );
-    await expect(db.acknowledgeSessionReview("sess-review")).resolves.toBe(
+    await expect(sessionMutations.acknowledgeReview({
+      idempotencyKey: "ack:sess-review:2",
+      sessionId: "sess-review",
+      updatedAt: new Date("2026-07-12T00:03:00Z"),
+    })).resolves.toBe(
       "already_acknowledged",
     );
 
-    await db.updateSession("sess-review", {
-      status: "running",
-      review_state: "acknowledged",
+    await sessionMutations.transitionSession({
+      idempotencyKey: "transition:sess-review:running",
+      sessionId: "sess-review",
+      fields: { status: "running", reviewState: "acknowledged" },
+      updatedAt: new Date("2026-07-12T00:04:00Z"),
     });
-    await expect(db.interruptRunningSessionsForNode("node-review")).resolves.toBe(1);
+    await expect(sessionMutations.reconcileNodeDisconnected(
+      "node-review",
+      new Date("2026-07-12T00:05:00Z"),
+    )).resolves.toBe(1);
 
     await expect(db.getSession("sess-review")).resolves.toMatchObject({
       status: "interrupted",
@@ -205,7 +227,8 @@ describePostgres("SessionDB PostgreSQL integration", () => {
 
   it("reprojects response-loss binding warnings from durable state after restart", async () => {
     const now = new Date("2026-07-13T00:00:00Z");
-    await db.registerSession({
+    await sessionMutations.registerSession({
+      idempotencyKey: "register:sess-response-lost",
       sessionId: "sess-response-lost",
       nodeId: "node-review",
       agentId: "codex-default",
@@ -217,6 +240,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       createdAt: now,
       updatedAt: now,
       callerSessionId: null,
+      predecessorSessionId: null,
       reviewRequired: true,
       reviewState: "needs_review",
     });

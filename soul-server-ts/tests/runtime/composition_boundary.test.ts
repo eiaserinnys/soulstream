@@ -212,7 +212,7 @@ describe("worker composition boundary", () => {
     expect(recoveryIndex).toBeGreaterThan(executorIndex);
   });
 
-  it("fails closed on runtime schema before startup cleanup or index work", () => {
+  it("fails closed on runtime schema before index work and leaves reconciliation to orch", () => {
     const workerComposition = source("runtime/worker_composition.ts");
     const preflightIndex = workerComposition.indexOf(
       "await preflightPersistentRuntimeSchema(",
@@ -220,13 +220,10 @@ describe("worker composition boundary", () => {
     const indexEnsureIndex = workerComposition.indexOf(
       "ensureStableSessionOrderIndexInBackground(db, logger);",
     );
-    const cleanupIndex = workerComposition.indexOf(
-      "await db.interruptRunningSessionsForNode(",
-    );
 
     expect(preflightIndex).toBeGreaterThan(-1);
     expect(indexEnsureIndex).toBeGreaterThan(preflightIndex);
-    expect(cleanupIndex).toBeGreaterThan(preflightIndex);
+    expect(workerComposition).not.toContain("interruptRunningSessionsForNode");
   });
 
   it("keeps every production module touched by the extraction below 500 lines", () => {

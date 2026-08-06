@@ -4,17 +4,27 @@ export const EVENT_INGRESS_MAX_FRAME_BYTES = 256 * 1024;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-const SESSION_EFFECT_KINDS = new Set([
-  "last_message",
-  "set_backend_session_id",
-  "terminal_transition",
-  "append_metadata",
-]);
-
-export type EventSessionEffect = {
-  kind: "last_message" | "set_backend_session_id" | "terminal_transition" | "append_metadata";
-  [key: string]: unknown;
-};
+export type EventSessionEffect =
+  | {
+      kind: "last_message";
+      last_message: { type: string; preview: string; timestamp: string };
+      updated_at: string;
+    }
+  | { kind: "set_backend_session_id"; backend_session_id: string }
+  | {
+      kind: "terminal_transition";
+      status: string;
+      termination_reason: string;
+      termination_detail: string | null;
+      review_state: string;
+      updated_at: string;
+    }
+  | {
+      kind: "append_metadata";
+      entry: Record<string, unknown>;
+      updated_at: string;
+      replace_existing_type?: string;
+    };
 
 export type EventIngressEnvelope = {
   stream_id: string;
@@ -133,10 +143,67 @@ function parseEnvelope(
 
 function parseSessionEffect(value: unknown, index: number): EventSessionEffect | null {
   if (value === null) return null;
-  if (!isRecord(value) || typeof value.kind !== "string" || !SESSION_EFFECT_KINDS.has(value.kind)) {
+  if (!isRecord(value) || typeof value.kind !== "string") {
     throw new EventIngressValidationError(`events[${index}].session_effect kind is invalid`);
   }
-  return value as EventSessionEffect;
+  const field = `events[${index}].session_effect`;
+  if (value.kind === "last_message") {
+    const lastMessage = recordValue(value.last_message, `${field}.last_message`);
+    return {
+      kind: value.kind,
+      last_message: {
+        type: nonEmptyString(lastMessage.type, `${field}.last_message.type`),
+        preview: stringValue(lastMessage.preview, `${field}.last_message.preview`),
+        timestamp: isoTimestamp(lastMessage.timestamp, `${field}.last_message.timestamp`),
+      },
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "set_backend_session_id") {
+    return {
+      kind: value.kind,
+      backend_session_id: nonEmptyString(value.backend_session_id, `${field}.backend_session_id`),
+    };
+  }
+  if (value.kind === "terminal_transition") {
+    return {
+      kind: value.kind,
+      status: nonEmptyString(value.status, `${field}.status`),
+      termination_reason: nonEmptyString(value.termination_reason, `${field}.termination_reason`),
+      termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "append_metadata") {
+    return {
+      kind: value.kind,
+      entry: recordValue(value.entry, `${field}.entry`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+      ...(value.replace_existing_type === undefined
+        ? {}
+        : { replace_existing_type: nonEmptyString(value.replace_existing_type, `${field}.replace_existing_type`) }),
+    };
+  }
+  throw new EventIngressValidationError(`${field} kind is invalid`);
+}
+
+function recordValue(value: unknown, field: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new EventIngressValidationError(`${field} must be an object`);
+  return value;
+}
+
+function isoTimestamp(value: unknown, field: string): string {
+  const text = nonEmptyString(value, field);
+  if (!Number.isFinite(Date.parse(text))) {
+    throw new EventIngressValidationError(`${field} must be ISO-8601`);
+  }
+  return text;
+}
+
+function stringValue(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new EventIngressValidationError(`${field} must be string`);
+  return value;
 }
 
 function requiredUuid(value: unknown, field: string): string {

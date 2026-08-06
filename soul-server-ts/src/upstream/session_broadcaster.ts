@@ -9,9 +9,8 @@
  */
 
 import type { AgentRegistry } from "../agent_registry.js";
-import type { LastMessageRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type { Task, TaskStatus } from "../task/task_models.js";
+import type { Task } from "../task/task_models.js";
 import { effectiveTaskBackend } from "../task/task_model_preset.js";
 import type {
   CatalogBoardItemsDelta,
@@ -49,8 +48,8 @@ export class SessionBroadcaster {
   }
 
   /**
-   * 세션 상태 변경 wire. Python `emit_session_updated` L88-108 정본:
-   *   {type, agent_session_id, status, updated_at, last_event_id, last_read_event_id,
+   * 세션 상태 변경 wire. last_event_id는 event ingress만 갱신하므로 제외한다:
+   *   {type, agent_session_id, status, updated_at, last_read_event_id,
    *    last_progress_text, last_assistant_text, session_type,
    *    caller_source, userName, userPortraitUrl}
    *
@@ -65,7 +64,6 @@ export class SessionBroadcaster {
       agent_session_id: task.agentSessionId,
       status: task.status,
       updated_at: updatedAt.toISOString(),
-      last_event_id: task.lastEventId,
       last_read_event_id: task.lastReadEventId,
       last_progress_text: task.lastProgressText ?? null,
       last_assistant_text: task.lastAssistantText ?? null,
@@ -81,41 +79,6 @@ export class SessionBroadcaster {
       terminationDetail: task.terminationDetail ?? null,
       review_required: task.reviewRequired === true,
       review_state: task.reviewState ?? "not_required",
-    });
-  }
-
-  /**
-   * 세션 last_message 갱신 wire (F-3A). Python `emit_session_message_updated` L141-221 정본:
-   *   {type: "session_updated", agent_session_id, status, updated_at, last_message,
-   *    last_event_id, last_read_event_id}
-   *
-   * **payload 키 7종** — emit_session_updated/phase와 *type* 키는 공유하지만 다음으로 구분:
-   *   - G-19 식별 마커: 본 wire는 `last_message` 키를 *반드시* 포함 (orch가 wire 종류 식별에 사용)
-   *   - P6 결정: caller_source/userName/userPortraitUrl 키 *비움* (atom `d7a1ad86` 정본 둘 안티패턴 회피)
-   *
-   * emit_session_updated/phase에 last_message 키를 *추가하지 말 것* — 식별 마커 충돌로 G-19 회로 재발.
-   *
-   * 참조:
-   *   - Python L172-201 G-19 fix 주석 ("변경 금지 사항" 3건)
-   *   - atom `b558ca3b` wire payload 키 정본
-   *   - atom `d7a1ad86` 정본 둘 안티패턴
-   */
-  async emitSessionMessageUpdated(
-    agentSessionId: string,
-    status: TaskStatus,
-    updatedAt: string,
-    lastMessage: LastMessageRow,
-    lastEventId: number,
-    lastReadEventId: number,
-  ): Promise<void> {
-    await this.send({
-      type: "session_updated",
-      agent_session_id: agentSessionId,
-      status,
-      updated_at: updatedAt,
-      last_message: lastMessage,
-      last_event_id: lastEventId,
-      last_read_event_id: lastReadEventId,
     });
   }
 

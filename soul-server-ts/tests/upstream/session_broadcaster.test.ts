@@ -119,7 +119,7 @@ describe("emitSessionCreated", () => {
 });
 
 describe("emitSessionUpdated", () => {
-  it("Python wire 키 정합 (12개 필드)", async () => {
+  it("event ingress 소유 필드를 제외한 상태 wire를 보낸다", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     const completedAt = new Date("2026-05-17T01:05:00Z");
@@ -144,7 +144,6 @@ describe("emitSessionUpdated", () => {
       agent_session_id: "sess-1",
       status: "completed",
       updated_at: completedAt.toISOString(),
-      last_event_id: 5,
       last_read_event_id: 3,
       last_progress_text: "step 1",
       last_assistant_text: "result text",
@@ -153,6 +152,8 @@ describe("emitSessionUpdated", () => {
       userName: "서소영",
       userPortraitUrl: "/u/seosoyoung.png",
     });
+    expect(msg.last_event_id).toBeUndefined();
+    expect(msg.last_message).toBeUndefined();
   });
 
   it("completedAt 부재 시 now 사용", async () => {
@@ -175,57 +176,6 @@ describe("emitSessionUpdated", () => {
     expect(msg.userPortraitUrl).toBeNull();
     expect(msg.last_assistant_text).toBeNull();
     expect(msg.last_progress_text).toBeNull();
-  });
-});
-
-describe("emitSessionMessageUpdated (F-3A)", () => {
-  it("Python wire 키 7종 정확 (last_message 식별 마커 + caller_source/userName/userPortraitUrl 부재)", async () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
-    const lastMessage = {
-      type: "text_delta",
-      preview: "hello world",
-      timestamp: "2026-05-17T01:02:03.000Z",
-    };
-    await b.emitSessionMessageUpdated(
-      "sess-1",
-      "running",
-      "2026-05-17T01:02:03.000Z",
-      lastMessage,
-      7,
-      3,
-    );
-
-    expect(send).toHaveBeenCalledTimes(1);
-    const msg = send.mock.calls[0][0] as Record<string, unknown>;
-
-    // 정확히 7개 키
-    expect(Object.keys(msg).sort()).toEqual(
-      [
-        "agent_session_id",
-        "last_event_id",
-        "last_message",
-        "last_read_event_id",
-        "status",
-        "type",
-        "updated_at",
-      ].sort(),
-    );
-
-    expect(msg).toEqual({
-      type: "session_updated",
-      agent_session_id: "sess-1",
-      status: "running",
-      updated_at: "2026-05-17T01:02:03.000Z",
-      last_message: lastMessage,
-      last_event_id: 7,
-      last_read_event_id: 3,
-    });
-
-    // P6 결정: emit_session_updated/phase와 달리 user 프로필·caller_source는 *비움*
-    expect(msg.caller_source).toBeUndefined();
-    expect(msg.userName).toBeUndefined();
-    expect(msg.userPortraitUrl).toBeUndefined();
   });
 });
 

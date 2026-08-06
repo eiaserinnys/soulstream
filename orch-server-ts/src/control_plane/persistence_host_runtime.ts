@@ -5,12 +5,14 @@ import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { SessionPageBindingRepository } from "./repositories/session_page_binding_repository.js";
+import { SessionMutationRepository } from "./repositories/session_mutation_repository.js";
 
 export interface PersistenceHostRepositories {
   deliveries: SessionDeliveryRepository;
   claudeBackgroundTasks: ClaudeBackgroundTaskRepository;
   claudeTranscripts: ClaudeTranscriptRepository;
   sessionPageBindings: SessionPageBindingRepository;
+  sessionMutations: SessionMutationRepository;
 }
 
 export function createPersistenceHostRepositoryProvider(
@@ -26,6 +28,7 @@ export function createPersistenceHostRepositoryProvider(
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
       claudeTranscripts: new ClaudeTranscriptRepository(sql),
       sessionPageBindings: new SessionPageBindingRepository(sql),
+      sessionMutations: new SessionMutationRepository(sql),
     };
     return repositories;
   };

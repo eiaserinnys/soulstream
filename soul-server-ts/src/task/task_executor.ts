@@ -1,5 +1,7 @@
 /**
  * TaskExecutor — Task 실행 흐름 (Phase B-3).
+ * 500줄 예외: turn state machine의 단일 제어 경로를 보존한다. 이벤트 발행·종료 등
+ * 독립 행위는 전용 모듈로 이미 추출되어 있다.
  *
  * 책임:
  *   1. EnginePort 인스턴스를 engineFactory(agent)로 생성
@@ -8,7 +10,7 @@
  *   4. 매 yield 이벤트: 저장 대상은 persistEvent → emitEventEnvelope → handleSideEffects,
  *      `_live_only`는 영속화 없이 emitEventEnvelope → handleSideEffects
  *   5. session event 첫 yield: task.codexThreadId 박기
- *   6. 종료 시: status 전환 + DB session_update + session_updated broadcast
+ *   6. 종료 시: terminal event + terminal_transition effect를 ACK barrier까지 반영
  *
  * Codex 단일턴 — _consumeEventStream이 generator 완료까지 drain하면 task 종료.
  * 멀티턴/idle 전환은 B-4.
@@ -104,8 +106,6 @@ export class TaskExecutor {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
-      db,
-      broadcaster,
       logger: this.logger,
       persistence,
     });
@@ -116,7 +116,6 @@ export class TaskExecutor {
     });
     this.engineEventPublisher = new TaskEngineEventPublisher({
       broadcaster,
-      db,
       logger: this.logger,
       persistence,
     });
@@ -135,7 +134,7 @@ export class TaskExecutor {
       logger: this.logger,
     });
     this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
-      db,
+      persistence,
       logger: this.logger,
     });
     this.engineTurnRunner = new TaskEngineTurnRunner({

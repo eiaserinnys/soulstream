@@ -115,7 +115,15 @@ describe("EventPersistence durable ingress", () => {
       searchable_text: "hi",
       created_at: "2024-11-15T19:46:40.000Z",
       semantic_dedupe_key: "claude-sdk:assistant:msg-1:0",
-      session_effect: null,
+      session_effect: {
+        kind: "last_message",
+        last_message: {
+          type: "assistant_message",
+          preview: "hi",
+          timestamp: "2024-11-15T19:46:40.000Z",
+        },
+        updated_at: "2024-11-15T19:46:40.000Z",
+      },
     });
     expect(appendEvent).not.toHaveBeenCalled();
     expect(findEventIdByDedupeKey).not.toHaveBeenCalled();
@@ -364,7 +372,7 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(task.lastAssistantText).toBe("Hello.");
   });
 
-  it("assistant_message is the persisted final assistant text for preview/search/push state", async () => {
+  it("assistant_message is captured in runtime state without a worker DB mutation", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ep = makeEventPersistence(db, broadcaster);
@@ -381,90 +389,27 @@ describe("EventPersistence.handleSideEffects", () => {
     await ep.handleSideEffects("sess-1", event, task);
 
     expect(task.lastAssistantText).toBe("Hello final answer");
-    expect(updateLastMessage).toHaveBeenCalledWith("sess-1", {
-      type: "assistant_message",
-      preview: "Hello final answer",
-      timestamp: expect.any(String),
-    });
+    expect(updateLastMessage).not.toHaveBeenCalled();
     expect(extractSearchableText(event)).toBe("Hello final answer");
   });
 
-  it("preview 200자 cap preserves surrogate pairs", async () => {
-    const { db, updateLastMessage } = makeMockDB();
+  it("preview 200자 cap preserves surrogate pairs in the typed effect", async () => {
+    const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(db, broadcaster, silentLogger, ingress.outbox, ingress.pump);
     const long = `${"a".repeat(199)}😀tail`;
-    await ep.handleSideEffects(
+    await ep.enqueueEvent(
       "sess-1",
       {
         type: "assistant_message",
         content: long,
         timestamp: 1,
       } as unknown as SSEEventPayload,
-      makeTask(),
     );
-    const arg = updateLastMessage.mock.calls[0][1];
-    expect(arg.preview).toBe(`${"a".repeat(199)}😀`);
-    expect(Array.from(arg.preview)).toHaveLength(200);
-  });
-
-  it("updateLastMessage throw → 호출자 전파 + wire 미발행 (Python 정합: DB·wire 일관성)", async () => {
-    const appendEvent = vi.fn();
-    const updateLastMessage = vi.fn().mockRejectedValue(new Error("db down"));
-    const db = { appendEvent, updateLastMessage } as unknown as SessionDB;
-    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
-    await expect(
-      ep.handleSideEffects(
-        "sess-1",
-        {
-          type: "assistant_message",
-          content: "x",
-          timestamp: 1,
-        } as unknown as SSEEventPayload,
-        makeTask(),
-      ),
-    ).rejects.toThrow(/db down/);
-
-    // 호출자(task_executor._processEvent)가 try로 감싸 격리. 여기서는 throw 전파만 검증.
-    // wire는 *미발행* — DB 미갱신 상태로 wire를 보내면 클라이언트가 last_message 보고 새로
-    // 그렸다가 다음 list refresh에서 이전 값으로 회귀하는 transient 불일치 방지.
-    expect(emitSessionMessageUpdated).not.toHaveBeenCalled();
-  });
-
-  // === F-3A: emit_session_message_updated wire 발행 ===
-
-  it("F-3A T2: preview 있을 때 emitSessionMessageUpdated 호출 (Python L141-221 정합)", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
-    const task = makeTask({
-      status: "running",
-      lastEventId: 5,
-      lastReadEventId: 3,
-    });
-    await ep.handleSideEffects(
-      "sess-1",
-      {
-        type: "assistant_message",
-        content: "hello world",
-        timestamp: 1731700000,
-      } as unknown as SSEEventPayload,
-      task,
-    );
-
-    expect(emitSessionMessageUpdated).toHaveBeenCalledTimes(1);
-    const args = emitSessionMessageUpdated.mock.calls[0];
-    expect(args[0]).toBe("sess-1");                    // agentSessionId
-    expect(args[1]).toBe("running");                   // status
-    expect(typeof args[2]).toBe("string");             // updatedAt (ISO)
-    expect(args[3]).toEqual({                          // lastMessage
-      type: "assistant_message",
-      preview: "hello world",
-      timestamp: args[2],                              // DB 갱신과 같은 ts
-    });
-    expect(args[4]).toBe(5);                           // lastEventId
-    expect(args[5]).toBe(3);                           // lastReadEventId
+    const effect = ingress.append.mock.calls[0]?.[0].session_effect;
+    expect(effect.last_message.preview).toBe(`${"a".repeat(199)}😀`);
+    expect(Array.from(effect.last_message.preview)).toHaveLength(200);
   });
 
   it("F-3A T3: preview 없는 이벤트 (text_start/text_end/session 등) — broadcaster 호출 안 함", async () => {
@@ -485,31 +430,4 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(emitSessionMessageUpdated).not.toHaveBeenCalled();
   });
 
-  it("F-3A T4: broadcaster throw → 격리 (DB 갱신은 성공 + lastAssistantText 누적 정상)", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const broadcaster = {
-      emitSessionMessageUpdated: vi
-        .fn()
-        .mockRejectedValue(new Error("wire down")),
-    } as unknown as SessionBroadcaster;
-    const ep = makeEventPersistence(db, broadcaster);
-    const task = makeTask();
-
-    await expect(
-      ep.handleSideEffects(
-        "sess-1",
-        {
-          type: "assistant_message",
-          content: "hello",
-          timestamp: 1,
-        } as unknown as SSEEventPayload,
-        task,
-      ),
-    ).resolves.toBeUndefined();
-
-    // DB 갱신은 성공
-    expect(updateLastMessage).toHaveBeenCalledTimes(1);
-    // lastAssistantText 누적은 정상 동작
-    expect(task.lastAssistantText).toBe("hello");
-  });
 });

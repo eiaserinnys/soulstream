@@ -1,8 +1,6 @@
 import type { Logger } from "pino";
 
-import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
-import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { Task } from "./task_models.js";
 import { reviewStateAfterTerminal } from "./session_review.js";
@@ -19,31 +17,9 @@ export interface ExternalFinalizeParams {
 }
 
 interface TaskLifecycleTransitionDeps {
-  db: SessionDB;
-  broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
 }
-
-interface FinalStateLogMessages {
-  db: string;
-  broadcast: string;
-}
-
-const EXECUTOR_FINALIZE_LOGS: FinalStateLogMessages = {
-  db: "DB updateSession failed in finalize",
-  broadcast: "session_updated broadcast failed",
-};
-
-const EXTERNAL_FINALIZE_LOGS: FinalStateLogMessages = {
-  db: "DB updateSession failed in finalizeTask",
-  broadcast: "session_updated broadcast failed in finalizeTask",
-};
-
-const SHUTDOWN_INTERRUPT_LOGS: FinalStateLogMessages = {
-  db: "DB updateSession failed during shutdown interrupt",
-  broadcast: "session_updated broadcast failed during shutdown interrupt",
-};
 
 export class TaskLifecycleTransition {
   constructor(private readonly deps: TaskLifecycleTransitionDeps) {}
@@ -84,7 +60,7 @@ export class TaskLifecycleTransition {
     task.status = "interrupted";
     task.completedAt = shutdownAt;
     recordTerminationHint(task, "killed", "shutdown");
-    await this.persistFinalState(task, SHUTDOWN_INTERRUPT_LOGS);
+    await this.persistFinalState(task);
   }
 
   async interruptForShutdown(task: Task): Promise<void> {
@@ -119,52 +95,29 @@ export class TaskLifecycleTransition {
       task.llmUsage = params.llmUsage;
     }
 
-    await this.persistFinalState(task, EXTERNAL_FINALIZE_LOGS);
+    await this.persistFinalState(task);
     return task;
   }
 
   async persistExecutorFinalState(task: Task): Promise<void> {
-    await this.persistFinalState(task, EXECUTOR_FINALIZE_LOGS);
+    await this.persistFinalState(task);
   }
 
-  private async persistFinalState(
-    task: Task,
-    messages: FinalStateLogMessages,
-  ): Promise<void> {
+  private async persistFinalState(task: Task): Promise<void> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
     if (termination.newlyFinalized && !task.terminationEventRecorded) {
-      await this.enqueueAndAwaitSessionEnded(task);
-    }
-
-    try {
-      await this.deps.db.updateSession(task.agentSessionId, {
-        status: task.status,
-        last_event_id: task.lastEventId,
-        termination_reason: termination.reason,
-        termination_detail: termination.detail,
-        review_state: task.reviewState,
-      });
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        messages.db,
-      );
-    }
-
-    try {
-      await this.deps.broadcaster.emitSessionUpdated(task);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        messages.broadcast,
-      );
+      await this.enqueueAndAwaitSessionEnded(task, termination.reason, termination.detail);
     }
   }
 
-  private async enqueueAndAwaitSessionEnded(task: Task): Promise<void> {
+  private async enqueueAndAwaitSessionEnded(
+    task: Task,
+    terminationReason: string,
+    terminationDetail: string | null,
+  ): Promise<void> {
     if (!this.deps.persistence) {
       throw new Error("session_ended durable event persistence is required");
     }
@@ -172,6 +125,14 @@ export class TaskLifecycleTransition {
     const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
       task.agentSessionId,
       event,
+      {
+        kind: "terminal_transition",
+        status: task.status,
+        termination_reason: terminationReason,
+        termination_detail: terminationDetail,
+        review_state: task.reviewState ?? "not_required",
+        updated_at: (task.completedAt ?? new Date()).toISOString(),
+      },
     );
     task.lastEventId = eventId;
     task.terminationEventRecorded = true;
