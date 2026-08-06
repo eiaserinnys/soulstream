@@ -71,6 +71,49 @@ describe("orch public page Yjs routes", () => {
     }
   }, 20_000);
 
+  it("preserves the provider handshake while page validation is pending", async () => {
+    const repository = new MemoryPageRepository();
+    repository.seed("page-1");
+    const validationStarted = deferred<void>();
+    const releaseValidation = deferred<void>();
+    const originalGetSnapshot = repository.getPageYjsSnapshot.bind(repository);
+    repository.getPageYjsSnapshot = async (documentName) => {
+      validationStarted.resolve();
+      await releaseValidation.promise;
+      return await originalGetSnapshot(documentName);
+    };
+    const handshakeReachedServer = deferred<void>();
+    const app = Fastify({ logger: false });
+    const service = createPageService(repository, productionAuth(), app.log);
+    const handleConnection = service.handleConnection.bind(service);
+    service.handleConnection = (socket, request, pageId) => {
+      socket.once("message", () => handshakeReachedServer.resolve());
+      handleConnection(socket, request, pageId);
+    };
+    registerPageYjsRoutes(app, {
+      createService: () => service,
+      authBearerToken: "service-token",
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      const provider = connectProvider(
+        `${address.replace("http", "ws")}/yjs/page/page-1`,
+        { token: "service-token" },
+      );
+      await validationStarted.promise;
+      await Promise.race([
+        handshakeReachedServer.promise,
+        new Promise((resolve) => setTimeout(resolve, 100)),
+      ]);
+      releaseValidation.resolve();
+      await waitForSync(provider, 1_000);
+      expect(provider.isSynced).toBe(true);
+    } finally {
+      releaseValidation.resolve();
+      await app.close();
+    }
+  }, 10_000);
+
   it("accepts cookie, bearer, and development auth while rejecting unauthenticated production", async () => {
     const cookieVerifier = vi.fn().mockResolvedValue({ sub: "dashboard-user" });
     const cases = [
@@ -260,10 +303,10 @@ function websocketWithHeaders(headers: Record<string, string>): typeof WebSocket
   } as typeof WebSocket;
 }
 
-function waitForSync(provider: HocuspocusProvider): Promise<void> {
+function waitForSync(provider: HocuspocusProvider, timeoutMs = 10_000): Promise<void> {
   if (provider.isSynced) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 10_000);
+    const timer = setTimeout(() => reject(new Error("provider sync timed out")), timeoutMs);
     provider.on("synced", () => {
       clearTimeout(timer);
       resolve();
@@ -273,6 +316,16 @@ function waitForSync(provider: HocuspocusProvider): Promise<void> {
       reject(new Error(reason));
     });
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function connectUntilClose(url: string): Promise<{ code: number; reason: string }> {
