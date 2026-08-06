@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
+import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { ExecutionContextBuilder, PreparedContext } from "../../src/context/context_builder.js";
 import {
   type TaskInitialMessagePublisherPort,
@@ -137,6 +138,21 @@ describe("TaskTurnInputBuilder", () => {
       expect.objectContaining({ sessionId: "sess-turn-input" }),
       "context_builder failed — falling back to task.prompt without context",
     );
+  });
+
+  it("refuses to start a turn when the session-data host read fails", async () => {
+    const failure = new SessionDataHostError({
+      operation: "resume_context",
+      retryable: true,
+      message: "session-data host unavailable",
+    });
+    const { builder, initialMessagePublisher } = makeSubject({
+      contextBuilder: { build: vi.fn().mockRejectedValue(failure) },
+    });
+
+    await expect(builder.prepareInitialTurnInput(makeTask(), claudeAgent))
+      .rejects.toBe(failure);
+    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
   });
 
   it("prepares an auto-resume Claude turn without rebuilding first-turn context", async () => {

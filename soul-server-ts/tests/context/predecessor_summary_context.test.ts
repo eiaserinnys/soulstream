@@ -6,10 +6,11 @@ import { buildPredecessorSummaryContextItem } from
 import { buildSessionTurnExcerpt } from
   "../../src/context/session_turn_summary.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type {
   SessionStoryTurnSummary,
   SessionStoryView,
-} from "../../src/db/repositories/session_story_repository.js";
+} from "../../src/db/session_story_types.js";
 
 const CURRENT_SESSION_ID = "sess-current";
 const PREDECESSOR_SESSION_ID = "sess-previous";
@@ -46,7 +47,7 @@ describe("buildPredecessorSummaryContextItem", () => {
       ],
     });
     expect(db.getSessionStory).toHaveBeenCalledWith(PREDECESSOR_SESSION_ID);
-    expect(db.countEvents).not.toHaveBeenCalled();
+    expect(db.getTurnExcerpt).not.toHaveBeenCalled();
   });
 
   it("keeps a just-folded story when no unfolded summaries remain", async () => {
@@ -145,7 +146,7 @@ describe("buildPredecessorSummaryContextItem", () => {
     });
   });
 
-  it("warns and degrades to the turn excerpt when story lookup fails", async () => {
+  it("propagates a story host failure instead of injecting an empty predecessor history", async () => {
     const logger = makeLogger();
     const db = makeDb({
       storyError: new Error("session_digests unavailable"),
@@ -158,23 +159,33 @@ describe("buildPredecessorSummaryContextItem", () => {
       }],
     });
 
-    const item = await buildPredecessorSummaryContextItem(
+    await expect(buildPredecessorSummaryContextItem(
       db,
       logger,
       CURRENT_SESSION_ID,
-    );
+    )).rejects.toBeInstanceOf(SessionDataHostError);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 
-    expect(JSON.parse(String(item?.content))).toMatchObject({
-      source: "turn_excerpt",
-      turns: [{ event_id: 9, text: "이전 요청" }],
-    });
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: CURRENT_SESSION_ID,
-        predecessorSessionId: PREDECESSOR_SESSION_ID,
-      }),
-      "Failed to read predecessor session story; using turn excerpt",
-    );
+  it("rejects a malformed host response instead of inventing an empty excerpt", async () => {
+    const logger = makeLogger();
+    const db = makeDb();
+
+    await expect(buildPredecessorSummaryContextItem(
+      db,
+      logger,
+      CURRENT_SESSION_ID,
+      {
+        session: {
+          session_id: PREDECESSOR_SESSION_ID,
+          predecessor_session_id: null,
+          folder_id: null,
+        } as never,
+        story: makeStory(),
+        excerpt: null,
+      },
+    )).rejects.toBeInstanceOf(SessionDataHostError);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
 
@@ -215,12 +226,57 @@ function makeDb(options: {
   const getSessionStory = options.storyError
     ? vi.fn().mockRejectedValue(options.storyError)
     : vi.fn().mockResolvedValue(options.story ?? makeStory());
+  const getTurnExcerpt = vi.fn(async (_sessionId: string, maxResponseChars = 500) => ({
+    totalEvents: options.totalEvents ?? 0,
+    turns: (options.legacyEvents ?? []).map((event) => ({
+      event_id: event.id,
+      event_type: event.event_type,
+      text: truncate(String(event.payload.text ?? JSON.stringify(event.payload)), maxResponseChars),
+      created_at: event.created_at.toISOString(),
+    })),
+  }));
+  const getResumeContext = vi.fn(async (sessionId: string) => {
+    const current = await getSession(sessionId);
+    const predecessorId = current?.predecessor_session_id;
+    if (!predecessorId) {
+      return {
+        session: current,
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions: [], total: 0 },
+        predecessor: null,
+      };
+    }
+    const predecessor = await getSession(predecessorId);
+    try {
+      const story = await getSessionStory(predecessorId);
+      const excerpt = story.narrative === null && story.unfoldedTurnSummaries.length === 0
+        ? await getTurnExcerpt(predecessorId)
+        : null;
+      return {
+        session: current,
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions: [], total: 0 },
+        predecessor: { session: predecessor, story, excerpt },
+      };
+    } catch (cause) {
+      throw new SessionDataHostError({
+        operation: "resume_context",
+        retryable: true,
+        message: "resume context failed",
+        cause,
+      });
+    }
+  });
   return {
     getSession,
     getSessionStory,
-    countEvents: vi.fn().mockResolvedValue(options.totalEvents ?? 0),
-    readEvents: vi.fn().mockResolvedValue(options.legacyEvents ?? []),
+    getTurnExcerpt,
+    getResumeContext,
   } as unknown as SessionDB;
+}
+
+function truncate(value: string, limit: number): string {
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
 function makeStory(

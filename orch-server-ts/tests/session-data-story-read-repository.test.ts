@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionStoryReadRepository } from
-  "../../src/db/repositories/session_story_repository.js";
-import type { SqlClient } from "../../src/db/session_db_types.js";
+  "../src/control_plane/repositories/session_story_read_repository.js";
+import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 
 describe("SessionStoryReadRepository", () => {
   it("loads turn and digest presence metadata for unique sessions in one query", async () => {
@@ -26,7 +26,7 @@ describe("SessionStoryReadRepository", () => {
     await expect(repository.getSessionSearchMetadata([
       "session-a",
       "session-b",
-    ])).resolves.toEqual(new Map([
+    ])).resolves.toEqual([
       ["session-a", {
         turnCount: 3,
         hasTurnSummaries: true,
@@ -39,7 +39,7 @@ describe("SessionStoryReadRepository", () => {
         hasStoryDigest: false,
         hasHighlight: false,
       }],
-    ]));
+    ]);
     expect(calls[0]?.text).toContain("user_message");
     expect(calls[0]?.text).toContain("intervention_sent");
     expect(calls[0]?.text).toContain("session_notification");

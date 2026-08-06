@@ -1,0 +1,143 @@
+import type { SqlClient } from "../control_plane_types.js";
+
+export interface HostSessionRow extends Record<string, unknown> {
+  session_id: string;
+  folder_id: string | null;
+  predecessor_session_id: string | null;
+}
+
+export interface HostSessionSummaryRow extends Record<string, unknown> {
+  session_id: string;
+  display_name: string | null;
+  updated_at: Date;
+}
+
+export class SessionReadRepository {
+  constructor(private readonly sql: SqlClient) {}
+
+  async getSession(sessionId: string): Promise<HostSessionRow | null> {
+    const rows = await this.sql<HostSessionRow[]>`
+      SELECT * FROM session_get(${sessionId})
+    `;
+    return rows[0] ?? null;
+  }
+
+  async listSessionsSummary(params: {
+    search?: string | null;
+    limit: number;
+    offset: number;
+    folderId?: string | null;
+    nodeId?: string | null;
+  }): Promise<{ sessions: HostSessionSummaryRow[]; total: number }> {
+    const rows = await this.sql<Array<HostSessionSummaryRow & {
+      event_count: string | number;
+      last_event_id: string | number | null;
+      last_read_event_id: string | number | null;
+      total_count: string | number;
+    }>>`
+      SELECT summary.*, sessions.predecessor_session_id
+      FROM session_list_summary(
+        ${params.search ?? null},
+        ${null},
+        ${params.limit},
+        ${params.offset},
+        ${params.folderId ?? null},
+        ${params.nodeId ?? null}
+      ) AS summary
+      JOIN sessions ON sessions.session_id = summary.session_id
+      ORDER BY summary.updated_at DESC, summary.session_id DESC
+    `;
+    return {
+      sessions: rows.map(({ total_count: _totalCount, ...row }) => ({
+        ...row,
+        event_count: Number(row.event_count),
+        last_event_id: row.last_event_id == null ? null : Number(row.last_event_id),
+        last_read_event_id:
+          row.last_read_event_id == null ? null : Number(row.last_read_event_id),
+      })),
+      total: rows[0] ? Number(rows[0].total_count) : 0,
+    };
+  }
+
+  async listSessionsForUpstreamDump(params: {
+    limit: number;
+    offset: number;
+    nodeId: string;
+  }): Promise<{ sessions: Array<Record<string, unknown>>; total: number }> {
+    const rows = await this.sql<Array<Record<string, unknown> & { session_id: string }>>`
+      SELECT
+        s.session_id,
+        s.display_name,
+        s.status,
+        s.session_type,
+        s.created_at,
+        s.updated_at,
+        (SELECT COUNT(*)::int FROM events e WHERE e.session_id = s.session_id) AS event_count,
+        s.away_summary,
+        s.caller_session_id,
+        s.predecessor_session_id,
+        s.last_event_id,
+        s.last_read_event_id,
+        s.node_id,
+        s.agent_id,
+        s.model_preset,
+        s.model,
+        s.prompt,
+        s.folder_id,
+        s.metadata,
+        s.last_message,
+        s.client_id,
+        s.review_required,
+        s.review_state
+      FROM sessions s
+      WHERE s.node_id = ${params.nodeId}
+      ORDER BY s.updated_at DESC, s.session_id DESC
+      LIMIT ${params.limit} OFFSET ${params.offset}
+    `;
+    const counts = await this.sql<Array<{ count: string | number }>>`
+      SELECT COUNT(*) AS count
+      FROM sessions
+      WHERE node_id = ${params.nodeId}
+    `;
+    return {
+      sessions: rows.map((row) => ({ ...row, binding_warnings: [] })),
+      total: Number(counts[0]?.count ?? 0),
+    };
+  }
+
+  async listRunningSessionsSummary(params: {
+    limit: number;
+    excludeSessionId?: string | null;
+  }): Promise<{ sessions: Array<Record<string, unknown>>; total: number }> {
+    const rows = await this.sql<Array<Record<string, unknown> & {
+      session_id: string;
+      updated_at: Date;
+      total_count: string | number;
+    }>>`
+      WITH filtered AS (
+        SELECT
+          s.session_id,
+          s.display_name,
+          s.node_id,
+          s.folder_id,
+          f.name AS folder_name,
+          s.updated_at
+        FROM sessions s
+        LEFT JOIN folders f ON f.id = s.folder_id
+        WHERE s.status = 'running'
+          AND (
+            ${params.excludeSessionId ?? null}::text IS NULL
+            OR s.session_id <> ${params.excludeSessionId ?? null}
+          )
+      )
+      SELECT f.*, (SELECT COUNT(*) FROM filtered)::BIGINT AS total_count
+      FROM filtered f
+      ORDER BY f.updated_at DESC, f.session_id DESC
+      LIMIT ${params.limit}
+    `;
+    return {
+      sessions: rows.map(({ total_count: _totalCount, ...row }) => row),
+      total: rows[0] ? Number(rows[0].total_count) : 0,
+    };
+  }
+}

@@ -15,6 +15,7 @@
 import type { Logger } from "pino";
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { SessionRow } from "../db/session_db_types.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import {
   fetchAtomContext,
@@ -62,6 +63,8 @@ import {
 } from "./session_context_sources.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
+import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
+import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
@@ -190,7 +193,11 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    const folder = await this._resolveFolder(task);
+    const resumeContext = await this.db.getResumeContext(
+      task.agentSessionId,
+      BOARD_WORKSPACE_SESSION_LIMIT,
+    );
+    const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
     const pageContext = await this.pageContextResolver.resolve(task, agent, this.cfg.atom, {
       pageIds: folder.projectPageIds,
@@ -208,7 +215,12 @@ export class ExecutionContextBuilder {
         this._fetchAtomContext(atomSources.agent),
         this._fetchAtomContext(atomSources.folder),
         this._fetchAtomContext(atomSources.session),
-        fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId),
+        fetchBoardWorkspaceContextItem(
+          this.db,
+          this.logger,
+          folder.folderId,
+          resumeContext.folderSessions,
+        ),
       ]);
     const primaryContainer = await resolvePrimarySessionContainerContext(
       this.db,
@@ -220,8 +232,14 @@ export class ExecutionContextBuilder {
       this.db,
       this.logger,
       task.agentSessionId,
+      resumeContext.runningSessions,
     );
-    const predecessorSummaryItem = await buildPredecessorSummaryContextItem(this.db, this.logger, task.agentSessionId);
+    const predecessorSummaryItem = await buildPredecessorSummaryContextItem(
+      this.db,
+      this.logger,
+      task.agentSessionId,
+      resumeContext.predecessor,
+    );
     const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
     return this._assembleContext({
@@ -250,22 +268,28 @@ export class ExecutionContextBuilder {
    * 본 PR은 *신규 task에만* 폴더 프롬프트 적용 — 호출자가 이미 분기 보장하므로 본 메서드에서
    * resume 가드는 생략 (Python L100은 호출자 분기와 중복이지만 안전망).
    */
-  private async _resolveFolder(task: Task): Promise<{
+  private async _resolveFolder(
+    task: Task,
+    preloadedSession?: SessionRow | null,
+  ): Promise<{
     folderId?: string;
     folderName?: string;
     folderPrompt?: string;
     atomContextSpecs?: AtomContextSpec[];
     projectPageIds?: string[];
   }> {
-    let sessionRow;
-    try {
-      sessionRow = await this.db.getSession(task.agentSessionId);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "_resolveFolder: getSession failed",
-      );
-      return {};
+    let sessionRow = preloadedSession;
+    if (preloadedSession === undefined) {
+      try {
+        sessionRow = await this.db.getSession(task.agentSessionId);
+      } catch (err) {
+        if (isSessionDataHostError(err)) throw err;
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "_resolveFolder: getSession failed",
+        );
+        return {};
+      }
     }
     if (!sessionRow || !sessionRow.folder_id) return {};
 

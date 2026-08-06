@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { serializeSessionStoryTurnSummary } from
-  "../../db/repositories/session_story_repository.js";
+  "../../db/session_story_types.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import type { SessionQueryConsumptionBoundary } from

@@ -1,6 +1,10 @@
 import type { Logger } from "pino";
 
 import type { SessionDB } from "../db/session_db.js";
+import {
+  isSessionDataHostError,
+  type SessionResumeContext,
+} from "../control_plane/session_data_host_client.js";
 
 import {
   BOARD_WORKSPACE_SESSION_LIMIT,
@@ -13,11 +17,20 @@ export async function fetchBoardWorkspaceContextItem(
   db: SessionDB,
   logger: Logger,
   folderId?: string,
+  preloaded?: SessionResumeContext["folderSessions"],
 ): Promise<ContextItem | null> {
   if (!folderId) return null;
   try {
     const catalog = await db.getCatalog();
-    const folderSessions = await fetchBoardWorkspaceFolderSessions(db, logger, folderId);
+    const folderSessions = preloaded
+      ? {
+          sessions: preloaded.sessions.map((session) => ({
+            sessionId: session.session_id,
+            displayName: session.display_name,
+          })),
+          total: preloaded.total,
+        }
+      : await fetchBoardWorkspaceFolderSessions(db, logger, folderId);
     return buildBoardWorkspaceContextItem(folderId, catalog, {
       ...(folderSessions
         ? {
@@ -27,6 +40,7 @@ export async function fetchBoardWorkspaceContextItem(
         : {}),
     });
   } catch (err) {
+    if (isSessionDataHostError(err)) throw err;
     logger.warn({ err, folderId }, "fetchBoardWorkspaceContextItem: getCatalog failed");
     return null;
   }
@@ -36,6 +50,7 @@ export async function fetchRunningSessionsContextItem(
   db: SessionDB,
   logger: Logger,
   currentSessionId: string,
+  preloaded?: SessionResumeContext["runningSessions"],
 ): Promise<ContextItem | null> {
   const listRunningSessionsSummary = (db as unknown as {
     listRunningSessionsSummary?: SessionDB["listRunningSessionsSummary"];
@@ -43,10 +58,10 @@ export async function fetchRunningSessionsContextItem(
   if (typeof listRunningSessionsSummary !== "function") return null;
 
   try {
-    const result = await listRunningSessionsSummary.call(db, {
-      limit: BOARD_WORKSPACE_SESSION_LIMIT,
-      excludeSessionId: currentSessionId,
-    });
+    const result = preloaded ?? await listRunningSessionsSummary.call(db, {
+        limit: BOARD_WORKSPACE_SESSION_LIMIT,
+        excludeSessionId: currentSessionId,
+      });
     const sessions = result.sessions.map((session) => {
       const item: Record<string, unknown> = {
         agent_session_id: session.session_id,
@@ -80,6 +95,7 @@ export async function fetchRunningSessionsContextItem(
       },
     };
   } catch (err) {
+    if (isSessionDataHostError(err)) throw err;
     logger.warn(
       { err, currentSessionId },
       "fetchRunningSessionsContextItem: listRunningSessionsSummary failed",
@@ -123,6 +139,7 @@ async function fetchBoardWorkspaceFolderSessions(
       total: result.total,
     };
   } catch (err) {
+    if (isSessionDataHostError(err)) throw err;
     logger.warn(
       { err, folderId },
       "fetchBoardWorkspaceFolderSessions: listSessionsSummary failed",

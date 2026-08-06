@@ -19,7 +19,7 @@ import {
   serializeSessionStoryView,
   type SessionStoryView,
 } from
-  "../../db/repositories/session_story_repository.js";
+  "../../db/session_story_types.js";
 import { SessionQueryConsumptionBoundary } from
   "./session_query_consumption_boundary.js";
 import { registerSessionTurnSummaryTool } from

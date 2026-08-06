@@ -23,6 +23,7 @@ import {
   hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
+import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
 
 const describePostgres =
   hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
@@ -38,6 +39,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
     db = new SessionDB(harness.sql);
+    configureTestSessionDataHost(db, harness.sql);
     db.configureSessionDeliveryHost(
       new SessionDeliveryRepository(harness.sql) as never,
     );

@@ -14,6 +14,7 @@ import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
+import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 
 export interface TaskTurnInput {
   prompt: string;
@@ -101,6 +102,7 @@ export class TaskTurnInputBuilder {
     try {
       return await this.deps.contextBuilder.build(task, agent);
     } catch (err) {
+      if (isSessionDataHostError(err)) throw err;
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "context_builder failed — falling back to task.prompt without context",
@@ -161,6 +163,7 @@ export class TaskTurnInputBuilder {
         options,
       );
     } catch (err) {
+      if (isSessionDataHostError(err)) throw err;
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "follow-up context_builder failed — continuing without dynamic context",

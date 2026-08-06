@@ -20,28 +20,69 @@ import type {
   SessionUpdateFields,
 } from "../db/session_db_types.js";
 
-type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
+export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 
-class PersistenceHostTransport {
+export class PersistenceHostRequestError extends Error {
+  readonly retryable: boolean;
+
+  constructor(
+    readonly domain: string,
+    readonly operation: string,
+    message: string,
+    readonly status?: number,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "PersistenceHostRequestError";
+    this.retryable = status === undefined || status === 408 || status === 429 || status >= 500;
+  }
+}
+
+export class PersistenceHostTransport {
   constructor(private readonly config: HostClientConfig) {}
 
-  async request<T>(domain: string, operation: string, args: unknown[]): Promise<T> {
-    const response = await fetch(
-      `${this.config.orch.baseUrl}/api/${domain}/host/${encodeURIComponent(operation)}`,
-      {
-        method: "POST",
-        headers: { ...this.config.orch.headers, "content-type": "application/json" },
-        body: JSON.stringify({ args: snakeCase(args) }),
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
+  async request<T>(
+    domain: string,
+    operation: string,
+    args: unknown[],
+    options: { timeoutMs?: number } = {},
+  ): Promise<T> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.config.orch.baseUrl}/api/${domain}/host/${encodeURIComponent(operation)}`,
+        {
+          method: "POST",
+          headers: { ...this.config.orch.headers, "content-type": "application/json" },
+          body: JSON.stringify({ args: snakeCase(args) }),
+          signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+        },
+      );
+    } catch (error) {
+      this.config.logger.warn(
+        { domain, operation, err: error },
+        "persistence host request failed before response",
+      );
+      throw new PersistenceHostRequestError(
+        domain,
+        operation,
+        `${domain} host ${operation} request failed`,
+        undefined,
+        { cause: error },
+      );
+    }
     if (!response.ok) {
       const message = await response.text();
       this.config.logger.warn(
         { domain, operation, status: response.status, message },
         "persistence host request failed",
       );
-      throw new Error(`${domain} host ${operation} failed: ${message || response.statusText}`);
+      throw new PersistenceHostRequestError(
+        domain,
+        operation,
+        `${domain} host ${operation} failed: ${message || response.statusText}`,
+        response.status,
+      );
     }
     return reviveDates(await response.json()) as T;
   }

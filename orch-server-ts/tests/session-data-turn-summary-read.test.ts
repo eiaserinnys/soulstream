@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionStoryReadRepository } from
-  "../../src/db/repositories/session_story_repository.js";
-import type { SqlClient } from "../../src/db/session_db_types.js";
+  "../src/control_plane/repositories/session_story_read_repository.js";
+import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 
 describe("SessionStoryReadRepository turn summary queries", () => {
   it("counts total, digested, and undigested summaries in one bounded session query", async () => {

@@ -162,8 +162,7 @@ describe("get_session_summary child completion", () => {
           caller_session_id: "caller-1",
           last_event_id: 42,
         })),
-        countEvents: vi.fn(async () => 0),
-        readEvents: vi.fn(async () => []),
+        getTurnExcerpt: vi.fn(async () => ({ totalEvents: 0, turns: [] })),
       },
       childCompletionConsumption: {
         recordObserved: vi.fn(),
