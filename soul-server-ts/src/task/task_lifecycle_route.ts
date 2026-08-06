@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
-import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 
 import type { ExternalFinalizeParams } from "./task_lifecycle_transition.js";
 import type { Task } from "./task_models.js";
@@ -32,7 +32,7 @@ interface TaskLifecycleRouteDeps {
   listTasks(): Task[];
   forgetTask(sessionId: string): void;
   lifecycleTransition: TaskLifecycleTransitionPort;
-  db: SessionDB;
+  sessionMutations: SessionMutationHost;
   broadcaster: SessionBroadcaster;
   logger: Logger;
   closeSessionRuntime?: (
@@ -64,13 +64,11 @@ export class TaskLifecycleRoute {
         this.deps.logger.warn({ err, sessionId }, "session runtime close failed");
       }
     }
+    await this.deps.sessionMutations.deleteSession(
+      sessionId,
+      `delete_session:${sessionId}`,
+    );
     this.deps.forgetTask(sessionId);
-
-    try {
-      await this.deps.db.deleteSession(sessionId);
-    } catch (err) {
-      this.deps.logger.warn({ err, sessionId }, "DB deleteSession failed");
-    }
 
     try {
       await this.deps.broadcaster.emitSessionDeleted(sessionId);

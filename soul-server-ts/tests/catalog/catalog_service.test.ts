@@ -1004,19 +1004,31 @@ describe("CatalogService board items", () => {
 });
 
 describe("CatalogService.renameSession", () => {
-  it("db.renameSession + broadcast", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
+  it("host renameSession + broadcast", async () => {
+    const { sql } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
+    const renameSession = vi.fn().mockResolvedValue({});
+    const svc = new CatalogService(
+      db,
+      broadcaster,
+      undefined,
+      undefined,
+      { renameSession } as never,
+    );
 
     await svc.renameSession("s1", "새 이름");
+    await svc.renameSession("s1", "새 이름");
 
-    const renameCall = calls.find((c) =>
-      c.fragments.join("|").includes("session_rename"),
+    expect(renameSession).toHaveBeenNthCalledWith(
+      1,
+      "s1",
+      "새 이름",
+      expect.stringMatching(/^rename_session:s1:/),
     );
-    expect(renameCall).toBeDefined();
-    expect(renameCall!.values).toEqual(["s1", "새 이름"]);
+    expect(renameSession.mock.calls[1]?.[2]).toBe(
+      renameSession.mock.calls[0]?.[2],
+    );
     expect(emitCatalogUpdated).toHaveBeenCalledWith(
       expect.any(Array),
       {
@@ -1028,20 +1040,23 @@ describe("CatalogService.renameSession", () => {
 });
 
 describe("CatalogService.deleteSession", () => {
-  it("db.deleteSession + broadcastCatalog + emitSessionDeleted", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
+  it("host deleteSession + broadcastCatalog + emitSessionDeleted", async () => {
+    const { sql } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated, emitSessionDeleted } =
       createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
+    const deleteSession = vi.fn().mockResolvedValue({});
+    const svc = new CatalogService(
+      db,
+      broadcaster,
+      undefined,
+      undefined,
+      { deleteSession } as never,
+    );
 
     await svc.deleteSession("s1");
 
-    const deleteCall = calls.find((c) =>
-      c.fragments.join("|").includes("session_delete"),
-    );
-    expect(deleteCall).toBeDefined();
-    expect(deleteCall!.values).toEqual(["s1"]);
+    expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
     expect(emitCatalogUpdated).toHaveBeenCalledWith(
       expect.any(Array),
       { s1: null },

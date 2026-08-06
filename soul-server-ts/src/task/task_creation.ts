@@ -1,8 +1,10 @@
 import type { Logger } from "pino";
 
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
+import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -76,6 +78,8 @@ export interface CreateTaskParams {
 export interface TaskCreationDeps {
   nodeId: string;
   db: SessionDB;
+  sessionMutations: SessionMutationHost;
+  persistence?: EventPersistence;
   boardYjsService?: Pick<BoardYjsHostClient, "upsertSessionBoardItem">;
   broadcaster: SessionBroadcaster;
   logger: Logger;
@@ -87,18 +91,18 @@ export interface TaskCreationDeps {
 /**
  * Owns new runtime task creation.
  *
- * This is the only place that assembles the initial Task shape, DB
- * `session_register` payload, caller metadata timing, folder assignment, and
+ * This is the only place that assembles the initial Task shape, persistence-host
+ * `register_session` payload, caller metadata timing, folder assignment, and
  * `session_created` broadcast ordering for a brand-new session.
  */
 export class TaskCreation {
   constructor(private readonly deps: TaskCreationDeps) {}
 
   /**
-   * 새 Task 생성 + DB 등록 + orch broadcast.
+   * 새 Task 생성 + persistence host 등록 + orch broadcast.
    *
    * 같은 agentSessionId가 이미 있으면 throw — 중복 차단.
-   * DB register 실패 시 in-memory map에 task를 *남기지 않음* (실패 격리).
+   * host register 실패 시 in-memory map에 task를 *남기지 않음* (실패 격리).
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
     if (this.deps.hasTask(params.agentSessionId)) {
@@ -157,9 +161,9 @@ export class TaskCreation {
       interventionQueue: [],
     };
 
-    // DB 등록 — schema.sql session_register는 *INSERT only*, ON CONFLICT 없음.
-    // 같은 session_id 중복 INSERT 시 PK violation throw → 호출자에게 신호.
-    await this.deps.db.registerSession({
+    // host 등록은 실행 시작 전에 반드시 성공해야 한다. 같은 session_id로 같은
+    // idempotency key를 재시도하면 기존 결과를 반환하고, 다른 intent면 충돌한다.
+    await this.deps.sessionMutations.registerSession({
       sessionId: task.agentSessionId,
       nodeId: this.deps.nodeId,
       agentId: task.profileId ?? null,
@@ -177,12 +181,17 @@ export class TaskCreation {
       notifyCompletion: task.notifyCompletion ?? true,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",
-    });
+    }, `register_session:${task.agentSessionId}`);
 
-    // caller_info와 session-scoped SDK policy를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:
+    // caller_info와 session-scoped SDK policy를 Task.metadata와 ingress effect에 동시 저장. Python TaskFactory와 같은 타이밍:
     // session_created 전에 박아 feed/folder 초기 카드가 metadata fallback을 즉시 사용할 수 있게 한다.
     for (const entry of metadata) {
-      await this.deps.db.appendMetadata(task.agentSessionId, entry);
+      if (!this.deps.persistence) {
+        throw new Error("metadata session effect persistence is required");
+      }
+      await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+        waitForAck: true,
+      });
     }
 
     try {

@@ -30,7 +30,7 @@ import {
 import type { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -169,41 +169,6 @@ export class SessionDB {
     return this.claudeBackgroundTaskRepository;
   }
 
-  async registerSession(params: RegisterSessionParams): Promise<void> {
-    await this.sessionRepository.registerSession(params);
-  }
-
-  async updateSession(
-    sessionId: string,
-    fields: SessionUpdateFields,
-  ): Promise<void> {
-    await this.sessionRepository.updateSession(sessionId, fields);
-  }
-
-  async acknowledgeSessionReview(
-    sessionId: string,
-  ): Promise<AcknowledgeReviewOutcome> {
-    return await this.sessionRepository.acknowledgeSessionReview(sessionId);
-  }
-
-  async interruptRunningSessionsForNode(nodeId: string): Promise<number> {
-    return await this.sessionRepository.interruptRunningSessionsForNode(nodeId);
-  }
-
-  async setClaudeSessionId(
-    sessionId: string,
-    claudeSessionId: string,
-  ): Promise<void> {
-    await this.sessionRepository.setClaudeSessionId(sessionId, claudeSessionId);
-  }
-
-  async updateLastMessage(
-    sessionId: string,
-    lastMessage: LastMessageRow,
-  ): Promise<void> {
-    await this.sessionRepository.updateLastMessage(sessionId, lastMessage);
-  }
-
   async getSession(sessionId: string): Promise<SessionRow | null> {
     return await this.sessionRepository.getSession(sessionId);
   }
@@ -250,17 +215,6 @@ export class SessionDB {
       includeHighlight,
       includeStory,
     );
-  }
-
-  async deleteSession(sessionId: string): Promise<void> {
-    await this.sessionRepository.deleteSession(sessionId);
-  }
-
-  async appendMetadata(
-    sessionId: string,
-    entry: Record<string, unknown>,
-  ): Promise<number> {
-    return await this.sessionRepository.appendMetadata(sessionId, entry);
   }
 
   async assignSessionToFolder(
@@ -322,13 +276,6 @@ export class SessionDB {
     container: string | BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope | null> {
     return await this.boardYjsRepository.resolveBoardYjsContainerScope(container);
-  }
-
-  async renameSession(
-    sessionId: string,
-    displayName: string | null,
-  ): Promise<void> {
-    await this.sessionRepository.renameSession(sessionId, displayName);
   }
 
   async listSessionsSummary(params: {

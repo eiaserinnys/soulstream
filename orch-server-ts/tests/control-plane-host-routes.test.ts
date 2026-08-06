@@ -268,6 +268,86 @@ describe("control-plane host routes", () => {
     expect(input.delivery.createdAt).toBeInstanceOf(Date);
   });
 
+  it("preserves session transition fields, idempotency, and timestamps across the host boundary", async () => {
+    const transitionSession = vi.fn(async (input: unknown) => ({ input }));
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        sessionMutations: { transitionSession },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-data/host/transition_session",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        args: [{
+          session_id: "session-1",
+          fields: {
+            status: "interrupted",
+            last_read_event_id: 12,
+            termination_reason: "killed",
+          },
+          idempotency_key: "transition-session-1",
+          updated_at: "2026-08-06T10:00:00.000Z",
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(transitionSession).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      fields: {
+        status: "interrupted",
+        lastReadEventId: 12,
+        terminationReason: "killed",
+      },
+      idempotencyKey: "transition-session-1",
+      updatedAt: new Date("2026-08-06T10:00:00.000Z"),
+    });
+  });
+
+  it("returns idempotency conflicts across the session mutation host boundary", async () => {
+    const deleteSession = vi.fn(async () => {
+      throw Object.assign(new Error("idempotency key conflict: delete-session-1"), {
+        statusCode: 409,
+      });
+    });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        sessionMutations: { deleteSession },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-data/host/delete_session",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        args: [{
+          session_id: "session-1",
+          idempotency_key: "delete-session-1",
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      detail: {
+        error: {
+          code: "HOST_OPERATION_FAILED",
+          message: "idempotency key conflict: delete-session-1",
+        },
+      },
+    });
+  });
+
   it("rejects persistence operations outside the explicit whitelist", async () => {
     const app = Fastify();
     apps.push(app);

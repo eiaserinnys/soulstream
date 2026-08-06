@@ -113,17 +113,53 @@ class SessionCreated(TypedDict):
     caller_source: NotRequired[dict[str, Any]]
 
 
-class SessionEffect(TypedDict):
+class LastMessage(TypedDict, closed=True):
+    type: str
+    preview: str
+    timestamp: str
+
+
+class SessionEffect(TypedDict, closed=True):
     """
-    Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.
+    Event와 같은 ingress transaction에서 적용되는 typed session effect.
     """
 
-    kind: Literal[
-        'last_message',
-        'set_backend_session_id',
-        'terminal_transition',
-        'append_metadata',
-    ]
+    kind: Literal['last_message']
+    last_message: LastMessage
+    updated_at: str
+
+
+class SessionEffect1(TypedDict, closed=True):
+    """
+    Event와 같은 ingress transaction에서 적용되는 typed session effect.
+    """
+
+    kind: Literal['set_backend_session_id']
+    backend_session_id: str
+
+
+class SessionEffect2(TypedDict, closed=True):
+    """
+    Event와 같은 ingress transaction에서 적용되는 typed session effect.
+    """
+
+    kind: Literal['terminal_transition']
+    status: str
+    termination_reason: str
+    termination_detail: str | None
+    review_state: str
+    updated_at: str
+
+
+class SessionEffect3(TypedDict, closed=True):
+    """
+    Event와 같은 ingress transaction에서 적용되는 typed session effect.
+    """
+
+    kind: Literal['append_metadata']
+    entry: dict[str, Any]
+    updated_at: str
+    replace_existing_type: NotRequired[str]
 
 
 class Event(TypedDict, closed=True):
@@ -135,7 +171,9 @@ class Event(TypedDict, closed=True):
     searchable_text: str | None
     created_at: str
     semantic_dedupe_key: str | None
-    session_effect: SessionEffect | None
+    session_effect: (
+        SessionEffect | SessionEffect1 | SessionEffect2 | SessionEffect3 | None
+    )
     payload_hash: str
 
 
@@ -167,6 +205,9 @@ class EventAppendAck(TypedDict):
     events: list[Event1]
 
 
+RunningSessionId: TypeAlias = str
+
+
 class Session1(TypedDict):
     review_required: NotRequired[bool]
     review_state: NotRequired[Literal['not_required', 'needs_review', 'acknowledged']]
@@ -179,6 +220,7 @@ class SessionsUpdate(TypedDict):
     """
 
     type: Literal['sessions_update']
+    running_session_ids: NotRequired[list[RunningSessionId]]
     sessions: list[Session1]
     total: NotRequired[int]
     requestId: NotRequired[str]

@@ -127,10 +127,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(55);
+    expect(migrations).toHaveLength(56);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "054_event_ingress_receipts.sql",
+      "055_session_effects_and_mutation_receipts.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -140,10 +140,10 @@ describe("versioned migration contract", () => {
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
     ]);
-    expect(migrations.slice(0, -13).every(
+    expect(migrations.slice(0, -14).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-13).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-14).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
       "previous_release_safe",
@@ -156,6 +156,7 @@ describe("versioned migration contract", () => {
       "previous_release_safe",
       "previous_release_safe",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
     ]);
   });
@@ -208,6 +209,7 @@ describe("versioned migration contract", () => {
       "052_session_review_state_filter.sql",
       "053_retire_supervisor.sql",
       "054_event_ingress_receipts.sql",
+      "055_session_effects_and_mutation_receipts.sql",
     ]);
   });
 
@@ -230,6 +232,7 @@ describe("versioned migration contract", () => {
       "052_session_review_state_filter.sql",
       "053_retire_supervisor.sql",
       "054_event_ingress_receipts.sql",
+      "055_session_effects_and_mutation_receipts.sql",
     ]);
   });
 

@@ -75,7 +75,16 @@ function makeMocks() {
   const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
   const broadcaster = { emitEventEnvelope, emitSessionUpdated } as unknown as SessionBroadcaster;
 
-  return { persistence, db, broadcaster, persistEvent, emitEventEnvelope, emitSessionUpdated };
+  return {
+    persistence,
+    db,
+    broadcaster,
+    persistEvent,
+    enqueueEventAndWaitForSessionAck:
+      persistenceDouble.enqueueEventAndWaitForSessionAck,
+    emitEventEnvelope,
+    emitSessionUpdated,
+  };
 }
 
 /** ClaudeClientEvent 시퀀스를 yield하는 mock ClaudeClient. turn별로 event 배열을 받음. */
@@ -189,8 +198,15 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     );
     expect(completeCalls).toHaveLength(1);
 
-    // session_updated broadcast가 1회 (finalize에서)
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-lc",
+      expect.objectContaining({ type: "session_ended", status: "completed" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+      }),
+    );
   });
 
   it("multi-turn intervention (queued) → 두 turn 모두 처리 + complete 누락/중복 없음", async () => {
@@ -423,6 +439,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         type: "assistant_message",
         content: "handled after steer",
       }),
+      undefined,
     );
     expect(task.status).toBe("completed");
   });

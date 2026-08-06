@@ -43,7 +43,11 @@ describe("EventIngressRepository", () => {
     );
 
     const committed = await repository.commitBatch("node-a", batch({
-      session_effect: { kind: "last_message", preview: "done" },
+      session_effect: {
+        kind: "last_message",
+        last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
     }));
 
     expect(sql.begin).toHaveBeenCalledTimes(1);
@@ -54,7 +58,11 @@ describe("EventIngressRepository", () => {
       "receipt-insert",
     ]);
     expect(committed).toEqual([{ envelope: batch({
-      session_effect: { kind: "last_message", preview: "done" },
+      session_effect: {
+        kind: "last_message",
+        last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
     }).events[0], eventId: 41, duplicateReceipt: false }]);
   });
 

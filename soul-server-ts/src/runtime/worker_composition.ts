@@ -15,6 +15,7 @@ import { CustomViewService } from "../custom_view/custom_view_service.js";
 import {
   ClaudeRuntimeHostClient,
   SessionDeliveryHostClient,
+  SessionMutationHostClient,
   SessionPageBindingHostClient,
 } from "../control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../db/event_persistence.js";
@@ -130,13 +131,6 @@ export async function composeWorkerRuntime(
   await preflightPersistentRuntimeSchema(db, env.CLAUDE_SESSION_RUNTIME_V2_ENABLED);
   ensureStableSessionOrderIndexInBackground(db, logger);
   const claudeSessionStore = new DbClaudeSessionStore(db);
-  const interruptedOnStartup = await db.interruptRunningSessionsForNode(env.SOULSTREAM_NODE_ID);
-  if (interruptedOnStartup > 0) {
-    logger.warn(
-      { count: interruptedOnStartup, nodeId: env.SOULSTREAM_NODE_ID },
-      "Interrupted stale running sessions on startup",
-    );
-  }
   const send = async (data: unknown): Promise<void> => {
     if (!upstreamAdapter) {
       logger.warn({ data }, "broadcast send called before UpstreamAdapter ready");
@@ -162,6 +156,7 @@ export async function composeWorkerRuntime(
     modelCatalog,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
+  const sessionMutations = new SessionMutationHostClient({ orch: orchProxyConfig, logger });
   const claudeRuntimeHost = new ClaudeRuntimeHostClient({ orch: orchProxyConfig, logger });
   db.configurePersistenceHosts({
     deliveries: new SessionDeliveryHostClient({ orch: orchProxyConfig, logger }),
@@ -229,7 +224,6 @@ export async function composeWorkerRuntime(
   const detachedClaudeEventPublisher = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? new TaskEngineEventPublisher({
         broadcaster,
-        db,
         logger,
         persistence,
       })
@@ -278,6 +272,7 @@ export async function composeWorkerRuntime(
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     claudeSessionClientRegistry,
     modelCatalog,
+    sessionMutations,
   );
   db.configureScheduleHost(new ScheduleHostClient({ orch: orchProxyConfig, logger }));
   const scheduleService =
@@ -314,6 +309,7 @@ export async function composeWorkerRuntime(
     broadcaster,
     boardYjsService,
     folderProjectIdentityHost,
+    sessionMutations,
   );
   const taskHandoffNotifier = new TaskHandoffNotifier(
     taskService,

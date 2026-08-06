@@ -884,12 +884,37 @@ export interface EventAppendBatch {
       created_at: string;
       semantic_dedupe_key: string | null;
       /**
-       * Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.
+       * Event와 같은 ingress transaction에서 적용되는 typed session effect.
        */
-      session_effect: {
-        kind: "last_message" | "set_backend_session_id" | "terminal_transition" | "append_metadata";
-        [k: string]: unknown;
-      } | null;
+      session_effect:
+        | null
+        | {
+            kind: "last_message";
+            last_message: {
+              type: string;
+              preview: string;
+              timestamp: string;
+            };
+            updated_at: string;
+          }
+        | {
+            kind: "set_backend_session_id";
+            backend_session_id: string;
+          }
+        | {
+            kind: "terminal_transition";
+            status: string;
+            termination_reason: string;
+            termination_detail: string | null;
+            review_state: string;
+            updated_at: string;
+          }
+        | {
+            kind: "append_metadata";
+            entry: {};
+            updated_at: string;
+            replace_existing_type?: string;
+          };
       payload_hash: string;
     },
     ...{
@@ -902,12 +927,37 @@ export interface EventAppendBatch {
       created_at: string;
       semantic_dedupe_key: string | null;
       /**
-       * Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.
+       * Event와 같은 ingress transaction에서 적용되는 typed session effect.
        */
-      session_effect: {
-        kind: "last_message" | "set_backend_session_id" | "terminal_transition" | "append_metadata";
-        [k: string]: unknown;
-      } | null;
+      session_effect:
+        | null
+        | {
+            kind: "last_message";
+            last_message: {
+              type: string;
+              preview: string;
+              timestamp: string;
+            };
+            updated_at: string;
+          }
+        | {
+            kind: "set_backend_session_id";
+            backend_session_id: string;
+          }
+        | {
+            kind: "terminal_transition";
+            status: string;
+            termination_reason: string;
+            termination_detail: string | null;
+            review_state: string;
+            updated_at: string;
+          }
+        | {
+            kind: "append_metadata";
+            entry: {};
+            updated_at: string;
+            replace_existing_type?: string;
+          };
       payload_hash: string;
     }[]
   ];
@@ -941,6 +991,7 @@ export interface EventAppendAck {
  */
 export interface SessionsUpdate {
   type: "sessions_update";
+  running_session_ids?: string[];
   sessions: {
     review_required?: boolean;
     review_state?: "not_required" | "needs_review" | "acknowledged";

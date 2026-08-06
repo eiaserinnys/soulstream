@@ -7,6 +7,7 @@ import {
   EventIngressValidationError,
   parseEventAppendBatch,
   type EventAppendAck,
+  type EventAppendBatch,
 } from "./event_ingress_types.js";
 
 export type NodeEventIngressCommitter = Pick<EventIngressRepository, "commitBatch">;
@@ -86,6 +87,18 @@ export class NodeEventIngressController {
         } catch (error) {
           this.options.logError(error, "Committed event broadcast failed");
         }
+        const sessionUpdate = committedEffectSessionUpdate(item.envelope.session_effect, {
+          sessionId: item.envelope.session_id,
+          eventId: item.eventId,
+        });
+        if (sessionUpdate) {
+          const effectEvents = this.options.receiveCommittedEvent(sessionUpdate);
+          try {
+            this.options.publish(effectEvents);
+          } catch (error) {
+            this.options.logError(error, "Committed session effect broadcast failed");
+          }
+        }
       }
       const ack: EventAppendAck = {
         type: "event_append_ack",
@@ -113,6 +126,35 @@ export class NodeEventIngressController {
       throw error;
     }
   }
+}
+
+function committedEffectSessionUpdate(
+  effect: EventAppendBatch["events"][number]["session_effect"],
+  input: { sessionId: string; eventId: number },
+): Record<string, unknown> | null {
+  if (!effect) return null;
+  if (effect.kind === "last_message") {
+    return {
+      type: "session_updated",
+      agentSessionId: input.sessionId,
+      last_message: effect.last_message,
+      updated_at: effect.updated_at,
+      last_event_id: input.eventId,
+    };
+  }
+  if (effect.kind === "terminal_transition") {
+    return {
+      type: "session_updated",
+      agentSessionId: input.sessionId,
+      status: effect.status,
+      termination_reason: effect.termination_reason,
+      termination_detail: effect.termination_detail,
+      review_state: effect.review_state,
+      updated_at: effect.updated_at,
+      last_event_id: input.eventId,
+    };
+  }
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

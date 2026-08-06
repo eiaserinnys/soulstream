@@ -14,7 +14,7 @@ describe("TaskCreationHook production seam", () => {
       "task/task_creation.ts",
       "db/session_db.ts",
     ].filter((path) => source(path).includes(".registerSession("));
-    expect(directRegistrationOwners).toEqual(["task/task_creation.ts", "db/session_db.ts"]);
+    expect(directRegistrationOwners).toEqual(["task/task_creation.ts"]);
     expect(source("task/task_manager.ts").match(/new TaskCreation\(/g)).toHaveLength(1);
   });
 

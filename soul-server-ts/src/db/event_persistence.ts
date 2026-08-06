@@ -7,8 +7,8 @@
  * 책임:
  *   1. enqueueEvent: semantic/debug events를 worker JSONL outbox에 fsync append
  *   2. waitForSessionAck: turn/terminal 경계에서 orch commit ACK 대기
- *   3. handleSideEffects: last_message DB 갱신 + emit_session_message_updated wire 발행
- *      (F-3A) + task.lastAssistantText 누적
+ *   3. handleSideEffects: worker runtime text state only. Durable session effects
+ *      are attached before outbox append and committed by the orchestrator.
  */
 
 import type { Logger } from "pino";
@@ -19,6 +19,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   EventOutbox,
   EventOutboxRecord,
+  EventOutboxSessionEffect,
 } from "../upstream/event_outbox.js";
 import type { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 
@@ -77,6 +78,7 @@ export class EventPersistence {
   async enqueueEvent(
     sessionId: string,
     event: SSEEventPayload,
+    explicitEffect?: EventOutboxSessionEffect,
   ): Promise<EventOutboxRecord> {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
@@ -88,6 +90,7 @@ export class EventPersistence {
     const eventType = (safeEvent as { type: string }).type;
     const searchable = extractSearchableText(safeEvent);
     const createdAt = extractTimestamp(event) ?? new Date();
+    const sessionEffect = explicitEffect ?? buildLastMessageEffect(safeEvent, createdAt);
     const record = await this.outbox.append({
       session_id: sessionId,
       event_type: eventType,
@@ -95,7 +98,7 @@ export class EventPersistence {
       searchable_text: searchable,
       created_at: createdAt.toISOString(),
       semantic_dedupe_key: dedupeKey,
-      session_effect: null,
+      session_effect: sessionEffect,
     });
     this.latestPendingAckBySession.set(sessionId, record);
     return record;
@@ -104,8 +107,9 @@ export class EventPersistence {
   async enqueueEventAndWaitForSessionAck(
     sessionId: string,
     event: SSEEventPayload,
+    effect?: EventOutboxSessionEffect,
   ): Promise<{ record: EventOutboxRecord; eventId: number }> {
-    const record = await this.enqueueEvent(sessionId, event);
+    const record = await this.enqueueEvent(sessionId, event, effect);
     const eventId = await this.outboxPump.waitForAcknowledgement(record);
     this.clearPendingAckTarget(sessionId, record.source_seq);
     return { record, eventId };
@@ -119,37 +123,47 @@ export class EventPersistence {
     return eventId;
   }
 
+  async enqueueMetadataEffect(
+    sessionId: string,
+    entry: Record<string, unknown>,
+    options: { replaceExistingType?: string; waitForAck?: boolean } = {},
+  ): Promise<number | null> {
+    const timestamp = new Date().toISOString();
+    const event = {
+      type: "metadata",
+      metadata_type: entry.type,
+      value: entry.value,
+      label: entry.label,
+      timestamp,
+    } as unknown as SSEEventPayload;
+    const effect: EventOutboxSessionEffect = {
+      kind: "append_metadata",
+      entry: sanitizeJsonValue(entry) as Record<string, unknown>,
+      updated_at: timestamp,
+      ...(options.replaceExistingType
+        ? { replace_existing_type: options.replaceExistingType }
+        : {}),
+    };
+    if (options.waitForAck) {
+      return (await this.enqueueEventAndWaitForSessionAck(sessionId, event, effect)).eventId;
+    }
+    await this.enqueueEvent(sessionId, event, effect);
+    return null;
+  }
+
   private clearPendingAckTarget(sessionId: string, sourceSeq: number): void {
     if (this.latestPendingAckBySession.get(sessionId)?.source_seq === sourceSeq) {
       this.latestPendingAckBySession.delete(sessionId);
     }
   }
 
-  /**
-   * 이벤트 후처리: last_message DB 갱신 + emit_session_message_updated wire 발행 +
-   * task.lastAssistantText 누적.
-   *
-   * F-3A: PREVIEW_FIELD_MAP 매칭 이벤트(thinking/error/away_summary/assistant_message)에
-   * 한해 DB 갱신 직후 broadcaster에 last_message wire를 발행. text_start/text_delta/
-   * text_end/complete/result/session 등은
-   * PREVIEW_FIELD_MAP에 없어 자동 필터됨 — Python `event_persistence.py` L96-133 정본과 정합.
-   *
-   * 실패 격리 정책 (Python 정본 정합):
-   *   - DB updateLastMessage throw → 호출자(task_executor._processEvent)까지 전파.
-   *     wire는 발행하지 *않음* — DB·wire 불일치(클라이언트가 last_message 보고 새로 그렸는데
-   *     DB는 미갱신이라 다음 list refresh에서 이전 값으로 회귀) 방지.
-   *   - broadcaster.emitSessionMessageUpdated throw → 격리 (logger.debug, task 진행 계속).
-   *     wire는 다음 readable event가 self-correct.
-   *   - lastAssistantText 누적은 *항상* 수행 (DB·wire 무관).
-   */
+  /** Runtime-only state capture. Durable DB/wire effects are ingress-owned. */
   async handleSideEffects(
     sessionId: string,
     event: SSEEventPayload,
     task: Task,
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
-    let previewText = extractPreviewText(event);
-
     if (eventType === "text_start") {
       task.lastAssistantText = "";
     }
@@ -176,36 +190,25 @@ export class EventPersistence {
       }
     }
 
-    if (previewText) {
-      const ts = extractTimestamp(event)?.toISOString() ?? new Date().toISOString();
-      const lastMessage = {
-        type: eventType,
-        preview: truncateJsonText(previewText, LAST_MESSAGE_PREVIEW_LIMIT),
-        timestamp: ts,
-      };
-
-      // last_message DB 갱신 — throw 시 호출자로 전파 (wire 미발행).
-      await this.db.updateLastMessage(sessionId, lastMessage);
-
-      // F-3A: emit_session_message_updated wire — DB 성공 후에만 발행.
-      // wire 실패는 격리 (다음 readable event가 self-correct).
-      try {
-        await this.broadcaster.emitSessionMessageUpdated(
-          sessionId,
-          task.status,
-          ts,
-          lastMessage,
-          task.lastEventId,
-          task.lastReadEventId,
-        );
-      } catch (err) {
-        this.logger.debug(
-          { err, sessionId },
-          "emitSessionMessageUpdated failed",
-        );
-      }
-    }
   }
+}
+
+function buildLastMessageEffect(
+  event: SSEEventPayload,
+  createdAt: Date,
+): EventOutboxSessionEffect | null {
+  const preview = extractPreviewText(event);
+  if (!preview) return null;
+  const updatedAt = createdAt.toISOString();
+  return {
+    kind: "last_message",
+    last_message: {
+      type: (event as { type: string }).type,
+      preview: truncateJsonText(preview, LAST_MESSAGE_PREVIEW_LIMIT),
+      timestamp: updatedAt,
+    },
+    updated_at: updatedAt,
+  };
 }
 
 /**

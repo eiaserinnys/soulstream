@@ -6,13 +6,14 @@
  * 정책(broadcast 시점, ID 생성 책임)을 단일 자리에 둔다 (design-principles §3).
  *
  * 의존:
- *   - SessionDB — folders/sessions 테이블 mutation
+ *   - SessionDB — folders·문서·board item mutation과 catalog read
+ *   - SessionMutationHost — session rename/delete mutation
  *   - SessionBroadcaster — catalog_updated / session_deleted wire emit
  *
- * 본 PR은 stored procedure 호출만 — schema DDL 정본은 `packages/db-schema/sql/schema.sql`.
+ * schema DDL 정본은 `packages/db-schema/sql/schema.sql`.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type {
   BoardYjsContainerRef,
@@ -23,6 +24,7 @@ import type {
 import { assertMutableFolder } from "../system_folders.js";
 import type { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import {
   CatalogBoardItemService,
   type CatalogBoardItemMoveResult,
@@ -41,6 +43,16 @@ import {
   type ContainerSessionItem,
   createContainerBrowseStore,
 } from "./container_browse_service.js";
+
+function renameSessionIdempotencyKey(
+  sessionId: string,
+  displayName: string | null,
+): string {
+  const intentHash = createHash("sha256")
+    .update(JSON.stringify({ displayName }))
+    .digest("hex");
+  return `rename_session:${sessionId}:${intentHash}`;
+}
 
 export interface CatalogFolderDto {
   id: string;
@@ -113,6 +125,7 @@ export class CatalogService {
       FolderProjectIdentityHostClient,
       "create" | "rename" | "archive"
     >,
+    private readonly sessionMutations?: SessionMutationHost,
   ) {
     this.boardItems = new CatalogBoardItemService(
       db,
@@ -258,8 +271,7 @@ export class CatalogService {
   /**
    * 세션 표시 이름 갱신. displayName=null → 이름 제거.
    *
-   * Python `catalog_service.rename_session` L126-133 정본:
-   *   db.rename_session + broadcast_catalog().
+   * host rename_session + broadcast_catalog().
    *
    * 정규화(trim·empty→null) 책임은 호출자 (도구 핸들러 또는 dashboard API).
    */
@@ -267,15 +279,19 @@ export class CatalogService {
     sessionId: string,
     displayName: string | null,
   ): Promise<void> {
-    await this.db.renameSession(sessionId, displayName);
+    if (!this.sessionMutations) throw new Error("session mutation host is required");
+    await this.sessionMutations.renameSession(
+      sessionId,
+      displayName,
+      renameSessionIdempotencyKey(sessionId, displayName),
+    );
     await this.broadcastCatalog({ sessionIds: [sessionId] });
   }
 
   /**
-   * 세션 삭제 — 이벤트까지 함께 삭제 (schema.sql session_delete cascade).
+   * 세션 삭제 — host operation이 이벤트까지 함께 삭제한다.
    *
-   * Python `catalog_service.delete_session` L135-141 정합:
-   *   db.delete_session + broadcast_catalog() + emit_session_deleted.
+   * host delete_session + broadcast_catalog() + emit_session_deleted.
    *
    * 두 wire를 모두 발사하는 이유:
    *   - catalog_updated → 폴더 트리 갱신
@@ -283,7 +299,8 @@ export class CatalogService {
    */
   async deleteSession(sessionId: string): Promise<void> {
     const deletedBoardItemIds = await this.db.getBoardItemIdsForSession(sessionId);
-    await this.db.deleteSession(sessionId);
+    if (!this.sessionMutations) throw new Error("session mutation host is required");
+    await this.sessionMutations.deleteSession(sessionId, `delete_session:${sessionId}`);
     await this.broadcastCatalog({
       sessionsDelta: { [sessionId]: null },
       deletedBoardItemIds,

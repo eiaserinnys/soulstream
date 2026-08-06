@@ -2,7 +2,6 @@ import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EventPersistence } from "../../src/db/event_persistence.js";
-import type { SessionDB } from "../../src/db/session_db.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
@@ -32,9 +31,6 @@ function makePublisherDeps() {
     handleSideEffects,
   } as unknown as EventPersistence;
 
-  const setClaudeSessionId = vi.fn(async () => undefined);
-  const db = { setClaudeSessionId } as unknown as SessionDB;
-
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broadcaster = {
     emitEventEnvelope,
@@ -47,13 +43,11 @@ function makePublisherDeps() {
 
   return {
     broadcaster,
-    db,
     emitEventEnvelope,
     handleSideEffects,
     logger,
     enqueueEvent,
     persistence,
-    setClaudeSessionId,
   };
 }
 
@@ -70,7 +64,7 @@ describe("TaskEngineEventPublisher", () => {
 
     await publisher.publishEngineEvent(task, event);
 
-    expect(deps.enqueueEvent).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.enqueueEvent).toHaveBeenCalledWith("sess-1", event, undefined);
     expect(task.lastEventId).toBe(7);
     expect((event as Record<string, unknown>)._event_id).toBeUndefined();
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
@@ -116,17 +110,18 @@ describe("TaskEngineEventPublisher", () => {
     } as SSEEventPayload);
 
     expect(task.codexThreadId).toBe("thr-first");
-    expect(deps.setClaudeSessionId).toHaveBeenCalledTimes(1);
-    expect(deps.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "thr-first");
     expect(deps.enqueueEvent).toHaveBeenCalledTimes(2);
+    expect(deps.enqueueEvent.mock.calls.map((call) => call[2])).toEqual([
+      { kind: "set_backend_session_id", backend_session_id: "thr-first" },
+      undefined,
+    ]);
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
     expect(deps.handleSideEffects).toHaveBeenCalledTimes(2);
     expect(task.lastEventId).toBe(7);
   });
 
-  it("isolates setClaudeSessionId failure before durable enqueue", async () => {
+  it("persists the backend session id as an atomic ingress effect", async () => {
     const deps = makePublisherDeps();
-    deps.setClaudeSessionId.mockRejectedValueOnce(new Error("db down"));
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask();
     const event = {
@@ -137,17 +132,13 @@ describe("TaskEngineEventPublisher", () => {
     await publisher.publishEngineEvent(task, event);
 
     expect(task.codexThreadId).toBe("thr-first");
-    expect(deps.enqueueEvent).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.enqueueEvent).toHaveBeenCalledWith("sess-1", event, {
+      kind: "set_backend_session_id",
+      backend_session_id: "thr-first",
+    });
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
-    expect(deps.logger.warn).toHaveBeenCalledWith(
-      {
-        err: expect.any(Error),
-        sessionId: "sess-1",
-        threadId: "thr-first",
-      },
-      expect.stringContaining("setClaudeSessionId failed"),
-    );
+    expect(deps.logger.warn).not.toHaveBeenCalled();
   });
 
   it("broadcasts live-only events without persistence or lastEventId changes", async () => {

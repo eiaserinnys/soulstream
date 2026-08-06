@@ -7,6 +7,7 @@ type ListSessionsSummary = Awaited<
 
 export interface ListSessionsParams {
   requestId: string;
+  runningSessionIds?: string[];
 }
 
 export interface SessionsUpdateAck {
@@ -14,6 +15,7 @@ export interface SessionsUpdateAck {
   sessions: ListSessionsSummary["sessions"];
   total: number;
   requestId: string;
+  running_session_ids?: string[];
 }
 
 /**
@@ -59,6 +61,9 @@ export class SessionListCommands {
       sessions,
       total,
       requestId: params.requestId,
+      ...(params.runningSessionIds === undefined
+        ? {}
+        : { running_session_ids: params.runningSessionIds }),
     };
   }
 }

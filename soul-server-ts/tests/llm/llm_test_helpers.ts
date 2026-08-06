@@ -2,6 +2,8 @@ import pino from "pino";
 import { vi } from "vitest";
 
 import type { AgentRegistry } from "../../src/agent_registry.js";
+import type { SessionMutationHost } from
+  "../../src/control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { LlmAdapter, LlmResult } from "../../src/llm/types.js";
@@ -13,8 +15,10 @@ export const silentLogger = pino({ level: "silent" });
 export function makeLlmHarness(adapter?: LlmAdapter) {
   let sourceSeq = 0;
   const registerSession = vi.fn().mockResolvedValue(undefined);
-  const appendMetadata = vi.fn().mockResolvedValue(1);
-  const updateSession = vi.fn().mockResolvedValue(undefined);
+  const transitionSession = vi.fn().mockResolvedValue(undefined);
+  const renameSession = vi.fn().mockResolvedValue(undefined);
+  const deleteSession = vi.fn().mockResolvedValue(undefined);
+  const acknowledgeReview = vi.fn().mockResolvedValue("acknowledged");
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
   const getFolderById = vi
     .fn()
@@ -44,9 +48,6 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
   const updateLastMessage = vi.fn().mockResolvedValue(undefined);
 
   const db = {
-    registerSession,
-    appendMetadata,
-    updateSession,
     assignSessionToFolder,
     getFolderById,
     getCatalog,
@@ -69,12 +70,27 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     { append: outboxAppend } as never,
     { waitForAcknowledgement } as never,
   );
+  const sessionMutations = {
+    registerSession,
+    transitionSession,
+    renameSession,
+    deleteSession,
+    acknowledgeReview,
+  } satisfies SessionMutationHost;
   const taskManager = new TaskManager(
     "test-node",
     db,
     broadcaster,
     silentLogger,
     persistence,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    undefined,
+    undefined,
+    sessionMutations,
   );
 
   return {
@@ -86,8 +102,10 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     sent,
     mocks: {
       registerSession,
-      appendMetadata,
-      updateSession,
+      transitionSession,
+      renameSession,
+      deleteSession,
+      acknowledgeReview,
       assignSessionToFolder,
       getFolderById,
       getCatalog,

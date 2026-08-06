@@ -1,3 +1,5 @@
+// 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
+// 도메인 동작은 각 service/repository 모듈에 있고, 이 파일은 연결만 소유한다.
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +29,8 @@ import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
 } from "./node/event_ingress_repository.js";
+import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
+import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
   PushNotifier,
@@ -142,9 +146,11 @@ export async function createLiveProductionApplication(
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
+  const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(sqlResolver);
   const registry = new InMemoryNodeRegistry();
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
+    applyEventSessionEffect,
   );
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const pageRepository = new PageRepository(sqlResolver);
@@ -191,6 +197,10 @@ export async function createLiveProductionApplication(
     additionalNodeEventSinks: [
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
+      createSessionReconciliationSink({
+        repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
+        logError: (error, message) => context.warn(`${message}: ${String(error)}`),
+      }),
     ],
     boardYjsRoutes: {
       createService: (logger) => boardYjsService ??= new BoardYjsService({
@@ -334,7 +344,7 @@ export async function createLiveProductionApplication(
     }),
     createScheduleRepositoryProvider(sqlResolver),
     createFolderControlPlaneServiceProvider(sqlResolver),
-    createPersistenceHostRepositoryProvider(sqlResolver),
+    persistenceRepositoryProvider,
   ));
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,

@@ -80,7 +80,12 @@ function makeMocks() {
       }
     },
   );
-  const { persistence, enqueueEvent: persistEvent, handleSideEffects } = persistenceDouble;
+  const {
+    persistence,
+    enqueueEvent: persistEvent,
+    enqueueMetadataEffect,
+    handleSideEffects,
+  } = persistenceDouble;
 
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const setClaudeSessionId = vi.fn().mockResolvedValue(undefined);
@@ -98,6 +103,7 @@ function makeMocks() {
     waitForSessionAck: persistenceDouble.waitForSessionAck,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
     setClaudeSessionId,
@@ -297,7 +303,10 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
       deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
     );
-    expect(mocks.setClaudeSessionId.mock.invocationCallOrder[0]).toBeLessThan(
+    const sessionEventCall = mocks.persistEvent.mock.calls.findIndex(
+      (call) => (call[1] as { type: string }).type === "session",
+    );
+    expect(mocks.persistEvent.mock.invocationCallOrder[sessionEventCall]).toBeLessThan(
       deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]!,
     );
   });
@@ -451,12 +460,16 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.engine).toBeUndefined();
 
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "completed",
-      last_event_id: 4,
-      termination_reason: "completed_ok",
-    }));
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "completed" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+      }),
+    );
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
   it("app-server live-only text chunks are broadcast-only; final assistant_message is persisted", async () => {
@@ -532,11 +545,15 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
     ]);
     expect(task.lastEventId).toBe(3);
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "completed",
-      last_event_id: 3,
-      termination_reason: "completed_ok",
-    }));
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+      }),
+    );
   });
 
   it("신규 task attachmentPaths → user_message.attachments 보존 + 이미지 path는 engine params로 전달", async () => {
@@ -635,12 +652,14 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("claude-sess-1");
     expect(task.lastAssistantText).toBe("claude says hi");
-    expect(mocks.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "claude-sess-1");
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "completed",
-      last_event_id: 5,
-      termination_reason: "completed_ok",
-    }));
+    expect(mocks.persistEvent).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session", session_id: "claude-sess-1" }),
+      {
+        kind: "set_backend_session_id",
+        backend_session_id: "claude-sess-1",
+      },
+    );
   });
 
   it("Agents SDK 합성 시나리오: handoff 중 tool approval 거부 → graceful complete", async () => {
@@ -794,27 +813,28 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.agentsRunState).toBe("state-v2");
     expect(task.agentsPendingApprovalId).toBe("danger-call-1");
     expect(task.agentsSessionItems).toEqual([{ role: "user", content: "hi" }]);
-    expect(mocks.updateSession).toHaveBeenCalledWith(
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({
-        metadata: expect.arrayContaining([
-          expect.objectContaining({
-            type: "agents_run_state",
-            value: expect.objectContaining({
-              serialized: "state-v2",
-              pendingApprovalId: "danger-call-1",
-              previousResponseId: "resp-2",
-              conversationId: "conv-2",
-            }),
-          }),
-          expect.objectContaining({
-            type: "agents_session_items",
-            value: expect.objectContaining({
-              items: [{ role: "user", content: "hi" }],
-            }),
-          }),
-        ]),
+        type: "agents_run_state",
+        value: expect.objectContaining({
+          serialized: "state-v2",
+          pendingApprovalId: "danger-call-1",
+          previousResponseId: "resp-2",
+          conversationId: "conv-2",
+        }),
       }),
+      { replaceExistingType: "agents_run_state" },
+    );
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        type: "agents_session_items",
+        value: expect.objectContaining({
+          items: [{ role: "user", content: "hi" }],
+        }),
+      }),
+      { replaceExistingType: "agents_session_items" },
     );
   });
 
@@ -832,12 +852,15 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toContain("engine boom");
-    expect(mocks.emitSessionUpdated).toHaveBeenCalled();
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "error",
-      last_event_id: 3,  // user_message + session + session_ended
-      termination_reason: "unknown",
-    }));
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "error",
+        termination_reason: "unknown",
+      }),
+    );
   });
 
   it("Claude fatal error event 후 throw → error event를 남기고 task status=error로 finalize", async () => {
@@ -872,11 +895,15 @@ describe("TaskExecutor.startExecution", () => {
       message: "claude boom",
       fatal: true,
     });
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "error",
-      last_event_id: 3,
-      termination_reason: "error_aborted",
-    }));
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "error",
+        termination_reason: "error_aborted",
+      }),
+    );
   });
 
   it("Claude rate-limit StopFailure fatal event finalizes as limit_hit without a persistent timeout", async () => {
@@ -960,9 +987,11 @@ describe("TaskExecutor.startExecution", () => {
         }),
       ]),
     );
-    expect(mocks.updateSession).toHaveBeenCalledWith(
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
+        kind: "terminal_transition",
         status: "error",
         termination_reason: "limit_hit",
         termination_detail: "credential_alert",
@@ -1036,12 +1065,16 @@ describe("TaskExecutor.startExecution", () => {
         },
       },
     });
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "error",
-      last_event_id: 8,
-      termination_reason: "error_aborted",
-    }));
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "error",
+        termination_reason: "error_aborted",
+      }),
+    );
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
   it("idle Claude runtime with lingering unmarked task completes without pending-after-turn fatal", async () => {
@@ -1098,12 +1131,16 @@ describe("TaskExecutor.startExecution", () => {
         "claude_runtime_pending_after_turn",
     );
     expect(pendingAfterTurnError).toBeUndefined();
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "completed",
-      last_event_id: 3,
-      termination_reason: "completed_ok",
-    }));
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "completed" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+      }),
+    );
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
   it("active Claude runtime session after turn emits recoverable fatal error and finalizes", async () => {
@@ -1168,12 +1205,16 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitEventEnvelope.mock.calls.some(
       (call) => (call[1] as { type: string }).type === "error",
     )).toBe(false);
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "error",
-      last_event_id: expect.any(Number),
-      termination_reason: "error_aborted",
-    }));
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "error",
+        termination_reason: "error_aborted",
+      }),
+    );
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
   it("persistent ingress 실패는 turn을 중단하고 terminal error를 남긴다", async () => {
@@ -1225,7 +1266,7 @@ describe("TaskExecutor.startExecution", () => {
 
   // === F-3B: Codex thread id DB 영속화 ===
 
-  it("F-3B T6: 첫 session 이벤트 시 db.setClaudeSessionId 호출 + 두 번째 session 이벤트는 호출 안 함", async () => {
+  it("F-3B T6: 첫 session 이벤트에 backend-session effect를 붙이고 두 번째는 생략", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-codex-1" } as SSEEventPayload,
@@ -1246,12 +1287,15 @@ describe("TaskExecutor.startExecution", () => {
     // 메모리: 첫 thread id만 박힘 (기존 동작 유지)
     expect(task.codexThreadId).toBe("thr-codex-1");
 
-    // DB: setClaudeSessionId 정확히 1회 호출 + 첫 thread id로
-    expect(mocks.setClaudeSessionId).toHaveBeenCalledTimes(1);
-    expect(mocks.setClaudeSessionId).toHaveBeenCalledWith(
-      "sess-1",
-      "thr-codex-1",
-    );
+    const backendEffects = mocks.persistEvent.mock.calls
+      .map((call) => call[2])
+      .filter((effect) => effect?.kind === "set_backend_session_id");
+    expect(backendEffects).toEqual([
+      {
+        kind: "set_backend_session_id",
+        backend_session_id: "thr-codex-1",
+      },
+    ]);
   });
 
   it("F-3A 회귀: handleSideEffects throw (DB 실패 등) → 격리, task 진행 계속", async () => {
@@ -1282,11 +1326,8 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(3);
   });
 
-  it("F-3B T7: db.setClaudeSessionId throw → 격리 (task 진행 계속, status=completed)", async () => {
+  it("F-3B T7: backend-session effect는 worker DB를 호출하지 않고 task를 완료", async () => {
     const mocks = makeMocks();
-    mocks.setClaudeSessionId.mockRejectedValueOnce(
-      new Error("connection refused"),
-    );
 
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-codex-1" } as SSEEventPayload,
@@ -1304,12 +1345,18 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // setClaudeSessionId throw에도 task 진행 계속
     expect(task.status).toBe("completed");
-    expect(task.codexThreadId).toBe("thr-codex-1");  // 메모리 박기는 throw 전에 완료
+    expect(task.codexThreadId).toBe("thr-codex-1");
     // user_message(1) + session(2) + assistant_message(3) = 3건 durable 저장
     expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
-    expect(mocks.emitSessionUpdated).toHaveBeenCalled();
+    expect(mocks.persistEvent).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session", session_id: "thr-codex-1" }),
+      {
+        kind: "set_backend_session_id",
+        backend_session_id: "thr-codex-1",
+      },
+    );
   });
 
   it("같은 task에 startExecution 두 번 호출 → throw", () => {
@@ -1344,11 +1391,15 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
     // 정상 종료 분기의 `if (status === "running") status = "completed"`가 발동 안 함
     expect(task.status).toBe("interrupted");
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "interrupted",
-      last_event_id: expect.any(Number),
-      termination_reason: "unknown",
-    }));
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "interrupted" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "interrupted",
+        termination_reason: "unknown",
+      }),
+    );
   });
 
   it("engineFactory throw → status=error, finalize 호출", async () => {
@@ -1394,11 +1445,15 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.error).toBe("prepare boom");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.interventionQueue).toEqual([]);
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
-      status: "error",
-      last_event_id: 1,
-      termination_reason: "unknown",
-    }));
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "error",
+        termination_reason: "unknown",
+      }),
+    );
     const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
       (c) =>
         (c[1] as { type: string }).type === "error" &&
@@ -1481,7 +1536,11 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
-    expect(mocks.emitSessionUpdated).toHaveBeenCalled();
+    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended" }),
+      expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
+    );
   });
 
   it("B-7: notifier.notify가 throw해도 finalize는 격리 (task.status 그대로)", async () => {

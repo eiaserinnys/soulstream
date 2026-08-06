@@ -218,9 +218,9 @@ export interface ClaudeRuntimeState {
  *
  * 단일 turn 모델 (Codex 단일턴, B-3 범위) — 멀티턴은 B-4 검토.
  *
- * 영속화 책임: TaskManager가 `session_register` stored procedure로 *불변 필드* (agentSessionId,
- * nodeId, profileId, callerSessionId)만 박는다. 가변 필드(status, last_event_id 등)는
- * `session_update`로 진행 중 갱신.
+ * 영속화 책임: TaskManager가 persistence host로 *불변 필드* (agentSessionId,
+ * nodeId, profileId, callerSessionId)를 등록한다. 이벤트에 결합된 가변 필드는
+ * event ingress effect로, 이벤트 없는 mutation은 명시 host operation으로 갱신한다.
  */
 export interface Task {
   agentSessionId: string;

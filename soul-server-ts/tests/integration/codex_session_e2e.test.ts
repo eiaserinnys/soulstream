@@ -3,13 +3,13 @@
  *
  * 흐름: dispatcher.dispatch(create_session) → task_manager.createTask → task_executor.startExecution
  *  → engine.execute drain → persistent event는 outbox, transient event는 worker WS
- *  → 완료 시 session_updated broadcast
+ *  → 완료 상태는 terminal effect로 orch ingress가 broadcast
  *
  * 검증:
  *   - session_register stored proc 호출 (DB)
  *   - session_created wire 발행 (orch)
  *   - live event envelope과 durable outbox 이벤트의 분리
- *   - session_updated wire 발행 (완료 시)
+ *   - terminal_transition effect 발행 (완료 시)
  *   - lastAssistantText 누적
  */
 
@@ -17,6 +17,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import type { SessionMutationHost } from
+  "../../src/control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB, SqlClient } from "../../src/db/session_db.js";
 import { SessionDB as SessionDBClass } from "../../src/db/session_db.js";
@@ -94,8 +96,8 @@ function makeEventOutboxHarness() {
   return { append, waitForAcknowledgement };
 }
 
-describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
-  it("정상 흐름 — session_created + event envelopes + session_updated 시퀀스", async () => {
+describe("Phase B-3 E2E: create_session → engine drain → ingress effects", () => {
+  it("정상 흐름 — session_created + transient envelopes + durable effects", async () => {
     // mock orch — broadcast 메시지 캡처
     const orchReceived: Record<string, unknown>[] = [];
     const send = vi.fn(async (data: unknown) => {
@@ -137,12 +139,28 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
       { append: outbox.append } as never,
       { waitForAcknowledgement: outbox.waitForAcknowledgement } as never,
     );
+    const registerSession = vi.fn(async () => undefined);
+    const sessionMutations = {
+      registerSession,
+      transitionSession: vi.fn(async () => undefined),
+      renameSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+      acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+    } satisfies SessionMutationHost;
     const taskManager = new TaskManager(
       "eias-shopping-ts",
       db,
       broadcaster,
       silentLogger,
       persistence,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      sessionMutations,
     );
 
     const factory = vi.fn(() => makeFakeEngine(codexEvents));
@@ -181,7 +199,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     const wireTypes = orchReceived.map((m) => m.type);
     expect(wireTypes).toContain("session_created");
     expect(wireTypes).toContain("event");
-    expect(wireTypes).toContain("session_updated");
+    expect(wireTypes).not.toContain("session_updated");
 
     // session_created가 첫 broadcast (event ack가 그 뒤 또는 같이)
     const createdIdx = orchReceived.findIndex((m) => m.type === "session_created" && m.session);
@@ -216,34 +234,28 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
       "session_ended",
     ]);
 
-    // session_updated 완료 시 1회 (status=completed)
-    const updated = orchReceived.filter((m) => m.type === "session_updated");
-    expect(updated.length).toBeGreaterThanOrEqual(1);
-    const finalUpdate = updated[updated.length - 1];
-    expect(finalUpdate.status).toBe("completed");
-    expect(finalUpdate.last_assistant_text).toBe("Hello world");  // 누적 text_delta
-
-    // === ASSERT — DB stored proc 호출 ===
-    const procNames = dbCalls.map((c) => c.fragments.join("?"));
-    expect(procNames.some((p) => p.includes("session_register"))).toBe(true);
-    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(0);
-    expect(procNames.some((p) => p.includes("session_update"))).toBe(true);
-
-    // F-3B: session_set_claude_id 1회 호출 (thread id 영속화)
-    expect(
-      procNames.filter((p) => p.includes("session_set_claude_id")).length,
-    ).toBe(1);
-
-    // F-3A: emit_session_message_updated wire — semantic preview 이벤트만 발행.
-    // B-5: user_message(1) + assistant_message(1). live text lifecycle과 complete는 제외.
-    // 이 wire는 `last_message` 키 보유로 식별 (G-19 마커).
-    const messageUpdates = orchReceived.filter(
-      (m) => m.type === "session_updated" && m.last_message !== undefined,
+    // === ASSERT — session mutations are host/effect owned, not worker DB writes ===
+    expect(registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-e2e-1" }),
+      "register_session:sess-e2e-1",
     );
-    expect(messageUpdates.length).toBe(2);
-    expect(
-      (messageUpdates[1].last_message as Record<string, unknown>).preview,
-    ).toBe("Hello world");
+    const procNames = dbCalls.map((c) => c.fragments.join("?"));
+    expect(procNames.some((p) => p.includes("session_register"))).toBe(false);
+    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(0);
+    expect(procNames.some((p) => p.includes("session_update"))).toBe(false);
+    expect(procNames.some((p) => p.includes("session_set_claude_id"))).toBe(false);
+    expect(outbox.append.mock.calls.map(([input]) =>
+      (input as Record<string, unknown>).session_effect)).toEqual([
+      expect.objectContaining({ kind: "last_message" }),
+      { kind: "set_backend_session_id", backend_session_id: "thr-codex-1" },
+      expect.objectContaining({ kind: "last_message" }),
+      null,
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+      }),
+    ]);
 
     // task 상태
     expect(task!.status).toBe("completed");

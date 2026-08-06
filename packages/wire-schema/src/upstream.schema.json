@@ -290,19 +290,62 @@
               "created_at": { "type": "string", "format": "date-time" },
               "semantic_dedupe_key": { "type": ["string", "null"] },
               "session_effect": {
-                "type": ["object", "null"],
-                "description": "Phase 11 typed effect. 허용 kind만 후속 단계에서 원자 적용한다.",
-                "required": ["kind"],
-                "additionalProperties": true,
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "last_message", "set_backend_session_id",
-                      "terminal_transition", "append_metadata"
-                    ]
+                "description": "Event와 같은 ingress transaction에서 적용되는 typed session effect.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "required": ["kind", "last_message", "updated_at"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "last_message" },
+                      "last_message": {
+                        "type": "object",
+                        "required": ["type", "preview", "timestamp"],
+                        "additionalProperties": false,
+                        "properties": {
+                          "type": { "type": "string", "minLength": 1 },
+                          "preview": { "type": "string" },
+                          "timestamp": { "type": "string", "format": "date-time" }
+                        }
+                      },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["kind", "backend_session_id"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "set_backend_session_id" },
+                      "backend_session_id": { "type": "string", "minLength": 1 }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["kind", "status", "termination_reason", "termination_detail", "review_state", "updated_at"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "terminal_transition" },
+                      "status": { "type": "string", "minLength": 1 },
+                      "termination_reason": { "type": "string", "minLength": 1 },
+                      "termination_detail": { "type": ["string", "null"] },
+                      "review_state": { "type": "string", "minLength": 1 },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["kind", "entry", "updated_at"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "append_metadata" },
+                      "entry": { "type": "object" },
+                      "updated_at": { "type": "string", "format": "date-time" },
+                      "replace_existing_type": { "type": "string", "minLength": 1 }
+                    }
                   }
-                }
+                ]
               },
               "payload_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
@@ -342,6 +385,11 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "sessions_update" },
+        "running_session_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "sessions": {
           "type": "array",
           "items": {

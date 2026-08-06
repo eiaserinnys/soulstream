@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { SessionDB } from "../db/session_db.js";
+import type { EventPersistence } from "../db/event_persistence.js";
 import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
@@ -9,7 +9,7 @@ import type {
 import type { Task } from "./task_models.js";
 
 export interface TaskAgentsSnapshotPersistenceDeps {
-  db: SessionDB;
+  persistence: EventPersistence;
   logger: Logger;
 }
 
@@ -34,7 +34,7 @@ export class TaskAgentsSnapshotPersistence {
     task.agentsConversationId = snapshot.conversationId ?? undefined;
     task.agentsRunStateSchemaVersion = snapshot.schemaVersion ?? undefined;
 
-    const metadata = replaceMetadataEntry(task.metadata, {
+    const entry = {
       type: "agents_run_state",
       value: {
         backend: "openai-agents",
@@ -45,10 +45,13 @@ export class TaskAgentsSnapshotPersistence {
         schemaVersion: snapshot.schemaVersion ?? null,
         updatedAt: new Date().toISOString(),
       },
-    });
+    };
+    const metadata = replaceMetadataEntry(task.metadata, entry);
     task.metadata = metadata;
     try {
-      await this.deps.db.updateSession(task.agentSessionId, { metadata });
+      await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+        replaceExistingType: "agents_run_state",
+      });
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -64,17 +67,20 @@ export class TaskAgentsSnapshotPersistence {
     if (snapshot.backendId !== "openai-agents") return;
 
     task.agentsSessionItems = snapshot.items;
-    const metadata = replaceMetadataEntry(task.metadata, {
+    const entry = {
       type: "agents_session_items",
       value: {
         backend: "openai-agents",
         items: snapshot.items,
         updatedAt: new Date().toISOString(),
       },
-    });
+    };
+    const metadata = replaceMetadataEntry(task.metadata, entry);
     task.metadata = metadata;
     try {
-      await this.deps.db.updateSession(task.agentSessionId, { metadata });
+      await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+        replaceExistingType: "agents_session_items",
+      });
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },

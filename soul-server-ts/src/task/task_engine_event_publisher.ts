@@ -5,9 +5,9 @@ import {
   shouldPersistEvent,
   type EventPersistence,
 } from "../db/event_persistence.js";
-import type { SessionDB } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
@@ -15,7 +15,6 @@ import { recordTerminationHint } from "./task_termination.js";
 
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
-  db: SessionDB;
   logger: Logger;
   persistence: EventPersistence;
 }
@@ -32,12 +31,12 @@ export class TaskEngineEventPublisher {
   async publishEngineEvent(task: Task, event: SSEEventPayload): Promise<void> {
     const eventType = (event as { type: string }).type;
 
-    await this.captureSessionId(task, event, eventType);
+    const sessionEffect = this.captureSessionId(task, event, eventType);
     this.captureClaudeRuntimeState(task, event);
     this.captureCompactReinjectionNeed(task, eventType);
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
-    const persistent = await this.enqueuePersistentEventIfNeeded(task, event);
+    const persistent = await this.enqueuePersistentEventIfNeeded(task, event, sessionEffect);
     if (!persistent) {
       await this.broadcastTransientEvent(task, event, eventType);
     }
@@ -89,31 +88,24 @@ export class TaskEngineEventPublisher {
     recordTerminationHint(task, "error_aborted", detail);
   }
 
-  private async captureSessionId(
+  private captureSessionId(
     task: Task,
     event: SSEEventPayload,
     eventType: string,
-  ): Promise<void> {
-    if (eventType !== "session") return;
+  ): EventOutboxSessionEffect | undefined {
+    if (eventType !== "session") return undefined;
 
     const sid = (event as { session_id?: unknown }).session_id;
-    if (typeof sid !== "string" || task.codexThreadId) return;
+    if (typeof sid !== "string" || task.codexThreadId) return undefined;
 
     task.codexThreadId = sid;
-    // F-3B: persist sessions.claude_session_id so node restarts can resume the backend thread.
-    try {
-      await this.deps.db.setClaudeSessionId(task.agentSessionId, sid);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, threadId: sid },
-        "setClaudeSessionId failed — thread id not persisted",
-      );
-    }
+    return { kind: "set_backend_session_id", backend_session_id: sid };
   }
 
   private async enqueuePersistentEventIfNeeded(
     task: Task,
     event: SSEEventPayload,
+    effect?: EventOutboxSessionEffect,
   ): Promise<boolean> {
     if (!shouldPersistEvent(event)) {
       clearEventPersistenceInternals(event);
@@ -121,7 +113,7 @@ export class TaskEngineEventPublisher {
     }
 
     try {
-      await this.deps.persistence.enqueueEvent(task.agentSessionId, event);
+      await this.deps.persistence.enqueueEvent(task.agentSessionId, event, effect);
       return true;
     } finally {
       clearEventPersistenceInternals(event);

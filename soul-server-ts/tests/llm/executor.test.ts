@@ -41,18 +41,20 @@ describe("LlmExecutor", () => {
         clientId: "translate",
         agentId: null,
       }),
+      `register_session:${response.session_id}`,
     );
     expect(harness.mocks.getFolderById).toHaveBeenCalledWith("llm");
-    expect(harness.mocks.outboxAppend).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.outboxAppend).toHaveBeenCalledTimes(4);
     expect(harness.mocks.appendEvent).not.toHaveBeenCalled();
-    expect(harness.mocks.updateSession).toHaveBeenCalledWith(
-      response.session_id,
-      expect.objectContaining({
+    expect(harness.mocks.outboxAppend.mock.calls.at(-1)?.[0]).toMatchObject({
+      event_type: "session_ended",
+      session_effect: {
+        kind: "terminal_transition",
         status: "completed",
-        last_event_id: 3,
         termination_reason: "completed_ok",
-      }),
-    );
+      },
+    });
+    expect(harness.mocks.transitionSession).not.toHaveBeenCalled();
 
     const task = harness.taskManager.getTask(response.session_id);
     expect(task?.sessionType).toBe("llm");
@@ -79,13 +81,10 @@ describe("LlmExecutor", () => {
             client_id: "translate",
           }),
         }),
-        expect.objectContaining({
-          type: "session_updated",
-          agent_session_id: response.session_id,
-          status: "completed",
-          session_type: "llm",
-        }),
       ]),
+    );
+    expect(harness.sent).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "session_updated" })]),
     );
   });
 
@@ -116,9 +115,15 @@ describe("LlmExecutor", () => {
     });
 
     expect(harness.taskManager.getTask(response.session_id)?.callerInfo).toEqual(callerInfo);
-    expect(harness.mocks.appendMetadata).toHaveBeenCalledWith(response.session_id, {
-      type: "caller_info",
-      value: callerInfo,
+    expect(harness.mocks.outboxAppend.mock.calls[0]?.[0]).toMatchObject({
+      event_type: "metadata",
+      session_effect: {
+        kind: "append_metadata",
+        entry: {
+          type: "caller_info",
+          value: callerInfo,
+        },
+      },
     });
   });
 
@@ -171,15 +176,17 @@ describe("LlmExecutor", () => {
     ).rejects.toThrow(/rate limited/);
 
     const sessionId = harness.mocks.registerSession.mock.calls[0]?.[0].sessionId;
-    expect(harness.mocks.outboxAppend).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.outboxAppend).toHaveBeenCalledTimes(4);
     expect(harness.mocks.appendEvent).not.toHaveBeenCalled();
-    expect(harness.mocks.updateSession).toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({
+    expect(harness.mocks.outboxAppend.mock.calls.at(-1)?.[0]).toMatchObject({
+      session_id: sessionId,
+      event_type: "session_ended",
+      session_effect: {
+        kind: "terminal_transition",
         status: "error",
-        last_event_id: 3,
         termination_reason: "unknown",
-      }),
-    );
+      },
+    });
+    expect(harness.mocks.transitionSession).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,9 @@ import type {
   SessionDeliveryNotificationOutboxRow,
   SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
+  AcknowledgeReviewOutcome,
+  RegisterSessionParams,
+  SessionUpdateFields,
 } from "../db/session_db_types.js";
 
 type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
@@ -29,6 +32,7 @@ class PersistenceHostTransport {
         method: "POST",
         headers: { ...this.config.orch.headers, "content-type": "application/json" },
         body: JSON.stringify({ args: snakeCase(args) }),
+        signal: AbortSignal.timeout(10_000),
       },
     );
     if (!response.ok) {
@@ -41,6 +45,109 @@ class PersistenceHostTransport {
     }
     return reviveDates(await response.json()) as T;
   }
+}
+
+export type SessionTransitionFields = Pick<
+  SessionUpdateFields,
+  | "status"
+  | "prompt"
+  | "client_id"
+  | "was_running_at_shutdown"
+  | "last_read_event_id"
+  | "termination_reason"
+  | "termination_detail"
+  | "review_state"
+>;
+
+export interface SessionMutationHost {
+  registerSession(input: RegisterSessionParams, idempotencyKey: string): Promise<void>;
+  transitionSession(
+    sessionId: string,
+    fields: SessionTransitionFields,
+    idempotencyKey: string,
+    updatedAt?: Date,
+  ): Promise<void>;
+  renameSession(sessionId: string, displayName: string | null, idempotencyKey: string): Promise<void>;
+  deleteSession(sessionId: string, idempotencyKey: string): Promise<void>;
+  acknowledgeReview(
+    sessionId: string,
+    idempotencyKey: string,
+    updatedAt?: Date,
+  ): Promise<AcknowledgeReviewOutcome>;
+}
+
+export class SessionMutationHostClient implements SessionMutationHost {
+  private readonly transport: PersistenceHostTransport;
+
+  constructor(config: HostClientConfig) {
+    this.transport = new PersistenceHostTransport(config);
+  }
+
+  async registerSession(input: RegisterSessionParams, idempotencyKey: string): Promise<void> {
+    await this.transport.request("session-data", "register_session", [{
+      ...input,
+      idempotencyKey,
+    }]);
+  }
+
+  async transitionSession(
+    sessionId: string,
+    fields: SessionTransitionFields,
+    idempotencyKey: string,
+    updatedAt = new Date(),
+  ): Promise<void> {
+    await this.transport.request("session-data", "transition_session", [{
+      sessionId,
+      fields: snakeTransitionFields(fields),
+      idempotencyKey,
+      updatedAt,
+    }]);
+  }
+
+  async renameSession(sessionId: string, displayName: string | null, idempotencyKey: string): Promise<void> {
+    await this.transport.request("session-data", "rename_session", [{
+      sessionId,
+      displayName,
+      idempotencyKey,
+    }]);
+  }
+
+  async deleteSession(sessionId: string, idempotencyKey: string): Promise<void> {
+    await this.transport.request("session-data", "delete_session", [{ sessionId, idempotencyKey }]);
+  }
+
+  acknowledgeReview(
+    sessionId: string,
+    idempotencyKey: string,
+    updatedAt = new Date(),
+  ): Promise<AcknowledgeReviewOutcome> {
+    return this.transport.request("session-data", "acknowledge_review", [{
+      sessionId,
+      idempotencyKey,
+      updatedAt,
+    }]);
+  }
+}
+
+function snakeTransitionFields(fields: SessionTransitionFields): Record<string, unknown> {
+  return {
+    ...(fields.status === undefined ? {} : { status: fields.status }),
+    ...(fields.prompt === undefined ? {} : { prompt: fields.prompt }),
+    ...(fields.client_id === undefined ? {} : { clientId: fields.client_id }),
+    ...(fields.was_running_at_shutdown === undefined
+      ? {}
+      : { wasRunningAtShutdown: fields.was_running_at_shutdown }),
+    ...(fields.last_read_event_id === undefined
+      ? {}
+      : { lastReadEventId: fields.last_read_event_id }),
+    ...(fields.termination_reason === undefined
+      ? {}
+      : { terminationReason: fields.termination_reason }),
+    ...(fields.termination_detail === undefined
+      ? {}
+      : { terminationDetail: fields.termination_detail }),
+    ...(fields.review_state === undefined ? {} : { reviewState: fields.review_state }),
+  };
 }
 
 export class SessionDeliveryNotificationHostClient {

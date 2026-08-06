@@ -5,10 +5,10 @@
  * (codex MVP).
  *
  * 책임:
- *   - createTask: Task 생성 + DB `session_register` + broadcast `session_created`
+ *   - createTask: Task 생성 + host `register_session` + broadcast `session_created`
  *   - getTask / listTasks
  *   - cancelTask: 진행 중 turn abort
- *   - deleteTask: 메모리 + DB + broadcast `session_deleted`
+ *   - deleteTask: 메모리 + host `delete_session` + broadcast `session_deleted`
  *   - addIntervention (B-4): turn 사이 큐잉 또는 auto-resume — 분석 캐시
  *     `20260517-1410-codex-ts-folder-resume-intervene.md` §D
  *
@@ -24,6 +24,7 @@ import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_client_registry.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
 import { ActiveTaskRecovery } from "./task_active_recovery.js";
@@ -81,6 +82,19 @@ export type {
 } from "./task_intervention_route.js";
 export type { FinalizeTaskParams } from "./task_lifecycle_route.js";
 
+function missingSessionMutationHost(): SessionMutationHost {
+  const missing = async (): Promise<never> => {
+    throw new Error("session mutation host is required");
+  };
+  return {
+    registerSession: missing,
+    transitionSession: missing,
+    renameSession: missing,
+    deleteSession: missing,
+    acknowledgeReview: missing,
+  };
+}
+
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
   private readonly taskCreation: TaskCreation;
@@ -94,6 +108,7 @@ export class TaskManager {
   private readonly sessionNotificationPublisher: SessionNotificationPublisher;
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
   private readonly loadEvictedTask: (sessionId: string) => Promise<Task | null>;
+  private readonly sessionMutations: SessionMutationHost;
 
   constructor(
     private readonly nodeId: string,
@@ -114,7 +129,9 @@ export class TaskManager {
     private readonly deliveryRuntimeV2Enabled = false,
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
+    sessionMutations?: SessionMutationHost,
   ) {
+    this.sessionMutations = sessionMutations ?? missingSessionMutationHost();
     this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
     const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
       ? sessionRuntimeControl
@@ -122,6 +139,8 @@ export class TaskManager {
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
       db,
+      sessionMutations: this.sessionMutations,
+      persistence,
       boardYjsService,
       broadcaster,
       logger,
@@ -132,8 +151,6 @@ export class TaskManager {
       },
     });
     const lifecycleTransition = new TaskLifecycleTransition({
-      db,
-      broadcaster,
       logger,
       persistence,
     });
@@ -144,7 +161,7 @@ export class TaskManager {
         this.tasks.delete(sessionId);
       },
       lifecycleTransition,
-      db,
+      sessionMutations: this.sessionMutations,
       broadcaster,
       logger,
       closeSessionRuntime: gatedSessionRuntimeControl
@@ -159,6 +176,7 @@ export class TaskManager {
     });
     const autoResumeTransition = new AutoResumeTransition({
       db,
+      sessionMutations: this.sessionMutations,
       broadcaster,
       logger,
       persistence,
@@ -232,7 +250,7 @@ export class TaskManager {
   }
 
   /**
-   * 새 Task 생성 + DB 등록 + orch broadcast. 신규 task creation policy는
+   * 새 Task 생성 + host 등록 + orch broadcast. 신규 task creation policy는
    * TaskCreation이 소유하고, TaskManager는 public collection API를 유지한다.
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
@@ -351,7 +369,7 @@ export class TaskManager {
    *
    * 본 메서드가 status를 *engine.interrupt 호출 전*에 박으므로, 그 후 generator가
    * 정상 종료해도 _consumeEventStream의 가드가 status를 덮지 않는다.
-   * finalize의 DB session_update + emit_session_updated는 interrupted 그대로 발행.
+   * terminal event의 terminal_transition effect가 interrupted 상태를 원자 반영한다.
    */
   async cancelTask(sessionId: string): Promise<boolean> {
     return await this.lifecycleRoute.cancelTask(sessionId);
@@ -384,28 +402,29 @@ export class TaskManager {
    * 외부 실행기(LLM proxy 등)가 만든 task를 완료/실패 상태로 마무리한다.
    *
    * TaskExecutorFinalizer는 engine lifecycle까지 닫는 전용 경로라 LLM proxy에서 재사용할 수 없다.
-   * 이 메서드는 세션 상태·완료 시각·LLM usage만 갱신하고 session_updated wire를 발행한다.
+   * 이 메서드는 세션 상태·완료 시각·LLM usage를 terminal event effect로 원자 반영한다.
    */
   async finalizeTask(params: FinalizeTaskParams): Promise<Task | undefined> {
     return await this.lifecycleRoute.finalizeTask(params);
   }
 
   async acknowledgeReview(sessionId: string): Promise<AcknowledgeReviewOutcome> {
-    const outcome = await this.db.acknowledgeSessionReview(sessionId);
+    let task: Task | null | undefined = this.tasks.get(sessionId);
+    if (!task) {
+      try {
+        task = await this.loadEvictedTask(sessionId);
+      } catch (err) {
+        this.logger.warn({ err, sessionId }, "runtime review state unavailable before acknowledge");
+      }
+    }
+    const outcome = await this.sessionMutations.acknowledgeReview(
+      sessionId,
+      `acknowledge_review:${sessionId}:${task?.lastEventId ?? 0}`,
+    );
     if (outcome !== "acknowledged" && outcome !== "already_acknowledged") {
       return outcome;
     }
 
-    let task: Task | null | undefined = this.tasks.get(sessionId);
-    try {
-      task ??= await this.loadEvictedTask(sessionId);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId, outcome },
-        "runtime review repair unavailable after durable acknowledge",
-      );
-      return outcome;
-    }
     if (!task) {
       this.logger.warn(
         { sessionId, outcome },

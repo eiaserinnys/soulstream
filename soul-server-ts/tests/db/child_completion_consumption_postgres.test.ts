@@ -219,10 +219,11 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       searchableText: "revision-race-new",
       createdAt: new Date("2026-07-26T00:02:00Z"),
     });
-    await db.updateSession(sessionId, {
-      last_event_id: newerRevision,
-      status: "completed",
-    });
+    await harness.sql`
+      UPDATE sessions
+      SET last_event_id = ${newerRevision}, status = 'completed'
+      WHERE session_id = ${sessionId}
+    `;
     const recorder = new ChildCompletionConsumptionRecorder(
       db.sessionDeliveries(),
     );
@@ -267,10 +268,11 @@ describePostgres("child completion observation PostgreSQL integration", () => {
         searchableText: `${text}-newer`,
         createdAt: new Date("2026-07-26T00:03:00Z"),
       });
-      await db.updateSession(childB, {
-        last_event_id: newerRevision,
-        status: "completed",
-      });
+      await harness.sql`
+        UPDATE sessions
+        SET last_event_id = ${newerRevision}, status = 'completed'
+        WHERE session_id = ${childB}
+      `;
       return await original(observations);
     });
 
@@ -334,10 +336,11 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       searchableText: text,
       createdAt: new Date("2026-07-26T00:00:00Z"),
     });
-    await db.updateSession(sessionId, {
-      last_event_id: terminalEventId,
-      status: "completed",
-    });
+    await harness.sql`
+      UPDATE sessions
+      SET last_event_id = ${terminalEventId}, status = 'completed'
+      WHERE session_id = ${sessionId}
+    `;
     return terminalEventId;
   }
 });
