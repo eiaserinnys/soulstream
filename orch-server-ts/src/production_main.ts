@@ -3,6 +3,41 @@ import { pathToFileURL } from "node:url";
 import { loadOrchServerEnvironment } from "./config.js";
 import { createProductionOrchestrator } from "./production.js";
 
+type ProcessErrorHandlerOptions = {
+  readonly runtimeProcess?: Pick<NodeJS.Process, "on" | "removeListener">;
+  readonly logger?: Pick<Console, "error">;
+};
+
+export function installProductionProcessErrorHandlers(
+  options: ProcessErrorHandlerOptions = {},
+): () => void {
+  const runtimeProcess = options.runtimeProcess ?? process;
+  const logger = options.logger ?? console;
+  const onUnhandledRejection = (reason: unknown) => {
+    logger.error("Unhandled promise rejection in orchestrator", {
+      event: "orchestrator.unhandled_rejection",
+      reason,
+    });
+  };
+  const onUncaughtException = (
+    error: Error,
+    origin: NodeJS.UncaughtExceptionOrigin,
+  ) => {
+    logger.error("Uncaught exception in orchestrator", {
+      event: "orchestrator.uncaught_exception",
+      error,
+      origin,
+      fatal: true,
+    });
+  };
+  runtimeProcess.on("unhandledRejection", onUnhandledRejection);
+  runtimeProcess.on("uncaughtExceptionMonitor", onUncaughtException);
+  return () => {
+    runtimeProcess.removeListener("unhandledRejection", onUnhandledRejection);
+    runtimeProcess.removeListener("uncaughtExceptionMonitor", onUncaughtException);
+  };
+}
+
 export async function runProductionMain(): Promise<void> {
   const config = loadOrchServerEnvironment();
   const server = await createProductionOrchestrator({ config });
@@ -39,6 +74,7 @@ function isDirectEntrypoint(): boolean {
 }
 
 if (isDirectEntrypoint()) {
+  installProductionProcessErrorHandlers();
   runProductionMain().catch((error: unknown) => {
     console.error("Failed to start soulstream-orch-server-ts", error);
     process.exitCode = 1;

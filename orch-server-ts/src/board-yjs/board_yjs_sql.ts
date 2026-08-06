@@ -2,15 +2,12 @@ import type {
   LiveDbSqlResolver,
   LivePostgresSql,
 } from "../runtime/live_db_sql.js";
+import {
+  createPostgresQueryAdapter,
+  type PostgresQuerySql,
+} from "../runtime/postgres_query_adapter.js";
 
-export type BoardYjsQuerySql = {
-  <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T>;
-  readonly json: (value: unknown) => unknown;
-  readonly array: (values: readonly unknown[]) => unknown;
-};
+export type BoardYjsQuerySql = PostgresQuerySql;
 
 export type BoardYjsSql = BoardYjsQuerySql & {
   readonly begin: <T>(callback: (sql: BoardYjsQuerySql) => Promise<T>) => Promise<T>;
@@ -43,19 +40,12 @@ export function createBoardYjsSqlAdapter(sql: LivePostgresSql): BoardYjsSql {
   return Object.assign(query, {
     begin: <T>(callback: (transaction: BoardYjsQuerySql) => Promise<T>) =>
       sql.begin((transactionSql) => callback(createBoardYjsQueryAdapter(transactionSql))),
-  }) as BoardYjsSql;
+  });
 }
 
 function createBoardYjsQueryAdapter(sql: LivePostgresSql): BoardYjsQuerySql {
   assertBoardYjsQuerySql(sql);
-  const query = async <T extends readonly Record<string, unknown>[]>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T> => await sql(strings, ...values) as T;
-  return Object.assign(query, {
-    json: (value: unknown) => sql.json(value),
-    array: (values: readonly unknown[]) => sql.array(values),
-  }) as BoardYjsQuerySql;
+  return createPostgresQueryAdapter(sql);
 }
 
 function assertTransactionSql(
