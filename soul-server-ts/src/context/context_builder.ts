@@ -375,7 +375,9 @@ export class ExecutionContextBuilder {
       spec.nodeId,
       spec.depth,
       spec.titlesOnly,
-      this.logger, spec.limit,
+      this.logger,
+      spec.limit,
+      spec.includeIds,
     );
   }
 

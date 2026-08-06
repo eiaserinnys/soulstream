@@ -310,7 +310,7 @@ export function registerAgentConfigTools(
     "set_agent_atom_contexts",
     {
       description:
-        "agents.yaml의 agent.atom_contexts를 교체한다. 각 항목은 atom node_id, bfs depth, titles_only를 지정한다.",
+        "agents.yaml의 agent.atom_contexts를 교체한다. 각 항목은 atom node_id, bfs depth, titles_only, include_ids를 지정한다.",
       inputSchema: {
         agent_id: z.string().min(1),
         atom_contexts: z.array(AgentAtomContextSchema).default([]),

@@ -897,14 +897,26 @@ describe("MCP SDK client smoke", () => {
       name: "set_agent_atom_contexts",
       arguments: {
         agent_id: "codex-default",
-        atom_contexts: [{ node_id: nodeId, depth: 2, titles_only: true }],
+        atom_contexts: [{
+          node_id: nodeId,
+          depth: 2,
+          titles_only: true,
+          include_ids: false,
+        }],
       },
     });
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
       snapshot_path?: string;
       semantic_changes: Array<{ op: string; agent_id: string }>;
-      agent: { atom_contexts?: Array<{ node_id: string; depth: number; titles_only: boolean }> };
+      agent: {
+        atom_contexts?: Array<{
+          node_id: string;
+          depth: number;
+          titles_only: boolean;
+          include_ids?: boolean;
+        }>;
+      };
     };
     expect(structured.snapshot_path).toBeTruthy();
     expect(structured.semantic_changes).toEqual([
@@ -914,10 +926,10 @@ describe("MCP SDK client smoke", () => {
       }),
     ]);
     expect(structured.agent.atom_contexts).toEqual([
-      { node_id: nodeId, depth: 2, titles_only: true },
+      { node_id: nodeId, depth: 2, titles_only: true, include_ids: false },
     ]);
     expect(agentRegistry.get("codex-default")?.atom_contexts).toEqual([
-      { node_id: nodeId, depth: 2, titles_only: true },
+      { node_id: nodeId, depth: 2, titles_only: true, include_ids: false },
     ]);
     expect(fs.readFileSync(configPath, "utf-8")).toContain("atom_contexts:");
 

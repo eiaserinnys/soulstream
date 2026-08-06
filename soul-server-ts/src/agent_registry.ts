@@ -199,6 +199,7 @@ export const AgentAtomContextSchema = z.object({
   node_id: z.string().regex(UUID_RE, "atom_contexts.node_id must be a UUID"),
   depth: z.number().int().min(0).default(3),
   titles_only: z.boolean().default(false),
+  include_ids: z.boolean().optional(),
 });
 
 export type AgentAtomContext = z.infer<typeof AgentAtomContextSchema>;
@@ -252,7 +253,8 @@ export const AgentProfileSchema = z.object({
   /**
    * agents.yaml 정본 atom 주입.
    *
-   * 각 항목은 atom compile_subtree REST API의 node/depth/titles_only에 대응한다.
+   * 각 항목은 atom compile_subtree REST API의
+   * node/depth/titles_only/include_ids에 대응한다.
    * ExecutionContextBuilder가 신규 세션 첫 turn의 system prompt 맨 앞에 주입한다.
    */
   atom_contexts: z.array(AgentAtomContextSchema).optional(),

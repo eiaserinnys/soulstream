@@ -122,6 +122,9 @@ export function extractAgentAtomContextSpecs(agent: AgentProfile): AtomContextSp
     nodeId: context.node_id,
     depth: context.depth,
     titlesOnly: context.titles_only,
+    ...(context.include_ids !== undefined
+      ? { includeIds: context.include_ids }
+      : {}),
   }));
 }
 
