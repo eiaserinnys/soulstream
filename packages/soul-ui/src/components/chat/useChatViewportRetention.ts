@@ -4,8 +4,8 @@ import {
   useRef,
 } from "react";
 
-import type { MessageOrGroup } from "../../lib/grouping";
 import { areMessageGroupsRenderEqual, messageOrGroupKey } from "./ChatView.reverse-helpers";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 import {
   measureChatItemOffset,
   measureFirstVisuallyIntersectingItem,
@@ -22,7 +22,7 @@ const USER_VIEWPORT_INPUT_EVENTS = [
 
 interface ChatViewportRetentionOptions {
   activeSessionKey: string | null;
-  grouped: MessageOrGroup[];
+  grouped: ChatTimelineItem[];
   firstItemIndex: number;
   isFollowing: boolean;
   recordFirstVisibleKey: (key: string | null) => void;

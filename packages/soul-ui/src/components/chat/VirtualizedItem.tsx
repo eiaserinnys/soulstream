@@ -1,8 +1,9 @@
 import { memo } from "react";
 import type { LlmContext } from "./hooks";
-import type { MessageOrGroup } from "../../lib/grouping";
 import { ToolCallGroup } from "./ToolCallGroup";
 import { ChatMessageItem } from "./ChatMessageItem";
+import { ChatThinkingIndicator } from "./ChatThinkingIndicator";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 /**
  * ChatView의 리스트 항목 렌더러.
@@ -16,12 +17,15 @@ import { ChatMessageItem } from "./ChatMessageItem";
  */
 
 export type VirtualizedItemProps = {
-  item: MessageOrGroup;
+  item: ChatTimelineItem;
   llmContext?: LlmContext;
   sessionId?: string;
 };
 
 function VirtualizedItemImpl({ item, llmContext, sessionId }: VirtualizedItemProps) {
+  if (item.type === "thinking-indicator") {
+    return <ChatThinkingIndicator />;
+  }
   if (item.type === "summary-group") {
     return (
       <>
@@ -63,6 +67,10 @@ export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemP
   if (prev.llmContext !== next.llmContext) return false;
   if (prev.sessionId !== next.sessionId) return false;
   if (prev.item.type !== next.item.type) return false;
+  if (
+    prev.item.type === "thinking-indicator" &&
+    next.item.type === "thinking-indicator"
+  ) return true;
   if (prev.item.type === "single" && next.item.type === "single") {
     return prev.item.msg === next.item.msg;
   }

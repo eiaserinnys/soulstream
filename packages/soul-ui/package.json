@@ -49,6 +49,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
+    "thinking-orbs": "0.2.0",
     "y-codemirror.next": "^0.3.5",
     "y-protocols": "1.0.6",
     "yjs": "13.6.27",

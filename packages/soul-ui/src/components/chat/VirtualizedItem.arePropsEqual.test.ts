@@ -159,6 +159,15 @@ describe("VirtualizedItem.arePropsEqual — summary-group", () => {
 });
 
 describe("VirtualizedItem.arePropsEqual — type 변화", () => {
+  it("생각 중 안정 행끼리는 true", () => {
+    expect(
+      arePropsEqual(
+        { item: { type: "thinking-indicator" } },
+        { item: { type: "thinking-indicator" } },
+      ),
+    ).toBe(true);
+  });
+
   it("single → tool-group 전환 → false", () => {
     const msg = makeMsg("a");
     const tool = makeMsg("a", "tool");
