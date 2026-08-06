@@ -41,6 +41,12 @@ function task(contextItems: Task["contextItems"] = []): Task {
 
 function db(): SessionDB {
   return {
+    getResumeContext: vi.fn().mockResolvedValue({
+      session: { folder_id: "leaf" },
+      folderSessions: { sessions: [], total: 0 },
+      runningSessions: { sessions: [], total: 0 },
+      predecessor: null,
+    }),
     getSession: vi.fn().mockResolvedValue({ folder_id: "leaf" }),
     getFolderById: vi.fn().mockResolvedValue({
       id: "leaf",

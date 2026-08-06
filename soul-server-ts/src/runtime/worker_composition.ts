@@ -18,6 +18,7 @@ import {
   SessionMutationHostClient,
   SessionPageBindingHostClient,
 } from "../control_plane/persistence_host_clients.js";
+import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
@@ -162,6 +163,7 @@ export async function composeWorkerRuntime(
     deliveries: new SessionDeliveryHostClient({ orch: orchProxyConfig, logger }),
     claudeRuntime: claudeRuntimeHost,
     sessionPageBindings: new SessionPageBindingHostClient({ orch: orchProxyConfig, logger }),
+    sessionData: new SessionDataHostClient({ orch: orchProxyConfig, logger }),
   });
   const boardYjsAuth = {
     authBearerToken: env.AUTH_BEARER_TOKEN,

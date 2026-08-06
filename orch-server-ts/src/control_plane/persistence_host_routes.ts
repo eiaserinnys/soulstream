@@ -70,6 +70,23 @@ const sessionDataOperations = {
   rename_session: ["sessionMutations", null, "renameSession"],
   delete_session: ["sessionMutations", null, "deleteSession"],
   acknowledge_review: ["sessionMutations", null, "acknowledgeReview"],
+  get: ["sessionReads", null, "getSession"],
+  list_summary: ["sessionReads", null, "listSessionsSummary"],
+  list_running: ["sessionReads", null, "listRunningSessionsSummary"],
+  upstream_dump: ["sessionReads", null, "listSessionsForUpstreamDump"],
+  event_count: ["eventReads", null, "countEvents"],
+  event_read_page: ["eventReads", null, "readEvents"],
+  event_read_one: ["eventReads", null, "readOneEvent"],
+  event_raw_page: ["eventReads", null, "streamEventsRaw"],
+  event_search: ["eventReads", null, "searchEvents"],
+  event_session_id_search: ["eventReads", null, "searchEventsBySessionId"],
+  story_search_metadata: ["storyReads", null, "getSessionSearchMetadata"],
+  turn_summary_count: ["storyReads", null, "countTurnSummaries"],
+  turn_summary_range: ["storyReads", null, "loadTurnSummaryRange"],
+  digest_search: ["storyReads", null, "searchSessionDigests"],
+  story: ["storyReads", null, "getSessionStory"],
+  turn_excerpt: ["sessionReadComposites", null, "getTurnExcerpt"],
+  resume_context: ["sessionReadComposites", null, "getResumeContext"],
 } as const satisfies Record<string, OperationTarget>;
 
 export function registerPersistenceHostRoutes(

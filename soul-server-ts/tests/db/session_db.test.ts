@@ -127,21 +127,6 @@ describe("SessionDB.appendEvent", () => {
     ]);
   });
 
-  it("dedupe key로 기존 event id를 조회", async () => {
-    const { sql, calls } = createMockSql(() => [{ id: "17" }]);
-    const db = new SessionDB(sql);
-    const id = await db.findEventIdByDedupeKey(
-      "sess-1",
-      "claude-sdk:assistant:msg-1:0",
-    );
-
-    expect(id).toBe(17);
-    expect(calls[0].fragments.join("?")).toContain("dedupe_key");
-    expect(calls[0].values).toEqual([
-      "sess-1",
-      "claude-sdk:assistant:msg-1:0",
-    ]);
-  });
 
   it("반환에 event_append 키 없으면 throw", async () => {
     const { sql } = createMockSql(() => [{}]);
@@ -292,16 +277,6 @@ describe("SessionDB Claude transcript mirror", () => {
   });
 });
 
-describe("SessionDB.getSession", () => {
-  it("rows[0] 반환, 비어있으면 null", async () => {
-    const { sql: emptySql } = createMockSql(() => []);
-    expect(await new SessionDB(emptySql).getSession("x")).toBeNull();
-
-    const row = { session_id: "x", status: "running" };
-    const { sql: rowSql } = createMockSql(() => [row]);
-    expect(await new SessionDB(rowSql).getSession("x")).toEqual(row);
-  });
-});
 
 describe("SessionDB folder ops (B-5)", () => {
   it("assignSessionToFolder → session_assign_folder(sessionId, folderId)", async () => {
@@ -511,129 +486,81 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
   });
 });
 
-describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
-  it("listSessionsSummary → 빈 결과 시 total=0", async () => {
-    const { sql } = createMockSql(() => []);
-    const result = await new SessionDB(sql).listSessionsSummary({
-      limit: 10,
-      offset: 0,
-    });
-    expect(result).toEqual({ sessions: [], total: 0 });
-  });
-
-  it("listSessionsSummary → 첫 행의 total_count를 total로 사용", async () => {
-    const now = new Date("2026-05-18T00:00:00Z");
-    const { sql, calls } = createMockSql(() => [
-      {
-        session_id: "s1",
-        display_name: "Hi",
-        status: "running",
-        session_type: "claude",
-        created_at: now,
-        updated_at: now,
-        event_count: "5",
-        away_summary: null,
-        caller_session_id: null,
-        predecessor_session_id: "s0",
-        last_event_id: "9",
-        last_read_event_id: "4",
-        node_id: "node-1",
-        total_count: "42",
-      },
-    ]);
-    const result = await new SessionDB(sql).listSessionsSummary({
-      search: "Hi",
-      limit: 20,
-      offset: 0,
-      folderId: "claude",
-      nodeId: "node-1",
-    });
-    expect(result.total).toBe(42);
-    expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0].event_count).toBe(5);
-    expect(result.sessions[0].session_id).toBe("s1");
-    expect(result.sessions[0].last_event_id).toBe(9);
-    expect(result.sessions[0].last_read_event_id).toBe(4);
-    expect(result.sessions[0].node_id).toBe("node-1");
-    expect(result.sessions[0].predecessor_session_id).toBe("s0");
-    // 인자 순서: search, session_type(null), limit, offset, folderId, nodeId
-    expect(calls[0].values).toEqual(["Hi", null, 20, 0, "claude", "node-1"]);
-  });
-
-  it("listSessionsForUpstreamDump → 기존 sessions 컬럼을 손실 없이 반환", async () => {
-    const row = {
-      session_id: "s1",
-      display_name: "게이트",
-      agent_id: "seosoyoung",
-      node_id: "node-1",
-      folder_id: "folder-1",
-      prompt: "검증",
-      metadata: [{ type: "caller_info", value: { source: "agent" } }],
-    };
-    const { sql, calls } = createMockSql((call) => {
-      const query = call.fragments.join("?");
-      return query.includes("SELECT COUNT(*) AS count") ? [{ count: "1" }] : [row];
-    });
-
+describe("SessionDB session-data host delegation", () => {
+  it("preserves the public read interface while delegating to the configured host", async () => {
+    const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
-    const listForSessions = vi.fn(async () => []);
+    const getSession = vi.fn().mockResolvedValue({ session_id: "s1" });
+    const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
+    const countEvents = vi.fn().mockResolvedValue(7);
+    db.configureSessionDataHost({
+      getSession,
+      listSessionsSummary,
+      countEvents,
+    } as never);
+
+    await expect(db.getSession("s1")).resolves.toEqual({ session_id: "s1" });
+    await expect(db.listSessionsSummary({ limit: 10, offset: 0 }))
+      .resolves.toEqual({ sessions: [], total: 0 });
+    await expect(db.countEvents("s1")).resolves.toBe(7);
+
+    expect(getSession).toHaveBeenCalledWith("s1");
+    expect(listSessionsSummary).toHaveBeenCalledWith({ limit: 10, offset: 0 });
+    expect(countEvents).toHaveBeenCalledWith("s1");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("keeps upstream binding warnings as a worker-side projection", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+    const row = { session_id: "s1", display_name: "게이트", binding_warnings: [] };
+    const listSessionsForUpstreamDump = vi.fn().mockResolvedValue({
+      sessions: [row],
+      total: 1,
+    });
+    const listForSessions = vi.fn().mockResolvedValue([{
+      session_id: "s1",
+      page_state: "manual_repair",
+      legacy_state: "completed",
+    }]);
+    db.configureSessionDataHost({ listSessionsForUpstreamDump } as never);
     db.configureSessionPageBindingHost({ listForSessions } as never);
-    await expect(db.listSessionsForUpstreamDump({
+
+    const result = await db.listSessionsForUpstreamDump({
       limit: 10_000,
       offset: 0,
       nodeId: "node-1",
-    })).resolves.toEqual({ sessions: [{ ...row, binding_warnings: [] }], total: 1 });
-
-    expect(calls).toHaveLength(2);
-    expect(calls[0].fragments.join("?")).toContain("s.agent_id");
-    expect(calls[0].fragments.join("?")).toContain("s.predecessor_session_id");
-    expect(calls[0].fragments.join("?")).not.toContain("session_page_bindings");
-    expect(calls[0].fragments.join("?")).toContain("AS event_count");
-    expect(calls[0].fragments.join("?")).not.toContain("SELECT *");
-    expect(calls[0].fragments.join("?")).toContain("ORDER BY s.updated_at DESC, s.session_id DESC");
-    expect(calls[0].values).toEqual(["node-1", 10_000, 0]);
-    expect(calls[1].fragments.join("?")).toContain("SELECT COUNT(*) AS count");
-    expect(calls[1].values).toEqual(["node-1"]);
-    expect(listForSessions).toHaveBeenCalledWith(["s1"]);
-  });
-
-  it("listRunningSessionsSummary → running 세션만 current session 제외 후 최신순으로 조회", async () => {
-    const now = new Date("2026-06-07T05:00:00Z");
-    const { sql, calls } = createMockSql(() => [
-      {
-        session_id: "running-2",
-        display_name: "Running 2",
-        node_id: "node-B",
-        folder_id: "folder-B",
-        folder_name: "Folder B",
-        updated_at: now,
-        total_count: "16",
-      },
-    ]);
-    const result = await new SessionDB(sql).listRunningSessionsSummary({
-      limit: 15,
-      excludeSessionId: "current-session",
     });
 
-    expect(result.total).toBe(16);
-    expect(result.sessions).toEqual([
-      {
-        session_id: "running-2",
-        display_name: "Running 2",
-        node_id: "node-B",
-        folder_id: "folder-B",
-        folder_name: "Folder B",
-        updated_at: now,
-      },
-    ]);
-    const query = calls[0].fragments.join("?");
-    expect(query).toContain("s.status = 'running'");
-    expect(query).toContain("LEFT JOIN folders f ON f.id = s.folder_id");
-    expect(query).toContain("s.session_id <>");
-    expect(query).toContain("ORDER BY f.updated_at DESC, f.session_id DESC");
-    expect(calls[0].values).toEqual(["current-session", "current-session", 15]);
+    expect(listSessionsForUpstreamDump).toHaveBeenCalledWith({
+      limit: 10_000,
+      offset: 0,
+      nodeId: "node-1",
+    });
+    expect(listForSessions).toHaveBeenCalledWith(["s1"]);
+    expect(result.sessions[0]?.binding_warnings).not.toEqual([]);
+    expect(calls).toHaveLength(0);
   });
 
+  it("delegates turn excerpt and resume context without local SQL", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+    const getTurnExcerpt = vi.fn().mockResolvedValue({ totalEvents: 0, turns: [] });
+    const getResumeContext = vi.fn().mockResolvedValue({
+      session: null,
+      folderSessions: { sessions: [], total: 0 },
+      runningSessions: { sessions: [], total: 0 },
+      predecessor: null,
+    });
+    db.configureSessionDataHost({ getTurnExcerpt, getResumeContext } as never);
+
+    await db.getTurnExcerpt("s1", 250);
+    await db.getResumeContext("s1", 15);
+
+    expect(getTurnExcerpt).toHaveBeenCalledWith("s1", 250);
+    expect(getResumeContext).toHaveBeenCalledWith("s1", 15);
+    expect(calls).toHaveLength(0);
+  });
   it("getAllFolders → folder_get_all 행 그대로 + settings null 정규화", async () => {
     const { sql } = createMockSql(() => [
       {
@@ -697,119 +624,6 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(calls[0].values).toEqual(["child", ["parent_folder_id"], [null]]);
   });
 
-  it("countEvents → event_count(sessionId) 반환 Number 변환", async () => {
-    const { sql, calls } = createMockSql(() => [{ event_count: "123" }]);
-    const n = await new SessionDB(sql).countEvents("sess-1");
-    expect(n).toBe(123);
-    expect(calls[0].values).toEqual(["sess-1"]);
-  });
-
-  it("countEvents → 빈 결과 시 0", async () => {
-    const { sql } = createMockSql(() => []);
-    expect(await new SessionDB(sql).countEvents("missing")).toBe(0);
-  });
-
-  it("readEvents → event_read(sessionId, afterId, limit, types)", async () => {
-    const { sql, calls } = createMockSql(() => [
-      {
-        id: 1,
-        session_id: "s1",
-        event_type: "user_message",
-        payload: { text: "hi" },
-        searchable_text: "hi",
-        created_at: new Date("2026-05-18T00:00:00Z"),
-      },
-    ]);
-    const events = await new SessionDB(sql).readEvents("s1", 0, 50, [
-      "user_message",
-    ]);
-    expect(calls[0].values).toEqual(["s1", 0, 50, ["user_message"]]);
-    expect(events).toHaveLength(1);
-    expect(events[0].payload).toEqual({ text: "hi" });
-  });
-
-  it("readEvents 빈 eventTypes → null로 변환", async () => {
-    const { sql, calls } = createMockSql(() => []);
-    await new SessionDB(sql).readEvents("s1", 0, 50, []);
-    expect(calls[0].values).toEqual(["s1", 0, 50, null]);
-  });
-
-  it("readOneEvent → 부재 시 null", async () => {
-    const { sql } = createMockSql(() => []);
-    expect(await new SessionDB(sql).readOneEvent("s1", 99)).toBeNull();
-  });
-
-  it("readOneEvent → 존재 시 payload 정규화", async () => {
-    const { sql, calls } = createMockSql(() => [
-      {
-        id: 5,
-        session_id: "s1",
-        event_type: "user_message",
-        payload: { text: "x" },
-        searchable_text: "x",
-        created_at: new Date("2026-05-18T00:00:00Z"),
-      },
-    ]);
-    const ev = await new SessionDB(sql).readOneEvent("s1", 5);
-    expect(ev?.id).toBe(5);
-    expect(ev?.payload).toEqual({ text: "x" });
-    expect(calls[0].values).toEqual(["s1", 5]);
-  });
-
-  it("streamEventsRaw → 인자 (sessionId, afterId=0 default)", async () => {
-    const { sql, calls } = createMockSql(() => [
-      { id: 1, event_type: "user_message", payload_text: "{\"x\":1}" },
-    ]);
-    const rows = await new SessionDB(sql).streamEventsRaw("s1");
-    expect(calls[0].values).toEqual(["s1", 0]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].payload_text).toBe('{"x":1}');
-  });
-
-  it("searchEvents → event_search(query, sessionIds, limit, eventTypes) + score Number 변환", async () => {
-    const { sql, calls } = createMockSql(() => [
-      {
-        id: 1,
-        session_id: "s1",
-        event_type: "user_message",
-        payload: { text: "hi" },
-        searchable_text: "hi",
-        created_at: new Date("2026-05-18T00:00:00Z"),
-        score: "0.123",
-      },
-    ]);
-    const results = await new SessionDB(sql).searchEvents("hi", ["s1"], 10, ["user_message"]);
-    expect(calls[0].values).toEqual(["hi", ["s1"], 10, ["user_message"]]);
-    expect(results).toHaveLength(1);
-    expect(results[0].score).toBeCloseTo(0.123);
-  });
-
-  it("searchEvents — 빈 sessionIds → null로 변환", async () => {
-    const { sql, calls } = createMockSql(() => []);
-    await new SessionDB(sql).searchEvents("hi", [], 10);
-    expect(calls[0].values).toEqual(["hi", null, 10, null]);
-  });
-
-  it("searchEventsBySessionId → session_id_search(query, eventTypes, limit)", async () => {
-    const { sql, calls } = createMockSql(() => [
-      {
-        id: 2,
-        session_id: "sess-hi",
-        event_type: "user_message",
-        payload: { text: "hi" },
-        searchable_text: "hi",
-        created_at: new Date("2026-05-18T00:00:00Z"),
-        score: "0.5",
-      },
-    ]);
-    const results = await new SessionDB(sql).searchEventsBySessionId(
-      "sess",
-      ["user_message"],
-      5,
-    );
-    expect(calls[0].values).toEqual(["sess", ["user_message"], 5]);
-    expect(results[0].score).toBeCloseTo(0.5);
-  });
 });
 
 describe("SessionDB lifecycle", () => {

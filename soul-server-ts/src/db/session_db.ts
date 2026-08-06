@@ -1,6 +1,7 @@
 /**
- * SessionDB — postgres.js 기반 stored procedure facade. Stored procedure DDL 정본은
- * `packages/db-schema/sql/schema.sql`이고, 외부 호출자는 기존처럼 `SessionDB`를 사용한다.
+ * SessionDB — worker persistence facade. Session/event/story reads cross the
+ * orchestrator host boundary; worker-local SQL remains for writes and the
+ * board/markdown/projection surfaces scheduled for the next cutover.
  */
 
 import postgres from "postgres";
@@ -8,6 +9,14 @@ import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
 import type { ScheduleHostClient } from "../schedule/schedule_host_client.js";
+import type {
+  SessionDataHost,
+  SessionEventDetailRow,
+  SessionEventRow,
+  SessionEventSearchRow,
+  SessionResumeContext,
+  SessionTurnExcerptResult,
+} from "../control_plane/session_data_host_client.js";
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
@@ -20,13 +29,12 @@ import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
 import {
-  SessionStoryReadRepository,
   type SessionDigestSearchMatch,
   type SessionStoryTurnSummary,
   type SessionStoryView,
   type SessionSearchMetadata,
   type SessionTurnSummaryCounts,
-} from "./repositories/session_story_repository.js";
+} from "./session_story_types.js";
 import type { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
@@ -48,7 +56,7 @@ export class SessionDB {
   private sessionDeliveryRepository?: SessionDeliveryRepository;
   private claudeBackgroundTaskRepository?: ClaudeBackgroundTaskRepository;
   private readonly sessionRepository: SessionRepository;
-  private readonly sessionStoryRepository: SessionStoryReadRepository;
+  private sessionDataHost?: SessionDataHost;
   private readonly boardRepository: BoardRepository;
   private folderHost?: FolderHostClient;
   private readonly markdownDocumentRepository: MarkdownDocumentRepository;
@@ -75,7 +83,6 @@ export class SessionDB {
     this.ownsSql = ownsSql;
 
     this.sessionRepository = new SessionRepository(this.sql);
-    this.sessionStoryRepository = new SessionStoryReadRepository(this.sql);
     this.boardRepository = new BoardRepository(this.sql);
     this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
     this.boardYjsRepository = new BoardYjsRepository(this.sql);
@@ -121,11 +128,13 @@ export class SessionDB {
     deliveries: SessionDeliveryRepository;
     claudeRuntime: ClaudeBackgroundTaskRepository & ClaudeTranscriptRepository;
     sessionPageBindings: SessionPageBindingRepository;
+    sessionData: SessionDataHost;
   }): void {
     this.configureSessionDeliveryHost(hosts.deliveries);
     this.configureClaudeBackgroundTaskHost(hosts.claudeRuntime);
     this.configureClaudeTranscriptHost(hosts.claudeRuntime);
     this.configureSessionPageBindingHost(hosts.sessionPageBindings);
+    this.configureSessionDataHost(hosts.sessionData);
   }
 
   configureSessionDeliveryHost(host: SessionDeliveryRepository): void {
@@ -142,6 +151,10 @@ export class SessionDB {
 
   configureSessionPageBindingHost(host: SessionPageBindingRepository): void {
     this.sessionPageBindingRepository = host;
+  }
+
+  configureSessionDataHost(host: SessionDataHost): void {
+    this.sessionDataHost = host;
   }
 
   schedules(): ScheduleHostClient {
@@ -170,21 +183,21 @@ export class SessionDB {
   }
 
   async getSession(sessionId: string): Promise<SessionRow | null> {
-    return await this.sessionRepository.getSession(sessionId);
+    return await this.requireSessionDataHost().getSession(sessionId);
   }
 
   async getSessionStory(sessionId: string): Promise<SessionStoryView> {
-    return await this.sessionStoryRepository.getSessionStory(sessionId);
+    return await this.requireSessionDataHost().getSessionStory(sessionId);
   }
 
   async getSessionSearchMetadata(
     sessionIds: string[],
   ): Promise<Map<string, SessionSearchMetadata>> {
-    return await this.sessionStoryRepository.getSessionSearchMetadata(sessionIds);
+    return await this.requireSessionDataHost().getSessionSearchMetadata(sessionIds);
   }
 
   async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
-    return await this.sessionStoryRepository.countTurnSummaries(sessionId);
+    return await this.requireSessionDataHost().countTurnSummaries(sessionId);
   }
 
   async loadTurnSummaryRange(
@@ -193,7 +206,7 @@ export class SessionDB {
     toTurnNumber: number | null,
     limit: number,
   ): Promise<SessionStoryTurnSummary[]> {
-    return await this.sessionStoryRepository.loadTurnSummaryRange(
+    return await this.requireSessionDataHost().loadTurnSummaryRange(
       sessionId,
       fromTurnNumber,
       toTurnNumber,
@@ -208,7 +221,7 @@ export class SessionDB {
     includeHighlight: boolean,
     includeStory: boolean,
   ): Promise<SessionDigestSearchMatch[]> {
-    return await this.sessionStoryRepository.searchSessionDigests(
+    return await this.requireSessionDataHost().searchSessionDigests(
       query,
       sessionIds,
       limit,
@@ -288,7 +301,7 @@ export class SessionDB {
     sessions: ListSessionSummaryRow[];
     total: number;
   }> {
-    return await this.sessionRepository.listSessionsSummary(params);
+    return await this.requireSessionDataHost().listSessionsSummary(params);
   }
 
   async listSessionsForUpstreamDump(params: {
@@ -296,7 +309,7 @@ export class SessionDB {
     offset: number;
     nodeId: string;
   }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }> {
-    const result = await this.sessionRepository.listSessionsForUpstreamDump(params);
+    const result = await this.requireSessionDataHost().listSessionsForUpstreamDump(params);
     const bindings = await this.sessionPageBindings().listForSessions(
       result.sessions.map((session) => session.session_id),
     );
@@ -323,7 +336,7 @@ export class SessionDB {
     sessions: RunningSessionSummaryRow[];
     total: number;
   }> {
-    return await this.sessionRepository.listRunningSessionsSummary(params);
+    return await this.requireSessionDataHost().listRunningSessionsSummary(params);
   }
 
   async getAllFolders(): Promise<FolderRow[]> {
@@ -337,7 +350,7 @@ export class SessionDB {
   }
 
   async countEvents(sessionId: string): Promise<number> {
-    return await this.eventRepository.countEvents(sessionId);
+    return await this.requireSessionDataHost().countEvents(sessionId);
   }
 
   async readEvents(
@@ -345,32 +358,15 @@ export class SessionDB {
     afterId: number,
     limit: number,
     eventTypes?: string[],
-  ): Promise<
-    Array<{
-      id: number;
-      session_id: string;
-      event_type: string;
-      payload: Record<string, unknown>;
-      searchable_text: string;
-      created_at: Date;
-    }>
-  > {
-    return await this.eventRepository.readEvents(sessionId, afterId, limit, eventTypes);
+  ): Promise<SessionEventRow[]> {
+    return await this.requireSessionDataHost().readEvents(sessionId, afterId, limit, eventTypes);
   }
 
   async readOneEvent(
     sessionId: string,
     eventId: number,
-  ): Promise<{
-    id: number;
-    session_id: string;
-    event_type: string;
-    parent_event_id: number | null;
-    payload: Record<string, unknown>;
-    searchable_text: string;
-    created_at: Date;
-  } | null> {
-    return await this.eventRepository.readOneEvent(sessionId, eventId);
+  ): Promise<SessionEventDetailRow | null> {
+    return await this.requireSessionDataHost().readOneEvent(sessionId, eventId);
   }
 
   async streamEventsRaw(
@@ -379,7 +375,7 @@ export class SessionDB {
   ): Promise<
     Array<{ id: number; event_type: string; payload_text: string }>
   > {
-    return await this.eventRepository.streamEventsRaw(sessionId, afterId);
+    return await this.requireSessionDataHost().streamEventsRaw(sessionId, afterId);
   }
 
   async createFolder(
@@ -413,36 +409,30 @@ export class SessionDB {
     sessionIds: string[] | null,
     limit: number,
     eventTypes?: string[] | null,
-  ): Promise<
-    Array<{
-      id: number;
-      session_id: string;
-      event_type: string;
-      payload: Record<string, unknown>;
-      searchable_text: string;
-      created_at: Date;
-      score: number;
-    }>
-  > {
-    return await this.eventRepository.searchEvents(query, sessionIds, limit, eventTypes);
+  ): Promise<SessionEventSearchRow[]> {
+    return await this.requireSessionDataHost().searchEvents(query, sessionIds, limit, eventTypes);
   }
 
   async searchEventsBySessionId(
     query: string,
     eventTypes: string[] | null,
     limit: number,
-  ): Promise<
-    Array<{
-      id: number;
-      session_id: string;
-      event_type: string;
-      payload: Record<string, unknown>;
-      searchable_text: string;
-      created_at: Date;
-      score: number;
-    }>
-  > {
-    return await this.eventRepository.searchEventsBySessionId(query, eventTypes, limit);
+  ): Promise<SessionEventSearchRow[]> {
+    return await this.requireSessionDataHost().searchEventsBySessionId(query, eventTypes, limit);
+  }
+
+  async getTurnExcerpt(
+    sessionId: string,
+    maxResponseChars = 500,
+  ): Promise<SessionTurnExcerptResult> {
+    return await this.requireSessionDataHost().getTurnExcerpt(sessionId, maxResponseChars);
+  }
+
+  async getResumeContext(
+    sessionId: string,
+    limit: number,
+  ): Promise<SessionResumeContext> {
+    return await this.requireSessionDataHost().getResumeContext(sessionId, limit);
   }
 
   async appendEvent(params: AppendEventParams): Promise<number> {
@@ -454,13 +444,6 @@ export class SessionDB {
     params: AppendEventParams,
   ): Promise<number> {
     return await this.eventRepository.appendEventTx(sql, params);
-  }
-
-  async findEventIdByDedupeKey(
-    sessionId: string,
-    dedupeKey: string,
-  ): Promise<number | null> {
-    return await this.eventRepository.findEventIdByDedupeKey(sessionId, dedupeKey);
   }
 
   async appendClaudeTranscriptEntries(
@@ -495,5 +478,10 @@ export class SessionDB {
   private claudeTranscripts(): ClaudeTranscriptRepository {
     if (!this.claudeTranscriptRepository) throw new Error("Claude runtime host is not configured");
     return this.claudeTranscriptRepository;
+  }
+
+  private requireSessionDataHost(): SessionDataHost {
+    if (!this.sessionDataHost) throw new Error("session data host is not configured");
+    return this.sessionDataHost;
   }
 }

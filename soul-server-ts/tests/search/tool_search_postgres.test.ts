@@ -7,6 +7,7 @@ import {
   hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "../db/full_schema_postgres_harness.js";
+import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
 
 const describePostgres = hasFullSchemaPostgresBackend ? describe : describe.skip;
 
@@ -17,6 +18,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
     db = new SessionDB(harness.sql);
+    configureTestSessionDataHost(db, harness.sql);
     await harness.sql`
       INSERT INTO sessions (
         session_id, display_name, status, session_type, agent_id,

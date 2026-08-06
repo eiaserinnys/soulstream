@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import {
+  SessionDataHostError,
+  type SessionResumeContext,
+} from "../../src/control_plane/session_data_host_client.js";
+import {
   ExecutionContextBuilder,
   composeFirstTurnPrompt,
 } from "../../src/context/context_builder.js";
@@ -51,6 +55,10 @@ function makeBuilder(
   const getSession = vi.fn().mockResolvedValue(null);
   const getFolderById = vi.fn().mockResolvedValue(null);
   const db = { getSession, getFolderById, ...dbOverrides } as unknown as SessionDB;
+  if (typeof dbOverrides.getResumeContext !== "function") {
+    (db as unknown as { getResumeContext: SessionDB["getResumeContext"] }).getResumeContext =
+      vi.fn((sessionId: string, limit: number) => buildTestResumeContext(db, sessionId, limit));
+  }
   return new ExecutionContextBuilder(
     db,
     registry ?? new AgentRegistry([codexAgent]),
@@ -66,6 +74,72 @@ function makeBuilder(
     silentLogger,
     pageContextResolver,
   );
+}
+
+async function buildTestResumeContext(
+  db: SessionDB,
+  sessionId: string,
+  limit: number,
+): Promise<SessionResumeContext> {
+  let session = null;
+  try {
+    session = await db.getSession(sessionId);
+  } catch {
+    session = null;
+  }
+  const listSessionsSummary = (db as unknown as {
+    listSessionsSummary?: SessionDB["listSessionsSummary"];
+  }).listSessionsSummary;
+  const listRunningSessionsSummary = (db as unknown as {
+    listRunningSessionsSummary?: SessionDB["listRunningSessionsSummary"];
+  }).listRunningSessionsSummary;
+  const folderSessions = session?.folder_id && typeof listSessionsSummary === "function"
+    ? await listSessionsSummary.call(db, {
+        limit,
+        offset: 0,
+        folderId: session.folder_id,
+      }).catch(() => ({ sessions: [], total: 0 }))
+    : { sessions: [], total: 0 };
+  const runningSessions = typeof listRunningSessionsSummary === "function"
+    ? await listRunningSessionsSummary.call(db, {
+        limit,
+        excludeSessionId: sessionId,
+      }).catch(() => ({ sessions: [], total: 0 }))
+    : { sessions: [], total: 0 };
+  const predecessorId = session?.predecessor_session_id;
+  if (!predecessorId) {
+    return { session, folderSessions, runningSessions, predecessor: null };
+  }
+  const predecessorSession = await db.getSession(predecessorId);
+  if (!predecessorSession) {
+    return { session, folderSessions, runningSessions, predecessor: null };
+  }
+  const story = await db.getSessionStory(predecessorId);
+  let excerpt = null;
+  if (story.narrative === null && story.unfoldedTurnSummaries.length === 0) {
+    const totalEvents = await db.countEvents(predecessorId);
+    const events = await db.readEvents(predecessorId, 0, Math.min(totalEvents, 200), [
+      "user_message",
+      "assistant_message",
+      "user_text",
+      "assistant_text",
+    ]);
+    excerpt = {
+      totalEvents,
+      turns: events.map((event) => ({
+        event_id: event.id,
+        event_type: event.event_type,
+        text: String(event.payload.text ?? event.payload.content ?? JSON.stringify(event.payload)),
+        created_at: event.created_at.toISOString(),
+      })),
+    };
+  }
+  return {
+    session,
+    folderSessions,
+    runningSessions,
+    predecessor: { session: predecessorSession, story, excerpt },
+  };
 }
 
 function makeCogitoConfig(
@@ -1342,29 +1416,18 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
     expect(await buildWithPage(0)).not.toHaveProperty("running_sessions_truncated");
   });
 
-  it("running_sessions 조회 실패는 warning context item으로 격리하고 build는 계속한다", async () => {
-    const listRunningSessionsSummary = vi.fn().mockRejectedValue(new Error("db down"));
+  it("turn-critical running session host 실패는 빈 context로 바꾸지 않는다", async () => {
+    const error = new SessionDataHostError({
+      operation: "resume_context",
+      retryable: true,
+      message: "db down",
+    });
     const cb = makeBuilder({
-      listRunningSessionsSummary,
+      getResumeContext: vi.fn().mockRejectedValue(error),
     } as unknown as Partial<SessionDB>);
 
-    const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
-    const runningItem = ctx.combinedContextItems.find((item) => item.key === "running_sessions");
-
-    expect(ctx.combinedContextItems[0].key).toBe("soulstream_session");
-    expect(runningItem?.content).toEqual({
-      status: "unavailable",
-      scope: "cluster_database_running_sessions",
-      current_session_id: "sess-current",
-      sessions: [],
-      warnings: [
-        {
-          code: "running_sessions_unavailable",
-          message:
-            "running sessions unavailable; startup continues without live running session context",
-        },
-      ],
-    });
+    await expect(cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent))
+      .rejects.toBe(error);
   });
 });
 

@@ -6,6 +6,10 @@ import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_rep
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { SessionPageBindingRepository } from "./repositories/session_page_binding_repository.js";
 import { SessionMutationRepository } from "./repositories/session_mutation_repository.js";
+import { SessionReadRepository } from "./repositories/session_read_repository.js";
+import { EventReadRepository } from "./repositories/event_read_repository.js";
+import { SessionStoryReadRepository } from "./repositories/session_story_read_repository.js";
+import { SessionReadCompositeRepository } from "./repositories/session_read_composite.js";
 
 export interface PersistenceHostRepositories {
   deliveries: SessionDeliveryRepository;
@@ -13,6 +17,10 @@ export interface PersistenceHostRepositories {
   claudeTranscripts: ClaudeTranscriptRepository;
   sessionPageBindings: SessionPageBindingRepository;
   sessionMutations: SessionMutationRepository;
+  sessionReads: SessionReadRepository;
+  eventReads: EventReadRepository;
+  storyReads: SessionStoryReadRepository;
+  sessionReadComposites: SessionReadCompositeRepository;
 }
 
 export function createPersistenceHostRepositoryProvider(
@@ -23,12 +31,23 @@ export function createPersistenceHostRepositoryProvider(
   return async () => {
     if (repositories) return repositories;
     const sql = await resolver.resolveSql() as unknown as SqlClient;
+    const sessionReads = new SessionReadRepository(sql);
+    const eventReads = new EventReadRepository(sql);
+    const storyReads = new SessionStoryReadRepository(sql);
     repositories = {
       deliveries: new SessionDeliveryRepository(sql),
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
       claudeTranscripts: new ClaudeTranscriptRepository(sql),
       sessionPageBindings: new SessionPageBindingRepository(sql),
       sessionMutations: new SessionMutationRepository(sql),
+      sessionReads,
+      eventReads,
+      storyReads,
+      sessionReadComposites: new SessionReadCompositeRepository(
+        sessionReads,
+        eventReads,
+        storyReads,
+      ),
     };
     return repositories;
   };

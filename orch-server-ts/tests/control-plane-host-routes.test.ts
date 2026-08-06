@@ -310,6 +310,82 @@ describe("control-plane host routes", () => {
     });
   });
 
+  it("dispatches every session-data read operation through the explicit whitelist", async () => {
+    const targets = {
+      getSession: vi.fn(async () => null),
+      listSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
+      listRunningSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
+      listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
+      countEvents: vi.fn(async () => 0),
+      readEvents: vi.fn(async () => []),
+      readOneEvent: vi.fn(async () => null),
+      streamEventsRaw: vi.fn(async () => []),
+      searchEvents: vi.fn(async () => []),
+      searchEventsBySessionId: vi.fn(async () => []),
+      getSessionSearchMetadata: vi.fn(async () => []),
+      countTurnSummaries: vi.fn(async () => ({ totalCount: 0, digestedCount: 0, undigestedCount: 0 })),
+      loadTurnSummaryRange: vi.fn(async () => []),
+      searchSessionDigests: vi.fn(async () => []),
+      getSessionStory: vi.fn(async () => ({
+        highlight: null,
+        narrative: null,
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 0,
+        updatedAt: null,
+      })),
+      getTurnExcerpt: vi.fn(async () => ({ totalEvents: 0, turns: [] })),
+      getResumeContext: vi.fn(async () => ({
+        session: null,
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions: [], total: 0 },
+        predecessor: null,
+      })),
+    };
+    const repositories = {
+      sessionReads: targets,
+      eventReads: targets,
+      storyReads: targets,
+      sessionReadComposites: targets,
+    } as unknown as PersistenceHostRepositories;
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => repositories,
+    });
+    const operations = [
+      ["get", "getSession"],
+      ["list_summary", "listSessionsSummary"],
+      ["list_running", "listRunningSessionsSummary"],
+      ["upstream_dump", "listSessionsForUpstreamDump"],
+      ["event_count", "countEvents"],
+      ["event_read_page", "readEvents"],
+      ["event_read_one", "readOneEvent"],
+      ["event_raw_page", "streamEventsRaw"],
+      ["event_search", "searchEvents"],
+      ["event_session_id_search", "searchEventsBySessionId"],
+      ["story_search_metadata", "getSessionSearchMetadata"],
+      ["turn_summary_count", "countTurnSummaries"],
+      ["turn_summary_range", "loadTurnSummaryRange"],
+      ["digest_search", "searchSessionDigests"],
+      ["story", "getSessionStory"],
+      ["turn_excerpt", "getTurnExcerpt"],
+      ["resume_context", "getResumeContext"],
+    ] as const;
+
+    for (const [operation, method] of operations) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/session-data/host/${operation}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { args: [] },
+      });
+      expect(response.statusCode, operation).toBe(200);
+      expect(targets[method]).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("returns idempotency conflicts across the session mutation host boundary", async () => {
     const deleteSession = vi.fn(async () => {
       throw Object.assign(new Error("idempotency key conflict: delete-session-1"), {

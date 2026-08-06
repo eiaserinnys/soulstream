@@ -10,6 +10,7 @@ import { SessionPageBindingRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
 import { SessionMutationRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_mutation_repository.js";
+import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
 
 const TEST_DB_NAME = "session_db_integration_test";
 const TEST_USER = "session_db_integration_test";
@@ -28,6 +29,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
     harness = await createHarness();
     await applyCurrentSchema(harness.sql);
     db = new SessionDB(harness.sql);
+    configureTestSessionDataHost(db, harness.sql);
     db.configureSessionPageBindingHost(
       new SessionPageBindingRepository(harness.sql) as never,
     );
@@ -265,6 +267,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
     `;
 
     const restarted = new SessionDB(harness!.sql);
+    configureTestSessionDataHost(restarted, harness!.sql);
     restarted.configureSessionPageBindingHost(
       new SessionPageBindingRepository(harness!.sql) as never,
     );
