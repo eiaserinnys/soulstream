@@ -126,7 +126,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     CREATE OR REPLACE FUNCTION event_append(
       p_session_id TEXT,
       p_event_type TEXT,
-      p_payload JSONB,
+      p_payload TEXT,
       p_searchable_text TEXT,
       p_created_at TIMESTAMPTZ,
       p_dedupe_key TEXT DEFAULT NULL
@@ -140,7 +140,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       INSERT INTO events (
         session_id, id, event_type, payload, searchable_text, dedupe_key, created_at
       ) VALUES (
-        p_session_id, next_id, p_event_type, p_payload, p_searchable_text,
+        p_session_id, next_id, p_event_type, p_payload::jsonb, p_searchable_text,
         p_dedupe_key, p_created_at
       );
       RETURN next_id;

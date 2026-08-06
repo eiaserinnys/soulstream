@@ -4,12 +4,22 @@ import { z } from "zod";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { BoardYjsService } from "./board_yjs_service.js";
 import {
+  dispatchBoardProjectionHostOperation,
+  getBoardProjectionHostOperationSchema,
+  isBoardProjectionHostOperation,
+} from "./board_projection_host_operations.js";
+import {
+  CustomViewRevisionConflictError,
+  type BoardProjectionHost,
+} from "./board_projection_types.js";
+import {
   boardContainerKindInputSchema,
   boardItemTypeInputSchema,
 } from "./board_container_kind_compat.js";
 
 export interface BoardYjsHostOperationOptions {
   service: BoardYjsService;
+  projectionHost?: BoardProjectionHost;
   authBearerToken: string;
 }
 
@@ -139,7 +149,8 @@ export async function handleBoardYjsHostOperation(
   operation: string,
   options: BoardYjsHostOperationOptions,
 ): Promise<FastifyReply> {
-  const schema = schemas[operation as keyof typeof schemas];
+  const schema = schemas[operation as keyof typeof schemas]
+    ?? getBoardProjectionHostOperationSchema(operation);
   if (schema === undefined) {
     return reply.status(404).send({
       detail: {
@@ -182,9 +193,22 @@ export async function handleBoardYjsHostOperation(
     return reply.send(await dispatchBoardYjsHostOperation(
       operation,
       parsed.data,
-      options.service,
+      options,
     ));
   } catch (error) {
+    if (error instanceof CustomViewRevisionConflictError) {
+      return reply.status(409).send({
+        detail: {
+          error: {
+            code: "CUSTOM_VIEW_REVISION_CONFLICT",
+            message: error.message,
+            customViewId: error.customViewId,
+            expectedRevision: error.expectedRevision,
+            actualRevision: error.actualRevision,
+          },
+        },
+      });
+    }
     request.log.error({ err: error, operation }, "Board Yjs host operation failed");
     return reply.status(500).send({
       detail: {
@@ -200,8 +224,19 @@ export async function handleBoardYjsHostOperation(
 async function dispatchBoardYjsHostOperation(
   operation: string,
   input: unknown,
-  service: BoardYjsService,
+  options: BoardYjsHostOperationOptions,
 ): Promise<unknown> {
+  if (isBoardProjectionHostOperation(operation)) {
+    if (!options.projectionHost) {
+      throw new Error("Orchestrator board projection host is required");
+    }
+    return await dispatchBoardProjectionHostOperation(
+      operation,
+      input,
+      options.projectionHost,
+    );
+  }
+  const service = options.service;
   switch (operation) {
     case "create-markdown-document":
       return await service.createMarkdownDocument(

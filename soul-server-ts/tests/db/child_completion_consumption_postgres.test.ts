@@ -24,6 +24,7 @@ import {
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
+import { appendTestEvent } from "../helpers/append_test_event.js";
 
 const describePostgres =
   hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
@@ -214,7 +215,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       sessionId,
       "revision-race-old",
     );
-    const newerRevision = await db.appendEvent({
+    const newerRevision = await appendTestEvent(harness.sql, {
       sessionId,
       eventType: "assistant_message",
       payload: JSON.stringify({ text: "revision-race-new" }),
@@ -263,7 +264,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       consumptionRecorder,
       "recordObservedBatch",
     ).mockImplementation(async (observations) => {
-      const newerRevision = await db.appendEvent({
+      const newerRevision = await appendTestEvent(harness.sql, {
         sessionId: childB,
         eventType: "assistant_message",
         payload: JSON.stringify({ text: `${text}-newer` }),
@@ -331,7 +332,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
         'caller-session'
       )
     `;
-    const terminalEventId = await db.appendEvent({
+    const terminalEventId = await appendTestEvent(harness.sql, {
       sessionId,
       eventType: "assistant_message",
       payload: JSON.stringify({ text }),

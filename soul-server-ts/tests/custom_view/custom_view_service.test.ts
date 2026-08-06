@@ -5,7 +5,6 @@ import {
   CustomViewService,
 } from "../../src/custom_view/custom_view_service.js";
 import type { CatalogBoardItemRow, CustomViewRow } from "../../src/db/session_db_types.js";
-import type { CustomViewRepository } from "../../src/db/repositories/custom_view_repository.js";
 
 const customView: CustomViewRow = {
   id: "cv-1",
@@ -39,19 +38,22 @@ const boardItem: CatalogBoardItemRow = {
 describe("CustomViewService", () => {
   it("creates the board tile through Y.Doc before inserting the custom view row", async () => {
     const order: string[] = [];
-    const repo = {
-      getCustomView: vi.fn(async () => null),
-      transaction: vi.fn(async (fn: (sql: unknown) => Promise<void>) => fn({})),
-      createCustomViewTx: vi.fn(async (_sql: unknown, params: { id: string; boardItemId: string }) => {
+    const createCustomViewRecord = vi.fn(
+      async (params: { id: string; boardItemId: string }) => {
         order.push("db");
         return {
-          ...customView,
-          id: params.id,
-          boardItemId: params.boardItemId,
+          customView: {
+            ...customView,
+            id: params.id,
+            boardItemId: params.boardItemId,
+          },
+          eventId: 7,
         };
-      }),
-    };
+      },
+    );
     const boardYjs = {
+      getCustomView: vi.fn(async () => null),
+      createCustomViewRecord,
       upsertCustomViewBoardItem: vi.fn(async (input: { boardItemId: string; customViewId: string }) => {
         order.push("yjs");
         return {
@@ -61,21 +63,19 @@ describe("CustomViewService", () => {
         };
       }),
       removeBoardItem: vi.fn(async () => undefined),
+      resolveBoardYjsContainerScope: vi.fn(async () => ({
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "rb-1",
+      })),
     };
     const emitCatalogUpdated = vi.fn(async () => undefined);
     const emitCustomViewUpdated = vi.fn(async () => undefined);
     const service = new CustomViewService(
       {
-        customViews: () => repo as unknown as CustomViewRepository,
-        appendEventTx: vi.fn(async () => 7),
         getAllFolders: vi.fn(async () => []),
-        resolveBoardYjsContainerScope: vi.fn(async () => ({
-          folderId: "folder-1",
-          containerKind: "task",
-          containerId: "rb-1",
-        })),
       },
-      boardYjs,
+      boardYjs as never,
       {
         emitCatalogUpdated,
         emitCustomViewUpdated,
@@ -95,8 +95,7 @@ describe("CustomViewService", () => {
 
     expect(order).toEqual(["yjs", "db"]);
     expect(result.boardItem.itemType).toBe("custom_view");
-    expect(repo.createCustomViewTx).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(createCustomViewRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         boardItemId: result.boardItem.id,
         html: "<section></section>",
@@ -118,32 +117,27 @@ describe("CustomViewService", () => {
   });
 
   it("propagates revision CAS conflicts without updating the Y.Doc board item", async () => {
-    const repo = {
+    const boardYjs = {
       getCustomView: vi.fn(async () => ({
         customView: { ...customView, revision: 5 },
         boardItem,
       })),
-      transaction: vi.fn(async (fn: (sql: unknown) => Promise<void>) => fn({})),
-      patchCustomViewTx: vi.fn(async () => {
+      patchCustomViewRecord: vi.fn(async () => {
         throw new CustomViewRevisionConflictError("cv-1", 3, 5);
       }),
-    };
-    const boardYjs = {
       upsertCustomViewBoardItem: vi.fn(async () => boardItem),
       removeBoardItem: vi.fn(async () => undefined),
+      resolveBoardYjsContainerScope: vi.fn(async () => ({
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "rb-1",
+      })),
     };
     const service = new CustomViewService(
       {
-        customViews: () => repo as unknown as CustomViewRepository,
-        appendEventTx: vi.fn(async () => 8),
         getAllFolders: vi.fn(async () => []),
-        resolveBoardYjsContainerScope: vi.fn(async () => ({
-          folderId: "folder-1",
-          containerKind: "task",
-          containerId: "rb-1",
-        })),
       },
-      boardYjs,
+      boardYjs as never,
     );
 
     await expect(service.patchCustomView({
@@ -160,43 +154,39 @@ describe("CustomViewService", () => {
   });
 
   it("외부 llm 변경은 이벤트 없이 llm provenance를 저장하고 catalog만 갱신한다", async () => {
-    const appendEventTx = vi.fn(async () => 99);
-    const createCustomViewTx = vi.fn(async (_sql: unknown, params: {
+    const createCustomViewRecord = vi.fn(async (params: {
       actorKind: "llm";
       actorSessionId: null;
-      eventId: null;
     }) => ({
-      ...customView,
-      createdActorKind: params.actorKind,
-      createdSessionId: params.actorSessionId,
-      createdEventId: params.eventId,
-      updatedActorKind: params.actorKind,
-      updatedSessionId: params.actorSessionId,
-      updatedEventId: params.eventId,
+      customView: {
+        ...customView,
+        createdActorKind: params.actorKind,
+        createdSessionId: params.actorSessionId,
+        createdEventId: null,
+        updatedActorKind: params.actorKind,
+        updatedSessionId: params.actorSessionId,
+        updatedEventId: null,
+      },
+      eventId: null,
     }));
-    const repo = {
-      getCustomView: vi.fn(async () => null),
-      transaction: vi.fn(async (fn: (sql: unknown) => Promise<void>) => fn({})),
-      createCustomViewTx,
-    };
     const boardYjs = {
+      getCustomView: vi.fn(async () => null),
+      createCustomViewRecord,
       upsertCustomViewBoardItem: vi.fn(async () => boardItem),
       removeBoardItem: vi.fn(async () => undefined),
+      resolveBoardYjsContainerScope: vi.fn(async () => ({
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "rb-1",
+      })),
     };
     const emitCatalogUpdated = vi.fn(async () => undefined);
     const emitCustomViewUpdated = vi.fn(async () => undefined);
     const service = new CustomViewService(
       {
-        customViews: () => repo as unknown as CustomViewRepository,
-        appendEventTx,
         getAllFolders: vi.fn(async () => []),
-        resolveBoardYjsContainerScope: vi.fn(async () => ({
-          folderId: "folder-1",
-          containerKind: "task",
-          containerId: "rb-1",
-        })),
       },
-      boardYjs,
+      boardYjs as never,
       { emitCatalogUpdated, emitCustomViewUpdated },
     );
 
@@ -209,13 +199,10 @@ describe("CustomViewService", () => {
       idempotencyKey: "idem-llm-custom-view",
     });
 
-    expect(appendEventTx).not.toHaveBeenCalled();
-    expect(createCustomViewTx).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(createCustomViewRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         actorKind: "llm",
         actorSessionId: null,
-        eventId: null,
       }),
     );
     expect(result.eventId).toBeNull();

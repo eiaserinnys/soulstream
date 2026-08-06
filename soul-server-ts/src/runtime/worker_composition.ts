@@ -175,9 +175,10 @@ export async function composeWorkerRuntime(
     orch: orchProxyConfig,
     logger,
   });
+  db.configureBoardProjectionHost(boardYjsService);
   logger.info(
     { nodeId: env.SOULSTREAM_NODE_ID },
-    "Board Yjs mutations delegated to orchestrator",
+    "Board Yjs mutations and projections delegated to orchestrator",
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient({ orch: orchProxyConfig, logger });

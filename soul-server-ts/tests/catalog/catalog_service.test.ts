@@ -5,6 +5,7 @@ import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
+import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
 interface MockCall {
   fragments: string[];
@@ -42,6 +43,7 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
 
 function createSessionDb(sql: SqlClient): SessionDB {
   const db = new SessionDB(sql);
+  configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
     new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
   );

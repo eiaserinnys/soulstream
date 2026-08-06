@@ -25,6 +25,7 @@ import { buildServer } from "../../src/server.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
+import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
 const EXPECTED_TOOLS = [
   // reflect
@@ -372,6 +373,7 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
   const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
   sqlCalls = sql.__calls;
   const db = new SessionDB(sql);
+  configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
     new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
   );
