@@ -56,6 +56,7 @@ const TERMINAL_NOTIFICATION_TITLES = new Map([
   ["error", "세션 오류"],
 ]);
 export const PUSH_TOOL_INPUT_TTL_MS = 60 * 60_000;
+export const PUSH_EVENT_MAX_AGE_MS = 10 * 60_000;
 const PUSH_BODY_MAX = 100;
 const INPUT_EXCERPT_MAX = 50;
 
@@ -132,6 +133,7 @@ export class PushNotifier {
     const payload = recordValue(event.data.event) ?? recordValue(event.data.payload);
     if (sessionId === undefined || payload === undefined) return;
     if (payload.type === "session_ended") {
+      if (this.isStalePushEvent(sessionId, payload)) return;
       await this.handleSessionEnded(event.nodeId, sessionId, event.data, payload);
       return;
     }
@@ -144,8 +146,16 @@ export class PushNotifier {
     );
     if (signal?.kind === "exit_plan_mode") this.toolInputs.delete(inputKey);
     if (signal !== undefined) {
+      if (this.isStalePushEvent(sessionId, payload)) return;
       await this.handleInputRequest(event.nodeId, sessionId, event.data, signal);
     }
+  }
+
+  private isStalePushEvent(sessionId: string, event: Record<string, unknown>): boolean {
+    const createdAtMs = pushEventCreatedAtMs(event);
+    if (createdAtMs === undefined || this.nowMs() - createdAtMs <= PUSH_EVENT_MAX_AGE_MS) return false;
+    this.warn(`Push notification skipped for stale event ${sessionId}`);
+    return true;
   }
 
   private async handleSessionEnded(
@@ -409,6 +419,16 @@ function toolInputExcerpt(value: unknown): string {
 
 function sessionIdFrom(data: Record<string, unknown>): string | undefined {
   return optionalString(data.agentSessionId, data.agent_session_id, data.sessionId, data.session_id);
+}
+
+function pushEventCreatedAtMs(event: Record<string, unknown>): number | undefined {
+  const value = event.created_at ?? event.createdAt ?? event.timestamp;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 10_000_000_000 ? value * 1_000 : value;
+  }
+  if (typeof value !== "string") return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function toolInputKey(nodeId: string, sessionId: string, toolUseId: string): string {
