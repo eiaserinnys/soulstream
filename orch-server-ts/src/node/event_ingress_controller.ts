@@ -82,17 +82,20 @@ export class NodeEventIngressController {
           agentSessionId: item.envelope.session_id,
           event: payload,
         });
+        const sessionUpdate = committedEffectSessionUpdate(item.envelope.session_effect, {
+          sessionId: item.envelope.session_id,
+          eventId: item.eventId,
+        });
+        let effectEvents = sessionUpdate && item.envelope.session_effect?.kind === "terminal_transition"
+          ? this.options.receiveCommittedEvent(sessionUpdate)
+          : undefined;
         try {
           this.options.publish(registryEvents);
         } catch (error) {
           this.options.logError(error, "Committed event broadcast failed");
         }
-        const sessionUpdate = committedEffectSessionUpdate(item.envelope.session_effect, {
-          sessionId: item.envelope.session_id,
-          eventId: item.eventId,
-        });
         if (sessionUpdate) {
-          const effectEvents = this.options.receiveCommittedEvent(sessionUpdate);
+          effectEvents ??= this.options.receiveCommittedEvent(sessionUpdate);
           try {
             this.options.publish(effectEvents);
           } catch (error) {
@@ -150,6 +153,9 @@ function committedEffectSessionUpdate(
       termination_reason: effect.termination_reason,
       termination_detail: effect.termination_detail,
       review_state: effect.review_state,
+      ...(effect.last_assistant_text === undefined
+        ? {}
+        : { last_assistant_text: effect.last_assistant_text }),
       updated_at: effect.updated_at,
       last_event_id: input.eventId,
     };

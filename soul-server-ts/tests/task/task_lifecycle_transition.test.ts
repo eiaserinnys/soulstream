@@ -71,7 +71,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 describe("TaskLifecycleTransition.finalizeExternalTask", () => {
   it("records completed result, usage, and final-state side effects", async () => {
     const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
-    const task = makeTask();
+    const task = makeTask({ lastAssistantText: "final answer" });
 
     const result = await transition.finalizeExternalTask(task, {
       result: "done",
@@ -92,6 +92,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
         status: "completed",
         termination_reason: "completed_ok",
         review_state: "acknowledged",
+        last_assistant_text: "final answer",
       }),
     );
   });

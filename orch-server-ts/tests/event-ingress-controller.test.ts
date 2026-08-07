@@ -83,6 +83,7 @@ describe("NodeEventIngressController", () => {
       termination_reason: "completed",
       termination_detail: null,
       review_state: "not_required",
+      last_assistant_text: "fresh final answer",
       updated_at: "2026-08-06T00:00:00.000Z",
     };
     const received: Array<Record<string, unknown>> = [];
@@ -114,11 +115,59 @@ describe("NodeEventIngressController", () => {
         termination_reason: "completed",
         termination_detail: null,
         review_state: "not_required",
+        last_assistant_text: "fresh final answer",
         updated_at: "2026-08-06T00:00:00.000Z",
         last_event_id: 101,
       },
     ]);
     expect(order.at(-1)).toBe("ack");
+  });
+
+  it("projects a terminal effect into session cache before publishing session_ended", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "session_ended";
+    value.events[0]!.payload = {
+      type: "session_ended",
+      status: "completed",
+      termination_reason: "completed_ok",
+    };
+    value.events[0]!.session_effect = {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "not_required",
+      last_assistant_text: "fresh final answer",
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const session = { last_assistant_text: "previous turn" };
+    const completionBodies: string[] = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        if (message.type === "session_updated") {
+          session.last_assistant_text = String(message.last_assistant_text ?? "");
+          return [{ type: "node_session_session_updated", nodeId: "node-a", data: message }];
+        }
+        return [{ type: "node_session_event", nodeId: "node-a", data: message }];
+      },
+      publish: (events: Array<{ type: string }>) => {
+        if (events.some((event) => event.type === "node_session_event")) {
+          completionBodies.push(session.last_assistant_text);
+        }
+      },
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(completionBodies).toEqual(["fresh final answer"]);
   });
 
   it("rejects malformed typed effects before the repository", async () => {
