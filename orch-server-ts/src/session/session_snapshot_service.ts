@@ -2,6 +2,7 @@ import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type { CachedNodeSession } from "../node/session_cache.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import { serializeSessionRow } from "../runtime/live_session_serialization.js";
+import type { AgentProfileIdentityOverlay } from "../node/agent_profile_lookup.js";
 
 export type SessionSnapshotQuery = {
   session_ids?: string[];
@@ -36,6 +37,7 @@ export type SessionSnapshotRecord = Record<string, unknown> & {
 
 export type SessionSnapshotServiceOptions = {
   registry: InMemoryNodeRegistry;
+  agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
 };
 
 const DEFAULT_LIMIT = 50;
@@ -44,9 +46,11 @@ export const SESSION_SNAPSHOT_MAX_TARGET_IDS = SESSION_SNAPSHOT_MAX_LIMIT;
 
 export class SessionSnapshotService {
   private readonly registry: InMemoryNodeRegistry;
+  private readonly agentProfiles: () => readonly AgentProfileIdentityOverlay[];
 
   constructor(options: SessionSnapshotServiceOptions) {
     this.registry = options.registry;
+    this.agentProfiles = options.agentProfiles ?? (() => []);
   }
 
   listSessions(query: SessionSnapshotQuery = {}): SessionSnapshotListResponse {
@@ -90,7 +94,10 @@ export class SessionSnapshotService {
           status: session.status,
           last_event_id: session.lastEventId,
         },
-        { registry: this.registry },
+        {
+          registry: this.registry,
+          agentProfiles: this.agentProfiles(),
+        },
       ),
       agent_session_id: session.agentSessionId,
       agentSessionId: session.agentSessionId,

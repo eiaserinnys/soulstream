@@ -121,4 +121,28 @@ describe("buildBriefSnapshot", () => {
     );
     expect(runtimeSection?.errors).toEqual([]);
   });
+
+  it("exposes profile source counts and stale state in the compact runtime brief", async () => {
+    const runtime = makeRuntime({
+      agentProfileSource: {
+        resolve: vi.fn(),
+        list: vi.fn(),
+        state: () => ({
+          stale: true,
+          checkedAt: "2026-08-07T00:00:00.000Z",
+          lastError: "orch down",
+          counts: { db: 1, yaml: 2 },
+        }),
+      },
+    });
+
+    const brief = await buildBriefSnapshot(runtime);
+
+    expect(brief.services[0]?.data.sections.runtime.data.agent_profiles).toEqual({
+      stale: true,
+      checked_at: "2026-08-07T00:00:00.000Z",
+      last_error: "orch down",
+      source_counts: { db: 1, yaml: 2 },
+    });
+  });
 });

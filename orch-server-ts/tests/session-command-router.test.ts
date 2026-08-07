@@ -8,6 +8,7 @@ import {
   SessionRouteNodeUnavailableError,
   SessionRouteSessionOwnerMissingError,
   loadContractFixtures,
+  type AgentProfileRecord,
   type CreateSessionNodeCommandPayload,
   type NodeRegistrationPayload,
   type RespondNodeCommandPayload,
@@ -41,6 +42,19 @@ describe("Session command router primitive", () => {
       node_id: nodeId,
     }).node.connectionId;
   }
+
+  const dbProfile: AgentProfileRecord = {
+    agentId: "fake-agent",
+    name: "DB Agent",
+    atomContexts: [],
+    defaultPreset: "db-preset",
+    aliases: [{ id: "db-alias", default_preset: "alias-preset" }],
+    hasPortrait: false,
+    portrait: null,
+    version: 1,
+    createdAt: "2026-08-07T00:00:00.000Z",
+    updatedAt: "2026-08-07T00:00:00.000Z",
+  };
 
   async function createExistingSession(
     registry: InMemoryNodeRegistry,
@@ -85,6 +99,59 @@ describe("Session command router primitive", () => {
     expect(registry.getConnectedNode("a-node")).toMatchObject({
       pendingCommandCount: 0,
     });
+  });
+
+  it("uses DB aliases and default presets over the node YAML registration", () => {
+    const { registry } = createRegistry();
+    registry.registerNode({
+      ...(reconnect.registration as NodeRegistrationPayload),
+      node_id: "db-node",
+      agents: [{
+        id: "fake-agent",
+        name: "YAML Agent",
+        backend: "codex",
+        default_preset: "yaml-preset",
+        aliases: ["yaml-alias"],
+      }],
+      supported_backends: ["codex"],
+      model_presets: [
+        { id: "yaml-preset", backend: "codex", available: true },
+        { id: "db-preset", backend: "codex", available: true },
+        { id: "alias-preset", backend: "codex", available: true },
+      ],
+    });
+    const router = new SessionCommandRouter({
+      registry,
+      agentProfiles: () => [dbProfile],
+    });
+
+    const canonical = router.createSession({
+      type: "create_session",
+      agentSessionId: "canonical-session",
+      prompt: "hello",
+      profile: "fake-agent",
+    });
+    const alias = router.createSession({
+      type: "create_session",
+      agentSessionId: "alias-session",
+      prompt: "hello",
+      profile: "db-alias",
+    });
+
+    expect(canonical.command.message).toMatchObject({
+      profile: "fake-agent",
+      model_preset: "db-preset",
+    });
+    expect(alias.command.message).toMatchObject({
+      profile: "fake-agent",
+      model_preset: "alias-preset",
+    });
+    expect(() => router.createSession({
+      type: "create_session",
+      agentSessionId: "stale-yaml-alias-session",
+      prompt: "hello",
+      profile: "yaml-alias",
+    })).toThrowError(/not registered/);
   });
 
   it("routes respond to the fresh connected owner and preserves inputRequestId separately", async () => {

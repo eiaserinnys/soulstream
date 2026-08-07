@@ -55,6 +55,8 @@ export const EnvSchema = z
      * dotenv 로딩과 같은 cwd 협약. 운영에서 변경 시 절대 경로 설정.
      */
     AGENTS_CONFIG_PATH: z.string().default("config/agents.yaml"),
+    /** Last-known-good DB-owned agent profile overlay. */
+    AGENT_PROFILE_CACHE_PATH: z.string().default(".local/cache/agent-profiles.json"),
     /**
      * Node-local model preset catalog. The path follows the same service-cwd
      * convention as AGENTS_CONFIG_PATH and is re-read for each resolution.

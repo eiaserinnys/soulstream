@@ -14,6 +14,7 @@ import type { TaskExecutor } from "../task/task_executor.js";
 import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
+import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
@@ -21,6 +22,7 @@ interface TaskRuntimeCommandsDeps {
   taskExecutor: Pick<TaskExecutor, "startExecution">;
   logger: Logger;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
+  agentProfileSource?: NewSessionAgentProfileSource;
 }
 
 export interface CreateSessionRuntimeParams {
@@ -141,7 +143,8 @@ export class TaskRuntimeCommands {
   constructor(private readonly deps: TaskRuntimeCommandsDeps) {}
 
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
-    const agent = this.requireAgent(params.profileId);
+    const resolvedAgent = await this.resolveNewSessionAgent(params.profileId);
+    const agent = resolvedAgent.profile;
     const preset = resolveModelPresetSelection(
       params,
       agent,
@@ -152,6 +155,12 @@ export class TaskRuntimeCommands {
       agentSessionId: params.agentSessionId,
       prompt,
       profileId: agent.id,
+      ...(resolvedAgent.fromSource
+        ? {
+            agentProfileSnapshot: agent,
+            agentProfileHasDbPortrait: resolvedAgent.hasDbPortrait,
+          }
+        : {}),
       callerSessionId: params.callerSessionId ?? null,
       predecessorSessionId: params.predecessorSessionId ?? null,
       callerInfo: params.callerInfo,
@@ -218,13 +227,31 @@ export class TaskRuntimeCommands {
     return agent;
   }
 
+  private async resolveNewSessionAgent(profileId: string): Promise<{
+    profile: AgentProfile;
+    hasDbPortrait: boolean;
+    fromSource: boolean;
+  }> {
+    if (!this.deps.agentProfileSource) {
+      const profile = this.requireAgent(profileId);
+      return { profile, hasDbPortrait: false, fromSource: false };
+    }
+    const resolved = await this.deps.agentProfileSource.resolve(profileId);
+    if (!resolved) throw new UnknownAgentProfileError(profileId);
+    return {
+      profile: resolved.profile,
+      hasDbPortrait: resolved.portraitSource === "db",
+      fromSource: true,
+    };
+  }
+
   private startResumedTask(task: Task): void {
     if (!task.profileId) {
       throw new Error(
         `Cannot auto-resume ${task.agentSessionId}: task is missing profileId`,
       );
     }
-    const agent = this.requireAgent(task.profileId);
+    const agent = task.agentProfileSnapshot ?? this.requireAgent(task.profileId);
     this.deps.taskExecutor.startExecution(task, agent);
   }
 }

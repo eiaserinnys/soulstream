@@ -32,6 +32,7 @@ import type { TaskRouteOptions } from "../tasks/task_route_types.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
 import { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
 import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
+import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
@@ -151,6 +152,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
   readonly nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
+  readonly agentProfileRoutes: AgentProfileRouteOptions;
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly taskRoutes:
     & LiveTaskRouteProviderBundle["taskRoutes"]
@@ -205,6 +207,7 @@ export function createLiveOrchestratorProviderBundle(
     registry: options.runtimeServices.registry,
     bridge: options.runtimeServices.sessionBridge,
     nodeHttpClient: options.dependencies.nodeHttpClient,
+    agentProfileRepository: options.dependencies.dbCatalogRepository.agentProfileRepository,
   });
   const modelPresetAvailability = new ModelPresetAvailabilityService(
     options.runtimeServices.registry,
@@ -252,6 +255,9 @@ export function createLiveOrchestratorProviderBundle(
   });
 
   return {
+    agentProfileRoutes: {
+      repository: options.dependencies.dbCatalogRepository.agentProfileRepository,
+    },
     authenticatedUserResolvers,
     adminUsersRoutes: {
       provider: createLiveAdminUsersRouteProvider({

@@ -54,8 +54,11 @@ import {
 } from "./live_admin_users_route_provider.js";
 import { createLiveSessionReviewRepository } from "./live_session_review_repository.js";
 import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
+import { createLiveAgentProfileRepository } from "./live_agent_profile_repository.js";
+import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
 export type LiveDbCatalogRepository = {
+  readonly agentProfileRepository: AgentProfileRepository;
   readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
@@ -127,6 +130,7 @@ export function createLiveDbCatalogRepository(
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
   const cogitoSearchProvider = createLiveCogitoSearchProvider({ sqlResolver });
   const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
+  const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
   const folderProvider = createLiveFolderProvider(sqlResolver);
   const boardItemProvider = createLiveBoardItemRouteProvider(
     sqlResolver,
@@ -149,6 +153,7 @@ export function createLiveDbCatalogRepository(
   const sessionReviewRepository = createLiveSessionReviewRepository({
     sqlResolver,
     registry: options.registry,
+    agentProfiles: agentProfileRepository.snapshot,
   });
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
@@ -221,7 +226,10 @@ export function createLiveDbCatalogRepository(
           serializeSessionRow({
             ...row,
             binding_warnings: bindingWarnings.get(String(row.session_id ?? "")) ?? [],
-          }, { registry: options.registry }),
+          }, {
+            registry: options.registry,
+            agentProfiles: agentProfileRepository.snapshot(),
+          }),
         ),
         total: accessibleRows.length,
       };
@@ -244,12 +252,16 @@ export function createLiveDbCatalogRepository(
         serializeSessionRow({
           ...row,
           binding_warnings: bindingWarnings.get(String(row.session_id ?? "")) ?? [],
-        }, { registry: options.registry }),
+        }, {
+          registry: options.registry,
+          agentProfiles: agentProfileRepository.snapshot(),
+        }),
       ),
       total: numberValue(countRows[0]?.count) ?? sessionRows.length,
     };
   }
   return {
+    agentProfileRepository,
     adminUsersRepository,
     folderRouteProvider: folderProvider,
     folderCountsProvider: folderProvider,

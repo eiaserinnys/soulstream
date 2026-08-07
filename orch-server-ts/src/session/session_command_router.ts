@@ -11,6 +11,7 @@ import type {
   NodeConnectionSnapshot,
 } from "../node/registry.js";
 import { InMemoryNodeRegistry } from "../node/registry.js";
+import type { AgentProfileRecord } from "../node/agent_profile_routes.js";
 import {
   SessionCreateNodeSelectionError,
   selectNodeForSessionCreate,
@@ -20,6 +21,7 @@ import {
 export type SessionCommandRouterOptions = {
   registry: InMemoryNodeRegistry;
   findSessionOwnerNodeId?: SessionOwnerNodeIdLookup;
+  agentProfiles?: () => readonly AgentProfileRecord[];
 };
 
 export type SessionOwnerNodeIdLookup = (
@@ -122,10 +124,22 @@ export class SessionRouteNodeUnavailableError extends SessionCommandRouteError {
 export class SessionCommandRouter {
   private readonly registry: InMemoryNodeRegistry;
   private readonly findSessionOwnerNodeId: SessionOwnerNodeIdLookup | undefined;
+  private readonly agentProfiles: () => readonly AgentProfileRecord[];
 
   constructor(options: SessionCommandRouterOptions) {
     this.registry = options.registry;
     this.findSessionOwnerNodeId = options.findSessionOwnerNodeId;
+    this.agentProfiles = options.agentProfiles ?? (() => []);
+  }
+
+  selectNodeForCreate(
+    request: Parameters<typeof selectNodeForSessionCreate>[1],
+  ): SessionCreateNodeSelection {
+    return selectNodeForSessionCreate(
+      this.registry,
+      request,
+      this.agentProfiles(),
+    );
   }
 
   createSession<
@@ -140,7 +154,7 @@ export class SessionCommandRouter {
   ): RoutedPendingSessionCommand<TPayload, TResponse> {
     let selection;
     try {
-      selection = selectNodeForSessionCreate(this.registry, {
+      selection = this.selectNodeForCreate({
         nodeId: optionalNonEmptyString(payload.nodeId),
         profileId: optionalNonEmptyString(payload.profile),
         modelPresetId: optionalNonEmptyString(payload.model_preset),

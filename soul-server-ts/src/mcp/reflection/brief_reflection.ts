@@ -250,6 +250,7 @@ function buildRuntimeBriefData(data: Record<string, unknown>): Record<string, un
       },
     },
     counts: isRecord(data.counts) ? data.counts : {},
+    agent_profiles: isRecord(data.agent_profiles) ? data.agent_profiles : {},
     dependencies,
     dependency_statuses: Object.fromEntries(
       Object.entries(dependencies).map(([name, value]) => [

@@ -12,6 +12,7 @@ import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { ModelPreset } from "../../src/model_catalog.js";
+import type { NewSessionAgentProfileSource } from "../../src/agent_profile_source.js";
 
 const logger = pino({ level: "silent" });
 
@@ -57,6 +58,7 @@ function createRuntime(opts: {
   addIntervention?: TaskManager["addIntervention"];
   startExecution?: TaskExecutor["startExecution"];
   presets?: ModelPreset[];
+  agentProfileSource?: NewSessionAgentProfileSource;
 } = {}) {
   const agents = new Map(
     (opts.agents ?? [codexAgent]).map((agent) => [agent.id, agent]),
@@ -87,12 +89,42 @@ function createRuntime(opts: {
           },
         }
       : {}),
+    ...(opts.agentProfileSource ? { agentProfileSource: opts.agentProfileSource } : {}),
   });
 
   return { runtime, taskManager, taskExecutor };
 }
 
 describe("TaskRuntimeCommands.createSession", () => {
+  it("uses the refreshed DB overlay only for a newly created session", async () => {
+    const dbAgent = { ...codexAgent, name: "DB Codex", atom_contexts: [] };
+    const source: NewSessionAgentProfileSource = {
+      resolve: vi.fn(async () => ({
+        profile: dbAgent,
+        source: "db",
+        stale: false,
+        hasPortrait: false,
+        portraitSource: "none",
+      })),
+      list: vi.fn(async () => []),
+      state: vi.fn(() => ({
+        stale: false,
+        checkedAt: "2026-08-07T00:00:00.000Z",
+        lastError: null,
+        counts: { db: 1, yaml: 0 },
+      })),
+    };
+    const { runtime, taskExecutor } = createRuntime({ agentProfileSource: source });
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-db",
+      prompt: "new session",
+      profileId: codexAgent.id,
+    });
+
+    expect(source.resolve).toHaveBeenCalledWith(codexAgent.id);
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, dbAgent);
+  });
   it("creates a task from upstream command params and starts execution with the resolved agent", async () => {
     const contextItems = [
       { key: "external", label: "External", content: "keep this" },
@@ -384,6 +416,26 @@ describe("TaskRuntimeCommands.createSession", () => {
 });
 
 describe("TaskRuntimeCommands.intervene", () => {
+  it("keeps the session-scoped DB profile on auto-resume instead of refreshing it", async () => {
+    const snapshot = { ...codexAgent, name: "DB snapshot" };
+    const resumedTask = makeTask({ agentProfileSnapshot: snapshot });
+    const addIntervention = vi.fn(async (_params, onResume) => {
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const source = {
+      resolve: vi.fn(),
+      list: vi.fn(),
+      state: vi.fn(() => ({ stale: false, checkedAt: null, lastError: null, counts: { db: 1, yaml: 0 } })),
+    } as unknown as NewSessionAgentProfileSource;
+    const { runtime, taskExecutor } = createRuntime({ addIntervention, agentProfileSource: source });
+
+    await runtime.intervene({ agentSessionId: resumedTask.agentSessionId, text: "continue" });
+
+    expect(source.resolve).not.toHaveBeenCalled();
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, snapshot);
+  });
+
   it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
     const resumedTask = makeTask({ agentSessionId: "sess-resume", profileId: codexAgent.id });
     const extraContextItems = [

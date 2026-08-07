@@ -65,6 +65,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
   findSessionOwnerNodeId?: SessionCommandRouterOptions["findSessionOwnerNodeId"];
+  agentProfiles?: SessionCommandRouterOptions["agentProfiles"];
   commandTimeoutMs?: number;
   enableSessionActionCommandRoutes?: boolean;
   enableSessionBackgroundScheduleRoutes?: boolean;
@@ -131,6 +132,7 @@ export function createOrchestratorRuntimeServices(
   const sessionRouter = new SessionCommandRouter({
     registry,
     findSessionOwnerNodeId: options.findSessionOwnerNodeId,
+    agentProfiles: options.agentProfiles,
   } satisfies SessionCommandRouterOptions);
   const sessionBridge = new SessionCommandTransportBridge({
     registry,
@@ -140,7 +142,10 @@ export function createOrchestratorRuntimeServices(
   const nodeStreamBroadcaster = new InMemoryNodeStreamBroadcaster({
     snapshotService: nodeSnapshotService,
   });
-  const sessionSnapshotService = new SessionSnapshotService({ registry });
+  const sessionSnapshotService = new SessionSnapshotService({
+    registry,
+    agentProfiles: options.agentProfiles,
+  });
   const sessionEventHub = new RuntimeSessionEventHub();
   const sessionBroadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
     instanceId: options.sessionSseInstanceId,
@@ -165,7 +170,11 @@ export function createOrchestratorRuntimeServices(
       transportHub: transports,
       eventSink: composeEventSinks(
         createRuntimeSessionEventHubSink(sessionEventHub),
-        createNodeSessionEventBroadcasterSink(sessionBroadcaster, registry),
+        createNodeSessionEventBroadcasterSink(
+          sessionBroadcaster,
+          registry,
+          options.agentProfiles,
+        ),
         createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
         ...(options.additionalNodeEventSinks ?? []),
       ),

@@ -90,6 +90,26 @@ describe("emitSessionCreated", () => {
     expect(session.backend).toBe("claude");
   });
 
+  it("uses the session-scoped DB profile and node portrait proxy without changing YAML sessions", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
+    await b.emitSessionCreated(makeTask({
+      agentProfileSnapshot: {
+        id: "codex-default",
+        name: "DB Codex",
+        backend: "codex",
+        workspace_dir: "/tmp/codex-default",
+      },
+      agentProfileHasDbPortrait: true,
+    }), null);
+
+    const session = (send.mock.calls[0][0] as Record<string, unknown>).session as Record<string, unknown>;
+    expect(session.agentName).toBe("DB Codex");
+    expect(session.agentPortraitUrl).toBe(
+      "/api/nodes/eias-shopping-ts/agents/codex-default/portrait",
+    );
+  });
+
   it("profileId 있고 registry에 없을 때 backend 'claude' default (X-1)", async () => {
     // profile registry miss 시 agent?.backend ?? "claude" → "claude" (TS broadcaster
     // default 정책이 Python과 정합)

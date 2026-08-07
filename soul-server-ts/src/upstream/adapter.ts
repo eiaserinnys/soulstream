@@ -18,6 +18,7 @@ import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
 import type { EventOutboxPump } from "./event_outbox_pump.js";
+import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 
 const APP_HEARTBEAT_PING = "app_heartbeat_ping";
 const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
@@ -53,6 +54,7 @@ export interface UpstreamDependencies {
   deliveryV2Enabled?: boolean;
   modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
   eventOutboxPump?: EventOutboxPump;
+  agentProfileSource?: NewSessionAgentProfileSource;
 }
 
 /**
@@ -97,6 +99,7 @@ export class UpstreamAdapter {
       deps.scheduleCommands,
       deps.deliveryV2Enabled,
       deps.modelCatalog,
+      deps.agentProfileSource,
     );
   }
 

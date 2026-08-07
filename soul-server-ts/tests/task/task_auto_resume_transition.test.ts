@@ -208,6 +208,36 @@ describe("AutoResumeTransition", () => {
     expect(onResume).not.toHaveBeenCalled();
   });
 
+  it("accepts the session profile snapshot when the mutable registry no longer has the profile", async () => {
+    const task = makeTerminalTask({
+      profileId: "db-profile",
+      agentProfileSnapshot: {
+        id: "db-profile",
+        name: "DB Profile",
+        backend: "codex",
+        workspace_dir: "/tmp/db-profile",
+      },
+    });
+    const updateSession = vi.fn().mockResolvedValue(undefined);
+    const onResume = vi.fn();
+    const transition = new AutoResumeTransition({
+      db: { appendMetadata: vi.fn().mockResolvedValue(1), updateSession } as unknown as SessionDB,
+      sessionMutations: mutationHost(updateSession),
+      persistence: makeEventPersistenceTestDouble().persistence,
+      broadcaster: {
+        emitEventEnvelope: vi.fn().mockResolvedValue(undefined),
+        emitSessionUpdated: vi.fn().mockResolvedValue(undefined),
+      } as unknown as SessionBroadcaster,
+      logger: silentLogger,
+      agentRegistry: { get: vi.fn().mockReturnValue(undefined) } as unknown as AgentRegistry,
+    });
+
+    await expect(
+      transition.resume(task, { text: "resume", user: "u" }, onResume),
+    ).resolves.toEqual({ autoResumed: true });
+    expect(onResume).toHaveBeenCalledWith(task);
+  });
+
   it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
     const task = makeTerminalTask({
       terminationReason: "completed_ok",

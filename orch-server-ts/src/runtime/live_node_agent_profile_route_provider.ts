@@ -26,6 +26,7 @@ import type {
   LiveNodeHttpResponse,
 } from "./live_provider_dependencies.js";
 import { LiveNodeHttpClientError } from "./live_node_http_client.js";
+import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
 type AgentSnapshot = {
   readonly id: string;
@@ -67,6 +68,7 @@ export type CreateLiveNodeAgentProfileRouteProviderOptions = {
   readonly registry: LiveNodeAgentProfileRegistry;
   readonly bridge: LiveNodeAgentProfileBridge;
   readonly nodeHttpClient: LiveNodeAgentProfileHttpClient;
+  readonly agentProfileRepository: Pick<AgentProfileRepository, "list" | "getPortrait">;
 };
 
 export type LiveNodeAgentProfileRouteProviderBundle = {
@@ -90,20 +92,30 @@ function createLiveNodeAgentProfileProvider(
     listAgentProfiles: async (nodeId) => {
       const node = options.registry.getConnectedNode(nodeId);
       if (node === undefined) return undefined;
+      const dbProfiles = new Map(
+        (await options.agentProfileRepository.list()).map((profile) => [profile.agentId, profile]),
+      );
       return Object.fromEntries(
-        agentSnapshots(node).map((agent) => [
-          agent.id,
-          {
-            name: agent.name,
-            portrait_url: agent.portrait_url,
+        agentSnapshots(node).map((agent) => {
+          const dbProfile = dbProfiles.get(agent.id);
+          return [agent.id, {
+            name: dbProfile?.name ?? agent.name,
+            portrait_url: dbProfile?.hasPortrait ? "db" : agent.portrait_url,
             max_turns: agent.max_turns,
             backend: agent.backend,
-            default_preset: agent.default_preset,
-          } satisfies RawNodeAgentProfile,
-        ]),
+            default_preset: dbProfile
+              ? dbProfile.defaultPreset ?? undefined
+              : agent.default_preset,
+            aliases: dbProfile?.aliases,
+          } satisfies RawNodeAgentProfile];
+        }),
       );
     },
     getAgentPortrait: async (nodeId, agentId, requestOptions) => {
+      const dbPortrait = await options.agentProfileRepository.getPortrait(agentId);
+      if (dbPortrait !== null) {
+        return { status: "cached", body: dbPortrait.body };
+      }
       const node = options.registry.getConnectedNode(nodeId);
       if (node === undefined) return { status: "missing" };
       const cached = agentSnapshots(node).find((agent) => agent.id === agentId)

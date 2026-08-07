@@ -17,6 +17,7 @@ import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 import type { LiveAdminUsersRepository } from "./live_admin_users_route_provider.js";
 import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
+import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
 export const liveProviderDependencyCategories = [
   "dbCatalogRepository",
@@ -30,6 +31,7 @@ export type LiveProviderDependencyCategory =
   (typeof liveProviderDependencyCategories)[number];
 
 export type LiveDbCatalogRepositoryBoundary = {
+  readonly agentProfileRepository: AgentProfileRepository;
   readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;

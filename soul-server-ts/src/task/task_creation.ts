@@ -34,11 +34,14 @@ import {
   sessionBoardItemPosition,
 } from "./task_session_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
+import type { AgentProfile } from "../agent_registry.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
   prompt: string;
   profileId?: string;
+  agentProfileSnapshot?: AgentProfile;
+  agentProfileHasDbPortrait?: boolean;
   clientId?: string | null;
   sessionType?: SessionType;
   llmProvider?: string | null;
@@ -133,6 +136,8 @@ export class TaskCreation {
       status: "running",
       ...review,
       profileId: params.profileId,
+      agentProfileSnapshot: params.agentProfileSnapshot,
+      agentProfileHasDbPortrait: params.agentProfileHasDbPortrait,
       clientId: params.clientId ?? null,
       sessionType,
       llmProvider: params.llmProvider ?? null,

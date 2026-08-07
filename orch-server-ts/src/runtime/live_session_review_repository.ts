@@ -1,4 +1,5 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
+import type { AgentProfileIdentityOverlay } from "../node/agent_profile_lookup.js";
 import type {
   SessionReviewAcknowledgeOutcome,
   SessionReviewAcknowledgeRepository,
@@ -9,6 +10,7 @@ import { serializeSessionRow } from "./live_session_serialization.js";
 export type CreateLiveSessionReviewRepositoryOptions = {
   readonly sqlResolver: LiveDbSqlResolver;
   readonly registry?: InMemoryNodeRegistry;
+  readonly agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
 };
 
 export function createLiveSessionReviewRepository(
@@ -33,7 +35,10 @@ export function createLiveSessionReviewRepository(
         outcome,
         session: sessionRow === undefined
           ? null
-          : serializeSessionRow(sessionRow, { registry: options.registry }),
+          : serializeSessionRow(sessionRow, {
+              registry: options.registry,
+              agentProfiles: options.agentProfiles?.() ?? [],
+            }),
       };
     },
   };

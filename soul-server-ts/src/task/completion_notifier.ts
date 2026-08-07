@@ -186,15 +186,17 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    * Python `_notify_caller_completion`의 build_agent_caller_info 호출(L472-477)과 의미 동등.
    */
   private _buildCallerInfo(task: Task): AgentCallerInfo {
-    const profile = task.profileId
+    const profile = task.agentProfileSnapshot ?? (task.profileId
       ? this.agentRegistry.get(task.profileId)
-      : undefined;
+      : undefined);
     const sourceEmail = task.callerInfo?.email;
     return buildAgentCallerInfo({
       agentNode: this.nodeId,
       agentId: profile?.id ?? task.profileId ?? null,
       agentName: profile?.name ?? null,
-      portraitPath: profile?.portrait_path ?? null,
+      portraitPath: task.agentProfileHasDbPortrait
+        ? `/api/agents/${profile?.id ?? task.profileId}/portrait`
+        : profile?.portrait_path ?? null,
       email: typeof sourceEmail === "string" ? sourceEmail : undefined,
     });
   }

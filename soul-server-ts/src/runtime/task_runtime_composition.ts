@@ -78,7 +78,7 @@ export function composeTaskRuntime(
     if (!task.profileId) {
       throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
     }
-    const agent = agentRegistry.get(task.profileId);
+    const agent = task.agentProfileSnapshot ?? agentRegistry.get(task.profileId);
     if (!agent) {
       throw new Error(
         `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,

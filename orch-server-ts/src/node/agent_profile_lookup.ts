@@ -2,6 +2,12 @@ import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
 } from "./registry.js";
+import type { AgentProfileRecord } from "./agent_profile_routes.js";
+
+export type AgentProfileIdentityOverlay = Pick<
+  AgentProfileRecord,
+  "agentId" | "name" | "defaultPreset" | "aliases" | "hasPortrait"
+>;
 
 export type RegisteredAgentProfile = {
   readonly nodeId: string;
@@ -14,24 +20,38 @@ export type RegisteredAgentProfile = {
 export function findNodeAgentProfile(
   node: NodeConnectionSnapshot,
   requestedId: string,
+  overlays: readonly AgentProfileIdentityOverlay[] = [],
 ): RegisteredAgentProfile | undefined {
   const profiles = node.agents.flatMap((candidate) => {
     const agent = asRecord(candidate);
     const id = nonEmptyString(agent?.id);
-    return agent && id ? [{ agent, id }] : [];
+    const overlay = id
+      ? overlays.find((candidate) => candidate.agentId === id)
+      : undefined;
+    return agent && id ? [{ agent, id, overlay }] : [];
   });
 
   const canonical = profiles.find((profile) => profile.id === requestedId);
-  if (canonical) return resolvedProfile(node.nodeId, canonical.agent, canonical.id);
+  if (canonical) {
+    return resolvedProfile(
+      node.nodeId,
+      canonical.agent,
+      canonical.id,
+      undefined,
+      canonical.overlay,
+    );
+  }
 
   for (const profile of profiles) {
-    const alias = aliases(profile.agent).find((candidate) => candidate.id === requestedId);
+    const alias = effectiveAliases(profile.agent, profile.overlay)
+      .find((candidate) => candidate.id === requestedId);
     if (!alias) continue;
     return resolvedProfile(
       node.nodeId,
       profile.agent,
       profile.id,
       alias.defaultPreset,
+      profile.overlay,
     );
   }
   return undefined;
@@ -41,15 +61,16 @@ export function findRegisteredAgentProfile(
   registry: InMemoryNodeRegistry,
   requestedId: string,
   preferredNodeId?: string,
+  overlays: readonly AgentProfileIdentityOverlay[] = [],
 ): RegisteredAgentProfile | undefined {
   if (preferredNodeId) {
     const preferredNode = registry.getConnectedNode(preferredNodeId);
     return preferredNode
-      ? findNodeAgentProfile(preferredNode, requestedId)
+      ? findNodeAgentProfile(preferredNode, requestedId, overlays)
       : undefined;
   }
   for (const node of registry.listConnectedNodes()) {
-    const profile = findNodeAgentProfile(node, requestedId);
+    const profile = findNodeAgentProfile(node, requestedId, overlays);
     if (profile) return profile;
   }
   return undefined;
@@ -59,10 +80,11 @@ export function resolveRegisteredAgentId(
   registry: InMemoryNodeRegistry,
   nodeId: string,
   requestedId: string,
+  overlays: readonly AgentProfileIdentityOverlay[] = [],
 ): string {
   const node = registry.getConnectedNode(nodeId);
   return node
-    ? findNodeAgentProfile(node, requestedId)?.id ?? requestedId
+    ? findNodeAgentProfile(node, requestedId, overlays)?.id ?? requestedId
     : requestedId;
 }
 
@@ -71,17 +93,36 @@ function resolvedProfile(
   agent: Record<string, unknown>,
   id: string,
   aliasDefaultPreset?: string,
+  overlay?: AgentProfileIdentityOverlay,
 ): RegisteredAgentProfile {
   const backend = nonEmptyString(agent.backend) ?? "claude";
   const defaultPreset =
-    aliasDefaultPreset ?? nonEmptyString(agent.default_preset);
+    aliasDefaultPreset ?? (overlay === undefined
+      ? nonEmptyString(agent.default_preset)
+      : overlay.defaultPreset ?? undefined);
+  const effectiveAgent = overlay === undefined
+    ? agent
+    : {
+        ...agent,
+        name: overlay.name,
+        aliases: overlay.aliases,
+        default_preset: overlay.defaultPreset ?? undefined,
+        ...(overlay.hasPortrait ? { portrait_url: "db" } : {}),
+      };
   return {
     nodeId,
     id,
     backend,
     ...(defaultPreset ? { defaultPreset } : {}),
-    agent,
+    agent: effectiveAgent,
   };
+}
+
+function effectiveAliases(
+  agent: Record<string, unknown>,
+  overlay: AgentProfileIdentityOverlay | undefined,
+): Array<{ id: string; defaultPreset?: string }> {
+  return aliases(overlay === undefined ? agent : { aliases: overlay.aliases });
 }
 
 function aliases(

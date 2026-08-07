@@ -470,6 +470,16 @@ function createLiveDependencies(): LiveProviderDependencies {
   };
   return {
     dbCatalogRepository: {
+      agentProfileRepository: {
+        snapshot: vi.fn(() => []),
+        list: vi.fn(async () => []),
+        get: vi.fn(async () => null),
+        put: vi.fn(),
+        delete: vi.fn(),
+        getPortrait: vi.fn(async () => null),
+        putPortrait: vi.fn(),
+        deletePortrait: vi.fn(),
+      },
       adminUsersRepository: {
         findUserByEmail: vi.fn(async (email) =>
           email === "admin@example.com"

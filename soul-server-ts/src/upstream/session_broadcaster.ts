@@ -200,11 +200,14 @@ export class SessionBroadcaster {
     //   `{session.backend && ...}` silent drop 차단. agentId/Name/PortraitUrl은 null로 박음.
     // - default "claude"는 Python `_session_to_response` (session_serializer.py:131)와 같은 정책.
     if (task.profileId) {
-      const agent = this.agentRegistry.get(task.profileId);
+      const agent = task.agentProfileSnapshot ?? this.agentRegistry.get(task.profileId);
       info.agentId = agent?.id ?? task.profileId;
       info.agentName = agent?.name ?? null;
-      info.agentPortraitUrl =
-        agent?.portrait_path ? `/api/agents/${agent.id}/portrait` : null;
+      info.agentPortraitUrl = task.agentProfileHasDbPortrait
+        ? `/api/nodes/${this.nodeId}/agents/${agent?.id ?? task.profileId}/portrait`
+        : agent?.portrait_path
+          ? `/api/agents/${agent.id}/portrait`
+          : null;
       info.backend = agent ? effectiveTaskBackend(task, agent) : "claude";
     } else if (sessionType === "claude") {
       info.agentId = null;

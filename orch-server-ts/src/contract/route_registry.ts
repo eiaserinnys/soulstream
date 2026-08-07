@@ -146,6 +146,35 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   {
+    methods: ["GET"],
+    path: "/api/agent-profiles",
+    name: "list_agent_profiles",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/agent-profiles/runtime",
+    name: "list_agent_profile_runtime_overlays",
+    authRequired: true,
+    family: "control_plane",
+    beforePath: "/api/agent-profiles/{agent_id}",
+  },
+  {
+    methods: ["DELETE", "GET", "PUT"],
+    path: "/api/agent-profiles/{agent_id}",
+    name: "agent_profile_crud",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["DELETE", "GET", "PUT"],
+    path: "/api/agent-profiles/{agent_id}/portrait",
+    name: "agent_profile_portrait_crud",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
     methods: ["POST"],
     path: "/api/llm/ephemeral",
     name: "create_ephemeral_llm_response",

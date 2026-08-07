@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { ZodError } from "zod";
 
 import { loadAgentRegistry } from "./agent_registry.js";
+import { AgentProfileSource } from "./agent_profile_source.js";
 import { parseEnv } from "./config.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
 import { createLogger } from "./logger.js";
@@ -9,6 +10,7 @@ import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { startServer } from "./server.js";
+import { wsToHttpBase } from "./mcp/orch_proxy.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // legacy `.env`와 분리하여 SOULSTREAM_NODE_ID 충돌을 막는다.
@@ -81,6 +83,17 @@ async function main(): Promise<void> {
       );
     }
   }
+  const agentProfileSource = new AgentProfileSource({
+    agentsConfigPath: env.AGENTS_CONFIG_PATH,
+    cachePath: env.AGENT_PROFILE_CACHE_PATH,
+    runtimeUrl: `${wsToHttpBase(env.SOULSTREAM_UPSTREAM_URL)}/api/agent-profiles/runtime`,
+    headers: env.AUTH_BEARER_TOKEN
+      ? { authorization: `Bearer ${env.AUTH_BEARER_TOKEN}` }
+      : {},
+    logger,
+    profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+  });
+  await agentProfileSource.initialize();
 
   logger.info(
     {
@@ -129,6 +142,7 @@ async function main(): Promise<void> {
     mcpConfigService,
     codexCliPath,
     modelCatalog,
+    agentProfileSource,
   });
   await startServer(runtime.server, env.HOST, env.PORT);
   logger.info(

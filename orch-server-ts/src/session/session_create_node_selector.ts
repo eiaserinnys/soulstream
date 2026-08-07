@@ -2,7 +2,10 @@ import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
 } from "../node/registry.js";
-import { findNodeAgentProfile } from "../node/agent_profile_lookup.js";
+import {
+  findNodeAgentProfile,
+  type AgentProfileIdentityOverlay,
+} from "../node/agent_profile_lookup.js";
 
 export type SessionCreateNodeSelectionRequest = {
   readonly nodeId?: string;
@@ -54,6 +57,7 @@ export class SessionCreateNodeSelectionError extends Error {
 export function selectNodeForSessionCreate(
   registry: InMemoryNodeRegistry,
   request: SessionCreateNodeSelectionRequest,
+  agentProfiles: readonly AgentProfileIdentityOverlay[] = [],
 ): SessionCreateNodeSelection {
   const nodes = registry.listConnectedNodesInRegistrationOrder();
   if (nodes.length === 0) {
@@ -64,14 +68,15 @@ export function selectNodeForSessionCreate(
     return selectRequestedNode(registry, {
       ...request,
       nodeId: request.nodeId,
-    });
+    }, agentProfiles);
   }
-  return selectAutomaticNode(registry, nodes, request);
+  return selectAutomaticNode(registry, nodes, request, agentProfiles);
 }
 
 function selectRequestedNode(
   registry: InMemoryNodeRegistry,
   request: SessionCreateNodeSelectionRequest & { readonly nodeId: string },
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
 ): SessionCreateNodeSelection {
   const nodeId = request.nodeId;
   const node = registry.getConnectedNode(nodeId);
@@ -82,8 +87,8 @@ function selectRequestedNode(
   }
 
   const profile = request.profileId === undefined
-    ? compatibleProfiles(node, request)[0]?.profile
-    : findProfile(node, request.profileId);
+    ? compatibleProfiles(node, request, agentProfiles)[0]?.profile
+    : findProfile(node, request.profileId, agentProfiles);
   if (profile === undefined) {
     if (request.profileId !== undefined) {
       throw selectionError(
@@ -119,10 +124,11 @@ function selectAutomaticNode(
   registry: InMemoryNodeRegistry,
   nodes: NodeConnectionSnapshot[],
   request: SessionCreateNodeSelectionRequest,
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
 ): SessionCreateNodeSelection {
   if (request.profileId !== undefined) {
     const eligible = nodes.flatMap((node) => {
-      const profile = findProfile(node, request.profileId!);
+      const profile = findProfile(node, request.profileId!, agentProfiles);
       return profile === undefined ? [] : [{ node, profile }];
     });
     if (eligible.length === 0) {
@@ -163,7 +169,7 @@ function selectAutomaticNode(
   }
 
   const resolvedDefaults = nodes.flatMap((node) =>
-    compatibleProfiles(node, request),
+    compatibleProfiles(node, request, agentProfiles),
   );
   if (resolvedDefaults.length === 0 && request.modelPresetId) {
     throw modelPresetNotFound(undefined, request.modelPresetId);
@@ -225,8 +231,9 @@ function toSelection(candidate: NodeProfileCandidate): SessionCreateNodeSelectio
 function compatibleProfiles(
   node: NodeConnectionSnapshot,
   request: SessionCreateNodeSelectionRequest,
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
 ): NodeProfileCandidate[] {
-  return profiles(node).flatMap((profile) => {
+  return profiles(node, agentProfiles).flatMap((profile) => {
     const backend = backendForProfile(node, profile, request);
     const modelPresetId = selectedPresetId(profile, request);
     return backend && node.supportedBackends.includes(backend)
@@ -243,8 +250,9 @@ function compatibleProfiles(
 function findProfile(
   node: NodeConnectionSnapshot,
   profileId: string,
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
 ): AgentProfile | undefined {
-  const profile = findNodeAgentProfile(node, profileId);
+  const profile = findNodeAgentProfile(node, profileId, agentProfiles);
   return profile
     ? {
         id: profile.id,
@@ -256,21 +264,16 @@ function findProfile(
     : undefined;
 }
 
-function profiles(node: NodeConnectionSnapshot): AgentProfile[] {
+function profiles(
+  node: NodeConnectionSnapshot,
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
+): AgentProfile[] {
   return node.agents.flatMap((candidate) => {
     if (!isRecord(candidate) || typeof candidate.id !== "string" || candidate.id.length === 0) {
       return [];
     }
-    return [{
-      id: candidate.id,
-      backend:
-        typeof candidate.backend === "string" && candidate.backend.length > 0
-          ? candidate.backend
-          : "claude",
-      ...(typeof candidate.default_preset === "string" && candidate.default_preset.length > 0
-        ? { defaultPreset: candidate.default_preset }
-        : {}),
-    }];
+    const profile = findProfile(node, candidate.id, agentProfiles);
+    return profile ? [profile] : [];
   });
 }
 

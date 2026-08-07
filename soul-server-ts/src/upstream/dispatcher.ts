@@ -15,6 +15,7 @@ import type { TaskManager } from "../task/task_manager.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
+import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import {
   AgentConfigCommands,
@@ -95,6 +96,7 @@ export class CommandDispatcher {
     scheduleCommands?: ClaudeRuntimeScheduleCommands,
     _deliveryV2Enabled = false,
     modelCatalog?: Pick<ModelCatalog, "resolve" | "list">,
+    agentProfileSource?: NewSessionAgentProfileSource,
   ) {
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -102,6 +104,7 @@ export class CommandDispatcher {
       taskExecutor,
       logger,
       modelCatalog,
+      agentProfileSource,
     });
     const attachmentCommands = new AttachmentCommands(attachmentStore);
     const sessionListCommands = new SessionListCommands(sessionDb, nodeId);

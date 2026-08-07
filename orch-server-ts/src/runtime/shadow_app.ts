@@ -16,6 +16,7 @@ import type { RouteOwnerManifest } from "../contract/route_owner_manifest.js";
 import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.js";
 import type { EphemeralLlmRouteOptions } from "../llm/ephemeral_llm_routes.js";
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
+import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
 import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
 import type { NodeClaudeAuthRouteOptions } from "../node/node_claude_auth_routes.js";
 import type {
@@ -85,6 +86,7 @@ export type ShadowOrchestratorProviderBundle = {
   ephemeralLlmRoutes: EphemeralLlmRouteOptions;
   folderRoutes: FolderRouteOptions;
   markdownDocumentRoutes: ShadowMarkdownDocumentRouteProviders;
+  agentProfileRoutes: AgentProfileRouteOptions;
   nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
   nodeClaudeAuthRoutes: ShadowNodeClaudeAuthRouteProviders;
   publicStatusRoutes: PublicStatusRouteOptions;
@@ -119,6 +121,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "ephemeralLlmRoutes"
     | "folderRoutes"
     | "markdownDocumentRoutes"
+    | "agentProfileRoutes"
     | "nodeAgentProfileRoutes"
     | "nodeClaudeAuthRoutes"
     | "nodeSnapshotRoutes"
@@ -212,6 +215,7 @@ export const shadowRouteCompositionRequirements = [
     owner: "planner",
     paths: ["runtime.pageYjsRoutes.plannerReads"],
   },
+  { owner: "agent.profiles", paths: ["agentProfileRoutes.repository"] },
   { owner: "node.agent-profiles", paths: ["nodeAgentProfileRoutes.provider"] },
   {
     owner: "node.claude-auth",
@@ -370,6 +374,7 @@ function buildShadowRouteOptions(
       hostProxy: boardYjsHostProxyRoutes,
     },
     pageYjsRoutes: providers.runtime.pageYjsRoutes,
+    agentProfileRoutes: providers.agentProfileRoutes,
     nodeAgentProfileRoutes: providers.nodeAgentProfileRoutes,
     nodeClaudeAuthRoutes: {
       provider: providers.nodeClaudeAuthRoutes.provider,

@@ -63,6 +63,32 @@ describe("live node agent profile route provider", () => {
     expect(requestNode).not.toHaveBeenCalled();
   });
 
+  it("uses the DB portrait before registration and node HTTP fallbacks", async () => {
+    const dbPortrait = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]);
+    const { provider, requestNode } = createFixture({
+      agents: [{ id: "agent-a", portrait_b64: "legacy" }],
+      agentProfileRepository: {
+        list: async () => [],
+        getPortrait: async () => ({
+          body: dbPortrait,
+          mime: "image/png",
+          sha256: "a".repeat(64),
+          version: 2,
+        }),
+      },
+    });
+
+    await expect(provider.getAgentPortrait("node-a", "agent-a")).resolves.toEqual({
+      status: "cached",
+      body: dbPortrait,
+    });
+    await expect(provider.getAgentPortrait("disconnected-node", "agent-a")).resolves.toEqual({
+      status: "cached",
+      body: dbPortrait,
+    });
+    expect(requestNode).not.toHaveBeenCalled();
+  });
+
   it("requests agent and user portraits with forwarded auth headers as binary live node HTTP responses", async () => {
     const portraitBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d]);
     const { provider, requestNode } = createFixture({
@@ -224,6 +250,7 @@ function createFixture(input: {
   agents?: unknown[];
   requestNode?: ProviderOptions["nodeHttpClient"]["requestNode"];
   bridgeError?: unknown;
+  agentProfileRepository?: ProviderOptions["agentProfileRepository"];
 } = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
@@ -266,6 +293,10 @@ function createFixture(input: {
     registry,
     bridge,
     nodeHttpClient: { requestNode },
+    agentProfileRepository: input.agentProfileRepository ?? {
+      list: async () => [],
+      getPortrait: async () => null,
+    },
   });
   return {
     provider: bundle.nodeAgentProfileRoutes.provider,

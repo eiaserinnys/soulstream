@@ -29,10 +29,7 @@ import {
   type SessionCommandTransportBridge,
 } from "../session/session_command_transport.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
-import {
-  SessionCreateNodeSelectionError,
-  selectNodeForSessionCreate,
-} from "../session/session_create_node_selector.js";
+import { SessionCreateNodeSelectionError } from "../session/session_create_node_selector.js";
 import type {
   RuntimeSessionEvent,
   RuntimeSessionEventHub,
@@ -62,7 +59,7 @@ export function createLiveExecuteProxyRouteProvider(
         agentSessionId,
       );
       try {
-        const selected = selectNodeForSessionCreate(options.registry, {
+        const selected = options.router.selectNodeForCreate({
           nodeId: payload.nodeId,
           profileId: payload.profile,
         });
@@ -70,6 +67,8 @@ export function createLiveExecuteProxyRouteProvider(
           payload,
           agentSessionId,
           backend: selected.backend,
+          profileId: selected.profileId,
+          modelPresetId: selected.modelPresetId,
         });
         const command = options.registry.createCommand(
           selected.node.nodeId,
@@ -169,15 +168,18 @@ function createSessionCommandPayload(params: {
   payload: ExecuteProxyNewProviderRequest;
   agentSessionId: string;
   backend: string;
+  profileId: string;
+  modelPresetId?: string;
 }): CreateSessionNodeCommandPayload {
-  const { payload, agentSessionId, backend } = params;
+  const { payload, agentSessionId, backend, profileId, modelPresetId } = params;
   const command: CreateSessionNodeCommandPayload = {
     type: "create_session",
     agentSessionId,
     prompt: payload.prompt,
-    profile: payload.profile,
+    profile: profileId,
     caller_info: payload.caller_info,
   };
+  if (modelPresetId !== undefined) command.model_preset = modelPresetId;
   if (payload.allowed_tools !== undefined) command.allowed_tools = payload.allowed_tools;
   if (payload.disallowed_tools !== undefined) {
     command.disallowed_tools = payload.disallowed_tools;

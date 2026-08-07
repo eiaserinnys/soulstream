@@ -1,6 +1,8 @@
 import type { OrchServerEnvironmentConfig } from "../config.js";
 import { findRegisteredAgentProfile } from
   "../node/agent_profile_lookup.js";
+import type { AgentProfileIdentityOverlay } from
+  "../node/agent_profile_lookup.js";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import { warnForBlockedChildProcessEnvKeys } from
   "../runtime/child_process_env.js";
@@ -44,6 +46,7 @@ export function createLiveTurnSummaryPipeline(options: {
   readonly configPath: string;
   readonly sqlResolver: LiveDbSqlResolver;
   readonly registry: InMemoryNodeRegistry;
+  readonly agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
   readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
   readonly sessionBroadcaster: Pick<
     InMemorySseReplayBroadcaster<SessionStreamEvent>,
@@ -95,6 +98,7 @@ export function createLiveTurnSummaryPipeline(options: {
           options.registry,
           agentId,
           nodeId ?? undefined,
+          options.agentProfiles?.() ?? [],
         );
         const name = profile?.agent.name;
         return typeof name === "string" && name.trim().length > 0

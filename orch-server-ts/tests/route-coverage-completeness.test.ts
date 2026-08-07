@@ -139,6 +139,7 @@ function createAllOptInRouteApp() {
   const inert = {} as Record<string, unknown>;
   return createApp({
     config,
+    agentProfileRoutes: inert,
     adminUsersRoutes: inert,
     atomRoutes: inert,
     authRoutes: inert,
