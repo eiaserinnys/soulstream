@@ -15,14 +15,36 @@ export function assertBoardItemProjectionParity(input: {
   ydocItems: readonly CatalogBoardItemRow[];
   projectionItems: readonly CatalogBoardItemRow[];
 }): void {
-  const ydoc = normalizeItems(input.ydocItems);
-  const projection = normalizeItems(input.projectionItems);
-  if (JSON.stringify(ydoc) !== JSON.stringify(projection)) {
+  const difference = inspectBoardItemProjectionDifference(input);
+  if (hasDifference(difference)) {
     throw new Error(
       `${input.label} board item projection mismatch: ` +
-        `${JSON.stringify(describeDifference(ydoc, projection))}`,
+        `${JSON.stringify(difference)}`,
     );
   }
+}
+
+export function inspectBoardItemProjectionDifference(input: {
+  ydocItems: readonly CatalogBoardItemRow[];
+  projectionItems: readonly CatalogBoardItemRow[];
+}): BoardItemProjectionDifference {
+  const ydoc = normalizeItems(input.ydocItems);
+  const projection = normalizeItems(input.projectionItems);
+  return describeDifference(ydoc, projection);
+}
+
+export function inspectBoardItemMembershipDifference(input: {
+  ydocItems: readonly CatalogBoardItemRow[];
+  projectionItems: readonly CatalogBoardItemRow[];
+}): BoardItemMembershipDifference {
+  const ydocIds = normalizeMembershipIds(input.ydocItems);
+  const projectionIds = normalizeMembershipIds(input.projectionItems);
+  const ydoc = new Set(ydocIds);
+  const projection = new Set(projectionIds);
+  return {
+    missingFromProjection: ydocIds.filter((id) => !projection.has(id)),
+    missingFromYdoc: projectionIds.filter((id) => !ydoc.has(id)),
+  };
 }
 
 function normalizeItems(items: readonly CatalogBoardItemRow[]): NormalizedBoardItem[] {
@@ -46,10 +68,17 @@ function normalizeItems(items: readonly CatalogBoardItemRow[]): NormalizedBoardI
   return normalized;
 }
 
+function normalizeMembershipIds(items: readonly CatalogBoardItemRow[]): string[] {
+  const ids = items.map((item) => item.id).sort((left, right) => left.localeCompare(right));
+  const duplicate = ids.find((id, index) => index > 0 && ids[index - 1] === id);
+  if (duplicate) throw new Error(`duplicate board item ID: ${duplicate}`);
+  return ids;
+}
+
 function describeDifference(
   ydoc: readonly NormalizedBoardItem[],
   projection: readonly NormalizedBoardItem[],
-): Record<string, unknown> {
+): BoardItemProjectionDifference {
   const ydocById = new Map(ydoc.map((item) => [item.id, item]));
   const projectionById = new Map(projection.map((item) => [item.id, item]));
   const missingFromProjection = [...ydocById.keys()]
@@ -62,6 +91,12 @@ function describeDifference(
       JSON.stringify(ydocById.get(id)) !== JSON.stringify(projected);
   });
   return { missingFromProjection, missingFromYdoc, changed };
+}
+
+function hasDifference(difference: BoardItemProjectionDifference): boolean {
+  return difference.missingFromProjection.length > 0 ||
+    difference.missingFromYdoc.length > 0 ||
+    difference.changed.length > 0;
 }
 
 function sortValue(value: unknown): unknown {
@@ -86,4 +121,15 @@ interface NormalizedBoardItem {
   x: number;
   y: number;
   metadata: unknown;
+}
+
+export interface BoardItemProjectionDifference {
+  missingFromProjection: string[];
+  missingFromYdoc: string[];
+  changed: string[];
+}
+
+export interface BoardItemMembershipDifference {
+  missingFromProjection: string[];
+  missingFromYdoc: string[];
 }

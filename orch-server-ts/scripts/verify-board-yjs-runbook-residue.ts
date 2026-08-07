@@ -10,18 +10,28 @@ import {
 } from "../src/board-yjs/board_yjs_model.js";
 import {
   assertBoardItemProjectionParity,
+  inspectBoardItemMembershipDifference,
   requireBoardItemCatalogProjection,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
-import { normalizeMissingSourceTaskItemReferences } from
+import {
+  findMissingSourceTaskItemReferences,
+  normalizeMissingSourceTaskItemReferences,
+  type MissingSourceTaskItemReference,
+} from
   "../src/board-yjs/board_yjs_replica_normalization.js";
 import { inspectBoardYjsRunbookResidue } from
   "../src/board-yjs/board_yjs_runbook_residue.js";
+import {
+  toCatalogBoardItemRow,
+  type BoardItemDbRow,
+} from "../src/board-yjs/board_projection_serialization.js";
 import type { CatalogBoardItemRow } from "../src/board-yjs/board_yjs_types.js";
 
 interface DocumentRow {
   name: string;
   snapshot: Buffer | Uint8Array;
+  synced_at: Date | string | null;
 }
 
 interface UpdateRow {
@@ -42,7 +52,7 @@ try {
   const inventory = await sql.begin(async (transaction) => {
     await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
     const documents = await transaction<DocumentRow[]>`
-      SELECT name, snapshot FROM board_yjs_documents
+      SELECT name, snapshot, synced_at FROM board_yjs_documents
       WHERE name LIKE 'board:%' OR name LIKE 'board-folder:%'
       ORDER BY name
     `;
@@ -58,6 +68,13 @@ try {
     `;
     const sourceTaskItems = await transaction<readonly { id: string }[]>`
       SELECT id FROM task_items ORDER BY id
+    `;
+    const boardItems = await transaction<BoardItemDbRow[]>`
+      SELECT
+        id, folder_id, container_kind, container_id, membership_kind,
+        source_task_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
+      FROM board_items
+      ORDER BY id
     `;
     const projections = await transaction<Array<{
       tasks: number;
@@ -91,6 +108,7 @@ try {
       updates,
       catalog,
       sourceTaskItems,
+      boardItems,
       projections: projections[0],
     };
   });
@@ -113,7 +131,17 @@ try {
   const existingSourceTaskItemIds = new Set(
     inventory.sourceTaskItems.map((row) => row.id),
   );
+  const relationalBoardItems = inventory.boardItems.map(toCatalogBoardItemRow);
+  const boardItemsByContainer = groupBoardItemsByContainer(
+    relationalBoardItems,
+  );
+  const catalogNormalizationWarnings: MissingSourceTaskItemReference[] = [];
+  const boardItemsNormalizationWarnings: MissingSourceTaskItemReference[] = [];
+  const boardItemsProjectionMismatches: BoardItemsProjectionMismatch[] = [];
   let boardItemsCompared = 0;
+  let relationalBoardItemsCompared = 0;
+  let syncedDocumentsCompared = 0;
+  let unsyncedDocumentsSkipped = 0;
   let emptyDocumentsWithoutCatalog = 0;
   for (const row of inventory.documents) {
     const doc = new Y.Doc();
@@ -128,33 +156,81 @@ try {
     for (const id of residue.opaqueBoardItemIds) opaqueBoardItemIds.add(id);
     const container = parseBoardYjsDocumentName(row.name);
     if (!container) throw new Error(`invalid board Y.Doc document name: ${row.name}`);
+    const containerKey = `${container.containerKind}:${container.containerId}`;
     const cache = requireBoardItemCatalogProjection({
       label: row.name,
       ydocItemCount: doc.getMap(BOARD_ITEMS_MAP).size,
-      projection: catalogByContainer.get(
-        `${container.containerKind}:${container.containerId}`,
-      ) ?? null,
+      projection: catalogByContainer.get(containerKey) ?? null,
     });
+    let normalizedYdocItems: readonly CatalogBoardItemRow[] = [];
     if (!cache) {
       emptyDocumentsWithoutCatalog += 1;
-      continue;
+    } else {
+      const ydocReplica = readBoardYDocReplica({
+        folderId: cache.folder_id,
+        containerKind: container.containerKind,
+        containerId: container.containerId,
+      }, doc);
+      const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
+        ydocReplica,
+        existingSourceTaskItemIds,
+      );
+      normalizedYdocItems = normalizedYdocReplica.boardItems;
+      catalogNormalizationWarnings.push(...findMissingSourceTaskItemReferences(
+        cache.board_items,
+        existingSourceTaskItemIds,
+      ));
+      const normalizedCatalogReplica = normalizeMissingSourceTaskItemReferences(
+        { boardItems: cache.board_items, markdownDocuments: [] },
+        existingSourceTaskItemIds,
+      );
+      assertBoardItemProjectionParity({
+        label: row.name,
+        ydocItems: normalizedYdocItems,
+        projectionItems: normalizedCatalogReplica.boardItems,
+      });
+      boardItemsCompared += ydocReplica.boardItems.length;
     }
-    const ydocReplica = readBoardYDocReplica({
-      folderId: cache.folder_id,
-      containerKind: container.containerKind,
-      containerId: container.containerId,
-    }, doc);
-    const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
-      ydocReplica,
-      existingSourceTaskItemIds,
-    );
-    assertBoardItemProjectionParity({
-      label: row.name,
-      ydocItems: normalizedYdocReplica.boardItems,
-      projectionItems: cache.board_items,
-    });
-    boardItemsCompared += ydocReplica.boardItems.length;
+    // Before the first replica sync, board_items is the seed and the Y.Doc is not authoritative.
+    if (row.synced_at === null) {
+      unsyncedDocumentsSkipped += 1;
+    } else {
+      const relationalProjection = boardItemsByContainer.get(containerKey) ?? [];
+      boardItemsNormalizationWarnings.push(...findMissingSourceTaskItemReferences(
+        relationalProjection,
+        existingSourceTaskItemIds,
+      ));
+      // Compare the same logical snapshot on both sides, but retain normalized-away drift above.
+      const normalizedRelationalReplica = normalizeMissingSourceTaskItemReferences(
+        { boardItems: relationalProjection, markdownDocuments: [] },
+        existingSourceTaskItemIds,
+      );
+      recordBoardItemsProjectionMismatch(
+        boardItemsProjectionMismatches,
+        containerKey,
+        row.name,
+        normalizedYdocItems,
+        normalizedRelationalReplica.boardItems,
+      );
+      relationalBoardItemsCompared += relationalProjection.length;
+      syncedDocumentsCompared += 1;
+    }
   }
+
+  const boardItemsProjectionMismatchCount = boardItemsProjectionMismatches.reduce(
+    (total, mismatch) => total + mismatch.ydocOnly.length +
+      mismatch.boardItemsOnly.length,
+    0,
+  );
+  const boardItemsProjectionYdocOnlyCount = boardItemsProjectionMismatches.reduce(
+    (total, mismatch) => total + mismatch.ydocOnly.length,
+    0,
+  );
+  const boardItemsProjectionBoardItemsOnlyCount =
+    boardItemsProjectionMismatches.reduce(
+      (total, mismatch) => total + mismatch.boardItemsOnly.length,
+      0,
+    );
 
   const committedAllowlist = JSON.parse(await readFile(
     new URL("./ydoc-runbook-opaque-board-item-allowlist.json", import.meta.url),
@@ -165,7 +241,22 @@ try {
     documentsRecomposed: inventory.documents.length,
     pendingUpdatesApplied: inventory.updates.length,
     boardItemsCompared,
+    relationalBoardItemsLoaded: relationalBoardItems.length,
+    relationalBoardItemsCompared,
+    syncedDocumentsCompared,
+    unsyncedDocumentsSkipped,
     emptyDocumentsWithoutCatalog,
+    boardItemsProjection: {
+      mismatchCount: boardItemsProjectionMismatchCount,
+      mismatchContainers: boardItemsProjectionMismatches.length,
+      ydocOnlyCount: boardItemsProjectionYdocOnlyCount,
+      boardItemsOnlyCount: boardItemsProjectionBoardItemsOnlyCount,
+      mismatches: boardItemsProjectionMismatches,
+    },
+    normalizationWarnings: {
+      catalog: catalogNormalizationWarnings,
+      boardItems: boardItemsNormalizationWarnings,
+    },
     ydoc: { legacyDocumentNames, legacyItemTypes, legacySourceKeys },
     opaqueBoardItemIds: [...opaqueBoardItemIds].sort(),
     projections: inventory.projections,
@@ -184,7 +275,10 @@ try {
     inventory.projections?.catalog_legacy_source_keys ?? -1,
   );
   assertContainsStrings([...opaqueBoardItemIds], committedAllowlist);
-  process.stdout.write("Y.Doc recomposition and SQL projection verification passed.\n");
+  assertNoBoardItemsProjectionMismatches(boardItemsProjectionMismatches);
+  process.stdout.write(
+    "Y.Doc recomposition, catalog cache, and board_items projection verification passed.\n",
+  );
 } finally {
   await sql.end();
 }
@@ -205,4 +299,61 @@ function assertContainsStrings(actual: readonly string[], expected: readonly str
   if (missing.length > 0) {
     throw new Error(`opaque board item IDs were not preserved: ${JSON.stringify(missing)}`);
   }
+}
+
+function groupBoardItemsByContainer(
+  boardItems: readonly CatalogBoardItemRow[],
+): Map<string, CatalogBoardItemRow[]> {
+  const grouped = new Map<string, CatalogBoardItemRow[]>();
+  for (const item of boardItems) {
+    const containerKey = `${item.containerKind ?? "folder"}:` +
+      `${item.containerId ?? item.folderId}`;
+    const values = grouped.get(containerKey) ?? [];
+    values.push(item);
+    grouped.set(containerKey, values);
+  }
+  return grouped;
+}
+
+function recordBoardItemsProjectionMismatch(
+  mismatches: BoardItemsProjectionMismatch[],
+  container: string,
+  documentName: string | null,
+  ydocItems: readonly CatalogBoardItemRow[],
+  boardItems: readonly CatalogBoardItemRow[],
+): void {
+  const difference = inspectBoardItemMembershipDifference({
+    ydocItems,
+    projectionItems: boardItems,
+  });
+  if (difference.missingFromProjection.length === 0 &&
+      difference.missingFromYdoc.length === 0) return;
+  mismatches.push({
+    container,
+    documentName,
+    ydocOnly: difference.missingFromProjection,
+    boardItemsOnly: difference.missingFromYdoc,
+  });
+}
+
+function assertNoBoardItemsProjectionMismatches(
+  mismatches: readonly BoardItemsProjectionMismatch[],
+): void {
+  if (mismatches.length === 0) return;
+  const mismatchCount = mismatches.reduce(
+    (total, mismatch) => total + mismatch.ydocOnly.length +
+      mismatch.boardItemsOnly.length,
+    0,
+  );
+  throw new Error(
+    `board_items projection mismatch: ${mismatchCount} rows across ` +
+      `${mismatches.length} containers; see report above`,
+  );
+}
+
+interface BoardItemsProjectionMismatch {
+  container: string;
+  documentName: string | null;
+  ydocOnly: string[];
+  boardItemsOnly: string[];
 }
