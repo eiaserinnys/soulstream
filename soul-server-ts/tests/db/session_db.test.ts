@@ -6,7 +6,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
@@ -52,56 +52,10 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
 }
 
 function createFolderHostedDb(sql: SqlClient): SessionDB {
-  const db = new SessionDB(sql);
+  const db = new SessionDB();
   db.configureFolderHost(new FolderControlPlaneService(sql as never) as never);
   return db;
 }
-
-describe("SessionDB.ensureStableSessionOrderIndex", () => {
-  it("runs the stable session order index concurrently outside a transaction", async () => {
-    const { sql, calls } = createMockSql();
-
-    await new SessionDB(sql).ensureStableSessionOrderIndex();
-
-    expect(calls).toHaveLength(2);
-    const stateQuery = calls[0].fragments.join("?");
-    expect(stateQuery).toContain("FROM pg_class c");
-    expect(stateQuery).toContain("JOIN pg_index i ON i.indexrelid = c.oid");
-    expect(stateQuery).toContain("idx_sessions_updated_at_session_id");
-    expect(calls[0].inTransaction).toBe(false);
-
-    const query = calls[1].fragments.join("?");
-    expect(query).toContain(
-      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
-    );
-    expect(query).toContain("ON sessions (updated_at DESC, session_id DESC)");
-    expect(calls[1].inTransaction).toBe(false);
-  });
-
-  it("drops an invalid stable session order index before recreating it", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      const query = call.fragments.join("?");
-      if (query.includes("FROM pg_class c")) {
-        return [{ indisvalid: false, indisready: false }];
-      }
-      return [];
-    });
-
-    await new SessionDB(sql).ensureStableSessionOrderIndex();
-
-    expect(calls).toHaveLength(3);
-    const dropQuery = calls[1].fragments.join("?");
-    expect(dropQuery).toContain(
-      "DROP INDEX CONCURRENTLY idx_sessions_updated_at_session_id",
-    );
-    expect(calls.every((call) => !call.inTransaction)).toBe(true);
-
-    const createQuery = calls[2].fragments.join("?");
-    expect(createQuery).toContain(
-      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
-    );
-  });
-});
 
 describe("SessionDB Claude transcript mirror", () => {
   it("appendClaudeTranscriptEntries delegates JSON batch to stored proc", async () => {
@@ -358,7 +312,7 @@ describe("SessionDB folder ops (B-5)", () => {
 describe("SessionDB.getPrimarySessionBoardItem", () => {
   it("getPrimarySessionBoardItem → primary session membership을 normalized board item으로 반환", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:s1",
       folderId: "f1",
@@ -399,7 +353,7 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
 
   it("getPrimarySessionBoardItem → row 없음이면 null", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
     db.configureBoardProjectionHost({ getPrimarySessionBoardItem } as never);
 
@@ -412,7 +366,7 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
 describe("SessionDB session-data host delegation", () => {
   it("preserves the public read interface while delegating to the configured host", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
     const getSession = vi.fn().mockResolvedValue({ session_id: "s1" });
     const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const countEvents = vi.fn().mockResolvedValue(7);
@@ -435,7 +389,7 @@ describe("SessionDB session-data host delegation", () => {
 
   it("keeps upstream binding warnings as a worker-side projection", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
     const row = { session_id: "s1", display_name: "게이트", binding_warnings: [] };
     const listSessionsForUpstreamDump = vi.fn().mockResolvedValue({
       sessions: [row],
@@ -467,7 +421,7 @@ describe("SessionDB session-data host delegation", () => {
 
   it("delegates turn excerpt and resume context without local SQL", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
     const getTurnExcerpt = vi.fn().mockResolvedValue({ totalEvents: 0, turns: [] });
     const getResumeContext = vi.fn().mockResolvedValue({
       session: null,
@@ -528,7 +482,7 @@ describe("SessionDB session-data host delegation", () => {
 
   it("createFolder → identity host 우회를 명시적으로 거부", async () => {
     const { sql, calls } = createMockSql();
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
 
     await expect(db.createFolder("child", "Child", 7, "parent")).rejects.toThrow(
       "folder creation must use identity host",
@@ -547,23 +501,6 @@ describe("SessionDB session-data host delegation", () => {
     expect(calls[0].values).toEqual(["child", ["parent_folder_id"], [null]]);
   });
 
-});
-
-describe("SessionDB lifecycle", () => {
-  let sql: SqlClient;
-  let endSpy: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    const mock = createMockSql();
-    sql = mock.sql;
-    endSpy = (mock.sql as unknown as { end: ReturnType<typeof vi.fn> }).end;
-  });
-
-  it("외부 주입 sql은 close 시 end 호출 안 함", async () => {
-    const db = new SessionDB(sql);
-    await db.close();
-    expect(endSpy).not.toHaveBeenCalled();
-  });
 });
 
 describe("session_delete SQL", () => {

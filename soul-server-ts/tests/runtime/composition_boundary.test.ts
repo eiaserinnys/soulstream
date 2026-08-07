@@ -70,7 +70,6 @@ describe("worker composition boundary", () => {
     const env = parseEnv({
       SOULSTREAM_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
-      DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
       EVENT_OUTBOX_DIR: "/tmp/soulstream-event-outbox-test",
       CLAUDE_SESSION_RUNTIME_V2_ENABLED: "false",
     });
@@ -212,17 +211,12 @@ describe("worker composition boundary", () => {
     expect(recoveryIndex).toBeGreaterThan(executorIndex);
   });
 
-  it("fails closed on runtime schema before index work and leaves reconciliation to orch", () => {
+  it("composes the worker without PostgreSQL bootstrap or maintenance", () => {
     const workerComposition = source("runtime/worker_composition.ts");
-    const preflightIndex = workerComposition.indexOf(
-      "await preflightPersistentRuntimeSchema(",
-    );
-    const indexEnsureIndex = workerComposition.indexOf(
-      "ensureStableSessionOrderIndexInBackground(db, logger);",
-    );
-
-    expect(preflightIndex).toBeGreaterThan(-1);
-    expect(indexEnsureIndex).toBeGreaterThan(preflightIndex);
+    expect(workerComposition).toContain("const db = new SessionDB();");
+    expect(workerComposition).not.toContain("preflightPersistentRuntimeSchema");
+    expect(workerComposition).not.toContain("ensureStableSessionOrderIndexInBackground");
+    expect(workerComposition).not.toContain("env.DATABASE_URL");
     expect(workerComposition).not.toContain("interruptRunningSessionsForNode");
   });
 
@@ -230,7 +224,6 @@ describe("worker composition boundary", () => {
     const files = [
       "main.ts",
       "runtime/worker_composition.ts",
-      "runtime/worker_schema_preflight.ts",
       "runtime/task_runtime_composition.ts",
       "context/context_builder.ts",
       "context/context_builder_helpers.ts",
@@ -260,7 +253,6 @@ describe("worker composition boundary", () => {
       "db/repositories/session_delivery_repository.ts",
       "db/repositories/session_delivery_recovery_repository.ts",
       "db/repositories/session_delivery_relation_repository.ts",
-      "db/runtime_schema_preflight.ts",
       "engine/claude_delivery_transcript_receipt.ts",
     ];
 

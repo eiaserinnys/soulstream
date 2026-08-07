@@ -1,4 +1,3 @@
-import type postgres from "postgres";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type {
@@ -587,11 +586,16 @@ export interface ClaudeTranscriptSessionSummary {
   mtime: number;
 }
 
-/**
- * postgres.js 인스턴스를 외부에서 주입 가능하게 한 type alias.
- *
- * 테스트 시 fake sql 함수를 주입하여 stored proc 호출을 검증한다.
- * production은 `postgres(databaseUrl, options)`로 생성된 인스턴스.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SqlClient = postgres.Sql<any>;
+/** SQL boundary used by legacy repository test fixtures, never constructed by the worker. */
+export type SqlClient = {
+  <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): T | Promise<T>;
+  <T extends Record<string, unknown>>(
+    value: T,
+    ...columns: Array<Extract<keyof T, string>>
+  ): unknown;
+  readonly json: (value: unknown) => unknown;
+  readonly end?: (options?: { readonly timeout?: number }) => Promise<void>;
+};

@@ -35,7 +35,6 @@ services:
     restart_delay: 3
     hooks:
       post_pull: pnpm --dir __INSTALL_DIR__/soulstream install --frozen-lockfile --config.strict-dep-builds=false && pnpm --dir __INSTALL_DIR__/soulstream/soul-server-ts run build
-      pre_start: node soul-server-ts/scripts/verify-migrations.mjs
 
 install:
   requirements:

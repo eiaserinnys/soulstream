@@ -18,7 +18,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    db = new SessionDB(harness.sql);
+    db = new SessionDB();
     configureTestSessionDataHost(db, harness.sql);
     await harness.sql`
       INSERT INTO sessions (

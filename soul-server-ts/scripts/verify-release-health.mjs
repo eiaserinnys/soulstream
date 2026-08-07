@@ -4,14 +4,9 @@ import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import dotenv from "dotenv";
-import postgres from "postgres";
 
-import {
-  deploymentEnvironmentPath,
-  loadLegacyBackupContract,
-  readDatabaseUrl,
-} from "../../packages/db-schema/scripts/migration-contract.mjs";
-import { readMigrationPlan } from "../../packages/db-schema/scripts/migrate.mjs";
+import { deploymentEnvironmentPath } from
+  "../../packages/db-schema/scripts/migration-contract.mjs";
 
 function required(env, name) {
   const value = env[name]?.trim();
@@ -128,40 +123,6 @@ export async function readMcpHealth({ url, token, taskId }) {
   }
 }
 
-export async function readDataHealth({ databaseUrl, taskId }) {
-  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 1, connect_timeout: 5 });
-  try {
-    const plan = await readMigrationPlan(sql);
-    if (plan.state !== "current" || plan.bootstrap.length > 0 || plan.pending.length > 0) {
-      throw new Error("database migration ledger is not complete and current");
-    }
-    const rows = await sql`
-      SELECT
-        (SELECT COUNT(*)::int FROM tasks) AS task_count,
-        (SELECT COUNT(*)::int FROM markdown_documents) AS document_count,
-        (SELECT COUNT(*)::int FROM schema_migrations) AS migration_count,
-        EXISTS(SELECT 1 FROM tasks WHERE id = ${taskId}) AS task_exists
-    `;
-    const row = rows[0];
-    if (taskId && !row?.task_exists) throw new Error(`canonical Task ${taskId} is missing`);
-    const legacyBackup = await loadLegacyBackupContract();
-    return {
-      task_count: Number(row.task_count),
-      document_count: Number(row.document_count),
-      migration_count: Number(row.migration_count),
-      task_id: taskId,
-      legacy_task_tree_backup: {
-        status: legacyBackup.status,
-        stored_operations: legacyBackup.stored_operation_count,
-        observed_operations: legacyBackup.observed_pre_drop_operation_count,
-        missing_operations: legacyBackup.missing_operation_count,
-      },
-    };
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
-}
-
 export async function verifyReleaseHealth(
   {
     taskId,
@@ -170,7 +131,6 @@ export async function verifyReleaseHealth(
     fetchImpl = fetch,
     nodeRead = readNodeRegistration,
     mcpRead = readMcpHealth,
-    dataRead = readDataHealth,
   },
 ) {
   dotenv.config({
@@ -190,7 +150,7 @@ export async function verifyReleaseHealth(
   const token = required(env, "AUTH_BEARER_TOKEN");
   const nodeId = required(env, "SOULSTREAM_NODE_ID");
 
-  const [orchestrator, soul, node, mcp, data] = await Promise.all([
+  const [orchestrator, soul, node, mcp] = await Promise.all([
     fetchHealth(orchHealthUrl, fetchImpl),
     fetchHealth(soulHealthUrl, fetchImpl),
     nodeRead({
@@ -200,7 +160,6 @@ export async function verifyReleaseHealth(
       fetchImpl,
     }),
     mcpRead({ url: mcpUrl, token, taskId }),
-    dataRead({ databaseUrl: readDatabaseUrl(env), taskId }),
   ]);
   return {
     status: "ok",
@@ -208,13 +167,12 @@ export async function verifyReleaseHealth(
     soul: { url: soulHealthUrl.toString(), status: soul.status },
     node,
     mcp,
-    data,
   };
 }
 
 export function formatHealthError(error, env = process.env) {
   let text = error instanceof Error ? error.stack ?? error.message : String(error);
-  for (const secret of [env.DATABASE_URL, env.AUTH_BEARER_TOKEN]) {
+  for (const secret of [env.AUTH_BEARER_TOKEN]) {
     if (secret) text = text.split(secret).join("[redacted]");
   }
   return text;

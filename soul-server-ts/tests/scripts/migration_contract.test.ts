@@ -4,8 +4,6 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { REQUIRED_RUNTIME_MIGRATIONS } from
-  "../../src/db/runtime_schema_preflight.js";
 import { validateBackupArchive } from "../../../packages/db-schema/scripts/backup.mjs";
 import {
   assertLegacyBackupResolved,
@@ -80,7 +78,7 @@ describe("versioned migration contract", () => {
     });
   });
 
-  it("keeps worker deployments verify-only and standalone migration-authoritative", () => {
+  it("keeps worker deployments database-free and standalone migration-authoritative", () => {
     const worker = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest-worker.json", import.meta.url),
     ), "utf8"));
@@ -93,9 +91,12 @@ describe("versioned migration contract", () => {
 
     expect(worker).not.toHaveProperty("environment_service");
     expect(worker).not.toHaveProperty("migration");
-    expect(worker.post_start_verify[0].command).toBe(
-      "node packages/db-schema/scripts/migrate.mjs verify",
-    );
+    expect(worker.post_start_verify).toEqual([{
+      name: "verify-release-health",
+      command: "node soul-server-ts/scripts/verify-release-health.mjs",
+      timeout_seconds: 300,
+    }]);
+    expect(JSON.stringify(worker)).not.toMatch(/migrate|backup|DATABASE_URL/);
 
     expect(standalone.environment_service).toBe("soul-server-ts");
     expect(standalone.migration).toEqual({
@@ -159,15 +160,6 @@ describe("versioned migration contract", () => {
       "previous_release_safe",
       "previous_release_safe",
     ]);
-  });
-
-  it("keeps the worker startup preflight pinned to the published manifest tail", async () => {
-    const migrations = await loadMigrationManifest();
-    expect(migrations.slice(44).map((migration) => ({
-      ordinal: migration.ordinal,
-      migrationId: migration.id,
-      checksum: migration.sha256,
-    }))).toEqual(REQUIRED_RUNTIME_MIGRATIONS);
   });
 
   it("treats only explicit one-release compatibility as data-preserving rollback", () => {

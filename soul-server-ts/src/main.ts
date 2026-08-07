@@ -94,7 +94,7 @@ async function main(): Promise<void> {
       claudeAuthTokenPathConfigured: Boolean(env.CLAUDE_AUTH_TOKEN_PATH),
       claudeSessionRuntimeV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     },
-    "soul-server-ts starting (B-3 task lifecycle + DB)",
+    "soul-server-ts starting (orchestrator-hosted persistence)",
   );
 
   const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
@@ -187,11 +187,6 @@ async function main(): Promise<void> {
       }
     }
     await runtime.server.close();
-    try {
-      await runtime.db.close();
-    } catch (err) {
-      logger.warn({ err }, "DB close failed");
-    }
     process.exit(0);
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));

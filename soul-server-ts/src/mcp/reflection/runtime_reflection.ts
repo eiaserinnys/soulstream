@@ -44,7 +44,7 @@ export async function buildRuntimeReflection(
 ): Promise<RuntimeReflectionData> {
   const memory = process.memoryUsage();
   const tasks = runtime.taskManager.listTasks();
-  const database = await probeDatabase(runtime);
+  const database = workerDatabaseBoundary();
   const orchestrator = probeOrchestrator(runtime);
   const errors = [
     ...probeError("database", database),
@@ -78,28 +78,12 @@ export async function buildRuntimeReflection(
   };
 }
 
-async function probeDatabase(
-  runtime: McpRuntime,
-): Promise<{ status: ProbeStatus; checked_at: string; reason?: string }> {
-  const checkedAt = new Date().toISOString();
-  const db = runtime.db as { ping?: () => Promise<void> };
-  if (typeof db.ping !== "function") {
-    return {
-      status: "unavailable",
-      checked_at: checkedAt,
-      reason: "SessionDB.ping is not available on this runtime object",
-    };
-  }
-  try {
-    await db.ping.call(runtime.db);
-    return { status: "ok", checked_at: checkedAt };
-  } catch (err) {
-    return {
-      status: "unavailable",
-      checked_at: checkedAt,
-      reason: err instanceof Error ? err.message : String(err),
-    };
-  }
+function workerDatabaseBoundary(): RuntimeReflectionData["dependencies"]["database"] {
+  return {
+    status: "not_configured",
+    checked_at: new Date().toISOString(),
+    reason: "worker persistence is hosted by the orchestrator",
+  };
 }
 
 function probeOrchestrator(runtime: McpRuntime): RuntimeReflectionData["dependencies"]["orchestrator"] {

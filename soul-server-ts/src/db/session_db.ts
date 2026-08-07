@@ -1,10 +1,7 @@
 /**
- * SessionDB — worker persistence facade. Session/event/story reads cross the
- * orchestrator host boundary. Worker-local SQL remains only for the runtime
- * pool/schema/index bootstrap scheduled for Phase 12.
+ * SessionDB — worker persistence facade. Durable reads and writes cross the
+ * orchestrator host boundary; this facade owns no database connection.
  */
-
-import postgres from "postgres";
 import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
@@ -23,7 +20,6 @@ import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import type { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
-import { SessionRepository } from "./repositories/session_repository.js";
 import {
   type SessionDigestSearchMatch,
   type SessionStoryTurnSummary,
@@ -32,8 +28,7 @@ import {
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
 import type { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
-import { assertRuntimeSchemaReady } from "./runtime_schema_preflight.js";
-import type { BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, SqlClient, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -41,54 +36,15 @@ export type * from "./session_db_types.js";
 export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
 export class SessionDB {
-  private readonly sql: SqlClient;
-  private readonly ownsSql: boolean;
   private taskReader?: { getTask(taskId: string): Promise<TaskSnapshot | null> };
   private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private boardProjectionHost?: BoardYjsHostClient;
   private sessionDeliveryRepository?: SessionDeliveryRepository;
   private claudeBackgroundTaskRepository?: ClaudeBackgroundTaskRepository;
-  private readonly sessionRepository: SessionRepository;
   private sessionDataHost?: SessionDataHost;
   private folderHost?: FolderHostClient;
   private claudeTranscriptRepository?: ClaudeTranscriptRepository;
-
-  /** @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열. 문자열이면 close 시 end. */
-  constructor(sqlOrUrl: SqlClient | string) {
-    let sql: SqlClient;
-    let ownsSql: boolean;
-    if (typeof sqlOrUrl === "string") {
-      sql = postgres(sqlOrUrl, {
-        max: 10,
-        idle_timeout: 60,
-      });
-      ownsSql = true;
-    } else {
-      sql = sqlOrUrl;
-      ownsSql = false;
-    }
-
-    this.sql = sql;
-    this.ownsSql = ownsSql;
-
-    this.sessionRepository = new SessionRepository(this.sql);
-  }
-
-  async close(): Promise<void> {
-    if (this.ownsSql) await this.sql.end({ timeout: 5 });
-  }
-  async ping(): Promise<void> {
-    await this.sql`SELECT 1`;
-  }
-
-  async assertRuntimeSchemaReady(): Promise<void> {
-    await assertRuntimeSchemaReady(this.sql);
-  }
-
-  async ensureStableSessionOrderIndex(): Promise<void> {
-    await this.sessionRepository.ensureStableSessionOrderIndex();
-  }
 
   configureTaskReader(reader: { getTask(taskId: string): Promise<TaskSnapshot | null> }): void {
     this.taskReader = reader;

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createBackup,
   recoverPreviousReleaseData,
-  validateClusterWriteFence,
   verifyBackup,
 } from "../../../packages/db-schema/scripts/backup.mjs";
 import { assertPostgresBackupPrerequisites } from
@@ -87,11 +86,10 @@ describe("pending destructive backup contract", () => {
     expect(backupPreflight).not.toHaveBeenCalled();
   });
 
-  it("checks backup tools and cluster fence for a rollback-unsafe pending plan", async () => {
+  it("checks backup tools and records central service quiescence for a rollback-unsafe plan", async () => {
     const backupPreflight = vi.fn(async () => ({ restore_capability: "verified" }));
-    const fencePreflight = vi.fn(async () => ({ status: "verified" }));
 
-    await preflightPendingMigrations(
+    const report = await preflightPendingMigrations(
       {
         pending: [{
           id: "043_destructive.sql",
@@ -102,45 +100,17 @@ describe("pending destructive backup contract", () => {
       {
         env: backupEnvironment("C:/backup"),
         backupPreflight,
-        fencePreflight,
       },
     );
 
     expect(backupPreflight).toHaveBeenCalledWith(expect.objectContaining({
       databaseUrl: expect.stringContaining("release_test"),
     }));
-    expect(fencePreflight).toHaveBeenCalledWith(backupEnvironment("C:/backup"));
+    expect(report.writer_quiescence).toBe("central_service_stop");
   });
 
-  it("blocks rollback-unsafe DDL before handover when cluster fencing is absent", async () => {
-    const backupPreflight = vi.fn(async () => ({ restore_capability: "verified" }));
-    const fencePreflight = vi.fn(async () => {
-      throw new Error("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required");
-    });
-
-    await expect(preflightPendingMigrations(
-      {
-        pending: [{
-          id: "043_contract.sql",
-          destructive: false,
-          rollback_compatibility: "restore_required",
-        }],
-      },
-      {
-        env: backupEnvironment("C:/backup"),
-        backupPreflight,
-        fencePreflight,
-      },
-    )).rejects.toThrow("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required");
-    expect(backupPreflight).not.toHaveBeenCalled();
-  });
-
-  it("revalidates the cluster fence before applying rollback-unsafe DDL", async () => {
+  it("revalidates the backup gate before applying rollback-unsafe DDL", async () => {
     const events: string[] = [];
-    const fenceRead = vi.fn(async () => {
-      events.push("fence");
-      throw new Error("cluster writers are not fully fenced");
-    });
     const backupGateRead = vi.fn(async () => events.push("backup"));
 
     await expect(assertRollbackUnsafeApplyGates(
@@ -152,10 +122,12 @@ describe("pending destructive backup contract", () => {
         }],
       },
       backupEnvironment("C:/backup"),
-      { fenceRead, backupGateRead },
-    )).rejects.toThrow("cluster writers are not fully fenced");
-    expect(events).toEqual(["fence"]);
-    expect(backupGateRead).not.toHaveBeenCalled();
+      { backupGateRead },
+    )).resolves.toMatchObject({
+      gates: "verified",
+      writer_quiescence: "central_service_stop",
+    });
+    expect(events).toEqual(["backup"]);
   });
 
   it("fails before handover when pg_dump is absent on Windows", async () => {
@@ -200,40 +172,4 @@ describe("pending destructive backup contract", () => {
     })).rejects.toThrow("objects have another owner");
   });
 
-  it("rejects destructive restore while any cluster writer is unfenced", () => {
-    const fence = {
-      schema_version: "soulstream.cluster-write-fence.v1",
-      status: "verified",
-      release_id: "release-1",
-      target_head: "target-head",
-      writer_nodes: ["eiaserinnys", "eias-linegames", "eias-linegames-wsl"],
-      fenced_nodes: ["eiaserinnys", "eias-linegames-wsl"],
-      active_writer_count: 1,
-    };
-
-    expect(() => validateClusterWriteFence(
-      fence,
-      backupEnvironment("C:/backup"),
-    )).toThrow("cluster writers are not fully fenced");
-  });
-
-  it("requires an explicit cluster fence path before restore", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-restore-fence-"));
-    tempDirs.push(directory);
-    writeFileSync(join(directory, "database-backup.json"), JSON.stringify({
-      schema_version: "soulstream.database-backup.v1",
-      status: "verified",
-      release_id: "release-1",
-      target_head: "target-head",
-      dump_file: "database.dump",
-      dump_sha256: "a".repeat(64),
-      destructive_pending: ["043_destructive.sql"],
-    }));
-    const spawn = vi.fn();
-
-    await expect(import("../../../packages/db-schema/scripts/backup.mjs").then(
-      ({ restoreBackup }) => restoreBackup({ env: backupEnvironment(directory), spawn }),
-    )).rejects.toThrow("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required");
-    expect(spawn).not.toHaveBeenCalled();
-  });
 });

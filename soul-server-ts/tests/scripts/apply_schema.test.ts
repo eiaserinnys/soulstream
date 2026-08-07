@@ -647,7 +647,7 @@ describe("apply-schema.mjs", () => {
     expectNoSecretLeak(result);
   });
 
-  it("uses Haniel pre_start and install config for fail-closed schema gating", () => {
+  it("keeps worker Haniel config free of database startup gates", () => {
     const yaml = readFileSync(YAML_PATH, "utf8");
     const parsed = parseYaml(yaml) as HanielSoulServerTsExample;
     const service = parsed.services["soul-server-ts"];
@@ -656,11 +656,9 @@ describe("apply-schema.mjs", () => {
     expect(parsed.repos["soulstream-server-src"].release_manifest).toBe(
       "deploy/release-manifest-worker.json",
     );
-    expect(service.hooks.pre_start).toBe(
-      "node src/soulstream/soul-server-ts/scripts/verify-migrations.mjs",
-    );
+    expect(service.hooks).not.toHaveProperty("pre_start");
     expect(service.hooks.post_pull).not.toContain("apply-schema.mjs");
-    expect(envConfig.keys.map((entry) => entry.key)).toContain("DATABASE_URL");
+    expect(envConfig.keys.map((entry) => entry.key)).not.toContain("DATABASE_URL");
     expect(envConfig.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
   });
 
@@ -674,10 +672,7 @@ describe("apply-schema.mjs", () => {
       "deploy/release-manifest-standalone.json",
     );
     expect(service.ready).toBe("http://127.0.0.1:__PORT__/health");
-    expect(service.hooks.pre_start).toBe(
-      "node soul-server-ts/scripts/verify-migrations.mjs",
-    );
-    expect(service.hooks.pre_start).not.toContain("apply-schema.mjs");
+    expect(service.hooks).not.toHaveProperty("pre_start");
     const standaloneEnv = parsed.install.configs["soul-server-ts-env"];
     expect(standaloneEnv.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
     expect(installer).toContain("Push-Location $monoRepoDir");
@@ -740,7 +735,7 @@ interface HanielSoulServerTsExample {
     "soul-server-ts": {
       hooks: {
         post_pull: string;
-        pre_start: string;
+        pre_start?: string;
       };
     };
   };
@@ -763,7 +758,7 @@ interface HanielStandaloneTemplate {
   services: {
     "soul-server-ts": {
       ready: string;
-      hooks: { pre_start: string };
+      hooks: { post_pull: string; pre_start?: string };
     };
   };
 }
@@ -848,20 +843,9 @@ function minimalEnv(extraEnvironment: Record<string, string> = {}): NodeJS.Proce
 
 function prepareRollbackUnsafeGates(cwd: string): Record<string, string> {
   const backupDirectory = join(cwd, "backup");
-  const fencePath = join(cwd, "cluster-write-fence.json");
-  writeFileSync(fencePath, `${JSON.stringify({
-    schema_version: "soulstream.cluster-write-fence.v1",
-    status: "verified",
-    release_id: "fresh-install-test",
-    target_head: "integration-test-head",
-    writer_nodes: ["test-writer"],
-    fenced_nodes: ["test-writer"],
-    active_writer_count: 0,
-  }, null, 2)}\n`, "utf8");
   const environment = {
     HANIEL_BACKUP_DIR: backupDirectory,
     HANIEL_TARGET_HEAD: "integration-test-head",
-    SOULSTREAM_CLUSTER_WRITE_FENCE_PATH: fencePath,
   };
   const created = spawnSync(process.execPath, [BACKUP_SCRIPT_PATH, "create"], {
     cwd,

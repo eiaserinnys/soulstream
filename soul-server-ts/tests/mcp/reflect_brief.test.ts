@@ -104,7 +104,7 @@ describe("buildBriefSnapshot", () => {
     );
   });
 
-  it("represents unavailable runtime dependencies structurally", async () => {
+  it("represents the worker database boundary as intentionally not configured", async () => {
     const runtime = makeRuntime({
       db: {} as McpRuntime["db"],
     });
@@ -112,14 +112,13 @@ describe("buildBriefSnapshot", () => {
     const brief = await buildBriefSnapshot(runtime);
     const runtimeSection = brief.services[0]?.data.sections.runtime;
 
-    expect(brief.status).toBe("partial");
-    expect(runtimeSection?.status).toBe("partial");
-    expect(runtimeSection?.data.dependencies.database.status).toBe("unavailable");
+    expect(brief.status).toBe("ok");
+    expect(runtimeSection?.status).toBe("ok");
+    expect(runtimeSection?.data.dependencies.database.status).toBe("not_configured");
     expect(runtimeSection?.data.dependencies.database.checked_at).toEqual(expect.any(String));
-    expect(runtimeSection?.errors[0]).toEqual(
-      expect.objectContaining({
-        code: "database_unavailable",
-      }),
+    expect(runtimeSection?.data.dependencies.database.reason).toBe(
+      "worker persistence is hosted by the orchestrator",
     );
+    expect(runtimeSection?.errors).toEqual([]);
   });
 });

@@ -21,7 +21,6 @@ import {
 import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
-import { ensureStableSessionOrderIndexInBackground } from "../db/session_index_ensure.js";
 import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
 import {
   isPostResultDrainEvent,
@@ -68,7 +67,6 @@ import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import type { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
-import { preflightPersistentRuntimeSchema } from "./worker_schema_preflight.js";
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -128,9 +126,7 @@ export async function composeWorkerRuntime(
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
     logger.error({ error }, "Durable event outbox pump failed");
   });
-  const db = new SessionDB(env.DATABASE_URL);
-  await preflightPersistentRuntimeSchema(db, env.CLAUDE_SESSION_RUNTIME_V2_ENABLED);
-  ensureStableSessionOrderIndexInBackground(db, logger);
+  const db = new SessionDB();
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const send = async (data: unknown): Promise<void> => {
     if (!upstreamAdapter) {

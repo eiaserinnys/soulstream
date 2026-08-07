@@ -58,13 +58,10 @@ describe.sequential("versioned migration runner", () => {
       await sql`DROP TABLE schema_migrations`;
 
       const backupDirectory = join(cwd, "backup");
-      const fencePath = join(cwd, "cluster-write-fence.json");
-      writeVerifiedFence(fencePath);
       const gatedEnvironment = {
         ...serviceEnvironment,
         HANIEL_BACKUP_DIR: backupDirectory,
         HANIEL_TARGET_HEAD: "integration-test-head",
-        SOULSTREAM_CLUSTER_WRITE_FENCE_PATH: fencePath,
       };
       const backup = runWithEnv(BACKUP, REPOSITORY_ROOT, gatedEnvironment, "create");
       expect(backup.status).toBe(0);
@@ -144,18 +141,6 @@ async function seedCurrentTask(sql: ReturnType<typeof postgres>) {
       'create_task', 'system'
     )
   `;
-}
-
-function writeVerifiedFence(path: string) {
-  writeFileSync(path, `${JSON.stringify({
-    schema_version: "soulstream.cluster-write-fence.v1",
-    status: "verified",
-    release_id: "integration-test",
-    target_head: "integration-test-head",
-    writer_nodes: ["test-writer"],
-    fenced_nodes: ["test-writer"],
-    active_writer_count: 0,
-  }, null, 2)}\n`, "utf8");
 }
 
 function runWithEnv(

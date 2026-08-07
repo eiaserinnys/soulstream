@@ -28,7 +28,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
   beforeAll(async () => {
     harness = await createHarness();
     await applyCurrentSchema(harness.sql);
-    db = new SessionDB(harness.sql);
+    db = new SessionDB();
     configureTestSessionDataHost(db, harness.sql);
     db.configureSessionPageBindingHost(
       new SessionPageBindingRepository(harness.sql) as never,
@@ -38,7 +38,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
 
   beforeEach(async () => {
     if (!harness) return;
-    await harness.sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_updated_at_session_id`;
     await harness.sql`DELETE FROM session_mutation_receipts`;
     await harness.sql`DELETE FROM sessions`;
   }, 15_000);
@@ -72,23 +71,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
     expect(secondPage.map((row) => row.session_id)).toEqual(["sess-a", "sess-old"]);
     expect(new Set([...firstPage, ...secondPage].map((row) => row.session_id)).size).toBe(4);
   }, 45_000);
-
-  it("creates the stable session order index as a valid concurrent index", async () => {
-    await db.ensureStableSessionOrderIndex();
-
-    const rows = await harness!.sql<
-      Array<{ indisvalid: boolean; indisready: boolean; definition: string }>
-    >`
-      SELECT i.indisvalid, i.indisready, pg_get_indexdef(c.oid) AS definition
-      FROM pg_class c
-      JOIN pg_index i ON i.indexrelid = c.oid
-      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
-    `;
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ indisvalid: true, indisready: true });
-    expect(rows[0].definition).toContain("(updated_at DESC, session_id DESC)");
-  }, 30_000);
 
   it("persists one idempotent page-binding intent and advances its replay steps", async () => {
     await harness!.sql`
@@ -266,7 +248,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       WHERE session_id = 'sess-response-lost'
     `;
 
-    const restarted = new SessionDB(harness!.sql);
+    const restarted = new SessionDB();
     configureTestSessionDataHost(restarted, harness!.sql);
     restarted.configureSessionPageBindingHost(
       new SessionPageBindingRepository(harness!.sql) as never,
@@ -302,46 +284,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       (session) => session.session_id === "sess-response-lost",
     )).toMatchObject({ binding_warnings: [] });
   }, 30_000);
-
-  it("drops an invalid concurrent index remnant and recreates a valid one", async () => {
-    const duplicateUpdatedAt = new Date("2026-06-14T00:00:00Z");
-    await harness!.sql`
-      INSERT INTO sessions (session_id, updated_at)
-      VALUES ('invalid-a', ${duplicateUpdatedAt}), ('invalid-b', ${duplicateUpdatedAt})
-    `;
-
-    await expect(
-      harness!.sql`
-        CREATE UNIQUE INDEX CONCURRENTLY idx_sessions_updated_at_session_id
-        ON sessions (updated_at)
-      `,
-    ).rejects.toThrow();
-
-    const invalidRows = await harness!.sql<Array<{ indisvalid: boolean }>>`
-      SELECT i.indisvalid
-      FROM pg_class c
-      JOIN pg_index i ON i.indexrelid = c.oid
-      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
-    `;
-    expect(invalidRows).toHaveLength(1);
-    expect(invalidRows[0].indisvalid).toBe(false);
-
-    await db.ensureStableSessionOrderIndex();
-
-    const repairedRows = await harness!.sql<
-      Array<{ indisvalid: boolean; indisready: boolean; definition: string }>
-    >`
-      SELECT i.indisvalid, i.indisready, pg_get_indexdef(c.oid) AS definition
-      FROM pg_class c
-      JOIN pg_index i ON i.indexrelid = c.oid
-      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
-    `;
-    expect(repairedRows).toHaveLength(1);
-    expect(repairedRows[0]).toMatchObject({ indisvalid: true, indisready: true });
-    expect(repairedRows[0].definition).toContain(
-      "USING btree (updated_at DESC, session_id DESC)",
-    );
-  }, 45_000);
 
 });
 
