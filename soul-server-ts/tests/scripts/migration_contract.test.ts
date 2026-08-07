@@ -200,6 +200,8 @@ describe("versioned migration contract", () => {
     expect(migration?.sql).toContain("BEFORE DELETE ON sessions");
     expect(migration?.sql).toContain("FROM board_yjs_catalog_cache cache");
     expect(migration?.sql).not.toContain("DELETE FROM board_items");
+    expect(migration?.sql).not.toContain("DROP FUNCTION IF EXISTS board_delete_session_refs");
+    expect(migration?.sql).not.toContain("DROP TRIGGER IF EXISTS board_delete_session_refs_trigger");
   });
 
   it("treats only explicit one-release compatibility as data-preserving rollback", () => {

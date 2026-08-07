@@ -59,6 +59,6 @@
     { "id": "055_session_effects_and_mutation_receipts.sql", "sha256": "57d8f97900911036a15713abf4b9469552e9edbca7540a9f7571745fba7c53e9", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "056_agent_profiles.sql", "sha256": "e0db4fe76bcc703ae7501f507d509aca2d246cceeb191c83176bf41fe974e523", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "057_source_task_item_integrity.sql", "sha256": "0e3f4b2df58335accd7e3b5f10eca8ee9e51bfc8df33e963bb7d171bb6a0bea6", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "058_session_delete_ydoc_guard.sql", "sha256": "bd2f4d1e35d698eafd4e905163d5c6ae65c3924c80f242904efff97bdefd4ba8", "destructive": false, "rollback_compatibility": "restore_required" }
+    { "id": "058_session_delete_ydoc_guard.sql", "sha256": "cef8c05dd916cde5799650afba6727492de5533e4fe1f129d4939a0043ef231b", "destructive": false, "rollback_compatibility": "restore_required" }
   ]
 }

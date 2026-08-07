@@ -11,15 +11,36 @@ interface SqlCall {
 }
 
 describe("SessionDeletionRepository", () => {
-  it("enumerates every session-card membership and commits canonical sync before session_delete", async () => {
-    const { sql, calls } = createMockSql((call) =>
-      call.query.includes("FROM board_items") && call.query.includes("item_type = 'session'")
-        ? [
-            boardItemRow("session:session-a", "folder", "folder-1", "primary"),
-            boardItemRow("session-reference:session-a", "task", "task-1", "reference"),
-          ]
-        : []
-    );
+  it("enumerates projection and cache-only memberships before canonical sync and session_delete", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'session'")) {
+        return [boardItemRow("session:session-a", "folder", "folder-1", "primary")];
+      }
+      if (call.query.includes("FROM board_yjs_catalog_cache")) {
+        return [{
+          folder_id: "folder-1",
+          container_kind: "folder",
+          container_id: "folder-1",
+          board_items: [cachedBoardItem(
+            "session:session-a",
+            "folder",
+            "folder-1",
+            "primary",
+          )],
+        }, {
+          folder_id: "folder-1",
+          container_kind: "task",
+          container_id: "task-1",
+          board_items: JSON.stringify([cachedBoardItem(
+            "session-reference:session-a",
+            "task",
+            "task-1",
+            "reference",
+          )]),
+        }];
+      }
+      return [];
+    });
     const repository = new SessionDeletionRepository({
       resolveSql: vi.fn(async () => sql),
       close: vi.fn(),
@@ -64,6 +85,27 @@ describe("SessionDeletionRepository", () => {
     expect(calls[sessionDeleteIndex]?.values).toEqual(["session-a"]);
   });
 });
+
+function cachedBoardItem(
+  id: string,
+  containerKind: "folder" | "task",
+  containerId: string,
+  membershipKind: "primary" | "reference",
+) {
+  return {
+    id,
+    folderId: "folder-1",
+    containerKind,
+    containerId,
+    membershipKind,
+    sourceTaskItemId: null,
+    itemType: "session",
+    itemId: "session-a",
+    x: 0,
+    y: 0,
+    metadata: {},
+  };
+}
 
 function boardItemRow(
   id: string,

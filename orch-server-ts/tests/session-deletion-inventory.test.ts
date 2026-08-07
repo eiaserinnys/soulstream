@@ -44,7 +44,26 @@ describe("session deletion ingress inventory", () => {
       'delete_session: ["sessionMutations", null, "deleteSession"]',
     );
     expect(source("packages/db-schema/sql/schema.sql")).toContain(
-      "CREATE TRIGGER board_assert_session_refs_removed_trigger",
+      "CREATE TRIGGER board_assert_session_ydoc_refs_removed_trigger",
+    );
+    expect(source("packages/db-schema/sql/schema.sql")).toContain(
+      "CREATE TRIGGER board_delete_session_refs_trigger",
+    );
+  });
+
+  it("keeps sessions as the deletion root instead of a cascading child", () => {
+    const schema = source("packages/db-schema/sql/schema.sql");
+    const definition = schema.match(
+      /CREATE TABLE IF NOT EXISTS sessions \(([\s\S]*?)\n\);/,
+    )?.[1];
+
+    expect(definition).toBeDefined();
+    expect(definition).not.toContain("ON DELETE CASCADE");
+    expect(definition).toContain(
+      "predecessor_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL",
+    );
+    expect(schema).toContain(
+      "session_id      TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE",
     );
   });
 });

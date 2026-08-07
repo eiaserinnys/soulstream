@@ -1358,13 +1358,13 @@ async def test_session_delete_rejects_remaining_board_ydoc_references(test_db):
     with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
         await test_db.execute("SELECT session_delete($1)", "s-delete-guard")
 
-    await test_db.execute(
-        """
-        UPDATE board_yjs_catalog_cache
-        SET board_items = '[]'::jsonb
-        WHERE container_kind = 'folder' AND container_id = $1
-        """,
-        board_item["folderId"],
+
+async def test_session_delete_preserves_automatic_projection_cleanup(test_db):
+    await _create_folder(test_db, "delete-projection-folder")
+    await _create_session(
+        test_db,
+        "s-delete-projection-only",
+        folder_id="delete-projection-folder",
     )
     await test_db.execute(
         """
@@ -1373,12 +1373,24 @@ async def test_session_delete_rejects_remaining_board_ydoc_references(test_db):
             item_type, item_id, x, y, metadata
         ) VALUES ($1, $2, 'folder', $2, 'primary', 'session', $3, 0, 0, '{}')
         """,
-        board_item["id"],
-        board_item["folderId"],
-        board_item["itemId"],
+        "session:s-delete-projection-only",
+        "delete-projection-folder",
+        "s-delete-projection-only",
     )
-    with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
-        await test_db.execute("SELECT session_delete($1)", "s-delete-guard")
+
+    await test_db.execute(
+        "DELETE FROM sessions WHERE session_id = $1",
+        "s-delete-projection-only",
+    )
+
+    assert not await test_db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE session_id = $1)",
+        "s-delete-projection-only",
+    )
+    assert not await test_db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM board_items WHERE item_id = $1)",
+        "s-delete-projection-only",
+    )
 
 
 async def test_claude_transcript_append_load_preserves_content_shapes(test_db):

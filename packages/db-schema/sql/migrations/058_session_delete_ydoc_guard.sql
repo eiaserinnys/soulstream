@@ -1,15 +1,7 @@
-DROP TRIGGER IF EXISTS board_delete_session_refs_trigger ON sessions;
-DROP TRIGGER IF EXISTS board_assert_session_refs_removed_trigger ON sessions;
-DROP FUNCTION IF EXISTS board_delete_session_refs();
-
-CREATE OR REPLACE FUNCTION board_assert_session_refs_removed()
+CREATE OR REPLACE FUNCTION board_assert_session_ydoc_refs_removed()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     IF EXISTS (
-        SELECT 1
-        FROM board_items
-        WHERE item_type = 'session' AND item_id = OLD.session_id
-    ) OR EXISTS (
         SELECT 1
         FROM board_yjs_catalog_cache cache
         WHERE (
@@ -39,6 +31,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER board_assert_session_refs_removed_trigger
+DROP TRIGGER IF EXISTS board_assert_session_ydoc_refs_removed_trigger ON sessions;
+CREATE TRIGGER board_assert_session_ydoc_refs_removed_trigger
 BEFORE DELETE ON sessions
-FOR EACH ROW EXECUTE FUNCTION board_assert_session_refs_removed();
+FOR EACH ROW EXECUTE FUNCTION board_assert_session_ydoc_refs_removed();

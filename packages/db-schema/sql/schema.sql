@@ -492,18 +492,23 @@ CREATE INDEX IF NOT EXISTS idx_claude_background_tasks_delivery
     ON claude_background_tasks(notification_delivery_id)
     WHERE notification_delivery_id IS NOT NULL;
 
-DROP TRIGGER IF EXISTS board_delete_session_refs_trigger ON sessions;
-DROP TRIGGER IF EXISTS board_assert_session_refs_removed_trigger ON sessions;
-DROP FUNCTION IF EXISTS board_delete_session_refs();
+CREATE OR REPLACE FUNCTION board_delete_session_refs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'session' AND item_id = OLD.session_id;
+    RETURN OLD;
+END;
+$$;
 
-CREATE OR REPLACE FUNCTION board_assert_session_refs_removed()
+DROP TRIGGER IF EXISTS board_delete_session_refs_trigger ON sessions;
+CREATE TRIGGER board_delete_session_refs_trigger
+AFTER DELETE ON sessions
+FOR EACH ROW EXECUTE FUNCTION board_delete_session_refs();
+
+CREATE OR REPLACE FUNCTION board_assert_session_ydoc_refs_removed()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     IF EXISTS (
-        SELECT 1
-        FROM board_items
-        WHERE item_type = 'session' AND item_id = OLD.session_id
-    ) OR EXISTS (
         SELECT 1
         FROM board_yjs_catalog_cache cache
         WHERE (
@@ -533,9 +538,10 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER board_assert_session_refs_removed_trigger
+DROP TRIGGER IF EXISTS board_assert_session_ydoc_refs_removed_trigger ON sessions;
+CREATE TRIGGER board_assert_session_ydoc_refs_removed_trigger
 BEFORE DELETE ON sessions
-FOR EACH ROW EXECUTE FUNCTION board_assert_session_refs_removed();
+FOR EACH ROW EXECUTE FUNCTION board_assert_session_ydoc_refs_removed();
 
 CREATE TABLE IF NOT EXISTS markdown_documents (
     id          TEXT PRIMARY KEY,
