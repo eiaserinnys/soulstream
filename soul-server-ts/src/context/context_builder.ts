@@ -17,11 +17,8 @@ import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
-import {
-  fetchAtomContext,
-  fetchAtomContexts,
-  type AtomContextSpec,
-} from "./atom_context.js";
+import { type AtomContextSpec } from "./atom_context.js";
+import { compileContexts } from "./compiler/index.js";
 import {
   fetchCogitoContextItem,
   type CogitoContextConfig,
@@ -365,20 +362,8 @@ export class ExecutionContextBuilder {
     specs?: AtomContextSpec[],
   ): Promise<string | null> {
     if (!specs || specs.length === 0) return null;
-    if (specs.length > 1) {
-      return await fetchAtomContexts(this.cfg.atom, specs, this.logger);
-    }
-    const spec = specs[0];
-    if (!spec) return null;
-    return await fetchAtomContext(
-      this.cfg.atom,
-      spec.nodeId,
-      spec.depth,
-      spec.titlesOnly,
-      this.logger,
-      spec.limit,
-      spec.includeIds,
-    );
+    const compiled = await compileContexts(this.cfg.atom, specs, this.logger);
+    return compiled.assembled;
   }
 
   /**

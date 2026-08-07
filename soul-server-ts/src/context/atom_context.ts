@@ -22,7 +22,7 @@ const ATOM_HTML_PATTERN = new RegExp(
   "g",
 );
 
-const ATOM_CONTEXT_HEADER =
+export const ATOM_CONTEXT_HEADER =
   "# atom 트리 | 드릴다운: " +
   "mcp__atom__list_children(parent_node_id) · " +
   "compile_subtree(node_id)\n";
@@ -49,7 +49,7 @@ export function formatAtomContext(markdown: string): string {
   return `${ATOM_CONTEXT_HEADER}${formatAtomMarkdown(markdown)}`;
 }
 
-function formatAtomMarkdown(markdown: string): string {
+export function formatAtomMarkdown(markdown: string): string {
   const lines = markdown.split("\n").map((line) =>
     line.replace(ATOM_HTML_PATTERN, (_match, nodeId, cardId, chars) => {
       const label = cardId ? `[node:${nodeId} card:${cardId}]` : `[${nodeId}]`;
@@ -117,7 +117,7 @@ export async function fetchAtomContexts(
   return `${ATOM_CONTEXT_HEADER}\n${sections.join("\n\n")}`;
 }
 
-async function fetchAtomMarkdown(
+export async function fetchAtomMarkdown(
   config: AtomFetchConfig,
   spec: AtomContextSpec,
   logger: AtomContextLogger,
