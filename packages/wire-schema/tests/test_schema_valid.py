@@ -230,6 +230,11 @@ def test_context_manifest_event_contract() -> None:
         "index",
         "titles",
     }
+    assert source["properties"]["instance"]["enum"] == ["atom", "atom-nl"]
+    assert _load_orch_string_set("CONTEXT_MANIFEST_SOURCE_INSTANCES") == {
+        "atom",
+        "atom-nl",
+    }
     assert source["required"] == [
         "id",
         "label",
@@ -239,6 +244,8 @@ def test_context_manifest_event_contract() -> None:
         "depth",
         "titles_only",
         "include_ids",
+        "priority",
+        "never_truncate",
         "chars",
         "token_estimate",
         "status",

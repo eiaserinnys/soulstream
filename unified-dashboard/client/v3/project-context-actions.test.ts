@@ -58,6 +58,7 @@ describe("project context page mutations", () => {
       nodeTitle: "새 노드",
       depth: 5,
       titlesOnly: true,
+      mode: "titles",
       limit: 3,
     }, () => "request-3");
     expect(api.applyOperations).toHaveBeenLastCalledWith("project", expect.objectContaining({
@@ -71,6 +72,7 @@ describe("project context page mutations", () => {
           nodeTitle: "새 노드",
           depth: 5,
           titlesOnly: true,
+          mode: "titles",
           limit: 3,
         },
       }],
@@ -96,6 +98,7 @@ describe("project context page mutations", () => {
     const clearedProperties = (api.applyOperations as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]
       .operations[0].properties;
     expect(clearedProperties).not.toHaveProperty("limit");
+    expect(clearedProperties).not.toHaveProperty("mode");
 
     await deleteProjectContextBlock(api, "project", "atom", () => "request-4");
     expect(api.applyOperations).toHaveBeenLastCalledWith("project", expect.objectContaining({

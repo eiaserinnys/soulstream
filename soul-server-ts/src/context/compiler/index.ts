@@ -25,11 +25,12 @@ import {
 
 type ContextCompilerLogger = Pick<Logger, "warn">;
 
-export interface ContextSource {
+export interface ContextSource extends AtomContextSpec {
   id: string;
   label: string;
-  instance: "atom";
-  legacy: AtomContextSpec;
+  instance: "atom" | "atom-nl";
+  priority: number;
+  neverTruncate: boolean;
 }
 
 export interface CompiledContextSection {
@@ -40,7 +41,7 @@ export interface CompiledContextSection {
   anchorCount: number;
 }
 
-export const CONTEXT_COMPILER_VERSION = "phase-b.v1";
+export const CONTEXT_COMPILER_VERSION = "phase-d.v1";
 
 export interface ContextManifestUsage {
   limit: number;
@@ -60,13 +61,15 @@ export interface PageContextTruncation {
 export interface ContextManifestSource {
   id: string;
   label: string;
-  instance: "atom";
+  instance: "atom" | "atom-nl";
   node_id: string;
   mode: ContextRenderMode;
   depth: number;
   titles_only: boolean;
   include_ids: boolean;
   limit?: number;
+  priority: number;
+  never_truncate: boolean;
   chars: number;
   token_estimate: number;
   status: AtomFetchStatus;
@@ -90,13 +93,25 @@ export interface ContextCompilationResult {
   manifest: ContextManifest;
 }
 
+export function createContextSource(
+  spec: AtomContextSpec,
+  overrides: Partial<Pick<
+    ContextSource,
+    "id" | "label" | "instance" | "priority" | "neverTruncate"
+  >> = {},
+): ContextSource {
+  return {
+    ...spec,
+    id: overrides.id ?? spec.nodeId,
+    label: overrides.label ?? `atom node: ${spec.nodeId}`,
+    instance: overrides.instance ?? "atom",
+    priority: overrides.priority ?? 0,
+    neverTruncate: overrides.neverTruncate ?? false,
+  };
+}
+
 function resolveContextSources(specs: readonly AtomContextSpec[]): ContextSource[] {
-  return specs.map((legacy) => ({
-    id: legacy.nodeId,
-    label: `atom node: ${legacy.nodeId}`,
-    instance: "atom",
-    legacy: { ...legacy },
-  }));
+  return specs.map((spec) => createContextSource(spec));
 }
 
 /** Phase C hook: legacy sources all apply in Phase A. */
@@ -111,17 +126,17 @@ async function renderContextSources(
 ): Promise<CompiledContextSection[]> {
   const sections: CompiledContextSection[] = [];
   for (const source of sources) {
-    const requestedMode = source.legacy.mode;
+    const requestedMode = source.mode;
     if (requestedMode !== undefined && !isContextRenderMode(requestedMode)) {
       logger.warn(
-        { mode: requestedMode, nodeId: source.legacy.nodeId },
+        { mode: requestedMode, nodeId: source.nodeId },
         "[context compiler] unknown atom render mode — using legacy rendering",
       );
     }
     if (isContextRenderMode(requestedMode)) {
       const rendered = await renderExplicitAtomSource(
         config,
-        source.legacy,
+        source,
         requestedMode,
         logger,
       );
@@ -134,7 +149,7 @@ async function renderContextSources(
       });
       continue;
     }
-    const result = await fetchAtomMarkdownResult(config, source.legacy, logger);
+    const result = await fetchAtomMarkdownResult(config, source, logger);
     sections.push({
       source,
       markdown: result.markdown,
@@ -153,13 +168,6 @@ function annotateContextSections(
   return [...sections];
 }
 
-/** Phase D hook: no compiler-owned budget in Phase A. */
-function budgetContextSections(
-  sections: readonly CompiledContextSection[],
-): CompiledContextSection[] {
-  return [...sections];
-}
-
 function assembleContextSections(sections: readonly CompiledContextSection[]): string | null {
   if (sections.length === 0) return null;
   if (sections.length === 1) {
@@ -169,12 +177,12 @@ function assembleContextSections(sections: readonly CompiledContextSection[]): s
       : formatAtomContext(markdown);
   }
 
-  const assembled = sections.flatMap(({ source: { legacy }, markdown }) => {
+  const assembled = sections.flatMap(({ source, markdown }) => {
     if (!markdown) return [];
-    if (isContextRenderMode(legacy.mode)) return [formatAtomMarkdown(markdown)];
+    if (isContextRenderMode(source.mode)) return [formatAtomMarkdown(markdown)];
     return [[
-      `## atom node: ${legacy.nodeId}`,
-      `depth=${legacy.depth}, titles_only=${legacy.titlesOnly}`,
+      `## atom node: ${source.nodeId}`,
+      `depth=${source.depth}, titles_only=${source.titlesOnly}`,
       "",
       formatAtomMarkdown(markdown),
     ].join("\n")];
@@ -189,18 +197,19 @@ function estimateTokenCount(chars: number): number {
 }
 
 function desiredSpec(source: ContextSource | ContextManifestSource): Record<string, unknown> {
-  if ("legacy" in source) {
-    const spec = source.legacy;
+  if ("nodeId" in source) {
     return {
       id: source.id,
       label: source.label,
       instance: source.instance,
-      node_id: spec.nodeId,
-      mode: effectiveMode(spec),
-      depth: spec.depth,
-      titles_only: spec.titlesOnly,
-      include_ids: spec.includeIds ?? true,
-      ...(spec.limit !== undefined ? { limit: spec.limit } : {}),
+      node_id: source.nodeId,
+      mode: effectiveMode(source),
+      depth: source.depth,
+      titles_only: source.titlesOnly,
+      include_ids: source.includeIds ?? true,
+      ...(source.limit !== undefined ? { limit: source.limit } : {}),
+      priority: source.priority,
+      never_truncate: source.neverTruncate,
     };
   }
   return {
@@ -213,6 +222,8 @@ function desiredSpec(source: ContextSource | ContextManifestSource): Record<stri
     titles_only: source.titles_only,
     include_ids: source.include_ids,
     ...(source.limit !== undefined ? { limit: source.limit } : {}),
+    priority: source.priority,
+    never_truncate: source.never_truncate,
   };
 }
 
@@ -251,6 +262,21 @@ function buildContextManifest(
     total_chars: totalChars,
     total_token_estimate: estimateTokenCount(totalChars),
     sources,
+  };
+}
+
+export function contextManifestFromSources(
+  sources: readonly ContextManifestSource[],
+): ContextManifest {
+  const copied = sources.map((source) => ({ ...source }));
+  const totalChars = copied.reduce((sum, source) => sum + source.chars, 0);
+  return {
+    compiler_version: CONTEXT_COMPILER_VERSION,
+    spec_hash: hashDesiredSpec(copied),
+    source_count: copied.length,
+    total_chars: totalChars,
+    total_token_estimate: estimateTokenCount(totalChars),
+    sources: copied,
   };
 }
 
@@ -316,20 +342,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export async function compileContextSources(
+  config: AtomFetchConfig,
+  sources: readonly ContextSource[],
+  logger: ContextCompilerLogger,
+): Promise<ContextCompilationResult> {
+  const filtered = filterContextSources(sources);
+  const rendered = await renderContextSources(config, filtered, logger);
+  const annotated = annotateContextSections(rendered);
+  const assembled = assembleContextSections(annotated);
+  return {
+    sections: annotated,
+    assembled,
+    manifest: buildContextManifest(annotated, assembled),
+  };
+}
+
 export async function compileContexts(
   config: AtomFetchConfig,
   specs: readonly AtomContextSpec[],
   logger: ContextCompilerLogger,
 ): Promise<ContextCompilationResult> {
-  const resolved = resolveContextSources(specs);
-  const filtered = filterContextSources(resolved);
-  const rendered = await renderContextSources(config, filtered, logger);
-  const annotated = annotateContextSections(rendered);
-  const budgeted = budgetContextSections(annotated);
-  const assembled = assembleContextSections(budgeted);
-  return {
-    sections: budgeted,
-    assembled,
-    manifest: buildContextManifest(budgeted, assembled),
-  };
+  return await compileContextSources(config, resolveContextSources(specs), logger);
 }

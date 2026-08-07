@@ -8,6 +8,7 @@ export interface ProjectAtomReference {
   depth: number | null;
   titlesOnly: boolean | null;
   limit?: number | null;
+  mode?: "full" | "index" | "titles";
 }
 
 export interface ProjectGuidance {
@@ -61,6 +62,7 @@ export function parseProjectPageDetails(blocks: readonly BlockDto[]): ProjectPag
         depth: normalizeAtomDepth(block.properties.depth),
         titlesOnly: block.properties.titlesOnly === true,
         limit: normalizeAtomLimit(block.properties.limit),
+        ...normalizeAtomMode(block.properties.mode),
       }];
     }),
     sessionDefaults: blocks.flatMap((block) => {
@@ -111,4 +113,8 @@ function normalizeAtomDepth(value: unknown): number {
 
 function normalizeAtomLimit(value: unknown): number | null {
   return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
+}
+
+function normalizeAtomMode(value: unknown): { mode?: "full" | "index" | "titles" } {
+  return value === "full" || value === "index" || value === "titles" ? { mode: value } : {};
 }

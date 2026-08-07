@@ -8,10 +8,8 @@ import type { BlockDto } from "@soulstream/page-model";
 import type { AgentProfile } from "../agent_registry.js";
 import type { Task } from "../task/task_models.js";
 import type { ContextItem } from "./prompt_assembler.js";
-import {
-  fetchAtomContext,
-  type AtomFetchConfig,
-} from "./atom_context.js";
+import type { AtomFetchConfig } from "./atom_context.js";
+import type { ContextManifest } from "./compiler/index.js";
 import type {
   AtomRefPageContextCandidate,
   PageContextAssembler,
@@ -19,6 +17,7 @@ import type {
   PageContextTraversalFailure,
 } from "./page_context_assembler.js";
 import { selectNearestPageContextCandidates } from "./page_context_assembler.js";
+import { compilePageAtomCandidates } from "./page_context_atom_compiler.js";
 import type {
   PageContextAnchor,
   PageContextRepository,
@@ -32,6 +31,7 @@ export interface NoPageAnchorContext {
 export interface ResolvedPageContext {
   kind: "page-context";
   contextItem: ContextItem;
+  contextManifest: ContextManifest;
   atomNodeIds: string[];
 }
 
@@ -148,19 +148,21 @@ export class AncestorPageContextResolver implements PageContextResolver {
         candidate.category === "atom_ref"
       ))
       .map((candidate) => candidate.nodeId);
-    const enrichedCandidates = await enrichAtomRefCandidates(
+    const enrichedCandidates = await compilePageAtomCandidates(
       eligibleCandidates,
       atomConfig,
       this.logger,
     );
+    const assembly = this.assembler.assembleDetailed(anchor, {
+      candidates: enrichedCandidates,
+      visitedPages: new Set([...visited, ...explicitPageIds]).size,
+      failures,
+      truncated,
+    });
     return {
       kind: "page-context",
-      contextItem: this.assembler.assemble(anchor, {
-        candidates: enrichedCandidates,
-        visitedPages: new Set([...visited, ...explicitPageIds]).size,
-        failures,
-        truncated,
-      }),
+      contextItem: assembly.contextItem,
+      contextManifest: assembly.contextManifest,
       atomNodeIds,
     };
   }
@@ -364,46 +366,8 @@ function toCandidate(
     depth: normalizeAtomDepth(block.properties.depth),
     titlesOnly: block.properties.titlesOnly === true,
     ...normalizeAtomLimit(block.properties.limit),
+    ...(typeof block.properties.mode === "string" ? { mode: block.properties.mode } : {}),
   };
-}
-
-async function enrichAtomRefCandidates(
-  candidates: PageContextCandidate[],
-  atomConfig: AtomFetchConfig | undefined,
-  logger: Pick<Logger, "warn">,
-): Promise<PageContextCandidate[]> {
-  if (!atomConfig) return candidates;
-  const selected = selectNearestPageContextCandidates(candidates).filter(
-    (candidate): candidate is AtomRefPageContextCandidate => candidate.category === "atom_ref",
-  );
-  const compiled = await Promise.all(selected.map(async (candidate) => {
-    try {
-      const text = await fetchAtomContext(
-        atomConfig,
-        candidate.nodeId,
-        candidate.depth,
-        candidate.titlesOnly,
-        logger,
-        candidate.limit,
-      );
-      return [candidate, text] as const;
-    } catch (err) {
-      logger.warn(
-        { err, nodeId: candidate.nodeId, instance: candidate.instance },
-        "page atom context compile failed",
-      );
-      return [candidate, null] as const;
-    }
-  }));
-  const byCandidate = new Map<AtomRefPageContextCandidate, string>();
-  for (const [candidate, text] of compiled) {
-    if (text) byCandidate.set(candidate, text);
-  }
-  return candidates.map((candidate) => {
-    if (candidate.category !== "atom_ref") return candidate;
-    const compiledText = byCandidate.get(candidate);
-    return compiledText ? { ...candidate, compiledText } : candidate;
-  });
 }
 
 function normalizeAtomDepth(value: unknown): number {

@@ -1,7 +1,10 @@
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AtomFetchConfig } from "../../src/context/atom_context.js";
+import {
+  ATOM_CONTEXT_HEADER,
+  type AtomFetchConfig,
+} from "../../src/context/atom_context.js";
 import { DefaultPageContextAssembler } from "../../src/context/page_context_assembler.js";
 import type {
   MountParentResult,
@@ -215,6 +218,53 @@ describe("AncestorPageContextResolver", () => {
       depth: 3,
       titles_only: false,
       markdown: expect.stringContaining("# compiled node"),
+    });
+    expect(content.items[1].markdown).toBe(`${ATOM_CONTEXT_HEADER}# compiled node`);
+  });
+
+  it("maps page atom_ref mode through the compiler and reports the page source manifest", async () => {
+    const rootNode = "11111111-2222-3333-4444-555555555555";
+    const rootCard = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const childNode = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+    const childCard = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) => {
+      const url = new URL(input.toString());
+      const depth = url.searchParams.get("depth");
+      const markdown = depth === "0"
+        ? `# Root <!-- node:${rootNode} card:${rootCard} depth:0 -->\nroot body`
+        : `Root <!-- node:${rootNode} card:${rootCard} depth:0 chars:100 -->\n  └── Child <!-- node:${childNode} card:${childCard} depth:1 chars:20 -->`;
+      return new Response(JSON.stringify({ markdown }), { status: 200 });
+    });
+    const repo = repository({
+      pages: {
+        target: page("target", [
+          block("atom", null, "atom_ref", "", {
+            instance: "atom",
+            nodeId: rootNode,
+            depth: 2,
+            mode: "index",
+          }),
+          block("anchor", "atom", "session_ref"),
+        ]),
+      },
+    });
+
+    const result = await resolve(repo, 64, enabledAtomConfig);
+    expect(contentOf(result).items[0]).toMatchObject({
+      mode: "index",
+      markdown: expect.stringContaining("## 드릴다운 색인"),
+    });
+    expect(result).toMatchObject({
+      kind: "page-context",
+      contextManifest: {
+        source_count: 1,
+        sources: [expect.objectContaining({
+          id: "page:target:atom",
+          node_id: rootNode,
+          mode: "index",
+          anchor_count: 1,
+        })],
+      },
     });
   });
 

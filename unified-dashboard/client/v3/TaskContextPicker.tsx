@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
 import { AtomNodeSelector, Button } from "@seosoyoung/soul-ui";
 import {
   createPageApiClient,
@@ -14,6 +13,11 @@ import {
   type ContextPickerSelection,
 } from "./context-picker-model";
 import { addTaskContextBlocks } from "./task-workspace-api";
+import {
+  SelectedAtomOption,
+  withAtomOptions,
+  type AtomRenderMode,
+} from "./AtomContextOptions";
 
 type ContextTab = "page" | "atom";
 
@@ -134,12 +138,18 @@ export function TaskContextPicker({
     setSelected((current) => new Map(current).set(selection.key, selection));
   };
 
-  const updateAtomOptions = (key: string, depth: number, titlesOnly: boolean, limit?: number) => {
+  const updateAtomOptions = (
+    key: string,
+    depth: number,
+    titlesOnly: boolean,
+    mode: AtomRenderMode | undefined,
+    limit?: number,
+  ) => {
     setSelected((current) => {
       const selection = current.get(key);
       if (!selection || selection.kind !== "atom") return current;
       const next = new Map(current);
-      next.set(key, withAtomOptions(selection, depth, titlesOnly, limit));
+      next.set(key, withAtomOptions(selection, depth, titlesOnly, mode, limit));
       return next;
     });
   };
@@ -187,12 +197,14 @@ export function TaskContextPicker({
                   meta={selection.nodeId}
                   depth={selection.depth}
                   titlesOnly={selection.titlesOnly}
+                  mode={selection.mode}
                   limit={selection.limit}
                   disabled={pending}
-                  onOptionsChange={(depth, titlesOnly, limit) => updateAtomOptions(
+                  onOptionsChange={(depth, titlesOnly, mode, limit) => updateAtomOptions(
                     selection.key,
                     depth,
                     titlesOnly,
+                    mode,
                     limit,
                   )}
                   onRemove={() => toggle(selection)}
@@ -253,13 +265,14 @@ export function InitialTaskContextPicker({
     nodeId: string,
     depth: number,
     titlesOnly: boolean,
+    mode: AtomRenderMode | undefined,
     limit?: number,
   ) => {
     onChange({
       ...value,
       atomReferences: value.atomReferences.map((reference) => (
         reference.instance === instance && reference.nodeId === nodeId
-          ? withAtomOptions(reference, depth, titlesOnly, limit)
+          ? withAtomOptions(reference, depth, titlesOnly, mode, limit)
           : reference
       )),
     });
@@ -317,13 +330,15 @@ export function InitialTaskContextPicker({
                       meta={reference.nodeId}
                       depth={reference.depth}
                       titlesOnly={reference.titlesOnly}
+                      mode={reference.mode}
                       limit={reference.limit}
                       disabled={disabled}
-                      onOptionsChange={(depth, titlesOnly, limit) => updateAtomOptions(
+                      onOptionsChange={(depth, titlesOnly, mode, limit) => updateAtomOptions(
                         reference.instance,
                         reference.nodeId,
                         depth,
                         titlesOnly,
+                        mode,
                         limit,
                       )}
                       onRemove={() => onChange({
@@ -343,92 +358,6 @@ export function InitialTaskContextPicker({
       ) : null}
     </section>
   );
-}
-
-function SelectedAtomOption({
-  title,
-  meta,
-  depth,
-  titlesOnly,
-  limit,
-  disabled,
-  onOptionsChange,
-  onRemove,
-}: {
-  title: string;
-  meta: string;
-  depth: number;
-  titlesOnly: boolean;
-  limit?: number;
-  disabled: boolean;
-  onOptionsChange(depth: number, titlesOnly: boolean, limit?: number): void;
-  onRemove(): void;
-}) {
-  return (
-    <div className="v3-context-option v3-context-option--selected">
-      <span className="v3-emoji" aria-hidden="true">🧠</span>
-      <span><strong>{title}</strong><small>{meta}</small></span>
-      <span className="v3-context-option-settings">
-        <label>
-          depth
-          <select
-            aria-label={`${title} atom depth`}
-            value={depth}
-            disabled={disabled}
-            onChange={(event) => onOptionsChange(Number(event.target.value), titlesOnly, limit)}
-          >
-            {[1, 2, 3, 4, 5].map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-        </label>
-        <label>
-          최근 자식 수
-          <input
-            type="number"
-            min={1}
-            value={limit ?? ""}
-            placeholder="전체"
-            aria-label={`${title} 최근 자식 수`}
-            disabled={disabled}
-            onChange={(event) => onOptionsChange(
-              depth,
-              titlesOnly,
-              event.target.value === "" ? undefined : Number(event.target.value),
-            )}
-          />
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            aria-label={`${title} 제목만 포함`}
-            checked={titlesOnly}
-            disabled={disabled}
-            onChange={(event) => onOptionsChange(depth, event.target.checked, limit)}
-          />
-          제목만
-        </label>
-      </span>
-      <button
-        type="button"
-        className="v3-context-remove"
-        aria-label={`${title} atom 제거`}
-        disabled={disabled}
-        onClick={onRemove}
-      >
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
-function withAtomOptions<T extends { depth: number; titlesOnly: boolean; limit?: number }>(
-  reference: T,
-  depth: number,
-  titlesOnly: boolean,
-  limit?: number,
-): T {
-  const updated = { ...reference, depth, titlesOnly, limit };
-  if (limit === undefined) delete updated.limit;
-  return updated;
 }
 
 function ContextOption({ icon, title, meta, selected, disabled = false, onClick }: {

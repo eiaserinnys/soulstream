@@ -77,5 +77,6 @@ function sameAtom(
     && previous.nodeTitle === (next.nodeTitle.trim() || next.nodeId.trim())
     && (previous.depth ?? 3) === next.depth
     && (previous.titlesOnly ?? false) === next.titlesOnly
-    && (previous.limit ?? null) === (next.limit ?? null);
+    && (previous.limit ?? null) === (next.limit ?? null)
+    && previous.mode === next.mode;
 }

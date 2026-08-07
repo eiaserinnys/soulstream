@@ -1576,13 +1576,15 @@ class SSEEventContextUsage(TypedDict):
 class Source(TypedDict, closed=True):
     id: str
     label: str
-    instance: Literal['atom']
+    instance: Literal['atom', 'atom-nl']
     node_id: str
     mode: Literal['full', 'index', 'titles']
     depth: int
     titles_only: bool
     include_ids: bool
     limit: NotRequired[int]
+    priority: int
+    never_truncate: bool
     chars: int
     token_estimate: int
     status: Literal['ok', 'empty', 'error']

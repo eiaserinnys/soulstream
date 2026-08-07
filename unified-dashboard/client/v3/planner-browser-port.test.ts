@@ -30,6 +30,7 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
           nodeTitle: "soulstream",
           depth: 4,
           titlesOnly: true,
+          mode: "titles",
         }],
         sessionDefaults: {
           agentId: "roselin_codex",
@@ -53,6 +54,7 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
             node_title: "soulstream",
             depth: 4,
             titles_only: true,
+            mode: "titles",
           }],
           session_defaults: {
             agent_id: "roselin_codex",

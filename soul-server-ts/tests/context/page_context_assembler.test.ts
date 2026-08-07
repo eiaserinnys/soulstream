@@ -123,7 +123,7 @@ describe("DefaultPageContextAssembler", () => {
     });
   });
 
-  it("truncates compiled atom markdown within the category and total budgets", () => {
+  it("replaces budget-cut atom markdown with a reachable root anchor", () => {
     const item = new DefaultPageContextAssembler({
       guidanceChars: 8,
       atomRefChars: 5,
@@ -152,12 +152,18 @@ describe("DefaultPageContextAssembler", () => {
     const content = item.content as Record<string, any>;
 
     expect(content.items).toEqual([
-      expect.objectContaining({ markdown: "12345", truncated: true }),
+      expect.objectContaining({
+        markdown: expect.stringContaining('compile_subtree(node_id="n1")'),
+        truncated: true,
+        anchor_count: 1,
+      }),
     ]);
-    expect(content.metadata.truncation.categories.atom_ref).toEqual({
+    expect(content.items[0].markdown).not.toBe("12345");
+    expect(content.metadata.truncation.categories.atom_ref).toMatchObject({
       limit: 5,
-      used: 5,
       omitted: 1,
     });
+    expect(content.metadata.truncation.categories.atom_ref.used)
+      .toBe(content.items[0].markdown.length);
   });
 });

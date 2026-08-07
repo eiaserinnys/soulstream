@@ -9,6 +9,7 @@ export interface ProjectAtomFieldValue {
   depth: number;
   titlesOnly: boolean;
   limit?: number | null;
+  mode?: "full" | "index" | "titles";
 }
 
 export function ProjectAtomFields({
@@ -67,6 +68,25 @@ export function ProjectAtomFields({
             limit: event.target.value === "" ? null : Number(event.target.value),
           })}
         />
+      </label>
+      <label>
+        렌더 방식
+        <select
+          aria-label="atom 렌더 방식"
+          value={value.mode ?? ""}
+          disabled={disabled}
+          onChange={(event) => {
+            const mode = event.target.value as "" | "full" | "index" | "titles";
+            const next = { ...value, mode: mode || undefined };
+            if (!next.mode) delete next.mode;
+            onChange(next);
+          }}
+        >
+          <option value="">기존 방식</option>
+          <option value="full">전체 본문</option>
+          <option value="index">색인</option>
+          <option value="titles">제목 트리</option>
+        </select>
       </label>
       <label>
         <input

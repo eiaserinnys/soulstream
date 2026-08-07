@@ -3,7 +3,12 @@ import type { BlockDto } from "@seosoyoung/soul-ui/page";
 export function updateOptimisticTaskAtomReference(
   blocks: readonly BlockDto[],
   blockId: string,
-  patch: { depth: number; titlesOnly: boolean; limit?: number | null },
+  patch: {
+    depth: number;
+    titlesOnly: boolean;
+    limit?: number | null;
+    mode?: "full" | "index" | "titles";
+  },
 ): BlockDto[] {
   if (!Number.isInteger(patch.depth) || patch.depth < 1 || patch.depth > 5) {
     throw new Error("atom depth는 1~5 정수여야 합니다");
@@ -18,8 +23,10 @@ export function updateOptimisticTaskAtomReference(
       depth: patch.depth,
       titlesOnly: patch.titlesOnly,
       ...(patch.limit != null ? { limit: patch.limit } : {}),
+      ...(patch.mode !== undefined ? { mode: patch.mode } : {}),
     };
     if (patch.limit == null) delete properties.limit;
+    if (patch.mode === undefined) delete properties.mode;
     return { ...block, properties };
   });
 }

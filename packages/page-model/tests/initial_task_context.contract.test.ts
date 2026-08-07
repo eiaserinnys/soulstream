@@ -15,6 +15,7 @@ describe("initial task context wire", () => {
         nodeTitle: "soulstream",
         depth: 5,
         titlesOnly: true,
+        mode: "index" as const,
         limit: 3,
       }],
       sessionDefaults: {
@@ -33,6 +34,7 @@ describe("initial task context wire", () => {
         node_title: "soulstream",
         depth: 5,
         titles_only: true,
+        mode: "index",
         limit: 3,
       }],
       session_defaults: {
@@ -88,6 +90,33 @@ describe("initial task context wire", () => {
     })).toEqual({
       ok: false,
       error: "initial_context.atom_references[0].limit must be a positive integer",
+    });
+  });
+
+  it("keeps legacy mode omitted and rejects unknown explicit modes", () => {
+    const legacy = {
+      guidance: "",
+      atomReferences: [{
+        instance: "atom" as const,
+        nodeId: "node-a",
+        nodeTitle: "soulstream",
+        depth: 3,
+        titlesOnly: false,
+      }],
+    };
+    expect(serializeInitialTaskContext(legacy)?.atom_references?.[0]).not.toHaveProperty("mode");
+    expect(parseInitialTaskContextWire({
+      atom_references: [{
+        instance: "atom",
+        node_id: "node-a",
+        node_title: "soulstream",
+        depth: 3,
+        titles_only: false,
+        mode: "future-mode",
+      }],
+    })).toEqual({
+      ok: false,
+      error: "initial_context.atom_references[0].mode invalid",
     });
   });
 

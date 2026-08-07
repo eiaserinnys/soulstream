@@ -23,6 +23,7 @@ describe("task context row optimistic patches", () => {
     expect(updateOptimisticTaskAtomReference(blocks, "atom-1", {
       depth: 5,
       titlesOnly: true,
+      mode: "index",
       limit: 3,
     })).toEqual([
       blocks[0],
@@ -32,6 +33,7 @@ describe("task context row optimistic patches", () => {
           nodeTitle: "soulstream",
           depth: 5,
           titlesOnly: true,
+          mode: "index",
           limit: 3,
           futureKey: "preserve",
         }),
@@ -44,6 +46,7 @@ describe("task context row optimistic patches", () => {
       limit: undefined,
     });
     expect(cleared[1]?.properties).not.toHaveProperty("limit");
+    expect(cleared[1]?.properties).not.toHaveProperty("mode");
   });
 
   it("removes only the requested direct context block", () => {

@@ -24,6 +24,7 @@ describe("project form model", () => {
         nodeTitle: "노드",
         depth: 3,
         titlesOnly: false,
+        mode: "index",
         limit: 3,
       }],
       sessionDefaults: [{
@@ -36,7 +37,7 @@ describe("project form model", () => {
     })).toMatchObject({
       title: "기존 프로젝트",
       guidance: [{ blockId: "g-1", text: "지침" }],
-      atomReferences: [{ blockId: "a-1", nodeId: "node-1", limit: 3 }],
+      atomReferences: [{ blockId: "a-1", nodeId: "node-1", mode: "index", limit: 3 }],
       sessionDefaults: {
         blockId: "d-1",
         agentId: "roselin_codex",

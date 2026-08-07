@@ -13,6 +13,7 @@ describe("project page details", () => {
         nodeTitle: "소울스트림",
         depth: 3,
         titlesOnly: false,
+        mode: "index",
         limit: 3,
       }),
       block("session_defaults", "", {
@@ -30,6 +31,7 @@ describe("project page details", () => {
         nodeTitle: "소울스트림",
         depth: 3,
         titlesOnly: false,
+        mode: "index",
         limit: 3,
       }],
       sessionDefaults: [{
