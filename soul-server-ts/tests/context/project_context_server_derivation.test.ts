@@ -105,7 +105,28 @@ beforeEach(() => {
 });
 
 describe("project context server derivation contract", () => {
-  it("applies session, page, folder, then agent atom priority by node id", () => {
+  it("deduplicates exact atom specs while preserving every full-spec variant", () => {
+    const base = { nodeId: "shared", depth: 2, titlesOnly: false };
+    const variants = [
+      { ...base, depth: 3 },
+      { ...base, titlesOnly: true },
+      { ...base, includeIds: false },
+      { ...base, limit: 4 },
+    ];
+
+    expect(prioritizeAtomContextSpecs({
+      session: [base, ...variants],
+      pageNodeIds: [],
+      folder: [{ ...base }, { ...variants[0]! }],
+      agent: [{ ...variants[1]! }, { ...variants[2]! }, { ...variants[3]! }],
+    })).toEqual({
+      session: [base, ...variants],
+      folder: [],
+      agent: [],
+    });
+  });
+
+  it("applies session, page, folder, then agent priority to exact atom specs", () => {
     expect(prioritizeAtomContextSpecs({
       session: [{ nodeId: "session", depth: 1, titlesOnly: false }],
       pageNodeIds: ["session", "page"],
@@ -122,7 +143,10 @@ describe("project context server derivation contract", () => {
     })).toEqual({
       session: [{ nodeId: "session", depth: 1, titlesOnly: false }],
       folder: [{ nodeId: "folder", depth: 3, titlesOnly: true }],
-      agent: [{ nodeId: "agent", depth: 5, titlesOnly: false }],
+      agent: [
+        { nodeId: "folder", depth: 5, titlesOnly: false },
+        { nodeId: "agent", depth: 5, titlesOnly: false },
+      ],
     });
   });
 
@@ -197,7 +221,7 @@ describe("project context server derivation contract", () => {
     expect(context.combinedContextItems.map((item) => item.key)).toContain("atom_context");
   });
 
-  it("deduplicates atom node ids by session, page, folder, then agent priority", async () => {
+  it("preserves different session, folder, and agent views of the same atom node", async () => {
     const duplicateAgent: AgentProfile = {
       ...agent,
       atom_contexts: [{ node_id: "shared-node", depth: 5, titles_only: true }],
@@ -250,11 +274,11 @@ describe("project context server derivation contract", () => {
     const atomFetches = vi.mocked(fetch).mock.calls
       .map(([input]) => new URL(String(input)))
       .filter((url) => url.pathname.includes("/api/tree/shared-node/compile"));
-    expect(atomFetches).toHaveLength(1);
-    expect(atomFetches[0]?.searchParams.get("depth")).toBe("1");
+    expect(atomFetches).toHaveLength(3);
+    expect(atomFetches.map((url) => url.searchParams.get("depth"))).toEqual(["5", "4", "1"]);
     expect(context.combinedContextItems.find((item) => item.key === "page_context")?.content)
       .toMatchObject({ items: [] });
-    expect(context.combinedContextItems.map((item) => item.key)).not.toContain("atom_context");
-    expect(context.effectiveSystemPrompt).toBeUndefined();
+    expect(context.combinedContextItems.map((item) => item.key)).toContain("atom_context");
+    expect(context.effectiveSystemPrompt).toContain("# shared-node");
   });
 });
