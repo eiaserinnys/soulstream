@@ -1,9 +1,10 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 115개 $defs (wire 55 + SSE event 60)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 116개 $defs (wire 55 + SSE event 61)를 모두 포함하는지 확인한다.
 """
 
+import ast
 import json
 from pathlib import Path
 
@@ -15,6 +16,9 @@ GENERATED_TS_PATH = (
     Path(__file__).parent.parent / "generated" / "typescript" / "index.ts"
 )
 GENERATED_PY_PATH = Path(__file__).parent.parent / "generated" / "python" / "upstream.py"
+ORCH_CONSTANTS_PATH = (
+    Path(__file__).parents[3] / "orch-server" / "src" / "soulstream_server" / "constants.py"
+)
 
 
 def _load_schema() -> dict:
@@ -26,6 +30,22 @@ def _message_inventory_summary(schema: dict) -> str:
     wire_count = len(schema["oneOf"])
     sse_count = defs_count - wire_count
     return f"{defs_count}개 $defs (wire {wire_count} + SSE event {sse_count})"
+
+
+def _load_orch_known_sse_event_types() -> set[str]:
+    tree = ast.parse(ORCH_CONSTANTS_PATH.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == "KNOWN_SSE_EVENT_TYPES"
+            for target in node.targets
+        ):
+            continue
+        assert isinstance(node.value, ast.Call)
+        assert node.value.args
+        return set(ast.literal_eval(node.value.args[0]))
+    raise AssertionError("KNOWN_SSE_EVENT_TYPES assignment not found")
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
@@ -112,6 +132,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventMemory",
         "SSEEventSession",
         "SSEEventInterventionSent",
+        "SSEEventSessionNotification",
         "SSEEventUserMessage",
         "SSEEventAssistantMessage",
         "SSEEventInputRequest",
@@ -158,6 +179,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventRunbookUpdatedLegacy",
         "SSEEventCustomViewUpdated",
         "SSEEventContextUsage",
+        "SSEEventContextManifest",
         "SSEEventCompact",
         "SSEEventReconnect",
         "SSEEventHistorySync",
@@ -166,8 +188,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 59, (
-        "SSE event $defs 59종 (canonical 58종 + production-gated runbook_updated 읽기 호환)."
+    assert len(sse_types) == 61, (
+        "SSE event $defs 61종 (canonical 60종 + production-gated runbook_updated 읽기 호환)."
     )
 
     expected = wire_types | sse_types
@@ -182,6 +204,37 @@ def test_documented_message_inventory_counts_match_schema() -> None:
     assert expected in README_PATH.read_text(encoding="utf-8")
     assert expected in GENERATED_TS_PATH.read_text(encoding="utf-8")
     assert expected in GENERATED_PY_PATH.read_text(encoding="utf-8")
+
+
+def test_context_manifest_event_contract() -> None:
+    schema = _load_schema()
+    manifest = schema["$defs"]["SSEEventContextManifest"]
+    assert manifest["required"] == [
+        "type",
+        "compiler_version",
+        "spec_hash",
+        "source_count",
+        "total_chars",
+        "total_token_estimate",
+        "sources",
+    ]
+    assert manifest["properties"]["type"]["const"] == "context_manifest"
+    source = manifest["properties"]["sources"]["items"]
+    assert source["required"] == [
+        "id",
+        "label",
+        "instance",
+        "node_id",
+        "mode",
+        "depth",
+        "titles_only",
+        "include_ids",
+        "chars",
+        "token_estimate",
+        "status",
+        "truncated",
+        "anchor_count",
+    ]
 
 
 def test_session_binding_warnings_are_additive_on_created_and_reconnect_rows() -> None:
@@ -394,10 +447,11 @@ def test_known_sse_event_types_completeness() -> None:
         "claude_runtime_mode_state",
         "claude_runtime_schedule_updated",
         "claude_runtime_schedule_deleted",
-            "task_updated",
-            "runbook_updated",
+        "task_updated",
+        "runbook_updated",
         "custom_view_updated",
         "context_usage",
+        "context_manifest",
         "compact",
         "reconnect",
         "history_sync",
@@ -408,4 +462,8 @@ def test_known_sse_event_types_completeness() -> None:
     }
     assert sse_consts == expected_known, (
         f"Missing: {expected_known - sse_consts}, Extra: {sse_consts - expected_known}"
+    )
+    actual_known = _load_orch_known_sse_event_types()
+    assert actual_known == expected_known, (
+        f"orch Missing: {expected_known - actual_known}, orch Extra: {actual_known - expected_known}"
     )

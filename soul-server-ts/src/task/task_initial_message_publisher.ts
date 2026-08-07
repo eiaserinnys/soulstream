@@ -29,6 +29,9 @@ export class TaskInitialMessagePublisher {
   constructor(private readonly deps: TaskInitialMessagePublisherDeps) {}
 
   async publishInitialMessages(task: Task, ctx?: PreparedContext): Promise<void> {
+    if (ctx?.contextManifest) {
+      await this.publishContextManifestBestEffort(task, ctx.contextManifest);
+    }
     if (ctx?.effectiveSystemPrompt) {
       await this.publishSystemMessage(task, ctx.effectiveSystemPrompt);
     }
@@ -40,6 +43,27 @@ export class TaskInitialMessagePublisher {
     });
     await persistUserMessageEvent(task, event, this.deps);
     await finishUserMessageEvent(task, event, this.deps);
+  }
+
+  private async publishContextManifestBestEffort(
+    task: Task,
+    manifest: NonNullable<PreparedContext["contextManifest"]>,
+  ): Promise<void> {
+    try {
+      const event = {
+        type: "context_manifest",
+        ...manifest,
+      } satisfies SSEEventPayload;
+      await this.deps.persistence.enqueueEvent(
+        task.agentSessionId,
+        event,
+      );
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "context_manifest persistence failed — continuing session start",
+      );
+    }
   }
 
   private async publishSystemMessage(

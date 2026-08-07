@@ -4,9 +4,9 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 115개 $defs (wire 55 + SSE event 60).
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 116개 $defs (wire 55 + SSE event 61).
   - wire 메시지 55종
-  - SSE event payload 60종 (`event` 메시지의 `event` 키 안에 packed — canonical 59종 + production-gated 읽기 호환 `runbook_updated` 1종)
+  - SSE event payload 61종 (`event` 메시지의 `event` 키 안에 packed — canonical 60종 + production-gated 읽기 호환 `runbook_updated` 1종)
 
 `runbook_updated`의 제거 조건은 `docs/task-read-compatibility.md`가 정본이다. 내부 Phase 번호만으로 제거하지 않는다.
 

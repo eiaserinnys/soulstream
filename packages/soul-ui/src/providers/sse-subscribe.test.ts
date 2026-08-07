@@ -185,6 +185,36 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     unsubscribe();
   });
 
+  it("context_manifest named event를 관측 이벤트로 전달한다", async () => {
+    const createSSESubscribe = await loadModule();
+    const onEvent = vi.fn();
+    const unsubscribe = createSSESubscribe({
+      baseUrl: "/api/sessions/abc/events",
+      onEvent,
+    });
+
+    instances[0].emit(
+      "context_manifest",
+      {
+        type: "context_manifest",
+        compiler_version: "phase-a.v1",
+        spec_hash: "a".repeat(64),
+        source_count: 0,
+        total_chars: 0,
+        total_token_estimate: 0,
+        sources: [],
+      },
+      141,
+    );
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "context_manifest", source_count: 0 }),
+      141,
+    );
+
+    unsubscribe();
+  });
+
   it("id 없는 _live_only 이벤트는 브라우저 lastEventId가 남아 있어도 eventId=0으로 전달한다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";

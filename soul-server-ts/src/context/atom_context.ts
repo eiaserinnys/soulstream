@@ -65,6 +65,13 @@ export interface AtomFetchConfig {
   enabled: boolean;
 }
 
+export type AtomFetchStatus = "ok" | "empty" | "error";
+
+export interface AtomFetchResult {
+  status: AtomFetchStatus;
+  markdown: string | null;
+}
+
 /**
  * atom API에서 subtree를 compile하여 마크다운을 반환 (Python `fetch_atom_context` 정본).
  *
@@ -122,7 +129,16 @@ export async function fetchAtomMarkdown(
   spec: AtomContextSpec,
   logger: AtomContextLogger,
 ): Promise<string | null> {
-  if (!config.enabled || !config.serverUrl) return null;
+  return (await fetchAtomMarkdownResult(config, spec, logger)).markdown;
+}
+
+/** Detailed observation for the context compiler; legacy callers keep the null-only API above. */
+export async function fetchAtomMarkdownResult(
+  config: AtomFetchConfig,
+  spec: AtomContextSpec,
+  logger: AtomContextLogger,
+): Promise<AtomFetchResult> {
+  if (!config.enabled || !config.serverUrl) return { status: "empty", markdown: null };
   const url = new URL(
     `${config.serverUrl.replace(/\/$/, "")}/api/tree/${spec.nodeId}/compile`,
   );
@@ -144,14 +160,14 @@ export async function fetchAtomMarkdown(
         { status: resp.status, nodeId: spec.nodeId },
         "[atom] compile failed",
       );
-      return null;
+      return { status: "error", markdown: null };
     }
     const data = (await resp.json()) as { markdown?: string };
-    if (!data.markdown) return null;
-    return data.markdown;
+    if (!data.markdown) return { status: "empty", markdown: null };
+    return { status: "ok", markdown: data.markdown };
   } catch (err) {
     logger.warn({ err, nodeId: spec.nodeId }, "[atom] compile error");
-    return null;
+    return { status: "error", markdown: null };
   } finally {
     clearTimeout(timer);
   }

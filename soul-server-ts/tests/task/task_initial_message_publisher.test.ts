@@ -102,6 +102,84 @@ describe("TaskInitialMessagePublisher", () => {
     );
   });
 
+  it("durably records one context_manifest before the initial timeline messages", async () => {
+    const task = makeTask();
+    const { publisher, enqueueEvent, emitEventEnvelope } = makeSubject();
+    const contextManifest = {
+      compiler_version: "phase-a.v1",
+      spec_hash: "a".repeat(64),
+      source_count: 1,
+      total_chars: 120,
+      total_token_estimate: 30,
+      sources: [{
+        id: "node-a",
+        label: "atom node: node-a",
+        instance: "atom" as const,
+        node_id: "node-a",
+        mode: "full" as const,
+        depth: 5,
+        titles_only: false,
+        chars: 100,
+        token_estimate: 25,
+        status: "ok" as const,
+        truncated: false,
+        anchor_count: 0,
+      }],
+    };
+
+    await publisher.publishInitialMessages(task, {
+      effectiveSystemPrompt: "system prompt",
+      combinedContextItems: [],
+      assembledPrompt: "사용자 요청",
+      contextManifest,
+    });
+
+    expect(enqueueEvent.mock.calls.map((call) => (call[1] as { type: string }).type)).toEqual([
+      "context_manifest",
+      "system_message",
+      "user_message",
+    ]);
+    expect(enqueueEvent.mock.calls[0]?.[1]).toEqual({
+      type: "context_manifest",
+      ...contextManifest,
+    });
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("continues system and user message persistence when context_manifest enqueue fails", async () => {
+    const task = makeTask();
+    const enqueueEvent = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("manifest outbox down"))
+      .mockResolvedValue({ source_seq: 12 });
+    const { publisher, handleSideEffects, logger } = makeSubject({ enqueueEvent });
+
+    await publisher.publishInitialMessages(task, {
+      effectiveSystemPrompt: "system prompt",
+      combinedContextItems: [],
+      assembledPrompt: "사용자 요청",
+      contextManifest: {
+        compiler_version: "phase-a.v1",
+        spec_hash: "b".repeat(64),
+        source_count: 0,
+        total_chars: 0,
+        total_token_estimate: 0,
+        sources: [],
+      },
+    });
+
+    expect(enqueueEvent.mock.calls.map((call) => (call[1] as { type: string }).type)).toEqual([
+      "context_manifest",
+      "system_message",
+      "user_message",
+    ]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-initial", err: expect.any(Error) }),
+      "context_manifest persistence failed — continuing session start",
+    );
+    expect(handleSideEffects).toHaveBeenCalledOnce();
+  });
+
   it("skips system_message and omits optional user_message keys when inputs are absent", async () => {
     const task = makeTask();
     const { publisher, enqueueEvent, emitEventEnvelope } = makeSubject();

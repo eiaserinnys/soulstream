@@ -96,6 +96,33 @@ function makeTurnSummaryEvent(
 }
 
 describe("processEventsBatch — dedup", () => {
+  it("context_manifest는 이벤트 ID만 전진시키고 채팅 트리는 바꾸지 않음", () => {
+    const ctx = createProcessingContext();
+    const event: SoulSSEEvent = {
+      type: "context_manifest",
+      compiler_version: "phase-a.v1",
+      spec_hash: "a".repeat(64),
+      source_count: 0,
+      total_chars: 0,
+      total_token_estimate: 0,
+      sources: [],
+    };
+
+    const result = processEventsBatch(
+      [{ event, eventId: 12 }],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(result.updated).toBe(false);
+    expect(result.root).toBeNull();
+    expect(result.maxEventId).toBe(12);
+    expect(result.notifications).toEqual([]);
+  });
+
   it("lastEventId 이하 이벤트를 차단 (모든 배치 일관 적용)", () => {
     const ctx = createProcessingContext();
 

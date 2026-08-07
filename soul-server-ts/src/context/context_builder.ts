@@ -18,7 +18,13 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { type AtomContextSpec } from "./atom_context.js";
-import { compileContexts } from "./compiler/index.js";
+import {
+  compileContexts,
+  extractPageContextTruncation,
+  mergeContextManifests,
+  type ContextCompilationResult,
+  type ContextManifest,
+} from "./compiler/index.js";
 import {
   fetchCogitoContextItem,
   type CogitoContextConfig,
@@ -75,6 +81,8 @@ export interface PreparedContext {
   maxTurns?: number;
   /** Python `assembled_prompt` 등가 — 현재 task.prompt 그대로 (task.context wire 별건). */
   assembledPrompt: string;
+  /** Phase A compiler observation. Initial-message publisher records this once per new session. */
+  contextManifest?: ContextManifest;
 }
 
 export interface FollowupContextOptions {
@@ -207,11 +215,11 @@ export class ExecutionContextBuilder {
       folder: folder.atomContextSpecs ?? [],
       agent: extractAgentAtomContextSpecs(agent),
     });
-    const [agentAtomMarkdown, atomMarkdown, taskAtomMarkdown, boardWorkspaceItem] =
+    const [agentAtomCompilation, atomCompilation, taskAtomCompilation, boardWorkspaceItem] =
       await Promise.all([
-        this._fetchAtomContext(atomSources.agent),
-        this._fetchAtomContext(atomSources.folder),
-        this._fetchAtomContext(atomSources.session),
+        this._compileAtomContext(atomSources.agent),
+        this._compileAtomContext(atomSources.folder),
+        this._compileAtomContext(atomSources.session),
         fetchBoardWorkspaceContextItem(
           this.db,
           this.logger,
@@ -219,6 +227,14 @@ export class ExecutionContextBuilder {
           resumeContext.folderSessions,
         ),
       ]);
+    const contextManifest = mergeContextManifests(
+      [
+        agentAtomCompilation.manifest,
+        atomCompilation.manifest,
+        taskAtomCompilation.manifest,
+      ],
+      extractPageContextTruncation(pageContextItem),
+    );
     const primaryContainer = await resolvePrimarySessionContainerContext(
       this.db,
       this.logger,
@@ -244,9 +260,10 @@ export class ExecutionContextBuilder {
       agent,
       folderName: folder.folderName,
       folderPrompt: folder.folderPrompt,
-      agentAtomMarkdown,
-      atomMarkdown,
-      taskAtomMarkdown,
+      agentAtomMarkdown: agentAtomCompilation.assembled,
+      atomMarkdown: atomCompilation.assembled,
+      taskAtomMarkdown: taskAtomCompilation.assembled,
+      contextManifest,
       primaryContainer,
       pageContextItem,
       boardWorkspaceItem,
@@ -358,12 +375,14 @@ export class ExecutionContextBuilder {
   }
 
   /** Fetches configured atom specs without blocking the turn on failure. */
-  private async _fetchAtomContext(
+  private async _fetchAtomContext(specs?: AtomContextSpec[]): Promise<string | null> {
+    return (await this._compileAtomContext(specs)).assembled;
+  }
+
+  private async _compileAtomContext(
     specs?: AtomContextSpec[],
-  ): Promise<string | null> {
-    if (!specs || specs.length === 0) return null;
-    const compiled = await compileContexts(this.cfg.atom, specs, this.logger);
-    return compiled.assembled;
+  ): Promise<ContextCompilationResult> {
+    return await compileContexts(this.cfg.atom, specs ?? [], this.logger);
   }
 
   /**
@@ -395,6 +414,7 @@ export class ExecutionContextBuilder {
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
     taskAtomMarkdown: string | null;
+    contextManifest: ContextManifest;
     primaryContainer: PrimarySessionContainerContext | null;
     pageContextItem: ContextItem | null;
     boardWorkspaceItem: ContextItem | null;
@@ -466,6 +486,7 @@ export class ExecutionContextBuilder {
       workingDir: args.workingDir,
       maxTurns: args.maxTurns,
       assembledPrompt,
+      contextManifest: args.contextManifest,
     };
   }
 
