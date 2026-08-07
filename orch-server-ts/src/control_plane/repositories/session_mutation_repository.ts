@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { sanitizePgText } from "../../node/pg_text_sanitizer.js";
 import type { SqlClient } from "../control_plane_types.js";
 
 export type SessionTransitionFields = {
@@ -45,15 +46,23 @@ export class SessionMutationRepository {
   constructor(private readonly sql: SqlClient) {}
 
   registerSession(input: RegisterSessionMutation): Promise<{ ok: true }> {
-    return this.idempotent("register_session", input, async (sql) => {
+    const sanitizedInput = {
+      ...input,
+      prompt: sanitizePgText(input.prompt),
+    };
+    return this.idempotent("register_session", sanitizedInput, async (sql) => {
       await sql`
         SELECT session_register_with_model_preset(
-          ${input.sessionId}, ${input.nodeId}, ${input.agentId}, ${input.claudeSessionId},
-          ${input.sessionType}, ${input.prompt}, ${input.clientId}, ${input.status},
-          ${input.createdAt}, ${input.updatedAt}, ${input.callerSessionId},
-          ${input.notifyCompletion ?? true}, ${input.reviewRequired ?? false},
-          ${input.reviewState ?? "not_required"}, ${input.predecessorSessionId},
-          ${input.modelPreset ?? null}, ${input.model ?? null}
+          ${sanitizedInput.sessionId}, ${sanitizedInput.nodeId},
+          ${sanitizedInput.agentId}, ${sanitizedInput.claudeSessionId},
+          ${sanitizedInput.sessionType}, ${sanitizedInput.prompt},
+          ${sanitizedInput.clientId}, ${sanitizedInput.status},
+          ${sanitizedInput.createdAt}, ${sanitizedInput.updatedAt},
+          ${sanitizedInput.callerSessionId}, ${sanitizedInput.notifyCompletion ?? true},
+          ${sanitizedInput.reviewRequired ?? false},
+          ${sanitizedInput.reviewState ?? "not_required"},
+          ${sanitizedInput.predecessorSessionId},
+          ${sanitizedInput.modelPreset ?? null}, ${sanitizedInput.model ?? null}
         )
       `;
       return { ok: true } as const;
@@ -66,11 +75,22 @@ export class SessionMutationRepository {
     fields: SessionTransitionFields;
     updatedAt: Date;
   }): Promise<{ ok: true }> {
-    assertTransitionFields(input.fields);
-    return await this.idempotent("transition_session", input, async (sql) => {
-      const [columns, values] = transitionColumns(input.fields);
+    const sanitizedInput = {
+      ...input,
+      fields: {
+        ...input.fields,
+        ...(input.fields.prompt === undefined
+          ? {}
+          : { prompt: sanitizePgText(input.fields.prompt) }),
+      },
+    };
+    assertTransitionFields(sanitizedInput.fields);
+    return await this.idempotent("transition_session", sanitizedInput, async (sql) => {
+      const [columns, values] = transitionColumns(sanitizedInput.fields);
       if (columns.length === 0) throw hostError(422, "transition_session fields must not be empty");
-      await sql`SELECT session_update(${input.sessionId}, ${columns}, ${values}, ${input.updatedAt})`;
+      await sql`SELECT session_update(
+        ${sanitizedInput.sessionId}, ${columns}, ${values}, ${sanitizedInput.updatedAt}
+      )`;
       return { ok: true } as const;
     });
   }
@@ -80,8 +100,14 @@ export class SessionMutationRepository {
     sessionId: string;
     displayName: string | null;
   }): Promise<{ ok: true }> {
-    return this.idempotent("rename_session", input, async (sql) => {
-      await sql`SELECT session_rename(${input.sessionId}, ${input.displayName})`;
+    const sanitizedInput = {
+      ...input,
+      displayName: input.displayName === null ? null : sanitizePgText(input.displayName),
+    };
+    return this.idempotent("rename_session", sanitizedInput, async (sql) => {
+      await sql`SELECT session_rename(
+        ${sanitizedInput.sessionId}, ${sanitizedInput.displayName}
+      )`;
       return { ok: true } as const;
     });
   }
