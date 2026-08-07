@@ -176,7 +176,6 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.completedAt = undefined;
   task.error = undefined;
   task.result = undefined;
-  task.lastAssistantText = undefined;
   task.terminationReason = undefined;
   task.terminationDetail = undefined;
   task.pendingTerminationHint = undefined;

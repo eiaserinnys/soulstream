@@ -86,7 +86,10 @@ export class NodeEventIngressController {
           sessionId: item.envelope.session_id,
           eventId: item.eventId,
         });
-        let effectEvents = sessionUpdate && item.envelope.session_effect?.kind === "terminal_transition"
+        // receiveCommittedEvent updates the session cache as a side effect. Apply the
+        // effect before publishing session_ended so cache-reading sinks such as
+        // PushNotifier observe the committed final assistant text.
+        const effectEvents = sessionUpdate
           ? this.options.receiveCommittedEvent(sessionUpdate)
           : undefined;
         try {
@@ -94,8 +97,7 @@ export class NodeEventIngressController {
         } catch (error) {
           this.options.logError(error, "Committed event broadcast failed");
         }
-        if (sessionUpdate) {
-          effectEvents ??= this.options.receiveCommittedEvent(sessionUpdate);
+        if (effectEvents) {
           try {
             this.options.publish(effectEvents);
           } catch (error) {

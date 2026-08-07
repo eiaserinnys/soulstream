@@ -44,7 +44,7 @@ function mutationHost(updateSession: ReturnType<typeof vi.fn>) {
 describe("AutoResumeTransition", () => {
   it("promotes resume message into task state, queues it, updates DB, broadcasts session_updated, and resumes", async () => {
     const order: string[] = [];
-    const task = makeTerminalTask({ lastAssistantText: "previous turn" });
+    const task = makeTerminalTask();
     const callerInfo = { source: "slack", display_name: "Alice" };
 
     const appendMetadata = vi.fn(async () => {
@@ -101,7 +101,6 @@ describe("AutoResumeTransition", () => {
       expect(task.pendingTerminationHint).toBeUndefined();
       expect(task.pendingTerminationDetail).toBeUndefined();
       expect(task.terminationEventRecorded).toBe(false);
-      expect(task.lastAssistantText).toBeUndefined();
       expect(task.interventionQueue).toHaveLength(1);
     });
     const broadcaster = { emitEventEnvelope, emitSessionUpdated } as unknown as SessionBroadcaster;
@@ -141,7 +140,6 @@ describe("AutoResumeTransition", () => {
     expect(task.clientId).toBe("alice");
     expect(task.callerInfo).toBe(callerInfo);
     expect(task.attachmentPaths).toEqual(["/tmp/a.png"]);
-    expect(task.lastAssistantText).toBeUndefined();
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
