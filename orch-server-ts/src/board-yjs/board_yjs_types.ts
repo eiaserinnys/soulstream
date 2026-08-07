@@ -53,6 +53,13 @@ export interface BoardYjsReplica {
   markdownDocuments: MarkdownDocumentRow[];
 }
 
+export interface BoardYjsDocumentApplication {
+  documentName: string;
+  scope: BoardYjsContainerScope;
+  snapshot: Uint8Array;
+  replica: BoardYjsReplica;
+}
+
 export interface BoardYjsItemValue {
   item_type: BoardItemType;
   item_id: string;

@@ -21,7 +21,11 @@ type SqlCall = {
 describe("live DB session catalog provider", () => {
   it("uses Python catalog DB functions and preserves caller_info as route input only", async () => {
     const harness = createSqlHarness();
-    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+    const deleteSession = vi.fn().mockResolvedValue(undefined);
+    const repository = createLiveDbCatalogRepository({
+      sql: harness.sql,
+      sessionDeletion: { deleteSession },
+    });
 
     await repository.sessionCatalogProvider.renameSession(
       "sess-1",
@@ -47,7 +51,6 @@ describe("live DB session catalog provider", () => {
       "SELECT session_assign_folder(?, ?)",
       "SELECT session_assign_folder(?, ?)",
       "SELECT session_rename(?, ?)",
-      "SELECT session_delete(?)",
       "SELECT session_update_read_position(?, ?)",
     ]);
     expect(harness.calls.map((call) => call.values)).toEqual([
@@ -56,9 +59,9 @@ describe("live DB session catalog provider", () => {
       ["sess-2", "folder-1"],
       ["sess-3", null],
       ["sess-3", null],
-      ["sess-4"],
       ["sess-5", 42],
     ]);
+    expect(deleteSession).toHaveBeenCalledWith("sess-4");
   });
 
   it("normalizes event_read rows for session cards through the route", async () => {

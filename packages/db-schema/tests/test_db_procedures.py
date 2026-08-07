@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import asyncpg
 import pytest
 
 
@@ -1277,10 +1278,107 @@ async def test_session_metadata_search_matches_title_folder_and_node(test_db):
 
 
 async def test_session_delete(test_db):
+    await _create_folder(test_db, "unrelated-delete-cache")
+    await test_db.execute(
+        """
+        INSERT INTO board_yjs_catalog_cache (
+            folder_id, container_kind, container_id, board_items, markdown_documents
+        ) VALUES ($1, 'folder', $1, $2::jsonb, '[]'::jsonb)
+        """,
+        "unrelated-delete-cache",
+        json.dumps(json.dumps([{"id": "session:someone-else"}])),
+    )
     await _create_session(test_db, "s-del")
     await test_db.execute("SELECT session_delete($1)", "s-del")
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-del")
     assert row is None
+
+
+async def test_session_delete_rejects_remaining_board_ydoc_references(test_db):
+    await _create_folder(test_db, "delete-guard-folder")
+    await _create_session(test_db, "s-delete-guard", folder_id="delete-guard-folder")
+    board_item = {
+        "id": "session:s-delete-guard",
+        "folderId": "delete-guard-folder",
+        "containerKind": "folder",
+        "containerId": "delete-guard-folder",
+        "membershipKind": "primary",
+        "sourceTaskItemId": None,
+        "itemType": "session",
+        "itemId": "s-delete-guard",
+        "x": 0,
+        "y": 0,
+        "metadata": {},
+    }
+    await test_db.execute(
+        """
+        INSERT INTO board_items (
+            id, folder_id, container_kind, container_id, membership_kind,
+            item_type, item_id, x, y, metadata
+        ) VALUES ($1, $2, 'folder', $2, 'primary', 'session', $3, 0, 0, '{}')
+        """,
+        board_item["id"],
+        board_item["folderId"],
+        board_item["itemId"],
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_yjs_catalog_cache (
+            folder_id, container_kind, container_id, board_items, markdown_documents
+        ) VALUES ($1, 'folder', $1, $2::jsonb, '[]'::jsonb)
+        """,
+        board_item["folderId"],
+        json.dumps([board_item]),
+    )
+
+    await test_db.execute(
+        "DELETE FROM board_items WHERE id = $1",
+        board_item["id"],
+    )
+    with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
+        await test_db.execute(
+            "DELETE FROM sessions WHERE session_id = $1",
+            "s-delete-guard",
+        )
+
+    assert await test_db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE session_id = $1)",
+        "s-delete-guard",
+    )
+
+    await test_db.execute(
+        """
+        UPDATE board_yjs_catalog_cache
+        SET board_items = $2::jsonb
+        WHERE container_kind = 'folder' AND container_id = $1
+        """,
+        board_item["folderId"],
+        json.dumps(json.dumps([board_item])),
+    )
+    with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
+        await test_db.execute("SELECT session_delete($1)", "s-delete-guard")
+
+    await test_db.execute(
+        """
+        UPDATE board_yjs_catalog_cache
+        SET board_items = '[]'::jsonb
+        WHERE container_kind = 'folder' AND container_id = $1
+        """,
+        board_item["folderId"],
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_items (
+            id, folder_id, container_kind, container_id, membership_kind,
+            item_type, item_id, x, y, metadata
+        ) VALUES ($1, $2, 'folder', $2, 'primary', 'session', $3, 0, 0, '{}')
+        """,
+        board_item["id"],
+        board_item["folderId"],
+        board_item["itemId"],
+    )
+    with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
+        await test_db.execute("SELECT session_delete($1)", "s-delete-guard")
 
 
 async def test_claude_transcript_append_load_preserves_content_shapes(test_db):

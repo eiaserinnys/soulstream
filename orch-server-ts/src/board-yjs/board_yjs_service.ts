@@ -27,6 +27,10 @@ import {
   withStagedTaskBoardMove,
 } from "./board_yjs_move.js";
 import {
+  boardItemRemovalDocumentNames,
+  withStagedBoardItemRemoval,
+} from "./board_yjs_remove.js";
+import {
   authenticateBoardYjsConnection,
   type BoardYjsAuthConfig,
 } from "./board_yjs_auth.js";
@@ -36,6 +40,7 @@ import {
 } from "./board_yjs_persistence.js";
 import type {
   BoardYjsContainerRef,
+  BoardYjsDocumentApplication,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
 } from "./board_yjs_types.js";
@@ -254,6 +259,16 @@ export class BoardYjsService {
       deleteBoardYjsItem(doc, boardItemId);
       return true;
     });
+  }
+
+  async withBoardItemRemovalApplications<T>(
+    boardItems: readonly CatalogBoardItemRow[],
+    persist: (applications: readonly BoardYjsDocumentApplication[]) => Promise<T>,
+  ): Promise<T> {
+    return await this.documentMutationGate.withMutation(
+      boardItemRemovalDocumentNames(boardItems),
+      async () => await withStagedBoardItemRemoval(this.hocuspocus, boardItems, persist),
+    );
   }
 
   async removeBoardItem(

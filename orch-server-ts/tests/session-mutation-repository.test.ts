@@ -7,6 +7,20 @@ import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 type SqlCall = { text: string; values: unknown[] };
 
 describe("SessionMutationRepository", () => {
+  it("routes idempotent delete_session through canonical Y.Doc deletion", async () => {
+    const { sql, calls } = fakeSql(() => []);
+    const deleteSession = vi.fn().mockResolvedValue(undefined);
+    const repository = new SessionMutationRepository(sql, { deleteSession });
+
+    await repository.deleteSession({
+      idempotencyKey: "delete-1",
+      sessionId: "session-a",
+    });
+
+    expect(deleteSession).toHaveBeenCalledWith("session-a");
+    expect(calls.some((call) => call.text.includes("session_delete("))).toBe(false);
+  });
+
   it("applies an allowed transition once and reuses its receipt across timestamp retries", async () => {
     const receipt = new Map<string, Record<string, unknown>>();
     const { sql, calls } = fakeSql((text, values) => {

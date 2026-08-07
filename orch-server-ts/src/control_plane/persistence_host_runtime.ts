@@ -10,6 +10,7 @@ import { SessionReadRepository } from "./repositories/session_read_repository.js
 import { EventReadRepository } from "./repositories/event_read_repository.js";
 import { SessionStoryReadRepository } from "./repositories/session_story_read_repository.js";
 import { SessionReadCompositeRepository } from "./repositories/session_read_composite.js";
+import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 
 export interface PersistenceHostRepositories {
   deliveries: SessionDeliveryRepository;
@@ -25,6 +26,7 @@ export interface PersistenceHostRepositories {
 
 export function createPersistenceHostRepositoryProvider(
   sqlResolver: LiveDbSqlResolver,
+  sessionDeletion: SessionDeletionPort,
 ): () => Promise<PersistenceHostRepositories> {
   const resolver = new BoardYjsSqlResolver(sqlResolver);
   let repositories: PersistenceHostRepositories | undefined;
@@ -39,7 +41,7 @@ export function createPersistenceHostRepositoryProvider(
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
       claudeTranscripts: new ClaudeTranscriptRepository(sql),
       sessionPageBindings: new SessionPageBindingRepository(sql),
-      sessionMutations: new SessionMutationRepository(sql),
+      sessionMutations: new SessionMutationRepository(sql, sessionDeletion),
       sessionReads,
       eventReads,
       storyReads,

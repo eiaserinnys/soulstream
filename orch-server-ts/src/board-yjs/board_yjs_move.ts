@@ -11,6 +11,7 @@ import {
 import type {
   BoardYjsContainerRef,
   BoardYjsContainerScope,
+  BoardYjsDocumentApplication,
   CatalogBoardItemRow,
 } from "./board_yjs_types.js";
 
@@ -20,12 +21,7 @@ export interface BoardMoveInput {
   position?: { x: number; y: number };
 }
 
-export interface StagedBoardApplication {
-  documentName: string;
-  scope: BoardYjsContainerScope;
-  snapshot: Uint8Array;
-  replica: ReturnType<typeof readBoardYDocReplica>;
-}
+export type StagedBoardApplication = BoardYjsDocumentApplication;
 
 export interface StagedTaskBoardMove {
   movedBoardItem: CatalogBoardItemRow;
