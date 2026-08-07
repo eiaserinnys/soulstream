@@ -911,10 +911,14 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(content.indexOf("# root atom")).toBeLessThan(content.indexOf("# leaf atom"));
   });
 
-  it("folder atomContextNode 중복 nodeId는 leaf 설정으로 한 번만 fetch한다", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ markdown: "# leaf atom\nbody" }), { status: 200 }),
-    );
+  it("folder atomContextNode의 같은 nodeId 다른 뷰를 모두 fetch한다", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ markdown: "# root atom\nbody" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ markdown: "# leaf atom\nbody" }), { status: 200 }),
+      );
     const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "leaf",
@@ -965,10 +969,13 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
 
     const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => new URL(String(url)));
-    expect(urls).toHaveLength(1);
-    expect(urls[0].searchParams.get("depth")).toBe("5");
-    expect(urls[0].searchParams.has("titles_only")).toBe(false);
+    expect(urls).toHaveLength(2);
+    expect(urls[0].searchParams.get("depth")).toBe("2");
+    expect(urls[0].searchParams.get("titles_only")).toBe("true");
+    expect(urls[1].searchParams.get("depth")).toBe("5");
+    expect(urls[1].searchParams.has("titles_only")).toBe(false);
     const atomItem = ctx.combinedContextItems.find((item) => item.key === "atom_context");
+    expect(atomItem?.content).toContain("# root atom");
     expect(atomItem?.content).toContain("# leaf atom");
   });
 

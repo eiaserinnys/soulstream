@@ -1,9 +1,9 @@
 /**
- * Phase A context compiler.
+ * Context compiler pipeline.
  *
- * The caller already resolves legacy yaml/page/folder sources into AtomContextSpec. This module
- * establishes the seven-stage compiler boundary while preserving the legacy render and assembly
- * byte-for-byte. Phase B-D replace the pass-through stages without changing the consumer API.
+ * The caller resolves yaml/session/folder sources into AtomContextSpec. Explicit Phase B modes
+ * render and annotate here, while mode-less legacy specs retain their Phase A bytes. Later phases
+ * replace the remaining filter and budget pass-through stages without changing the consumer API.
  */
 import type { Logger } from "pino";
 import { createHash } from "node:crypto";
@@ -17,6 +17,11 @@ import {
   type AtomFetchConfig,
   type AtomFetchStatus,
 } from "../atom_context.js";
+import {
+  isContextRenderMode,
+  renderExplicitAtomSource,
+  type ContextRenderMode,
+} from "./render_modes.js";
 
 type ContextCompilerLogger = Pick<Logger, "warn">;
 
@@ -31,9 +36,11 @@ export interface CompiledContextSection {
   source: ContextSource;
   markdown: string | null;
   status: AtomFetchStatus;
+  truncated: boolean;
+  anchorCount: number;
 }
 
-export const CONTEXT_COMPILER_VERSION = "phase-a.v1";
+export const CONTEXT_COMPILER_VERSION = "phase-b.v1";
 
 export interface ContextManifestUsage {
   limit: number;
@@ -55,7 +62,7 @@ export interface ContextManifestSource {
   label: string;
   instance: "atom";
   node_id: string;
-  mode: "full" | "titles";
+  mode: ContextRenderMode;
   depth: number;
   titles_only: boolean;
   include_ids: boolean;
@@ -63,8 +70,8 @@ export interface ContextManifestSource {
   chars: number;
   token_estimate: number;
   status: AtomFetchStatus;
-  truncated: false;
-  anchor_count: 0;
+  truncated: boolean;
+  anchor_count: number;
 }
 
 export interface ContextManifest {
@@ -104,17 +111,42 @@ async function renderContextSources(
 ): Promise<CompiledContextSection[]> {
   const sections: CompiledContextSection[] = [];
   for (const source of sources) {
+    const requestedMode = source.legacy.mode;
+    if (requestedMode !== undefined && !isContextRenderMode(requestedMode)) {
+      logger.warn(
+        { mode: requestedMode, nodeId: source.legacy.nodeId },
+        "[context compiler] unknown atom render mode — using legacy rendering",
+      );
+    }
+    if (isContextRenderMode(requestedMode)) {
+      const rendered = await renderExplicitAtomSource(
+        config,
+        source.legacy,
+        requestedMode,
+        logger,
+      );
+      sections.push({
+        source,
+        markdown: rendered.markdown,
+        status: rendered.status,
+        truncated: rendered.truncated,
+        anchorCount: rendered.anchorCount,
+      });
+      continue;
+    }
     const result = await fetchAtomMarkdownResult(config, source.legacy, logger);
     sections.push({
       source,
       markdown: result.markdown,
       status: result.status,
+      truncated: false,
+      anchorCount: 0,
     });
   }
   return sections;
 }
 
-/** Phase B hook: no cut-surface annotations in Phase A. */
+/** Phase B renderers annotate their own cut surfaces before this shared hook. */
 function annotateContextSections(
   sections: readonly CompiledContextSection[],
 ): CompiledContextSection[] {
@@ -139,6 +171,7 @@ function assembleContextSections(sections: readonly CompiledContextSection[]): s
 
   const assembled = sections.flatMap(({ source: { legacy }, markdown }) => {
     if (!markdown) return [];
+    if (isContextRenderMode(legacy.mode)) return [formatAtomMarkdown(markdown)];
     return [[
       `## atom node: ${legacy.nodeId}`,
       `depth=${legacy.depth}, titles_only=${legacy.titlesOnly}`,
@@ -163,7 +196,7 @@ function desiredSpec(source: ContextSource | ContextManifestSource): Record<stri
       label: source.label,
       instance: source.instance,
       node_id: spec.nodeId,
-      mode: spec.titlesOnly ? "titles" : "full",
+      mode: effectiveMode(spec),
       depth: spec.depth,
       titles_only: spec.titlesOnly,
       include_ids: spec.includeIds ?? true,
@@ -193,15 +226,21 @@ function buildContextManifest(
   sections: readonly CompiledContextSection[],
   assembled: string | null,
 ): ContextManifest {
-  const sources = sections.map(({ source, markdown, status }): ContextManifestSource => {
+  const sources = sections.map(({
+    source,
+    markdown,
+    status,
+    truncated,
+    anchorCount,
+  }): ContextManifestSource => {
     const chars = markdown === null ? 0 : formatAtomMarkdown(markdown).length;
     return {
       ...desiredSpec(source),
       chars,
       token_estimate: estimateTokenCount(chars),
       status,
-      truncated: false,
-      anchor_count: 0,
+      truncated,
+      anchor_count: anchorCount,
     } as ContextManifestSource;
   });
   const totalChars = assembled?.length ?? 0;
@@ -213,6 +252,12 @@ function buildContextManifest(
     total_token_estimate: estimateTokenCount(totalChars),
     sources,
   };
+}
+
+function effectiveMode(spec: AtomContextSpec): ContextRenderMode {
+  return isContextRenderMode(spec.mode)
+    ? spec.mode
+    : spec.titlesOnly ? "titles" : "full";
 }
 
 export function mergeContextManifests(

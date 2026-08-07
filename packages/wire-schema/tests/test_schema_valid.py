@@ -32,20 +32,24 @@ def _message_inventory_summary(schema: dict) -> str:
     return f"{defs_count}개 $defs (wire {wire_count} + SSE event {sse_count})"
 
 
-def _load_orch_known_sse_event_types() -> set[str]:
+def _load_orch_string_set(name: str) -> set[str]:
     tree = ast.parse(ORCH_CONSTANTS_PATH.read_text(encoding="utf-8"))
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
         if not any(
-            isinstance(target, ast.Name) and target.id == "KNOWN_SSE_EVENT_TYPES"
+            isinstance(target, ast.Name) and target.id == name
             for target in node.targets
         ):
             continue
         assert isinstance(node.value, ast.Call)
         assert node.value.args
         return set(ast.literal_eval(node.value.args[0]))
-    raise AssertionError("KNOWN_SSE_EVENT_TYPES assignment not found")
+    raise AssertionError(f"{name} assignment not found")
+
+
+def _load_orch_known_sse_event_types() -> set[str]:
+    return _load_orch_string_set("KNOWN_SSE_EVENT_TYPES")
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
@@ -220,6 +224,12 @@ def test_context_manifest_event_contract() -> None:
     ]
     assert manifest["properties"]["type"]["const"] == "context_manifest"
     source = manifest["properties"]["sources"]["items"]
+    assert source["properties"]["mode"]["enum"] == ["full", "index", "titles"]
+    assert _load_orch_string_set("CONTEXT_MANIFEST_SOURCE_MODES") == {
+        "full",
+        "index",
+        "titles",
+    }
     assert source["required"] == [
         "id",
         "label",

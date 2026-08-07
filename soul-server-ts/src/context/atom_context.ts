@@ -17,7 +17,7 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
  *   group(2) card_id  — 옵션 (구 단일 ID 입력 폴백)
  *   group(3) chars    — 옵션 (heading 모드는 chars 없음)
  */
-const ATOM_HTML_PATTERN = new RegExp(
+export const ATOM_HTML_PATTERN = new RegExp(
   `<!--\\s*node:(${UUID})(?:\\s+card:(${UUID}))?(?:\\s+[^>]*?chars:(\\d+))?[^>]*?-->`,
   "g",
 );
@@ -33,6 +33,18 @@ export interface AtomContextSpec {
   titlesOnly: boolean;
   includeIds?: boolean;
   limit?: number;
+  mode?: string;
+}
+
+export function atomContextSpecKey(spec: AtomContextSpec): string {
+  return JSON.stringify([
+    spec.nodeId,
+    spec.depth,
+    spec.titlesOnly,
+    spec.includeIds ?? null,
+    spec.limit ?? null,
+    spec.mode ?? null,
+  ]);
 }
 
 /**
