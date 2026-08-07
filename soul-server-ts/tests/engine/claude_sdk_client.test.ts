@@ -111,6 +111,7 @@ describe("ClaudeSdkClient", () => {
       pathToClaudeCodeExecutable: "/opt/claude",
     });
     expect(captured[0]?.options?.canUseTool).toEqual(expect.any(Function));
+    expect(captured[0]?.options?.spawnClaudeCodeProcess).toEqual(expect.any(Function));
     expect(captured[0]?.options?.hooks).toMatchObject({
       PreToolUse: [{ matcher: "Agent", hooks: [expect.any(Function)] }],
       PreCompact: [{ hooks: [expect.any(Function)] }],

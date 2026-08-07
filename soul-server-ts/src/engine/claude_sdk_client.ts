@@ -33,6 +33,7 @@ import {
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
+import { spawnClaudeSessionEngine } from "./session_engine_oom_score.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {
   ClaudeBackgroundTaskControlResult,
@@ -431,6 +432,9 @@ export class ClaudeSdkClient implements ClaudeClient {
     return {
       abortController,
       cwd: options.workspaceDir,
+      ...(process.platform === "linux"
+        ? { spawnClaudeCodeProcess: (spawnOptions) => spawnClaudeSessionEngine(spawnOptions, this.logger) }
+        : {}),
       ...(options.env !== undefined ? { env: options.env } : {}),
       permissionMode,
       ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
