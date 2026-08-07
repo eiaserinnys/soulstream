@@ -116,6 +116,54 @@ describe("SessionMutationRepository", () => {
     ]);
   });
 
+  it("sanitizes only user-authored session text before PostgreSQL mutations", async () => {
+    const { sql, calls } = fakeSql(() => []);
+    const repository = new SessionMutationRepository(sql);
+    const now = new Date("2026-08-06T00:00:00.000Z");
+
+    await repository.registerSession({
+      idempotencyKey: "register-sanitize",
+      sessionId: "session-a",
+      nodeId: "node-a",
+      agentId: "roselin",
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect\u0000\ud800",
+      clientId: null,
+      status: "running",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: null,
+      predecessorSessionId: null,
+    });
+    await repository.transitionSession({
+      idempotencyKey: "transition-sanitize",
+      sessionId: "session-a",
+      fields: {
+        prompt: "resume\u0000\udfff",
+        terminationDetail: "system\u0000detail",
+      },
+      updatedAt: now,
+    });
+    await repository.renameSession({
+      idempotencyKey: "rename-sanitize",
+      sessionId: "session-a",
+      displayName: "name\u0000\ud800",
+    });
+
+    const register = calls.find((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    );
+    const transition = calls.find((call) => call.text.includes("session_update("));
+    const rename = calls.find((call) => call.text.includes("session_rename("));
+    expect(register?.values[5]).toBe("inspect�");
+    expect(transition?.values.slice(1, 3)).toEqual([
+      ["prompt", "termination_detail"],
+      ["resume�", "system\u0000detail"],
+    ]);
+    expect(rename?.values).toEqual(["session-a", "name�"]);
+  });
+
   it("reuses a register receipt when transport retry timestamps change", async () => {
     let receipt: Record<string, unknown> | undefined;
     const { sql, calls } = fakeSql((text, values) => {

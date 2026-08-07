@@ -5,6 +5,7 @@ import {
   EventPersistence,
   extractSearchableText,
   isLiveOnlyEvent,
+  sanitizeJsonText,
   shouldPersistEvent,
 } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -83,6 +84,12 @@ function makeEventPersistence(db: SessionDB, broadcaster: SessionBroadcaster) {
 
 const silentLogger = pino({ level: "silent" });
 
+describe("sanitizeJsonText", () => {
+  it("removes NUL, replaces lone surrogates, and preserves valid pairs", () => {
+    expect(sanitizeJsonText("a\u0000b\ud800c\udfff😀")).toBe("ab�c�😀");
+  });
+});
+
 describe("EventPersistence durable ingress", () => {
   it("sanitizes and fsync-enqueues persistent events without direct event DB calls", async () => {
     const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
@@ -127,6 +134,40 @@ describe("EventPersistence durable ingress", () => {
     });
     expect(appendEvent).not.toHaveBeenCalled();
     expect(findEventIdByDedupeKey).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes payload, searchable text, and typed effects before outbox append", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await ep.enqueueEvent(
+      "sess-1",
+      {
+        type: "assistant_message",
+        content: "before\u0000middle\ud800after 😀",
+        timestamp: 1731700000,
+      } as unknown as SSEEventPayload,
+    );
+
+    expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        content: "beforemiddle�after 😀",
+      }),
+      searchable_text: "beforemiddle�after 😀",
+      session_effect: expect.objectContaining({
+        last_message: expect.objectContaining({
+          preview: "beforemiddle�after 😀",
+        }),
+      }),
+    }));
   });
 
   it("returns the exact DB event id only after the session ACK barrier", async () => {
