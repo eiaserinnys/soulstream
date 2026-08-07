@@ -2864,6 +2864,7 @@ CREATE TABLE IF NOT EXISTS task_items (
 CREATE INDEX IF NOT EXISTS idx_task_items_section
     ON task_items(section_id, position_key);
 
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey;
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_task_item_id_fkey;
 ALTER TABLE board_items ADD CONSTRAINT board_items_source_task_item_id_fkey
     FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL;
@@ -3204,6 +3205,12 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
       legacy_container_kind IS NULL OR legacy_container_kind IN ('folder','task')
     )
 );
+
+ALTER TABLE session_page_bindings
+    DROP CONSTRAINT IF EXISTS session_page_bindings_source_task_item_id_fkey;
+ALTER TABLE session_page_bindings
+    ADD CONSTRAINT session_page_bindings_source_task_item_id_fkey
+    FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_session_page_bindings_due
     ON session_page_bindings(node_id, next_retry_at, created_at)

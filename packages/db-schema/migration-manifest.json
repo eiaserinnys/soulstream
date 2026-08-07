@@ -57,6 +57,7 @@
     { "id": "053_retire_supervisor.sql", "sha256": "0a8fa2d2265c286ba477ccddb6a17ccbf00d3d14defcd6aa93459ed3cc84096f", "destructive": true, "rollback_compatibility": "restore_required" },
     { "id": "054_event_ingress_receipts.sql", "sha256": "7b9148dc196992cc4039edad778f5c28fba845b877e9e8f79e114c3cb28552e7", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "055_session_effects_and_mutation_receipts.sql", "sha256": "57d8f97900911036a15713abf4b9469552e9edbca7540a9f7571745fba7c53e9", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "056_agent_profiles.sql", "sha256": "e0db4fe76bcc703ae7501f507d509aca2d246cceeb191c83176bf41fe974e523", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "056_agent_profiles.sql", "sha256": "e0db4fe76bcc703ae7501f507d509aca2d246cceeb191c83176bf41fe974e523", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "057_source_task_item_integrity.sql", "sha256": "0e3f4b2df58335accd7e3b5f10eca8ee9e51bfc8df33e963bb7d171bb6a0bea6", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }
