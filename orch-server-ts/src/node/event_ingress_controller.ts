@@ -82,17 +82,22 @@ export class NodeEventIngressController {
           agentSessionId: item.envelope.session_id,
           event: payload,
         });
+        const sessionUpdate = committedEffectSessionUpdate(item.envelope.session_effect, {
+          sessionId: item.envelope.session_id,
+          eventId: item.eventId,
+        });
+        // receiveCommittedEvent updates the session cache as a side effect. Apply the
+        // effect before publishing session_ended so cache-reading sinks such as
+        // PushNotifier observe the committed final assistant text.
+        const effectEvents = sessionUpdate
+          ? this.options.receiveCommittedEvent(sessionUpdate)
+          : undefined;
         try {
           this.options.publish(registryEvents);
         } catch (error) {
           this.options.logError(error, "Committed event broadcast failed");
         }
-        const sessionUpdate = committedEffectSessionUpdate(item.envelope.session_effect, {
-          sessionId: item.envelope.session_id,
-          eventId: item.eventId,
-        });
-        if (sessionUpdate) {
-          const effectEvents = this.options.receiveCommittedEvent(sessionUpdate);
+        if (effectEvents) {
           try {
             this.options.publish(effectEvents);
           } catch (error) {
@@ -150,6 +155,7 @@ function committedEffectSessionUpdate(
       termination_reason: effect.termination_reason,
       termination_detail: effect.termination_detail,
       review_state: effect.review_state,
+      last_assistant_text: effect.last_assistant_text ?? null,
       updated_at: effect.updated_at,
       last_event_id: input.eventId,
     };

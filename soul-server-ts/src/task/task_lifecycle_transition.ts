@@ -131,6 +131,7 @@ export class TaskLifecycleTransition {
         termination_reason: terminationReason,
         termination_detail: terminationDetail,
         review_state: task.reviewState ?? "not_required",
+        last_assistant_text: task.lastAssistantText ?? null,
         updated_at: (task.completedAt ?? new Date()).toISOString(),
       },
     );

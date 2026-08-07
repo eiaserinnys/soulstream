@@ -20,6 +20,7 @@ export type EventSessionEffect =
       termination_reason: string;
       termination_detail: string | null;
       review_state: string;
+      last_assistant_text?: string | null;
       updated_at: string;
     }
   | {
@@ -189,6 +190,14 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       termination_reason: nonEmptyString(value.termination_reason, `${field}.termination_reason`),
       termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
       review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.last_assistant_text === undefined
+        ? {}
+        : {
+            last_assistant_text: nullableString(
+              value.last_assistant_text,
+              `${field}.last_assistant_text`,
+            ),
+          }),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }

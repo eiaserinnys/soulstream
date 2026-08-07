@@ -39,6 +39,7 @@ export type EventOutboxSessionEffect =
       termination_reason: string;
       termination_detail: string | null;
       review_state: string;
+      last_assistant_text?: string | null;
       updated_at: string;
     }
   | {

@@ -40,6 +40,76 @@ describe("PushNotifier", () => {
     );
   });
 
+  it("prefers final text carried by the completion wire over stale cached text", async () => {
+    const harness = createHarness({
+      sessions: new Map([[
+        "session-a",
+        { ...userSession("browser"), last_assistant_text: "previous turn" },
+      ]]),
+    });
+
+    harness.notifier.accept([
+      sessionEnded("node-a", "session-a", "completed", {
+        last_assistant_text: "fresh final answer",
+      }),
+    ]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).toHaveBeenCalledWith(
+      "token-1",
+      "세션 완료",
+      "fresh final answer",
+      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
+    );
+  });
+
+  it("keeps last_message preview fallback when an older node omits final text", async () => {
+    const harness = createHarness({
+      sessions: new Map([[
+        "session-a",
+        {
+          ...userSession("browser"),
+          last_message: { preview: "fallback preview" },
+        },
+      ]]),
+    });
+
+    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).toHaveBeenCalledWith(
+      "token-1",
+      "세션 완료",
+      "fallback preview",
+      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
+    );
+  });
+
+  it("clears stale cached final text when the completion wire carries null", async () => {
+    const harness = createHarness({
+      sessions: new Map([[
+        "session-a",
+        {
+          ...userSession("browser"),
+          last_assistant_text: "previous turn",
+          last_message: { preview: "fallback preview" },
+        },
+      ]]),
+    });
+
+    harness.notifier.accept([
+      sessionEnded("node-a", "session-a", "completed", { last_assistant_text: null }),
+    ]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).toHaveBeenCalledWith(
+      "token-1",
+      "세션 완료",
+      "fallback preview",
+      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
+    );
+  });
+
   it.each([
     ["llm", "browser", 0],
     ["claude", "agent", 0],
