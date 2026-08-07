@@ -1,5 +1,6 @@
 import type {
   AgentProfileUpdateInput,
+  AgentContextPreviewInput,
   ApplyAgentProfileUpdateInput,
   NodeAgentProfileProvider,
   NodeAgentProfileRouteOptions,
@@ -147,7 +148,53 @@ function createLiveNodeAgentProfileProvider(
       }),
     rollbackAgentsConfig: async (nodeId, input) =>
       sendConfigCommand(options, nodeId, rollbackPayload(input)),
+    previewAgentContext: async (nodeId, input, requestOptions) =>
+      previewAgentContext(options, nodeId, input, requestOptions),
   };
+}
+
+async function previewAgentContext(
+  options: CreateLiveNodeAgentProfileRouteProviderOptions,
+  nodeId: string,
+  input: AgentContextPreviewInput,
+  requestOptions?: NodePortraitRequestOptions,
+): Promise<unknown> {
+  const headers = forwardAuthHeaders(requestOptions?.headers);
+  let response: LiveNodeHttpResponse;
+  try {
+    response = await options.nodeHttpClient.requestNode({
+      nodeId,
+      method: "POST",
+      path: "/api/context/preview",
+      ...(headers ? { headers } : {}),
+      body: input,
+    });
+  } catch (error) {
+    if (error instanceof LiveNodeHttpClientError) {
+      throw new NodeAgentProfileRouteError(
+        "NODE_AGENT_CONTEXT_PREVIEW_UNAVAILABLE",
+        error.message,
+        503,
+      );
+    }
+    throw error;
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new NodeAgentProfileRouteError(
+      "NODE_AGENT_CONTEXT_PREVIEW_FAILED",
+      responseDetail(response.body) ?? `Context preview returned HTTP ${response.statusCode}`,
+      response.statusCode,
+    );
+  }
+  return response.body;
+}
+
+function responseDetail(body: unknown): string | undefined {
+  if (typeof body === "object" && body !== null) {
+    const detail = (body as { detail?: unknown }).detail;
+    if (typeof detail === "string") return detail;
+  }
+  return typeof body === "string" && body.length > 0 ? body : undefined;
 }
 
 function agentSnapshots(node: NodeConnectionSnapshot): AgentSnapshot[] {

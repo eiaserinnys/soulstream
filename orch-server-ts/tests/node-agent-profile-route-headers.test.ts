@@ -40,6 +40,10 @@ describe("node agent profile route proxy headers", () => {
       async rollbackAgentsConfig() {
         return {};
       },
+      async previewAgentContext(_nodeId, _input, options) {
+        calls.push(options ?? {});
+        return { manifest: { sources: [] } };
+      },
     };
     const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
 
@@ -57,7 +61,17 @@ describe("node agent profile route proxy headers", () => {
       });
     }
 
-    expect(calls).toHaveLength(2);
+    await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/agents/context-preview",
+      payload: { atom_contexts: [] },
+      headers: {
+        authorization: "Bearer caller-token",
+        cookie: "session=abc",
+      },
+    });
+
+    expect(calls).toHaveLength(3);
     for (const call of calls) {
       expect(call.headers).toEqual(
         expect.objectContaining({

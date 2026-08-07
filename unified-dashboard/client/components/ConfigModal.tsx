@@ -28,6 +28,7 @@ import { useAppConfig } from "../config/AppConfigContext";
 import { ClaudeAuthTab } from "./ClaudeAuthTab";
 import { NodePanel } from "./NodePanel";
 import { UserManagementTab } from "./UserManagementTab";
+import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
@@ -41,6 +42,7 @@ const LIQUID_GLASS_TAB_NAME = "liquid_glass";
 const CHAT_TAB_NAME = "chat";
 const NODES_TAB_NAME = "nodes";
 const USERS_TAB_NAME = "users";
+const AGENTS_TAB_NAME = "agents";
 
 interface ConfigModalProps {
   open: boolean;
@@ -74,7 +76,10 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         chatTab,
         glassTab,
         { name: NODES_TAB_NAME, label: "노드" },
-        ...(user?.isAdmin ? [{ name: USERS_TAB_NAME, label: "사용자" }] : []),
+        ...(user?.isAdmin ? [
+          { name: AGENTS_TAB_NAME, label: "에이전트" },
+          { name: USERS_TAB_NAME, label: "사용자" },
+        ] : []),
       ];
     }
     return [
@@ -102,6 +107,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     selectedTab === LIQUID_GLASS_TAB_NAME ||
     selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
+    selectedTab === AGENTS_TAB_NAME ||
     selectedTab === USERS_TAB_NAME;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
 
@@ -145,6 +151,8 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 <div className="h-[420px] overflow-hidden rounded border border-border">
                   <NodePanel />
                 </div>
+              ) : selectedTab === AGENTS_TAB_NAME ? (
+                <AgentProfileEditorTab />
               ) : selectedTab === USERS_TAB_NAME ? (
                 <UserManagementTab />
               ) : activeCategory ? (

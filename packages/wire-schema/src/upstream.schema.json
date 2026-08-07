@@ -2115,13 +2115,18 @@
               "limit": { "type": "integer", "minimum": 0 },
               "priority": { "type": "integer" },
               "never_truncate": { "type": "boolean" },
+              "applies_when": {
+                "type": "object",
+                "description": "Forward-compatible conditional source selector. Unknown fields and values are ignored with a warning by the compiler.",
+                "additionalProperties": true
+              },
               "chars": { "type": "integer", "minimum": 0 },
               "token_estimate": {
                 "type": "integer",
                 "minimum": 0,
                 "description": "소스 렌더 자수를 4로 나눈 올림 근사값."
               },
-              "status": { "type": "string", "enum": ["ok", "empty", "error"] },
+              "status": { "type": "string", "enum": ["ok", "empty", "error", "filtered"] },
               "truncated": { "type": "boolean" },
               "anchor_count": { "type": "integer", "minimum": 0 }
             }

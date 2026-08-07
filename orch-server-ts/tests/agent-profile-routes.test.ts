@@ -131,4 +131,42 @@ describe("agent profile DB routes", () => {
     expect(response.json().detail).toContain("UUID");
     await app.close();
   });
+
+  it("preserves applies_when objects in JSONB profile writes", async () => {
+    const put = vi.fn(async () => profile);
+    const app = Fastify();
+    registerAgentProfileRoutes(app, { repository: repository({ put }) });
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/agent-profiles/roselin",
+      payload: {
+        name: "로젤린",
+        atom_contexts: [{
+          node_id: "11111111-2222-3333-4444-555555555555",
+          mode: "titles",
+          applies_when: {
+            source: ["agent"],
+            future_field: ["future-value"],
+          },
+        }],
+        default_preset: null,
+        aliases: [],
+        expected_version: 1,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(put).toHaveBeenCalledWith(expect.objectContaining({
+      atomContexts: [{
+        node_id: "11111111-2222-3333-4444-555555555555",
+        mode: "titles",
+        applies_when: {
+          source: ["agent"],
+          future_field: ["future-value"],
+        },
+      }],
+    }));
+    await app.close();
+  });
 });

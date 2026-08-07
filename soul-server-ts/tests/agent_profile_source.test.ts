@@ -83,6 +83,30 @@ describe("AgentProfileSource", () => {
     });
   });
 
+  it("preserves DB atom_contexts applies_when for compiler evaluation", async () => {
+    const files = await fixture();
+    const source = new AgentProfileSource({
+      ...files,
+      runtimeUrl: "http://orch/api/agent-profiles/runtime",
+      logger,
+      fetchRuntime: async () => ({ profiles: [remote({
+        atom_contexts: [{
+          node_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          depth: 2,
+          mode: "titles",
+          applies_when: { source: ["agent"], future_field: ["future-value"] },
+        }],
+      })] }),
+    });
+
+    const resolved = await source.resolve("roselin");
+
+    expect(resolved?.profile.atom_contexts?.[0]?.applies_when).toEqual({
+      source: ["agent"],
+      future_field: ["future-value"],
+    });
+  });
+
   it("uses an atomic last-known-good overlay and marks it stale on outage", async () => {
     const files = await fixture();
     const online = new AgentProfileSource({

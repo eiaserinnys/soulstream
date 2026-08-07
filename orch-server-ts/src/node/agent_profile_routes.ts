@@ -8,6 +8,7 @@ export type AgentAtomContext = {
   readonly titles_only?: boolean;
   readonly include_ids?: boolean;
   readonly mode?: "full" | "index" | "titles";
+  readonly applies_when?: Readonly<Record<string, unknown>>;
 };
 
 export type AgentAlias = string | {
@@ -250,7 +251,8 @@ function parseAtomContexts(value: unknown): ParseResult<AgentAtomContext[]> {
     if (entry.mode !== undefined && !["full", "index", "titles"].includes(String(entry.mode))) return invalid("atom_contexts mode is invalid");
     if (entry.titles_only !== undefined && typeof entry.titles_only !== "boolean") return invalid("atom_contexts titles_only must be boolean");
     if (entry.include_ids !== undefined && typeof entry.include_ids !== "boolean") return invalid("atom_contexts include_ids must be boolean");
-    result.push({ node_id: entry.node_id, ...(typeof entry.depth === "number" ? { depth: entry.depth } : {}), ...(typeof entry.titles_only === "boolean" ? { titles_only: entry.titles_only } : {}), ...(typeof entry.include_ids === "boolean" ? { include_ids: entry.include_ids } : {}), ...(typeof entry.mode === "string" ? { mode: entry.mode as AgentAtomContext["mode"] } : {}) });
+    if (entry.applies_when !== undefined && !isObject(entry.applies_when)) return invalid("atom_contexts applies_when must be an object");
+    result.push({ node_id: entry.node_id, ...(typeof entry.depth === "number" ? { depth: entry.depth } : {}), ...(typeof entry.titles_only === "boolean" ? { titles_only: entry.titles_only } : {}), ...(typeof entry.include_ids === "boolean" ? { include_ids: entry.include_ids } : {}), ...(typeof entry.mode === "string" ? { mode: entry.mode as AgentAtomContext["mode"] } : {}), ...(isObject(entry.applies_when) ? { applies_when: entry.applies_when } : {}) });
   }
   return { ok: true, value: result };
 }

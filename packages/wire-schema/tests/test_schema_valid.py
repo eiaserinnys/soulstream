@@ -235,6 +235,18 @@ def test_context_manifest_event_contract() -> None:
         "atom",
         "atom-nl",
     }
+    assert source["properties"]["status"]["enum"] == [
+        "ok",
+        "empty",
+        "error",
+        "filtered",
+    ]
+    assert _load_orch_string_set("CONTEXT_MANIFEST_SOURCE_STATUSES") == {
+        "ok",
+        "empty",
+        "error",
+        "filtered",
+    }
     assert source["required"] == [
         "id",
         "label",

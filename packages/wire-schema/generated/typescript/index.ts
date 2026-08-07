@@ -838,12 +838,18 @@ export interface SSEEventContextManifest {
     limit?: number;
     priority: number;
     never_truncate: boolean;
+    /**
+     * Forward-compatible conditional source selector. Unknown fields and values are ignored with a warning by the compiler.
+     */
+    applies_when?: {
+      [k: string]: unknown;
+    };
     chars: number;
     /**
      * 소스 렌더 자수를 4로 나눈 올림 근사값.
      */
     token_estimate: number;
-    status: "ok" | "empty" | "error";
+    status: "ok" | "empty" | "error" | "filtered";
     truncated: boolean;
     anchor_count: number;
   }[];

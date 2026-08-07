@@ -297,10 +297,11 @@ export interface ContextManifestEvent {
     limit?: number;
     priority: number;
     never_truncate: boolean;
+    applies_when?: Record<string, unknown>;
     chars: number;
     /** Character-based approximation, not a tokenizer-exact count. */
     token_estimate: number;
-    status: "ok" | "empty" | "error";
+    status: "ok" | "empty" | "error" | "filtered";
     truncated: boolean;
     anchor_count: number;
   }>;

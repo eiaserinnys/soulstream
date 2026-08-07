@@ -201,6 +201,7 @@ export const AgentAtomContextSchema = z.object({
   titles_only: z.boolean().default(false),
   include_ids: z.boolean().optional(),
   mode: z.string().min(1, "atom_contexts.mode must not be empty").optional(),
+  applies_when: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type AgentAtomContext = z.infer<typeof AgentAtomContextSchema>;
