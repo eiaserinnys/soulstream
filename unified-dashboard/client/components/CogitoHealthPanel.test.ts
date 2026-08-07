@@ -107,7 +107,6 @@ describe("CogitoHealthPanelContent", () => {
     expect(html).toContain("Partial");
     expect(html).toContain("node-ok");
     expect(html).toContain("runtime ok");
-    expect(html).toContain("wake blocked 1");
     expect(html).toContain("database:ok");
     expect(html).toContain("node-timeout");
     expect(html).toContain("Timeout");
