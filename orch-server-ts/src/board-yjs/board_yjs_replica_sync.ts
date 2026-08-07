@@ -13,7 +13,8 @@ export async function syncBoardYjsReplicaWithSql(
   documentName: string,
 ): Promise<void> {
   await sql`SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)`;
-  const boardItemIds = replica.boardItems.map((item) => item.id);
+  const projectedReplica = await normalizeMissingSourceTaskItemReferences(sql, replica);
+  const boardItemIds = projectedReplica.boardItems.map((item) => item.id);
   if (boardItemIds.length === 0) {
     await sql`
       DELETE FROM board_items
@@ -28,7 +29,7 @@ export async function syncBoardYjsReplicaWithSql(
         AND id <> ALL(${sql.array(boardItemIds)})
     `;
   }
-  for (const item of replica.boardItems) {
+  for (const item of projectedReplica.boardItems) {
     await sql`
       INSERT INTO board_items (
         id, folder_id, container_kind, container_id, membership_kind,
@@ -53,7 +54,7 @@ export async function syncBoardYjsReplicaWithSql(
           updated_at = EXCLUDED.updated_at
     `;
   }
-  for (const document of replica.markdownDocuments) {
+  for (const document of projectedReplica.markdownDocuments) {
     await sql`
       INSERT INTO markdown_documents (id, title, body, version, updated_at)
       VALUES (${document.id}, ${document.title}, ${document.body}, ${document.version}, NOW())
@@ -69,8 +70,8 @@ export async function syncBoardYjsReplicaWithSql(
       folder_id, container_kind, container_id, board_items, markdown_documents, updated_at
     ) VALUES (
       ${scope.folderId}, ${scope.containerKind}, ${scope.containerId},
-      ${sql.json(replica.boardItems)}::jsonb,
-      ${sql.json(replica.markdownDocuments)}::jsonb,
+      ${sql.json(projectedReplica.boardItems)}::jsonb,
+      ${sql.json(projectedReplica.markdownDocuments)}::jsonb,
       NOW()
     )
     ON CONFLICT (container_kind, container_id) DO UPDATE
@@ -84,4 +85,38 @@ export async function syncBoardYjsReplicaWithSql(
     SET synced_at = COALESCE(synced_at, NOW())
     WHERE name = ${documentName}
   `;
+}
+
+async function normalizeMissingSourceTaskItemReferences(
+  sql: BoardYjsQuerySql,
+  replica: BoardYjsReplica,
+): Promise<BoardYjsReplica> {
+  const sourceTaskItemIds = [...new Set(replica.boardItems
+    .map((item) => item.sourceTaskItemId)
+    .filter((id): id is string => id !== null && id !== undefined))];
+  if (sourceTaskItemIds.length === 0) return replica;
+
+  const rows = await sql<readonly TaskItemIdRow[]>`
+    SELECT id
+    FROM task_items
+    WHERE id = ANY(${sql.array(sourceTaskItemIds)})
+    FOR KEY SHARE
+  `;
+  const existingIds = new Set(rows.map((row) => row.id));
+  let changed = false;
+  const boardItems = replica.boardItems.map((item) => {
+    const sourceTaskItemId = item.sourceTaskItemId;
+    if (sourceTaskItemId === null || sourceTaskItemId === undefined ||
+      existingIds.has(sourceTaskItemId)) {
+      return item;
+    }
+    changed = true;
+    return { ...item, sourceTaskItemId: null };
+  });
+
+  return changed ? { ...replica, boardItems } : replica;
+}
+
+interface TaskItemIdRow extends Record<string, unknown> {
+  id: string;
 }
