@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 115개 $defs (wire 55 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 116개 $defs (wire 55 + SSE event 61). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -248,6 +248,7 @@
             { "$ref": "#/$defs/SSEEventRunbookUpdatedLegacy" },
             { "$ref": "#/$defs/SSEEventCustomViewUpdated" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
+            { "$ref": "#/$defs/SSEEventContextManifest" },
             { "$ref": "#/$defs/SSEEventCompact" },
             { "$ref": "#/$defs/SSEEventReconnect" },
             { "$ref": "#/$defs/SSEEventHistorySync" },
@@ -2055,6 +2056,135 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "context_usage" } }
+    },
+    "SSEEventContextManifest": {
+      "type": "object",
+      "description": "SSE: 신규 세션의 컨텍스트 컴파일 명세와 관측 실적. token_estimate는 자수 기반 근사값이다.",
+      "required": [
+        "type",
+        "compiler_version",
+        "spec_hash",
+        "source_count",
+        "total_chars",
+        "total_token_estimate",
+        "sources"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "context_manifest" },
+        "compiler_version": { "type": "string" },
+        "spec_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "source_count": { "type": "integer", "minimum": 0 },
+        "total_chars": { "type": "integer", "minimum": 0 },
+        "total_token_estimate": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "주입된 총 자수를 4로 나눈 올림 근사값."
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "label",
+              "instance",
+              "node_id",
+              "mode",
+              "depth",
+              "titles_only",
+              "include_ids",
+              "chars",
+              "token_estimate",
+              "status",
+              "truncated",
+              "anchor_count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "instance": { "const": "atom" },
+              "node_id": { "type": "string" },
+              "mode": { "type": "string", "enum": ["full", "titles"] },
+              "depth": { "type": "integer", "minimum": 0 },
+              "titles_only": { "type": "boolean" },
+              "include_ids": { "type": "boolean" },
+              "limit": { "type": "integer", "minimum": 0 },
+              "chars": { "type": "integer", "minimum": 0 },
+              "token_estimate": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "소스 렌더 자수를 4로 나눈 올림 근사값."
+              },
+              "status": { "type": "string", "enum": ["ok", "empty", "error"] },
+              "truncated": { "type": "boolean" },
+              "anchor_count": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "page_context": {
+          "type": "object",
+          "required": ["truncation"],
+          "additionalProperties": false,
+          "properties": {
+            "truncation": {
+              "type": "object",
+              "required": ["categories", "total"],
+              "additionalProperties": false,
+              "properties": {
+                "categories": {
+                  "type": "object",
+                  "required": ["guidance", "atom_ref", "session_defaults"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "guidance": {
+                      "type": "object",
+                      "required": ["limit", "used", "omitted"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "limit": { "type": "integer", "minimum": 0 },
+                        "used": { "type": "integer", "minimum": 0 },
+                        "omitted": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "atom_ref": {
+                      "type": "object",
+                      "required": ["limit", "used", "omitted"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "limit": { "type": "integer", "minimum": 0 },
+                        "used": { "type": "integer", "minimum": 0 },
+                        "omitted": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "session_defaults": {
+                      "type": "object",
+                      "required": ["limit", "used", "omitted"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "limit": { "type": "integer", "minimum": 0 },
+                        "used": { "type": "integer", "minimum": 0 },
+                        "omitted": { "type": "integer", "minimum": 0 }
+                      }
+                    }
+                  }
+                },
+                "total": {
+                  "type": "object",
+                  "required": ["limit", "used", "omitted"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "limit": { "type": "integer", "minimum": 0 },
+                    "used": { "type": "integer", "minimum": 0 },
+                    "omitted": { "type": "integer", "minimum": 0 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "SSEEventCompact": {
       "type": "object",

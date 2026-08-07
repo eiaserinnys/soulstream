@@ -67,6 +67,7 @@ export type SSEEventType =
   | "custom_view_updated"
   // 대시보드 내부 이벤트
   | "context_usage"
+  | "context_manifest"
   | "compact"
   | "reconnect"
   // 사용자 입력 요청 이벤트
@@ -274,6 +275,43 @@ export interface ContextUsageEvent {
   used_tokens: number;
   max_tokens: number;
   percent: number;
+}
+
+export interface ContextManifestEvent {
+  type: "context_manifest";
+  compiler_version: string;
+  spec_hash: string;
+  source_count: number;
+  total_chars: number;
+  /** Character-based approximation, not a tokenizer-exact count. */
+  total_token_estimate: number;
+  sources: Array<{
+    id: string;
+    label: string;
+    instance: "atom";
+    node_id: string;
+    mode: "full" | "titles";
+    depth: number;
+    titles_only: boolean;
+    include_ids: boolean;
+    limit?: number;
+    chars: number;
+    /** Character-based approximation, not a tokenizer-exact count. */
+    token_estimate: number;
+    status: "ok" | "empty" | "error";
+    truncated: boolean;
+    anchor_count: number;
+  }>;
+  page_context?: {
+    truncation: {
+      categories: Record<"guidance" | "atom_ref" | "session_defaults", {
+        limit: number;
+        used: number;
+        omitted: number;
+      }>;
+      total: { limit: number; used: number; omitted: number };
+    };
+  };
 }
 
 export interface CompactEvent {
@@ -821,6 +859,7 @@ export type SoulSSEEvent =
   | CompleteEvent
   | ErrorEvent
   | ContextUsageEvent
+  | ContextManifestEvent
   | CompactEvent
   | AssistantErrorEvent
   | CredentialAlertEvent

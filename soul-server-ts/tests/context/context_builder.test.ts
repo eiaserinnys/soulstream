@@ -1057,6 +1057,38 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.combinedContextItems.map((item) => item.key)).not.toContain("page_context_sources");
   });
 
+  it("page context truncation accounting을 context manifest에 동봉", async () => {
+    const truncation = {
+      categories: {
+        guidance: { limit: 8_000, used: 42, omitted: 0 },
+        atom_ref: { limit: 52_000, used: 100, omitted: 1 },
+        session_defaults: { limit: 0, used: 0, omitted: 2 },
+      },
+      total: { limit: 60_000, used: 142, omitted: 1 },
+    };
+    const cb = makeBuilder({}, undefined, false, undefined, {
+      resolve: vi.fn().mockResolvedValue({
+        kind: "page-context",
+        contextItem: {
+          key: "page_context",
+          content: { items: [], metadata: { truncation } },
+        },
+        atomNodeIds: [],
+      }),
+    });
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    expect(ctx.contextManifest).toMatchObject({
+      source_count: 0,
+      total_chars: 0,
+      total_token_estimate: 0,
+      sources: [],
+      page_context: { truncation },
+    });
+    expect(ctx.contextManifest?.spec_hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it("session atom source marker를 컴파일하고 예약 마커는 모델 context에 노출하지 않음", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ markdown: "# 선택한 atom 컨텍스트" }), { status: 200 }),

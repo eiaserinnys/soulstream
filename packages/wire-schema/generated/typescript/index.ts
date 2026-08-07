@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 115개 $defs (wire 55 + SSE event 60). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 116개 $defs (wire 55 + SSE event 61). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -249,6 +249,7 @@ export interface SessionEventEnvelope {
     | SSEEventRunbookUpdatedLegacy
     | SSEEventCustomViewUpdated
     | SSEEventContextUsage
+    | SSEEventContextManifest
     | SSEEventCompact
     | SSEEventReconnect
     | SSEEventHistorySync
@@ -810,6 +811,66 @@ export interface SSEEventCustomViewUpdated {
  */
 export interface SSEEventContextUsage {
   type: "context_usage";
+  [k: string]: unknown;
+}
+/**
+ * SSE: 신규 세션의 컨텍스트 컴파일 명세와 관측 실적. token_estimate는 자수 기반 근사값이다.
+ */
+export interface SSEEventContextManifest {
+  type: "context_manifest";
+  compiler_version: string;
+  spec_hash: string;
+  source_count: number;
+  total_chars: number;
+  /**
+   * 주입된 총 자수를 4로 나눈 올림 근사값.
+   */
+  total_token_estimate: number;
+  sources: {
+    id: string;
+    label: string;
+    instance: "atom";
+    node_id: string;
+    mode: "full" | "titles";
+    depth: number;
+    titles_only: boolean;
+    include_ids: boolean;
+    limit?: number;
+    chars: number;
+    /**
+     * 소스 렌더 자수를 4로 나눈 올림 근사값.
+     */
+    token_estimate: number;
+    status: "ok" | "empty" | "error";
+    truncated: boolean;
+    anchor_count: number;
+  }[];
+  page_context?: {
+    truncation: {
+      categories: {
+        guidance: {
+          limit: number;
+          used: number;
+          omitted: number;
+        };
+        atom_ref: {
+          limit: number;
+          used: number;
+          omitted: number;
+        };
+        session_defaults: {
+          limit: number;
+          used: number;
+          omitted: number;
+        };
+      };
+      total: {
+        limit: number;
+        used: number;
+        omitted: number;
+      };
+    };
+  };
   [k: string]: unknown;
 }
 /**

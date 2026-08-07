@@ -95,11 +95,11 @@ ATTACHMENT_UPLOAD_CHUNK_SIZE = 1024 * 1024
 # Known SSE event types
 KNOWN_SSE_EVENT_TYPES = frozenset({
     "init", "reconnected",
-    "progress", "memory", "session", "intervention_sent", "user_message",
+    "progress", "memory", "session", "intervention_sent", "session_notification", "user_message",
     "assistant_message", "input_request", "input_request_expired",
     "input_request_responded", "debug", "complete", "error",
     "credential_alert", "session_ended", "thinking", "text_start", "text_delta", "text_end",
-    "tool_start", "tool_result", "result", "prompt_suggestion",
+    "tool_start", "tool_result", "result", "turn_summary", "prompt_suggestion",
     "agent_updated", "handoff_requested", "handoff_occurred",
     "tool_approval_requested", "tool_approval_resolved",
     "guardrail_tripwire",
@@ -119,8 +119,8 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "claude_runtime_mode_state",
     "claude_runtime_schedule_updated",
     "claude_runtime_schedule_deleted",
-    "task_updated",
+    "task_updated", "runbook_updated",
     "custom_view_updated",
-    "context_usage", "compact", "reconnect", "history_sync",
+    "context_usage", "context_manifest", "compact", "reconnect", "history_sync",
     "metadata_updated", "assistant_error", "away_summary",
 })

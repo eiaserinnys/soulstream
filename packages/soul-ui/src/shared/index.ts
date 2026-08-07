@@ -34,6 +34,7 @@ export type {
   CompleteEvent,
   ErrorEvent,
   ContextUsageEvent,
+  ContextManifestEvent,
   CompactEvent,
   ThinkingEvent,
   TextStartEvent,

@@ -77,6 +77,7 @@ export const SSE_EVENT_TYPES = [
   "runbook_updated",
   "custom_view_updated",
   "context_usage",
+  "context_manifest",
   "compact",
   "assistant_error",
   "credential_alert",
