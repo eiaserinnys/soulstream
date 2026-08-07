@@ -1,4 +1,6 @@
 import type { BoardYjsQuerySql } from "./board_yjs_sql.js";
+import { normalizeMissingSourceTaskItemReferences } from
+  "./board_yjs_replica_normalization.js";
 import type {
   BoardYjsContainerScope,
   BoardYjsReplica,
@@ -13,7 +15,11 @@ export async function syncBoardYjsReplicaWithSql(
   documentName: string,
 ): Promise<void> {
   await sql`SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)`;
-  const projectedReplica = await normalizeMissingSourceTaskItemReferences(sql, replica);
+  const existingSourceTaskItemIds = await loadExistingSourceTaskItemIds(sql, replica);
+  const projectedReplica = normalizeMissingSourceTaskItemReferences(
+    replica,
+    existingSourceTaskItemIds,
+  );
   const boardItemIds = projectedReplica.boardItems.map((item) => item.id);
   if (boardItemIds.length === 0) {
     await sql`
@@ -87,14 +93,14 @@ export async function syncBoardYjsReplicaWithSql(
   `;
 }
 
-async function normalizeMissingSourceTaskItemReferences(
+async function loadExistingSourceTaskItemIds(
   sql: BoardYjsQuerySql,
   replica: BoardYjsReplica,
-): Promise<BoardYjsReplica> {
+): Promise<ReadonlySet<string>> {
   const sourceTaskItemIds = [...new Set(replica.boardItems
     .map((item) => item.sourceTaskItemId)
     .filter((id): id is string => id !== null && id !== undefined))];
-  if (sourceTaskItemIds.length === 0) return replica;
+  if (sourceTaskItemIds.length === 0) return new Set();
 
   const rows = await sql<readonly TaskItemIdRow[]>`
     SELECT id
@@ -102,19 +108,7 @@ async function normalizeMissingSourceTaskItemReferences(
     WHERE id = ANY(${sql.array(sourceTaskItemIds)})
     FOR KEY SHARE
   `;
-  const existingIds = new Set(rows.map((row) => row.id));
-  let changed = false;
-  const boardItems = replica.boardItems.map((item) => {
-    const sourceTaskItemId = item.sourceTaskItemId;
-    if (sourceTaskItemId === null || sourceTaskItemId === undefined ||
-      existingIds.has(sourceTaskItemId)) {
-      return item;
-    }
-    changed = true;
-    return { ...item, sourceTaskItemId: null };
-  });
-
-  return changed ? { ...replica, boardItems } : replica;
+  return new Set(rows.map((row) => row.id));
 }
 
 interface TaskItemIdRow extends Record<string, unknown> {

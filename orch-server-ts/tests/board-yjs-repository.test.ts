@@ -3,6 +3,10 @@ import * as Y from "yjs";
 
 import { createBoardYDocSnapshot, readBoardYDocReplica } from "../src/board-yjs/board_yjs_model.js";
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
+import { assertBoardItemProjectionParity } from
+  "../src/board-yjs/board_yjs_projection_verification.js";
+import { normalizeMissingSourceTaskItemReferences } from
+  "../src/board-yjs/board_yjs_replica_normalization.js";
 import { computeBoardYjsRawRevision } from
   "../src/board-yjs/board_yjs_raw_document.js";
 import {
@@ -227,7 +231,7 @@ describe("orch BoardYjsRepository", () => {
     expect(jsonValues.every((value) => typeof value !== "string")).toBe(true);
   });
 
-  it("lets task board writes proceed when an existing Y.Doc item has dangling task provenance", async () => {
+  it("normalizes deleted task item references identically for sync and verification", async () => {
     const danglingSourceTaskItemId = "missing-task-item";
     const existingSourceTaskItemId = "existing-task-item";
     const { sql, calls, jsonValues } = createMockSql((call) => {
@@ -289,7 +293,6 @@ describe("orch BoardYjsRepository", () => {
         containerKind: "task" as const,
         containerId: "task-1",
         membershipKind: "primary" as const,
-        sourceTaskItemId: null,
         itemType: "markdown" as const,
         itemId: "moved",
         x: 40,
@@ -339,6 +342,15 @@ describe("orch BoardYjsRepository", () => {
       expect.objectContaining({ id: "markdown:created" }),
       expect.objectContaining({ id: "markdown:moved" }),
     ]);
+    const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
+      replica,
+      new Set([existingSourceTaskItemId]),
+    );
+    expect(() => assertBoardItemProjectionParity({
+      label: "board:task:task-1",
+      ydocItems: normalizedYdocReplica.boardItems,
+      projectionItems: cachedBoardItems,
+    })).not.toThrow();
   });
 
   it("does not let a never-synced empty Y.Doc erase relational board_items", async () => {
