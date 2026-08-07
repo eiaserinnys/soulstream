@@ -13,6 +13,8 @@ import {
   requireBoardItemCatalogProjection,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
+import { normalizeMissingSourceTaskItemReferences } from
+  "../src/board-yjs/board_yjs_replica_normalization.js";
 import { inspectBoardYjsRunbookResidue } from
   "../src/board-yjs/board_yjs_runbook_residue.js";
 import type { CatalogBoardItemRow } from "../src/board-yjs/board_yjs_types.js";
@@ -54,6 +56,9 @@ try {
       FROM board_yjs_catalog_cache
       ORDER BY container_kind, container_id
     `;
+    const sourceTaskItems = await transaction<readonly { id: string }[]>`
+      SELECT id FROM task_items ORDER BY id
+    `;
     const projections = await transaction<Array<{
       tasks: number;
       tasks_without_page: number;
@@ -81,7 +86,13 @@ try {
             OR board_items::text LIKE '%"source_runbook_item_id"%')
           AS catalog_legacy_source_keys
     `;
-    return { documents, updates, catalog, projections: projections[0] };
+    return {
+      documents,
+      updates,
+      catalog,
+      sourceTaskItems,
+      projections: projections[0],
+    };
   });
 
   const updatesByDocument = new Map<string, Uint8Array[]>();
@@ -99,6 +110,9 @@ try {
     `${row.container_kind}:${row.container_id}`,
     row,
   ]));
+  const existingSourceTaskItemIds = new Set(
+    inventory.sourceTaskItems.map((row) => row.id),
+  );
   let boardItemsCompared = 0;
   let emptyDocumentsWithoutCatalog = 0;
   for (const row of inventory.documents) {
@@ -125,17 +139,21 @@ try {
       emptyDocumentsWithoutCatalog += 1;
       continue;
     }
-    const replicaItems = readBoardYDocReplica({
+    const ydocReplica = readBoardYDocReplica({
       folderId: cache.folder_id,
       containerKind: container.containerKind,
       containerId: container.containerId,
-    }, doc).boardItems;
+    }, doc);
+    const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
+      ydocReplica,
+      existingSourceTaskItemIds,
+    );
     assertBoardItemProjectionParity({
       label: row.name,
-      ydocItems: replicaItems,
+      ydocItems: normalizedYdocReplica.boardItems,
       projectionItems: cache.board_items,
     });
-    boardItemsCompared += replicaItems.length;
+    boardItemsCompared += ydocReplica.boardItems.length;
   }
 
   const committedAllowlist = JSON.parse(await readFile(
