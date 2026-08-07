@@ -20,6 +20,7 @@ import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
+import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 
 export interface OrchProxyConfig {
   /** http[s]://host[:port] base. ws→http 변환 후. */
@@ -40,6 +41,7 @@ export interface McpRuntime {
     "recordObserved" | "recordObservedBatch"
   >;
   agentRegistry: AgentRegistry;
+  agentProfileSource?: NewSessionAgentProfileSource;
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;

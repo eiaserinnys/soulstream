@@ -129,7 +129,7 @@ export class DeliveryCommands {
       );
       return;
     }
-    const agent = this.deps.agentRegistry.get(task.profileId);
+    const agent = task.agentProfileSnapshot ?? this.deps.agentRegistry.get(task.profileId);
     if (!agent) {
       this.deps.logger.error(
         { sessionId: task.agentSessionId, profileId: task.profileId },

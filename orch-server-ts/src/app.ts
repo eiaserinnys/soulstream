@@ -71,6 +71,10 @@ import {
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
 import {
+  registerAgentProfileRoutes,
+  type AgentProfileRouteOptions,
+} from "./node/agent_profile_routes.js";
+import {
   registerFolderRoutes,
   type FolderRouteOptions,
 } from "./folders/folder_routes.js";
@@ -163,6 +167,7 @@ export type CreateAppOptions = {
   folderRoutes?: FolderRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
+  agentProfileRoutes?: AgentProfileRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
@@ -220,6 +225,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeAgentProfileRoutes !== undefined) {
     registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
+  }
+  if (options.agentProfileRoutes !== undefined) {
+    registerAgentProfileRoutes(app, options.agentProfileRoutes);
   }
   if (options.nodeWsRoute !== undefined) {
     registerNodeWsRoute(app, options.nodeWsRoute, {

@@ -24,6 +24,7 @@ import type {
   ReasoningEffort,
 } from "../engine/protocol.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
+import type { AgentProfile } from "../agent_registry.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
@@ -234,6 +235,10 @@ export interface Task {
 
   /** Agent registry 프로필 id (sessions.agent_id 컬럼). */
   profileId?: string;
+  /** Runtime-only profile selected when this session was created. */
+  agentProfileSnapshot?: AgentProfile;
+  /** Runtime-only portrait availability paired with agentProfileSnapshot. */
+  agentProfileHasDbPortrait?: boolean;
 
   /** 외부 호출자 식별자. LLM proxy에서 `translate`, `recall` 등으로 사용. */
   clientId?: string | null;

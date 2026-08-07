@@ -155,6 +155,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     ephemeralLlmRoutes: createInertProvider(),
     folderRoutes: createInertProvider(),
     markdownDocumentRoutes: createInertProvider(),
+    agentProfileRoutes: createInertProvider(),
     nodeAgentProfileRoutes: createInertProvider(),
     nodeClaudeAuthRoutes: createInertProvider(),
     publicStatusRoutes: createInertProvider(),

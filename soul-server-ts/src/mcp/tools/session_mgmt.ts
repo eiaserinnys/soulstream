@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { AgentProfile } from "../../agent_registry.js";
+import type { AgentProfileResolution } from "../../agent_profile_source.js";
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 import { UnknownModelPresetError } from "../../model_catalog.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
@@ -32,8 +34,16 @@ export function registerSessionMgmtTools(
       inputSchema: {},
     },
     async () => {
+      const profileSource = runtime.agentProfileSource;
+      const resolved = profileSource
+        ? await profileSource.list()
+        : runtime.agentRegistry.list().map((profile) => ({
+            profile,
+            source: "yaml" as const,
+            stale: false,
+          }));
       return jsonResult({
-        agents: runtime.agentRegistry.list().map((p) => ({
+        agents: resolved.map(({ profile: p, source, stale }) => ({
           id: p.id,
           name: p.name,
           backend: p.backend,
@@ -41,6 +51,7 @@ export function registerSessionMgmtTools(
           ...(p.default_preset
             ? { default_preset: p.default_preset }
             : {}),
+          ...(profileSource ? { source, stale } : {}),
         })),
       });
     },
@@ -64,18 +75,25 @@ export function registerSessionMgmtTools(
       },
     },
     async ({ agent_id, model_preset, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_task_item_id }) => {
-      // agent_id가 미지정이면 첫 번째 등록 agent를 default로.
-      const agents = runtime.agentRegistry.list();
-      if (agents.length === 0) {
-        return errorResult("등록된 agent가 없습니다");
+      let agentResolution: AgentProfileResolution | undefined;
+      let agent: AgentProfile | undefined;
+      let resolvedAgentId: string;
+      if (runtime.agentProfileSource) {
+        if (agent_id !== undefined) {
+          resolvedAgentId = agent_id;
+          agentResolution = await runtime.agentProfileSource.resolve(agent_id);
+        } else {
+          agentResolution = (await runtime.agentProfileSource.list())[0];
+          if (!agentResolution) return errorResult("등록된 agent가 없습니다");
+          resolvedAgentId = agentResolution.profile.id;
+        }
+        agent = agentResolution?.profile;
+      } else {
+        const firstAgent = runtime.agentRegistry.list()[0];
+        if (!firstAgent) return errorResult("등록된 agent가 없습니다");
+        resolvedAgentId = agent_id ?? firstAgent.id;
+        agent = runtime.agentRegistry.get(resolvedAgentId);
       }
-      const firstAgent = agents[0];
-      // 위 length 가드 후이지만 TS strict의 array index undefined 추론을 닫기 위해 명시 확인.
-      if (!firstAgent) {
-        return errorResult("등록된 agent가 없습니다");
-      }
-      const resolvedAgentId = agent_id ?? firstAgent.id;
-      const agent = runtime.agentRegistry.get(resolvedAgentId);
       if (!agent) {
         return errorResult(`agent_id를 찾을 수 없습니다: ${resolvedAgentId}`);
       }
@@ -93,8 +111,14 @@ export function registerSessionMgmtTools(
         const task = await runtime.taskManager.createTask({
           agentSessionId: sessionId,
           prompt,
-          profileId: resolvedAgentId,
-          modelPreset: model_preset,
+          profileId: agent.id,
+          ...(agentResolution
+            ? {
+                agentProfileSnapshot: agent,
+                agentProfileHasDbPortrait: agentResolution.portraitSource === "db",
+              }
+            : {}),
+          modelPreset: model_preset ?? agent.default_preset,
           callerSessionId: resolveStructuralCallerSessionId(
             attribution.callerSessionId,
             notify_completion,
@@ -147,7 +171,7 @@ export function registerSessionMgmtTools(
           // L153-161 (auto_resumed 분기 후 start_execution 호출) 정합.
           onResume: (task) => {
             if (!task.profileId) return;
-            const agent = runtime.agentRegistry.get(task.profileId);
+            const agent = task.agentProfileSnapshot ?? runtime.agentRegistry.get(task.profileId);
             if (!agent) return;
             runtime.taskExecutor.startExecution(task, agent);
           },

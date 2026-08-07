@@ -77,4 +77,41 @@ describe("serializeSessionRow predecessor contract", () => {
       backend: "codex",
     });
   });
+
+  it("uses DB identity fields and aliases while retaining YAML execution fields", () => {
+    const registry = new InMemoryNodeRegistry();
+    registry.registerNode({
+      type: "node_register",
+      node_id: "node-a",
+      agents: [{
+        id: "agent-a",
+        name: "YAML Agent",
+        backend: "codex",
+        aliases: ["yaml-alias"],
+      }],
+      supported_backends: ["codex"],
+    });
+
+    expect(serializeSessionRow({
+      session_id: "sess-db",
+      node_id: "node-a",
+      agent_id: "db-alias",
+      created_at: new Date("2026-08-07T00:00:00.000Z"),
+      updated_at: new Date("2026-08-07T00:00:00.000Z"),
+    }, {
+      registry,
+      agentProfiles: [{
+        agentId: "agent-a",
+        name: "DB Agent",
+        defaultPreset: null,
+        aliases: ["db-alias"],
+        hasPortrait: true,
+      }],
+    })).toMatchObject({
+      agentId: "agent-a",
+      agentName: "DB Agent",
+      agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
+      backend: "codex",
+    });
+  });
 });

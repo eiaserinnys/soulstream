@@ -96,7 +96,7 @@ describe.sequential("versioned migration runner", () => {
             WHERE migration_id = '042_runbook_to_task.sql') AS migration_042_kind
       `;
       expect(rows[0]).toMatchObject({
-        migration_count: 56,
+        migration_count: 57,
         operation_count: 1,
         applied_kind_count: 2,
         applied_kind: "bootstrap",
@@ -109,7 +109,7 @@ describe.sequential("versioned migration runner", () => {
       const afterRetry = await sql`
         SELECT COUNT(*)::int AS count FROM schema_migrations
       `;
-      expect(afterRetry[0].count).toBe(56);
+      expect(afterRetry[0].count).toBe(57);
     } finally {
       await sql.end({ timeout: 5 });
     }

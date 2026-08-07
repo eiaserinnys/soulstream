@@ -81,6 +81,7 @@ export class AutoResumeTransition {
     if (!task.profileId) {
       throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
     }
+    if (task.agentProfileSnapshot) return;
     if (!this.deps.agentRegistry.get(task.profileId)) {
       throw new Error(
         `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,

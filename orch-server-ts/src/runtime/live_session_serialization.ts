@@ -1,9 +1,13 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
-import { findRegisteredAgentProfile } from "../node/agent_profile_lookup.js";
+import {
+  findRegisteredAgentProfile,
+  type AgentProfileIdentityOverlay,
+} from "../node/agent_profile_lookup.js";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 
 export type SessionSerializationOptions = {
   readonly registry?: InMemoryNodeRegistry;
+  readonly agentProfiles?: readonly AgentProfileIdentityOverlay[];
 };
 
 const IDENTITY_BEARING_SOURCES = new Set([
@@ -69,7 +73,7 @@ export function serializeSessionRow(
     ),
   };
 
-  enrichAgent(payload, options.registry);
+  enrichAgent(payload, options.registry, options.agentProfiles ?? []);
   enrichModelPreset(payload, options.registry);
   const callerInfo = extractCallerInfo(row.metadata);
   if (callerInfo !== null) {
@@ -167,13 +171,19 @@ export function iso(value: unknown): string | null {
 function enrichAgent(
   payload: Record<string, unknown>,
   registry: InMemoryNodeRegistry | undefined,
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
 ): void {
   const agentId = payload.agentId;
   if (typeof agentId !== "string" || agentId.length === 0 || registry === undefined) {
     return;
   }
   const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : undefined;
-  const profile = findRegisteredAgentProfile(registry, agentId, nodeId);
+  const profile = findRegisteredAgentProfile(
+    registry,
+    agentId,
+    nodeId,
+    agentProfiles,
+  );
   if (profile === undefined) return;
   payload.agentId = profile.id;
   if (typeof profile.agent.name === "string" && profile.agent.name.length > 0) {

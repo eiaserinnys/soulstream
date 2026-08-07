@@ -3,6 +3,12 @@ import type { McpRuntime } from "../runtime.js";
 import type { ProbeStatus, ReflectionError } from "./types.js";
 
 export interface RuntimeReflectionData extends Record<string, unknown> {
+  agent_profiles: {
+    stale: boolean;
+    checked_at: string | null;
+    last_error: string | null;
+    source_counts: { db: number; yaml: number };
+  };
   process: {
     pid: number;
     cwd: string;
@@ -51,6 +57,7 @@ export async function buildRuntimeReflection(
     ...probeError("orchestrator", orchestrator),
   ];
   return {
+    agent_profiles: profileSourceState(runtime),
     process: {
       pid: process.pid,
       cwd: process.cwd(),
@@ -76,6 +83,23 @@ export async function buildRuntimeReflection(
     },
     errors,
   };
+}
+
+function profileSourceState(runtime: McpRuntime): RuntimeReflectionData["agent_profiles"] {
+  const state = runtime.agentProfileSource?.state();
+  return state
+    ? {
+        stale: state.stale,
+        checked_at: state.checkedAt,
+        last_error: state.lastError,
+        source_counts: state.counts,
+      }
+    : {
+        stale: false,
+        checked_at: null,
+        last_error: null,
+        source_counts: { db: 0, yaml: runtime.agentRegistry.list().length },
+      };
 }
 
 function workerDatabaseBoundary(): RuntimeReflectionData["dependencies"]["database"] {

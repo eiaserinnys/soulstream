@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
+import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { CatalogService } from "../catalog/catalog_service.js";
@@ -74,12 +75,14 @@ export interface WorkerCompositionParams {
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   modelCatalog?: ModelCatalog;
+  agentProfileSource?: NewSessionAgentProfileSource;
 }
 export interface WorkerComposition extends TaskRuntimeComposition {
   db: SessionDB;
   server: ServerInstance;
   taskManager: TaskManager;
   agentRegistry: AgentRegistry;
+  agentProfileSource?: NewSessionAgentProfileSource;
   attachmentStore: FileAttachmentStore;
   claudeAuth: ClaudeAuthService;
   realtimeBroker: RealtimeBroker;
@@ -99,7 +102,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
-  const { env, logger, agentRegistry, mcpConfigService, codexCliPath } = params;
+  const { env, logger, agentRegistry, mcpConfigService, codexCliPath, agentProfileSource } = params;
   const modelCatalog =
     params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger);
   let upstreamAdapter: UpstreamAdapter | null = null;
@@ -366,6 +369,7 @@ export async function composeWorkerRuntime(
       ? { childCompletionConsumption: claudeRuntime.childCompletionConsumption }
       : {}),
     agentRegistry,
+    ...(agentProfileSource ? { agentProfileSource } : {}),
     agentConfigService,
     mcpConfigService,
     catalogService,
@@ -440,6 +444,7 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump,
+        ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );
     return upstreamAdapter;
@@ -451,6 +456,7 @@ export async function composeWorkerRuntime(
     server,
     taskManager,
     agentRegistry,
+    ...(agentProfileSource ? { agentProfileSource } : {}),
     attachmentStore,
     claudeAuth,
     realtimeBroker,

@@ -118,6 +118,12 @@ export function buildCallerInfoFromCallerSession(deps: {
     getTask(sessionId: string): {
       profileId?: string | null;
       callerInfo?: CallerInfo | null;
+      agentProfileSnapshot?: {
+        id?: string | null;
+        name?: string | null;
+        portrait_path?: string | null;
+      };
+      agentProfileHasDbPortrait?: boolean;
     } | undefined;
   };
   agentRegistry: {
@@ -129,14 +135,16 @@ export function buildCallerInfoFromCallerSession(deps: {
   };
 }, callerSessionId: string): AgentCallerInfo {
   const callerTask = deps.taskManager.getTask(callerSessionId);
-  const callerProfile = callerTask?.profileId
+  const callerProfile = callerTask?.agentProfileSnapshot ?? (callerTask?.profileId
     ? deps.agentRegistry.get(callerTask.profileId)
-    : undefined;
+    : undefined);
   return buildAgentCallerInfo({
     agentNode: deps.nodeId,
     agentId: callerProfile?.id ?? callerTask?.profileId ?? null,
     agentName: callerProfile?.name ?? null,
-    portraitPath: callerProfile?.portrait_path ?? null,
+    portraitPath: callerTask?.agentProfileHasDbPortrait
+      ? `/api/agents/${callerProfile?.id ?? callerTask.profileId}/portrait`
+      : callerProfile?.portrait_path ?? null,
     email: extractEmail(callerTask?.callerInfo),
   });
 }

@@ -129,7 +129,7 @@ describe("apply-schema.mjs", () => {
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 56,
+        migration_count: 57,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -557,6 +557,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 56,
             applied_kind: "migration",
           },
+          {
+            migration_id: "056_agent_profiles.sql",
+            ordinal: 57,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -586,7 +591,7 @@ describe("apply-schema.mjs", () => {
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":56');
+        expect(verified.stdout).toContain('"ledger_count":57');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });

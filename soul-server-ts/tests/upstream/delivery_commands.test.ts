@@ -9,6 +9,7 @@ import {
   DeliveryCommandError,
   DeliveryCommands,
 } from "../../src/upstream/delivery_commands.js";
+import { resolveTaskBackend } from "../../src/task/task_live_delivery_result.js";
 
 const logger = pino({ level: "silent" });
 
@@ -153,9 +154,11 @@ describe("DeliveryCommands.respond", () => {
 
 describe("DeliveryCommands.toolApproval", () => {
   it("forwards approval options, starts resumed task, and returns tool_approval_ack", async () => {
+    const sessionAgent = { ...openaiAgent, name: "DB Session Agent" };
     const resumedTask = makeTask({
       agentSessionId: "sess-agents",
       profileId: openaiAgent.id,
+      agentProfileSnapshot: sessionAgent,
     });
     const deliverToolApproval = vi.fn(async (_params, onResume) => {
       onResume(resumedTask);
@@ -191,7 +194,7 @@ describe("DeliveryCommands.toolApproval", () => {
     );
     expect(taskExecutor.startExecution).toHaveBeenCalledWith(
       resumedTask,
-      openaiAgent,
+      sessionAgent,
     );
     expect(ack).toEqual({
       type: "tool_approval_ack",
@@ -216,5 +219,16 @@ describe("DeliveryCommands.toolApproval", () => {
       }),
     ).rejects.toBeInstanceOf(DeliveryCommandError);
     expect(deliverToolApproval).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveTaskBackend", () => {
+  it("uses the session profile snapshot before the mutable registry", () => {
+    const task = makeTask({
+      agentProfileSnapshot: { ...openaiAgent, backend: "codex" },
+    });
+    expect(resolveTaskBackend(task, {
+      get: () => openaiAgent,
+    })).toBe("codex");
   });
 });

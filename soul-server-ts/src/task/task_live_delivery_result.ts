@@ -132,6 +132,7 @@ export function resolveTaskBackend(
   agentRegistry?: AgentBackendLookup,
 ): BackendId | string | undefined {
   if (task.engine?.backendId) return task.engine.backendId;
+  if (task.agentProfileSnapshot) return task.agentProfileSnapshot.backend;
   if (task.profileId && agentRegistry) {
     return agentRegistry.get(task.profileId)?.backend;
   }

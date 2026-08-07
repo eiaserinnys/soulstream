@@ -295,6 +295,47 @@ describe("agent profile backend boundary", () => {
     expect(result.structuredContent).not.toHaveProperty("agents.0.aliases");
   });
 
+  it("list_local_agents는 DB/YAML 출처와 stale 상태를 함께 노출", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent],
+    );
+    runtime.agentProfileSource = {
+      list: vi.fn(async () => [{
+        profile: codexAgent,
+        source: "db" as const,
+        stale: true,
+        hasPortrait: false,
+        portraitSource: "none" as const,
+      }]),
+      resolve: vi.fn(),
+      state: vi.fn(() => ({
+        stale: true,
+        checkedAt: "2026-08-07T00:00:00.000Z",
+        lastError: "orch down",
+        counts: { db: 1, yaml: 0 },
+      })),
+    };
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "list_local_agents",
+      arguments: {},
+    });
+
+    expect(result.structuredContent).toEqual({
+      agents: [{
+        id: "codex-default",
+        name: "로젤린",
+        backend: "codex",
+        max_turns: null,
+        source: "db",
+        stale: true,
+      }],
+    });
+  });
+
   it("create_agent_session은 선택한 backend profile을 executor에 그대로 전달", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -324,6 +365,46 @@ describe("agent profile backend boundary", () => {
       expect.objectContaining({ agentSessionId: expect.any(String) }),
       claudeAgent,
     );
+  });
+
+  it("create_agent_session은 명시 profile을 프로필 소스에서 한 번만 조회한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent],
+    );
+    const list = vi.fn();
+    const resolve = vi.fn(async () => ({
+      profile: codexAgent,
+      source: "db" as const,
+      stale: false,
+      hasPortrait: false,
+      portraitSource: "none" as const,
+    }));
+    runtime.agentProfileSource = {
+      list,
+      resolve,
+      state: vi.fn(() => ({
+        stale: false,
+        checkedAt: "2026-08-07T00:00:00.000Z",
+        lastError: null,
+        counts: { db: 1, yaml: 0 },
+      })),
+    };
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "hi",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith("codex-default");
+    expect(list).not.toHaveBeenCalled();
   });
 
   it("create_agent_session은 잘못된 preset에 조회 도구와 현재 node 힌트를 제공", async () => {

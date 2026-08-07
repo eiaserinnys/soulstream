@@ -33,6 +33,7 @@ export type ValidateLiveProviderFactoryInventoryAlignmentInput = {
 
 export const liveFactoryImplementedProviderPaths = [
   { owner: "admin.users", path: "adminUsersRoutes.provider" },
+  { owner: "agent.profiles", path: "agentProfileRoutes.repository" },
   { owner: "atom", path: "atomRoutes.configProvider" },
   { owner: "atom", path: "atomRoutes.httpClient" },
   { owner: "attachments", path: "attachmentRoutes.accessProvider" },

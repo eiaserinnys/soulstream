@@ -194,6 +194,7 @@ export async function createLiveProductionApplication(
     registry,
     eventIngress: eventIngressRepository,
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
+    agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,
     loadSessionSnapshot: async () => dbCatalogRepository.loadSessionSnapshot(),
@@ -231,7 +232,12 @@ export async function createLiveProductionApplication(
       browserReads: pageRepository,
       plannerReads: plannerRepository,
       resolveAgentId: (nodeId, agentId) =>
-        resolveRegisteredAgentId(registry, nodeId, agentId),
+        resolveRegisteredAgentId(
+          registry,
+          nodeId,
+          agentId,
+          dbCatalogRepository.agentProfileRepository.snapshot(),
+        ),
       resolveBrowserUser: async (request) =>
         await providers.authenticatedUserResolvers.resolveUser(request),
       createService: (logger) => pageYjsService ??= new PageYjsService({
@@ -280,7 +286,12 @@ export async function createLiveProductionApplication(
       await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
     },
     resolveAgentId: (nodeId, agentId) =>
-      resolveRegisteredAgentId(registry, nodeId, agentId),
+      resolveRegisteredAgentId(
+        registry,
+        nodeId,
+        agentId,
+        dbCatalogRepository.agentProfileRepository.snapshot(),
+      ),
     onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
   });
   const dependencies: LiveProviderDependencies = {
@@ -359,6 +370,7 @@ export async function createLiveProductionApplication(
       fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
     sqlResolver,
     registry,
+    agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
     eventHub: runtimeServices.sessionEventHub,
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     logger: app.log,
@@ -385,6 +397,7 @@ export async function createLiveProductionApplication(
   return {
     app,
     startBackground: async () => {
+      await dbCatalogRepository.agentProfileRepository.list();
       startStableSessionOrderIndexMaintenance(
         stableSessionOrderIndexMaintenance,
         app.log,
@@ -464,6 +477,7 @@ export function buildProductionRouteOptions(
       hostProxy: providers.runtime.boardYjsHostProxyRoutes,
     },
     nodeAgentProfileRoutes: providers.nodeAgentProfileRoutes,
+    agentProfileRoutes: providers.agentProfileRoutes,
     nodeClaudeAuthRoutes: {
       ...providers.nodeClaudeAuthRoutes,
       registry: runtime.registry,
