@@ -134,15 +134,27 @@ export function prioritizeAtomContextSpecs(args: {
   folder: AtomContextSpec[];
   agent: AtomContextSpec[];
 }): PrioritizedAtomContextSpecs {
-  const seen = new Set<string>();
+  const seenSpecs = new Set<string>();
+  const blockedNodeIds = new Set<string>();
   const take = (specs: AtomContextSpec[]): AtomContextSpec[] => specs.filter((spec) => {
-    if (seen.has(spec.nodeId)) return false;
-    seen.add(spec.nodeId);
+    const key = atomContextSpecKey(spec);
+    if (blockedNodeIds.has(spec.nodeId) || seenSpecs.has(key)) return false;
+    seenSpecs.add(key);
     return true;
   });
   const session = take(args.session);
-  for (const nodeId of args.pageNodeIds) seen.add(nodeId);
+  for (const nodeId of args.pageNodeIds) blockedNodeIds.add(nodeId);
   return { session, folder: take(args.folder), agent: take(args.agent) };
+}
+
+function atomContextSpecKey(spec: AtomContextSpec): string {
+  return JSON.stringify([
+    spec.nodeId,
+    spec.depth,
+    spec.titlesOnly,
+    spec.includeIds ?? null,
+    spec.limit ?? null,
+  ]);
 }
 
 export function normalizeSettings(settings: unknown): Record<string, unknown> {
