@@ -60,15 +60,10 @@ function createMockSql(resultFor?: (call: SqlCall) => readonly Record<string, un
 }
 
 describe("orch BoardYjsRepository", () => {
-  it("loads a legacy document by its exact raw name with pending updates", async () => {
+  it("loads a legacy document by its exact raw name from the snapshot only", async () => {
     const snapshot = Buffer.from([1, 2, 3]);
-    const first = Buffer.from([4]);
-    const second = Buffer.from([5]);
     const { sql, calls } = createMockSql((call) => {
       if (call.query.includes("FROM board_yjs_documents")) return [{ snapshot }];
-      if (call.query.includes("FROM board_yjs_updates")) {
-        return [{ update: first }, { update: second }];
-      }
       return [];
     });
     const repository = new BoardYjsRepository({
@@ -80,23 +75,18 @@ describe("orch BoardYjsRepository", () => {
 
     expect(state).toEqual({
       snapshot: new Uint8Array(snapshot),
-      updates: [new Uint8Array(first), new Uint8Array(second)],
-      revision: computeBoardYjsRawRevision(
-        new Uint8Array(snapshot),
-        [new Uint8Array(first), new Uint8Array(second)],
-      ),
+      revision: computeBoardYjsRawRevision(new Uint8Array(snapshot)),
     });
     expect(calls[0]?.query).toContain("REPEATABLE READ, READ ONLY");
     expect(calls.slice(1).every((call) => call.inTransaction)).toBe(true);
     expect(calls[1]?.values).toEqual(["board:runbook:task-a"]);
-    expect(calls[2]?.values).toEqual(["board:runbook:task-a"]);
+    expect(calls).toHaveLength(2);
   });
 
   it("rechecks a locked source revision before atomically writing and retiring it", async () => {
     const sourceSnapshot = Buffer.from([1, 2, 3]);
     const expectedRevision = computeBoardYjsRawRevision(
       new Uint8Array(sourceSnapshot),
-      [],
     );
     const { sql, calls } = createMockSql((call) => {
       if (call.query.includes("SELECT snapshot") &&
@@ -153,11 +143,9 @@ describe("orch BoardYjsRepository", () => {
       canonicalDocumentName: "board:task:task-a",
       expectedSourceRevision: computeBoardYjsRawRevision(
         new Uint8Array(sourceSnapshot),
-        [],
       ),
       expectedCanonicalRevision: computeBoardYjsRawRevision(
         new Uint8Array(canonicalSnapshot),
-        [],
       ),
       canonicalSnapshot: new Uint8Array([9]),
       scope: { folderId: "folder-1", containerKind: "task", containerId: "task-a" },

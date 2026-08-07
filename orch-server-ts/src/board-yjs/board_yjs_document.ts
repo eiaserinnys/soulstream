@@ -165,14 +165,10 @@ export function readBoardYDocSnapshot(params: {
   containerKind?: BoardContainerKind;
   containerId?: string;
   snapshot?: Uint8Array | null;
-  updates?: readonly Uint8Array[];
 }): { replica: BoardYjsReplica; snapshot: Uint8Array } {
   const scope = scopeFromSnapshotParams(params);
   const doc = new Y.Doc();
   if (params.snapshot && params.snapshot.byteLength > 0) Y.applyUpdate(doc, params.snapshot);
-  for (const update of params.updates ?? []) {
-    if (update.byteLength > 0) Y.applyUpdate(doc, update);
-  }
   return { replica: readBoardYDocReplica(scope, doc), snapshot: Y.encodeStateAsUpdate(doc) };
 }
 

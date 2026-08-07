@@ -35,11 +35,6 @@ interface DocumentRow {
   snapshot: Buffer | Uint8Array;
 }
 
-interface UpdateRow {
-  document_name: string;
-  update: Buffer | Uint8Array;
-}
-
 interface CatalogRow {
   folder_id: string;
   container_kind: "folder" | "task";
@@ -56,11 +51,6 @@ try {
       SELECT name, snapshot FROM board_yjs_documents
       WHERE name LIKE 'board:%' OR name LIKE 'board-folder:%'
       ORDER BY name
-    `;
-    const updates = await transaction<UpdateRow[]>`
-      SELECT document_name, update FROM board_yjs_updates
-      WHERE document_name LIKE 'board:%' OR document_name LIKE 'board-folder:%'
-      ORDER BY document_name, id
     `;
     const catalog = await transaction<CatalogRow[]>`
       SELECT folder_id, container_kind, container_id, board_items
@@ -106,20 +96,12 @@ try {
     `;
     return {
       documents,
-      updates,
       catalog,
       sourceTaskItems,
       boardItems,
       projections: projections[0],
     };
   });
-
-  const updatesByDocument = new Map<string, Uint8Array[]>();
-  for (const row of inventory.updates) {
-    const values = updatesByDocument.get(row.document_name) ?? [];
-    values.push(new Uint8Array(row.update));
-    updatesByDocument.set(row.document_name, values);
-  }
 
   let legacyDocumentNames = 0;
   let legacyItemTypes = 0;
@@ -173,9 +155,6 @@ try {
   for (const row of inventory.documents) {
     const doc = new Y.Doc();
     if (row.snapshot.byteLength > 0) Y.applyUpdate(doc, new Uint8Array(row.snapshot));
-    for (const update of updatesByDocument.get(row.name) ?? []) {
-      if (update.byteLength > 0) Y.applyUpdate(doc, update);
-    }
     const residue = inspectBoardYjsRunbookResidue(row.name, doc);
     legacyDocumentNames += residue.legacyDocumentName;
     legacyItemTypes += residue.legacyItemTypes;
@@ -258,8 +237,7 @@ try {
   )) as string[];
   const report = {
     mode: "verify",
-    documentsRecomposed: inventory.documents.length,
-    pendingUpdatesApplied: inventory.updates.length,
+    snapshotsVerified: inventory.documents.length,
     boardItemsCompared,
     relationalBoardItemsLoaded: relationalBoardItems.length,
     relationalBoardItemsCompared,

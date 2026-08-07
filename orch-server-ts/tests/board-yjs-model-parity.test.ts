@@ -166,7 +166,7 @@ describe("board_yjs_model", () => {
     ]);
   });
 
-  it("snapshot과 누적 update에서 catalog replica를 derive", () => {
+  it("snapshot 하나에서 catalog replica를 derive", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
       boardItems: [{
@@ -180,21 +180,15 @@ describe("board_yjs_model", () => {
       }],
       markdownDocuments: [],
     });
-    const doc = new Y.Doc();
-    Y.applyUpdate(doc, snapshot);
-    applyBoardYjsPosition(doc, "session:s1", { x: 280, y: 160 });
-    const update = Y.encodeStateAsUpdate(doc);
-
     const decoded = readBoardYDocSnapshot({
       folderId: "folder-1",
       snapshot,
-      updates: [update],
     });
 
     expect(decoded.replica.boardItems[0]).toMatchObject({
       id: "session:s1",
-      x: 280,
-      y: 160,
+      x: 0,
+      y: 0,
     });
     expect(decoded.snapshot.byteLength).toBeGreaterThan(0);
   });

@@ -289,11 +289,15 @@ class MigrationRepositoryDouble {
     if (this.injectRevisionRaceOnce) {
       this.injectRevisionRaceOnce = false;
       const current = this.documents.get(input.sourceDocumentName)!;
-      const emptyUpdate = Y.encodeStateAsUpdate(new Y.Doc());
-      this.documents.set(input.sourceDocumentName, rawDocument(
-        current.snapshot,
-        [...current.updates, emptyUpdate],
-      ));
+      const racedDocument = new Y.Doc();
+      Y.applyUpdate(racedDocument, current.snapshot);
+      const boardItems = racedDocument.getMap<Record<string, unknown>>(BOARD_ITEMS_MAP);
+      const firstBoardItemId = [...boardItems.keys()][0]!;
+      boardItems.set(firstBoardItemId, boardItems.get(firstBoardItemId)!);
+      this.documents.set(
+        input.sourceDocumentName,
+        rawDocument(Y.encodeStateAsUpdate(racedDocument)),
+      );
       throw new BoardYjsMigrationRevisionConflictError(input.sourceDocumentName);
     }
     const source = this.documents.get(input.sourceDocumentName);
@@ -327,7 +331,6 @@ class MigrationRepositoryDouble {
   async loadBoardYjsSeed() { return { boardItems: [], markdownDocuments: [] }; }
   async storeBoardYjsSnapshot(): Promise<void> {}
   async markBoardYjsDocumentSynced(): Promise<void> {}
-  async appendBoardYjsUpdate(): Promise<void> {}
   async syncBoardYjsReplica(
     _scope: BoardYjsContainerScope,
     _replica: BoardYjsReplica,
@@ -350,12 +353,10 @@ function currentPlan(repository: MigrationRepositoryDouble, sourceDocumentName: 
 
 function rawDocument(
   snapshot: Uint8Array,
-  updates: Uint8Array[] = [],
 ): BoardYjsRawDocument {
   return {
     snapshot,
-    updates,
-    revision: computeBoardYjsRawRevision(snapshot, updates),
+    revision: computeBoardYjsRawRevision(snapshot),
   };
 }
 

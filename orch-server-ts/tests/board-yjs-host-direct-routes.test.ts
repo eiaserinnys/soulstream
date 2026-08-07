@@ -443,7 +443,6 @@ class CapturingBoardYjsRepository {
     this.snapshots.set(documentName, snapshot);
   }
   async markBoardYjsDocumentSynced(): Promise<void> {}
-  async appendBoardYjsUpdate(): Promise<void> {}
   async syncBoardYjsReplica(
     _container: BoardYjsContainerScope,
     replica: BoardYjsReplica,

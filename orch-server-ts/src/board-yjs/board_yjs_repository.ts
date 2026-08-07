@@ -108,9 +108,6 @@ export class BoardYjsRepository {
           SET snapshot = ${Buffer.from(input.canonicalSnapshot)}, updated_at = NOW()
           WHERE name = ${input.canonicalDocumentName}
         `;
-        await transaction`
-          DELETE FROM board_yjs_updates WHERE document_name = ${input.canonicalDocumentName}
-        `;
         await syncBoardYjsReplicaWithSql(
           transaction,
           input.scope,
@@ -173,31 +170,6 @@ export class BoardYjsRepository {
       SET snapshot = EXCLUDED.snapshot,
           updated_at = EXCLUDED.updated_at
     `;
-  }
-
-  async appendBoardYjsUpdate(documentName: string, update: Uint8Array): Promise<void> {
-    const sql = await this.sqlResolver.resolveSql();
-    const canonicalName = canonicalBoardYjsDocumentName(documentName);
-    await sql`
-      INSERT INTO board_yjs_documents (name, snapshot)
-      VALUES (${canonicalName}, ${Buffer.alloc(0)})
-      ON CONFLICT (name) DO NOTHING
-    `;
-    await sql`
-      INSERT INTO board_yjs_updates (document_name, update)
-      VALUES (${canonicalName}, ${Buffer.from(update)})
-    `;
-  }
-
-  async getBoardYjsUpdates(documentName: string): Promise<Uint8Array[]> {
-    const sql = await this.sqlResolver.resolveSql();
-    const canonicalName = canonicalBoardYjsDocumentName(documentName);
-    const rows = await sql<readonly { update: Buffer | Uint8Array }[]>`
-      SELECT update FROM board_yjs_updates
-      WHERE document_name = ${canonicalName}
-      ORDER BY id ASC
-    `;
-    return rows.map((row) => new Uint8Array(row.update));
   }
 
   async resolveBoardYjsContainerScope(

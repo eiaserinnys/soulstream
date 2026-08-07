@@ -446,6 +446,5 @@ class MemoryBoardRepository {
   }
 
   async markBoardYjsDocumentSynced(): Promise<void> {}
-  async appendBoardYjsUpdate(): Promise<void> {}
   async syncBoardYjsReplica(): Promise<void> {}
 }

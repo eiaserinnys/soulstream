@@ -32,7 +32,6 @@ export interface BoardYjsPersistenceRepository {
   loadBoardYjsSeed(container: BoardYjsContainerScope): Promise<BoardYjsSeed>;
   storeBoardYjsSnapshot(documentName: string, snapshot: Uint8Array): Promise<void>;
   markBoardYjsDocumentSynced(documentName: string): Promise<void>;
-  appendBoardYjsUpdate(documentName: string, update: Uint8Array): Promise<void>;
   syncBoardYjsReplica(
     container: BoardYjsContainerScope,
     replica: BoardYjsReplica,
@@ -48,7 +47,6 @@ export interface BoardYjsPersistenceRepository {
 
 export interface BoardYjsRawDocument {
   snapshot: Uint8Array;
-  updates: Uint8Array[];
   revision: string;
 }
 
@@ -65,7 +63,7 @@ export interface BoardYjsRunbookMigrationCommit {
 
 export interface BoardYjsPersistence {
   database: Database;
-  updateLog: Extension;
+  snapshotSync: Extension;
 }
 
 export function createBoardYjsPersistence(
@@ -111,10 +109,9 @@ export function createBoardYjsPersistence(
         );
       },
     }),
-    updateLog: {
-      extensionName: "soulstream-board-yjs-update-log",
+    snapshotSync: {
+      extensionName: "soulstream-board-yjs-snapshot-sync",
       async onChange(payload: onChangePayload) {
-        await repository.appendBoardYjsUpdate(payload.documentName, payload.update);
         const container = parseBoardYjsDocumentName(payload.documentName);
         if (!container) return;
         const scope = await repository.resolveBoardYjsContainerScope(container);

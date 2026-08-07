@@ -13,11 +13,9 @@ export class BoardYjsMigrationRevisionConflictError extends Error {
 
 export function computeBoardYjsRawRevision(
   snapshot: Uint8Array,
-  updates: readonly Uint8Array[],
 ): string {
   const hash = createHash("sha256");
   appendBytes(hash, snapshot);
-  for (const update of updates) appendBytes(hash, update);
   return hash.digest("hex");
 }
 
@@ -37,17 +35,10 @@ export async function loadExactRawBoardYjsDocument(
     `;
   const snapshotValue = documents[0]?.snapshot;
   if (!snapshotValue) return null;
-  const updateRows = await sql<readonly { update: Buffer | Uint8Array }[]>`
-    SELECT update FROM board_yjs_updates
-    WHERE document_name = ${documentName}
-    ORDER BY id ASC
-  `;
   const snapshot = new Uint8Array(snapshotValue);
-  const updates = updateRows.map((row) => new Uint8Array(row.update));
   return {
     snapshot,
-    updates,
-    revision: computeBoardYjsRawRevision(snapshot, updates),
+    revision: computeBoardYjsRawRevision(snapshot),
   };
 }
 
