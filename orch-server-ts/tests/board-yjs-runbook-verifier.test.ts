@@ -4,7 +4,9 @@ import * as Y from "yjs";
 import { BOARD_ITEMS_MAP } from "../src/board-yjs/board_yjs_document.js";
 import {
   assertBoardItemProjectionParity,
+  boardItemMembershipMismatchDisposition,
   inspectBoardItemMembershipDifference,
+  KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
   requireBoardItemCatalogProjection,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
@@ -89,6 +91,15 @@ describe("board Y.Doc runbook verifier catalog parity", () => {
       missingFromProjection: [],
       missingFromYdoc: [],
     });
+  });
+
+  it("blocks task membership drift but keeps known folder drift as a warning", () => {
+    expect(boardItemMembershipMismatchDisposition("task")).toBe("blocking");
+    expect(boardItemMembershipMismatchDisposition("folder")).toBe("warning");
+    expect(KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING).toContain(
+      "known unresolved drift",
+    );
+    expect(KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING).toContain("follow-up");
   });
 
   it("normalizes stale projection references without hiding the warning", () => {

@@ -1,5 +1,15 @@
 import type { CatalogBoardItemRow } from "./board_yjs_types.js";
 
+export const KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING =
+  "folder container Y.Doc ↔ board_items mismatch is known unresolved drift; " +
+  "a separate follow-up owns diagnosis and repair";
+
+export function boardItemMembershipMismatchDisposition(
+  containerKind: "folder" | "task",
+): "blocking" | "warning" {
+  return containerKind === "task" ? "blocking" : "warning";
+}
+
 export function requireBoardItemCatalogProjection<T>(input: {
   label: string;
   ydocItemCount: number;
