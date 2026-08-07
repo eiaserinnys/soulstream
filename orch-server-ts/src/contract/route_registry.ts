@@ -176,6 +176,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["POST"],
+    path: "/api/nodes/{node_id}/agents/context-preview",
+    name: "preview_agent_context",
+    authRequired: true,
+    family: "node_proxy",
+  },
+  {
+    methods: ["POST"],
     path: "/api/llm/ephemeral",
     name: "create_ephemeral_llm_response",
     authRequired: true,

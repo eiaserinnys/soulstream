@@ -1,9 +1,22 @@
+import type { Logger } from "pino";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
+import type { SessionDB } from "../db/session_db.js";
 
-import { atomContextSpecKey, type AtomContextSpec } from "./atom_context.js";
+import {
+  atomContextSpecKey,
+  type AtomContextSpec,
+  type AtomFetchConfig,
+} from "./atom_context.js";
+import {
+  compileContexts,
+  type ContextCompilationResult,
+  type ContextFilterParameters,
+} from "./compiler/index.js";
 import type { PreparedContext } from "./context_builder.js";
 import { formatContextItems, type ContextItem } from "./prompt_assembler.js";
+import type { PrimarySessionContainerContext } from "./session_container_context.js";
+import { resolvePrimarySessionContainerContext } from "./session_container_context.js";
 
 export interface FolderChainEntry {
   id: string;
@@ -127,7 +140,57 @@ export function extractAgentAtomContextSpecs(agent: AgentProfile): AtomContextSp
     ...(context.include_ids !== undefined
       ? { includeIds: context.include_ids }
       : {}),
+    ...(context.applies_when !== undefined
+      ? { appliesWhen: context.applies_when }
+      : {}),
   }));
+}
+
+export function buildContextFilterParameters(args: {
+  task: Task;
+  agent: AgentProfile;
+  nodeId: string;
+  primaryContainer: PrimarySessionContainerContext | null;
+}): ContextFilterParameters {
+  const source = args.task.callerInfo?.source;
+  return {
+    ...(typeof source === "string" && source.length > 0 ? { source } : {}),
+    node_id: args.nodeId,
+    ...(args.primaryContainer ? { container_kind: args.primaryContainer.container.kind } : {}),
+    agent: args.agent.id,
+  };
+}
+
+export async function resolveContextFilterContext(args: {
+  db: SessionDB;
+  logger: Logger;
+  task: Task;
+  agent: AgentProfile;
+  nodeId: string;
+  folderName?: string;
+}): Promise<{
+  primaryContainer: PrimarySessionContainerContext | null;
+  filterParameters: ContextFilterParameters;
+}> {
+  const primaryContainer = await resolvePrimarySessionContainerContext(
+    args.db,
+    args.logger,
+    args.task.agentSessionId,
+    args.folderName,
+  );
+  return {
+    primaryContainer,
+    filterParameters: buildContextFilterParameters({ ...args, primaryContainer }),
+  };
+}
+
+export async function compileAtomContext(
+  config: AtomFetchConfig,
+  specs: readonly AtomContextSpec[],
+  logger: Pick<Logger, "warn">,
+  filterParameters?: ContextFilterParameters,
+): Promise<ContextCompilationResult> {
+  return await compileContexts(config, specs, logger, filterParameters);
 }
 
 export function prioritizeAtomContextSpecs(args: {

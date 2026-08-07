@@ -834,6 +834,66 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     ]);
   });
 
+  it("evaluates agent applies_when from caller, worker node, primary container, and base agent id", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# matched agent context" }), { status: 200 }),
+    );
+    const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
+      itemType: "session",
+      membershipKind: "primary",
+      containerKind: "task",
+      containerId: "task-a",
+      folderId: "folder-a",
+      metadata: { title: "업무 A" },
+    });
+    const agent: AgentProfile = {
+      ...codexAgent,
+      atom_contexts: [
+        {
+          node_id: "11111111-2222-3333-4444-555555555555",
+          depth: 2,
+          titles_only: false,
+          applies_when: {
+            source: ["agent"],
+            node_id: ["node-A"],
+            container_kind: ["runbook"],
+            agent: ["codex-default"],
+          },
+        },
+        {
+          node_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+          depth: 2,
+          titles_only: false,
+          applies_when: { source: ["browser"] },
+        },
+      ],
+    };
+    const cb = makeBuilder(
+      { getPrimarySessionBoardItem } as Partial<SessionDB>,
+      new AgentRegistry([agent]),
+      true,
+    );
+
+    const ctx = await cb.build(makeTask({
+      callerInfo: { source: "agent", agent_id: "seosoyoung" },
+    }), agent);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(ctx.effectiveSystemPrompt).toContain("# matched agent context");
+    expect(ctx.contextManifest?.sources).toEqual([
+      expect.objectContaining({
+        node_id: "11111111-2222-3333-4444-555555555555",
+        status: "ok",
+      }),
+      expect.objectContaining({
+        node_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+        status: "filtered",
+        chars: 0,
+        token_estimate: 0,
+      }),
+    ]);
+  });
+
   it("folder.settings.atomContextNode 있고 atom 활성 → atom_context item 추가", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ markdown: "## atom node\nbody" }), { status: 200 }),

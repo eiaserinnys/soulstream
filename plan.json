@@ -1,0 +1,56 @@
+{
+  "title": "applies_when 조건부 주입 + 프로필 에디터",
+  "runbookId": "64c56037-dc49-4d2d-bde7-8184a5a40e48",
+  "runbookBoardItemId": "task:64c56037-dc49-4d2d-bde7-8184a5a40e48",
+  "trackedItemId": "a6ca67bf-8eb9-4d63-bf75-0167c1d448c4",
+  "baseCommit": "1fea3d8c",
+  "branch": "feature/context-applies-when",
+  "editorLocation": "unified-dashboard 설정 모달의 관리자용 에이전트 탭",
+  "constraints": [
+    "DB schema와 migration을 변경하지 않는다",
+    "agents.yaml, atom 카드, 라이브 DB를 쓰지 않는다",
+    "배포, 서비스 재시작, 데이터 import, merge, main push, worktree 정리를 하지 않는다",
+    "단계 1과 단계 3에서는 코드 수정 없이 리뷰만 수행한다"
+  ],
+  "phases": [
+    {
+      "name": "단계 1 — 스펙 갭 체크",
+      "summary": "설계 정본과 main 코드의 모순·누락을 확인하고 에디터 위치와 wire 경계를 확정한다",
+      "checklist": [
+        "컴파일러 filter 입력과 container resolution 순서를 확인한다",
+        "YAML/DB JSONB 파싱과 기존 렌더 byte 보존 경계를 확인한다",
+        "unified-dashboard 설정 모달을 에디터 위치로 확정한다"
+      ]
+    },
+    {
+      "name": "단계 2 — 구현",
+      "summary": "targeted TDD로 filter, wire, profile CRUD UI, compiler preview를 구현한다",
+      "checklist": [
+        "applies_when AND/OR 평가와 filtered manifest를 구현한다",
+        "AgentAtomContextSchema와 agent_profiles JSONB 경로에 applies_when을 보존한다",
+        "wire-schema, soul-ui, orch constants의 filtered 상태를 동기화한다",
+        "optimistic version과 충돌 안내를 포함한 프로필·초상화 에디터를 구현한다",
+        "실제 compiler dry-run 미리보기와 소스별 chars/token_estimate를 구현한다"
+      ]
+    },
+    {
+      "name": "단계 3 — 코드 리뷰와 검증",
+      "summary": "diff를 정독하고 P0/P1을 해소한 뒤 지정 게이트를 한 번씩 실행한다",
+      "checklist": [
+        "필터 매칭 매트릭스, 골든, manifest 계약, 에디터 표면 테스트를 실행한다",
+        "soul-server-ts 전체 vitest를 minWorkers=1 maxWorkers=2로 실행한다",
+        "영향 UI·orch·wire 패키지 테스트, typecheck, build를 실행한다",
+        "heavy verify는 flock과 free -m 2000MB 확인을 거친다"
+      ]
+    },
+    {
+      "name": "산출",
+      "summary": "커밋·push·PR·원격 SHA 확인과 업무 산출 갱신을 마친다",
+      "checklist": [
+        "커밋 후 feature/context-applies-when을 push한다",
+        "PR을 생성하고 번호와 head SHA를 기록한다",
+        "git ls-remote로 원격 SHA를 확인한 뒤에만 완료 보고한다"
+      ]
+    }
+  ]
+}

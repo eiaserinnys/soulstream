@@ -5,6 +5,7 @@ import {
   CONTEXT_COMPILER_VERSION,
   compileContexts,
   mergeContextManifests,
+  type ContextFilterParameters,
 } from "../../src/context/compiler/index.js";
 import {
   fetchAtomContext,
@@ -225,5 +226,122 @@ describe("context compiler golden parity", () => {
       page_context: { truncation: pageTruncation },
     });
     expect(merged.total_chars).toBe(first.manifest.total_chars + second.manifest.total_chars);
+  });
+});
+
+describe("context compiler applies_when filter", () => {
+  const originalFetch = globalThis.fetch;
+  const logger = { warn: vi.fn() };
+  const session: ContextFilterParameters = {
+    source: "agent",
+    node_id: "eiaserinnys",
+    container_kind: "task",
+    agent: "seosoyoung",
+  };
+
+  beforeEach(() => {
+    logger.warn.mockClear();
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ markdown: "# included" }), { status: 200 })) as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it.each([
+    ["omitted condition", undefined],
+    ["field-local OR", { source: ["browser", "agent"] }],
+    ["cross-field AND", {
+      source: ["agent"],
+      node_id: ["eiaserinnys"],
+      container_kind: ["runbook"],
+      agent: ["seosoyoung"],
+    }],
+  ])("injects a source for %s", async (_name, appliesWhen) => {
+    const compiled = await compileContexts(config, [{
+      nodeId: "node-included",
+      depth: 1,
+      titlesOnly: false,
+      ...(appliesWhen ? { appliesWhen } : {}),
+    }], logger, session);
+
+    expect(compiled.assembled).toContain("# included");
+    expect(compiled.manifest.sources[0]).toMatchObject({ status: "ok" });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["OR miss", { source: ["browser", "slack"] }],
+    ["AND miss", { source: ["agent"], agent: ["roselin"] }],
+    ["missing session parameter", { source: ["agent"], container_kind: ["folder"] }, {
+      source: "agent",
+      node_id: "eiaserinnys",
+      agent: "seosoyoung",
+    }],
+    ["empty OR set", { source: [] }],
+  ])("records a filtered observation for %s", async (_name, appliesWhen, parameters = session) => {
+    const compiled = await compileContexts(config, [{
+      nodeId: "node-filtered",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen,
+    }], logger, parameters);
+
+    expect(compiled.assembled).toBeNull();
+    expect(compiled.sections).toHaveLength(1);
+    expect(compiled.manifest).toMatchObject({
+      source_count: 1,
+      total_chars: 0,
+      total_token_estimate: 0,
+      sources: [{
+        node_id: "node-filtered",
+        applies_when: appliesWhen,
+        status: "filtered",
+        chars: 0,
+        token_estimate: 0,
+        truncated: false,
+        anchor_count: 0,
+      }],
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("warns and ignores unknown fields and values instead of silently filtering", async () => {
+    const appliesWhen = {
+      future_field: ["future-value"],
+      source: ["future-source"],
+      container_kind: ["future-container"],
+      agent: [42],
+    };
+    const compiled = await compileContexts(config, [{
+      nodeId: "node-forward-compatible",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen,
+    }], logger, session);
+
+    expect(compiled.manifest.sources[0]).toMatchObject({ status: "ok", applies_when: appliesWhen });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "future_field", nodeId: "node-forward-compatible" }),
+      "[context compiler] unknown applies_when field — ignoring condition",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "source", value: "future-source" }),
+      "[context compiler] unknown applies_when value — ignoring condition",
+    );
+  });
+
+  it("ignores the whole condition when an OR array contains an unknown value", async () => {
+    const compiled = await compileContexts(config, [{
+      nodeId: "node-mixed",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen: { source: ["future-source", "browser"] },
+    }], logger, session);
+
+    expect(compiled.manifest.sources[0]?.status).toBe("ok");
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
 });

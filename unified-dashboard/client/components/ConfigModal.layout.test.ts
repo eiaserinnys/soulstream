@@ -217,4 +217,17 @@ describe("ConfigModal layout", () => {
     expect(tableScroll).not.toBeNull();
     expect(tableScroll?.className).toContain("overflow-x-auto");
   });
+
+  it("exposes the DB agent profile editor to administrators", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+
+    clickConfigTab("에이전트");
+    await settleConfigModal();
+
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("편집할 프로필을 선택하거나 새로 만드세요.");
+    const saveButton = document.body.querySelector<HTMLButtonElement>('[data-testid="config-save-button"]');
+    expect(saveButton?.disabled).toBe(true);
+  });
 });

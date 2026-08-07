@@ -148,7 +148,7 @@ describe("AgentProfileSchema", () => {
     ).toThrow(ZodError);
   });
 
-  it("atom_contexts는 node_id/depth/titles_only/include_ids/mode를 파싱한다", () => {
+  it("atom_contexts는 node_id/depth/titles_only/include_ids/mode/applies_when을 파싱한다", () => {
     const parsed = AgentProfileSchema.parse({
       id: "a",
       name: "A",
@@ -161,6 +161,10 @@ describe("AgentProfileSchema", () => {
           titles_only: true,
           include_ids: false,
           mode: "index",
+          applies_when: {
+            source: ["agent", "browser"],
+            agent: ["seosoyoung"],
+          },
         },
       ],
     });
@@ -171,8 +175,30 @@ describe("AgentProfileSchema", () => {
         titles_only: true,
         include_ids: false,
         mode: "index",
+        applies_when: {
+          source: ["agent", "browser"],
+          agent: ["seosoyoung"],
+        },
       },
     ]);
+  });
+
+  it("atom_contexts applies_when의 미지 필드와 값을 런타임 경고를 위해 보존한다", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "a",
+      name: "A",
+      backend: "codex",
+      workspace_dir: "/tmp/a",
+      atom_contexts: [{
+        node_id: "11111111-2222-3333-4444-555555555555",
+        applies_when: { future_field: ["future-value"], source: ["future-source"] },
+      }],
+    });
+
+    expect(parsed.atom_contexts?.[0]?.applies_when).toEqual({
+      future_field: ["future-value"],
+      source: ["future-source"],
+    });
   });
 
   it("atom_contexts 미지 mode는 런타임 legacy 폴백을 위해 보존한다", () => {

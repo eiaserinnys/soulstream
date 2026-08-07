@@ -20,6 +20,10 @@ import {
   registerMarkdownDocumentHttpRoutes,
   type MarkdownDocumentHttpRouteConfig,
 } from "./catalog/markdown_document_http_route.js";
+import {
+  registerContextPreviewRoute,
+  type ContextPreviewRouteConfig,
+} from "./context/context_preview_route.js";
 
 export interface ServerParams {
   host: string;
@@ -50,6 +54,8 @@ export interface ServerParams {
   boardItem?: BoardItemHttpRouteConfig;
   /** Markdown document dashboard write routes. */
   markdownDocument?: MarkdownDocumentHttpRouteConfig;
+  /** Authenticated dry-run surface for agent profile context instrumentation. */
+  contextPreview?: ContextPreviewRouteConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -102,6 +108,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }
   if (params.markdownDocument) {
     registerMarkdownDocumentHttpRoutes(fastify, params.markdownDocument);
+  }
+  if (params.contextPreview) {
+    registerContextPreviewRoute(fastify, params.contextPreview);
   }
 
   return fastify;

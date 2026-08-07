@@ -18,6 +18,7 @@ const RemoteAtomContextSchema = z.object({
   titles_only: z.boolean().optional(),
   include_ids: z.boolean().optional(),
   mode: z.string().optional(),
+  applies_when: z.record(z.string(), z.unknown()).optional(),
 });
 
 const RemoteAliasSchema = z.union([

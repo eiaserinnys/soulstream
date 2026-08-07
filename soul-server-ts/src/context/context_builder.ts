@@ -19,10 +19,8 @@ import type { SessionRow } from "../db/session_db_types.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { type AtomContextSpec } from "./atom_context.js";
 import {
-  compileContexts,
   extractPageContextTruncation,
   mergeContextManifests,
-  type ContextCompilationResult,
   type ContextManifest,
 } from "./compiler/index.js";
 import {
@@ -37,6 +35,7 @@ import {
   buildCallerInfoUpdateContextItem,
   buildClaudeSessionIdUpdateContextItem,
   callerInfoChanged,
+  compileAtomContext,
   composeEffectiveSystemPrompt,
   composeFirstTurnPrompt as composeFirstTurnPromptImpl,
   composeFolderPromptChain,
@@ -45,6 +44,7 @@ import {
   extractFolderProjectPageIds,
   normalizeSettings,
   prioritizeAtomContextSpecs,
+  resolveContextFilterContext,
   resolveProfileRuntimeSettings,
   type FolderChainEntry,
 } from "./context_builder_helpers.js";
@@ -52,10 +52,7 @@ import {
   fetchBoardWorkspaceContextItem,
   fetchRunningSessionsContextItem,
 } from "./session_context_items.js";
-import {
-  resolvePrimarySessionContainerContext,
-  type PrimarySessionContainerContext,
-} from "./session_container_context.js";
+import type { PrimarySessionContainerContext } from "./session_container_context.js";
 import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
   type PageContextResolver,
@@ -182,7 +179,12 @@ export class ExecutionContextBuilder {
    */
   async buildSystemPrompt(task: Task, agent: AgentProfile): Promise<string | undefined> {
     const { folderPrompt } = await this._resolveFolder(task);
-    const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
+    const { filterParameters } = await resolveContextFilterContext({
+      db: this.db, logger: this.logger, task, agent, nodeId: this.cfg.nodeId,
+    });
+    const agentAtomMarkdown = (await compileAtomContext(
+      this.cfg.atom, extractAgentAtomContextSpecs(agent), this.logger, filterParameters,
+    )).assembled;
     return composeEffectiveSystemPrompt({
       agentAtomMarkdown,
       folderPrompt,
@@ -215,11 +217,15 @@ export class ExecutionContextBuilder {
       folder: folder.atomContextSpecs ?? [],
       agent: extractAgentAtomContextSpecs(agent),
     });
+    const { primaryContainer, filterParameters } = await resolveContextFilterContext({
+      db: this.db, logger: this.logger, task, agent, nodeId: this.cfg.nodeId,
+      folderName: folder.folderName,
+    });
     const [agentAtomCompilation, atomCompilation, taskAtomCompilation, boardWorkspaceItem] =
       await Promise.all([
-        this._compileAtomContext(atomSources.agent),
-        this._compileAtomContext(atomSources.folder),
-        this._compileAtomContext(atomSources.session),
+        compileAtomContext(this.cfg.atom, atomSources.agent, this.logger, filterParameters),
+        compileAtomContext(this.cfg.atom, atomSources.folder, this.logger, filterParameters),
+        compileAtomContext(this.cfg.atom, atomSources.session, this.logger, filterParameters),
         fetchBoardWorkspaceContextItem(
           this.db,
           this.logger,
@@ -235,12 +241,6 @@ export class ExecutionContextBuilder {
         ...(pageContext.kind === "page-context" ? [pageContext.contextManifest] : []),
       ],
       extractPageContextTruncation(pageContextItem),
-    );
-    const primaryContainer = await resolvePrimarySessionContainerContext(
-      this.db,
-      this.logger,
-      task.agentSessionId,
-      folder.folderName,
     );
     const runningSessionsItem = await fetchRunningSessionsContextItem(
       this.db,
@@ -373,28 +373,6 @@ export class ExecutionContextBuilder {
       this.logger.warn({ err, folderId: folderRow.id }, "_resolveFolderChain: getCatalog failed");
       return fallback;
     }
-  }
-
-  /** Fetches configured atom specs without blocking the turn on failure. */
-  private async _fetchAtomContext(specs?: AtomContextSpec[]): Promise<string | null> {
-    return (await this._compileAtomContext(specs)).assembled;
-  }
-
-  private async _compileAtomContext(
-    specs?: AtomContextSpec[],
-  ): Promise<ContextCompilationResult> {
-    return await compileContexts(this.cfg.atom, specs ?? [], this.logger);
-  }
-
-  /**
-   * agents.yaml `atom_contexts`는 agent profile 정본 지시문이다.
-   *
-   * CLAUDE.md / AGENTS.md / skills를 대체하는 장기 경로이므로 context_item이 아니라
-   * system prompt 맨 앞에 주입한다. 여러 노드를 순서대로 compile하며, 각 노드 실패는
-   * fetchAtomContexts 내부에서 skip되어 전체 turn 시작을 막지 않는다.
-   */
-  private async _fetchAgentAtomContext(agent: AgentProfile): Promise<string | null> {
-    return await this._fetchAtomContext(extractAgentAtomContextSpecs(agent));
   }
 
   private async _fetchCogitoContext(): Promise<ContextItem | null> {

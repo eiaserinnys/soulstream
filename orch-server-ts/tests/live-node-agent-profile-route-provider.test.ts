@@ -164,6 +164,43 @@ describe("live node agent profile route provider", () => {
     expect(requestNode).toHaveBeenCalledTimes(1);
   });
 
+  it("proxies context previews over live node HTTP with caller auth", async () => {
+    const preview = {
+      manifest: {
+        sources: [{ id: "profile:0", status: "filtered", chars: 0, token_estimate: 0 }],
+      },
+    };
+    const { provider, requestNode } = createFixture({
+      requestNode: vi.fn(async () => ({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: preview,
+      })),
+    });
+    const input = {
+      atom_contexts: [{ node_id: "9e91bf3d-b682-4c12-b42e-93fcb51344a5" }],
+      session: { source: "browser" },
+    };
+
+    await expect(provider.previewAgentContext("node-a", input, {
+      headers: {
+        authorization: "Bearer caller-token",
+        cookie: "session=abc",
+        "x-forwarded-for": "203.0.113.10",
+      },
+    })).resolves.toEqual(preview);
+    expect(requestNode).toHaveBeenCalledWith({
+      nodeId: "node-a",
+      method: "POST",
+      path: "/api/context/preview",
+      headers: {
+        authorization: "Bearer caller-token",
+        cookie: "session=abc",
+      },
+      body: input,
+    });
+  });
+
   it("sends config commands through registry createCommand and websocket bridge", async () => {
     const { provider, sentMessages } = createFixture();
 

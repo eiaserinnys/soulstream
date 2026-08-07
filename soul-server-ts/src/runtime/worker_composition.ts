@@ -414,6 +414,16 @@ export async function composeWorkerRuntime(
     },
     boardItem: { service: catalogService, auth: boardYjsAuth },
     markdownDocument: { service: catalogService, auth: boardYjsAuth },
+    contextPreview: {
+      nodeId: env.SOULSTREAM_NODE_ID,
+      atom: {
+        enabled: Boolean(env.ATOM_ENABLED),
+        serverUrl: env.ATOM_SERVER_URL ?? "",
+        apiKey: env.ATOM_API_KEY ?? "",
+      },
+      auth: boardYjsAuth,
+      logger,
+    },
   });
 
   const createUpstreamAdapter = (): UpstreamAdapter => {

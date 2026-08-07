@@ -1585,9 +1585,10 @@ class Source(TypedDict, closed=True):
     limit: NotRequired[int]
     priority: int
     never_truncate: bool
+    applies_when: NotRequired[dict[str, Any]]
     chars: int
     token_estimate: int
-    status: Literal['ok', 'empty', 'error']
+    status: Literal['ok', 'empty', 'error', 'filtered']
     truncated: bool
     anchor_count: int
 

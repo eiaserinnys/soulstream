@@ -2,8 +2,8 @@
  * Context compiler pipeline.
  *
  * The caller resolves yaml/session/folder sources into AtomContextSpec. Explicit Phase B modes
- * render and annotate here, while mode-less legacy specs retain their Phase A bytes. Later phases
- * replace the remaining filter and budget pass-through stages without changing the consumer API.
+ * render and annotate here, while mode-less legacy specs retain their Phase A bytes. Phase C
+ * evaluates applies_when here; the remaining budget pass-through stays behind the same consumer API.
  */
 import type { Logger } from "pino";
 import { createHash } from "node:crypto";
@@ -25,6 +25,12 @@ import {
 
 type ContextCompilerLogger = Pick<Logger, "warn">;
 
+export type ContextFilterField = "source" | "node_id" | "container_kind" | "agent";
+
+export type ContextFilterParameters = Partial<Record<ContextFilterField, string>>;
+
+export type ContextSourceStatus = AtomFetchStatus | "filtered";
+
 export interface ContextSource extends AtomContextSpec {
   id: string;
   label: string;
@@ -36,7 +42,7 @@ export interface ContextSource extends AtomContextSpec {
 export interface CompiledContextSection {
   source: ContextSource;
   markdown: string | null;
-  status: AtomFetchStatus;
+  status: ContextSourceStatus;
   truncated: boolean;
   anchorCount: number;
 }
@@ -70,9 +76,10 @@ export interface ContextManifestSource {
   limit?: number;
   priority: number;
   never_truncate: boolean;
+  applies_when?: Record<string, unknown>;
   chars: number;
   token_estimate: number;
-  status: AtomFetchStatus;
+  status: ContextSourceStatus;
   truncated: boolean;
   anchor_count: number;
 }
@@ -114,9 +121,128 @@ function resolveContextSources(specs: readonly AtomContextSpec[]): ContextSource
   return specs.map((spec) => createContextSource(spec));
 }
 
-/** Phase C hook: legacy sources all apply in Phase A. */
-function filterContextSources(specs: readonly ContextSource[]): ContextSource[] {
-  return [...specs];
+const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
+  "source",
+  "node_id",
+  "container_kind",
+  "agent",
+]);
+
+const KNOWN_CALLER_SOURCES = new Set([
+  "agent",
+  "api",
+  "browser",
+  "channel_observer",
+  "execute-proxy",
+  "llm",
+  "slack",
+  "soul-app",
+  "system",
+  "trello_watcher",
+]);
+
+const KNOWN_CONTAINER_KINDS = new Set(["folder", "task", "runbook"]);
+const IDENTIFIER_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+
+interface FilteredContextSources {
+  included: ContextSource[];
+  filtered: Set<ContextSource>;
+}
+
+function filterContextSources(
+  specs: readonly ContextSource[],
+  parameters: ContextFilterParameters,
+  logger: ContextCompilerLogger,
+): FilteredContextSources {
+  const included: ContextSource[] = [];
+  const filtered = new Set<ContextSource>();
+  for (const source of specs) {
+    if (sourceMatches(source, parameters, logger)) included.push(source);
+    else filtered.add(source);
+  }
+  return { included, filtered };
+}
+
+function sourceMatches(
+  source: ContextSource,
+  parameters: ContextFilterParameters,
+  logger: ContextCompilerLogger,
+): boolean {
+  const conditions = source.appliesWhen;
+  if (conditions === undefined) return true;
+  for (const [rawField, rawValues] of Object.entries(conditions)) {
+    if (!CONTEXT_FILTER_FIELDS.has(rawField as ContextFilterField)) {
+      logger.warn(
+        { field: rawField, nodeId: source.nodeId },
+        "[context compiler] unknown applies_when field — ignoring condition",
+      );
+      continue;
+    }
+    const field = rawField as ContextFilterField;
+    const values = recognizedConditionValues(field, rawValues, source, logger);
+    if (values === undefined) continue;
+    const actual = parameters[field];
+    if (actual === undefined || !values.some((value) => conditionValueMatches(field, value, actual))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function recognizedConditionValues(
+  field: ContextFilterField,
+  rawValues: unknown,
+  source: ContextSource,
+  logger: ContextCompilerLogger,
+): string[] | undefined {
+  if (!Array.isArray(rawValues)) {
+    warnUnknownConditionValue(field, rawValues, source, logger);
+    return undefined;
+  }
+  if (rawValues.length === 0) return [];
+  const values: string[] = [];
+  let hasUnknownValue = false;
+  for (const value of rawValues) {
+    if (!isKnownConditionValue(field, value)) {
+      warnUnknownConditionValue(field, value, source, logger);
+      hasUnknownValue = true;
+      continue;
+    }
+    values.push(value);
+  }
+  return hasUnknownValue || values.length === 0 ? undefined : values;
+}
+
+function isKnownConditionValue(field: ContextFilterField, value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) return false;
+  if (field === "source") return KNOWN_CALLER_SOURCES.has(value);
+  if (field === "container_kind") return KNOWN_CONTAINER_KINDS.has(value);
+  return IDENTIFIER_VALUE.test(value);
+}
+
+function warnUnknownConditionValue(
+  field: ContextFilterField,
+  value: unknown,
+  source: ContextSource,
+  logger: ContextCompilerLogger,
+): void {
+  logger.warn(
+    { field, value, nodeId: source.nodeId },
+    "[context compiler] unknown applies_when value — ignoring condition",
+  );
+}
+
+function conditionValueMatches(
+  field: ContextFilterField,
+  desired: string,
+  actual: string,
+): boolean {
+  if (field !== "container_kind") return desired === actual;
+  return canonicalContainerKind(desired) === canonicalContainerKind(actual);
+}
+
+function canonicalContainerKind(value: string): string {
+  return value === "runbook" ? "task" : value;
 }
 
 async function renderContextSources(
@@ -169,15 +295,16 @@ function annotateContextSections(
 }
 
 function assembleContextSections(sections: readonly CompiledContextSection[]): string | null {
-  if (sections.length === 0) return null;
-  if (sections.length === 1) {
-    const markdown = sections[0]?.markdown;
+  const renderedSections = sections.filter(({ status }) => status !== "filtered");
+  if (renderedSections.length === 0) return null;
+  if (renderedSections.length === 1) {
+    const markdown = renderedSections[0]?.markdown;
     return markdown === null || markdown === undefined
       ? null
       : formatAtomContext(markdown);
   }
 
-  const assembled = sections.flatMap(({ source, markdown }) => {
+  const assembled = renderedSections.flatMap(({ source, markdown }) => {
     if (!markdown) return [];
     if (isContextRenderMode(source.mode)) return [formatAtomMarkdown(markdown)];
     return [[
@@ -210,6 +337,7 @@ function desiredSpec(source: ContextSource | ContextManifestSource): Record<stri
       ...(source.limit !== undefined ? { limit: source.limit } : {}),
       priority: source.priority,
       never_truncate: source.neverTruncate,
+      ...(source.appliesWhen !== undefined ? { applies_when: source.appliesWhen } : {}),
     };
   }
   return {
@@ -224,6 +352,7 @@ function desiredSpec(source: ContextSource | ContextManifestSource): Record<stri
     ...(source.limit !== undefined ? { limit: source.limit } : {}),
     priority: source.priority,
     never_truncate: source.never_truncate,
+    ...(source.applies_when !== undefined ? { applies_when: source.applies_when } : {}),
   };
 }
 
@@ -346,10 +475,23 @@ export async function compileContextSources(
   config: AtomFetchConfig,
   sources: readonly ContextSource[],
   logger: ContextCompilerLogger,
+  parameters: ContextFilterParameters = {},
 ): Promise<ContextCompilationResult> {
-  const filtered = filterContextSources(sources);
-  const rendered = await renderContextSources(config, filtered, logger);
-  const annotated = annotateContextSections(rendered);
+  const decisions = filterContextSources(sources, parameters, logger);
+  const rendered = await renderContextSources(config, decisions.included, logger);
+  const renderedBySource = new Map(rendered.map((section) => [section.source, section]));
+  const observed = sources.map((source): CompiledContextSection => (
+    decisions.filtered.has(source)
+      ? {
+          source,
+          markdown: null,
+          status: "filtered",
+          truncated: false,
+          anchorCount: 0,
+        }
+      : renderedBySource.get(source)!
+  ));
+  const annotated = annotateContextSections(observed);
   const assembled = assembleContextSections(annotated);
   return {
     sections: annotated,
@@ -362,6 +504,7 @@ export async function compileContexts(
   config: AtomFetchConfig,
   specs: readonly AtomContextSpec[],
   logger: ContextCompilerLogger,
+  parameters: ContextFilterParameters = {},
 ): Promise<ContextCompilationResult> {
-  return await compileContextSources(config, resolveContextSources(specs), logger);
+  return await compileContextSources(config, resolveContextSources(specs), logger, parameters);
 }

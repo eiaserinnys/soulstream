@@ -48,6 +48,11 @@ export type RollbackAgentsConfigInput = {
   includeTextDiff: boolean;
 };
 
+export type AgentContextPreviewInput = {
+  readonly atom_contexts: readonly unknown[];
+  readonly session?: Readonly<Record<string, unknown>>;
+};
+
 export type NodeAgentProfileProvider = {
   listAgentProfiles: (nodeId: string) => Promise<NodeAgentProfiles | undefined>;
   getAgentPortrait: (
@@ -71,6 +76,11 @@ export type NodeAgentProfileProvider = {
   rollbackAgentsConfig: (
     nodeId: string,
     input: RollbackAgentsConfigInput,
+  ) => Promise<unknown>;
+  previewAgentContext: (
+    nodeId: string,
+    input: AgentContextPreviewInput,
+    options?: NodePortraitRequestOptions,
   ) => Promise<unknown>;
 };
 
@@ -111,6 +121,7 @@ export const nodeAgentProfileRouteAuthRequirements = {
   "POST /api/nodes/:node_id/agents/config/apply-profile-update": true,
   "GET /api/nodes/:node_id/agents/config/snapshots": true,
   "POST /api/nodes/:node_id/agents/config/rollback": true,
+  "POST /api/nodes/:node_id/agents/context-preview": true,
   "GET /api/nodes/:node_id/oauth-profiles": true,
   "GET /api/nodes/:node_id/user/portrait": true,
 } as const;
@@ -161,6 +172,25 @@ export function registerNodeAgentProfileRoutes(
           input.value,
         );
         return reply.send(result);
+      } catch (error) {
+        return sendConfigProviderError(reply, error);
+      }
+    },
+  );
+
+  app.post<{ Params: NodeParams }>(
+    "/api/nodes/:node_id/agents/context-preview",
+    async (request, reply) => {
+      const body = parseObjectBody(request.body);
+      if (!body.ok) return validationError(reply, body);
+      const input = contextPreviewInput(body.value);
+      if (!input.ok) return validationError(reply, input);
+      try {
+        return reply.send(await options.provider.previewAgentContext(
+          nodeParams(request).node_id,
+          input.value,
+          { headers: request.headers },
+        ));
       } catch (error) {
         return sendConfigProviderError(reply, error);
       }
@@ -414,6 +444,26 @@ function rollbackInput(
       snapshotPath: snapshotPath.value,
       snapshotId: snapshotId.value,
       includeTextDiff: includeTextDiff.value,
+    },
+  };
+}
+
+function contextPreviewInput(
+  body: Record<string, unknown>,
+): Validation<AgentContextPreviewInput> {
+  if (!Array.isArray(body.atom_contexts)) {
+    return { ok: false, message: "atom_contexts must be an array", statusCode: 422 };
+  }
+  if (body.session !== undefined && (
+    typeof body.session !== "object" || body.session === null || Array.isArray(body.session)
+  )) {
+    return { ok: false, message: "session must be an object", statusCode: 422 };
+  }
+  return {
+    ok: true,
+    value: {
+      atom_contexts: body.atom_contexts,
+      ...(body.session ? { session: body.session as Record<string, unknown> } : {}),
     },
   };
 }

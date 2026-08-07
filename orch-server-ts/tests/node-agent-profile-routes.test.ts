@@ -20,6 +20,7 @@ type ProviderCall =
   | ["agentPortrait", string, string]
   | ["userPortrait", string]
   | ["plan", string, unknown]
+  | ["preview", string, unknown]
   | ["apply", string, unknown]
   | ["snapshots", string]
   | ["rollback", string, unknown];
@@ -84,6 +85,10 @@ function createProvider(overrides: Partial<NodeAgentProfileProvider> = {}) {
       calls.push(["apply", nodeId, input]);
       return { applied: true };
     },
+    async previewAgentContext(nodeId, input) {
+      calls.push(["preview", nodeId, input]);
+      return { manifest: { sources: [] } };
+    },
     async listAgentsConfigSnapshots(nodeId) {
       calls.push(["snapshots", nodeId]);
       return { snapshots: ["agents.yaml.1"] };
@@ -116,6 +121,11 @@ describe("node agent/profile route harness", () => {
         "/api/nodes/node-a/agents/config/apply-profile-update",
         { profile: {} },
       ],
+      [
+        "POST",
+        "/api/nodes/node-a/agents/context-preview",
+        { atom_contexts: [] },
+      ],
       ["GET", "/api/nodes/node-a/agents/config/snapshots", undefined],
       [
         "POST",
@@ -140,6 +150,7 @@ describe("node agent/profile route harness", () => {
       "GET /api/nodes/:node_id/agents/:agent_id/portrait": true,
       "POST /api/nodes/:node_id/agents/config/plan-profile-update": true,
       "POST /api/nodes/:node_id/agents/config/apply-profile-update": true,
+      "POST /api/nodes/:node_id/agents/context-preview": true,
       "GET /api/nodes/:node_id/agents/config/snapshots": true,
       "POST /api/nodes/:node_id/agents/config/rollback": true,
       "GET /api/nodes/:node_id/oauth-profiles": true,
@@ -418,6 +429,41 @@ describe("node agent/profile route harness", () => {
       ],
     ]);
 
+    await app.close();
+  });
+
+  it("validates and forwards context preview input", async () => {
+    const { provider, calls } = createProvider();
+    const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
+    const input = {
+      atom_contexts: [
+        {
+          node_id: "9e91bf3d-b682-4c12-b42e-93fcb51344a5",
+          mode: "full",
+          applies_when: { source: ["browser"] },
+        },
+      ],
+      session: {
+        source: "browser",
+        container_kind: "task",
+        agent: "seosoyoung",
+      },
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/agents/context-preview",
+      payload: input,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ manifest: { sources: [] } });
+    expect(calls).toEqual([["preview", "node-a", input]]);
+
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/agents/context-preview",
+      payload: { atom_contexts: "invalid" },
+    })).statusCode).toBe(422);
     await app.close();
   });
 

@@ -34,6 +34,8 @@ export interface AtomContextSpec {
   includeIds?: boolean;
   limit?: number;
   mode?: string;
+  /** Forward-compatible condition payload. The compiler validates fields and values with warnings. */
+  appliesWhen?: Record<string, unknown>;
 }
 
 export function atomContextSpecKey(spec: AtomContextSpec): string {
@@ -44,7 +46,17 @@ export function atomContextSpecKey(spec: AtomContextSpec): string {
     spec.includeIds ?? null,
     spec.limit ?? null,
     spec.mode ?? null,
+    stableConditionJson(spec.appliesWhen),
   ]);
+}
+
+function stableConditionJson(value: Record<string, unknown> | undefined): string | null {
+  if (value === undefined) return null;
+  return JSON.stringify(Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, Array.isArray(entry) ? [...entry] : entry]),
+  ));
 }
 
 /**
