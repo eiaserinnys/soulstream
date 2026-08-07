@@ -35,11 +35,6 @@ interface DocumentRow {
   updated_at: Date | string;
 }
 
-interface UpdateRow {
-  document_name: string;
-  update: Buffer | Uint8Array;
-}
-
 const apply = process.argv.includes("--apply");
 const summaryOnly = process.argv.includes("--summary");
 const collisionDetails = process.argv.includes("--collision-details");
@@ -79,12 +74,6 @@ try {
       WHERE name LIKE 'board:%' OR name LIKE 'board-folder:%'
       ORDER BY name
     `;
-    const updates = await transaction<UpdateRow[]>`
-      SELECT document_name, update
-      FROM board_yjs_updates
-      WHERE document_name LIKE 'board:%' OR document_name LIKE 'board-folder:%'
-      ORDER BY document_name, id
-    `;
     const projection = await transaction<Array<{
       board_items_runbook: number;
       catalog_runbook: number;
@@ -101,27 +90,18 @@ try {
         (SELECT COUNT(*)::int FROM blocks WHERE block_type = 'runbook_ref')
           AS blocks_runbook_ref
     `;
-    return { documents, updates, projection: projection[0] };
+    return { documents, projection: projection[0] };
   });
 
-  const updatesByDocument = new Map<string, Uint8Array[]>();
-  for (const row of inventory.updates) {
-    const values = updatesByDocument.get(row.document_name) ?? [];
-    values.push(new Uint8Array(row.update));
-    updatesByDocument.set(row.document_name, values);
-  }
   const rawByName = new Map<string, BoardYjsRawDocument>();
   for (const row of inventory.documents) {
     const snapshot = new Uint8Array(row.snapshot);
-    const updates = updatesByDocument.get(row.name) ?? [];
     rawByName.set(row.name, {
       snapshot,
-      updates,
-      revision: computeBoardYjsRawRevision(snapshot, updates),
+      revision: computeBoardYjsRawRevision(snapshot),
     });
   }
   const affected: Array<BoardYjsRunbookMigrationPlan & {
-    pendingUpdates: number;
     lastUpdatedAt: string;
   }> = [];
   const opaqueBoardItemIds = new Set<string>();
@@ -134,10 +114,8 @@ try {
 
   for (const row of inventory.documents) {
     const source = rawByName.get(row.name)!;
-    const updates = updatesByDocument.get(row.name) ?? [];
     const sourceDoc = new Y.Doc();
     if (source.snapshot.byteLength > 0) Y.applyUpdate(sourceDoc, source.snapshot);
-    for (const update of source.updates) Y.applyUpdate(sourceDoc, update);
     const before = inspectBoardYjsRunbookResidue(row.name, sourceDoc);
     for (const id of before.opaqueBoardItemIds) opaqueBoardItemIds.add(id);
     if (!hasBoardYjsRunbookResidue(before)) continue;
@@ -160,7 +138,6 @@ try {
     plannedLegacySourceKeys += plan.after.legacySourceKeys;
     affected.push({
       ...plan,
-      pendingUpdates: updates.length,
       lastUpdatedAt: new Date(row.updated_at).toISOString(),
     });
   }
@@ -183,7 +160,7 @@ try {
     mode: apply ? "apply" : "dry-run",
     writesEnabled: apply,
     documentsScanned: inventory.documents.length,
-    pendingUpdatesApplied: inventory.updates.length,
+    snapshotsScanned: inventory.documents.length,
     affectedDocuments: affected.length,
     legacyDocumentNames,
     legacyItemTypes,

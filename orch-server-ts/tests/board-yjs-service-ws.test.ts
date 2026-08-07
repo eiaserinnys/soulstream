@@ -157,7 +157,11 @@ describe("orch BoardYjsService", () => {
       await waitFor(() =>
         right.document.getMap("wire-proof").get("message") === "synced through orch"
       );
-      expect(repository.appendedUpdates).toBeGreaterThan(0);
+      await waitFor(() => repository.snapshots.size > 0);
+      const storedDocument = new Y.Doc();
+      Y.applyUpdate(storedDocument, [...repository.snapshots.values()].at(-1)!);
+      expect(storedDocument.getMap("wire-proof").get("message"))
+        .toBe("synced through orch");
     } finally {
       await app.close();
     }
@@ -246,7 +250,6 @@ function silentLogger(): FastifyBaseLogger {
 
 class MemoryBoardYjsRepository {
   readonly snapshots = new Map<string, Uint8Array>();
-  appendedUpdates = 0;
 
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
     return this.snapshots.get(documentName) ?? null;
@@ -278,10 +281,6 @@ class MemoryBoardYjsRepository {
   }
 
   async markBoardYjsDocumentSynced(): Promise<void> {}
-
-  async appendBoardYjsUpdate(): Promise<void> {
-    this.appendedUpdates += 1;
-  }
 
   async syncBoardYjsReplica(
     _container: BoardYjsContainerScope,

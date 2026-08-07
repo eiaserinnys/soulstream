@@ -48,9 +48,6 @@ export interface ComputedBoardYjsRunbookMigrationPlan {
 export function recomposeBoardYjsRawDocument(state: BoardYjsRawDocument): Y.Doc {
   const doc = new Y.Doc();
   if (state.snapshot.byteLength > 0) Y.applyUpdate(doc, state.snapshot);
-  for (const update of state.updates) {
-    if (update.byteLength > 0) Y.applyUpdate(doc, update);
-  }
   return doc;
 }
 

@@ -68,7 +68,7 @@ export class BoardYjsService {
       maxDebounce: 5_000,
       extensions: [
         createBoardYjsAuthExtension(config.auth, config.logger),
-        persistence.updateLog,
+        persistence.snapshotSync,
         persistence.database,
       ],
     });

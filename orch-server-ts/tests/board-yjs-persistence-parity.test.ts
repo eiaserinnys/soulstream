@@ -163,7 +163,7 @@ describe("board_yjs_persistence", () => {
     expect(db.markBoardYjsDocumentSynced).toHaveBeenCalledWith(documentName);
   });
 
-  it("onChange stores update, writes compact snapshot, syncs replica, and invalidates catalog cache", async () => {
+  it("onChange writes the canonical snapshot, syncs replica, and invalidates catalog cache", async () => {
     const folderId = "folder-1";
     const documentName = getBoardYjsDocumentName(folderId);
     const doc = new Y.Doc();
@@ -188,9 +188,7 @@ describe("board_yjs_persistence", () => {
       y: 160,
       metadata: {},
     });
-    const update = Y.encodeStateAsUpdate(doc);
     const db = {
-      appendBoardYjsUpdate: vi.fn().mockResolvedValue(undefined),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId,
         containerKind: "folder",
@@ -202,13 +200,12 @@ describe("board_yjs_persistence", () => {
     } as unknown as BoardYjsPersistenceRepository;
 
     const persistence = createBoardYjsPersistence(db);
-    await persistence.updateLog.onChange?.({
+    await persistence.snapshotSync.onChange?.({
       documentName,
       document: doc,
-      update,
+      update: Y.encodeStateAsUpdate(doc),
     } as never);
 
-    expect(db.appendBoardYjsUpdate).toHaveBeenCalledWith(documentName, update);
     expect(db.storeBoardYjsSnapshot).toHaveBeenCalledWith(
       documentName,
       expect.any(Uint8Array),
