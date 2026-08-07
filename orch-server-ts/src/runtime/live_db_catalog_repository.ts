@@ -54,6 +54,7 @@ import {
 } from "./live_admin_users_route_provider.js";
 import { createLiveSessionReviewRepository } from "./live_session_review_repository.js";
 import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
+import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { createLiveAgentProfileRepository } from "./live_agent_profile_repository.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
@@ -111,6 +112,7 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly closeTimeoutSeconds?: number;
   readonly sessionSnapshotLimit?: number;
   readonly boardAssetStorage?: LiveBoardAssetStorage | null;
+  readonly sessionDeletion?: SessionDeletionPort;
 };
 
 const DEFAULT_SESSION_SNAPSHOT_LIMIT = 200;
@@ -273,7 +275,10 @@ export function createLiveDbCatalogRepository(
       boardItemProvider,
     ),
     taskRouteProvider: taskProvider,
-    sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
+    sessionCatalogProvider: createSessionCatalogProvider(
+      sqlResolver,
+      options.sessionDeletion,
+    ),
     sessionHistoryProvider,
     cogitoSearchProvider,
     sessionResourceAccessRepository,
@@ -391,6 +396,7 @@ async function sessionSnapshotFilters(
 
 function createSessionCatalogProvider(
   sqlResolver: LiveDbSqlResolver,
+  sessionDeletion: SessionDeletionPort | undefined,
 ): SessionCatalogProvider {
   return {
     async renameSession(sessionId, displayName) {
@@ -422,10 +428,8 @@ function createSessionCatalogProvider(
       }
     },
     async deleteSession(sessionId) {
-      const sql = await sqlResolver.resolveSql();
-      await sql`
-        SELECT session_delete(${sessionId})
-      `;
+      if (!sessionDeletion) throw new Error("session deletion service is required");
+      await sessionDeletion.deleteSession(sessionId);
     },
     async getSessionCards(sessionId) {
       const sql = await sqlResolver.resolveSql();

@@ -8,7 +8,12 @@ import WebSocket from "ws";
 import * as Y from "yjs";
 
 import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
+import { readBoardYDocReplica } from "../src/board-yjs/board_yjs_model.js";
 import { registerBoardYjsRoutes } from "../src/board-yjs/board_yjs_route.js";
+import { assertBoardItemProjectionParity } from
+  "../src/board-yjs/board_yjs_projection_verification.js";
+import { SessionDeletionService } from
+  "../src/session/session_deletion_service.js";
 import type {
   BoardYjsContainerRef,
   BoardYjsContainerScope,
@@ -76,6 +81,60 @@ describe("orch BoardYjsService", () => {
         title: "Moved",
         body: "Preserved body",
         version: 2,
+      });
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("deletes a session card from canonical Y.Doc storage and passes projection verification", async () => {
+    const repository = new MemoryBoardYjsRepository();
+    const service = createService(repository);
+    try {
+      const boardItem = await service.upsertSessionBoardItem({
+        folderId: "folder-1",
+        container: { containerKind: "task", containerId: "task-1" },
+        sessionId: "session-delete",
+        x: 10,
+        y: 20,
+      });
+      const deletion = new SessionDeletionService({
+        board: service,
+        repository: {
+          async listSessionBoardItems(sessionId) {
+            expect(sessionId).toBe("session-delete");
+            return [boardItem];
+          },
+          async deleteSession({ sessionId, boardApplications }) {
+            expect(sessionId).toBe("session-delete");
+            expect(boardApplications).toHaveLength(1);
+            for (const application of boardApplications) {
+              await repository.storeBoardYjsSnapshot(
+                application.documentName,
+                application.snapshot,
+              );
+            }
+          },
+        },
+      });
+
+      await deletion.deleteSession("session-delete");
+
+      const documentName = "board:task:task-1";
+      const storedSnapshot = repository.snapshots.get(documentName);
+      expect(storedSnapshot).toBeDefined();
+      const storedDocument = new Y.Doc();
+      Y.applyUpdate(storedDocument, storedSnapshot!);
+      const storedReplica = readBoardYDocReplica({
+        folderId: "folder-1",
+        containerKind: "task",
+        containerId: "task-1",
+      }, storedDocument);
+      expect(storedReplica.boardItems).toEqual([]);
+      assertBoardItemProjectionParity({
+        label: documentName,
+        ydocItems: storedReplica.boardItems,
+        projectionItems: [],
       });
     } finally {
       await service.close();

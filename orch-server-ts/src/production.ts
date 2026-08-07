@@ -68,6 +68,8 @@ import { createFolderControlPlaneServiceProvider } from "./folders/folder_contro
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
+import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
+import { SessionDeletionService } from "./session/session_deletion_service.js";
 import {
   createLiveTurnSummaryPipeline,
   type LiveTurnSummaryPipeline,
@@ -151,7 +153,20 @@ export async function createLiveProductionApplication(
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
-  const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(sqlResolver);
+  let boardYjsService: BoardYjsService | undefined;
+  const sessionDeletionService = new SessionDeletionService({
+    board: {
+      async withBoardItemRemovalApplications(boardItems, persist) {
+        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
+        return await boardYjsService.withBoardItemRemovalApplications(boardItems, persist);
+      },
+    },
+    repository: new SessionDeletionRepository(sqlResolver),
+  });
+  const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(
+    sqlResolver,
+    sessionDeletionService,
+  );
   const registry = new InMemoryNodeRegistry();
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
@@ -170,6 +185,7 @@ export async function createLiveProductionApplication(
     configProvider,
     registry,
     boardAssetStorage,
+    sessionDeletion: sessionDeletionService,
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
   const foregroundObservers = new SessionForegroundObserverTracker();
@@ -184,7 +200,6 @@ export async function createLiveProductionApplication(
     foregroundObservers,
   });
   let providers: LiveOrchestratorProviderBundle;
-  let boardYjsService: BoardYjsService | undefined;
   let pageYjsService: PageYjsService | undefined;
   let taskIdentityService: TaskIdentityService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;

@@ -102,6 +102,7 @@ export * from "./session/session_command_router.js";
 export * from "./session/session_create_node_selector.js";
 export * from "./session/session_command_routes.js";
 export * from "./session/session_create_lifecycle.js";
+export * from "./session/session_deletion_service.js";
 export * from "./session/session_command_transport.js";
 export * from "./session/session_history_routes.js";
 export * from "./session/session_history_service.js";

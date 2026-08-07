@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { sanitizePgText } from "../../node/pg_text_sanitizer.js";
 import type { SqlClient } from "../control_plane_types.js";
+import type { SessionDeletionPort } from "../../session/session_deletion_service.js";
 
 export type SessionTransitionFields = {
   status?: string;
@@ -43,7 +44,10 @@ type MutationReceipt = {
 };
 
 export class SessionMutationRepository {
-  constructor(private readonly sql: SqlClient) {}
+  constructor(
+    private readonly sql: SqlClient,
+    private readonly sessionDeletion?: SessionDeletionPort,
+  ) {}
 
   registerSession(input: RegisterSessionMutation): Promise<{ ok: true }> {
     const sanitizedInput = {
@@ -116,8 +120,9 @@ export class SessionMutationRepository {
     idempotencyKey: string;
     sessionId: string;
   }): Promise<{ ok: true }> {
-    return this.idempotent("delete_session", input, async (sql) => {
-      await sql`SELECT session_delete(${input.sessionId})`;
+    return this.idempotent("delete_session", input, async () => {
+      if (!this.sessionDeletion) throw hostError(500, "session deletion service is required");
+      await this.sessionDeletion.deleteSession(input.sessionId);
       return { ok: true } as const;
     });
   }
