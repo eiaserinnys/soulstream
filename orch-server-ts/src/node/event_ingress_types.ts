@@ -1,3 +1,5 @@
+import { sanitizePgJsonValue, sanitizePgText } from "./pg_text_sanitizer.js";
+
 export const EVENT_INGRESS_PROTOCOL_VERSION = 1;
 export const EVENT_INGRESS_MAX_EVENTS = 64;
 export const EVENT_INGRESS_MAX_BATCH_FRAME_BYTES = 256 * 1024;
@@ -134,19 +136,24 @@ function parseEnvelope(
   if (!SHA256_PATTERN.test(payloadHash)) {
     throw new EventIngressValidationError(`events[${index}].payload_hash must be sha256`);
   }
+  const searchableText = nullableString(value.searchable_text, `events[${index}].searchable_text`);
+  const semanticDedupeKey = nullableString(
+    value.semantic_dedupe_key,
+    `events[${index}].semantic_dedupe_key`,
+  );
+  const sessionEffect = parseSessionEffect(value.session_effect, index);
   return {
     stream_id: streamId,
     source_seq: sourceSeq,
     session_id: sessionId,
     event_type: eventType,
-    payload: value.payload,
-    searchable_text: nullableString(value.searchable_text, `events[${index}].searchable_text`),
+    payload: sanitizePgJsonValue(value.payload),
+    searchable_text: searchableText === null ? null : sanitizePgText(searchableText),
     created_at: createdAt,
-    semantic_dedupe_key: nullableString(
-      value.semantic_dedupe_key,
-      `events[${index}].semantic_dedupe_key`,
-    ),
-    session_effect: parseSessionEffect(value.session_effect, index),
+    semantic_dedupe_key: semanticDedupeKey === null ? null : sanitizePgText(semanticDedupeKey),
+    session_effect: sessionEffect === null
+      ? null
+      : sanitizePgJsonValue(sessionEffect) as EventSessionEffect,
     payload_hash: payloadHash,
   };
 }
