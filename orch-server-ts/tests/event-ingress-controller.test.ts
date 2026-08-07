@@ -170,6 +170,57 @@ describe("NodeEventIngressController", () => {
     expect(completionBodies).toEqual(["fresh final answer"]);
   });
 
+  it("clears stale final text before publishing when a legacy terminal effect omits it", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "session_ended";
+    value.events[0]!.payload = {
+      type: "session_ended",
+      status: "completed",
+      termination_reason: "completed_ok",
+    };
+    value.events[0]!.session_effect = {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "not_required",
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const session: { last_assistant_text: string | null; last_message: { preview: string } } = {
+      last_assistant_text: "previous turn",
+      last_message: { preview: "fallback preview" },
+    };
+    const completionBodies: string[] = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        if (message.type === "session_updated") {
+          if ("last_assistant_text" in message) {
+            session.last_assistant_text = message.last_assistant_text as string | null;
+          }
+          return [{ type: "node_session_session_updated", nodeId: "node-a", data: message }];
+        }
+        return [{ type: "node_session_event", nodeId: "node-a", data: message }];
+      },
+      publish: (events: Array<{ type: string }>) => {
+        if (events.some((event) => event.type === "node_session_event")) {
+          completionBodies.push(session.last_assistant_text || session.last_message.preview);
+        }
+      },
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(completionBodies).toEqual(["fallback preview"]);
+  });
+
   it("rejects malformed typed effects before the repository", async () => {
     const commitBatch = vi.fn();
     const close = vi.fn();

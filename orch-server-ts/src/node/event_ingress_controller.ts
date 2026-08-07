@@ -153,9 +153,7 @@ function committedEffectSessionUpdate(
       termination_reason: effect.termination_reason,
       termination_detail: effect.termination_detail,
       review_state: effect.review_state,
-      ...(effect.last_assistant_text === undefined
-        ? {}
-        : { last_assistant_text: effect.last_assistant_text }),
+      last_assistant_text: effect.last_assistant_text ?? null,
       updated_at: effect.updated_at,
       last_event_id: input.eventId,
     };
