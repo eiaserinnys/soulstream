@@ -45,17 +45,6 @@ export const EnvSchema = z
      */
     CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
     /**
-     * PostgreSQL 연결 URL. worker와 schema helper가 같은 키를 사용한다.
-     * design-principles §4 명시 실패 — default 없음. production·development 모두 필수.
-     */
-    DATABASE_URL: z
-      .string()
-      .url("DATABASE_URL must be a valid URL")
-      .refine(
-        (u) => u.startsWith("postgres://") || u.startsWith("postgresql://"),
-        "DATABASE_URL must be postgres:// or postgresql://",
-      ),
-    /**
      * Semantic event durable retry buffer. No code fallback: every worker node
      * must pre-seed an explicit node-local directory before this release starts.
      */

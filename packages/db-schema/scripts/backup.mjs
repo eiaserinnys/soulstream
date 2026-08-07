@@ -20,11 +20,8 @@ import {
   rollbackUnsafePending,
   sha256,
 } from "./migration-contract.mjs";
-import { readVerifiedClusterWriteFence } from "./cluster-write-fence.mjs";
 import { readMigrationPlan } from "./migrate.mjs";
 import { postgresCli, runPostgresCommand } from "./postgres-backup-tools.mjs";
-
-export { validateClusterWriteFence } from "./cluster-write-fence.mjs";
 
 const METADATA_NAME = "database-backup.json";
 const DUMP_NAME = "database.dump";
@@ -229,7 +226,6 @@ export async function restoreBackup(
   });
   const databaseUrl = readDatabaseUrl(env);
   const deploy = requireDeployEnvironment(env);
-  await readVerifiedClusterWriteFence(env);
   const metadataPath = resolve(deploy.backupDirectory, METADATA_NAME);
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
   if (!new Set(["verified", "restored"]).has(metadata.status)) {

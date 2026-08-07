@@ -355,9 +355,6 @@ importers:
       pino:
         specifier: ^9.5.0
         version: 9.14.0
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
       ws:
         specifier: ^8.18.0
         version: 8.20.0
@@ -380,6 +377,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.1
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0)

@@ -22,7 +22,7 @@ describe("worker session-data read boundary", () => {
     expect(Object.fromEntries([...matches].sort())).toEqual({});
   });
 
-  it("keeps every direct SQL module inside the Phase 12 inventory", () => {
+  it("keeps every direct SQL module out of worker runtime code", () => {
     const matches = new Set<string>();
     for (const file of walkTypescriptFiles(SOURCE_ROOT)) {
       const source = stripComments(readFileSync(file, "utf8"));
@@ -30,11 +30,21 @@ describe("worker session-data read boundary", () => {
       DIRECT_SQL_PATTERN.lastIndex = 0;
     }
 
-    expect([...matches].sort()).toEqual([
-      "db/repositories/session_repository.ts",
-      "db/runtime_schema_preflight.ts",
-      "db/session_db.ts",
-    ]);
+    expect([...matches].sort()).toEqual([]);
+  });
+
+  it("keeps PostgreSQL imports and DATABASE_URL out of worker runtime code", () => {
+    const matches = new Map<string, string[]>();
+    for (const file of walkTypescriptFiles(SOURCE_ROOT)) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      const violations = [
+        ...source.matchAll(/\bfrom\s+["']postgres["']/g),
+        ...source.matchAll(/\bDATABASE_URL\b/g),
+      ].map((match) => match[0]);
+      if (violations.length > 0) matches.set(relative(SOURCE_ROOT, file), violations);
+    }
+
+    expect(Object.fromEntries([...matches].sort())).toEqual({});
   });
 });
 

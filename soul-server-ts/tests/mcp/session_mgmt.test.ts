@@ -586,7 +586,7 @@ describe("agent profile backend boundary", () => {
         },
         dependencies: {
           database: {
-            status: "unavailable",
+            status: "not_configured",
           },
         },
       },

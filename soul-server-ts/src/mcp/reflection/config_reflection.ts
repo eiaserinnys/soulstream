@@ -36,7 +36,6 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
       value: runtime.agentsConfigPath,
       reason: agentsConfigExists ? undefined : "configured file is not readable from this process",
     },
-    envEntry("DATABASE_URL", { required: true, sensitive: true }),
     envEntry("SOULSTREAM_UPSTREAM_URL", { required: true, sensitive: false }),
     envEntry("CLAUDE_SESSION_RUNTIME_V2_ENABLED", {
       required: false,

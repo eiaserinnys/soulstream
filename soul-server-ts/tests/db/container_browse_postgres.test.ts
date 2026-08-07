@@ -106,7 +106,7 @@ describePostgres("container browse PostgreSQL integration", () => {
         NOW() - make_interval(secs => value)
       FROM generate_series(1, 2005) AS value
     `;
-    const db = new SessionDB(sql);
+    const db = new SessionDB();
     configureTestBoardProjectionReadHost(db, sql);
     db.configureFolderHost(
       new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,

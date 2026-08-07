@@ -44,6 +44,10 @@ import {
 import { resolveLiveBoardAssetStorageFromConfig } from "./runtime/live_board_asset_storage.js";
 import { OrchestratorMaintenanceService } from "./runtime/orchestrator_maintenance_service.js";
 import { createOrchestratorMemoryStatsCollector } from "./runtime/orchestrator_memory_stats.js";
+import {
+  StableSessionOrderIndexMaintenance,
+  startStableSessionOrderIndexMaintenance,
+} from "./runtime/stable_session_order_index_maintenance.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import { deletedBoardItemsDelta } from "./runtime/catalog_delta_broadcaster.js";
@@ -375,10 +379,16 @@ export async function createLiveProductionApplication(
       );
     },
   });
+  const stableSessionOrderIndexMaintenance =
+    new StableSessionOrderIndexMaintenance(sqlResolver);
   let resourcesClosed = false;
   return {
     app,
     startBackground: async () => {
+      startStableSessionOrderIndexMaintenance(
+        stableSessionOrderIndexMaintenance,
+        app.log,
+      );
       usageSummaryService.start();
       maintenanceService.start();
       turnSummaryPipeline?.start?.();

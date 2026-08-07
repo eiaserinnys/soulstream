@@ -39,7 +39,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    db = new SessionDB(harness.sql);
+    db = new SessionDB();
     configureTestSessionDataHost(db, harness.sql);
     db.configureSessionDeliveryHost(
       new SessionDeliveryRepository(harness.sql) as never,

@@ -7,7 +7,6 @@ describe("parseEnv", () => {
   const minimal = {
     SOULSTREAM_NODE_ID: "eias-shopping-ts",
     SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
-    DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
     EVENT_OUTBOX_DIR: "/tmp/soulstream-event-outbox-test",
   };
 
@@ -91,31 +90,14 @@ describe("parseEnv", () => {
     expect(env.LLM_ANTHROPIC_API_KEY).toBe("anthropic-key");
   });
 
-  // Phase B-3 — DATABASE_URL + AGENTS_CONFIG_PATH
-  it("DATABASE_URL 부재 시 ZodError", () => {
-    const { DATABASE_URL: _, ...rest } = minimal;
-    void _;
-    expect(() => parseEnv(rest)).toThrow(ZodError);
+  it("워커 설정은 DATABASE_URL 없이 성립한다", () => {
+    expect(parseEnv(minimal)).not.toHaveProperty("DATABASE_URL");
   });
 
   it("EVENT_OUTBOX_DIR는 fallback 없이 필수다", () => {
     const { EVENT_OUTBOX_DIR: _, ...rest } = minimal;
     void _;
     expect(() => parseEnv(rest)).toThrow(ZodError);
-  });
-
-  it("DATABASE_URL이 postgres:// 또는 postgresql://가 아니면 거부", () => {
-    expect(() =>
-      parseEnv({ ...minimal, DATABASE_URL: "mysql://localhost/x" }),
-    ).toThrow(ZodError);
-  });
-
-  it("postgresql:// 스킴 허용", () => {
-    const env = parseEnv({
-      ...minimal,
-      DATABASE_URL: "postgresql://test:test@localhost/x",
-    });
-    expect(env.DATABASE_URL).toBe("postgresql://test:test@localhost/x");
   });
 
   it("AGENTS_CONFIG_PATH 미지정 시 default 'config/agents.yaml'", () => {

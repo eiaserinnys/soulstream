@@ -54,7 +54,7 @@ function createSilentLogger(warn: (...args: unknown[]) => void = () => {}) {
 
 function makeRuntime(warn: (...args: unknown[]) => void = () => {}): McpRuntime {
   const { sql } = createMockSql();
-  const db = new SessionDB(sql);
+  const db = new SessionDB();
   const broadcaster = {
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
     emitSessionDeleted: vi.fn().mockResolvedValue(undefined),

@@ -372,7 +372,7 @@ let sqlCalls: MockSqlCall[] = [];
 function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRuntime {
   const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
   sqlCalls = sql.__calls;
-  const db = new SessionDB(sql);
+  const db = new SessionDB();
   configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
     new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
@@ -581,7 +581,7 @@ describe("MCP SDK client smoke", () => {
     expect(structured.services[0]?.data.sections.source.source.level).toBe(2);
     expect(structured.services[0]?.data.sections.runtime.source.level).toBe(3);
     expect(structured.services[0]?.data.sections.runtime.data.dependencies.database.status).toBe(
-      "ok",
+      "not_configured",
     );
     expect(
       structured.services[0]?.data.sections.runtime.data.dependencies.orchestrator.status,
@@ -887,7 +887,7 @@ describe("MCP SDK client smoke", () => {
     expect(structured.data.process.memory.heap_used).toBeGreaterThan(0);
     expect(structured.data.counts.agent_count).toBe(1);
     expect(structured.data.counts.active_task_count).toBe(0);
-    expect(structured.data.dependencies.database.status).toBe("ok");
+    expect(structured.data.dependencies.database.status).toBe("not_configured");
     expect(structured.data.dependencies.orchestrator.status).toBe("not_configured");
   });
 

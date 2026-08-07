@@ -22,7 +22,6 @@ import {
   rollbackUnsafePending,
   validateBackupGate,
 } from "./migration-contract.mjs";
-import { readVerifiedClusterWriteFence } from "./cluster-write-fence.mjs";
 import { assertPostgresBackupPrerequisites } from "./postgres-backup-tools.mjs";
 
 const MODES = new Set([
@@ -149,7 +148,6 @@ export async function preflightPendingMigrations(
   {
     env = process.env,
     backupPreflight = assertPostgresBackupPrerequisites,
-    fencePreflight = readVerifiedClusterWriteFence,
   } = {},
 ) {
   const destructive = destructivePending(plan);
@@ -159,11 +157,10 @@ export async function preflightPendingMigrations(
       destructive_pending: [],
       rollback_unsafe_pending: [],
       backup_prerequisites: "not_required",
-      cluster_write_fence: "not_required",
+      writer_quiescence: "not_required",
     };
   }
   await assertDestructivePreflight(plan);
-  const fence = await fencePreflight(env);
   const prerequisites = await backupPreflight({
     databaseUrl: readDatabaseUrl(env),
     env,
@@ -172,7 +169,7 @@ export async function preflightPendingMigrations(
     destructive_pending: destructive.map((migration) => migration.id),
     rollback_unsafe_pending: rollbackUnsafe.map((migration) => migration.id),
     backup_prerequisites: prerequisites,
-    cluster_write_fence: fence.status,
+    writer_quiescence: "central_service_stop",
   };
 }
 
@@ -193,7 +190,6 @@ export async function assertRollbackUnsafeApplyGates(
   plan,
   env = process.env,
   {
-    fenceRead = readVerifiedClusterWriteFence,
     backupGateRead = readVerifiedBackupGate,
   } = {},
 ) {
@@ -201,11 +197,11 @@ export async function assertRollbackUnsafeApplyGates(
   if (rollbackUnsafe.length === 0) {
     return { rollback_unsafe_pending: [], gates: "not_required" };
   }
-  await fenceRead(env);
   await backupGateRead(env, plan);
   return {
     rollback_unsafe_pending: rollbackUnsafe.map((migration) => migration.id),
     gates: "verified",
+    writer_quiescence: "central_service_stop",
   };
 }
 

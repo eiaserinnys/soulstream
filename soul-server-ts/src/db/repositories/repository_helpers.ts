@@ -1,5 +1,3 @@
-import type postgres from "postgres";
-
 import { normalizeMarkdownVersion } from "../markdown_document_version.js";
 import type {
   BoardContainerKind,
@@ -10,10 +8,9 @@ import type {
   SqlClient,
 } from "../session_db_types.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TransactionSql = postgres.TransactionSql<any>;
+export type TransactionSql = SqlClient;
 export type RepositorySql = SqlClient | TransactionSql;
-export type PostgresJsonValue = Parameters<RepositorySql["json"]>[0];
+export type PostgresJsonValue = unknown;
 
 export function asPostgresJsonValue(value: unknown): PostgresJsonValue {
   return value as PostgresJsonValue;
