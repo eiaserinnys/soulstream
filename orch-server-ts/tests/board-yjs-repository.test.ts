@@ -227,6 +227,120 @@ describe("orch BoardYjsRepository", () => {
     expect(jsonValues.every((value) => typeof value !== "string")).toBe(true);
   });
 
+  it("lets task board writes proceed when an existing Y.Doc item has dangling task provenance", async () => {
+    const danglingSourceTaskItemId = "missing-task-item";
+    const existingSourceTaskItemId = "existing-task-item";
+    const { sql, calls, jsonValues } = createMockSql((call) => {
+      if (call.query.includes("FROM task_items")) return [{ id: existingSourceTaskItemId }];
+      if (
+        call.query.includes("INSERT INTO board_items") &&
+        call.values[5] === danglingSourceTaskItemId
+      ) {
+        throw new Error(
+          'violates foreign key constraint "board_items_source_runbook_item_id_fkey"',
+        );
+      }
+      return [];
+    });
+    const repository = new BoardYjsRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+    const replica = {
+      boardItems: [{
+        id: "session:poisoned",
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "task-1",
+        membershipKind: "primary" as const,
+        sourceTaskItemId: danglingSourceTaskItemId,
+        itemType: "session" as const,
+        itemId: "poisoned",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }, {
+        id: "session:valid",
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "task-1",
+        membershipKind: "primary" as const,
+        sourceTaskItemId: existingSourceTaskItemId,
+        itemType: "session" as const,
+        itemId: "valid",
+        x: 10,
+        y: 10,
+        metadata: {},
+      }, {
+        id: "markdown:created",
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "task-1",
+        membershipKind: "primary" as const,
+        sourceTaskItemId: null,
+        itemType: "markdown" as const,
+        itemId: "created",
+        x: 20,
+        y: 20,
+        metadata: { title: "Created in task" },
+      }, {
+        id: "markdown:moved",
+        folderId: "folder-1",
+        containerKind: "task" as const,
+        containerId: "task-1",
+        membershipKind: "primary" as const,
+        sourceTaskItemId: null,
+        itemType: "markdown" as const,
+        itemId: "moved",
+        x: 40,
+        y: 40,
+        metadata: { title: "Moved into task" },
+      }],
+      markdownDocuments: [{
+        id: "created",
+        title: "Created in task",
+        body: "Created body",
+        version: 1,
+      }, {
+        id: "moved",
+        title: "Moved into task",
+        body: "Moved body",
+        version: 1,
+      }],
+    };
+
+    await expect(repository.syncBoardYjsReplica({
+      folderId: "folder-1",
+      containerKind: "task",
+      containerId: "task-1",
+    }, replica)).resolves.toBeUndefined();
+
+    const sourceLookup = calls.find((call) => call.query.includes("FROM task_items"));
+    expect(sourceLookup?.query).toContain("FOR KEY SHARE");
+    expect(sourceLookup?.values).toEqual([[
+      danglingSourceTaskItemId,
+      existingSourceTaskItemId,
+    ]]);
+    const poisonedInsert = calls.find((call) =>
+      call.query.includes("INSERT INTO board_items") && call.values[0] === "session:poisoned"
+    );
+    expect(poisonedInsert?.values[5]).toBeNull();
+    const validInsert = calls.find((call) =>
+      call.query.includes("INSERT INTO board_items") && call.values[0] === "session:valid"
+    );
+    expect(validInsert?.values[5]).toBe(existingSourceTaskItemId);
+    const cachedBoardItems = jsonValues.find(Array.isArray) as typeof replica.boardItems;
+    expect(cachedBoardItems).toEqual([
+      expect.objectContaining({ id: "session:poisoned", sourceTaskItemId: null }),
+      expect.objectContaining({
+        id: "session:valid",
+        sourceTaskItemId: existingSourceTaskItemId,
+      }),
+      expect.objectContaining({ id: "markdown:created" }),
+      expect.objectContaining({ id: "markdown:moved" }),
+    ]);
+  });
+
   it("does not let a never-synced empty Y.Doc erase relational board_items", async () => {
     const { sql, calls } = createMockSql((call) =>
       call.query.includes("synced_at IS NOT NULL") ? [{ synced: false }] : [],
