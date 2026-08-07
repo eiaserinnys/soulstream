@@ -128,10 +128,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(57);
+    expect(migrations).toHaveLength(58);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "056_agent_profiles.sql",
+      "057_source_task_item_integrity.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -141,10 +141,10 @@ describe("versioned migration contract", () => {
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
     ]);
-    expect(migrations.slice(0, -15).every(
+    expect(migrations.slice(0, -16).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-15).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-16).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
       "previous_release_safe",
@@ -157,10 +157,35 @@ describe("versioned migration contract", () => {
       "previous_release_safe",
       "previous_release_safe",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
     ]);
+  });
+
+  it("keeps source task item references relational and removes the legacy duplicate FK", async () => {
+    const migration = (await loadMigrationManifest()).at(-1);
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migration?.sql).toContain(
+      "DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey",
+    );
+    expect(migration?.sql).toContain(
+      "ADD CONSTRAINT session_page_bindings_source_task_item_id_fkey",
+    );
+    expect(migration?.sql).toContain(
+      "FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL",
+    );
+    expect(migration?.sql).not.toMatch(/SIMILAR TO|source_task_item_id\s*~/);
+    expect(schema).toContain(
+      "DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey",
+    );
+    expect(schema).toContain(
+      "ADD CONSTRAINT session_page_bindings_source_task_item_id_fkey",
+    );
   });
 
   it("treats only explicit one-release compatibility as data-preserving rollback", () => {
@@ -204,6 +229,7 @@ describe("versioned migration contract", () => {
       "054_event_ingress_receipts.sql",
       "055_session_effects_and_mutation_receipts.sql",
       "056_agent_profiles.sql",
+      "057_source_task_item_integrity.sql",
     ]);
   });
 
@@ -228,6 +254,7 @@ describe("versioned migration contract", () => {
       "054_event_ingress_receipts.sql",
       "055_session_effects_and_mutation_receipts.sql",
       "056_agent_profiles.sql",
+      "057_source_task_item_integrity.sql",
     ]);
   });
 

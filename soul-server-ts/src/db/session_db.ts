@@ -50,10 +50,15 @@ export class SessionDB {
     this.taskReader = reader;
   }
 
+  async getTaskSnapshot(taskId: string): Promise<TaskSnapshot | null> {
+    if (!this.taskReader) throw new Error("task reader host is not configured");
+    return await this.taskReader.getTask(taskId);
+  }
+
   tasks(): { getTask(taskId: string): Promise<TaskRow | null> } {
     if (!this.taskReader) throw new Error("task reader host is not configured");
     return {
-      getTask: async (taskId) => (await this.taskReader!.getTask(taskId))?.task ?? null,
+      getTask: async (taskId) => (await this.getTaskSnapshot(taskId))?.task ?? null,
     };
   }
 

@@ -562,6 +562,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 57,
             applied_kind: "migration",
           },
+          {
+            migration_id: "057_source_task_item_integrity.sql",
+            ordinal: 58,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -591,7 +596,7 @@ describe("apply-schema.mjs", () => {
 
         const verified = runMigration(cwd, "verify");
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":57');
+        expect(verified.stdout).toContain('"ledger_count":58');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });

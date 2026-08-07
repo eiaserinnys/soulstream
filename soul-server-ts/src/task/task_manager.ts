@@ -65,6 +65,7 @@ import {
 } from "./claude_runtime_control.js";
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
 import { resolveModelPresetSelection } from "./task_model_preset.js";
+import { resolveSourceTaskItemProvenance } from "./source_task_item_provenance.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {
@@ -254,17 +255,25 @@ export class TaskManager {
    * TaskCreation이 소유하고, TaskManager는 public collection API를 유지한다.
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
-    const agent = params.profileId
-      ? this.agentRegistry?.get(params.profileId)
+    const sourceTaskItemId = await resolveSourceTaskItemProvenance({
+      sessionId: params.agentSessionId,
+      sourceTaskItemId: params.sourceTaskItemId,
+      container: params.container,
+      getTaskSnapshot: (taskId) => this.db.getTaskSnapshot(taskId),
+      logger: this.logger,
+    });
+    const resolvedParams = { ...params, sourceTaskItemId };
+    const agent = resolvedParams.profileId
+      ? this.agentRegistry?.get(resolvedParams.profileId)
       : undefined;
-    const canonicalParams = agent && params.profileId !== agent.id
-      ? { ...params, profileId: agent.id }
-      : params;
-    if (!agent || params.modelPresetBackend) {
+    const canonicalParams = agent && resolvedParams.profileId !== agent.id
+      ? { ...resolvedParams, profileId: agent.id }
+      : resolvedParams;
+    if (!agent || resolvedParams.modelPresetBackend) {
       return await this.taskCreation.createTask(canonicalParams);
     }
 
-    const preset = resolveModelPresetSelection(params, agent, this.modelCatalog);
+    const preset = resolveModelPresetSelection(canonicalParams, agent, this.modelCatalog);
     if (!preset) {
       return await this.taskCreation.createTask(canonicalParams);
     }
