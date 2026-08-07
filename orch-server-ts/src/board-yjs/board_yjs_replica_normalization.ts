@@ -1,4 +1,7 @@
-import type { BoardYjsReplica } from "./board_yjs_types.js";
+import type {
+  BoardYjsReplica,
+  CatalogBoardItemRow,
+} from "./board_yjs_types.js";
 
 export function normalizeMissingSourceTaskItemReferences(
   replica: BoardYjsReplica,
@@ -16,4 +19,25 @@ export function normalizeMissingSourceTaskItemReferences(
   });
 
   return changed ? { ...replica, boardItems } : replica;
+}
+
+export function findMissingSourceTaskItemReferences(
+  boardItems: readonly CatalogBoardItemRow[],
+  existingSourceTaskItemIds: ReadonlySet<string>,
+): MissingSourceTaskItemReference[] {
+  return boardItems.flatMap((item) => {
+    const sourceTaskItemId = item.sourceTaskItemId;
+    return sourceTaskItemId !== null && sourceTaskItemId !== undefined &&
+        !existingSourceTaskItemIds.has(sourceTaskItemId)
+      ? [{ boardItemId: item.id, sourceTaskItemId }]
+      : [];
+  }).sort((left, right) =>
+    left.boardItemId.localeCompare(right.boardItemId) ||
+    left.sourceTaskItemId.localeCompare(right.sourceTaskItemId)
+  );
+}
+
+export interface MissingSourceTaskItemReference {
+  boardItemId: string;
+  sourceTaskItemId: string;
 }

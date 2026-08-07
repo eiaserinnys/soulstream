@@ -4,10 +4,16 @@ import * as Y from "yjs";
 import { BOARD_ITEMS_MAP } from "../src/board-yjs/board_yjs_document.js";
 import {
   assertBoardItemProjectionParity,
+  boardItemMembershipMismatchDisposition,
+  inspectBoardItemMembershipDifference,
+  KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
   requireBoardItemCatalogProjection,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
-import { normalizeMissingSourceTaskItemReferences } from
+import {
+  findMissingSourceTaskItemReferences,
+  normalizeMissingSourceTaskItemReferences,
+} from
   "../src/board-yjs/board_yjs_replica_normalization.js";
 import type { CatalogBoardItemRow } from "../src/board-yjs/board_yjs_types.js";
 
@@ -60,4 +66,84 @@ describe("board Y.Doc runbook verifier catalog parity", () => {
       projectionItems: [{ ...ydocItem, sourceTaskItemId: null }],
     })).not.toThrow();
   });
+
+  it("reports both directions of Y.Doc and board_items membership drift", () => {
+    const ydocOnly = boardItem("session:ydoc-only");
+    const boardItemsOnly = boardItem("session:board-items-only");
+
+    expect(inspectBoardItemMembershipDifference({
+      ydocItems: [ydocOnly],
+      projectionItems: [boardItemsOnly],
+    })).toEqual({
+      missingFromProjection: ["session:ydoc-only"],
+      missingFromYdoc: ["session:board-items-only"],
+    });
+  });
+
+  it("keeps board_items field drift outside the membership comparison", () => {
+    const ydocItem = boardItem("session:same-membership");
+    const relationalItem = { ...ydocItem, x: 999, metadata: { stale: true } };
+
+    expect(inspectBoardItemMembershipDifference({
+      ydocItems: [ydocItem],
+      projectionItems: [relationalItem],
+    })).toEqual({
+      missingFromProjection: [],
+      missingFromYdoc: [],
+    });
+  });
+
+  it("blocks task membership drift but keeps known folder drift as a warning", () => {
+    expect(boardItemMembershipMismatchDisposition("task")).toBe("blocking");
+    expect(boardItemMembershipMismatchDisposition("folder")).toBe("warning");
+    expect(KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING).toContain(
+      "known unresolved drift",
+    );
+    expect(KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING).toContain("follow-up");
+  });
+
+  it("normalizes stale projection references without hiding the warning", () => {
+    const item = {
+      ...boardItem("session:stale-source"),
+      sourceTaskItemId: "deleted-task-item",
+    };
+    const existingSourceTaskItemIds = new Set<string>();
+    const normalizedYdoc = normalizeMissingSourceTaskItemReferences(
+      { boardItems: [item], markdownDocuments: [] },
+      existingSourceTaskItemIds,
+    );
+    const normalizedProjection = normalizeMissingSourceTaskItemReferences(
+      { boardItems: [item], markdownDocuments: [] },
+      existingSourceTaskItemIds,
+    );
+
+    expect(() => assertBoardItemProjectionParity({
+      label: "board:task:task-1 board_items",
+      ydocItems: normalizedYdoc.boardItems,
+      projectionItems: normalizedProjection.boardItems,
+    })).not.toThrow();
+    expect(findMissingSourceTaskItemReferences(
+      [item],
+      existingSourceTaskItemIds,
+    )).toEqual([{
+      boardItemId: "session:stale-source",
+      sourceTaskItemId: "deleted-task-item",
+    }]);
+  });
 });
+
+function boardItem(id: string): CatalogBoardItemRow {
+  return {
+    id,
+    folderId: "folder-1",
+    containerKind: "task",
+    containerId: "task-1",
+    membershipKind: "primary",
+    sourceTaskItemId: null,
+    itemType: "session",
+    itemId: id.replace("session:", ""),
+    x: 10,
+    y: 20,
+    metadata: {},
+  };
+}

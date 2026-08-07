@@ -10,13 +10,24 @@ import {
 } from "../src/board-yjs/board_yjs_model.js";
 import {
   assertBoardItemProjectionParity,
+  boardItemMembershipMismatchDisposition,
+  inspectBoardItemMembershipDifference,
+  KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
   requireBoardItemCatalogProjection,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
-import { normalizeMissingSourceTaskItemReferences } from
+import {
+  findMissingSourceTaskItemReferences,
+  normalizeMissingSourceTaskItemReferences,
+  type MissingSourceTaskItemReference,
+} from
   "../src/board-yjs/board_yjs_replica_normalization.js";
 import { inspectBoardYjsRunbookResidue } from
   "../src/board-yjs/board_yjs_runbook_residue.js";
+import {
+  toCatalogBoardItemRow,
+  type BoardItemDbRow,
+} from "../src/board-yjs/board_projection_serialization.js";
 import type { CatalogBoardItemRow } from "../src/board-yjs/board_yjs_types.js";
 
 interface DocumentRow {
@@ -59,6 +70,13 @@ try {
     const sourceTaskItems = await transaction<readonly { id: string }[]>`
       SELECT id FROM task_items ORDER BY id
     `;
+    const boardItems = await transaction<BoardItemDbRow[]>`
+      SELECT
+        id, folder_id, container_kind, container_id, membership_kind,
+        source_task_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
+      FROM board_items
+      ORDER BY id
+    `;
     const projections = await transaction<Array<{
       tasks: number;
       tasks_without_page: number;
@@ -91,6 +109,7 @@ try {
       updates,
       catalog,
       sourceTaskItems,
+      boardItems,
       projections: projections[0],
     };
   });
@@ -113,6 +132,42 @@ try {
   const existingSourceTaskItemIds = new Set(
     inventory.sourceTaskItems.map((row) => row.id),
   );
+  const relationalBoardItems = inventory.boardItems.map(toCatalogBoardItemRow);
+  const boardItemsNormalizationWarnings = findMissingSourceTaskItemReferences(
+    relationalBoardItems,
+    existingSourceTaskItemIds,
+  );
+  const normalizedRelationalBoardItems = normalizeMissingSourceTaskItemReferences(
+    { boardItems: relationalBoardItems, markdownDocuments: [] },
+    existingSourceTaskItemIds,
+  ).boardItems;
+  const boardItemsByContainer = groupBoardItemsByContainer(
+    normalizedRelationalBoardItems,
+  );
+  const catalogNormalizationWarnings: MissingSourceTaskItemReference[] = [];
+  const normalizedCatalogItemsByContainer = new Map<
+    string,
+    readonly CatalogBoardItemRow[]
+  >();
+  for (const cache of inventory.catalog) {
+    const containerKey = `${cache.container_kind}:${cache.container_id}`;
+    catalogNormalizationWarnings.push(...findMissingSourceTaskItemReferences(
+      cache.board_items,
+      existingSourceTaskItemIds,
+    ));
+    normalizedCatalogItemsByContainer.set(
+      containerKey,
+      normalizeMissingSourceTaskItemReferences(
+        { boardItems: cache.board_items, markdownDocuments: [] },
+        existingSourceTaskItemIds,
+      ).boardItems,
+    );
+  }
+  const normalizedYdocItemsByContainer = new Map<
+    string,
+    readonly CatalogBoardItemRow[]
+  >();
+  const documentNameByContainer = new Map<string, string>();
   let boardItemsCompared = 0;
   let emptyDocumentsWithoutCatalog = 0;
   for (const row of inventory.documents) {
@@ -128,33 +183,74 @@ try {
     for (const id of residue.opaqueBoardItemIds) opaqueBoardItemIds.add(id);
     const container = parseBoardYjsDocumentName(row.name);
     if (!container) throw new Error(`invalid board Y.Doc document name: ${row.name}`);
+    const containerKey = `${container.containerKind}:${container.containerId}`;
+    documentNameByContainer.set(containerKey, row.name);
     const cache = requireBoardItemCatalogProjection({
       label: row.name,
       ydocItemCount: doc.getMap(BOARD_ITEMS_MAP).size,
-      projection: catalogByContainer.get(
-        `${container.containerKind}:${container.containerId}`,
-      ) ?? null,
+      projection: catalogByContainer.get(containerKey) ?? null,
     });
     if (!cache) {
       emptyDocumentsWithoutCatalog += 1;
-      continue;
+    } else {
+      const ydocReplica = readBoardYDocReplica({
+        folderId: cache.folder_id,
+        containerKind: container.containerKind,
+        containerId: container.containerId,
+      }, doc);
+      const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
+        ydocReplica,
+        existingSourceTaskItemIds,
+      );
+      normalizedYdocItemsByContainer.set(
+        containerKey,
+        normalizedYdocReplica.boardItems,
+      );
+      assertBoardItemProjectionParity({
+        label: row.name,
+        ydocItems: normalizedYdocReplica.boardItems,
+        projectionItems: normalizedCatalogItemsByContainer.get(containerKey) ?? [],
+      });
+      boardItemsCompared += ydocReplica.boardItems.length;
     }
-    const ydocReplica = readBoardYDocReplica({
-      folderId: cache.folder_id,
-      containerKind: container.containerKind,
-      containerId: container.containerId,
-    }, doc);
-    const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
-      ydocReplica,
-      existingSourceTaskItemIds,
-    );
-    assertBoardItemProjectionParity({
-      label: row.name,
-      ydocItems: normalizedYdocReplica.boardItems,
-      projectionItems: cache.board_items,
-    });
-    boardItemsCompared += ydocReplica.boardItems.length;
   }
+
+  const taskBlockingMismatches: BoardItemsProjectionMismatch[] = [];
+  const folderWarningMismatches: BoardItemsProjectionMismatch[] = [];
+  let relationalBoardItemsCompared = 0;
+  let catalogFallbackContainers = 0;
+  for (const cache of inventory.catalog) {
+    const containerKey = `${cache.container_kind}:${cache.container_id}`;
+    const normalizedYdocItems = normalizedYdocItemsByContainer.get(containerKey);
+    if (!normalizedYdocItems) catalogFallbackContainers += 1;
+    const relationalProjection = boardItemsByContainer.get(containerKey) ?? [];
+    const disposition = boardItemMembershipMismatchDisposition(
+      cache.container_kind,
+    );
+    // Folder mismatch is known unresolved drift owned by a separate follow-up.
+    // Keep every container and direction visible, but do not block deployment on it yet.
+    const target = disposition === "blocking"
+      ? taskBlockingMismatches
+      : folderWarningMismatches;
+    recordBoardItemsProjectionMismatch(
+      target,
+      containerKey,
+      documentNameByContainer.get(containerKey) ?? null,
+      normalizedYdocItems ??
+        normalizedCatalogItemsByContainer.get(containerKey) ?? [],
+      relationalProjection,
+    );
+    relationalBoardItemsCompared += relationalProjection.length;
+  }
+
+  const taskBlockingSummary = summarizeBoardItemsProjectionMismatches(
+    taskBlockingMismatches,
+    true,
+  );
+  const folderWarningSummary = summarizeBoardItemsProjectionMismatches(
+    folderWarningMismatches,
+    false,
+  );
 
   const committedAllowlist = JSON.parse(await readFile(
     new URL("./ydoc-runbook-opaque-board-item-allowlist.json", import.meta.url),
@@ -165,7 +261,23 @@ try {
     documentsRecomposed: inventory.documents.length,
     pendingUpdatesApplied: inventory.updates.length,
     boardItemsCompared,
+    relationalBoardItemsLoaded: relationalBoardItems.length,
+    relationalBoardItemsCompared,
+    catalogContainersCompared: inventory.catalog.length,
+    recomposedYdocContainersCompared: normalizedYdocItemsByContainer.size,
+    catalogFallbackContainers,
     emptyDocumentsWithoutCatalog,
+    boardItemsProjection: {
+      taskBlocking: taskBlockingSummary,
+      folderWarnings: {
+        reason: KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
+        ...folderWarningSummary,
+      },
+    },
+    normalizationWarnings: {
+      catalog: catalogNormalizationWarnings,
+      boardItems: boardItemsNormalizationWarnings,
+    },
     ydoc: { legacyDocumentNames, legacyItemTypes, legacySourceKeys },
     opaqueBoardItemIds: [...opaqueBoardItemIds].sort(),
     projections: inventory.projections,
@@ -184,7 +296,10 @@ try {
     inventory.projections?.catalog_legacy_source_keys ?? -1,
   );
   assertContainsStrings([...opaqueBoardItemIds], committedAllowlist);
-  process.stdout.write("Y.Doc recomposition and SQL projection verification passed.\n");
+  assertNoBoardItemsProjectionMismatches(taskBlockingMismatches);
+  process.stdout.write(
+    "Y.Doc recomposition, catalog cache, and board_items projection verification passed.\n",
+  );
 } finally {
   await sql.end();
 }
@@ -205,4 +320,109 @@ function assertContainsStrings(actual: readonly string[], expected: readonly str
   if (missing.length > 0) {
     throw new Error(`opaque board item IDs were not preserved: ${JSON.stringify(missing)}`);
   }
+}
+
+function groupBoardItemsByContainer(
+  boardItems: readonly CatalogBoardItemRow[],
+): Map<string, CatalogBoardItemRow[]> {
+  const grouped = new Map<string, CatalogBoardItemRow[]>();
+  for (const item of boardItems) {
+    const containerKey = `${item.containerKind ?? "folder"}:` +
+      `${item.containerId ?? item.folderId}`;
+    const values = grouped.get(containerKey) ?? [];
+    values.push(item);
+    grouped.set(containerKey, values);
+  }
+  return grouped;
+}
+
+function recordBoardItemsProjectionMismatch(
+  mismatches: BoardItemsProjectionMismatch[],
+  container: string,
+  documentName: string | null,
+  ydocItems: readonly CatalogBoardItemRow[],
+  boardItems: readonly CatalogBoardItemRow[],
+): void {
+  const difference = inspectBoardItemMembershipDifference({
+    ydocItems,
+    projectionItems: boardItems,
+  });
+  if (difference.missingFromProjection.length === 0 &&
+      difference.missingFromYdoc.length === 0) return;
+  mismatches.push({
+    container,
+    documentName,
+    ydocOnly: difference.missingFromProjection,
+    boardItemsOnly: difference.missingFromYdoc,
+  });
+}
+
+function assertNoBoardItemsProjectionMismatches(
+  mismatches: readonly BoardItemsProjectionMismatch[],
+): void {
+  if (mismatches.length === 0) return;
+  const mismatchCount = mismatches.reduce(
+    (total, mismatch) => total + mismatch.ydocOnly.length +
+      mismatch.boardItemsOnly.length,
+    0,
+  );
+  throw new Error(
+    `task board_items projection mismatch: ${mismatchCount} rows across ` +
+      `${mismatches.length} containers; see report above`,
+  );
+}
+
+function summarizeBoardItemsProjectionMismatches(
+  mismatches: readonly BoardItemsProjectionMismatch[],
+  includeIds: boolean,
+): BoardItemsProjectionMismatchSummary {
+  const containers = mismatches.map((mismatch) => ({
+    container: mismatch.container,
+    documentName: mismatch.documentName,
+    ydocOnlyCount: mismatch.ydocOnly.length,
+    boardItemsOnlyCount: mismatch.boardItemsOnly.length,
+    ...(includeIds
+      ? {
+        ydocOnly: mismatch.ydocOnly,
+        boardItemsOnly: mismatch.boardItemsOnly,
+      }
+      : {}),
+  }));
+  const ydocOnlyCount = containers.reduce(
+    (total, container) => total + container.ydocOnlyCount,
+    0,
+  );
+  const boardItemsOnlyCount = containers.reduce(
+    (total, container) => total + container.boardItemsOnlyCount,
+    0,
+  );
+  return {
+    mismatchCount: ydocOnlyCount + boardItemsOnlyCount,
+    mismatchContainers: containers.length,
+    ydocOnlyCount,
+    boardItemsOnlyCount,
+    containers,
+  };
+}
+
+interface BoardItemsProjectionMismatch {
+  container: string;
+  documentName: string | null;
+  ydocOnly: string[];
+  boardItemsOnly: string[];
+}
+
+interface BoardItemsProjectionMismatchSummary {
+  mismatchCount: number;
+  mismatchContainers: number;
+  ydocOnlyCount: number;
+  boardItemsOnlyCount: number;
+  containers: Array<{
+    container: string;
+    documentName: string | null;
+    ydocOnlyCount: number;
+    boardItemsOnlyCount: number;
+    ydocOnly?: string[];
+    boardItemsOnly?: string[];
+  }>;
 }
