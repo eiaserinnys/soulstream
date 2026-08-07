@@ -6,6 +6,7 @@ import {
   ExecutionContextBuilder,
   type ContextBuilderConfig,
 } from "../../src/context/context_builder.js";
+import { CONTEXT_COMPILER_VERSION } from "../../src/context/compiler/index.js";
 import { prioritizeAtomContextSpecs } from "../../src/context/context_builder_helpers.js";
 import type { PageContextResolver } from "../../src/context/page_context_resolver.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -24,6 +25,17 @@ const agent: AgentProfile = {
   backend: "codex",
   workspace_dir: "/workspace",
 };
+
+function emptyPageManifest() {
+  return {
+    compiler_version: CONTEXT_COMPILER_VERSION,
+    spec_hash: "0".repeat(64),
+    source_count: 0,
+    total_chars: 0,
+    total_token_estimate: 0,
+    sources: [],
+  } as const;
+}
 
 function task(contextItems: Task["contextItems"] = []): Task {
   return {
@@ -174,6 +186,7 @@ describe("project context server derivation contract", () => {
       const resolve = vi.fn(async (...args: unknown[]) => ({
         kind: "page-context" as const,
         atomNodeIds: [],
+        contextManifest: emptyPageManifest(),
         contextItem: {
           key: "page_context",
           content: { source_page_ids: (args[3] as { pageIds?: string[] } | undefined)?.pageIds ?? [] },
@@ -218,6 +231,7 @@ describe("project context server derivation contract", () => {
       resolve: vi.fn().mockResolvedValue({
         kind: "page-context",
         atomNodeIds: [],
+        contextManifest: emptyPageManifest(),
         contextItem: { key: "page_context", content: { items: [] } },
       }),
     }).build(task(), agent);
@@ -258,6 +272,7 @@ describe("project context server derivation contract", () => {
       return {
         kind: "page-context" as const,
         atomNodeIds: [],
+        contextManifest: emptyPageManifest(),
         contextItem: {
           key: "page_context",
           content: {

@@ -235,9 +235,15 @@ export function TaskDetailPane({
     depth: number,
     titlesOnly: boolean,
     limit: number | null,
+    mode: "full" | "index" | "titles" | undefined,
   ) => {
     const previous = contextBlocks;
-    const optimistic = updateOptimisticTaskAtomReference(previous, blockId, { depth, titlesOnly, limit });
+    const optimistic = updateOptimisticTaskAtomReference(previous, blockId, {
+      depth,
+      titlesOnly,
+      limit,
+      mode,
+    });
     applyContextBlocks(optimistic);
     setContextMutationBlockId(blockId);
     setContextMutationError(null);
@@ -250,6 +256,7 @@ export function TaskDetailPane({
         depth,
         titlesOnly,
         limit,
+        mode,
       });
       applyContextBlocks(result.blocks);
     } catch (cause) {
@@ -327,11 +334,12 @@ export function TaskDetailPane({
                     <span className="v3-context-row-copy"><strong>{context.contentLabel}</strong><small>{context.sourceLabel}</small></span>
                     {context.kind === "atom" ? (
                       context.direct ? <span className="v3-context-row-controls">
-                        <label>depth <select aria-label={`${context.contentLabel} atom depth`} value={context.reference.depth ?? 3} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, Number(event.target.value), context.reference.titlesOnly ?? false, context.reference.limit ?? null); }}>{[1, 2, 3, 4, 5].map((depth) => <option key={depth} value={depth}>{depth}</option>)}</select></label>
-                        <label>최근 자식 수 <input type="number" min={1} placeholder="전체" aria-label={`${context.contentLabel} 최근 자식 수`} value={context.reference.limit ?? ""} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, context.reference.depth ?? 3, context.reference.titlesOnly ?? false, event.target.value === "" ? null : Number(event.target.value)); }} /></label>
-                        <label><input type="checkbox" aria-label={`${context.contentLabel} 제목만 포함`} checked={context.reference.titlesOnly ?? false} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, context.reference.depth ?? 3, event.target.checked, context.reference.limit ?? null); }} /> 제목만</label>
+                        <label>depth <select aria-label={`${context.contentLabel} atom depth`} value={context.reference.depth ?? 3} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, Number(event.target.value), context.reference.titlesOnly ?? false, context.reference.limit ?? null, context.reference.mode); }}>{[1, 2, 3, 4, 5].map((depth) => <option key={depth} value={depth}>{depth}</option>)}</select></label>
+                        <label>최근 자식 수 <input type="number" min={1} placeholder="전체" aria-label={`${context.contentLabel} 최근 자식 수`} value={context.reference.limit ?? ""} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, context.reference.depth ?? 3, context.reference.titlesOnly ?? false, event.target.value === "" ? null : Number(event.target.value), context.reference.mode); }} /></label>
+                        <label>렌더 방식 <select aria-label={`${context.contentLabel} atom 렌더 방식`} value={context.reference.mode ?? ""} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, context.reference.depth ?? 3, context.reference.titlesOnly ?? false, context.reference.limit ?? null, event.target.value ? event.target.value as "full" | "index" | "titles" : undefined); }}><option value="">기존 방식</option><option value="full">전체 본문</option><option value="index">색인</option><option value="titles">제목 트리</option></select></label>
+                        <label><input type="checkbox" aria-label={`${context.contentLabel} 제목만 포함`} checked={context.reference.titlesOnly ?? false} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, context.reference.depth ?? 3, event.target.checked, context.reference.limit ?? null, context.reference.mode); }} /> 제목만</label>
                         <ContextRemoveButton title={context.contentLabel} disabled={contextMutationBlockId === context.blockId} onClick={() => { void removeContextBlock(context.blockId); }} />
-                      </span> : <small className="v3-context-row-readonly">depth {context.reference.depth ?? 3} · 제목만 {(context.reference.titlesOnly ?? false) ? "켜짐" : "꺼짐"}{context.reference.limit == null ? "" : ` · 최근 ${context.reference.limit}개`}</small>
+                      </span> : <small className="v3-context-row-readonly">depth {context.reference.depth ?? 3} · 제목만 {(context.reference.titlesOnly ?? false) ? "켜짐" : "꺼짐"}{context.reference.mode ? ` · ${context.reference.mode}` : ""}{context.reference.limit == null ? "" : ` · 최근 ${context.reference.limit}개`}</small>
                     ) : context.direct ? <ContextRemoveButton title={context.contentLabel} disabled={contextMutationBlockId === context.blockId} onClick={() => { void removeContextBlock(context.blockId); }} /> : null}
                   </div>
                 ))}

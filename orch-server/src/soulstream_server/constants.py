@@ -128,3 +128,4 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
 # Nested context_manifest wire enum. Kept beside KNOWN_SSE_EVENT_TYPES as a
 # contract sentinel for packages/wire-schema/tests/test_schema_valid.py.
 CONTEXT_MANIFEST_SOURCE_MODES = frozenset({"full", "index", "titles"})
+CONTEXT_MANIFEST_SOURCE_INSTANCES = frozenset({"atom", "atom-nl"})

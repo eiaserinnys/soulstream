@@ -24,5 +24,7 @@ describe("ProjectAtomFields", () => {
     expect(render(3)).toContain('value="3"');
     expect(render(null)).toContain('placeholder="전체"');
     expect(render(null)).not.toContain('value="0"');
+    expect(render(null)).toContain('aria-label="atom 렌더 방식"');
+    expect(render(null)).toContain('<option value="" selected="">기존 방식</option>');
   });
 });

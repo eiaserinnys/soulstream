@@ -26,6 +26,7 @@ export interface AtomRefBlockProperties {
   depth?: number;
   titlesOnly?: boolean;
   limit?: number;
+  mode?: "full" | "index" | "titles";
   [key: string]: unknown;
 }
 

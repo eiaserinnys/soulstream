@@ -32,6 +32,7 @@ const settingsSchema = z.object({
   atomNodeTitle: z.string(),
   atomDepth: z.number().min(1).max(5),
   atomTitlesOnly: z.boolean(),
+  atomMode: z.enum(["", "full", "index", "titles"]),
 });
 type SettingsFormValues = z.infer<typeof settingsSchema>;
 
@@ -66,6 +67,7 @@ export function FolderSettingsDialog({
         atomNodeTitle: "",
         atomDepth: 3,
         atomTitlesOnly: false,
+        atomMode: "",
       },
     });
 
@@ -79,6 +81,7 @@ export function FolderSettingsDialog({
         atomNodeTitle: folder.settings?.atomContextNode?.nodeTitle ?? "",
         atomDepth: folder.settings?.atomContextNode?.depth ?? 3,
         atomTitlesOnly: folder.settings?.atomContextNode?.titlesOnly ?? false,
+        atomMode: folder.settings?.atomContextNode?.mode ?? "",
       });
     }
   }, [open, folder, reset]);
@@ -91,6 +94,7 @@ export function FolderSettingsDialog({
             nodeTitle: data.atomNodeTitle || undefined,
             depth: data.atomDepth,
             titlesOnly: data.atomTitlesOnly,
+            ...(data.atomMode ? { mode: data.atomMode } : {}),
           }
         : undefined;
     onConfirm({
@@ -188,6 +192,24 @@ export function FolderSettingsDialog({
                     {...register("atomDepth", { valueAsNumber: true })}
                     className="w-full"
                   />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="folder-atom-render-mode"
+                    className="text-xs text-[--color-text-secondary]"
+                  >
+                    렌더 방식
+                  </label>
+                  <select
+                    id="folder-atom-render-mode"
+                    {...register("atomMode")}
+                    className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm"
+                  >
+                    <option value="">기존 방식</option>
+                    <option value="full">전체 본문</option>
+                    <option value="index">색인</option>
+                    <option value="titles">제목 트리</option>
+                  </select>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer text-sm">
                   <input

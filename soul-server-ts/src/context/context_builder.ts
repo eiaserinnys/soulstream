@@ -232,6 +232,7 @@ export class ExecutionContextBuilder {
         agentAtomCompilation.manifest,
         atomCompilation.manifest,
         taskAtomCompilation.manifest,
+        ...(pageContext.kind === "page-context" ? [pageContext.contextManifest] : []),
       ],
       extractPageContextTruncation(pageContextItem),
     );

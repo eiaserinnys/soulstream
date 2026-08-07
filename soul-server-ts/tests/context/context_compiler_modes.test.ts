@@ -122,7 +122,7 @@ describe("context compiler Phase B render modes", () => {
       - Section B — \`compile_subtree(node_id=\"00000000-0000-4000-8000-000000000003\")\`"
     `);
     expect(compiled.manifest).toMatchObject({
-      compiler_version: "phase-b.v1",
+      compiler_version: CONTEXT_COMPILER_VERSION,
       sources: [{ mode: "full", truncated: true, anchor_count: 2 }],
     });
     expect(outputNodeIds(compiled.sections[0]!.markdown!)).toEqual(
@@ -296,7 +296,7 @@ describe("context compiler Phase B render modes", () => {
       truncated: false,
       anchor_count: 0,
     });
-    expect(CONTEXT_COMPILER_VERSION).toBe("phase-b.v1");
+    expect(CONTEXT_COMPILER_VERSION).toBe("phase-d.v1");
   });
 
   it("keeps the existing null fallback when an explicit-mode atom query fails", async () => {

@@ -829,13 +829,15 @@ export interface SSEEventContextManifest {
   sources: {
     id: string;
     label: string;
-    instance: "atom";
+    instance: "atom" | "atom-nl";
     node_id: string;
     mode: "full" | "index" | "titles";
     depth: number;
     titles_only: boolean;
     include_ids: boolean;
     limit?: number;
+    priority: number;
+    never_truncate: boolean;
     chars: number;
     /**
      * 소스 렌더 자수를 4로 나눈 올림 근사값.

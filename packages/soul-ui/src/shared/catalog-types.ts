@@ -13,6 +13,7 @@ export interface AtomContextNodeSettings {
   nodeTitle?: string;    // 저장된 노드 표시 이름 (UUID 대신 이름 표시용)
   depth?: number;        // 컴파일 깊이 (기본 3)
   titlesOnly?: boolean;  // 제목만 가져올지 (기본 false)
+  mode?: "full" | "index" | "titles"; // 명시 렌더 모드 (미지정 시 기존 방식)
 }
 
 /** 폴더 설정 */

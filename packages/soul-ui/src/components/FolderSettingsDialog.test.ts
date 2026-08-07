@@ -129,4 +129,63 @@ describe("FolderSettingsDialog", () => {
       folderPrompt: "Child prompt",
     }));
   });
+
+  it("keeps a legacy folder atom mode omitted after an unchanged save", async () => {
+    const onConfirm = vi.fn();
+    ({ container, root } = renderDialog({
+      folder: {
+        ...folders[2],
+        settings: {
+          atomContextNode: {
+            nodeId: "node-a",
+            nodeTitle: "soulstream",
+            depth: 3,
+            titlesOnly: false,
+          },
+        },
+      },
+      onConfirm,
+    }));
+
+    submit();
+    await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+    expect(onConfirm.mock.calls[0]?.[0].atomContextNode).toEqual({
+      nodeId: "node-a",
+      nodeTitle: "soulstream",
+      depth: 3,
+      titlesOnly: false,
+    });
+  });
+
+  it("stores mode only after the user explicitly selects a render mode", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ atom_enabled: true }), { status: 200 })));
+    const onConfirm = vi.fn();
+    ({ container, root } = renderDialog({
+      folder: {
+        ...folders[2],
+        settings: {
+          atomContextNode: { nodeId: "node-a", nodeTitle: "soulstream", depth: 3 },
+        },
+      },
+      onConfirm,
+    }));
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector("#folder-atom-render-mode")).not.toBeNull();
+    });
+    const mode = document.body.querySelector<HTMLSelectElement>("#folder-atom-render-mode")!;
+    flushSync(() => {
+      mode.value = "index";
+      mode.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    submit();
+    await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+    expect(onConfirm.mock.calls[0]?.[0].atomContextNode).toMatchObject({ mode: "index" });
+  });
 });
+
+function submit() {
+  const saveButton = Array.from(document.body.querySelectorAll("button"))
+    .find((button) => button.textContent === "저장");
+  saveButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}

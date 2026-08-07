@@ -78,7 +78,9 @@ describe("context compiler golden parity", () => {
       expect(compiled.sections[0]?.source).toMatchObject({
         id: golden.spec.nodeId,
         instance: "atom",
-        legacy: golden.spec,
+        ...golden.spec,
+        priority: 0,
+        neverTruncate: false,
       });
       expect(compiled.manifest).toMatchObject({
         compiler_version: CONTEXT_COMPILER_VERSION,
@@ -153,6 +155,8 @@ describe("context compiler golden parity", () => {
           titles_only: false,
           include_ids: false,
           limit: 9,
+          priority: 0,
+          never_truncate: false,
           chars: 4,
           token_estimate: 1,
           status: "ok",

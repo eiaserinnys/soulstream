@@ -16,6 +16,8 @@ import {
   composeFirstTurnPrompt,
 } from "../../src/context/context_builder.js";
 import type { CogitoContextConfig } from "../../src/context/cogito_context.js";
+import { ATOM_CONTEXT_HEADER } from "../../src/context/atom_context.js";
+import { CONTEXT_COMPILER_VERSION } from "../../src/context/compiler/index.js";
 import {
   NoPageAnchorContextResolver,
   type PageContextResolver,
@@ -23,6 +25,17 @@ import {
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });
+
+function emptyPageContextManifest() {
+  return {
+    compiler_version: CONTEXT_COMPILER_VERSION,
+    spec_hash: "0".repeat(64),
+    source_count: 0,
+    total_chars: 0,
+    total_token_estimate: 0,
+    sources: [],
+  } as const;
+}
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -340,6 +353,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       const resolve = vi.fn().mockResolvedValue({
         kind: "page-context",
         contextItem: pageContextItem,
+        contextManifest: emptyPageContextManifest(),
         atomNodeIds: [],
       });
       const agent: AgentProfile = {
@@ -837,7 +851,40 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     expect(ctx.combinedContextItems).toHaveLength(2);  // soulstream + atom
     expect(ctx.combinedContextItems[1].key).toBe("atom_context");
-    expect(ctx.combinedContextItems[1].content).toContain("## atom node");
+    expect(ctx.combinedContextItems[1].content).toBe(
+      `${ATOM_CONTEXT_HEADER}## atom node\nbody`,
+    );
+  });
+
+  it("folder atomContextNode의 명시 mode를 컴파일러 렌더로 전달", async () => {
+    const rootNode = "11111111-2222-4333-8444-555555555555";
+    const rootCard = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const childNode = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+    const childCard = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) => {
+      const depth = new URL(input.toString()).searchParams.get("depth");
+      const markdown = depth === "0"
+        ? `# Root <!-- node:${rootNode} card:${rootCard} depth:0 -->\nroot body`
+        : `Root <!-- node:${rootNode} card:${rootCard} depth:0 chars:100 -->\n  └── Child <!-- node:${childNode} card:${childCard} depth:1 chars:20 -->`;
+      return new Response(JSON.stringify({ markdown }), { status: 200 });
+    });
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "f-1",
+      name: "f",
+      sort_order: 0,
+      settings: {
+        atomContextNode: { nodeId: rootNode, depth: 2, mode: "index" },
+      },
+    });
+    const cb = makeBuilder({ getSession, getFolderById } as Partial<SessionDB>, undefined, true);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    expect(ctx.combinedContextItems[1]?.content).toContain("## 드릴다운 색인");
+    expect(ctx.contextManifest?.sources).toEqual([
+      expect.objectContaining({ node_id: rootNode, mode: "index", anchor_count: 1 }),
+    ]);
   });
 
   it("folder atomContextNode는 root부터 leaf까지 상속 fetch한다", async () => {
@@ -1049,6 +1096,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
       resolve: vi.fn().mockResolvedValue({
         kind: "page-context",
         contextItem: { key: "page_context", content: { items: [] } },
+        contextManifest: emptyPageContextManifest(),
         atomNodeIds: [],
       }),
     });
@@ -1073,12 +1121,36 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
       },
       total: { limit: 60_000, used: 142, omitted: 1 },
     };
+    const pageSource = {
+      id: "page:task-page:atom-ref",
+      label: "page atom_ref: node-a",
+      instance: "atom" as const,
+      node_id: "node-a",
+      mode: "index" as const,
+      depth: 3,
+      titles_only: false,
+      include_ids: true,
+      priority: -1,
+      never_truncate: false,
+      chars: 12,
+      token_estimate: 3,
+      status: "ok" as const,
+      truncated: true,
+      anchor_count: 1,
+    };
     const cb = makeBuilder({}, undefined, false, undefined, {
       resolve: vi.fn().mockResolvedValue({
         kind: "page-context",
         contextItem: {
           key: "page_context",
           content: { items: [], metadata: { truncation } },
+        },
+        contextManifest: {
+          ...emptyPageContextManifest(),
+          source_count: 1,
+          total_chars: 12,
+          total_token_estimate: 3,
+          sources: [pageSource],
         },
         atomNodeIds: [],
       }),
@@ -1087,10 +1159,10 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
 
     expect(ctx.contextManifest).toMatchObject({
-      source_count: 0,
-      total_chars: 0,
-      total_token_estimate: 0,
-      sources: [],
+      source_count: 1,
+      total_chars: 12,
+      total_token_estimate: 3,
+      sources: [pageSource],
       page_context: { truncation },
     });
     expect(ctx.contextManifest?.spec_hash).toMatch(/^[0-9a-f]{64}$/);

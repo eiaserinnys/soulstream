@@ -310,6 +310,14 @@ function appendAnchors(
   return joinBlocks(markdown, block);
 }
 
+export function renderRootDrilldownAnchor(nodeId: string, label = nodeId): string {
+  return [
+    "## 드릴다운 앵커",
+    "",
+    `- ${label} — \`compile_subtree(node_id="${nodeId}")\``,
+  ].join("\n");
+}
+
 function rootChildrenDiffer(
   renderedMarkdown: string,
   unboundedMarkdown: string | null | undefined,

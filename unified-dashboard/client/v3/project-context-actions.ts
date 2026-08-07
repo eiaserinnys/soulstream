@@ -35,6 +35,7 @@ export async function savePageAtomReference(
     depth: number;
     titlesOnly: boolean;
     limit?: number | null;
+    mode?: "full" | "index" | "titles";
     instance?: string;
   },
   idFactory: ContextOperationIdFactory = operationId,
@@ -59,8 +60,10 @@ export async function savePageAtomReference(
       depth: input.depth,
       titlesOnly: input.titlesOnly,
       ...(input.limit != null ? { limit: input.limit } : {}),
+      ...(input.mode !== undefined ? { mode: input.mode } : {}),
     };
     if (input.limit == null) delete properties.limit;
+    if (input.mode === undefined) delete properties.mode;
     return input.blockId
       ? [{
         op: "update_block_type_and_properties",

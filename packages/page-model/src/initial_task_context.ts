@@ -5,6 +5,7 @@ export interface InitialTaskAtomReference {
   depth: number;
   titlesOnly: boolean;
   limit?: number;
+  mode?: "full" | "index" | "titles";
 }
 
 export interface InitialTaskSessionDefaults {
@@ -28,6 +29,7 @@ export interface InitialTaskContextWire {
     depth: number;
     titles_only: boolean;
     limit?: number;
+    mode?: "full" | "index" | "titles";
   }>;
   session_defaults?: {
     agent_id: string;
@@ -101,6 +103,9 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
     if (candidate.limit !== undefined && (!Number.isInteger(candidate.limit) || Number(candidate.limit) < 1)) {
       return { ok: false, error: `initial_context.atom_references[${index}].limit must be a positive integer` };
     }
+    if (candidate.mode !== undefined && !isAtomContextMode(candidate.mode)) {
+      return { ok: false, error: `initial_context.atom_references[${index}].mode invalid` };
+    }
     atomReferences.push({
       instance: candidate.instance,
       nodeId,
@@ -108,6 +113,7 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
       depth: candidate.depth as number,
       titlesOnly: candidate.titles_only,
       ...(candidate.limit !== undefined ? { limit: candidate.limit as number } : {}),
+      ...(candidate.mode !== undefined ? { mode: candidate.mode } : {}),
     });
   }
 
@@ -137,6 +143,7 @@ export function serializeInitialTaskContext(
     depth: reference.depth,
     titles_only: reference.titlesOnly,
     ...(reference.limit !== undefined ? { limit: reference.limit } : {}),
+    ...(reference.mode !== undefined ? { mode: reference.mode } : {}),
   }));
   const sessionDefaults = context.sessionDefaults
     ? {
@@ -162,6 +169,10 @@ export function serializeInitialTaskContext(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAtomContextMode(value: unknown): value is "full" | "index" | "titles" {
+  return value === "full" || value === "index" || value === "titles";
 }
 
 function trimmedString(value: unknown): string | null {

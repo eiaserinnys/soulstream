@@ -15,6 +15,7 @@ export interface ProjectFormAtomReference {
   depth: number;
   titlesOnly: boolean;
   limit?: number | null;
+  mode?: "full" | "index" | "titles";
 }
 
 export interface ProjectFormSessionDefaults {
@@ -58,6 +59,7 @@ export function projectFormValueFromDetails(
       depth: item.depth ?? 3,
       titlesOnly: item.titlesOnly ?? false,
       limit: item.limit ?? null,
+      ...(item.mode !== undefined ? { mode: item.mode } : {}),
     })),
     sessionDefaults: details.sessionDefaults[0]
       ? {

@@ -46,7 +46,7 @@ describe("InitialTaskContextPicker atom options", () => {
     document.body.replaceChildren();
   });
 
-  it("edits depth, titles-only, and limit on the selected card before task creation", () => {
+  it("edits depth, mode, titles-only, and limit on the selected card before task creation", () => {
     const onChange = vi.fn();
     flushSync(() => root.render(
       <InitialTaskContextPicker
@@ -71,6 +71,11 @@ describe("InitialTaskContextPicker atom options", () => {
 
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       atomReferences: [expect.objectContaining({ depth: 5, titlesOnly: false })],
+    }));
+
+    setSelect(select("soulstream atom 렌더 방식"), "index");
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      atomReferences: [expect.objectContaining({ mode: "index" })],
     }));
 
     const checkbox = input("soulstream 제목만 포함");
@@ -101,6 +106,10 @@ describe("InitialTaskContextPicker atom options", () => {
     const depth = select("soulstream atom depth");
     setSelect(depth, "5");
     expect(depth.value).toBe("5");
+
+    const mode = select("soulstream atom 렌더 방식");
+    setSelect(mode, "titles");
+    expect(mode.value).toBe("titles");
 
     const titlesOnly = input("soulstream 제목만 포함");
     flushSync(() => titlesOnly.click());
