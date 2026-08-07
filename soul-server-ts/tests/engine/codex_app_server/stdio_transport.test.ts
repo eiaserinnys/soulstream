@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildCodexAppServerArgs,
@@ -13,9 +13,14 @@ class MockChildProcess extends EventEmitter {
   public readonly stdin = new PassThrough();
   public readonly stdout = new PassThrough();
   public readonly stderr = new PassThrough();
-  public readonly pid = 1234;
+  public readonly pid: number | undefined;
   public killed = false;
   public killSignals: string[] = [];
+
+  constructor(pid?: number) {
+    super();
+    this.pid = pid;
+  }
 
   kill(signal?: NodeJS.Signals | number): boolean {
     this.killed = true;
@@ -69,6 +74,20 @@ describe("stdio app-server transport", () => {
     expect(writes).toEqual([
       JSON.stringify({ id: "req-1", method: "initialize", params: {} }) + "\n",
     ]);
+  });
+
+  it("applies the session OOM score immediately after spawning", () => {
+    const child = new MockChildProcess(1234);
+    const applyOomScore = vi.fn();
+
+    createStdioAppServerTransport({
+      platform: "linux",
+      spawnProcess: () => child,
+      applyOomScore,
+    });
+
+    expect(applyOomScore).toHaveBeenCalledTimes(1);
+    expect(applyOomScore).toHaveBeenCalledWith(1234);
   });
 
   it("uses explicit command override for app-server startup", async () => {

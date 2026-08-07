@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 
+import { setSessionEngineOomScore } from "../session_engine_oom_score.js";
 import type { AppServerTransportUrl } from "./protocol.js";
 import type { AppServerJsonMessage, AppServerTransport } from "./transport.js";
 
@@ -34,6 +35,7 @@ export interface StdioAppServerTransportOptions {
   logger?: AppServerTransportLogger;
   closeGraceMs?: number;
   spawnProcess?: StdioSpawnProcess;
+  applyOomScore?: (pid: number | undefined) => void;
 }
 
 const NOOP_LOGGER: AppServerTransportLogger = {
@@ -83,6 +85,10 @@ class StdioAppServerTransport implements AppServerTransport {
       stdio: "pipe",
       ...(needsWindowsCommandShell(command, platform) ? { shell: true } : {}),
     });
+    const applyOomScore = options.applyOomScore ?? ((pid: number | undefined) => {
+      void setSessionEngineOomScore(pid, { platform, logger: this.logger });
+    });
+    applyOomScore(this.child.pid);
 
     this.logger.debug({ pid: this.child.pid, command, args }, "Codex app-server spawned");
     this.child.stdout.on("data", (chunk) => this.handleStdout(chunk));
