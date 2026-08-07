@@ -200,6 +200,7 @@ export const AgentAtomContextSchema = z.object({
   depth: z.number().int().min(0).default(3),
   titles_only: z.boolean().default(false),
   include_ids: z.boolean().optional(),
+  mode: z.string().min(1, "atom_contexts.mode must not be empty").optional(),
 });
 
 export type AgentAtomContext = z.infer<typeof AgentAtomContextSchema>;
@@ -254,7 +255,7 @@ export const AgentProfileSchema = z.object({
    * agents.yaml 정본 atom 주입.
    *
    * 각 항목은 atom compile_subtree REST API의
-   * node/depth/titles_only/include_ids에 대응한다.
+   * node/depth/titles_only/include_ids/mode에 대응한다.
    * ExecutionContextBuilder가 신규 세션 첫 turn의 system prompt 맨 앞에 주입한다.
    */
   atom_contexts: z.array(AgentAtomContextSchema).optional(),

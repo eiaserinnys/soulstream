@@ -831,7 +831,7 @@ export interface SSEEventContextManifest {
     label: string;
     instance: "atom";
     node_id: string;
-    mode: "full" | "titles";
+    mode: "full" | "index" | "titles";
     depth: number;
     titles_only: boolean;
     include_ids: boolean;

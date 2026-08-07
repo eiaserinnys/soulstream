@@ -2106,7 +2106,7 @@
               "label": { "type": "string" },
               "instance": { "const": "atom" },
               "node_id": { "type": "string" },
-              "mode": { "type": "string", "enum": ["full", "titles"] },
+              "mode": { "type": "string", "enum": ["full", "index", "titles"] },
               "depth": { "type": "integer", "minimum": 0 },
               "titles_only": { "type": "boolean" },
               "include_ids": { "type": "boolean" },

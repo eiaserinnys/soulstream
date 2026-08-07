@@ -1578,7 +1578,7 @@ class Source(TypedDict, closed=True):
     label: str
     instance: Literal['atom']
     node_id: str
-    mode: Literal['full', 'titles']
+    mode: Literal['full', 'index', 'titles']
     depth: int
     titles_only: bool
     include_ids: bool

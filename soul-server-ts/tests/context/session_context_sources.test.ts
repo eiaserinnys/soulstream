@@ -6,14 +6,15 @@ import {
 } from "../../src/context/session_context_sources.js";
 
 describe("session context source markers", () => {
-  it("parses valid atom nodes, deduplicates them, and ignores malformed entries", () => {
+  it("parses atom modes, preserves full-spec variants, and removes exact duplicates", () => {
     expect(extractAtomContextSourceSpecs([
       {
         key: "atom_context_sources",
         content: {
           nodes: [
             { node_id: "node-a", depth: 3, titles_only: false },
-            { node_id: "node-a", depth: 7, titles_only: true },
+            { node_id: "node-a", depth: 7, titles_only: true, mode: "titles" },
+            { node_id: "node-a", depth: 7, titles_only: true, mode: "titles" },
             { node_id: "node-b", depth: 4, titles_only: true },
             { node_id: "", depth: 2 },
             null,
@@ -22,6 +23,7 @@ describe("session context source markers", () => {
       },
     ])).toEqual([
       { nodeId: "node-a", depth: 3, titlesOnly: false },
+      { nodeId: "node-a", depth: 7, titlesOnly: true, mode: "titles" },
       { nodeId: "node-b", depth: 4, titlesOnly: true },
     ]);
   });

@@ -112,13 +112,19 @@ describe("project context server derivation contract", () => {
       { ...base, titlesOnly: true },
       { ...base, includeIds: false },
       { ...base, limit: 4 },
+      { ...base, mode: "titles" },
     ];
 
     expect(prioritizeAtomContextSpecs({
       session: [base, ...variants],
       pageNodeIds: [],
       folder: [{ ...base }, { ...variants[0]! }],
-      agent: [{ ...variants[1]! }, { ...variants[2]! }, { ...variants[3]! }],
+      agent: [
+        { ...variants[1]! },
+        { ...variants[2]! },
+        { ...variants[3]! },
+        { ...variants[4]! },
+      ],
     })).toEqual({
       session: [base, ...variants],
       folder: [],

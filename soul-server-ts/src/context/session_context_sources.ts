@@ -1,4 +1,4 @@
-import type { AtomContextSpec } from "./atom_context.js";
+import { atomContextSpecKey, type AtomContextSpec } from "./atom_context.js";
 import { isPageContextSourcesItem } from "./page_context_resolver.js";
 import type { ContextItem } from "./prompt_assembler.js";
 
@@ -13,13 +13,17 @@ export function extractAtomContextSourceSpecs(
   return marker.content.nodes.flatMap((entry) => {
     if (!isRecord(entry)) return [];
     const nodeId = typeof entry.node_id === "string" ? entry.node_id.trim() : "";
-    if (!nodeId || seen.has(nodeId)) return [];
-    seen.add(nodeId);
-    return [{
+    if (!nodeId) return [];
+    const spec: AtomContextSpec = {
       nodeId,
       depth: finiteInteger(entry.depth, 3),
       titlesOnly: entry.titles_only === true,
-    }];
+      ...(typeof entry.mode === "string" ? { mode: entry.mode } : {}),
+    };
+    const key = atomContextSpecKey(spec);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [spec];
   });
 }
 

@@ -1,7 +1,7 @@
 import type { CallerInfo, Task } from "../task/task_models.js";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 
-import type { AtomContextSpec } from "./atom_context.js";
+import { atomContextSpecKey, type AtomContextSpec } from "./atom_context.js";
 import type { PreparedContext } from "./context_builder.js";
 import { formatContextItems, type ContextItem } from "./prompt_assembler.js";
 
@@ -97,14 +97,15 @@ export function composeFolderPromptChain(chain: FolderChainEntry[]): string | un
 }
 
 export function extractFolderAtomContextSpecs(chain: FolderChainEntry[]): AtomContextSpec[] {
-  const specsByNodeId = new Map<string, AtomContextSpec>();
+  const specsByKey = new Map<string, AtomContextSpec>();
   for (const folder of chain) {
     const spec = extractAtomContextSpec(folder.settings);
     if (!spec) continue;
-    specsByNodeId.delete(spec.nodeId);
-    specsByNodeId.set(spec.nodeId, spec);
+    const key = atomContextSpecKey(spec);
+    specsByKey.delete(key);
+    specsByKey.set(key, spec);
   }
-  return [...specsByNodeId.values()];
+  return [...specsByKey.values()];
 }
 
 export function extractFolderProjectPageIds(chain: FolderChainEntry[]): string[] {
@@ -122,6 +123,7 @@ export function extractAgentAtomContextSpecs(agent: AgentProfile): AtomContextSp
     nodeId: context.node_id,
     depth: context.depth,
     titlesOnly: context.titles_only,
+    ...(context.mode !== undefined ? { mode: context.mode } : {}),
     ...(context.include_ids !== undefined
       ? { includeIds: context.include_ids }
       : {}),
@@ -145,16 +147,6 @@ export function prioritizeAtomContextSpecs(args: {
   const session = take(args.session);
   for (const nodeId of args.pageNodeIds) blockedNodeIds.add(nodeId);
   return { session, folder: take(args.folder), agent: take(args.agent) };
-}
-
-function atomContextSpecKey(spec: AtomContextSpec): string {
-  return JSON.stringify([
-    spec.nodeId,
-    spec.depth,
-    spec.titlesOnly,
-    spec.includeIds ?? null,
-    spec.limit ?? null,
-  ]);
 }
 
 export function normalizeSettings(settings: unknown): Record<string, unknown> {
@@ -193,5 +185,6 @@ function extractAtomContextSpec(settings: Record<string, unknown>): AtomContextS
     nodeId,
     depth: typeof record.depth === "number" ? record.depth : 3,
     titlesOnly: Boolean(record.titlesOnly),
+    ...(typeof record.mode === "string" ? { mode: record.mode } : {}),
   };
 }

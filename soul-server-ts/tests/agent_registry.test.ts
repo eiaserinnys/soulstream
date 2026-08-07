@@ -148,7 +148,7 @@ describe("AgentProfileSchema", () => {
     ).toThrow(ZodError);
   });
 
-  it("atom_contexts는 node_id/depth/titles_only/include_ids를 파싱한다", () => {
+  it("atom_contexts는 node_id/depth/titles_only/include_ids/mode를 파싱한다", () => {
     const parsed = AgentProfileSchema.parse({
       id: "a",
       name: "A",
@@ -160,6 +160,7 @@ describe("AgentProfileSchema", () => {
           depth: 2,
           titles_only: true,
           include_ids: false,
+          mode: "index",
         },
       ],
     });
@@ -169,8 +170,24 @@ describe("AgentProfileSchema", () => {
         depth: 2,
         titles_only: true,
         include_ids: false,
+        mode: "index",
       },
     ]);
+  });
+
+  it("atom_contexts 미지 mode는 런타임 legacy 폴백을 위해 보존한다", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "a",
+      name: "A",
+      backend: "codex",
+      workspace_dir: "/tmp/a",
+      atom_contexts: [{
+        node_id: "11111111-2222-3333-4444-555555555555",
+        mode: "future-mode",
+      }],
+    });
+
+    expect(parsed.atom_contexts?.[0]?.mode).toBe("future-mode");
   });
 
   it("atom_contexts depth/titles_only 기본값", () => {
