@@ -2255,9 +2255,18 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- 29b. board_seed_items
-CREATE OR REPLACE FUNCTION board_seed_items()
+DROP FUNCTION IF EXISTS board_seed_items();
+DROP FUNCTION IF EXISTS board_seed_items(TEXT, TEXT);
+CREATE OR REPLACE FUNCTION board_seed_items(p_container_kind TEXT, p_container_id TEXT)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_container_kind IS NULL OR p_container_kind NOT IN ('folder', 'task') THEN
+        RAISE EXCEPTION 'unsupported board container kind: %', p_container_kind;
+    END IF;
+    IF NULLIF(BTRIM(p_container_id), '') IS NULL THEN
+        RAISE EXCEPTION 'board container id must not be empty';
+    END IF;
+
     PERFORM pg_advisory_xact_lock(hashtext('soulstream:board_items')::bigint);
 
     -- 세션 타일 reconcile: folder 컨테이너 타일만 폴더 불일치로 삭제한다.
@@ -2265,6 +2274,8 @@ BEGIN
     -- 사라진 경우(고아)에만 정리한다.
     DELETE FROM board_items bi
     WHERE bi.item_type = 'session'
+      AND bi.container_kind = p_container_kind
+      AND bi.container_id = p_container_id
       AND (
           NOT EXISTS (
               SELECT 1 FROM sessions s
@@ -2282,6 +2293,8 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'subfolder'
+      AND bi.container_kind = p_container_kind
+      AND bi.container_id = p_container_id
       AND NOT EXISTS (
           SELECT 1 FROM folders f
           WHERE f.id = bi.item_id
@@ -2290,6 +2303,8 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'markdown'
+      AND bi.container_kind = p_container_kind
+      AND bi.container_id = p_container_id
       AND NOT EXISTS (
           SELECT 1 FROM markdown_documents d
           WHERE d.id = bi.item_id
@@ -2297,6 +2312,8 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'asset'
+      AND bi.container_kind = p_container_kind
+      AND bi.container_id = p_container_id
       AND NOT EXISTS (
           SELECT 1 FROM file_assets fa
           WHERE fa.id = bi.item_id
@@ -2304,6 +2321,8 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'custom_view'
+      AND bi.container_kind = p_container_kind
+      AND bi.container_id = p_container_id
       AND NOT EXISTS (
           SELECT 1 FROM board_custom_views cv
           WHERE cv.id = bi.item_id
@@ -2327,7 +2346,8 @@ BEGIN
             ) AS activity_at,
             s.session_id AS tie_breaker
         FROM sessions s
-        WHERE s.folder_id IS NOT NULL
+        WHERE p_container_kind = 'folder'
+          AND s.folder_id = p_container_id
           AND NOT EXISTS (
               SELECT 1 FROM board_items existing_primary
               WHERE existing_primary.item_type = 'session'
@@ -2343,7 +2363,8 @@ BEGIN
             COALESCE(f.created_at, NOW()) AS activity_at,
             f.name AS tie_breaker
         FROM folders f
-        WHERE f.parent_folder_id IS NOT NULL
+        WHERE p_container_kind = 'folder'
+          AND f.parent_folder_id = p_container_id
     ),
     numbered AS (
         SELECT

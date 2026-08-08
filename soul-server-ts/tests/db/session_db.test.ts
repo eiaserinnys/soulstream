@@ -530,30 +530,38 @@ describe("session_delete SQL", () => {
 });
 
 describe("board_seed_items SQL", () => {
-  it("serializes board_items writes, ignores unique conflicts, and excludes sessions with primary membership elsewhere", () => {
+  it("limits cleanup and insertion to the requested board container", () => {
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
     const migration = readFileSync(
-      new URL("../../../packages/db-schema/sql/migrations/033_board_seed_primary_membership_guard.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/migrations/059_scope_board_seed_items.sql", import.meta.url),
       "utf8",
     );
 
     for (const sql of [schema, migration]) {
-      const start = sql.indexOf("CREATE OR REPLACE FUNCTION board_seed_items");
+      const start = sql.indexOf(
+        "CREATE OR REPLACE FUNCTION board_seed_items(p_container_kind TEXT, p_container_id TEXT)",
+      );
       const end = sql.indexOf("$$;", start);
       expect(start).toBeGreaterThanOrEqual(0);
       expect(end).toBeGreaterThan(start);
       const body = sql.slice(start, end);
       expect(body).toContain("pg_advisory_xact_lock");
       expect(body).toContain("hashtext('soulstream:board_items')::bigint");
+      expect(body.match(/bi\.container_kind = p_container_kind/g)).toHaveLength(5);
+      expect(body.match(/bi\.container_id = p_container_id/g)).toHaveLength(5);
+      expect(body).toContain("p_container_kind = 'folder'");
+      expect(body).toContain("s.folder_id = p_container_id");
+      expect(body).toContain("f.parent_folder_id = p_container_id");
       expect(body).toContain("ON CONFLICT DO NOTHING");
       expect(body).not.toContain("ON CONFLICT (id) DO NOTHING");
       expect(body).toContain("existing_primary.item_type = 'session'");
       expect(body).toContain("existing_primary.item_id = s.session_id");
       expect(body).toContain("existing_primary.membership_kind = 'primary'");
     }
+    expect(migration).toContain("DROP FUNCTION IF EXISTS board_seed_items()");
   });
 });
 

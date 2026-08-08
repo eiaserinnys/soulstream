@@ -225,13 +225,13 @@ export class BoardYjsRepository {
     const scope = await this.resolveBoardYjsContainerScope(containerInput);
     if (!scope) return { boardItems: [], markdownDocuments: [] };
     const sql = await this.sqlResolver.resolveSql();
-    await sql`SELECT board_seed_items()`;
-    const rows = await sql<readonly BoardItemDbRow[]>`SELECT * FROM board_item_get_all()`;
-    const boardItems = rows
-      .map(toCatalogBoardItemRow)
-      .filter((item) =>
-        item.containerKind === scope.containerKind && item.containerId === scope.containerId
-      );
+    await sql`SELECT board_seed_items(${scope.containerKind}, ${scope.containerId})`;
+    const rows = await sql<readonly BoardItemDbRow[]>`
+      SELECT * FROM board_item_get_all()
+      WHERE container_kind = ${scope.containerKind}
+        AND container_id = ${scope.containerId}
+    `;
+    const boardItems = rows.map(toCatalogBoardItemRow);
     const markdownIds = boardItems
       .filter((item) => item.itemType === "markdown")
       .map((item) => item.itemId);
