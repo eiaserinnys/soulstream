@@ -1,15 +1,5 @@
 import type { CatalogBoardItemRow } from "./board_yjs_types.js";
 
-export const KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING =
-  "folder container Y.Doc ↔ board_items mismatch is known unresolved drift; " +
-  "a separate follow-up owns diagnosis and repair";
-
-export function boardItemMembershipMismatchDisposition(
-  containerKind: "folder" | "task",
-): "blocking" | "warning" {
-  return containerKind === "task" ? "blocking" : "warning";
-}
-
 export function requireBoardItemCatalogProjection<T>(input: {
   label: string;
   ydocItemCount: number;
@@ -55,6 +45,55 @@ export function inspectBoardItemMembershipDifference(input: {
     missingFromProjection: ydocIds.filter((id) => !projection.has(id)),
     missingFromYdoc: projectionIds.filter((id) => !ydoc.has(id)),
   };
+}
+
+export function inspectCrossDocumentBoardItemDuplicates(
+  documents: readonly BoardYjsDocumentBoardItemIds[],
+): CrossDocumentBoardItemDuplicate[] {
+  const documentNamesByBoardItemId = new Map<string, Set<string>>();
+  for (const document of documents) {
+    for (const boardItemId of document.boardItemIds) {
+      const documentNames = documentNamesByBoardItemId.get(boardItemId) ?? new Set();
+      documentNames.add(document.documentName);
+      documentNamesByBoardItemId.set(boardItemId, documentNames);
+    }
+  }
+  return [...documentNamesByBoardItemId.entries()]
+    .filter(([, documentNames]) => documentNames.size > 1)
+    .map(([boardItemId, documentNames]) => ({
+      boardItemId,
+      documentNames: [...documentNames].sort((left, right) => left.localeCompare(right)),
+    }))
+    .sort((left, right) => left.boardItemId.localeCompare(right.boardItemId));
+}
+
+export function assertNoCrossDocumentBoardItemDuplicates(
+  documents: readonly BoardYjsDocumentBoardItemIds[],
+): void {
+  const duplicates = inspectCrossDocumentBoardItemDuplicates(documents);
+  if (duplicates.length === 0) return;
+  const documentCount = new Set(
+    duplicates.flatMap((duplicate) => duplicate.documentNames),
+  ).size;
+  throw new Error(
+    "board item IDs occur in multiple Y.Doc documents: " +
+      `${duplicates.length} IDs across ${documentCount} documents; see report above`,
+  );
+}
+
+export function assertNoBoardItemMembershipMismatches(
+  mismatches: readonly BoardItemMembershipMismatch[],
+): void {
+  if (mismatches.length === 0) return;
+  const mismatchCount = mismatches.reduce(
+    (total, mismatch) => total + mismatch.ydocOnly.length +
+      mismatch.boardItemsOnly.length,
+    0,
+  );
+  throw new Error(
+    `board_items projection mismatch: ${mismatchCount} rows across ` +
+      `${mismatches.length} containers; see report above`,
+  );
 }
 
 function normalizeItems(items: readonly CatalogBoardItemRow[]): NormalizedBoardItem[] {
@@ -142,4 +181,21 @@ export interface BoardItemProjectionDifference {
 export interface BoardItemMembershipDifference {
   missingFromProjection: string[];
   missingFromYdoc: string[];
+}
+
+export interface BoardYjsDocumentBoardItemIds {
+  documentName: string;
+  boardItemIds: readonly string[];
+}
+
+export interface CrossDocumentBoardItemDuplicate {
+  boardItemId: string;
+  documentNames: string[];
+}
+
+export interface BoardItemMembershipMismatch {
+  container: string;
+  documentName: string | null;
+  ydocOnly: string[];
+  boardItemsOnly: string[];
 }

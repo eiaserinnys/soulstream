@@ -3,10 +3,11 @@ import * as Y from "yjs";
 
 import { BOARD_ITEMS_MAP } from "../src/board-yjs/board_yjs_document.js";
 import {
+  assertNoBoardItemMembershipMismatches,
   assertBoardItemProjectionParity,
-  boardItemMembershipMismatchDisposition,
+  assertNoCrossDocumentBoardItemDuplicates,
+  inspectCrossDocumentBoardItemDuplicates,
   inspectBoardItemMembershipDifference,
-  KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
   requireBoardItemCatalogProjection,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
@@ -93,13 +94,36 @@ describe("board Y.Doc runbook verifier catalog parity", () => {
     });
   });
 
-  it("blocks task membership drift but keeps known folder drift as a warning", () => {
-    expect(boardItemMembershipMismatchDisposition("task")).toBe("blocking");
-    expect(boardItemMembershipMismatchDisposition("folder")).toBe("warning");
-    expect(KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING).toContain(
-      "known unresolved drift",
+  it("blocks the same board item ID appearing in different Y.Doc documents", () => {
+    const documents = [
+      {
+        documentName: "board-folder:folder-a",
+        boardItemIds: ["session:folder-only", "markdown:shared"],
+      },
+      {
+        documentName: "board:task:task-a",
+        boardItemIds: ["markdown:shared", "session:task-only"],
+      },
+    ];
+
+    expect(inspectCrossDocumentBoardItemDuplicates(documents)).toEqual([{
+      boardItemId: "markdown:shared",
+      documentNames: ["board-folder:folder-a", "board:task:task-a"],
+    }]);
+    expect(() => assertNoCrossDocumentBoardItemDuplicates(documents)).toThrow(
+      "board item IDs occur in multiple Y.Doc documents: 1 IDs across 2 documents",
     );
-    expect(KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING).toContain("follow-up");
+  });
+
+  it("blocks folder board_items membership drift", () => {
+    expect(() => assertNoBoardItemMembershipMismatches([{
+      container: "folder:folder-a",
+      documentName: "board-folder:folder-a",
+      ydocOnly: ["session:ydoc-only"],
+      boardItemsOnly: [],
+    }])).toThrow(
+      "board_items projection mismatch: 1 rows across 1 containers",
+    );
   });
 
   it("normalizes stale projection references without hiding the warning", () => {

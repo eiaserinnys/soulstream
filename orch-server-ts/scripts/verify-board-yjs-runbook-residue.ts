@@ -9,11 +9,14 @@ import {
   readBoardYDocReplica,
 } from "../src/board-yjs/board_yjs_model.js";
 import {
+  assertNoBoardItemMembershipMismatches,
   assertBoardItemProjectionParity,
-  boardItemMembershipMismatchDisposition,
+  assertNoCrossDocumentBoardItemDuplicates,
+  inspectCrossDocumentBoardItemDuplicates,
   inspectBoardItemMembershipDifference,
-  KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
   requireBoardItemCatalogProjection,
+  type BoardItemMembershipMismatch,
+  type BoardYjsDocumentBoardItemIds,
 } from
   "../src/board-yjs/board_yjs_projection_verification.js";
 import {
@@ -152,9 +155,14 @@ try {
   const documentNameByContainer = new Map<string, string>();
   let boardItemsCompared = 0;
   let emptyDocumentsWithoutCatalog = 0;
+  const ydocDocumentBoardItemIds: BoardYjsDocumentBoardItemIds[] = [];
   for (const row of inventory.documents) {
     const doc = new Y.Doc();
     if (row.snapshot.byteLength > 0) Y.applyUpdate(doc, new Uint8Array(row.snapshot));
+    ydocDocumentBoardItemIds.push({
+      documentName: row.name,
+      boardItemIds: [...doc.getMap(BOARD_ITEMS_MAP).keys()],
+    });
     const residue = inspectBoardYjsRunbookResidue(row.name, doc);
     legacyDocumentNames += residue.legacyDocumentName;
     legacyItemTypes += residue.legacyItemTypes;
@@ -194,8 +202,7 @@ try {
     }
   }
 
-  const taskBlockingMismatches: BoardItemsProjectionMismatch[] = [];
-  const folderWarningMismatches: BoardItemsProjectionMismatch[] = [];
+  const blockingMismatches: BoardItemMembershipMismatch[] = [];
   let relationalBoardItemsCompared = 0;
   let catalogFallbackContainers = 0;
   for (const cache of inventory.catalog) {
@@ -203,16 +210,8 @@ try {
     const normalizedYdocItems = normalizedYdocItemsByContainer.get(containerKey);
     if (!normalizedYdocItems) catalogFallbackContainers += 1;
     const relationalProjection = boardItemsByContainer.get(containerKey) ?? [];
-    const disposition = boardItemMembershipMismatchDisposition(
-      cache.container_kind,
-    );
-    // Folder mismatch is known unresolved drift owned by a separate follow-up.
-    // Keep every container and direction visible, but do not block deployment on it yet.
-    const target = disposition === "blocking"
-      ? taskBlockingMismatches
-      : folderWarningMismatches;
     recordBoardItemsProjectionMismatch(
-      target,
+      blockingMismatches,
       containerKey,
       documentNameByContainer.get(containerKey) ?? null,
       normalizedYdocItems ??
@@ -222,14 +221,12 @@ try {
     relationalBoardItemsCompared += relationalProjection.length;
   }
 
-  const taskBlockingSummary = summarizeBoardItemsProjectionMismatches(
-    taskBlockingMismatches,
+  const blockingSummary = summarizeBoardItemsProjectionMismatches(
+    blockingMismatches,
     true,
   );
-  const folderWarningSummary = summarizeBoardItemsProjectionMismatches(
-    folderWarningMismatches,
-    false,
-  );
+  const crossDocumentBoardItemDuplicates =
+    inspectCrossDocumentBoardItemDuplicates(ydocDocumentBoardItemIds);
 
   const committedAllowlist = JSON.parse(await readFile(
     new URL("./ydoc-runbook-opaque-board-item-allowlist.json", import.meta.url),
@@ -246,11 +243,11 @@ try {
     catalogFallbackContainers,
     emptyDocumentsWithoutCatalog,
     boardItemsProjection: {
-      taskBlocking: taskBlockingSummary,
-      folderWarnings: {
-        reason: KNOWN_FOLDER_BOARD_ITEM_DRIFT_WARNING,
-        ...folderWarningSummary,
-      },
+      blocking: blockingSummary,
+    },
+    crossDocumentBoardItemDuplicates: {
+      duplicateCount: crossDocumentBoardItemDuplicates.length,
+      duplicates: crossDocumentBoardItemDuplicates,
     },
     normalizationWarnings: {
       catalog: catalogNormalizationWarnings,
@@ -274,7 +271,8 @@ try {
     inventory.projections?.catalog_legacy_source_keys ?? -1,
   );
   assertContainsStrings([...opaqueBoardItemIds], committedAllowlist);
-  assertNoBoardItemsProjectionMismatches(taskBlockingMismatches);
+  assertNoCrossDocumentBoardItemDuplicates(ydocDocumentBoardItemIds);
+  assertNoBoardItemMembershipMismatches(blockingMismatches);
   process.stdout.write(
     "Y.Doc recomposition, catalog cache, and board_items projection verification passed.\n",
   );
@@ -315,7 +313,7 @@ function groupBoardItemsByContainer(
 }
 
 function recordBoardItemsProjectionMismatch(
-  mismatches: BoardItemsProjectionMismatch[],
+  mismatches: BoardItemMembershipMismatch[],
   container: string,
   documentName: string | null,
   ydocItems: readonly CatalogBoardItemRow[],
@@ -335,23 +333,8 @@ function recordBoardItemsProjectionMismatch(
   });
 }
 
-function assertNoBoardItemsProjectionMismatches(
-  mismatches: readonly BoardItemsProjectionMismatch[],
-): void {
-  if (mismatches.length === 0) return;
-  const mismatchCount = mismatches.reduce(
-    (total, mismatch) => total + mismatch.ydocOnly.length +
-      mismatch.boardItemsOnly.length,
-    0,
-  );
-  throw new Error(
-    `task board_items projection mismatch: ${mismatchCount} rows across ` +
-      `${mismatches.length} containers; see report above`,
-  );
-}
-
 function summarizeBoardItemsProjectionMismatches(
-  mismatches: readonly BoardItemsProjectionMismatch[],
+  mismatches: readonly BoardItemMembershipMismatch[],
   includeIds: boolean,
 ): BoardItemsProjectionMismatchSummary {
   const containers = mismatches.map((mismatch) => ({
@@ -381,13 +364,6 @@ function summarizeBoardItemsProjectionMismatches(
     boardItemsOnlyCount,
     containers,
   };
-}
-
-interface BoardItemsProjectionMismatch {
-  container: string;
-  documentName: string | null;
-  ydocOnly: string[];
-  boardItemsOnly: string[];
 }
 
 interface BoardItemsProjectionMismatchSummary {
