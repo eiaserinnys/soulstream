@@ -57,6 +57,29 @@ describe("SessionMutationHostClient", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("returns a string review outcome from the JSON host response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify("acknowledged"),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )));
+    const client = new SessionMutationHostClient({
+      orch: {
+        baseUrl: "http://orchestrator.test",
+        headers: { authorization: "Bearer secret" },
+      },
+      logger,
+    });
+
+    await expect(client.acknowledgeReview(
+      "session-a",
+      "acknowledge-session-a-1",
+      new Date("2026-08-08T00:00:00.000Z"),
+    )).resolves.toBe("acknowledged");
+  });
+
   it("surfaces host rejection without a detached promise", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ detail: { error: { message: "idempotency key conflict" } } }),
