@@ -24,6 +24,7 @@ describe("createOrchestratorMemoryStatsCollector", () => {
       pushNotifier: {
         getStats: () => ({
           toolInputs: 6,
+          notificationEvents: 2,
           pendingSends: 1,
         }),
       },
@@ -55,7 +56,7 @@ describe("createOrchestratorMemoryStatsCollector", () => {
       session_replay_ring: 8,
       session_cache: 12,
       pending_commands: 4,
-      push_notifier: 7,
+      push_notifier: 9,
       foreground_observers: 3,
       board_yjs_documents: 9,
       page_yjs_documents: 10,
@@ -78,8 +79,8 @@ describe("createOrchestratorMemoryStatsCollector", () => {
         details: { nodes: 3, connectedNodes: 2 },
       },
       push_notifier: {
-        entries: 7,
-        details: { toolInputs: 6, pendingSends: 1 },
+        entries: 9,
+        details: { toolInputs: 6, notificationEvents: 2, pendingSends: 1 },
       },
       foreground_observers: {
         entries: 3,

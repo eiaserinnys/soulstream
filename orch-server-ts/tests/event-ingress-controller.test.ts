@@ -50,6 +50,33 @@ describe("NodeEventIngressController", () => {
     ]);
   });
 
+  it("re-publishes a duplicate receipt with its stable event identity", async () => {
+    const value = batch(1);
+    const publish = vi.fn();
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: true,
+        }]),
+      },
+      publish,
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(publish).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "node_session_event",
+        data: expect.objectContaining({
+          event: expect.objectContaining({ id: 101, _event_id: 101 }),
+        }),
+      }),
+    ]);
+  });
+
   it("sends status 409 and closes without ACK on receipt conflict", async () => {
     const sent: Array<Record<string, unknown>> = [];
     const close = vi.fn();

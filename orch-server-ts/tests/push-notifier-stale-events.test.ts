@@ -100,6 +100,12 @@ function event(sessionId: string, payload: Record<string, unknown>): NodeRegistr
   return {
     type: "node_session_event",
     nodeId: "node-a",
-    data: { type: "event", agentSessionId: sessionId, event: payload },
+    data: {
+      type: "event",
+      agentSessionId: sessionId,
+      event: { _event_id: nextEventId++, ...payload },
+    },
   };
 }
+
+let nextEventId = 1;

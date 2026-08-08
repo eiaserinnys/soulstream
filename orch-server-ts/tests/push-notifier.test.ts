@@ -1,17 +1,57 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  PUSH_NOTIFICATION_DEDUPE_TTL_MS,
   PushNotifier,
   SessionForegroundObserverTracker,
   type NodeRegistryEvent,
   type PushNotificationRepository,
   type PushNotificationProvider,
+  type PushNotifierOptions,
   type PushSendResult,
 } from "../src/index.js";
 
 const OK: PushSendResult = { ok: true, invalidToken: false };
 
 describe("PushNotifier", () => {
+  it("suppresses a repeated session_ended event by persistent event identity", async () => {
+    const onInfo = vi.fn();
+    const harness = createHarness({ onInfo });
+    const event = sessionEnded("node-a", "session-a", "completed", { _event_id: 1056 });
+
+    harness.notifier.accept([event, event]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).toHaveBeenCalledTimes(1);
+    expect(onInfo.mock.calls.map(([event]) => event)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: "suppressed",
+        session_id: "session-a",
+        event_key: "session-a:1056",
+        reason: "duplicate_event_identity",
+      }),
+      expect.objectContaining({
+        action: "sent",
+        session_id: "session-a",
+        event_key: "session-a:1056",
+        reason: "notification_dispatched",
+      }),
+    ]));
+  });
+
+  it("suppresses a repeated input request by persistent event identity", async () => {
+    const harness = createHarness();
+    const event = inputRequest("node-a", "session-a", {
+      _event_id: 1057,
+      request_id: "request-1057",
+    });
+
+    harness.notifier.accept([event, event]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).toHaveBeenCalledTimes(1);
+  });
+
   it("sends completion and error notifications from session_ended transitions only", async () => {
     const harness = createHarness();
 
@@ -441,6 +481,20 @@ describe("PushNotifier", () => {
     expect(harness.notifier.sweepExpired(nowMs).toolInputs).toBe(1);
     expect(harness.notifier.getStats().toolInputs).toBe(0);
   });
+
+  it("sweeps notification identities after their independent TTL", async () => {
+    let nowMs = 1_000;
+    const harness = createHarness({ nowMs: () => nowMs });
+    harness.notifier.accept([
+      sessionEnded("node-a", "session-a", "completed", { _event_id: 1058 }),
+    ]);
+    await harness.notifier.flush();
+    expect(harness.notifier.getStats().notificationEvents).toBe(1);
+
+    nowMs += PUSH_NOTIFICATION_DEDUPE_TTL_MS;
+    expect(harness.notifier.sweepExpired(nowMs).notificationEvents).toBe(1);
+    expect(harness.notifier.getStats().notificationEvents).toBe(0);
+  });
 });
 
 function createHarness(options: {
@@ -449,6 +503,7 @@ function createHarness(options: {
   catalog?: ReturnType<typeof createCatalog>;
   sessions?: Map<string, Record<string, unknown>>;
   observers?: SessionForegroundObserverTracker;
+  onInfo?: PushNotifierOptions["onInfo"];
   onWarning?: (message: string, error?: unknown) => void;
   nowMs?: () => number;
 } = {}) {
@@ -468,6 +523,7 @@ function createHarness(options: {
       sessionLookup: (sessionId) => sessions.get(sessionId),
       resolveNodeEmail: () => "user@example.com",
       foregroundObservers: options.observers ?? new SessionForegroundObserverTracker(),
+      onInfo: options.onInfo,
       onWarning: options.onWarning ?? vi.fn(),
       nowMs: options.nowMs,
     }),
@@ -564,6 +620,12 @@ function sessionEvent(
   return {
     type: "node_session_event",
     nodeId,
-    data: { type: "event", agentSessionId: sessionId, event },
+    data: {
+      type: "event",
+      agentSessionId: sessionId,
+      event: { _event_id: nextEventId++, ...event },
+    },
   };
 }
+
+let nextEventId = 10_000;

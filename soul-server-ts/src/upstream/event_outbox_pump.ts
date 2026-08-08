@@ -22,6 +22,8 @@ export class EventOutboxPump {
   private inFlight?: EventOutboxBatch;
   private generation = 0;
   private flushScheduled = false;
+  private flushActive = false;
+  private flushAgain = false;
   private readonly acknowledgementWaiters = new Map<
     number,
     Set<(eventId: number) => void>
@@ -155,16 +157,29 @@ export class EventOutboxPump {
   }
 
   private async flush(): Promise<void> {
+    if (this.flushActive) {
+      this.flushAgain = true;
+      return;
+    }
     const sender = this.sender;
     if (!sender || this.inFlight) return;
-    const generation = this.generation;
-    const batch = await this.outbox.readBatch();
-    if (!batch || sender !== this.sender || generation !== this.generation) return;
-    this.inFlight = batch;
+    this.flushActive = true;
     try {
-      await sender(batch);
-    } catch (error) {
-      if (generation === this.generation) this.onError(error);
+      const generation = this.generation;
+      const batch = await this.outbox.readBatch();
+      if (!batch || sender !== this.sender || generation !== this.generation) return;
+      this.inFlight = batch;
+      try {
+        await sender(batch);
+      } catch (error) {
+        if (generation === this.generation) this.onError(error);
+      }
+    } finally {
+      this.flushActive = false;
+      if (this.flushAgain) {
+        this.flushAgain = false;
+        this.scheduleFlush();
+      }
     }
   }
 }

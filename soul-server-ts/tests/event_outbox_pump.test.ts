@@ -16,6 +16,33 @@ afterEach(async () => {
 });
 
 describe("EventOutboxPump", () => {
+  it("does not read and send the same batch concurrently", async () => {
+    const outbox = await createOutbox();
+    await outbox.append(eventInput("one"));
+    const originalReadBatch = outbox.readBatch.bind(outbox);
+    let releaseRead: (() => void) | undefined;
+    const readBlocked = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const readBatch = vi.spyOn(outbox, "readBatch").mockImplementation(async () => {
+      await readBlocked;
+      return await originalReadBatch();
+    });
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => readBatch.mock.calls.length === 1);
+    await outbox.append(eventInput("two"));
+    await new Promise((resolve) => setImmediate(resolve));
+    releaseRead?.();
+    await waitFor(() => sent.length > 0);
+    await Promise.resolve();
+
+    expect(readBatch).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(1);
+  });
+
   it("keeps one batch in flight and flushes the next only after ACK", async () => {
     const outbox = await createOutbox();
     await outbox.append(eventInput("one"));
