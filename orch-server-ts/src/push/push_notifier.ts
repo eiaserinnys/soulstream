@@ -1,5 +1,17 @@
 import type { NodeRegistryEvent } from "../node/registry.js";
+import { PushNotificationDedupe } from "./push_notification_dedupe.js";
 import type { PushRegistrationRepository } from "./push_routes.js";
+import {
+  responseWaitSignal,
+  type ResponseWaitSignal,
+} from "./response_wait_signal.js";
+import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
+
+export { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
+export {
+  PUSH_NOTIFICATION_DEDUPE_MAX_ENTRIES,
+  PUSH_NOTIFICATION_DEDUPE_TTL_MS,
+} from "./push_notification_dedupe.js";
 
 export type PushDeviceToken = {
   readonly deviceId: string;
@@ -39,14 +51,22 @@ export type PushNotifierOptions = {
   readonly sessionLookup: (sessionId: string) => Record<string, unknown> | undefined;
   readonly resolveNodeEmail: (nodeId: string) => string | undefined;
   readonly foregroundObservers: SessionForegroundObserverTracker;
+  readonly onInfo?: (event: PushNotificationLogEvent) => void;
   readonly onWarning?: (message: string, error?: unknown) => void;
   readonly nowMs?: () => number;
 };
 
-type ResponseWaitSignal = {
-  readonly kind: "ask_user_question" | "exit_plan_mode" | "permission_prompt" | "tool_approval";
-  readonly title: string;
-  readonly prompt: string;
+export type PushNotificationLogEvent = {
+  readonly action: "sent" | "suppressed";
+  readonly session_id: string;
+  readonly event_key: string;
+  readonly notification_kind:
+    | "session_ended"
+    | "ask_user_question"
+    | "exit_plan_mode"
+    | "permission_prompt"
+    | "tool_approval";
+  readonly reason: "notification_dispatched" | "duplicate_event_identity";
 };
 
 const COMPLETION_SOURCES = new Set(["slack", "browser", "soul-app"]);
@@ -60,34 +80,9 @@ export const PUSH_EVENT_MAX_AGE_MS = 10 * 60_000;
 const PUSH_BODY_MAX = 100;
 const INPUT_EXCERPT_MAX = 50;
 
-export class SessionForegroundObserverTracker {
-  private readonly counts = new Map<string, number>();
-
-  observe(sessionId: string): () => void {
-    this.counts.set(sessionId, this.count(sessionId) + 1);
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      const next = this.count(sessionId) - 1;
-      if (next <= 0) this.counts.delete(sessionId);
-      else this.counts.set(sessionId, next);
-    };
-  }
-
-  count(sessionId: string): number {
-    return this.counts.get(sessionId) ?? 0;
-  }
-
-  getStats(): { sessions: number; observers: number } {
-    let observers = 0;
-    for (const count of this.counts.values()) observers += count;
-    return { sessions: this.counts.size, observers };
-  }
-}
-
 export class PushNotifier {
   private readonly toolInputs = new Map<string, { value: unknown; atMs: number }>();
+  private readonly notificationDedupe = new PushNotificationDedupe();
   private readonly pending = new Set<Promise<void>>();
   private readonly warn: (message: string, error?: unknown) => void;
   private readonly nowMs: () => number;
@@ -134,7 +129,10 @@ export class PushNotifier {
     if (sessionId === undefined || payload === undefined) return;
     if (payload.type === "session_ended") {
       if (this.isStalePushEvent(sessionId, payload)) return;
-      await this.handleSessionEnded(event.nodeId, sessionId, event.data, payload);
+      const eventKey = this.claimEvent(sessionId, payload, "session_ended");
+      if (eventKey === null) return;
+      const sent = await this.handleSessionEnded(event.nodeId, sessionId, event.data, payload);
+      if (sent) this.logSent(sessionId, eventKey, "session_ended");
       return;
     }
     this.cacheToolInput(event.nodeId, sessionId, payload);
@@ -147,8 +145,46 @@ export class PushNotifier {
     if (signal?.kind === "exit_plan_mode") this.toolInputs.delete(inputKey);
     if (signal !== undefined) {
       if (this.isStalePushEvent(sessionId, payload)) return;
-      await this.handleInputRequest(event.nodeId, sessionId, event.data, signal);
+      const eventKey = this.claimEvent(sessionId, payload, signal.kind);
+      if (eventKey === null) return;
+      const sent = await this.handleInputRequest(event.nodeId, sessionId, event.data, signal);
+      if (sent) this.logSent(sessionId, eventKey, signal.kind);
     }
+  }
+
+  private claimEvent(
+    sessionId: string,
+    event: Record<string, unknown>,
+    notificationKind: PushNotificationLogEvent["notification_kind"],
+  ): string | undefined | null {
+    const claim = this.notificationDedupe.claim(sessionId, event, this.nowMs());
+    if (claim === undefined) {
+      this.warn(`Push notification event identity missing for ${sessionId}`);
+      return undefined;
+    }
+    if (!claim.duplicate) return claim.eventKey;
+    this.options.onInfo?.({
+      action: "suppressed",
+      session_id: sessionId,
+      event_key: claim.eventKey,
+      notification_kind: notificationKind,
+      reason: "duplicate_event_identity",
+    });
+    return null;
+  }
+
+  private logSent(
+    sessionId: string,
+    eventKey: string | undefined,
+    notificationKind: PushNotificationLogEvent["notification_kind"],
+  ): void {
+    this.options.onInfo?.({
+      action: "sent",
+      session_id: sessionId,
+      event_key: eventKey ?? "missing",
+      notification_kind: notificationKind,
+      reason: "notification_dispatched",
+    });
   }
 
   private isStalePushEvent(sessionId: string, event: Record<string, unknown>): boolean {
@@ -163,21 +199,21 @@ export class PushNotifier {
     sessionId: string,
     envelope: Record<string, unknown>,
     event: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const payload = {
       ...(this.options.sessionLookup(sessionId) ?? {}),
       ...envelope,
       ...event,
     };
-    if (normalizedString(payload.session_type, payload.sessionType) === "llm") return;
+    if (normalizedString(payload.session_type, payload.sessionType) === "llm") return false;
     const source = normalizedString(payload.caller_source, payload.callerSource);
-    if (!COMPLETION_SOURCES.has(source)) return;
+    if (!COMPLETION_SOURCES.has(source)) return false;
     const status = normalizedString(payload.status);
     const title = TERMINAL_NOTIFICATION_TITLES.get(status);
-    if (title === undefined) return;
-    if (await this.folderExcludes(sessionId, payload)) return;
+    if (title === undefined) return false;
+    if (await this.folderExcludes(sessionId, payload)) return false;
 
-    await this.sendToUser(nodeId, title, completionBody(payload, title), {
+    return await this.sendToUser(nodeId, title, completionBody(payload, title), {
       sessionId,
       status,
       sessionType: normalizedString(payload.session_type, payload.sessionType),
@@ -190,15 +226,15 @@ export class PushNotifier {
     sessionId: string,
     envelope: Record<string, unknown>,
     signal: ResponseWaitSignal,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const session = this.options.sessionLookup(sessionId) ?? {};
     const payload = { ...session, ...envelope };
     const sessionType = normalizedString(payload.session_type, payload.sessionType);
-    if (sessionType === "llm") return;
+    if (sessionType === "llm") return false;
     const source = normalizedString(payload.caller_source, payload.callerSource);
-    if (!INPUT_REQUEST_SOURCES.has(source)) return;
-    if (this.options.foregroundObservers.count(sessionId) > 0) return;
-    if (await this.folderExcludes(sessionId, payload)) return;
+    if (!INPUT_REQUEST_SOURCES.has(source)) return false;
+    if (this.options.foregroundObservers.count(sessionId) > 0) return false;
+    if (await this.folderExcludes(sessionId, payload)) return false;
 
     const sessionName = firstMeaningful(
       payload.session_name,
@@ -209,7 +245,7 @@ export class PushNotifier {
       sessionId.slice(0, 8),
     );
     const prompt = meaningful(signal.prompt) || "에이전트가 입력을 기다리고 있습니다";
-    await this.sendToUser(
+    return await this.sendToUser(
       nodeId,
       signal.title,
       `${truncate(sessionName, 40)}: ${truncate(prompt, INPUT_EXCERPT_MAX)}`,
@@ -250,23 +286,23 @@ export class PushNotifier {
     title: string,
     body: string,
     data: Readonly<Record<string, unknown>>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const email = this.options.resolveNodeEmail(nodeId)?.trim();
-    if (!email) return;
+    if (!email) return false;
     let tokens: readonly PushDeviceToken[];
     try {
       tokens = await this.options.repository.listTokens(email);
     } catch (error) {
       this.warn(`Push token lookup failed for ${email}`, error);
-      return;
+      return false;
     }
-    await Promise.all(tokens.map(async ({ deviceId, expoToken }) => {
+    const results = await Promise.all(tokens.map(async ({ deviceId, expoToken }) => {
       let result: PushSendResult;
       try {
         result = await this.options.provider.send(expoToken, title, body, data);
       } catch (error) {
         this.warn(`Push send failed for ${email}/${deviceId}`, error);
-        return;
+        return false;
       }
       if (result.invalidToken) {
         try {
@@ -277,7 +313,9 @@ export class PushNotifier {
       } else if (!result.ok) {
         this.warn(`Push send rejected for ${email}/${deviceId}: ${result.error ?? "unknown"}`);
       }
+      return result.ok;
     }));
+    return results.some(Boolean);
   }
 
   private cacheToolInput(
@@ -297,16 +335,19 @@ export class PushNotifier {
 
   getStats(): {
     toolInputs: number;
+    notificationEvents: number;
     pendingSends: number;
   } {
     return {
       toolInputs: this.toolInputs.size,
+      notificationEvents: this.notificationDedupe.size,
       pendingSends: this.pending.size,
     };
   }
 
   sweepExpired(nowMs = this.nowMs()): {
     toolInputs: number;
+    notificationEvents: number;
     total: number;
   } {
     let toolInputs = 0;
@@ -316,7 +357,8 @@ export class PushNotifier {
         toolInputs += 1;
       }
     }
-    return { toolInputs, total: toolInputs };
+    const notificationEvents = this.notificationDedupe.sweepExpired(nowMs);
+    return { toolInputs, notificationEvents, total: toolInputs + notificationEvents };
   }
 
   private clearNodeState(nodeId: string): void {
@@ -325,50 +367,6 @@ export class PushNotifier {
       if (key.startsWith(prefix)) this.toolInputs.delete(key);
     }
   }
-}
-
-function responseWaitSignal(
-  event: Record<string, unknown>,
-  cachedToolInput: unknown,
-): ResponseWaitSignal | undefined {
-  if (event.type === "input_request") {
-    return {
-      kind: "ask_user_question",
-      title: "입력 요청",
-      prompt: inputRequestExcerpt(event),
-    };
-  }
-  if (
-    event.type === "claude_runtime_mode_state" &&
-    event.mode === "plan" &&
-    event.active === false &&
-    stringValue(event.tool_name, event.toolName) === "ExitPlanMode"
-  ) {
-    return { kind: "exit_plan_mode", title: "플랜 검토 요청", prompt: toolInputExcerpt(cachedToolInput) || "ExitPlanMode" };
-  }
-  if (event.type === "claude_runtime_notification") {
-    const notificationType = normalizedString(event.notification_type, event.notificationType);
-    const key = normalizedString(event.key);
-    if (notificationType === "permission" || key === "permission") {
-      const title = meaningful(event.title);
-      const message = meaningful(event.message);
-      return {
-        kind: "permission_prompt",
-        title: "권한 요청",
-        prompt: title && message && title !== message ? `${title}: ${message}` : title || message,
-      };
-    }
-  }
-  if (event.type === "tool_approval_requested") {
-    const toolName = meaningful(event.tool_name ?? event.toolName) || "tool";
-    const excerpt = toolInputExcerpt(event.tool_input ?? event.toolInput);
-    return {
-      kind: "tool_approval",
-      title: "도구 승인 요청",
-      prompt: excerpt ? `${toolName}: ${excerpt}` : toolName,
-    };
-  }
-  return undefined;
 }
 
 function completionBody(data: Record<string, unknown>, fallbackTitle: string): string {
@@ -383,38 +381,6 @@ function completionBody(data: Record<string, unknown>, fallbackTitle: string): s
     data.lastProgressText,
     fallbackTitle,
   ), PUSH_BODY_MAX);
-}
-
-function inputRequestExcerpt(event: Record<string, unknown>): string {
-  if (Array.isArray(event.questions)) {
-    for (const question of event.questions) {
-      const record = recordValue(question);
-      const text = record === undefined
-        ? meaningful(question)
-        : firstMeaningful(record.question, record.header, record.label, record.description);
-      if (text) return text;
-    }
-  }
-  return firstMeaningful(event.prompt, event.message, event.title);
-}
-
-function toolInputExcerpt(value: unknown): string {
-  const record = recordValue(value);
-  if (record !== undefined) {
-    const text = firstMeaningful(
-      record.plan,
-      record.message,
-      record.summary,
-      record.content,
-      record.prompt,
-      record.question,
-      record.command,
-    );
-    if (text) return text;
-    const values = Object.values(record);
-    if (values.length === 1) return jsonPreview(values[0]);
-  }
-  return jsonPreview(value);
 }
 
 function sessionIdFrom(data: Record<string, unknown>): string | undefined {
@@ -455,15 +421,6 @@ function truncate(value: string, maxLength: number): string {
   const lastSpace = text.lastIndexOf(" ");
   if (lastSpace > maxLength * 0.6) text = text.slice(0, lastSpace);
   return `${text}…`;
-}
-
-function jsonPreview(value: unknown): string {
-  if (typeof value === "string") return meaningful(value);
-  try {
-    return meaningful(JSON.stringify(value));
-  } catch {
-    return meaningful(value);
-  }
 }
 
 function normalizedString(...values: unknown[]): string {

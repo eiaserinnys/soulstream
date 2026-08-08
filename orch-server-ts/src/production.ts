@@ -37,6 +37,7 @@ import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
   PushNotifier,
   SessionForegroundObserverTracker,
+  type PushNotificationLogEvent,
 } from "./push/push_notifier.js";
 import {
   createOrchestratorRuntimeServices,
@@ -202,6 +203,7 @@ export async function createLiveProductionApplication(
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
   const foregroundObservers = new SessionForegroundObserverTracker();
+  let logPushNotification: ((event: PushNotificationLogEvent) => void) | undefined;
   const pushNotifier = new PushNotifier({
     provider: createExpoPushProvider(),
     repository: pushRepository,
@@ -211,6 +213,8 @@ export async function createLiveProductionApplication(
     resolveNodeEmail: (nodeId) =>
       stringValue(registry.getUserInfo(nodeId).email) || config.allowed_email || undefined,
     foregroundObservers,
+    onInfo: (event) => logPushNotification?.(event),
+    onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
   let providers: LiveOrchestratorProviderBundle;
   let pageYjsService: PageYjsService | undefined;
@@ -396,6 +400,12 @@ export async function createLiveProductionApplication(
     createFolderControlPlaneServiceProvider(sqlResolver),
     persistenceRepositoryProvider,
   ));
+  logPushNotification = (event) => {
+    app.log.info(
+      { pushNotification: event },
+      event.action === "sent" ? "Push notification sent" : "Push notification suppressed",
+    );
+  };
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
     configPath: overrides.turnSummaryConfigPath ??
