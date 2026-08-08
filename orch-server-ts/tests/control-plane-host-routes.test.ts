@@ -225,6 +225,29 @@ describe("control-plane host routes", () => {
     expect(response.json()).toBeNull();
   });
 
+  it("serializes string persistence results as JSON", async () => {
+    const acknowledgeReview = vi.fn(async () => "acknowledged");
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        sessionMutations: { acknowledgeReview },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-data/host/acknowledge_review",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: ["session-1", "acknowledge-session-1"] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(JSON.parse(response.body)).toBe("acknowledged");
+  });
+
   it("revives nested background terminal timestamps before the atomic repository call", async () => {
     const terminalize = vi.fn(async (input: unknown) => ({ accepted: false, row: input }));
     const app = Fastify();

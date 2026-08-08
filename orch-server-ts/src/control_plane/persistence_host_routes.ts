@@ -122,7 +122,7 @@ function registerDomain(
       try {
         const repositories = await options.repositoryProvider();
         const result = await invoke(repositories, target, args);
-        return reply.send(result ?? null);
+        return reply.type("application/json").send(JSON.stringify(result ?? null));
       } catch (error) {
         request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
         const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
