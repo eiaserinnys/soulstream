@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 
 import { SessionDeletionRepository } from
   "../src/session/session_deletion_repository.js";
@@ -39,6 +40,10 @@ describe("SessionDeletionRepository", () => {
           )]),
         }];
       }
+      if (call.query.includes("INSERT INTO board_yjs_documents") &&
+        call.query.includes("RETURNING revision")) {
+        return [{ revision: 1 }];
+      }
       return [];
     });
     const repository = new SessionDeletionRepository({
@@ -56,7 +61,7 @@ describe("SessionDeletionRepository", () => {
           containerKind: "folder",
           containerId: "folder-1",
         },
-        snapshot: new Uint8Array([1, 2, 3]),
+        snapshot: Y.encodeStateAsUpdate(new Y.Doc()),
         replica: { boardItems: [], markdownDocuments: [] },
       }],
     });

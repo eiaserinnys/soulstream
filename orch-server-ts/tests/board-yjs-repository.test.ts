@@ -440,6 +440,10 @@ describe("orch BoardYjsRepository", () => {
           updated_at: null,
         }];
       }
+      if (call.query.includes("UPDATE board_yjs_documents") &&
+        call.query.includes("RETURNING revision")) {
+        return [{ revision: 2 }];
+      }
       return [];
     });
     const repository = new BoardYjsRepository({
@@ -455,16 +459,90 @@ describe("orch BoardYjsRepository", () => {
     const repaired = await repository.backfillTaskBoardItemsIntoSnapshot(
       "board-folder:folder-1",
       { folderId: "folder-1", containerKind: "folder", containerId: "folder-1" },
-      empty,
+      { snapshot: empty, revision: 1 },
     );
     const doc = new Y.Doc();
-    Y.applyUpdate(doc, repaired);
+    Y.applyUpdate(doc, repaired.snapshot);
 
     expect(readBoardYDocReplica("folder-1", doc).boardItems)
       .toEqual([expect.objectContaining({ id: "task:rb-1", itemType: "task" })]);
-    expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_documents")))
+    expect(calls.some((call) =>
+      call.query.includes("UPDATE board_yjs_documents") &&
+      call.query.includes("AND revision =")
+    ))
       .toBe(true);
     expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_catalog_cache")))
       .toBe(true);
+  });
+
+  it("reloads the winning snapshot and retries task backfill after a CAS conflict", async () => {
+    const scope = {
+      folderId: "folder-retry",
+      containerKind: "folder" as const,
+      containerId: "folder-retry",
+    };
+    const concurrent = createBoardYDocSnapshot({
+      ...scope,
+      boardItems: [{
+        id: "session:concurrent",
+        folderId: scope.folderId,
+        itemType: "session",
+        itemId: "concurrent",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+    let casAttempts = 0;
+    const { sql } = createMockSql((call) => {
+      if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'task'")) {
+        return [{
+          id: "task:retry",
+          folder_id: scope.folderId,
+          container_kind: scope.containerKind,
+          container_id: scope.containerId,
+          membership_kind: "primary",
+          source_task_item_id: null,
+          item_type: "task",
+          item_id: "retry",
+          x: 40,
+          y: 80,
+          metadata: { title: "Retry" },
+          created_at: null,
+          updated_at: null,
+        }];
+      }
+      if (call.query.includes("UPDATE board_yjs_documents") &&
+        call.query.includes("RETURNING revision")) {
+        casAttempts += 1;
+        return casAttempts === 1 ? [] : [{ revision: 3 }];
+      }
+      if (call.query.includes("SELECT snapshot, revision")) {
+        return [{ snapshot: Buffer.from(concurrent), revision: 2 }];
+      }
+      return [];
+    });
+    const repository = new BoardYjsRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+    const initial = createBoardYDocSnapshot({
+      ...scope,
+      boardItems: [],
+      markdownDocuments: [],
+    });
+
+    const repaired = await repository.backfillTaskBoardItemsIntoSnapshot(
+      "board-folder:folder-retry",
+      scope,
+      { snapshot: initial, revision: 1 },
+    );
+
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, repaired.snapshot);
+    expect(casAttempts).toBe(2);
+    expect(readBoardYDocReplica(scope, doc).boardItems.map((item) => item.id).sort())
+      .toEqual(["session:concurrent", "task:retry"]);
   });
 });

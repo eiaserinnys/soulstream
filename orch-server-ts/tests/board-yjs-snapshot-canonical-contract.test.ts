@@ -40,9 +40,37 @@ describe("board Y.Doc snapshot canonical contract", () => {
       "packages/soul-common/src/soul_common/db/postgres/folders.py",
     ]);
   });
+
+  it("pins every snapshot writer and keeps application writes behind revision CAS", () => {
+    const writers = listSourceFiles(REPO_ROOT)
+      .filter((path) => !relative(REPO_ROOT, path).startsWith(
+        "packages/db-schema/sql/migrations/"
+      ))
+      .filter((path) => !relative(REPO_ROOT, path).split("/").includes("tests"))
+      .filter((path) => BOARD_YJS_SNAPSHOT_WRITE_PATTERN.test(readFileSync(path, "utf8")))
+      .map((path) => relative(REPO_ROOT, path))
+      .sort();
+
+    expect(writers).toEqual([
+      "orch-server-ts/src/board-yjs/board_yjs_repository.ts",
+      "orch-server-ts/src/board-yjs/board_yjs_snapshot_store.ts",
+      "orch-server-ts/src/page/page_repository_projection.ts",
+    ]);
+
+    const snapshotStore = readFileSync(
+      resolve(ORCH_ROOT, "src/board-yjs/board_yjs_snapshot_store.ts"),
+      "utf8",
+    );
+    expect(snapshotStore).toContain("AND revision = ${input.expectedRevision}");
+    expect(snapshotStore).toContain("ON CONFLICT (name) DO NOTHING");
+    expect(snapshotStore).toContain("syncBoardYjsReplicaWithSql");
+    expect(snapshotStore).not.toContain("ON CONFLICT (name) DO UPDATE");
+  });
 });
 
 const BOARD_ITEMS_WRITE_PATTERN = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+board_items\b/i;
+const BOARD_YJS_SNAPSHOT_WRITE_PATTERN =
+  /\b(?:INSERT\s+INTO\s+board_yjs_documents|UPDATE\s+board_yjs_documents\s+SET\s+snapshot\b)/i;
 
 function listTypeScriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

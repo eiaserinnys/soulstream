@@ -645,11 +645,30 @@ CREATE TRIGGER trg_board_items_fill_container_defaults
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,
     snapshot    BYTEA NOT NULL,
+    revision    INTEGER NOT NULL DEFAULT 1,
     synced_at   TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE board_yjs_documents ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE board_yjs_documents ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ;
+
+CREATE OR REPLACE FUNCTION board_yjs_documents_advance_revision()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.snapshot IS DISTINCT FROM OLD.snapshot THEN
+        NEW.revision := OLD.revision + 1;
+    ELSE
+        NEW.revision := OLD.revision;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_board_yjs_documents_advance_revision ON board_yjs_documents;
+CREATE TRIGGER trg_board_yjs_documents_advance_revision
+    BEFORE UPDATE OF snapshot ON board_yjs_documents
+    FOR EACH ROW EXECUTE FUNCTION board_yjs_documents_advance_revision();
 
 CREATE TABLE IF NOT EXISTS board_yjs_updates (
     id             BIGSERIAL PRIMARY KEY,

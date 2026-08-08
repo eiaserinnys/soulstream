@@ -417,7 +417,14 @@ class MemoryPageRepository {
 
 class MemoryBoardRepository {
   readonly snapshots = new Map<string, Uint8Array>();
+  readonly revisions = new Map<string, number>();
 
+  async loadBoardYjsSnapshot(documentName: string) {
+    const snapshot = this.snapshots.get(documentName);
+    return snapshot
+      ? { snapshot, revision: this.revisions.get(documentName) ?? 1 }
+      : null;
+  }
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
     return this.snapshots.get(documentName) ?? null;
   }
@@ -432,8 +439,8 @@ class MemoryBoardRepository {
   async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
     _container: unknown,
-    snapshot: Uint8Array,
-  ): Promise<Uint8Array> {
+    snapshot: { snapshot: Uint8Array; revision: number },
+  ) {
     return snapshot;
   }
 
@@ -441,10 +448,16 @@ class MemoryBoardRepository {
     return { boardItems: [], markdownDocuments: [] };
   }
 
-  async storeBoardYjsSnapshot(documentName: string, snapshot: Uint8Array): Promise<void> {
+  async storeBoardYjsSnapshot(
+    documentName: string,
+    snapshot: Uint8Array,
+    expectedRevision: number | null,
+  ) {
+    const actualRevision = this.revisions.get(documentName) ?? null;
+    if (expectedRevision !== actualRevision) return null;
+    const revision = (actualRevision ?? 0) + 1;
     this.snapshots.set(documentName, snapshot);
+    this.revisions.set(documentName, revision);
+    return { snapshot, revision };
   }
-
-  async markBoardYjsDocumentSynced(): Promise<void> {}
-  async syncBoardYjsReplica(): Promise<void> {}
 }

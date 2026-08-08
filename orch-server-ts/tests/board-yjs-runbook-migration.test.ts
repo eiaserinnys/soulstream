@@ -323,18 +323,14 @@ class MigrationRepositoryDouble {
   }
 
   async getBoardYjsSnapshot(): Promise<Uint8Array | null> { return null; }
+  async loadBoardYjsSnapshot() { return null; }
   async backfillTaskBoardItemsIntoSnapshot(
     _name: string,
     _scope: BoardYjsContainerScope,
-    snapshot: Uint8Array,
-  ): Promise<Uint8Array> { return snapshot; }
+    snapshot: { snapshot: Uint8Array; revision: number },
+  ) { return snapshot; }
   async loadBoardYjsSeed() { return { boardItems: [], markdownDocuments: [] }; }
-  async storeBoardYjsSnapshot(): Promise<void> {}
-  async markBoardYjsDocumentSynced(): Promise<void> {}
-  async syncBoardYjsReplica(
-    _scope: BoardYjsContainerScope,
-    _replica: BoardYjsReplica,
-  ): Promise<void> {}
+  async storeBoardYjsSnapshot() { return null; }
 }
 
 function currentPlan(repository: MigrationRepositoryDouble, sourceDocumentName: string) {

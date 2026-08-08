@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import Fastify from "fastify";
 
 import { runPlaywrightLifecycle } from "../../../unified-dashboard/e2e/playwright-lifecycle-harness.mjs";
+import { createBoardYDocSnapshot } from "../../src/board-yjs/board_yjs_model.js";
 import { PageRepository } from "../../src/page/page_repository.js";
 import { PageYjsService } from "../../src/page/page_service.js";
 import { PlannerRepository } from "../../src/planner/planner_repository.js";
@@ -217,18 +218,23 @@ function localBoardPort(): TaskIdentityBoardPort {
       const existing = boardItems.findIndex((item) => item.id === next.id);
       if (existing >= 0) boardItems.splice(existing, 1, next);
       else boardItems.push(next);
-      return await persist({
-      documentName: `board-folder:${input.folderId}`,
-      scope: {
+      const scope = {
         folderId: input.folderId,
-        containerKind: "folder",
+        containerKind: "folder" as const,
         containerId: input.folderId,
-      },
-      snapshot: new Uint8Array([1, 2, 3]),
-      replica: {
-        boardItems: [...boardItems],
-        markdownDocuments: [],
-      },
+      };
+      return await persist({
+        documentName: `board-folder:${input.folderId}`,
+        scope,
+        snapshot: createBoardYDocSnapshot({
+          ...scope,
+          boardItems,
+          markdownDocuments: [],
+        }),
+        replica: {
+          boardItems: [...boardItems],
+          markdownDocuments: [],
+        },
       });
     },
     async withTaskBoardMoveApplication(): Promise<never> {

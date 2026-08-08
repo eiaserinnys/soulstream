@@ -1,7 +1,6 @@
-import { Buffer } from "node:buffer";
-
-import { syncBoardYjsReplicaWithSql } from "../board-yjs/board_yjs_replica_sync.js";
 import type { BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
+import { storeMergedBoardYjsApplicationWithSql } from
+  "../board-yjs/board_yjs_snapshot_store.js";
 import type {
   PageMutationCommitResult,
   PageOperationRecord,
@@ -120,18 +119,7 @@ export async function storeBoardApplication(
   sql: BoardYjsQuerySql,
   application: Parameters<TaskIdentityRepository["create"]>[0]["boardApplication"],
 ): Promise<void> {
-  await sql`
-    INSERT INTO board_yjs_documents (name, snapshot, updated_at)
-    VALUES (${application.documentName}, ${Buffer.from(application.snapshot)}, NOW())
-    ON CONFLICT (name) DO UPDATE
-    SET snapshot = EXCLUDED.snapshot, updated_at = EXCLUDED.updated_at
-  `;
-  await syncBoardYjsReplicaWithSql(
-    sql,
-    application.scope,
-    application.replica,
-    application.documentName,
-  );
+  await storeMergedBoardYjsApplicationWithSql(sql, application);
 }
 
 export async function insertTaskOperation(

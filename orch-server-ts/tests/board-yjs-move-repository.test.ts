@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 
 import { BoardYjsMoveRepository } from
   "../src/board-yjs/board_yjs_move_repository.js";
@@ -24,7 +25,7 @@ describe("BoardYjsMoveRepository", () => {
       boardApplications: ["folder-source", "folder-target"].map((containerId) => ({
         documentName: `board-folder:${containerId}`,
         scope: { folderId: containerId, containerKind: "folder" as const, containerId },
-        snapshot: new Uint8Array([1, 2, 3]),
+        snapshot: Y.encodeStateAsUpdate(new Y.Doc()),
         replica: { boardItems: [], markdownDocuments: [] },
       })),
     });
@@ -49,8 +50,14 @@ function createMockSql() {
   let inTransaction = false;
   const sql = Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => {
-      calls.push({ query: Array.from(strings).join("?"), values, inTransaction });
-      return Promise.resolve([]);
+      const query = Array.from(strings).join("?");
+      calls.push({ query, values, inTransaction });
+      return Promise.resolve(
+        query.includes("INSERT INTO board_yjs_documents") &&
+          query.includes("RETURNING revision")
+          ? [{ revision: 1 }]
+          : [],
+      );
     },
     {
       array: (values: readonly unknown[]) => values,

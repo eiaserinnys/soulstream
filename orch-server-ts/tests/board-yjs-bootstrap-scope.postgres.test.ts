@@ -127,6 +127,7 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
         boardItems: [],
         markdownDocuments: [],
       }),
+      null,
     );
     await repository.storeBoardYjsSnapshot(
       "board-folder:instant-folder-b",
@@ -135,6 +136,7 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
         boardItems: [otherItem],
         markdownDocuments: [],
       }),
+      null,
     );
     await harness.sql`
       INSERT INTO board_items (
@@ -218,6 +220,55 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
     } finally {
       await service.close();
     }
+  });
+
+  it("advances snapshot revision and rejects a stale compare-and-swap", async () => {
+    const repository = new BoardYjsRepository(createLiveDbSqlResolver({
+      sql: harness.sql as unknown as LivePostgresSql,
+    }));
+    const first = createBoardYDocSnapshot({
+      folderId: "cas-folder",
+      boardItems: [],
+      markdownDocuments: [],
+    });
+    const secondDoc = new Y.Doc();
+    Y.applyUpdate(secondDoc, first);
+    secondDoc.getMap("boardItems").set("session:second", {
+      item_type: "session",
+      item_id: "second",
+      x: 0,
+      y: 0,
+      metadata: {},
+    });
+    const second = Y.encodeStateAsUpdate(secondDoc);
+
+    const created = await repository.storeBoardYjsSnapshot(
+      "board-folder:cas-folder",
+      first,
+      null,
+    );
+    const updated = await repository.storeBoardYjsSnapshot(
+      "board-folder:cas-folder",
+      second,
+      created!.revision,
+    );
+    const stale = await repository.storeBoardYjsSnapshot(
+      "board-folder:cas-folder",
+      first,
+      created!.revision,
+    );
+
+    expect(created?.revision).toBe(1);
+    expect(updated?.revision).toBe(2);
+    expect(stale).toBeNull();
+    await expect(harness.sql`
+      SELECT revision, snapshot
+      FROM board_yjs_documents
+      WHERE name = 'board-folder:cas-folder'
+    `).resolves.toEqual([{
+      revision: 2,
+      snapshot: Buffer.from(second),
+    }]);
   });
 });
 
