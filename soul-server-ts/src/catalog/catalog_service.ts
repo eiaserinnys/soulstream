@@ -260,7 +260,7 @@ export class CatalogService {
     folderId: string | null,
   ): Promise<void> {
     for (const sessionId of sessionIds) {
-      await this.db.assignSessionToFolder(sessionId, folderId);
+      await this.boardItems.moveSessionToFolder(sessionId, folderId);
     }
     const movedBoardItems = (await Promise.all(
       sessionIds.map((sessionId) => this.db.getPrimarySessionBoardItem(sessionId)),

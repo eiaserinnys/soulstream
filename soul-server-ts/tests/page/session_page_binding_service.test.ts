@@ -409,6 +409,28 @@ describe("kstDate", () => {
 });
 
 describe("SessionLegacyProjection", () => {
+  it("moves legacy folder placement through the atomic Board Yjs host operation", async () => {
+    const moveSessionToFolder = vi.fn(async () => null);
+    const assignSessionToFolder = vi.fn(async () => undefined);
+    const db = {
+      getFolderById: vi.fn(async () => ({ id: "folder-1" })),
+      assignSessionToFolder,
+    };
+    const projection = new SessionLegacyProjection(
+      db as never,
+      { moveSessionToFolder, upsertSessionBoardItem: vi.fn() } as never,
+    );
+
+    await projection.project(binding({
+      legacy_folder_id: "folder-1",
+      legacy_container_kind: null,
+      legacy_container_id: null,
+    }));
+
+    expect(moveSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-1");
+    expect(assignSessionToFolder).not.toHaveBeenCalled();
+  });
+
   it("replays task placement into the same first-free grid policy as initial creation", async () => {
     const upsertSessionBoardItem = vi.fn(async () => ({}));
     const db = {

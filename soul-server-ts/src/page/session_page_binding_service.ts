@@ -264,7 +264,10 @@ export class SessionPageBindingService implements TaskCreationHook {
 export class SessionLegacyProjection implements LegacyProjectionPort {
   constructor(
     private readonly db: SessionDB,
-    private readonly boardYjsService: Pick<BoardYjsHostClient, "upsertSessionBoardItem">,
+    private readonly boardYjsService: Pick<
+      BoardYjsHostClient,
+      "upsertSessionBoardItem" | "moveSessionToFolder"
+    >,
   ) {}
 
   async project(binding: SessionPageBindingRow): Promise<void> {
@@ -275,7 +278,6 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       };
       const scope = await this.db.resolveBoardYjsContainerScope(container);
       if (!scope) throw new ManualRepairError(`stale legacy container: ${binding.legacy_container_id}`);
-      await this.db.assignSessionToFolder(binding.session_id, scope.folderId);
       const boardItems = boardItemsInContainer(await this.db.getBoardItems(), container);
       const [x, y] = sessionBoardItemPosition(boardItems, binding.session_id);
       await this.boardYjsService.upsertSessionBoardItem({
@@ -292,12 +294,15 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       if (!await this.db.getFolderById(binding.legacy_folder_id)) {
         throw new ManualRepairError(`stale legacy folder: ${binding.legacy_folder_id}`);
       }
-      await this.db.assignSessionToFolder(binding.session_id, binding.legacy_folder_id);
+      await this.boardYjsService.moveSessionToFolder(
+        binding.session_id,
+        binding.legacy_folder_id,
+      );
       return;
     }
     const folderId = defaultFolderIdForSessionType(binding.session_type);
     if (await this.db.getFolderById(folderId)) {
-      await this.db.assignSessionToFolder(binding.session_id, folderId);
+      await this.boardYjsService.moveSessionToFolder(binding.session_id, folderId);
     }
   }
 }

@@ -87,6 +87,10 @@ const schemas = {
     y: z.number(),
     sourceTaskItemId: z.string().nullable().optional(),
   }),
+  "move-session-to-folder": z.object({
+    sessionId: z.string().min(1),
+    folderId: z.string().min(1).nullable(),
+  }),
   "upsert-task-board-item": z.object({
     folderId: z.string().min(1),
     boardItemId: z.string().min(1),
@@ -246,6 +250,10 @@ async function dispatchBoardYjsHostOperation(
       return await service.upsertSessionBoardItem(
         input as z.infer<typeof schemas["upsert-session-board-item"]>,
       );
+    case "move-session-to-folder": {
+      const value = input as z.infer<typeof schemas["move-session-to-folder"]>;
+      return await service.moveSessionToFolder(value.sessionId, value.folderId);
+    }
     case "upsert-task-board-item":
       return await service.upsertTaskBoardItem(
         input as z.infer<typeof schemas["upsert-task-board-item"]>,

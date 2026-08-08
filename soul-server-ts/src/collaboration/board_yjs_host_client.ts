@@ -53,6 +53,13 @@ export class BoardYjsHostClient
     return await this.request("upsert-session-board-item", input);
   }
 
+  async moveSessionToFolder(
+    sessionId: string,
+    folderId: string | null,
+  ): Promise<CatalogBoardItemRow | null> {
+    return await this.request("move-session-to-folder", { sessionId, folderId });
+  }
+
   async upsertTaskBoardItem(input: {
     folderId: string;
     boardItemId: string;

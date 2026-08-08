@@ -41,16 +41,17 @@ describe("Board Y.Doc mutation gate", () => {
         }, vi.fn()),
       },
       {
-        name: "moveBoardItemBetweenDocuments",
+        name: "staged session board move",
         expectedNames: ["board-folder:folder-a", "board:task:task-a"],
-        run: () => service.moveBoardItemToContainer({
-          boardItem: boardItem("session"),
+        run: () => service.withSessionBoardMoveApplications({
+          sessionId: "a",
+          boardItems: [boardItem("session")],
           targetScope: {
             folderId: "folder-a",
             containerKind: "task",
             containerId: "task-a",
           },
-        }),
+        }, vi.fn()),
       },
       {
         name: "staged task board move",
@@ -95,6 +96,7 @@ function boardItem(itemType: "session" | "task"): CatalogBoardItemRow {
 function createNodeService(): BoardYjsService {
   return new BoardYjsService({
     repository: {} as never,
+    persistBoardItemMove: vi.fn(),
     logger: silentLogger(),
     auth: {
       authBearerToken: "test-token",

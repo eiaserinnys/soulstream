@@ -113,6 +113,12 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly sessionSnapshotLimit?: number;
   readonly boardAssetStorage?: LiveBoardAssetStorage | null;
   readonly sessionDeletion?: SessionDeletionPort;
+  readonly sessionMoves?: {
+    moveSessionToFolder(
+      sessionId: string,
+      folderId: string | null,
+    ): Promise<unknown>;
+  };
 };
 
 const DEFAULT_SESSION_SNAPSHOT_LIMIT = 200;
@@ -278,6 +284,7 @@ export function createLiveDbCatalogRepository(
     sessionCatalogProvider: createSessionCatalogProvider(
       sqlResolver,
       options.sessionDeletion,
+      options.sessionMoves,
     ),
     sessionHistoryProvider,
     cogitoSearchProvider,
@@ -397,6 +404,7 @@ async function sessionSnapshotFilters(
 function createSessionCatalogProvider(
   sqlResolver: LiveDbSqlResolver,
   sessionDeletion: SessionDeletionPort | undefined,
+  sessionMoves: CreateLiveDbCatalogRepositoryOptions["sessionMoves"],
 ): SessionCatalogProvider {
   return {
     async renameSession(sessionId, displayName) {
@@ -406,22 +414,19 @@ function createSessionCatalogProvider(
       `;
     },
     async moveSessionsToFolder(sessionIds, folderId) {
-      const sql = await sqlResolver.resolveSql();
+      if (!sessionMoves) throw new Error("session board move service is required");
       for (const sessionId of sessionIds) {
-        await sql`
-          SELECT session_assign_folder(${sessionId}, ${folderId})
-        `;
+        await sessionMoves.moveSessionToFolder(sessionId, folderId);
       }
       return { count: sessionIds.length };
     },
     async updateSessionCatalog(sessionId, update) {
-      const sql = await sqlResolver.resolveSql();
       if (hasOwn(update, "folderId")) {
-        await sql`
-          SELECT session_assign_folder(${sessionId}, ${update.folderId ?? null})
-        `;
+        if (!sessionMoves) throw new Error("session board move service is required");
+        await sessionMoves.moveSessionToFolder(sessionId, update.folderId ?? null);
       }
       if (hasOwn(update, "displayName")) {
+        const sql = await sqlResolver.resolveSql();
         await sql`
           SELECT session_rename(${sessionId}, ${update.displayName ?? null})
         `;
