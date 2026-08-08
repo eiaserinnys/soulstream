@@ -260,10 +260,10 @@ export class TaskCreation {
    * 신규 세션을 폴더에 배정 + catalog_updated wire broadcast.
    *
    * Python `service/task_manager.py:284-323 _assign_default_folder_and_broadcast` 정본 이식.
-   *   - folder_id 명시 → 그 폴더에 배정
-   *   - 미지정 → sessionType에 대응하는 기본 폴더 id lookup → 배정
+   *   - folder_id 명시 → Y.Doc 원자 배치로 그 폴더에 배정
+   *   - 미지정 → sessionType에 대응하는 기본 폴더 id lookup → Y.Doc 원자 배치
    *   - 기본 폴더 미존재 → 폴더 배정 없음(graceful) + broadcast 없음
-   *   - 폴더 배정 후 해당 세션·보드 항목 delta 발행
+   *   - 원자 배치 후 해당 세션·보드 항목 delta 발행
    *
    * 부가 기능 — 각 단계 실패를 격리 (Python L292-293 "폴더 배정이나 브로드캐스트에 실패해도
    * 호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다").
@@ -278,6 +278,10 @@ export class TaskCreation {
     sourceTaskItemId: string | null,
   ): Promise<{ assignedFolderId: string | null; completed: boolean }> {
     let assigned: string | null = null;
+    let target: {
+      folderId: string;
+      container: BoardYjsContainerRef;
+    } | null = null;
     let completed = true;
     try {
       if (container?.containerKind === "task") {
@@ -285,27 +289,41 @@ export class TaskCreation {
         if (!scope) {
           throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
         }
-        const boardItems = boardItemsInContainer(await this.deps.db.getBoardItems(), container);
-        const [x, y] = sessionBoardItemPosition(boardItems, sessionId);
-        await this.deps.boardYjsService?.upsertSessionBoardItem({
-          folderId: scope.folderId,
-          container,
-          sessionId,
-          sourceTaskItemId,
-          x,
-          y,
-        });
-        assigned = scope.folderId;
+        target = { folderId: scope.folderId, container };
       } else if (folderId !== null) {
-        await this.deps.db.assignSessionToFolder(sessionId, folderId);
-        assigned = folderId;
+        target = {
+          folderId,
+          container: { containerKind: "folder", containerId: folderId },
+        };
       } else {
         const defaultFolderId = defaultFolderIdForSessionType(sessionType);
         const folder = await this.deps.db.getFolderById(defaultFolderId);
         if (folder) {
-          await this.deps.db.assignSessionToFolder(sessionId, folder.id);
-          assigned = folder.id;
+          target = {
+            folderId: folder.id,
+            container: { containerKind: "folder", containerId: folder.id },
+          };
         }
+      }
+      if (target) {
+        if (!this.deps.boardYjsService) {
+          throw new Error("Board Yjs service is required for session placement");
+        }
+        const boardItems = boardItemsInContainer(
+          await this.deps.db.getBoardItems(),
+          target.container,
+        );
+        const [x, y] = sessionBoardItemPosition(boardItems, sessionId);
+        await this.deps.boardYjsService.upsertSessionBoardItem({
+          folderId: target.folderId,
+          container: target.container,
+          sessionId,
+          sourceTaskItemId:
+            target.container.containerKind === "task" ? sourceTaskItemId : null,
+          x,
+          y,
+        });
+        assigned = target.folderId;
       }
     } catch (err) {
       completed = false;
@@ -315,8 +333,12 @@ export class TaskCreation {
           sessionId,
           requestedFolderId: folderId,
           assignedFolderId: assigned,
-          targetContainer: container
-            ? { containerKind: container.containerKind, containerId: container.containerId }
+          targetFolderId: target?.folderId ?? null,
+          targetContainer: target
+            ? {
+                containerKind: target.container.containerKind,
+                containerId: target.container.containerId,
+              }
             : null,
           sourceTaskItemId,
         },

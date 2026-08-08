@@ -2,15 +2,21 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import * as Y from "yjs";
 
 import { createBoardYjsPersistence } from "../src/board-yjs/board_yjs_persistence.js";
-import { readBoardYDocReplica } from "../src/board-yjs/board_yjs_model.js";
+import {
+  createBoardYDocSnapshot,
+  readBoardYDocReplica,
+} from "../src/board-yjs/board_yjs_model.js";
+import { BoardYjsMoveRepository } from "../src/board-yjs/board_yjs_move_repository.js";
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
+import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
+import { SessionBoardMoveService } from "../src/session/session_board_move_service.js";
 
 const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 const hasPostgresBackend = Boolean(process.env.TEST_DATABASE_URL?.trim()) || hasDocker;
@@ -75,7 +81,160 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
     ]);
     await expect(readContainerRows(harness, "seed-folder-b")).resolves.toEqual(beforeOther);
   });
+
+  it("persists an immediate folder-session upsert to its existing Y.Doc and projection only", async () => {
+    await harness.sql`
+      INSERT INTO folders (id, name)
+      VALUES ('instant-folder-a', 'Instant A'), ('instant-folder-b', 'Instant B')
+    `;
+    await harness.sql`
+      INSERT INTO sessions (session_id, folder_id)
+      VALUES
+        ('instant-session-a', NULL),
+        ('instant-session-b', 'instant-folder-b')
+    `;
+    const targetScope = {
+      folderId: "instant-folder-a",
+      containerKind: "folder" as const,
+      containerId: "instant-folder-a",
+    };
+    const otherScope = {
+      folderId: "instant-folder-b",
+      containerKind: "folder" as const,
+      containerId: "instant-folder-b",
+    };
+    const otherItem = {
+      id: "session:instant-session-b",
+      folderId: "instant-folder-b",
+      containerKind: "folder" as const,
+      containerId: "instant-folder-b",
+      membershipKind: "primary" as const,
+      sourceTaskItemId: null,
+      itemType: "session" as const,
+      itemId: "instant-session-b",
+      x: 17,
+      y: 29,
+      metadata: { sentinel: true },
+    };
+    const sqlResolver = createLiveDbSqlResolver({
+      sql: harness.sql as unknown as LivePostgresSql,
+    });
+    const repository = new BoardYjsRepository(sqlResolver);
+    await repository.storeBoardYjsSnapshot(
+      "board-folder:instant-folder-a",
+      createBoardYDocSnapshot({
+        ...targetScope,
+        boardItems: [],
+        markdownDocuments: [],
+      }),
+    );
+    await repository.storeBoardYjsSnapshot(
+      "board-folder:instant-folder-b",
+      createBoardYDocSnapshot({
+        ...otherScope,
+        boardItems: [otherItem],
+        markdownDocuments: [],
+      }),
+    );
+    await harness.sql`
+      INSERT INTO board_items (
+        id, folder_id, container_kind, container_id, membership_kind,
+        item_type, item_id, x, y, metadata
+      )
+      VALUES (
+        ${otherItem.id}, ${otherItem.folderId}, ${otherItem.containerKind},
+        ${otherItem.containerId}, ${otherItem.membershipKind}, ${otherItem.itemType},
+        ${otherItem.itemId}, ${otherItem.x}, ${otherItem.y},
+        ${harness.sql.json(otherItem.metadata)}::jsonb
+      )
+    `;
+    const beforeOtherRows = await readContainerRows(harness, "instant-folder-b");
+    const beforeOtherSnapshot = await repository.getBoardYjsSnapshot(
+      "board-folder:instant-folder-b",
+    );
+    let service!: BoardYjsService;
+    const moveService = new SessionBoardMoveService({
+      board: {
+        async withSessionBoardMoveApplications(input, persist) {
+          if (!service) throw new Error("Board Yjs service is not initialized");
+          return await service.withSessionBoardMoveApplications(input, persist);
+        },
+      },
+      repository: new BoardYjsMoveRepository(sqlResolver),
+    });
+    service = new BoardYjsService({
+      repository,
+      logger: createSilentLogger(),
+      moveSessionBoardItem: async (input) =>
+        await moveService.moveSessionBoardItem(input),
+      auth: {
+        authBearerToken: "test-token",
+        environment: "production",
+        dashboardAuthEnabled: false,
+        verifyDashboardToken: async () => null,
+      },
+    });
+
+    try {
+      await service.upsertSessionBoardItem({
+        folderId: targetScope.folderId,
+        container: targetScope,
+        sessionId: "instant-session-a",
+        sourceTaskItemId: null,
+        x: 0,
+        y: 160,
+      });
+
+      const targetSnapshot = await repository.getBoardYjsSnapshot(
+        "board-folder:instant-folder-a",
+      );
+      expect(targetSnapshot).not.toBeNull();
+      const targetDoc = new Y.Doc();
+      Y.applyUpdate(targetDoc, targetSnapshot!);
+      expect(readBoardYDocReplica(targetScope, targetDoc).boardItems).toEqual([
+        expect.objectContaining({
+          id: "session:instant-session-a",
+          itemId: "instant-session-a",
+          containerId: "instant-folder-a",
+        }),
+      ]);
+      await expect(readContainerRows(harness, "instant-folder-a")).resolves.toEqual([
+        expect.objectContaining({
+          id: "session:instant-session-a",
+          item_id: "instant-session-a",
+        }),
+      ]);
+      await expect(harness.sql`
+        SELECT folder_id
+        FROM sessions
+        WHERE session_id = 'instant-session-a'
+      `).resolves.toEqual([{ folder_id: "instant-folder-a" }]);
+      await expect(readContainerRows(harness, "instant-folder-b"))
+        .resolves.toEqual(beforeOtherRows);
+      const afterOtherSnapshot = await repository.getBoardYjsSnapshot(
+        "board-folder:instant-folder-b",
+      );
+      expect(Buffer.from(afterOtherSnapshot!)).toEqual(Buffer.from(beforeOtherSnapshot!));
+    } finally {
+      await service.close();
+    }
+  });
 });
+
+function createSilentLogger() {
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: () => logger,
+    level: "silent",
+    silent: vi.fn(),
+  };
+  return logger as never;
+}
 
 async function readContainerRows(
   harness: FullSchemaPostgresHarness,
