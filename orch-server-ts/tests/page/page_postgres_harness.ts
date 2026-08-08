@@ -149,10 +149,25 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     CREATE TABLE board_yjs_documents (
       name TEXT PRIMARY KEY,
       snapshot BYTEA NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
       synced_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE FUNCTION board_yjs_documents_advance_revision()
+    RETURNS TRIGGER LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.snapshot IS DISTINCT FROM OLD.snapshot THEN
+        NEW.revision := OLD.revision + 1;
+      ELSE
+        NEW.revision := OLD.revision;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    CREATE TRIGGER trg_board_yjs_documents_advance_revision
+      BEFORE UPDATE OF snapshot ON board_yjs_documents
+      FOR EACH ROW EXECUTE FUNCTION board_yjs_documents_advance_revision();
     CREATE TABLE board_yjs_updates (
       id BIGSERIAL PRIMARY KEY,
       document_name TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE,

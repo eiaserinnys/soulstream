@@ -26,6 +26,14 @@ import {
   BoardYjsMigrationRevisionConflictError,
   loadExactRawBoardYjsDocument,
 } from "./board_yjs_raw_document.js";
+import {
+  BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS,
+  BoardYjsSnapshotCasExhaustedError,
+  compareAndSwapBoardYjsSnapshotWithSql,
+  loadBoardYjsSnapshotWithSql,
+  type BoardYjsSnapshotProjection,
+  type BoardYjsSnapshotRecord,
+} from "./board_yjs_snapshot_store.js";
 import type {
   BoardItemType,
   BoardYjsContainerRef,
@@ -47,13 +55,13 @@ export class BoardYjsRepository {
   }
 
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
+    return (await this.loadBoardYjsSnapshot(documentName))?.snapshot ?? null;
+  }
+
+  async loadBoardYjsSnapshot(documentName: string): Promise<BoardYjsSnapshotRecord | null> {
     const sql = await this.sqlResolver.resolveSql();
     const canonicalName = canonicalBoardYjsDocumentName(documentName);
-    const rows = await sql<readonly { snapshot: Buffer | Uint8Array }[]>`
-      SELECT snapshot FROM board_yjs_documents WHERE name = ${canonicalName}
-    `;
-    const snapshot = rows[0]?.snapshot;
-    return snapshot ? new Uint8Array(snapshot) : null;
+    return await loadBoardYjsSnapshotWithSql(sql, canonicalName);
   }
 
   async loadRawBoardYjsDocument(documentName: string): Promise<BoardYjsRawDocument | null> {
@@ -160,16 +168,22 @@ export class BoardYjsRepository {
     });
   }
 
-  async storeBoardYjsSnapshot(documentName: string, snapshot: Uint8Array): Promise<void> {
+  async storeBoardYjsSnapshot(
+    documentName: string,
+    snapshot: Uint8Array,
+    expectedRevision: number | null,
+    projection?: BoardYjsSnapshotProjection,
+  ): Promise<BoardYjsSnapshotRecord | null> {
     const sql = await this.sqlResolver.resolveSql();
     const canonicalName = canonicalBoardYjsDocumentName(documentName);
-    await sql`
-      INSERT INTO board_yjs_documents (name, snapshot, updated_at)
-      VALUES (${canonicalName}, ${Buffer.from(snapshot)}, NOW())
-      ON CONFLICT (name) DO UPDATE
-      SET snapshot = EXCLUDED.snapshot,
-          updated_at = EXCLUDED.updated_at
-    `;
+    return await sql.begin(async (transaction) =>
+      await compareAndSwapBoardYjsSnapshotWithSql(transaction, {
+        documentName: canonicalName,
+        snapshot,
+        expectedRevision,
+        ...(projection ? { projection } : {}),
+      })
+    );
   }
 
   async resolveBoardYjsContainerScope(
@@ -265,26 +279,42 @@ export class BoardYjsRepository {
   async backfillTaskBoardItemsIntoSnapshot(
     documentName: string,
     containerInput: string | BoardYjsContainerRef | BoardYjsContainerScope,
-    snapshot: Uint8Array,
-  ): Promise<Uint8Array> {
+    initial: BoardYjsSnapshotRecord,
+  ): Promise<BoardYjsSnapshotRecord> {
     const scope = await this.resolveBoardYjsContainerScope(containerInput);
-    if (!scope || scope.containerKind !== "folder") return snapshot;
+    if (!scope || scope.containerKind !== "folder") return initial;
     const sql = await this.sqlResolver.resolveSql();
-    const taskItems = await this.loadTaskBoardItems(sql, scope);
-    if (taskItems.length === 0) return snapshot;
-    const doc = new Y.Doc();
-    if (snapshot.byteLength > 0) Y.applyUpdate(doc, snapshot);
-    const replica = readBoardYDocReplica(scope, doc);
-    const existingIds = new Set(replica.boardItems.map((item) => item.id));
-    const missing = taskItems.filter((item) => !existingIds.has(item.id));
-    if (missing.length === 0) return snapshot;
-    doc.transact(() => {
-      for (const item of missing) upsertBoardYjsItem(doc, item);
-    });
-    const repaired = Y.encodeStateAsUpdate(doc);
-    await this.storeBoardYjsSnapshot(documentName, repaired);
-    await this.syncBoardYjsReplica(scope, readBoardYDocReplica(scope, doc), documentName);
-    return repaired;
+    let current = initial;
+    for (let attempt = 1; attempt <= BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS; attempt += 1) {
+      const taskItems = await this.loadTaskBoardItems(sql, scope);
+      if (taskItems.length === 0) return current;
+      const doc = new Y.Doc();
+      if (current.snapshot.byteLength > 0) Y.applyUpdate(doc, current.snapshot);
+      const replica = readBoardYDocReplica(scope, doc);
+      const existingIds = new Set(replica.boardItems.map((item) => item.id));
+      const missing = taskItems.filter((item) => !existingIds.has(item.id));
+      if (missing.length === 0) return current;
+      doc.transact(() => {
+        for (const item of missing) upsertBoardYjsItem(doc, item);
+      });
+      const repaired = Y.encodeStateAsUpdate(doc);
+      const stored = await this.storeBoardYjsSnapshot(
+        documentName,
+        repaired,
+        current.revision,
+        { scope, replica: readBoardYDocReplica(scope, doc) },
+      );
+      if (stored) return stored;
+      const reloaded = await this.loadBoardYjsSnapshot(documentName);
+      if (!reloaded) {
+        throw new Error(`board Y.Doc disappeared during task backfill: ${documentName}`);
+      }
+      current = reloaded;
+    }
+    throw new BoardYjsSnapshotCasExhaustedError(
+      documentName,
+      BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS,
+    );
   }
 
   private async loadMarkdownDocuments(

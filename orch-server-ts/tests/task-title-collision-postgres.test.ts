@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { createBoardYDocSnapshot } from "../src/board-yjs/board_yjs_model.js";
 import { PageRepository } from "../src/page/page_repository.js";
 import { PageYjsService } from "../src/page/page_service.js";
 import { registerTaskCreateRoute } from "../src/tasks/task_create_route.js";
@@ -422,28 +423,34 @@ class TransactionBoardPort implements TaskIdentityBoardPort {
     input: Parameters<TaskIdentityBoardPort["withTaskBoardApplication"]>[0],
     persist: (application: TaskIdentityBoardApplication) => Promise<T>,
   ): Promise<T> {
+    const scope = {
+      folderId: input.folderId,
+      containerKind: "folder" as const,
+      containerId: input.folderId,
+    };
+    const boardItems = [{
+      id: input.boardItemId,
+      folderId: input.folderId,
+      containerKind: "folder" as const,
+      containerId: input.folderId,
+      membershipKind: "primary" as const,
+      sourceTaskItemId: null,
+      itemType: "task" as const,
+      itemId: input.taskId,
+      x: input.x,
+      y: input.y,
+      metadata: { title: input.title, archived: input.archived },
+    }];
     return await persist({
       documentName: `board-folder:${input.folderId}`,
-      scope: {
-        folderId: input.folderId,
-        containerKind: "folder",
-        containerId: input.folderId,
-      },
-      snapshot: new Uint8Array([1, 2, 3]),
+      scope,
+      snapshot: createBoardYDocSnapshot({
+        ...scope,
+        boardItems,
+        markdownDocuments: [],
+      }),
       replica: {
-        boardItems: [{
-          id: input.boardItemId,
-          folderId: input.folderId,
-          containerKind: "folder",
-          containerId: input.folderId,
-          membershipKind: "primary",
-          sourceTaskItemId: null,
-          itemType: "task",
-          itemId: input.taskId,
-          x: input.x,
-          y: input.y,
-          metadata: { title: input.title, archived: input.archived },
-        }],
+        boardItems,
         markdownDocuments: [],
       },
     });

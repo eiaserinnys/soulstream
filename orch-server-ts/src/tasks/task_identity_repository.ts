@@ -1,11 +1,10 @@
 import { Buffer } from "node:buffer";
 
 import {
-  syncBoardYjsReplicaWithSql,
-} from "../board-yjs/board_yjs_replica_sync.js";
-import {
   BoardYjsSqlResolver,
 } from "../board-yjs/board_yjs_sql.js";
+import { storeMergedBoardYjsApplicationWithSql } from
+  "../board-yjs/board_yjs_snapshot_store.js";
 import {
   assertDatabaseMutationVersion,
   commitPageMutationInTransaction,
@@ -112,22 +111,9 @@ export class SqlTaskIdentityRepository implements TaskIdentityRepository {
         throw new Error(`task identity already exists: ${input.id}`);
       }
 
-      await transaction`
-        INSERT INTO board_yjs_documents (name, snapshot, updated_at)
-        VALUES (
-          ${input.boardApplication.documentName},
-          ${Buffer.from(input.boardApplication.snapshot)},
-          NOW()
-        )
-        ON CONFLICT (name) DO UPDATE
-        SET snapshot = EXCLUDED.snapshot,
-            updated_at = EXCLUDED.updated_at
-      `;
-      await syncBoardYjsReplicaWithSql(
+      await storeMergedBoardYjsApplicationWithSql(
         transaction,
-        input.boardApplication.scope,
-        input.boardApplication.replica,
-        input.boardApplication.documentName,
+        input.boardApplication,
       );
 
       const pageCommitInput = {

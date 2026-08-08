@@ -419,8 +419,15 @@ function createRealService(repository: CapturingBoardYjsRepository): BoardYjsSer
 
 class CapturingBoardYjsRepository {
   readonly snapshots = new Map<string, Uint8Array>();
+  readonly revisions = new Map<string, number>();
   readonly replicas: BoardYjsReplica[] = [];
 
+  async loadBoardYjsSnapshot(documentName: string) {
+    const snapshot = this.snapshots.get(documentName);
+    return snapshot
+      ? { snapshot, revision: this.revisions.get(documentName) ?? 1 }
+      : null;
+  }
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
     return this.snapshots.get(documentName) ?? null;
   }
@@ -435,22 +442,26 @@ class CapturingBoardYjsRepository {
   async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
     _container: BoardYjsContainerScope,
-    snapshot: Uint8Array,
-  ): Promise<Uint8Array> {
+    snapshot: { snapshot: Uint8Array; revision: number },
+  ) {
     return snapshot;
   }
   async loadBoardYjsSeed(): Promise<BoardYjsSeed> {
     return { boardItems: [], markdownDocuments: [] };
   }
-  async storeBoardYjsSnapshot(documentName: string, snapshot: Uint8Array): Promise<void> {
+  async storeBoardYjsSnapshot(
+    documentName: string,
+    snapshot: Uint8Array,
+    expectedRevision: number | null,
+    projection?: { replica: BoardYjsReplica },
+  ) {
+    const actualRevision = this.revisions.get(documentName) ?? null;
+    if (actualRevision !== expectedRevision) return null;
+    const revision = (actualRevision ?? 0) + 1;
     this.snapshots.set(documentName, snapshot);
-  }
-  async markBoardYjsDocumentSynced(): Promise<void> {}
-  async syncBoardYjsReplica(
-    _container: BoardYjsContainerScope,
-    replica: BoardYjsReplica,
-  ): Promise<void> {
-    this.replicas.push(replica);
+    this.revisions.set(documentName, revision);
+    if (projection) this.replicas.push(projection.replica);
+    return { snapshot, revision };
   }
 }
 

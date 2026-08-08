@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createBoardYDocSnapshot } from "../src/board-yjs/board_yjs_model.js";
 import {
   TaskIdentityService,
   type TaskIdentityBoardApplication,
@@ -692,28 +693,34 @@ class MemoryBoardPort implements TaskIdentityBoardPort {
     input: Parameters<TaskIdentityBoardPort["withTaskBoardApplication"]>[0],
     persist: (application: TaskIdentityBoardApplication) => Promise<T>,
   ): Promise<T> {
+    const scope = {
+      folderId: input.folderId,
+      containerKind: "folder" as const,
+      containerId: input.folderId,
+    };
+    const boardItems = [{
+      id: input.boardItemId,
+      folderId: input.folderId,
+      containerKind: "folder" as const,
+      containerId: input.folderId,
+      membershipKind: "primary" as const,
+      sourceTaskItemId: null,
+      itemType: "task" as const,
+      itemId: input.taskId,
+      x: input.x,
+      y: input.y,
+      metadata: { title: input.title },
+    }];
     const result = await persist({
       documentName: `board-folder:${input.folderId}`,
-      scope: {
-        folderId: input.folderId,
-        containerKind: "folder",
-        containerId: input.folderId,
-      },
-      snapshot: new Uint8Array([1, 2, 3]),
+      scope,
+      snapshot: createBoardYDocSnapshot({
+        ...scope,
+        boardItems,
+        markdownDocuments: [],
+      }),
       replica: {
-        boardItems: [{
-          id: input.boardItemId,
-          folderId: input.folderId,
-          containerKind: "folder",
-          containerId: input.folderId,
-          membershipKind: "primary",
-          sourceTaskItemId: null,
-          itemType: "task",
-          itemId: input.taskId,
-          x: input.x,
-          y: input.y,
-          metadata: { title: input.title },
-        }],
+        boardItems,
         markdownDocuments: [],
       },
     });
@@ -749,10 +756,15 @@ function boardApplication(
   folderId: string,
   boardItems: TaskIdentityBoardApplication["replica"]["boardItems"],
 ): TaskIdentityBoardApplication {
+  const scope = { folderId, containerKind: "folder" as const, containerId: folderId };
   return {
     documentName: `board-folder:${folderId}`,
-    scope: { folderId, containerKind: "folder", containerId: folderId },
-    snapshot: new Uint8Array([1, 2, 3]),
+    scope,
+    snapshot: createBoardYDocSnapshot({
+      ...scope,
+      boardItems,
+      markdownDocuments: [],
+    }),
     replica: { boardItems: [...boardItems], markdownDocuments: [] },
   };
 }

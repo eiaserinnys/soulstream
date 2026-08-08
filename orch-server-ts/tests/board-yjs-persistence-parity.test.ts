@@ -27,7 +27,7 @@ describe("board_yjs_persistence", () => {
       markdownDocuments: [],
     });
     const db = {
-      getBoardYjsSnapshot: vi.fn().mockResolvedValue(snapshot),
+      loadBoardYjsSnapshot: vi.fn().mockResolvedValue({ snapshot, revision: 1 }),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId,
         containerKind: "folder",
@@ -45,10 +45,8 @@ describe("board_yjs_persistence", () => {
         }],
         markdownDocuments: [{ id: "d1", title: "Recovered", body: "restored body", version: 1 }],
       }),
-      storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
-      markBoardYjsDocumentSynced: vi.fn().mockResolvedValue(undefined),
-      syncBoardYjsReplica: vi.fn().mockResolvedValue(undefined),
-      backfillTaskBoardItemsIntoSnapshot: vi.fn().mockResolvedValue(snapshot),
+      storeBoardYjsSnapshot: vi.fn().mockResolvedValue(null),
+      backfillTaskBoardItemsIntoSnapshot: vi.fn().mockResolvedValue({ snapshot, revision: 1 }),
     } as unknown as BoardYjsPersistenceRepository;
 
     const persistence = createBoardYjsPersistence(db);
@@ -64,13 +62,11 @@ describe("board_yjs_persistence", () => {
     ]);
     expect(db.loadBoardYjsSeed).not.toHaveBeenCalled();
     expect(db.storeBoardYjsSnapshot).not.toHaveBeenCalled();
-    expect(db.syncBoardYjsReplica).not.toHaveBeenCalled();
     expect(db.backfillTaskBoardItemsIntoSnapshot).toHaveBeenCalledWith(
       documentName,
       { folderId, containerKind: "folder", containerId: folderId },
-      snapshot,
+      { snapshot, revision: 1 },
     );
-    expect(db.markBoardYjsDocumentSynced).not.toHaveBeenCalled();
   });
 
   it("fetch는 기존 snapshot의 DB-only task tile을 보강한 snapshot을 반환", async () => {
@@ -95,13 +91,16 @@ describe("board_yjs_persistence", () => {
       markdownDocuments: [],
     });
     const db = {
-      getBoardYjsSnapshot: vi.fn().mockResolvedValue(snapshot),
+      loadBoardYjsSnapshot: vi.fn().mockResolvedValue({ snapshot, revision: 3 }),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId,
         containerKind: "folder",
         containerId: folderId,
       }),
-      backfillTaskBoardItemsIntoSnapshot: vi.fn().mockResolvedValue(repaired),
+      backfillTaskBoardItemsIntoSnapshot: vi.fn().mockResolvedValue({
+        snapshot: repaired,
+        revision: 4,
+      }),
     } as unknown as BoardYjsPersistenceRepository;
 
     const persistence = createBoardYjsPersistence(db);
@@ -116,7 +115,7 @@ describe("board_yjs_persistence", () => {
     ]);
   });
 
-  it("fetch는 task 컨테이너 문서 seed를 해당 컨테이너 항목으로 생성하고 synced marker를 남긴다", async () => {
+  it("fetch는 task 컨테이너 seed와 projection을 하나의 CAS로 생성한다", async () => {
     const documentName = "board:task:rb-1";
     const scope = {
       folderId: "folder-1",
@@ -124,7 +123,7 @@ describe("board_yjs_persistence", () => {
       containerId: "rb-1",
     };
     const db = {
-      getBoardYjsSnapshot: vi.fn().mockResolvedValue(null),
+      loadBoardYjsSnapshot: vi.fn().mockResolvedValue(null),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue(scope),
       loadBoardYjsSeed: vi.fn().mockResolvedValue({
         boardItems: [{
@@ -140,8 +139,10 @@ describe("board_yjs_persistence", () => {
         }],
         markdownDocuments: [{ id: "d1", title: "Task note", body: "body", version: 1 }],
       }),
-      storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
-      markBoardYjsDocumentSynced: vi.fn().mockResolvedValue(undefined),
+      storeBoardYjsSnapshot: vi.fn(async (
+        _documentName: string,
+        encoded: Uint8Array,
+      ) => ({ snapshot: encoded, revision: 1 })),
     } as unknown as BoardYjsPersistenceRepository;
 
     const persistence = createBoardYjsPersistence(db);
@@ -159,8 +160,17 @@ describe("board_yjs_persistence", () => {
       }),
     ]);
     expect(db.loadBoardYjsSeed).toHaveBeenCalledWith(scope);
-    expect(db.storeBoardYjsSnapshot).toHaveBeenCalledWith(documentName, expect.any(Uint8Array));
-    expect(db.markBoardYjsDocumentSynced).toHaveBeenCalledWith(documentName);
+    expect(db.storeBoardYjsSnapshot).toHaveBeenCalledWith(
+      documentName,
+      expect.any(Uint8Array),
+      null,
+      {
+        scope,
+        replica: expect.objectContaining({
+          boardItems: [expect.objectContaining({ id: "markdown:d1" })],
+        }),
+      },
+    );
   });
 
   it("onChange writes the canonical snapshot, syncs replica, and invalidates catalog cache", async () => {
@@ -194,8 +204,11 @@ describe("board_yjs_persistence", () => {
         containerKind: "folder",
         containerId: folderId,
       }),
-      storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
-      syncBoardYjsReplica: vi.fn().mockResolvedValue(undefined),
+      loadBoardYjsSnapshot: vi.fn().mockResolvedValue(null),
+      storeBoardYjsSnapshot: vi.fn(async (
+        _documentName: string,
+        stored: Uint8Array,
+      ) => ({ snapshot: stored, revision: 1 })),
       invalidateBoardYjsCatalogCache: vi.fn(),
     } as unknown as BoardYjsPersistenceRepository;
 
@@ -209,13 +222,13 @@ describe("board_yjs_persistence", () => {
     expect(db.storeBoardYjsSnapshot).toHaveBeenCalledWith(
       documentName,
       expect.any(Uint8Array),
-    );
-    expect(db.syncBoardYjsReplica).toHaveBeenCalledWith(
-      { folderId, containerKind: "folder", containerId: folderId },
-      expect.objectContaining({
-        boardItems: [expect.objectContaining({ id: "session:s1", x: 280, y: 160 })],
-      }),
-      documentName,
+      null,
+      {
+        scope: { folderId, containerKind: "folder", containerId: folderId },
+        replica: expect.objectContaining({
+          boardItems: [expect.objectContaining({ id: "session:s1", x: 280, y: 160 })],
+        }),
+      },
     );
     expect(db.invalidateBoardYjsCatalogCache).toHaveBeenCalledWith({
       folderId,

@@ -815,6 +815,7 @@ async def test_board_yjs_persistence_container_schema_contract(test_db):
         )
     }
     assert "synced_at" in document_columns
+    assert "revision" in document_columns
 
     cache_columns = {
         row["column_name"]: row

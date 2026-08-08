@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 
+import {
+  deleteBoardYjsItem,
+  upsertBoardYjsItem,
+} from "../src/board-yjs/board_yjs_model.js";
 import { PageRepository } from "../src/page/page_repository.js";
 import { PageYjsService } from "../src/page/page_service.js";
 import type { PlannerTaskDto } from "../src/planner/planner_contract.js";
@@ -906,36 +911,44 @@ describe("Task identity PostgreSQL transaction", () => {
 
 class TransactionBoardPort implements TaskIdentityBoardPort {
   liveApplied = false;
+  readonly documents = new Map<string, Y.Doc>();
 
   async withTaskBoardApplication<T>(
     input: Parameters<TaskIdentityBoardPort["withTaskBoardApplication"]>[0],
     persist: (application: TaskIdentityBoardApplication) => Promise<T>,
   ): Promise<T> {
+    const scope = {
+      folderId: input.folderId,
+      containerKind: "folder" as const,
+      containerId: input.folderId,
+    };
+    const boardItem = {
+      id: input.boardItemId,
+      folderId: input.folderId,
+      containerKind: "folder" as const,
+      containerId: input.folderId,
+      membershipKind: "primary" as const,
+      sourceTaskItemId: null,
+      itemType: "task" as const,
+      itemId: input.taskId,
+      x: input.x,
+      y: input.y,
+      metadata: { title: input.title, archived: input.archived },
+    };
+    const boardItems = [boardItem];
+    const documentName = `board-folder:${input.folderId}`;
+    const document = this.cloneDocument(documentName);
+    upsertBoardYjsItem(document, boardItem);
     const result = await persist({
-      documentName: `board-folder:${input.folderId}`,
-      scope: {
-        folderId: input.folderId,
-        containerKind: "folder",
-        containerId: input.folderId,
-      },
-      snapshot: new Uint8Array([1, 2, 3]),
+      documentName,
+      scope,
+      snapshot: Y.encodeStateAsUpdate(document),
       replica: {
-        boardItems: [{
-          id: input.boardItemId,
-          folderId: input.folderId,
-          containerKind: "folder",
-          containerId: input.folderId,
-          membershipKind: "primary",
-          sourceTaskItemId: null,
-          itemType: "task",
-          itemId: input.taskId,
-          x: input.x,
-          y: input.y,
-          metadata: { title: input.title, archived: input.archived },
-        }],
+        boardItems,
         markdownDocuments: [],
       },
     });
+    this.documents.set(documentName, document);
     this.liveApplied = true;
     return result;
   }
@@ -952,29 +965,44 @@ class TransactionBoardPort implements TaskIdentityBoardPort {
       x: input.position?.x ?? input.boardItem.x,
       y: input.position?.y ?? input.boardItem.y,
     };
+    const sourceDocumentName = `board-folder:${input.boardItem.folderId}`;
+    const targetDocumentName = `board-folder:${input.targetScope.folderId}`;
+    const sourceDocument = this.cloneDocument(sourceDocumentName);
+    const targetDocument = this.cloneDocument(targetDocumentName);
+    deleteBoardYjsItem(sourceDocument, input.boardItem.id);
+    upsertBoardYjsItem(targetDocument, moved);
     await persist({
       movedBoardItem: moved,
       boardApplications: [
         {
-          documentName: `board-folder:${input.boardItem.folderId}`,
+          documentName: sourceDocumentName,
           scope: {
             folderId: input.boardItem.folderId,
             containerKind: "folder",
             containerId: input.boardItem.folderId,
           },
-          snapshot: new Uint8Array([4, 5, 6]),
+          snapshot: Y.encodeStateAsUpdate(sourceDocument),
           replica: { boardItems: [], markdownDocuments: [] },
         },
         {
-          documentName: `board-folder:${input.targetScope.folderId}`,
+          documentName: targetDocumentName,
           scope: input.targetScope,
-          snapshot: new Uint8Array([7, 8, 9]),
+          snapshot: Y.encodeStateAsUpdate(targetDocument),
           replica: { boardItems: [moved], markdownDocuments: [] },
         },
       ],
     });
+    this.documents.set(sourceDocumentName, sourceDocument);
+    this.documents.set(targetDocumentName, targetDocument);
     this.liveApplied = true;
     return moved;
+  }
+
+  private cloneDocument(documentName: string): Y.Doc {
+    const clone = new Y.Doc();
+    const current = this.documents.get(documentName);
+    if (current) Y.applyUpdate(clone, Y.encodeStateAsUpdate(current));
+    return clone;
   }
 }
 
