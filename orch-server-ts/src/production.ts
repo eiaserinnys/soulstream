@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 
 import { createApp, type CreateAppOptions } from "./app.js";
 import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
+import { BoardYjsMoveRepository } from "./board-yjs/board_yjs_move_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
 import { createBoardProjectionHost } from "./board-yjs/board_projection_host.js";
 import { PageRepository } from "./page/page_repository.js";
@@ -70,6 +71,7 @@ import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_conf
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
+import { SessionBoardMoveService } from "./session/session_board_move_service.js";
 import {
   createLiveTurnSummaryPipeline,
   type LiveTurnSummaryPipeline,
@@ -154,6 +156,16 @@ export async function createLiveProductionApplication(
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
   let boardYjsService: BoardYjsService | undefined;
+  const boardYjsMoveRepository = new BoardYjsMoveRepository(sqlResolver);
+  const sessionBoardMoveService = new SessionBoardMoveService({
+    board: {
+      async withSessionBoardMoveApplications(input, persist) {
+        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
+        return await boardYjsService.withSessionBoardMoveApplications(input, persist);
+      },
+    },
+    repository: boardYjsMoveRepository,
+  });
   const sessionDeletionService = new SessionDeletionService({
     board: {
       async withBoardItemRemovalApplications(boardItems, persist) {
@@ -186,6 +198,7 @@ export async function createLiveProductionApplication(
     registry,
     boardAssetStorage,
     sessionDeletion: sessionDeletionService,
+    sessionMoves: sessionBoardMoveService,
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
   const foregroundObservers = new SessionForegroundObserverTracker();
@@ -232,6 +245,10 @@ export async function createLiveProductionApplication(
           if (!taskIdentityService) throw new Error("Task identity service is not initialized");
           return await taskIdentityService.moveBoardItemToContainer(input);
         },
+        moveSessionBoardItem: async (input) =>
+          await sessionBoardMoveService.moveSessionBoardItem(input),
+        persistBoardItemMove: async ({ boardApplications }) =>
+          await boardYjsMoveRepository.commitBoardItemMove({ boardApplications }),
         auth: {
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,

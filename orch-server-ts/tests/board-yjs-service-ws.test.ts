@@ -17,8 +17,10 @@ import { SessionDeletionService } from
 import type {
   BoardYjsContainerRef,
   BoardYjsContainerScope,
+  BoardYjsDocumentApplication,
   BoardYjsReplica,
   BoardYjsSeed,
+  CatalogBoardItemRow,
 } from "../src/board-yjs/board_yjs_types.js";
 
 const providers: HocuspocusProvider[] = [];
@@ -141,6 +143,55 @@ describe("orch BoardYjsService", () => {
     }
   });
 
+  it("removes every cache-only primary residue and creates one destination card", async () => {
+    const repository = new MemoryBoardYjsRepository();
+    const service = createService(repository);
+    try {
+      const oldA = await service.upsertSessionBoardItem({
+        folderId: "folder-old-a",
+        container: { containerKind: "folder", containerId: "folder-old-a" },
+        sessionId: "session-move",
+        x: 10,
+        y: 20,
+      });
+      const oldB = {
+        ...oldA,
+        folderId: "folder-old-b",
+        containerId: "folder-old-b",
+      };
+      const reference = {
+        ...oldA,
+        id: "session-reference:session-move",
+        containerKind: "task" as const,
+        containerId: "task-1",
+        membershipKind: "reference" as const,
+      };
+      repository.sessionInventory.set("session-move", [oldA, oldB, reference]);
+      repository.snapshots.set(
+        "board-folder:folder-old-b",
+        snapshotWithBoardItems("folder-old-b", [oldB]),
+      );
+      const referenceSnapshot = snapshotWithBoardItems("folder-old-a", [reference]);
+      repository.snapshots.set("board:task:task-1", referenceSnapshot);
+
+      const moved = await service.moveSessionToFolder("session-move", "folder-target");
+
+      expect(moved).toMatchObject({
+        id: "session:session-move",
+        folderId: "folder-target",
+        containerId: "folder-target",
+      });
+      expect(readSnapshotItems(repository, "folder-old-a")).toEqual([]);
+      expect(readSnapshotItems(repository, "folder-old-b")).toEqual([]);
+      expect(readSnapshotItems(repository, "folder-target")).toEqual([
+        expect.objectContaining({ id: "session:session-move", itemId: "session-move" }),
+      ]);
+      expect(repository.snapshots.get("board:task:task-1")).toBe(referenceSnapshot);
+    } finally {
+      await service.close();
+    }
+  });
+
   it("completes the real HocuspocusProvider sync handshake and relays Y.Doc updates in orch mode", async () => {
     const repository = new MemoryBoardYjsRepository();
     const app = createBoardApp(repository);
@@ -182,9 +233,31 @@ function createService(
   repository = new MemoryBoardYjsRepository(),
   logger = silentLogger(),
 ) {
-  return new BoardYjsService({
+  let service!: BoardYjsService;
+  service = new BoardYjsService({
     repository,
     logger,
+    persistBoardItemMove: async ({ boardApplications }) => {
+      await repository.apply(boardApplications);
+    },
+    moveSessionBoardItem: async (input) => {
+      const boardItems = repository.sessionInventory.get(input.sessionId) ?? [];
+      return await service.withSessionBoardMoveApplications({
+        ...input,
+        boardItems,
+      }, async ({ boardApplications }) => {
+        await repository.apply(boardApplications);
+        const references = boardItems.filter((item) =>
+          (item.membershipKind ?? "primary") === "reference"
+        );
+        const staged = boardApplications.flatMap((application) =>
+          application.replica.boardItems.filter((item) =>
+            item.itemType === "session" && item.itemId === input.sessionId
+          )
+        );
+        repository.sessionInventory.set(input.sessionId, [...references, ...staged]);
+      });
+    },
     auth: {
       authBearerToken: "wire-token",
       environment: "production",
@@ -192,6 +265,7 @@ function createService(
       verifyDashboardToken: vi.fn().mockResolvedValue(null),
     },
   });
+  return service;
 }
 
 function connectProvider(
@@ -250,6 +324,13 @@ function silentLogger(): FastifyBaseLogger {
 
 class MemoryBoardYjsRepository {
   readonly snapshots = new Map<string, Uint8Array>();
+  readonly sessionInventory = new Map<string, CatalogBoardItemRow[]>();
+
+  async apply(applications: readonly BoardYjsDocumentApplication[]): Promise<void> {
+    for (const application of applications) {
+      await this.storeBoardYjsSnapshot(application.documentName, application.snapshot);
+    }
+  }
 
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
     return this.snapshots.get(documentName) ?? null;
@@ -286,4 +367,37 @@ class MemoryBoardYjsRepository {
     _container: BoardYjsContainerScope,
     _replica: BoardYjsReplica,
   ): Promise<void> {}
+}
+
+function snapshotWithBoardItems(
+  folderId: string,
+  boardItems: CatalogBoardItemRow[],
+): Uint8Array {
+  const document = new Y.Doc();
+  for (const item of boardItems) {
+    document.getMap("boardItems").set(item.id, {
+      item_type: item.itemType,
+      item_id: item.itemId,
+      x: item.x,
+      y: item.y,
+      membership_kind: item.membershipKind,
+      source_task_item_id: item.sourceTaskItemId,
+      metadata: item.metadata,
+    });
+  }
+  return Y.encodeStateAsUpdate(document);
+}
+
+function readSnapshotItems(
+  repository: MemoryBoardYjsRepository,
+  folderId: string,
+): CatalogBoardItemRow[] {
+  const document = new Y.Doc();
+  const snapshot = repository.snapshots.get(`board-folder:${folderId}`);
+  if (snapshot) Y.applyUpdate(document, snapshot);
+  return readBoardYDocReplica({
+    folderId,
+    containerKind: "folder",
+    containerId: folderId,
+  }, document).boardItems;
 }

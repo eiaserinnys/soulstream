@@ -285,8 +285,6 @@ export class TaskCreation {
         if (!scope) {
           throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
         }
-        await this.deps.db.assignSessionToFolder(sessionId, scope.folderId);
-        assigned = scope.folderId;
         const boardItems = boardItemsInContainer(await this.deps.db.getBoardItems(), container);
         const [x, y] = sessionBoardItemPosition(boardItems, sessionId);
         await this.deps.boardYjsService?.upsertSessionBoardItem({
@@ -297,6 +295,7 @@ export class TaskCreation {
           x,
           y,
         });
+        assigned = scope.folderId;
       } else if (folderId !== null) {
         await this.deps.db.assignSessionToFolder(sessionId, folderId);
         assigned = folderId;
@@ -321,7 +320,7 @@ export class TaskCreation {
             : null,
           sourceTaskItemId,
         },
-        "session folder assignment or board container enrollment failed - proceeding with folder fallback",
+        "session folder assignment or board container enrollment failed; atomic placement was not applied",
       );
     }
 

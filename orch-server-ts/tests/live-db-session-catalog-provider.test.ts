@@ -22,9 +22,11 @@ describe("live DB session catalog provider", () => {
   it("uses Python catalog DB functions and preserves caller_info as route input only", async () => {
     const harness = createSqlHarness();
     const deleteSession = vi.fn().mockResolvedValue(undefined);
+    const moveSessionToFolder = vi.fn().mockResolvedValue(undefined);
     const repository = createLiveDbCatalogRepository({
       sql: harness.sql,
       sessionDeletion: { deleteSession },
+      sessionMoves: { moveSessionToFolder },
     });
 
     await repository.sessionCatalogProvider.renameSession(
@@ -47,19 +49,18 @@ describe("live DB session catalog provider", () => {
 
     expect(harness.normalizedCalls()).toEqual([
       "SELECT session_rename(?, ?)",
-      "SELECT session_assign_folder(?, ?)",
-      "SELECT session_assign_folder(?, ?)",
-      "SELECT session_assign_folder(?, ?)",
       "SELECT session_rename(?, ?)",
       "SELECT session_update_read_position(?, ?)",
     ]);
     expect(harness.calls.map((call) => call.values)).toEqual([
       ["sess-1", "Renamed"],
+      ["sess-3", null],
+      ["sess-5", 42],
+    ]);
+    expect(moveSessionToFolder.mock.calls).toEqual([
       ["sess-1", "folder-1"],
       ["sess-2", "folder-1"],
       ["sess-3", null],
-      ["sess-3", null],
-      ["sess-5", 42],
     ]);
     expect(deleteSession).toHaveBeenCalledWith("sess-4");
   });

@@ -464,19 +464,22 @@ describe("CatalogService.deleteFolder", () => {
 });
 
 describe("CatalogService.moveSessionsToFolder", () => {
-  it("세션마다 session_assign_folder 호출 후 1회 broadcast", async () => {
+  it("세션마다 atomic Board Yjs 이동 호출 후 1회 broadcast", async () => {
     const { sql, calls } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
+    const moveSessionToFolder = vi.fn().mockResolvedValue(null);
+    const svc = new CatalogService(db, broadcaster, { moveSessionToFolder } as never);
 
     await svc.moveSessionsToFolder(["s1", "s2", "s3"], "f1");
 
-    const assigns = calls.filter((c) =>
-      c.fragments.join("|").includes("session_assign_folder"),
-    );
-    expect(assigns).toHaveLength(3);
-    expect(assigns.map((c) => c.values[0])).toEqual(["s1", "s2", "s3"]);
+    expect(moveSessionToFolder.mock.calls).toEqual([
+      ["s1", "f1"],
+      ["s2", "f1"],
+      ["s3", "f1"],
+    ]);
+    expect(calls.some((c) => c.fragments.join("|").includes("session_assign_folder")))
+      .toBe(false);
     const assignmentReads = calls.filter((c) =>
       c.fragments.join("|").includes("session_id = ANY"),
     );
@@ -493,18 +496,18 @@ describe("CatalogService.moveSessionsToFolder", () => {
     );
   });
 
-  it("folderId=null → 폴더 해제 (각 호출에 null 전달)", async () => {
+  it("folderId=null → atomic 이동 포트에 폴더 해제를 전달", async () => {
     const { sql, calls } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
     const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
+    const moveSessionToFolder = vi.fn().mockResolvedValue(null);
+    const svc = new CatalogService(db, broadcaster, { moveSessionToFolder } as never);
 
     await svc.moveSessionsToFolder(["s1"], null);
 
-    const assigns = calls.filter((c) =>
-      c.fragments.join("|").includes("session_assign_folder"),
-    );
-    expect(assigns[0].values).toEqual(["s1", null]);
+    expect(moveSessionToFolder).toHaveBeenCalledWith("s1", null);
+    expect(calls.some((c) => c.fragments.join("|").includes("session_assign_folder")))
+      .toBe(false);
   });
 });
 
@@ -560,7 +563,7 @@ describe("CatalogService board items", () => {
       x: 120,
       y: 240,
     });
-    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "f1");
+    expect(assignSessionToFolder).not.toHaveBeenCalled();
     expect(upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "f1",
       container: { containerKind: "task", containerId: "rb-1" },
@@ -572,11 +575,21 @@ describe("CatalogService board items", () => {
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("moveBoardItemToContainer는 DB-only stale 세션도 target folder 기준으로 편입한다", async () => {
+  it("moveBoardItemToContainer는 cache inventory로 DB-only stale 세션도 원자 이동한다", async () => {
     const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-    const moveBoardItemToContainer = vi.fn().mockRejectedValue(
-      new Error("board item not found in source Y.Doc: session:s1"),
-    );
+    const moveBoardItemToContainer = vi.fn().mockResolvedValue({
+      id: "session:s1",
+      folderId: "target-folder",
+      containerKind: "task",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceTaskItemId: null,
+      itemType: "session",
+      itemId: "s1",
+      x: 0,
+      y: 0,
+      metadata: {},
+    });
     const upsertSessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:s1",
       folderId: "target-folder",
@@ -638,17 +651,10 @@ describe("CatalogService board items", () => {
       idempotencyKey: "move-1",
     });
 
-    expect(result.enrolled).toBe(true);
-    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "target-folder");
-    expect(assignSessionToFolder).not.toHaveBeenCalledWith("s1", "source-folder");
-    expect(upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "target-folder",
-      container: { containerKind: "task", containerId: "rb-1" },
-      sessionId: "s1",
-      sourceTaskItemId: null,
-      x: 280,
-      y: 0,
-    });
+    expect(result.enrolled).toBe(false);
+    expect(assignSessionToFolder).not.toHaveBeenCalled();
+    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
+    expect(moveBoardItemToContainer).toHaveBeenCalledOnce();
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
@@ -795,7 +801,7 @@ describe("CatalogService board items", () => {
       idempotencyKey: "move-1",
     });
     expect(upsertSessionBoardItem).not.toHaveBeenCalled();
-    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "target-folder");
+    expect(assignSessionToFolder).not.toHaveBeenCalled();
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 

@@ -346,6 +346,8 @@ async function invokeActualClient(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   switch (operation) {
+    case "move-session-to-folder":
+      return await client.moveSessionToFolder?.(body.sessionId, body.folderId);
     case "remove-task-board-item":
       return await client.removeTaskBoardItem?.(body.folderId, body.boardItemId);
     case "remove-board-item":
@@ -387,6 +389,7 @@ function createServiceDouble() {
   return {
     createMarkdownDocument: result("create-markdown-document"),
     upsertSessionBoardItem: result("upsert-session-board-item"),
+    moveSessionToFolder: result("move-session-to-folder"),
     upsertTaskBoardItem: result("upsert-task-board-item"),
     upsertCustomViewBoardItem: result("upsert-custom-view-board-item"),
     removeTaskBoardItem: result("remove-task-board-item"),

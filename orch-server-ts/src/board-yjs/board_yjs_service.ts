@@ -13,17 +13,23 @@ import {
   deleteBoardYjsItem,
   deleteMarkdownYjsDocument,
   getBoardYjsContainerDocumentName,
+  nextBoardPosition,
   readBoardYDocReplica,
   updateMarkdownYjsDocument,
-  upsertBoardYjsItem,
   upsertCustomViewYjsBoardItem,
   upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
 import { BoardYjsDocumentMutationGate } from "./board_yjs_document_mutation_gate.js";
 import {
-  moveBoardItemBetweenDocuments,
   type BoardMoveInput,
+  boardMoveDocumentNames,
+  type SessionBoardMoveInput,
+  sessionBoardMoveDocumentNames,
+  type StagedBoardMove,
+  type StagedSessionBoardMove,
   type StagedTaskBoardMove,
+  withStagedBoardMove,
+  withStagedSessionBoardMove,
   withStagedTaskBoardMove,
 } from "./board_yjs_move.js";
 import {
@@ -52,11 +58,18 @@ export interface BoardYjsServiceConfig {
   moveTaskBoardItem?: (
     input: BoardMoveInput & { idempotencyKey: string },
   ) => Promise<CatalogBoardItemRow>;
+  moveSessionBoardItem?: (input: {
+    sessionId: string;
+    targetScope: SessionBoardMoveInput["targetScope"];
+    position?: { x: number; y: number };
+    sourceTaskItemId?: string | null;
+  }) => Promise<CatalogBoardItemRow | null>;
+  persistBoardItemMove?: (application: StagedBoardMove) => Promise<void>;
 }
 
 export class BoardYjsService {
   private readonly hocuspocus: Hocuspocus;
-  private readonly taskIdentityTails = new Map<string, Promise<void>>();
+  private readonly boardIdentityTails = new Map<string, Promise<void>>();
   private readonly documentMutationGate = new BoardYjsDocumentMutationGate();
 
   constructor(private readonly config: BoardYjsServiceConfig) {
@@ -133,24 +146,37 @@ export class BoardYjsService {
     y: number;
     sourceTaskItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
-    const boardItem: CatalogBoardItemRow = {
-      id: `session:${input.sessionId}`,
-      folderId: input.folderId,
-      containerKind: input.container.containerKind,
-      containerId: input.container.containerId,
-      membershipKind: "primary",
+    if (!this.config.moveSessionBoardItem) {
+      throw new Error("session board move is not configured");
+    }
+    const moved = await this.config.moveSessionBoardItem({
+      sessionId: input.sessionId,
+      targetScope: {
+        folderId: input.folderId,
+        containerKind: input.container.containerKind,
+        containerId: input.container.containerId,
+      },
+      position: { x: input.x, y: input.y },
       sourceTaskItemId: input.sourceTaskItemId ?? null,
-      itemType: "session",
-      itemId: input.sessionId,
-      x: input.x,
-      y: input.y,
-      metadata: {},
-    };
-    await this.withDirectContainerConnection(input.container, (doc) => {
-      upsertBoardYjsItem(doc, boardItem);
-      return true;
     });
-    return boardItem;
+    if (!moved) throw new Error(`session board item was not created: ${input.sessionId}`);
+    return moved;
+  }
+
+  async moveSessionToFolder(
+    sessionId: string,
+    folderId: string | null,
+  ): Promise<CatalogBoardItemRow | null> {
+    if (!this.config.moveSessionBoardItem) {
+      throw new Error("session board move is not configured");
+    }
+    return await this.config.moveSessionBoardItem({
+      sessionId,
+      targetScope: folderId === null
+        ? null
+        : { folderId, containerKind: "folder", containerId: folderId },
+      sourceTaskItemId: null,
+    });
   }
 
   async upsertTaskBoardItem(input: {
@@ -189,7 +215,7 @@ export class BoardYjsService {
     snapshot: Uint8Array;
     replica: ReturnType<typeof readBoardYDocReplica>;
   }) => Promise<T>): Promise<T> {
-    return await this.withTaskIdentityLock(input.folderId, async () => {
+    return await this.withBoardIdentityLock(input.folderId, async () => {
       const scope = {
         folderId: input.folderId,
         containerKind: "folder" as const,
@@ -315,17 +341,50 @@ export class BoardYjsService {
         idempotencyKey: input.idempotencyKey,
       });
     }
-    return await this.documentMutationGate.withMutation(moveDocumentNames(input), async () =>
-      await moveBoardItemBetweenDocuments(this.hocuspocus, input)
+    if (input.boardItem.itemType === "session") {
+      if (!this.config.moveSessionBoardItem) {
+        throw new Error("session board move is not configured");
+      }
+      const moved = await this.config.moveSessionBoardItem({
+        sessionId: input.boardItem.itemId,
+        targetScope: input.targetScope,
+        ...(input.position ? { position: input.position } : {}),
+        sourceTaskItemId: input.boardItem.sourceTaskItemId ?? null,
+      });
+      if (!moved) throw new Error(`session board item was not created: ${input.boardItem.itemId}`);
+      return moved;
+    }
+    if (!this.config.persistBoardItemMove) {
+      throw new Error("board item move persistence is not configured");
+    }
+    return await this.documentMutationGate.withMutation(boardMoveDocumentNames(input), async () =>
+      await withStagedBoardMove(this.hocuspocus, input, this.config.persistBoardItemMove!)
     );
+  }
+
+  async withSessionBoardMoveApplications<T>(
+    input: SessionBoardMoveInput,
+    persist: (application: StagedSessionBoardMove) => Promise<T>,
+  ): Promise<CatalogBoardItemRow | null> {
+    return await this.withBoardIdentityLock(`session:${input.sessionId}`, async () => {
+      const documentNames = sessionBoardMoveDocumentNames(input);
+      const stage = async () => await withStagedSessionBoardMove(
+        this.hocuspocus,
+        input,
+        async (application) => { await persist(application); },
+      );
+      return documentNames.length === 0
+        ? await stage()
+        : await this.documentMutationGate.withMutation(documentNames, stage);
+    });
   }
 
   async withTaskBoardMoveApplication(
     input: BoardMoveInput,
     persist: (application: StagedTaskBoardMove) => Promise<void>,
   ): Promise<CatalogBoardItemRow> {
-    return await this.withTaskIdentityLock(input.boardItem.id, async () =>
-      await this.documentMutationGate.withMutation(moveDocumentNames(input), async () =>
+    return await this.withBoardIdentityLock(input.boardItem.id, async () =>
+      await this.documentMutationGate.withMutation(boardMoveDocumentNames(input), async () =>
         await withStagedTaskBoardMove(this.hocuspocus, input, persist)
       )
     );
@@ -385,48 +444,20 @@ export class BoardYjsService {
     return this.hocuspocus;
   }
 
-  private async withTaskIdentityLock<T>(key: string, work: () => Promise<T>): Promise<T> {
-    const previous = this.taskIdentityTails.get(key) ?? Promise.resolve();
+  private async withBoardIdentityLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.boardIdentityTails.get(key) ?? Promise.resolve();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const tail = previous.then(() => gate, () => gate);
-    this.taskIdentityTails.set(key, tail);
+    this.boardIdentityTails.set(key, tail);
     await previous.catch(() => undefined);
     try {
       return await work();
     } finally {
       release();
-      if (this.taskIdentityTails.get(key) === tail) this.taskIdentityTails.delete(key);
+      if (this.boardIdentityTails.get(key) === tail) this.boardIdentityTails.delete(key);
     }
   }
-}
-
-function nextBoardPosition(
-  boardItems: readonly { x: number; y: number }[],
-): [number, number] {
-  const occupied = new Set(boardItems.map((item) => `${item.x}:${item.y}`));
-  let index = 0;
-  while (true) {
-    const x = (index % 4) * 280;
-    const y = Math.floor(index / 4) * 160;
-    if (!occupied.has(`${x}:${y}`)) return [x, y];
-    index += 1;
-  }
-}
-
-function moveDocumentNames(input: BoardMoveInput): string[] {
-  const source = {
-    containerKind: input.boardItem.containerKind ?? "folder",
-    containerId: input.boardItem.containerId ?? input.boardItem.folderId,
-  } as const;
-  const target = {
-    containerKind: input.targetScope.containerKind,
-    containerId: input.targetScope.containerId,
-  };
-  return [
-    getBoardYjsContainerDocumentName(source),
-    getBoardYjsContainerDocumentName(target),
-  ];
 }
 
 function createBoardYjsAuthExtension(

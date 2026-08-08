@@ -21,6 +21,10 @@ export interface CatalogBoardItemMoveResult {
 }
 
 export interface CatalogBoardYjsPort {
+  moveSessionToFolder(
+    sessionId: string,
+    folderId: string | null,
+  ): Promise<CatalogBoardItemRow | null>;
   updateBoardItemPosition(
     container: string | BoardYjsContainerRef,
     boardItemId: string,
@@ -71,6 +75,16 @@ export class CatalogBoardItemService {
     private readonly boardYjsService: CatalogBoardYjsPort | undefined,
     private readonly broadcastCatalog: (delta?: CatalogMutationDelta) => Promise<void>,
   ) {}
+
+  async moveSessionToFolder(
+    sessionId: string,
+    folderId: string | null,
+  ): Promise<CatalogBoardItemRow | null> {
+    if (!this.boardYjsService) {
+      throw new Error("orchestrator Board Yjs mutation port is not configured");
+    }
+    return await this.boardYjsService.moveSessionToFolder(sessionId, folderId);
+  }
 
   async updateBoardItemPosition(
     boardItemId: string,
@@ -170,54 +184,17 @@ export class CatalogBoardItemService {
       return { boardItem, enrolled: false };
     }
 
-    const previousSessionFolderId = boardItem.itemType === "session"
-      ? (await this.db.getSession(boardItem.itemId))?.folder_id ?? null
-      : null;
-    if (boardItem.itemType === "session") {
-      await this.db.assignSessionToFolder(boardItem.itemId, targetScope.folderId);
-    }
-
-    try {
-      const moved = await this.boardYjsService.moveBoardItemToContainer({
-        boardItem,
-        targetScope,
-        ...(snappedPosition ? { position: snappedPosition } : {}),
-        idempotencyKey: params.idempotencyKey,
-      });
-      await this.broadcastCatalog({
-        sessionIds: moved.itemType === "session" ? [moved.itemId] : [],
-        boardItems: [moved],
-      });
-      return { boardItem: moved, enrolled: false };
-    } catch (err) {
-      if (
-        boardItem.itemType === "session" &&
-        previousSessionFolderId !== null &&
-        isSourceYDocMissingError(err)
-      ) {
-        try {
-          const enrolled = await this.enrollSessionBoardItem({
-            sessionId: boardItem.itemId,
-            targetScope,
-            targetContainer,
-            position: snappedPosition,
-            sourceTaskItemId: boardItem.sourceTaskItemId ?? null,
-          });
-          await this.broadcastCatalog({
-            sessionIds: [enrolled.itemId],
-            boardItems: [enrolled],
-          });
-          return { boardItem: enrolled, enrolled: true };
-        } catch (fallbackErr) {
-          await this.db.assignSessionToFolder(boardItem.itemId, previousSessionFolderId);
-          throw fallbackErr;
-        }
-      }
-      if (boardItem.itemType === "session") {
-        await this.db.assignSessionToFolder(boardItem.itemId, previousSessionFolderId);
-      }
-      throw err;
-    }
+    const moved = await this.boardYjsService.moveBoardItemToContainer({
+      boardItem,
+      targetScope,
+      ...(snappedPosition ? { position: snappedPosition } : {}),
+      idempotencyKey: params.idempotencyKey,
+    });
+    await this.broadcastCatalog({
+      sessionIds: moved.itemType === "session" ? [moved.itemId] : [],
+      boardItems: [moved],
+    });
+    return { boardItem: moved, enrolled: false };
   }
 
   async createMarkdownDocument(params: {
@@ -373,7 +350,6 @@ export class CatalogBoardItemService {
     const [x, y] = params.position
       ? [params.position.x, params.position.y]
       : await this.nextBoardPosition(params.targetScope.folderId, params.targetContainer);
-    await this.db.assignSessionToFolder(params.sessionId, params.targetScope.folderId);
     return await this.boardYjsService!.upsertSessionBoardItem({
       folderId: params.targetScope.folderId,
       container: params.targetContainer,
@@ -406,11 +382,6 @@ function sessionIdFromBoardItemId(boardItemId: string): string | null {
   if (!boardItemId.startsWith("session:")) return null;
   const sessionId = boardItemId.slice("session:".length);
   return sessionId.trim() ? sessionId : null;
-}
-
-function isSourceYDocMissingError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.includes("board item not found in source Y.Doc");
 }
 
 function isMovableBoardItemType(

@@ -39,6 +39,19 @@ export function applyBoardYjsPosition(
   });
 }
 
+export function nextBoardPosition(
+  boardItems: readonly { x: number; y: number }[],
+): [number, number] {
+  const occupied = new Set(boardItems.map((item) => `${item.x}:${item.y}`));
+  let index = 0;
+  while (true) {
+    const x = (index % 4) * 280;
+    const y = Math.floor(index / 4) * 160;
+    if (!occupied.has(`${x}:${y}`)) return [x, y];
+    index += 1;
+  }
+}
+
 export function createMarkdownYjsDocument(
   doc: Y.Doc,
   scopeInput: BoardYjsScopeInput,

@@ -382,7 +382,7 @@ describe("TaskCreation", () => {
       containerKind: "task",
       containerId: "rb-1",
     });
-    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-task", "root");
+    expect(h.assignSessionToFolder).not.toHaveBeenCalledWith("sess-task", "root");
     expect(h.getBoardItems).toHaveBeenCalledTimes(1);
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "root",
@@ -433,7 +433,7 @@ describe("TaskCreation", () => {
     }));
   });
 
-  it("logs target container when task session board enrollment falls back to folder assignment", async () => {
+  it("logs target container and leaves assignment unchanged when atomic placement fails", async () => {
     const logger = {
       warn: vi.fn(),
       child: () => logger,
@@ -450,17 +450,17 @@ describe("TaskCreation", () => {
       sourceTaskItemId: "task-item-1",
     });
 
-    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-task-fallback", "root");
-    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
+    expect(h.assignSessionToFolder).not.toHaveBeenCalledWith("sess-task-fallback", "root");
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, null);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         err: expect.any(Error),
         sessionId: "sess-task-fallback",
-        assignedFolderId: "root",
+        assignedFolderId: null,
         targetContainer: { containerKind: "task", containerId: "rb-1" },
         sourceTaskItemId: "task-item-1",
       }),
-      expect.stringContaining("folder fallback"),
+      expect.stringContaining("atomic placement was not applied"),
     );
   });
 

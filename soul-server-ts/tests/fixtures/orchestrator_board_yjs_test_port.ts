@@ -87,6 +87,43 @@ export class OrchestratorBoardYjsTestPort implements CatalogBoardYjsPort, TaskBo
     return boardItem;
   }
 
+  async moveSessionToFolder(
+    sessionId: string,
+    folderId: string | null,
+  ): Promise<CatalogBoardItemRow | null> {
+    await this.sql`SELECT session_assign_folder(${sessionId}, ${folderId})`;
+    if (folderId === null) {
+      await this.sql`
+        DELETE FROM board_items
+        WHERE item_type = 'session' AND item_id = ${sessionId}
+          AND COALESCE(membership_kind, 'primary') = 'primary'
+      `;
+      return null;
+    }
+    const existing = await this.sql`
+      SELECT * FROM board_items
+      WHERE item_type = 'session' AND item_id = ${sessionId}
+        AND COALESCE(membership_kind, 'primary') = 'primary'
+      LIMIT 1
+    `;
+    const source = existing[0] as Record<string, unknown> | undefined;
+    const boardItem: CatalogBoardItemRow = {
+      id: `session:${sessionId}`,
+      folderId,
+      containerKind: "folder",
+      containerId: folderId,
+      membershipKind: "primary",
+      sourceTaskItemId: null,
+      itemType: "session",
+      itemId: sessionId,
+      x: Number(source?.x ?? 0),
+      y: Number(source?.y ?? 0),
+      metadata: {},
+    };
+    await this.upsertBoardItem(boardItem);
+    return boardItem;
+  }
+
   async updateBoardItemPosition(
     _container: string | BoardYjsContainerRef,
     boardItemId: string,

@@ -38,6 +38,13 @@
       }
     },
     {
+      "operation": "move-session-to-folder",
+      "body": {
+        "sessionId": "session-1",
+        "folderId": "folder-2"
+      }
+    },
+    {
       "operation": "upsert-task-board-item",
       "body": {
         "folderId": "folder-1",
