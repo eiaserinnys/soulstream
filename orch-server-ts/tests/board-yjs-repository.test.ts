@@ -405,6 +405,12 @@ describe("orch BoardYjsRepository", () => {
       expect.stringContaining("board_item_get_all"),
       expect.stringContaining("FROM markdown_documents"),
     ]);
+    expect(calls[0]?.values).toEqual(["task", "rb-1"]);
+    expect(calls[1]).toMatchObject({
+      values: ["task", "rb-1"],
+    });
+    expect(calls[1]?.query).toContain("WHERE container_kind =");
+    expect(calls[1]?.query).toContain("AND container_id =");
     expect(seed).toEqual({
       boardItems: [expect.objectContaining({
         id: "markdown:d1",
