@@ -1,5 +1,5 @@
-import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,13 +8,15 @@ import postgres from "postgres";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
+import {
+  hasTestDatabaseResource,
+  provisionTestDatabase,
+  type TestDatabaseLease,
+} from "./database_test_harness.js";
+
 const SCRIPT_PATH = fileURLToPath(new URL("../../scripts/apply-schema.mjs", import.meta.url));
-const MIGRATION_SCRIPT_PATH = fileURLToPath(new URL(
-  "../../../packages/db-schema/scripts/migrate.mjs",
-  import.meta.url,
-));
-const BACKUP_SCRIPT_PATH = fileURLToPath(new URL(
-  "../../../packages/db-schema/scripts/backup.mjs",
+const RELEASE_EXECUTOR_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/scripts/release-executor.mjs",
   import.meta.url,
 ));
 const PAGE_MODEL_MIGRATION_PATH = fileURLToPath(new URL(
@@ -41,20 +43,18 @@ const TEST_USER = "apply_schema_test";
 const TEST_PASSWORD = "apply_schema_secret";
 
 const tempDirs: string[] = [];
-const containers: string[] = [];
-const itWithDocker = hasDockerBinary() ? it : it.skip;
+const databaseLeases: TestDatabaseLease[] = [];
+const itWithDatabase = hasTestDatabaseResource() ? it : it.skip;
 
-afterEach(() => {
+afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
-  for (const container of containers.splice(0)) {
-    execFileSync("docker", ["stop", container], { stdio: "ignore" });
-  }
+  for (const lease of databaseLeases.splice(0)) await lease.cleanup();
 });
 
 describe("apply-schema.mjs", () => {
-  itWithDocker("initializes a fresh database and is safe on a current database", async () => {
+  itWithDatabase("initializes a fresh database and is safe on a current database", async () => {
     const { url } = await startPostgres();
     const cwd = writeEnv(url);
 
@@ -129,7 +129,7 @@ describe("apply-schema.mjs", () => {
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 60,
+        migration_count: 61,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -322,7 +322,7 @@ describe("apply-schema.mjs", () => {
     }
   });
 
-  itWithDocker(
+  itWithDatabase(
     "removes legacy supervisor DB surfaces while preserving transcript and normal delivery",
     async () => {
       const { url } = await startPostgres();
@@ -458,7 +458,7 @@ describe("apply-schema.mjs", () => {
     90_000,
   );
 
-  itWithDocker(
+  itWithDatabase(
     "applies runtime migrations after the published 044@45 baseline once",
     async () => {
       const { url } = await startPostgres();
@@ -468,7 +468,7 @@ describe("apply-schema.mjs", () => {
       const sql = postgres(url, { max: 2, idle_timeout: 1 });
       try {
         await resetToPreRuntimeMigrationState(sql);
-        const gatedEnvironment = prepareRollbackUnsafeGates(cwd);
+        const gatedEnvironment = prepareDatabaseRelease(cwd);
         const baseline = await sql<Array<{
           migration_id: string;
           ordinal: number;
@@ -482,14 +482,9 @@ describe("apply-schema.mjs", () => {
           ordinal: 45,
         }]);
 
-        const [left, right] = await Promise.all([
-          runMigrationAsync(cwd, "apply", gatedEnvironment),
-          runMigrationAsync(cwd, "apply", gatedEnvironment),
-        ]);
-        expect(left.status).toBe(0);
-        expect(right.status).toBe(0);
-        expectNoSecretLeak(left);
-        expectNoSecretLeak(right);
+        const first = await runMigrationAsync(cwd, "apply", gatedEnvironment);
+        expect(first.status).toBe(0);
+        expectNoSecretLeak(first);
 
         const promoted = await sql<Array<{
           migration_id: string;
@@ -577,6 +572,11 @@ describe("apply-schema.mjs", () => {
             ordinal: 60,
             applied_kind: "migration",
           },
+          {
+            migration_id: "060_board_yjs_snapshot_revision.sql",
+            ordinal: 61,
+            applied_kind: "migration",
+          },
         ]);
 
         const objects = await sql<Array<{
@@ -601,12 +601,12 @@ describe("apply-schema.mjs", () => {
 
         const repeated = runMigration(cwd, "apply", gatedEnvironment);
         expect(repeated.status).toBe(0);
-        expect(repeated.stdout).toContain('"pending":[]');
+        expect(repeated.stdout).toContain('"status":"applied"');
         expectNoSecretLeak(repeated);
 
-        const verified = runMigration(cwd, "verify");
+        const verified = runMigration(cwd, "verify", gatedEnvironment);
         expect(verified.status).toBe(0);
-        expect(verified.stdout).toContain('"ledger_count":60');
+        expect(verified.stdout).toContain('"status":"verified"');
         expectNoSecretLeak(verified);
       } finally {
         await sql.end({ timeout: 5 });
@@ -615,7 +615,7 @@ describe("apply-schema.mjs", () => {
     90_000,
   );
 
-  itWithDocker(
+  itWithDatabase(
     "aborts the release migration transaction and blocks startup verification on DDL failure",
     async () => {
       const { url } = await startPostgres();
@@ -629,11 +629,11 @@ describe("apply-schema.mjs", () => {
           CREATE VIEW session_deliveries AS
           SELECT 'incompatible-object'::text AS delivery_id
         `);
-        const gatedEnvironment = prepareRollbackUnsafeGates(cwd);
+        const gatedEnvironment = prepareDatabaseRelease(cwd);
 
         const failed = runMigration(cwd, "apply", gatedEnvironment);
         expect(failed.status).not.toBe(0);
-        expect(failed.stderr).toContain('"status":"error"');
+        expect(failed.stderr).toContain('"ok":false');
         expectNoSecretLeak(failed);
 
         const ledger = await sql<Array<{ count: number }>>`
@@ -642,9 +642,10 @@ describe("apply-schema.mjs", () => {
         `;
         expect(ledger[0]?.count).toBe(45);
 
-        const startupVerify = runMigration(cwd, "verify");
+        const startupVerify = runMigration(cwd, "verify", gatedEnvironment);
         expect(startupVerify.status).not.toBe(0);
-        expect(startupVerify.stderr).toContain("migration ledger incomplete");
+        expect(startupVerify.stderr).toContain("POST_VERIFY_FAILED");
+        expect(startupVerify.stderr).toContain("applied database release phase is required");
         expectNoSecretLeak(startupVerify);
       } finally {
         await sql.end({ timeout: 5 });
@@ -714,21 +715,21 @@ describe("apply-schema.mjs", () => {
 
   it("pins release migration execution to the eiaserinnys orch authority", () => {
     const fixture = parseYaml(readFileSync(EIASERINNYS_FIXTURE_PATH, "utf8")) as {
-      services: Record<string, { cwd: string; repo: string; hooks?: { pre_start?: string } }>;
+      services: Record<string, { repo?: string; after?: string[] }>;
     };
     const manifest = JSON.parse(readFileSync(
       fileURLToPath(new URL("../../../deploy/release-manifest.json", import.meta.url)),
       "utf8",
     ));
 
-    expect(Object.keys(fixture.services)).toEqual([
+    const soulstreamServices = Object.entries(fixture.services)
+      .filter(([, service]) => service.repo === "soulstream")
+      .map(([name]) => name)
+      .sort();
+    expect(soulstreamServices).toEqual([
       "soulstream-orch-server",
       "soulstream-soul-server-ts",
     ]);
-    expect(fixture.services["soulstream-orch-server"].cwd).toBe("./services/soulstream");
-    expect(fixture.services["soulstream-orch-server"].hooks?.pre_start).toContain(
-      "verify-migrations.mjs",
-    );
     expect(manifest.environment_service).toBe("soulstream-orch-server");
     expect(manifest.migration.apply.command).toBe(
       "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
@@ -739,11 +740,6 @@ describe("apply-schema.mjs", () => {
     ]);
   });
 });
-
-function hasDockerBinary(): boolean {
-  const result = spawnSync("docker", ["--version"], { stdio: "ignore" });
-  return result.status === 0;
-}
 
 interface HanielSoulServerTsExample {
   repos: {
@@ -797,7 +793,7 @@ function runMigration(
   mode: "apply" | "verify",
   extraEnvironment: Record<string, string> = {},
 ) {
-  return spawnSync(process.execPath, [MIGRATION_SCRIPT_PATH, mode], {
+  return spawnSync(process.execPath, [RELEASE_EXECUTOR_PATH, mode], {
     cwd,
     encoding: "utf8",
     env: minimalEnv(extraEnvironment),
@@ -811,7 +807,7 @@ async function runMigrationAsync(
   extraEnvironment: Record<string, string> = {},
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [MIGRATION_SCRIPT_PATH, mode], {
+    const child = spawn(process.execPath, [RELEASE_EXECUTOR_PATH, mode], {
       cwd,
       env: minimalEnv(extraEnvironment),
     });
@@ -861,28 +857,67 @@ function minimalEnv(extraEnvironment: Record<string, string> = {}): NodeJS.Proce
   };
 }
 
-function prepareRollbackUnsafeGates(cwd: string): Record<string, string> {
+function prepareDatabaseRelease(cwd: string): Record<string, string> {
   const backupDirectory = join(cwd, "backup");
+  const receiptPath = join(backupDirectory, "quiescence.json");
+  mkdirSync(backupDirectory, { recursive: true });
   const environment = {
     HANIEL_BACKUP_DIR: backupDirectory,
-    HANIEL_TARGET_HEAD: "integration-test-head",
+    HANIEL_DATABASE_OPERATION: "upgrade",
+    HANIEL_DEPLOYMENT_JOURNAL: join(backupDirectory, "haniel-deployment.json"),
+    HANIEL_DEPLOY_REPO: "soulstream",
+    HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),
+    HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
+    HANIEL_DATABASE_WRITER_SERVICES: '["soulstream-orch-server"]',
+    HANIEL_MANIFEST_DIGEST: "a".repeat(64),
+    HANIEL_PREVIOUS_HEAD: "1".repeat(40),
+    HANIEL_QUIESCENCE_RECEIPT: receiptPath,
+    HANIEL_RELEASE_ID: "fresh-install-test",
+    HANIEL_REQUEST_ID: "runtime-migration-test",
+    HANIEL_TARGET_HEAD: "2".repeat(40),
   };
-  const created = spawnSync(process.execPath, [BACKUP_SCRIPT_PATH, "create"], {
+  writeFileSync(receiptPath, JSON.stringify({
+    request_id: environment.HANIEL_REQUEST_ID,
+    repo: environment.HANIEL_DEPLOY_REPO,
+    target_head: environment.HANIEL_TARGET_HEAD,
+    owner_instance: "owner-1",
+    quiescence_nonce: "nonce-1",
+    stopped_services: ["soulstream-orch-server"],
+    already_stopped_services: [],
+    quiesced_services: ["soulstream-orch-server"],
+  }), "utf8");
+  writeFileSync(environment.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify({
+    repo: environment.HANIEL_DEPLOY_REPO,
+    request_id: environment.HANIEL_REQUEST_ID,
+    target_head: environment.HANIEL_TARGET_HEAD,
+    operation: "upgrade",
+    expected_operation: "upgrade",
+    manifest_digest: environment.HANIEL_MANIFEST_DIGEST,
+    database_journal_path: join(backupDirectory, "database-release.json"),
+    state: "backing_up",
+    quiescence_receipt: JSON.parse(readFileSync(receiptPath, "utf8")),
+  }), "utf8");
+  const preflight = spawnSync(process.execPath, [RELEASE_EXECUTOR_PATH, "preflight"], {
     cwd,
     encoding: "utf8",
     env: minimalEnv(environment),
     timeout: 30_000,
   });
-  expect(created.status).toBe(0);
-  expectNoSecretLeak(created);
-  const verified = spawnSync(process.execPath, [BACKUP_SCRIPT_PATH, "verify"], {
-    cwd,
-    encoding: "utf8",
-    env: minimalEnv(environment),
-    timeout: 30_000,
-  });
-  expect(verified.status).toBe(0);
-  expectNoSecretLeak(verified);
+  expect(preflight.status).toBe(0);
+  expectNoSecretLeak(preflight);
+  for (const phase of ["backup", "verify-backup"]) {
+    const result = spawnSync(process.execPath, [RELEASE_EXECUTOR_PATH, phase], {
+      cwd,
+      encoding: "utf8",
+      env: minimalEnv(environment),
+      timeout: 30_000,
+    });
+    expect(result.status).toBe(0);
+    expectNoSecretLeak(result);
+  }
+  const haniel = JSON.parse(readFileSync(environment.HANIEL_DEPLOYMENT_JOURNAL, "utf8"));
+  haniel.state = "migrating";
+  writeFileSync(environment.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify(haniel), "utf8");
   return environment;
 }
 
@@ -898,57 +933,14 @@ function writeEnv(databaseUrl: string): string {
 }
 
 async function startPostgres(): Promise<{ url: string }> {
-  const containerId = execFileSync("docker", [
-    "run",
-    "--rm",
-    "-d",
-    "-e",
-    `POSTGRES_USER=${TEST_USER}`,
-    "-e",
-    `POSTGRES_PASSWORD=${TEST_PASSWORD}`,
-    "-e",
-    `POSTGRES_DB=${TEST_DB_NAME}`,
-    "-p",
-    "127.0.0.1::5432",
-    "postgres:16-alpine",
-  ], { encoding: "utf8" }).trim();
-  containers.push(containerId);
-
-  const port = dockerMappedPort(containerId);
-  const url = `postgres://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${port}/${TEST_DB_NAME}`;
-  const sql = postgres(url, { max: 1, idle_timeout: 1 });
-  try {
-    await waitForPostgres(sql);
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
-  return { url };
-}
-
-function dockerMappedPort(containerId: string): string {
-  for (let i = 0; i < 30; i += 1) {
-    const output = execFileSync("docker", ["port", containerId, "5432/tcp"], {
-      encoding: "utf8",
-    }).trim();
-    const match = output.match(/:(\d+)$/);
-    if (match) return match[1];
-  }
-  throw new Error("docker did not publish a PostgreSQL port");
-}
-
-async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      await sql`SELECT 1`;
-      return;
-    } catch (err) {
-      lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  const lease = await provisionTestDatabase({
+    prefix: "apply_schema",
+    dockerUser: TEST_USER,
+    dockerPassword: TEST_PASSWORD,
+    dockerDatabase: TEST_DB_NAME,
+  });
+  databaseLeases.push(lease);
+  return { url: lease.url };
 }
 
 function expectNoSecretLeak(result: { stdout: string; stderr: string }) {

@@ -1,0 +1,17 @@
+{
+  "schema_version": "soulstream.database-release-writer-sources.v1",
+  "haniel_contract_sha": "3d02d57eb4a78b2eca18acb69c9f099424537c6e",
+  "sources": {
+    "central": {
+      "path": "soul-server-ts/tests/fixtures/eiaserinnys-haniel-services.yaml",
+      "sha256": "023fd2de7b09f0ed197fcbd2f5ba69abf394cf8f569bc756064e07d18ce4dc80",
+      "provenance_path": "deploy/eiaserinnys-haniel-writer-provenance.json",
+      "source_sha256": "794362996749b13b8d3e52191f89544ece63c5a3e8403278df2f2fae19765091",
+      "live_gate": "HANIEL_LIVE_CONFIG_PATH=<node-config> python deploy/generate_haniel_writer_projection.py --source <node-config> --fixture soul-server-ts/tests/fixtures/eiaserinnys-haniel-services.yaml --provenance deploy/eiaserinnys-haniel-writer-provenance.json --check"
+    },
+    "standalone": {
+      "path": "install/haniel-standalone.yaml.template",
+      "sha256": "67c6db456b0f59366f47c08c8283d9d389f0bb5e12b79c0fcdfef093e839d26e"
+    }
+  }
+}

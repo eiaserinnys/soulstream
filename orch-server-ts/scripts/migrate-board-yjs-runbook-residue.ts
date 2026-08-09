@@ -5,6 +5,13 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import * as Y from "yjs";
 
+import {
+  assertDatabaseReleaseSubphaseGate,
+  databaseReleaseFailure,
+  serializeDatabaseReleaseResult,
+} from
+  "../../packages/db-schema/scripts/release-executor.mjs";
+
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
 import { assertBoardYjsQuiescedApplyPreflight } from
   "../src/board-yjs/board_yjs_quiesced_preflight.js";
@@ -43,14 +50,23 @@ loadDeploymentEnvironmentIfPresent();
 if (apply) {
   const nodeId = requiredEnv("SOULSTREAM_NODE_ID");
   if (nodeId !== BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID) {
-    process.stdout.write(`${JSON.stringify({
-      event: "board_yjs_runbook_migration",
-      status: "skipped",
-      reason: "non_central_node",
-      nodeId,
-    })}\n`);
-    process.exit(0);
+    const error = new Error(
+      `NON_CENTRAL_MUTATION_FORBIDDEN: ${nodeId} cannot apply the central board migration`,
+    );
+    process.stderr.write(
+      `${serializeDatabaseReleaseResult(
+        databaseReleaseFailure(error, process.env, "board_yjs_runbook_residue"),
+        process.env,
+      )}\n`,
+    );
+    process.exit(1);
   }
+}
+if (apply) {
+  await assertDatabaseReleaseSubphaseGate({
+    env: process.env,
+    subphase: "board_yjs_runbook_residue",
+  });
 }
 await assertBoardYjsQuiescedApplyPreflight({
   apply,
@@ -188,7 +204,7 @@ try {
     projection: inventory.projection,
     ...(!summaryOnly ? { documents: affected } : {}),
   };
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!apply) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
   if (!apply) {
     process.stdout.write(
@@ -224,14 +240,18 @@ try {
       })),
       repository,
     });
-    for (const result of results) {
-      process.stdout.write(`${JSON.stringify({
-        ok: true,
+    process.stdout.write(`${serializeDatabaseReleaseResult({
+      schema_version: "soulstream.database-release.v1",
+      ok: true,
+      operation: process.env.HANIEL_DATABASE_OPERATION ?? null,
+      phase: "board_yjs_runbook_residue",
+      status: "subphase_complete",
+      results: results.map((result) => ({
         sourceDocumentName: result.sourceDocumentName,
         canonicalDocumentName: result.canonicalDocumentName,
         attempts: result.attempts,
-      })}\n`);
-    }
+      })),
+    }, process.env)}\n`);
   }
 } finally {
   await sql.end();

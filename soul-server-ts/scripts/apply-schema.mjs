@@ -2,16 +2,16 @@
 import { pathToFileURL } from "node:url";
 
 import {
-  formatMigrationError,
-  runMigrations,
-} from "../../packages/db-schema/scripts/migrate.mjs";
+  formatDatabaseReleaseError,
+  runDatabaseRelease,
+} from "../../packages/db-schema/scripts/release-executor.mjs";
 
 export async function applySchema(options = {}) {
-  return await runMigrations("initialize", options);
+  return await runDatabaseRelease("initialize", options);
 }
 
 export function formatApplySchemaError(error, env = process.env) {
-  return formatMigrationError(error, env);
+  return formatDatabaseReleaseError(error, env);
 }
 
 async function main() {

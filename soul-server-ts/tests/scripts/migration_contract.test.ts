@@ -72,9 +72,23 @@ describe("versioned migration contract", () => {
     ), "utf8"));
 
     expect(manifest.environment_service).toBe("soulstream-orch-server");
-    expect(manifest.recovery.fallback).toMatchObject({
-      name: "recover-previous-release-data",
-      command: "node packages/db-schema/scripts/backup.mjs recover",
+    expect(manifest.migration).toMatchObject({
+      destructive: true,
+      operation: "discover",
+      result_contract: "soulstream.database-release.v1",
+      provenance_probe: {
+        prepare: expect.objectContaining({
+          name: "prepare-database-release-probe",
+          command: expect.stringContaining("--ignore-scripts"),
+        }),
+        probe: expect.objectContaining({
+          command: expect.stringContaining("release-executor.mjs probe"),
+        }),
+      },
+    });
+    expect(manifest.recovery.command).toMatchObject({
+      name: "recover-database-release",
+      command: expect.stringContaining("release-executor.mjs recover"),
     });
   });
 
@@ -88,26 +102,68 @@ describe("versioned migration contract", () => {
     const cluster = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest.json", import.meta.url),
     ), "utf8"));
+    const standaloneContract = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/database-release-standalone.json", import.meta.url),
+    ), "utf8"));
+    const centralContract = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/database-release-central.json", import.meta.url),
+    ), "utf8"));
 
     expect(worker).not.toHaveProperty("environment_service");
     expect(worker).not.toHaveProperty("migration");
     expect(worker.post_start_verify).toEqual([{
       name: "verify-release-health",
-      command: "node soul-server-ts/scripts/verify-release-health.mjs",
+      command: "node soul-server-ts/scripts/verify-release-health.mjs --scope cluster",
       timeout_seconds: 300,
     }]);
     expect(JSON.stringify(worker)).not.toMatch(/migrate|backup|DATABASE_URL/);
 
     expect(standalone.environment_service).toBe("soul-server-ts");
-    expect(standalone.migration).toEqual({
-      ...cluster.migration,
+    expect(standalone.migration).toMatchObject({
+      destructive: true,
+      operation: "discover",
+      result_contract: "soulstream.database-release.v1",
+      preflight: {
+        command: expect.stringContaining("--manifest deploy/release-manifest-standalone.json"),
+      },
+      backup: {
+        command: expect.stringContaining("--manifest deploy/release-manifest-standalone.json"),
+      },
+      verify_backup: {
+        command: expect.stringContaining("--manifest deploy/release-manifest-standalone.json"),
+      },
       apply: {
         name: "apply-migrations",
-        command: "node packages/db-schema/scripts/migrate.mjs apply",
+        command: "node packages/db-schema/scripts/release-executor.mjs apply "
+          + "--manifest deploy/release-manifest-standalone.json "
+          + "--database-contract deploy/database-release-standalone.json",
         timeout_seconds: 300,
       },
     });
-    expect(standalone.post_start_verify).toEqual(cluster.post_start_verify.slice(0, -1));
+    expect(standaloneContract).toEqual({
+      schema_version: "soulstream.database-release-manifest.v1",
+      writer_services: ["soul-server-ts"],
+      required_subphases: [],
+    });
+    expect(centralContract).toEqual({
+      schema_version: "soulstream.database-release-manifest.v1",
+      writer_services: ["soulstream-orch-server", "soulstream-soul-server-ts"],
+      required_subphases: ["board_yjs_runbook_residue"],
+    });
+    expect(standalone.post_start_verify).toEqual(
+      cluster.post_start_verify.slice(0, -1).map((command: { name: string }) => (
+        command.name === "verify-release-health"
+          ? { ...command, command: "node soul-server-ts/scripts/verify-release-health.mjs --scope standalone" }
+          : command.name === "verify-migration-ledger"
+            ? {
+              ...command,
+              command: "node packages/db-schema/scripts/release-executor.mjs verify "
+                + "--manifest deploy/release-manifest-standalone.json "
+                + "--database-contract deploy/database-release-standalone.json",
+            }
+          : command
+      )),
+    );
     expect(cluster.post_start_verify.at(-1)).toEqual({
       name: "verify-board-yjs-runbook-residue",
       command: "node orch-server-ts/node_modules/tsx/dist/cli.mjs "

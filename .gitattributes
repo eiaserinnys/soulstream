@@ -1,1 +1,4 @@
 deploy/*.json text eol=lf
+packages/db-schema/scripts/*.mjs text eol=lf
+install/haniel-standalone.yaml.template text eol=lf
+soul-server-ts/tests/fixtures/eiaserinnys-haniel-services.yaml text eol=lf

@@ -1,0 +1,5 @@
+{
+  "schema_version": "soulstream.database-release-manifest.v1",
+  "writer_services": ["soulstream-orch-server", "soulstream-soul-server-ts"],
+  "required_subphases": ["board_yjs_runbook_residue"]
+}

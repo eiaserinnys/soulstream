@@ -1,0 +1,208 @@
+{
+  "fixture_sha256": "023fd2de7b09f0ed197fcbd2f5ba69abf394cf8f569bc756064e07d18ce4dc80",
+  "generator": "deploy/generate_haniel_writer_projection.py",
+  "schema_version": "soulstream.haniel-writer-provenance.v1",
+  "source_locator": "eiaserinnys:services/haniel/haniel.yaml",
+  "source_sha256": "794362996749b13b8d3e52191f89544ece63c5a3e8403278df2f2fae19765091",
+  "writer_graph": {
+    "repos": {
+      "atom": {
+        "branch": "main"
+      },
+      "celeris-poc": {
+        "branch": "main"
+      },
+      "clipper": {
+        "branch": "main"
+      },
+      "corksheet": {
+        "branch": "main"
+      },
+      "eb-lore-mcp-src": {
+        "branch": "main"
+      },
+      "eias-ninelives-x-ops": {
+        "branch": "main"
+      },
+      "haniel": {
+        "branch": "main"
+      },
+      "jeju-travel-map": {
+        "branch": "main"
+      },
+      "ktx-reservation": {
+        "branch": "main"
+      },
+      "majiku": {
+        "branch": "main"
+      },
+      "mini-soulstream-ts": {
+        "branch": "main"
+      },
+      "miniverse-server": {
+        "branch": "main"
+      },
+      "pages": {
+        "branch": "main"
+      },
+      "remiel": {
+        "branch": "main"
+      },
+      "seosoyoung": {
+        "branch": "main"
+      },
+      "serendipity": {
+        "branch": "main"
+      },
+      "soulstream": {
+        "branch": "main",
+        "release_manifest": "deploy/release-manifest.json"
+      },
+      "tauri-app-updater": {
+        "branch": "main"
+      },
+      "umami": {
+        "branch": "master"
+      },
+      "undercover-seosoyoung": {
+        "branch": "main"
+      },
+      "unhinged-students": {
+        "branch": "master"
+      },
+      "zombie-city": {
+        "branch": "main"
+      },
+      "zombie-labyrinth": {
+        "branch": "main"
+      }
+    },
+    "services": {
+      "atom-api": {
+        "after": [],
+        "enabled": true,
+        "repo": "atom"
+      },
+      "celeris-poc": {
+        "after": [],
+        "enabled": true,
+        "repo": "celeris-poc"
+      },
+      "clipper-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "clipper"
+      },
+      "corksheet": {
+        "after": [],
+        "enabled": true,
+        "repo": "corksheet"
+      },
+      "jeju-map-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "jeju-travel-map"
+      },
+      "ktx-reservation": {
+        "after": [],
+        "enabled": true,
+        "repo": "ktx-reservation"
+      },
+      "majiku-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "majiku"
+      },
+      "mcp-eb-lore": {
+        "after": [],
+        "enabled": true,
+        "repo": "eb-lore-mcp-src"
+      },
+      "mini-soulstream-ts": {
+        "after": [],
+        "enabled": true,
+        "repo": "mini-soulstream-ts"
+      },
+      "miniverse-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "miniverse-server"
+      },
+      "openai-mcp-tunnel": {
+        "after": [],
+        "enabled": true
+      },
+      "openai-mcp-tunnel-soulstream": {
+        "after": [],
+        "enabled": true
+      },
+      "pages": {
+        "after": [],
+        "enabled": false,
+        "repo": "pages"
+      },
+      "remiel-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "remiel"
+      },
+      "seosoyoung": {
+        "after": [],
+        "enabled": true,
+        "repo": "seosoyoung"
+      },
+      "serendipity": {
+        "after": [],
+        "enabled": true,
+        "repo": "serendipity"
+      },
+      "soulstream-orch-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "soulstream"
+      },
+      "soulstream-soul-server-ts": {
+        "after": [
+          "soulstream-orch-server"
+        ],
+        "enabled": true,
+        "repo": "soulstream"
+      },
+      "tauri-app-updater": {
+        "after": [],
+        "enabled": true,
+        "repo": "tauri-app-updater"
+      },
+      "umami": {
+        "after": [],
+        "enabled": true,
+        "repo": "umami"
+      },
+      "undercover-seosoyoung": {
+        "after": [],
+        "enabled": true,
+        "repo": "undercover-seosoyoung"
+      },
+      "unhinged-students": {
+        "after": [],
+        "enabled": true,
+        "repo": "unhinged-students"
+      },
+      "x-ops-dashboard": {
+        "after": [],
+        "enabled": true,
+        "repo": "eias-ninelives-x-ops"
+      },
+      "zombie-city-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "zombie-city"
+      },
+      "zombie-labyrinth-server": {
+        "after": [],
+        "enabled": true,
+        "repo": "zombie-labyrinth"
+      }
+    }
+  }
+}

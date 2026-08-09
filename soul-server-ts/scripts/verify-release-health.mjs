@@ -125,6 +125,7 @@ export async function readMcpHealth({ url, token, taskId }) {
 
 export async function verifyReleaseHealth(
   {
+    scope,
     taskId,
     env = process.env,
     cwd = process.cwd(),
@@ -133,6 +134,9 @@ export async function verifyReleaseHealth(
     mcpRead = readMcpHealth,
   },
 ) {
+  if (scope !== "standalone" && scope !== "cluster") {
+    throw new Error("release health scope must be standalone or cluster");
+  }
   dotenv.config({
     path: deploymentEnvironmentPath(env, cwd),
     override: true,
@@ -144,10 +148,22 @@ export async function verifyReleaseHealth(
   const base = localBaseUrl(env);
   const soulHealthUrl = new URL("/health", base);
   const mcpUrl = new URL(required(env, "MCP_PATH"), base);
+  const token = required(env, "AUTH_BEARER_TOKEN");
+  if (scope === "standalone") {
+    const [soul, mcp] = await Promise.all([
+      fetchHealth(soulHealthUrl, fetchImpl),
+      mcpRead({ url: mcpUrl, token, taskId }),
+    ]);
+    return {
+      status: "ok",
+      scope,
+      soul: { url: soulHealthUrl.toString(), status: soul.status },
+      mcp,
+    };
+  }
   const upstreamUrl = required(env, "SOULSTREAM_UPSTREAM_URL");
   const orchHealthUrl = deriveOrchestratorHealthUrl(upstreamUrl);
   const orchNodesUrl = deriveOrchestratorNodesUrl(upstreamUrl);
-  const token = required(env, "AUTH_BEARER_TOKEN");
   const nodeId = required(env, "SOULSTREAM_NODE_ID");
 
   const [orchestrator, soul, node, mcp] = await Promise.all([
@@ -163,6 +179,7 @@ export async function verifyReleaseHealth(
   ]);
   return {
     status: "ok",
+    scope,
     orchestrator: { url: orchHealthUrl.toString(), status: orchestrator.status },
     soul: { url: soulHealthUrl.toString(), status: soul.status },
     node,
@@ -178,14 +195,18 @@ export function formatHealthError(error, env = process.env) {
   return text;
 }
 
-function taskIdArgument(argv) {
-  const index = argv.indexOf("--task-id");
+function argument(argv, name) {
+  const index = argv.indexOf(name);
   return index >= 0 ? argv[index + 1] : null;
 }
 
 async function main() {
   try {
-    const report = await verifyReleaseHealth({ taskId: taskIdArgument(process.argv.slice(2)) });
+    const argv = process.argv.slice(2);
+    const report = await verifyReleaseHealth({
+      scope: argument(argv, "--scope"),
+      taskId: argument(argv, "--task-id"),
+    });
     console.log(JSON.stringify(report));
   } catch (error) {
     console.error(JSON.stringify({ status: "error", message: formatHealthError(error) }));

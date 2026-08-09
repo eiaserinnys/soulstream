@@ -23,6 +23,11 @@ import {
   validateBackupGate,
 } from "./migration-contract.mjs";
 import { assertPostgresBackupPrerequisites } from "./postgres-backup-tools.mjs";
+import {
+  assertDatabaseReleaseApplyGate,
+  inspectUserObjectInventory,
+} from "./database-release-journal.mjs";
+import { databaseReleaseFailure } from "./database-release-result.mjs";
 
 const MODES = new Set([
   "preflight",
@@ -205,10 +210,21 @@ export async function assertRollbackUnsafeApplyGates(
   };
 }
 
-async function applyPending(sql, migrations, releaseId, appliedKind) {
+async function applyPending(sql, migrations, releaseId, appliedKind, env) {
   return await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_ID})`;
-    const plan = await readMigrationPlan(tx, migrations);
+    let plan;
+    try {
+      plan = await readMigrationPlan(tx, migrations);
+    } catch (error) {
+      throw new Error(`JOURNAL_GATE_FAILED: current migration plan is invalid: ${error.message}`);
+    }
+    await assertDatabaseReleaseApplyGate({
+      env,
+      operation: "upgrade",
+      plan,
+      inventory: await inspectUserObjectInventory(tx),
+    });
     if (plan.state === "empty") {
       throw new Error("normal migration cannot initialize an empty database; use fresh-install");
     }
@@ -224,10 +240,21 @@ async function applyPending(sql, migrations, releaseId, appliedKind) {
   });
 }
 
-async function freshInstall(sql, migrations, releaseId) {
+async function freshInstall(sql, migrations, releaseId, env) {
   return await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_ID})`;
-    const plan = await readMigrationPlan(tx, migrations);
+    let plan;
+    try {
+      plan = await readMigrationPlan(tx, migrations);
+    } catch (error) {
+      throw new Error(`JOURNAL_GATE_FAILED: current migration plan is invalid: ${error.message}`);
+    }
+    await assertDatabaseReleaseApplyGate({
+      env,
+      operation: "fresh_install",
+      plan,
+      inventory: await inspectUserObjectInventory(tx),
+    });
     if (plan.state !== "empty" || plan.ledger.length > 0) {
       throw new Error("fresh-install requires an empty database");
     }
@@ -242,7 +269,11 @@ async function freshInstall(sql, migrations, releaseId) {
 
 export async function runMigrations(
   mode,
-  { env = process.env, cwd = process.cwd(), sql: injectedSql = null } = {},
+  {
+    env = process.env,
+    cwd = process.cwd(),
+    sql: injectedSql = null,
+  } = {},
 ) {
   if (!MODES.has(mode)) throw new Error(`unknown migration mode: ${mode}`);
   dotenv.config({
@@ -276,7 +307,7 @@ export async function runMigrations(
       return planReport(mode, initial);
     }
     if (mode === "fresh-install" || (mode === "initialize" && initial.state === "empty")) {
-      await freshInstall(sql, migrations, releaseId);
+      await freshInstall(sql, migrations, releaseId, env);
     } else {
       await assertDestructivePreflight(initial);
       await assertRollbackUnsafeApplyGates(initial, env);
@@ -285,6 +316,7 @@ export async function runMigrations(
         migrations,
         releaseId,
         mode === "recover" ? "recovery" : "migration",
+        env,
       );
     }
     const finalPlan = await readMigrationPlan(sql, migrations);
@@ -306,14 +338,23 @@ export function formatMigrationError(error, env = process.env) {
 
 async function main() {
   const mode = process.argv[2];
+  const mutating = new Set(["initialize", "fresh-install", "apply", "recover"]);
   try {
-    const report = await runMigrations(mode);
+    const report = mutating.has(mode)
+      ? await import("./release-executor.mjs").then(({ runDatabaseRelease }) => (
+        runDatabaseRelease(mode === "fresh-install" ? "initialize" : mode, mode === "fresh-install"
+          ? { env: { ...process.env, HANIEL_EXPECTED_DATABASE_OPERATION: "fresh_install" } }
+          : {})
+      ))
+      : await runMigrations(mode);
     console.log(JSON.stringify(report));
   } catch (error) {
-    console.error(JSON.stringify({ status: "error", mode, message: formatMigrationError(error) }));
+    console.error(JSON.stringify(mutating.has(mode)
+      ? databaseReleaseFailure(error, process.env, mode)
+      : { status: "error", mode, message: formatMigrationError(error) }));
     process.exitCode = 1;
   }
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
-if (import.meta.url === entrypoint) await main();
+if (import.meta.url === entrypoint) void main();
