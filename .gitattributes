@@ -1,1 +1,2 @@
 deploy/*.json text eol=lf
+packages/db-schema/scripts/*.mjs text eol=lf

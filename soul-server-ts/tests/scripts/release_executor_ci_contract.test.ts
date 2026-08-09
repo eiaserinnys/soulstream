@@ -8,6 +8,10 @@ const workflowPath = fileURLToPath(new URL(
   "../../../.github/workflows/test-install.yml",
   import.meta.url,
 ));
+const gitAttributesPath = fileURLToPath(new URL(
+  "../../../.gitattributes",
+  import.meta.url,
+));
 const databaseTestFiles = [
   "release_executor.test.ts",
   "migration_runner.test.ts",
@@ -15,6 +19,11 @@ const databaseTestFiles = [
 ];
 
 describe("database release CI contract", () => {
+  it("keeps executable database release modules LF-normalized on Windows", () => {
+    const attributes = readFileSync(gitAttributesPath, "utf8");
+    expect(attributes).toContain("packages/db-schema/scripts/*.mjs text eol=lf");
+  });
+
   it("pins a Node 20 compatible pnpm instead of resolving the moving Corepack latest", () => {
     const workflowText = readFileSync(workflowPath, "utf8");
     const workflow = parse(workflowText);
