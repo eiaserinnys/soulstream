@@ -235,7 +235,10 @@ export async function inspectUserObjectInventory(sql) {
           'deterministic', collation_value.collisdeterministic,
           'collate', collation_value.collcollate,
           'ctype', collation_value.collctype,
-          'locale', collation_value.colliculocale
+          'locale', COALESCE(
+            to_jsonb(collation_value)->>'colllocale',
+            to_jsonb(collation_value)->>'colliculocale'
+          )
         )::text
       FROM pg_collation collation_value
       JOIN all_user_namespaces namespace ON namespace.oid = collation_value.collnamespace

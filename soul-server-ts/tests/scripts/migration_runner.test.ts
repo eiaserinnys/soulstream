@@ -47,12 +47,10 @@ describe.sequential("versioned migration runner", () => {
     const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
 
     const prerequisites = await assertPostgresBackupPrerequisites({ databaseUrl: url });
-    expect(prerequisites).toMatchObject({
-      server_major: 16,
-      pg_dump_major: 16,
-      pg_restore_major: 16,
-      restore_capability: "verified",
-    });
+    expect(prerequisites.server_major).toBeGreaterThanOrEqual(16);
+    expect(prerequisites.pg_dump_major).toBeGreaterThanOrEqual(prerequisites.server_major);
+    expect(prerequisites.pg_restore_major).toBeGreaterThanOrEqual(prerequisites.server_major);
+    expect(prerequisites.restore_capability).toBe("verified");
 
     const fresh = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "initialize");
     expect(fresh.status).toBe(0);
