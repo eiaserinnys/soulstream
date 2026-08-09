@@ -1,5 +1,8 @@
 name: Test Windows Installer
 
+env:
+  PNPM_VERSION: '10.32.1'
+
 on:
   push:
     branches: [main]
@@ -54,6 +57,7 @@ jobs:
         shell: bash
         run: |
           corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
           corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
 
       - name: Install pinned Haniel release contract
@@ -110,6 +114,7 @@ jobs:
         shell: bash
         run: |
           corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
           corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
 
       - name: Run isolated PostgreSQL database release contracts
@@ -171,6 +176,7 @@ jobs:
         shell: pwsh
         run: |
           corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
           corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
 
       - name: Expose PostgreSQL 16+ client tools

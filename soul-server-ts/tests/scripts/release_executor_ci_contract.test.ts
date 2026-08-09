@@ -15,6 +15,15 @@ const databaseTestFiles = [
 ];
 
 describe("database release CI contract", () => {
+  it("pins a Node 20 compatible pnpm instead of resolving the moving Corepack latest", () => {
+    const workflowText = readFileSync(workflowPath, "utf8");
+    const workflow = parse(workflowText);
+    expect(workflow.env.PNPM_VERSION).toBe("10.32.1");
+    expect(workflowText.match(/corepack prepare pnpm@\$\{\{ env\.PNPM_VERSION \}\} --activate/g))
+      .toHaveLength(3);
+    expect(workflowText.match(/node-version: '20'/g)).toHaveLength(3);
+  });
+
   it("parses and triggers for every executor contract surface", () => {
     const workflow = parse(readFileSync(workflowPath, "utf8"));
     const expected = [
