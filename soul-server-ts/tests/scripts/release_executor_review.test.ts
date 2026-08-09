@@ -292,7 +292,7 @@ describe.sequential("database release review regressions", () => {
           },
           sync: async () => {
             events.push(isDirectory ? "directory-sync" : "file-sync");
-            return await handle.sync();
+            if (!isDirectory) await handle.sync();
           },
           close: async () => await handle.close(),
         };

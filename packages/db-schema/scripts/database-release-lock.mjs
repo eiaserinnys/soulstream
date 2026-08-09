@@ -154,15 +154,39 @@ async function acquireReclaimClaim(lockPath, deadline, platform) {
   }
 }
 
-async function releaseReclaimClaim(claim, platform) {
-  const current = await inspectGeneration(claim.claimPath, platform);
-  if (!current.exists) return;
-  if (current.owner?.nonce !== claim.owner.nonce) {
-    throw new Error("RELEASE_LEASE_CONFLICT: reclaim claim ownership changed");
-  }
+async function releaseReclaimClaim(claim, platform, deadline) {
   const retired = `${claim.claimPath}.released-${claim.owner.nonce}`;
-  await rename(claim.claimPath, retired);
-  await rm(retired, { recursive: true, force: false });
+  for (;;) {
+    const current = await inspectGeneration(claim.claimPath, platform);
+    if (!current.exists) return;
+    if (current.owner?.nonce !== claim.owner.nonce) {
+      throw new Error("RELEASE_LEASE_CONFLICT: reclaim claim ownership changed");
+    }
+    try {
+      await rename(claim.claimPath, retired);
+      // A Windows contender may still have owner.json open while the claim owner
+      // retires the directory. Once the rename succeeds the active claim is gone;
+      // cleanup is best effort and cannot affect a newer claim generation.
+      await rm(retired, {
+        recursive: true,
+        force: true,
+        maxRetries: platform === "win32" ? 10 : 0,
+        retryDelay: POLL_MS,
+      }).catch((error) => {
+        if (platform !== "win32" || error?.code !== "EPERM") throw error;
+      });
+      return;
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      if (platform !== "win32" || error?.code !== "EPERM") throw error;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `RELEASE_LEASE_CONFLICT: timed out releasing reclaim claim ${claim.claimPath}`,
+        );
+      }
+      await sleep(POLL_MS);
+    }
+  }
 }
 
 async function withReclaimClaim(
@@ -177,7 +201,7 @@ async function withReclaimClaim(
   try {
     return await callback();
   } finally {
-    await releaseReclaimClaim(claim, platform);
+    await releaseReclaimClaim(claim, platform, deadline);
   }
 }
 
