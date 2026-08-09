@@ -316,13 +316,14 @@ export async function inspectUserObjectInventory(sql) {
       JOIN pg_class relation ON relation.oid = foreign_table.ftrelid
       JOIN all_user_namespaces namespace ON namespace.oid = relation.relnamespace
       UNION ALL
-      SELECT 'user_mapping', server_value.srvname || ':' ||
+      -- pg_user_mapping is superuser-only; read the pg_user_mappings view instead.
+      -- umoptions is redacted per privilege, so it is excluded to keep the
+      -- fingerprint identical no matter which role runs the inventory.
+      SELECT 'user_mapping', mapping.srvname || ':' ||
           CASE WHEN mapping.umuser = 0 THEN 'PUBLIC' ELSE mapping.umuser::regrole::text END,
-        mapping.oid::text,
-        jsonb_build_object('server', mapping.umserver,
-          'options_digest', md5(COALESCE(array_to_string(mapping.umoptions, ','), '')))::text
-      FROM pg_user_mapping mapping
-      JOIN pg_foreign_server server_value ON server_value.oid = mapping.umserver
+        mapping.umid::text,
+        jsonb_build_object('server', mapping.srvid)::text
+      FROM pg_user_mappings mapping
       UNION ALL
       SELECT 'publication', publication.pubname, publication.oid::text,
         jsonb_build_object('all_tables', publication.puballtables,
@@ -454,12 +455,13 @@ export async function inspectUserObjectInventory(sql) {
           'acl', large_object.lomacl)::text
       FROM pg_largeobject_metadata large_object
       UNION ALL
+      -- subconninfo carries a column-level REVOKE from non-superusers; referencing it
+      -- fails at parse time even behind a CASE, so it stays out of the digest.
       SELECT 'subscription', subscription.subname, subscription.oid::text,
         jsonb_build_object('owner', subscription.subowner::regrole::text,
           'enabled', subscription.subenabled, 'binary', subscription.subbinary,
           'stream', subscription.substream, 'slot', subscription.subslotname,
-          'publications', subscription.subpublications,
-          'connection_digest', md5(subscription.subconninfo))::text
+          'publications', subscription.subpublications)::text
       FROM pg_subscription subscription
       UNION ALL
       SELECT 'extended_statistics', namespace.nspname || '.' || statistics.stxname,

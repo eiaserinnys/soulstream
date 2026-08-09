@@ -164,6 +164,59 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       await sql.end({ timeout: 5 });
     }
   });
+
+  it("reads the inventory as the unprivileged role that runs releases", async () => {
+    const admin = postgres(databaseUrl.replace(`/${DATABASE}`, "/postgres"), {
+      max: 1,
+      idle_timeout: 1,
+    });
+    const database = "release_unprivileged_test_db";
+    const reader = "release_unprivileged_reader";
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${database}`);
+    await admin.unsafe(`CREATE DATABASE ${database}`);
+    await admin.unsafe(`DROP ROLE IF EXISTS ${reader}`);
+    await admin.unsafe(
+      `CREATE ROLE ${reader} LOGIN NOSUPERUSER PASSWORD 'unprivileged-secret'`,
+    );
+    await admin.unsafe(`GRANT CONNECT ON DATABASE ${database} TO ${reader}`);
+    await admin.end({ timeout: 5 });
+
+    const adminUrl = safeTestDatabaseUrl(databaseUrl.replace(`/${DATABASE}`, `/${database}`));
+    const owner = postgres(adminUrl, { max: 1, idle_timeout: 1 });
+    try {
+      // The catalogs a non-superuser cannot read in full: pg_user_mapping is
+      // superuser-only, and pg_subscription.subconninfo carries a column-level REVOKE.
+      await owner.unsafe(`
+        CREATE FOREIGN DATA WRAPPER review_fdw NO HANDLER;
+        CREATE SERVER review_server FOREIGN DATA WRAPPER review_fdw;
+        CREATE USER MAPPING FOR PUBLIC SERVER review_server
+          OPTIONS (user 'review', password 'unprivileged-secret');
+        CREATE SUBSCRIPTION review_subscription
+          CONNECTION 'host=localhost dbname=review password=unprivileged-secret'
+          PUBLICATION review_publication
+          WITH (connect = false, slot_name = NONE);
+        GRANT USAGE ON SCHEMA public TO ${reader};
+      `);
+      const privileged = await inspectUserObjectInventory(owner);
+      const kinds = new Set(privileged.objects.map((item: { kind: string }) => item.kind));
+      expect(kinds).toContain("user_mapping");
+      expect(kinds).toContain("subscription");
+
+      const url = safeTestDatabaseUrl(
+        adminUrl.replace(`//${USER}:${PASSWORD}@`, `//${reader}:unprivileged-secret@`),
+      );
+      const unprivileged = postgres(url, { max: 1, idle_timeout: 1 });
+      try {
+        const inventory = await inspectUserObjectInventory(unprivileged);
+        expect(inventory.object_fingerprint).toBe(privileged.object_fingerprint);
+        expect(JSON.stringify(inventory.objects)).not.toContain("unprivileged-secret");
+      } finally {
+        await unprivileged.end({ timeout: 5 });
+      }
+    } finally {
+      await owner.end({ timeout: 5 });
+    }
+  });
 });
 
 function safeTestDatabaseUrl(value: string) {
