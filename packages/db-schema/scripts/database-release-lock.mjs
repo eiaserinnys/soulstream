@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const POLL_MS = 20;
+const MIN_RECLAIM_RELEASE_WINDOW_MS = 500;
 
 function sleep(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
@@ -201,7 +202,11 @@ async function withReclaimClaim(
   try {
     return await callback();
   } finally {
-    await releaseReclaimClaim(claim, platform, deadline);
+    await releaseReclaimClaim(
+      claim,
+      platform,
+      Math.max(deadline, Date.now() + MIN_RECLAIM_RELEASE_WINDOW_MS),
+    );
   }
 }
 

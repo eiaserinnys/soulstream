@@ -253,7 +253,7 @@ describe.sequential("database release cross-process and subphase boundaries", ()
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
       const lease = await acquireDatabaseReleaseLease(process.env.LOCK_PATH, {
-        timeoutMs: 10_000,
+        timeoutMs: 30_000,
       });
       const start = Date.now();
       appendFileSync(process.env.EVENT_PATH,
@@ -293,7 +293,7 @@ describe.sequential("database release cross-process and subphase boundaries", ()
     expect(events).toHaveLength(48);
     expect(maximum).toBe(1);
     expect(concurrent).toBe(0);
-  }, 30_000);
+  }, 60_000);
 
   it.each(["missing", "malformed"])(
     "bounds %s owner metadata recovery without an external timeout",

@@ -245,7 +245,7 @@ jobs:
             tests/scripts/migration_runner.test.ts `
             tests/scripts/apply_schema.test.ts `
             --maxWorkers=2 --minWorkers=1 `
-            --reporter=json --outputFile=$resultPath
+            --reporter=default --reporter=json --outputFile.json=$resultPath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs `
             (Join-Path "soul-server-ts" $resultPath) 26

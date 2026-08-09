@@ -87,6 +87,8 @@ describe("database release CI contract", () => {
     const commands = job.steps.map((step: { run?: string }) => step.run ?? "").join("\n");
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("TEST_DATABASE_URL");
+    expect(commands).toContain("--reporter=default --reporter=json");
+    expect(commands).toContain("--outputFile.json=$resultPath");
     expect(commands).toContain("verify-vitest-contract-result.mjs");
     expect(commands).toContain("26");
   });
