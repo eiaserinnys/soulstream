@@ -1,5 +1,5 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,35 +7,41 @@ import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  hasTestDatabaseResource,
+  provisionTestDatabase,
+  type TestDatabaseLease,
+} from "./database_test_harness.js";
+
 import { assertPostgresBackupPrerequisites } from
   "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
+import { MIGRATION_LOCK_ID, MIGRATION_LOCK_NAMESPACE } from
+  "../../../packages/db-schema/scripts/migration-contract.mjs";
 
 const MIGRATE = fileURLToPath(
   new URL("../../../packages/db-schema/scripts/migrate.mjs", import.meta.url),
 );
-const BACKUP = fileURLToPath(
-  new URL("../../../packages/db-schema/scripts/backup.mjs", import.meta.url),
+const RELEASE_EXECUTOR = fileURLToPath(
+  new URL("../../../packages/db-schema/scripts/release-executor.mjs", import.meta.url),
 );
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const TEST_USER = "migration_runner_test";
 const TEST_PASSWORD = "migration_runner_secret";
 const TEST_DB = "migration_runner_test_db";
 
-const containers: string[] = [];
+const databaseLeases: TestDatabaseLease[] = [];
 const tempDirs: string[] = [];
-const itWithDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0
+const itWithDatabase = hasTestDatabaseResource()
   ? it
   : it.skip;
 
-afterEach(() => {
+afterEach(async () => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-  for (const container of containers.splice(0)) {
-    execFileSync("docker", ["stop", container], { stdio: "ignore" });
-  }
+  for (const lease of databaseLeases.splice(0)) await lease.cleanup();
 });
 
 describe.sequential("versioned migration runner", () => {
-  itWithDocker("initializes fresh and bootstraps current databases without replaying 041 or 042", async () => {
+  itWithDatabase("initializes fresh and bootstraps current databases without replaying 041 or 042", async () => {
     const url = await startPostgres();
     const cwd = environmentDirectory(url);
     const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
@@ -58,21 +64,62 @@ describe.sequential("versioned migration runner", () => {
       await sql`DROP TABLE schema_migrations`;
 
       const backupDirectory = join(cwd, "backup");
+      mkdirSync(backupDirectory, { recursive: true });
+      const receiptPath = join(backupDirectory, "quiescence.json");
       const gatedEnvironment = {
         ...serviceEnvironment,
         HANIEL_BACKUP_DIR: backupDirectory,
-        HANIEL_TARGET_HEAD: "integration-test-head",
+        HANIEL_DATABASE_OPERATION: "upgrade",
+        HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
+        HANIEL_DATABASE_WRITER_SERVICES: '["soulstream-orch-server"]',
+        HANIEL_DEPLOYMENT_JOURNAL: join(backupDirectory, "haniel-deployment.json"),
+        HANIEL_DEPLOY_REPO: "soulstream",
+        HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),
+        HANIEL_MANIFEST_DIGEST: "a".repeat(64),
+        HANIEL_PREVIOUS_HEAD: "1".repeat(40),
+        HANIEL_QUIESCENCE_RECEIPT: receiptPath,
+        HANIEL_RELEASE_ID: "fresh-install-test",
+        HANIEL_REQUEST_ID: "migration-runner-test",
+        HANIEL_TARGET_HEAD: "2".repeat(40),
       };
-      const backup = runWithEnv(BACKUP, REPOSITORY_ROOT, gatedEnvironment, "create");
+      const receipt = {
+        request_id: gatedEnvironment.HANIEL_REQUEST_ID,
+        repo: gatedEnvironment.HANIEL_DEPLOY_REPO,
+        target_head: gatedEnvironment.HANIEL_TARGET_HEAD,
+        owner_instance: "owner-1",
+        quiescence_nonce: "nonce-1",
+        stopped_services: ["soulstream-orch-server"],
+        already_stopped_services: [],
+        quiesced_services: ["soulstream-orch-server"],
+      };
+      writeFileSync(receiptPath, JSON.stringify(receipt), "utf8");
+      writeFileSync(gatedEnvironment.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify({
+        repo: gatedEnvironment.HANIEL_DEPLOY_REPO,
+        request_id: gatedEnvironment.HANIEL_REQUEST_ID,
+        target_head: gatedEnvironment.HANIEL_TARGET_HEAD,
+        operation: "upgrade",
+        expected_operation: "upgrade",
+        manifest_digest: gatedEnvironment.HANIEL_MANIFEST_DIGEST,
+        database_journal_path: join(backupDirectory, "database-release.json"),
+        state: "backing_up",
+        quiescence_receipt: receipt,
+      }), "utf8");
+      const preflight = runWithEnv(
+        RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "preflight",
+      );
+      expect(preflight.status).toBe(0);
+      const backup = runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "backup");
       expect(backup.status).toBe(0);
       expectNoSecret(backup);
-      const verified = runWithEnv(BACKUP, REPOSITORY_ROOT, gatedEnvironment, "verify");
+      const verified = runWithEnv(
+        RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "verify-backup",
+      );
       expect(verified.status).toBe(0);
       expectNoSecret(verified);
       expect(JSON.parse(readFileSync(join(backupDirectory, "database-backup.json"), "utf8")))
         .toMatchObject({
           status: "verified",
-          target_head: "integration-test-head",
+          target_head: "2".repeat(40),
           destructive_pending: ["053_retire_supervisor.sql"],
           rollback_unsafe_pending: [
             "053_retire_supervisor.sql",
@@ -82,7 +129,11 @@ describe.sequential("versioned migration runner", () => {
         });
       expect(existsSync(join(backupDirectory, "database.dump"))).toBe(true);
 
-      const first = runWithEnv(MIGRATE, REPOSITORY_ROOT, gatedEnvironment, "apply");
+      writeFileSync(gatedEnvironment.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify({
+        ...JSON.parse(readFileSync(gatedEnvironment.HANIEL_DEPLOYMENT_JOURNAL, "utf8")),
+        state: "migrating",
+      }), "utf8");
+      const first = runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "apply");
       expect(first.status).toBe(0);
       expectNoSecret(first);
 
@@ -100,7 +151,7 @@ describe.sequential("versioned migration runner", () => {
             WHERE migration_id = '042_runbook_to_task.sql') AS migration_042_kind
       `;
       expect(rows[0]).toMatchObject({
-        migration_count: 60,
+        migration_count: 61,
         operation_count: 1,
         applied_kind_count: 2,
         applied_kind: "bootstrap",
@@ -108,16 +159,165 @@ describe.sequential("versioned migration runner", () => {
         migration_042_kind: "bootstrap",
       });
 
-      const repeated = runWithEnv(MIGRATE, REPOSITORY_ROOT, gatedEnvironment, "apply");
+      const repeated = runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "apply");
       expect(repeated.status).toBe(0);
       const afterRetry = await sql`
         SELECT COUNT(*)::int AS count FROM schema_migrations
       `;
-      expect(afterRetry[0].count).toBe(60);
+      expect(afterRetry[0].count).toBe(61);
     } finally {
       await sql.end({ timeout: 5 });
     }
   });
+
+  itWithDatabase("revalidates backup, archive, plan and serializes recovery after the advisory wait", async () => {
+    const url = await startPostgres();
+    const cwd = environmentDirectory(url);
+    const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
+    const initialized = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "initialize");
+    expect(initialized.status).toBe(0);
+    const sql = postgres(url, { max: 1, idle_timeout: 1 });
+    try {
+      await sql`DROP TABLE schema_migrations`;
+      const backupDirectory = join(cwd, "review-backup");
+      mkdirSync(backupDirectory, { recursive: true });
+      const receiptPath = join(backupDirectory, "quiescence.json");
+      const deploymentPath = join(backupDirectory, "haniel-deployment.json");
+      const environment = {
+        ...serviceEnvironment,
+        HANIEL_BACKUP_DIR: backupDirectory,
+        HANIEL_DATABASE_OPERATION: "upgrade",
+        HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
+        HANIEL_DATABASE_WRITER_SERVICES: '["soulstream-orch-server"]',
+        HANIEL_DEPLOYMENT_JOURNAL: deploymentPath,
+        HANIEL_DEPLOY_REPO: "soulstream",
+        HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),
+        HANIEL_MANIFEST_DIGEST: "a".repeat(64),
+        HANIEL_PREVIOUS_HEAD: "1".repeat(40),
+        HANIEL_QUIESCENCE_RECEIPT: receiptPath,
+        HANIEL_RELEASE_ID: "review-release",
+        HANIEL_REQUEST_ID: "review-request",
+        HANIEL_TARGET_HEAD: "2".repeat(40),
+      };
+      const receipt = {
+        request_id: environment.HANIEL_REQUEST_ID,
+        repo: environment.HANIEL_DEPLOY_REPO,
+        target_head: environment.HANIEL_TARGET_HEAD,
+        owner_instance: "owner-1",
+        quiescence_nonce: "nonce-1",
+        stopped_services: ["soulstream-orch-server"],
+        already_stopped_services: [],
+        quiesced_services: ["soulstream-orch-server"],
+      };
+      writeFileSync(receiptPath, JSON.stringify(receipt), "utf8");
+      const journalPath = join(backupDirectory, "database-release.json");
+      writeFileSync(deploymentPath, JSON.stringify({
+        repo: environment.HANIEL_DEPLOY_REPO,
+        request_id: environment.HANIEL_REQUEST_ID,
+        target_head: environment.HANIEL_TARGET_HEAD,
+        operation: "upgrade",
+        expected_operation: "upgrade",
+        manifest_digest: environment.HANIEL_MANIFEST_DIGEST,
+        database_journal_path: journalPath,
+        state: "backing_up",
+        quiescence_receipt: receipt,
+      }), "utf8");
+      expect(runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, environment, "preflight").status)
+        .toBe(0);
+      expect(runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, environment, "backup").status)
+        .toBe(0);
+      expect(runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, environment, "verify-backup").status)
+        .toBe(0);
+      writeFileSync(deploymentPath, JSON.stringify({
+        ...JSON.parse(readFileSync(deploymentPath, "utf8")), state: "migrating",
+      }), "utf8");
+      const metadataPath = join(backupDirectory, "database-backup.json");
+      const dumpPath = join(backupDirectory, "database.dump");
+      const metadata = readFileSync(metadataPath);
+      const dump = readFileSync(dumpPath);
+
+      const tamperCases: Array<{
+        name: string;
+        mutate: () => Promise<void> | void;
+        restore: () => Promise<void> | void;
+      }> = [
+        {
+          name: "metadata replacement",
+          mutate: () => writeFileSync(metadataPath, JSON.stringify({
+            ...JSON.parse(metadata.toString("utf8")), verified_at: "replaced",
+          })),
+          restore: () => writeFileSync(metadataPath, metadata),
+        },
+        {
+          name: "metadata deletion",
+          mutate: () => rmSync(metadataPath),
+          restore: () => writeFileSync(metadataPath, metadata),
+        },
+        {
+          name: "archive checksum change",
+          mutate: () => writeFileSync(dumpPath, Buffer.concat([dump, Buffer.from("tampered")])),
+          restore: () => writeFileSync(dumpPath, dump),
+        },
+        {
+          name: "pending plan change",
+          mutate: async () => {
+            await sql.unsafe(`
+              CREATE TABLE schema_migrations (
+                migration_id TEXT PRIMARY KEY,
+                checksum TEXT NOT NULL,
+                release_id TEXT NOT NULL,
+                ordinal INTEGER NOT NULL UNIQUE,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                applied_kind TEXT NOT NULL
+              )
+            `);
+            await sql`
+              INSERT INTO schema_migrations (
+                migration_id, checksum, release_id, ordinal, applied_kind
+              ) VALUES (
+                '001_initial.sql', ${"1".repeat(64)}, 'foreign-release', 1, 'migration'
+              )
+            `;
+          },
+          restore: () => undefined,
+        },
+      ];
+
+      for (const [index, tamper] of tamperCases.entries()) {
+        const lock = await holdMigrationLock(url);
+        const priorRevision = JSON.parse(readFileSync(journalPath, "utf8")).revision;
+        const applying = spawnWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, environment, "apply");
+        await waitForJournal(journalPath, "apply_started", priorRevision + 1);
+        await waitForMigrationLockWait(sql);
+        await tamper.mutate();
+        let recovering: ReturnType<typeof spawnWithEnv> | null = null;
+        if (index === 0) {
+          recovering = spawnWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, {
+            ...environment,
+            HANIEL_DATABASE_OPERATION: "recovery",
+            HANIEL_FAILED_DATABASE_OPERATION: "upgrade",
+          }, "recover");
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          expect(recovering.done, "recovery must wait behind the apply phase lease").toBe(false);
+        }
+        lock.release();
+        await lock.finished;
+        const applyResult = await applying.result;
+        expect(applyResult.status, tamper.name).toBe(1);
+        expect(applyResult.stderr, tamper.name).toContain("JOURNAL_GATE_FAILED");
+        if (recovering) {
+          const recoveryResult = await recovering.result;
+          expect(recoveryResult.status).toBe(1);
+          expect(recoveryResult.stderr).toContain("RECOVERY_FORBIDDEN");
+        }
+        await tamper.restore();
+      }
+      const ledger = await sql`SELECT COUNT(*)::int AS count FROM schema_migrations`;
+      expect(ledger[0].count).toBe(1);
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  }, 120_000);
 });
 
 async function seedCurrentTask(sql: ReturnType<typeof postgres>) {
@@ -178,44 +378,93 @@ function environmentDirectory(databaseUrl: string) {
 }
 
 async function startPostgres() {
-  const container = execFileSync("docker", [
-    "run", "--rm", "-d",
-    "-e", `POSTGRES_USER=${TEST_USER}`,
-    "-e", `POSTGRES_PASSWORD=${TEST_PASSWORD}`,
-    "-e", `POSTGRES_DB=${TEST_DB}`,
-    "-p", "127.0.0.1::5432",
-    "postgres:16-alpine",
-  ], { encoding: "utf8" }).trim();
-  containers.push(container);
-  const port = dockerPort(container);
-  const url = `postgres://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${port}/${TEST_DB}`;
-  const sql = postgres(url, { max: 1, idle_timeout: 1 });
-  try {
-    const deadline = Date.now() + 30_000;
-    while (true) {
-      try {
-        await sql`SELECT 1`;
-        break;
-      } catch (error) {
-        if (Date.now() >= deadline) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
-  return url;
-}
-
-function dockerPort(container: string) {
-  const output = execFileSync("docker", ["port", container, "5432/tcp"], {
-    encoding: "utf8",
-  }).trim();
-  const match = output.match(/:(\d+)$/);
-  if (!match) throw new Error("docker did not publish PostgreSQL port");
-  return match[1];
+  const lease = await provisionTestDatabase({
+    prefix: "migration_runner",
+    dockerUser: TEST_USER,
+    dockerPassword: TEST_PASSWORD,
+    dockerDatabase: TEST_DB,
+  });
+  databaseLeases.push(lease);
+  return lease.url;
 }
 
 function expectNoSecret(result: { stdout: string; stderr: string }) {
   expect(`${result.stdout}\n${result.stderr}`).not.toContain(TEST_PASSWORD);
+}
+
+function spawnWithEnv(
+  script: string,
+  cwd: string,
+  extraEnvironment: Record<string, string>,
+  ...args: string[]
+) {
+  const child = spawn(process.execPath, [script, ...args], {
+    cwd,
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      TMPDIR: process.env.TMPDIR ?? tmpdir(),
+      ...extraEnvironment,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  let done = false;
+  const result = new Promise<{ status: number | null; stdout: string; stderr: string }>(
+    (resolve) => {
+      child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+      child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+      child.on("close", (status) => {
+        done = true;
+        resolve({ status, stdout, stderr });
+      });
+    },
+  );
+  return { child, result, get done() { return done; } };
+}
+
+async function holdMigrationLock(databaseUrl: string) {
+  const lockSql = postgres(databaseUrl, { max: 1, idle_timeout: 1 });
+  let release!: () => void;
+  let locked!: () => void;
+  const acquired = new Promise<void>((resolve) => { locked = resolve; });
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  const finished = lockSql.begin(async (transaction) => {
+    await transaction`
+      SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_ID})
+    `;
+    locked();
+    await wait;
+  }).finally(async () => await lockSql.end({ timeout: 5 }));
+  await acquired;
+  return { release, finished };
+}
+
+async function waitForJournal(path: string, status: string, minimumRevision: number) {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const journal = JSON.parse(readFileSync(path, "utf8"));
+    if (journal.status === status && journal.revision >= minimumRevision) return journal;
+    if (Date.now() >= deadline) {
+      throw new Error(`journal did not reach ${status} revision ${minimumRevision}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function waitForMigrationLockWait(sql: ReturnType<typeof postgres>) {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const rows = await sql`
+      SELECT COUNT(*)::int AS count
+      FROM pg_stat_activity
+      WHERE pid <> pg_backend_pid()
+        AND wait_event_type = 'Lock'
+        AND query LIKE '%pg_advisory_xact_lock%'
+    `;
+    if (rows[0].count > 0) return;
+    if (Date.now() >= deadline) throw new Error("apply did not wait on migration advisory lock");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }

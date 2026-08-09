@@ -1,18 +1,220 @@
 repos:
+  atom:
+    branch: main
+    path: ./services/atom
+    url: https://example.invalid/atom.git
+  celeris-poc:
+    branch: main
+    path: ./services/celeris-poc
+    url: https://example.invalid/celeris-poc.git
+  clipper:
+    branch: main
+    path: ./services/clipper
+    url: https://example.invalid/clipper.git
+  corksheet:
+    branch: main
+    path: ./services/corksheet
+    url: https://example.invalid/corksheet.git
+  eb-lore-mcp-src:
+    branch: main
+    path: ./services/eb-lore-mcp-src
+    url: https://example.invalid/eb-lore-mcp-src.git
+  eias-ninelives-x-ops:
+    branch: main
+    path: ./services/eias-ninelives-x-ops
+    url: https://example.invalid/eias-ninelives-x-ops.git
+  haniel:
+    branch: main
+    path: ./services/haniel
+    url: https://example.invalid/haniel.git
+  jeju-travel-map:
+    branch: main
+    path: ./services/jeju-travel-map
+    url: https://example.invalid/jeju-travel-map.git
+  ktx-reservation:
+    branch: main
+    path: ./services/ktx-reservation
+    url: https://example.invalid/ktx-reservation.git
+  majiku:
+    branch: main
+    path: ./services/majiku
+    url: https://example.invalid/majiku.git
+  mini-soulstream-ts:
+    branch: main
+    path: ./services/mini-soulstream-ts
+    url: https://example.invalid/mini-soulstream-ts.git
+  miniverse-server:
+    branch: main
+    path: ./services/miniverse-server
+    url: https://example.invalid/miniverse-server.git
+  pages:
+    branch: main
+    path: ./services/pages
+    url: https://example.invalid/pages.git
+  remiel:
+    branch: main
+    path: ./services/remiel
+    url: https://example.invalid/remiel.git
+  seosoyoung:
+    branch: main
+    path: ./services/seosoyoung
+    url: https://example.invalid/seosoyoung.git
+  serendipity:
+    branch: main
+    path: ./services/serendipity
+    url: https://example.invalid/serendipity.git
   soulstream:
+    branch: main
     path: ./services/soulstream
     release_manifest: deploy/release-manifest.json
-
+    url: https://example.invalid/soulstream.git
+  tauri-app-updater:
+    branch: main
+    path: ./services/tauri-app-updater
+    url: https://example.invalid/tauri-app-updater.git
+  umami:
+    branch: master
+    path: ./services/umami
+    url: https://example.invalid/umami.git
+  undercover-seosoyoung:
+    branch: main
+    path: ./services/undercover-seosoyoung
+    url: https://example.invalid/undercover-seosoyoung.git
+  unhinged-students:
+    branch: master
+    path: ./services/unhinged-students
+    url: https://example.invalid/unhinged-students.git
+  zombie-city:
+    branch: main
+    path: ./services/zombie-city
+    url: https://example.invalid/zombie-city.git
+  zombie-labyrinth:
+    branch: main
+    path: ./services/zombie-labyrinth
+    url: https://example.invalid/zombie-labyrinth.git
 services:
+  atom-api:
+    cwd: .
+    enabled: true
+    repo: atom
+    run: node generated-writer-projection.js
+  celeris-poc:
+    cwd: .
+    enabled: true
+    repo: celeris-poc
+    run: node generated-writer-projection.js
+  clipper-server:
+    cwd: .
+    enabled: true
+    repo: clipper
+    run: node generated-writer-projection.js
+  corksheet:
+    cwd: .
+    enabled: true
+    repo: corksheet
+    run: node generated-writer-projection.js
+  jeju-map-server:
+    cwd: .
+    enabled: true
+    repo: jeju-travel-map
+    run: node generated-writer-projection.js
+  ktx-reservation:
+    cwd: .
+    enabled: true
+    repo: ktx-reservation
+    run: node generated-writer-projection.js
+  majiku-server:
+    cwd: .
+    enabled: true
+    repo: majiku
+    run: node generated-writer-projection.js
+  mcp-eb-lore:
+    cwd: .
+    enabled: true
+    repo: eb-lore-mcp-src
+    run: node generated-writer-projection.js
+  mini-soulstream-ts:
+    cwd: .
+    enabled: true
+    repo: mini-soulstream-ts
+    run: node generated-writer-projection.js
+  miniverse-server:
+    cwd: .
+    enabled: true
+    repo: miniverse-server
+    run: node generated-writer-projection.js
+  openai-mcp-tunnel:
+    cwd: .
+    enabled: true
+    run: node generated-writer-projection.js
+  openai-mcp-tunnel-soulstream:
+    cwd: .
+    enabled: true
+    run: node generated-writer-projection.js
+  pages:
+    cwd: .
+    enabled: false
+    repo: pages
+    run: node generated-writer-projection.js
+  remiel-server:
+    cwd: .
+    enabled: true
+    repo: remiel
+    run: node generated-writer-projection.js
+  seosoyoung:
+    cwd: .
+    enabled: true
+    repo: seosoyoung
+    run: node generated-writer-projection.js
+  serendipity:
+    cwd: .
+    enabled: true
+    repo: serendipity
+    run: node generated-writer-projection.js
   soulstream-orch-server:
-    cwd: ./services/soulstream
+    cwd: .
+    enabled: true
     repo: soulstream
-    ready: port:5200
-    hooks:
-      pre_start: /usr/bin/node soul-server-ts/scripts/verify-migrations.mjs
+    run: node generated-writer-projection.js
   soulstream-soul-server-ts:
-    cwd: ./services/soulstream
-    repo: soulstream
-    ready: port:3105
     after:
-      - soulstream-orch-server
+    - soulstream-orch-server
+    cwd: .
+    enabled: true
+    repo: soulstream
+    run: node generated-writer-projection.js
+  tauri-app-updater:
+    cwd: .
+    enabled: true
+    repo: tauri-app-updater
+    run: node generated-writer-projection.js
+  umami:
+    cwd: .
+    enabled: true
+    repo: umami
+    run: node generated-writer-projection.js
+  undercover-seosoyoung:
+    cwd: .
+    enabled: true
+    repo: undercover-seosoyoung
+    run: node generated-writer-projection.js
+  unhinged-students:
+    cwd: .
+    enabled: true
+    repo: unhinged-students
+    run: node generated-writer-projection.js
+  x-ops-dashboard:
+    cwd: .
+    enabled: true
+    repo: eias-ninelives-x-ops
+    run: node generated-writer-projection.js
+  zombie-city-server:
+    cwd: .
+    enabled: true
+    repo: zombie-city
+    run: node generated-writer-projection.js
+  zombie-labyrinth-server:
+    cwd: .
+    enabled: true
+    repo: zombie-labyrinth
+    run: node generated-writer-projection.js

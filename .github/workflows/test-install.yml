@@ -5,6 +5,14 @@ on:
     branches: [main]
     paths:
       - 'install/**'
+      - 'packages/db-schema/**'
+      - 'soul-server-ts/scripts/**'
+      - 'soul-server-ts/tests/scripts/**'
+      - 'orch-server-ts/scripts/**'
+      - 'orch-server-ts/tests/**'
+      - 'deploy/release-manifest*.json'
+      - 'deploy/database-release-*.json'
+      - 'deploy/tests/**'
       - '.github/workflows/test-install.yml'
   pull_request:
     paths:
@@ -12,12 +20,111 @@ on:
       - 'packages/db-schema/**'
       - 'soul-server-ts/scripts/**'
       - 'soul-server-ts/tests/scripts/**'
-      - 'deploy/release-manifest.json'
+      - 'orch-server-ts/scripts/**'
+      - 'orch-server-ts/tests/**'
+      - 'deploy/release-manifest*.json'
+      - 'deploy/database-release-*.json'
       - 'deploy/tests/**'
       - '.github/workflows/test-install.yml'
   workflow_dispatch:
 
 jobs:
+  database-release-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install repository dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+
+      - name: Install pinned Haniel release contract
+        shell: bash
+        run: >-
+          python -m pip install --force-reinstall
+          git+https://github.com/eiaserinnys/Haniel.git@3d02d57eb4a78b2eca18acb69c9f099424537c6e
+
+      - name: Run cross-platform database release contracts
+        shell: bash
+        run: |
+          corepack pnpm --dir soul-server-ts exec vitest run \
+            tests/scripts/release_executor_concurrency_review.test.ts \
+            tests/scripts/release_executor_cli_review.test.ts \
+            tests/scripts/release_executor_review.test.ts \
+            tests/scripts/migration_contract.test.ts \
+            tests/scripts/release_executor_ci_contract.test.ts \
+            --maxWorkers=2 --minWorkers=1
+          python -m unittest discover \
+            -s deploy/tests \
+            -p "test_haniel_release_contract.py" \
+            -v
+
+  database-release-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: release_executor_test
+          POSTGRES_PASSWORD: release_executor_secret
+          POSTGRES_DB: release_executor_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U release_executor_test -d release_executor_test_db"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: >-
+        postgresql://release_executor_test:release_executor_secret@127.0.0.1:5432/release_executor_test_db
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Install repository dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+
+      - name: Run isolated PostgreSQL database release contracts
+        shell: bash
+        run: |
+          corepack pnpm --dir soul-server-ts exec vitest run \
+            tests/scripts/release_executor.test.ts \
+            tests/scripts/migration_runner.test.ts \
+            tests/scripts/apply_schema.test.ts \
+            tests/scripts/release_executor_postgres_review.test.ts \
+            --maxWorkers=2 --minWorkers=1 \
+            --reporter=json --outputFile=database-release-postgres-results.json
+          node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
+            soul-server-ts/database-release-postgres-results.json 29
+
   test-install:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -26,7 +133,7 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       PGUSER: soulstream_schema_test
       PGPASSWORD: soulstream_schema_secret
-      PGDATABASE: soulstream_schema_test
+      PGDATABASE: release_executor_test_db
       PGPORT: '54329'
       SOULSTREAM_SOURCE_URL: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
       SOULSTREAM_SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
@@ -53,12 +160,18 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --force-reinstall `
-            git+https://github.com/eiaserinnys/Haniel.git@c19c06f201b02f3394b6cdec8392c5398803f4bf
+            git+https://github.com/eiaserinnys/Haniel.git@3d02d57eb4a78b2eca18acb69c9f099424537c6e
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v7
         with:
           node-version: '20'
+
+      - name: Install repository dependencies
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
 
       - name: Expose PostgreSQL 16+ client tools
         shell: pwsh
@@ -114,6 +227,22 @@ jobs:
             exit 1
           }
           createdb -h 127.0.0.1 -p $env:PGPORT -U $env:PGUSER $env:PGDATABASE
+
+      - name: Run actual database release PostgreSQL contracts
+        shell: pwsh
+        run: |
+          $env:TEST_DATABASE_URL = "postgresql://{0}:{1}@127.0.0.1:{2}/{3}" -f `
+            $env:PGUSER, $env:PGPASSWORD, $env:PGPORT, $env:PGDATABASE
+          $resultPath = "database-release-postgres-results.json"
+          corepack pnpm --dir soul-server-ts exec vitest run `
+            tests/scripts/release_executor.test.ts `
+            tests/scripts/migration_runner.test.ts `
+            tests/scripts/apply_schema.test.ts `
+            --maxWorkers=2 --minWorkers=1 `
+            --reporter=json --outputFile=$resultPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node packages/db-schema/scripts/verify-vitest-contract-result.mjs `
+            (Join-Path "soul-server-ts" $resultPath) 26
 
       - name: Run installer (non-interactive)
         shell: pwsh

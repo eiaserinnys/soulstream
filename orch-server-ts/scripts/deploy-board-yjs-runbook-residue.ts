@@ -7,6 +7,8 @@ import {
   runBoardYjsRunbookDeployment,
   type BoardYjsRunbookDeployMode,
 } from "../src/board-yjs/board_yjs_runbook_deploy.js";
+import { serializeDatabaseReleaseResult } from
+  "../../packages/db-schema/scripts/release-executor.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../..");
@@ -36,11 +38,25 @@ try {
     mode,
     approvedCollisionHashCount: approvedCollisionHashes.length,
     applySqlMigrations: async () => runNode([
-      resolve(repositoryRoot, "packages/db-schema/scripts/migrate.mjs"),
+      resolve(repositoryRoot, "packages/db-schema/scripts/release-executor.mjs"),
       "apply",
+      "--manifest",
+      "deploy/release-manifest.json",
+      "--database-contract",
+      "deploy/database-release-central.json",
     ]),
     reportResidue: async () => runNode([tsxCli, migrationScript, "--summary"]),
     applyResidueMigration: async () => runNode([
+      resolve(repositoryRoot, "packages/db-schema/scripts/release-executor.mjs"),
+      "run-subphase",
+      "--manifest",
+      "deploy/release-manifest.json",
+      "--database-contract",
+      "deploy/database-release-central.json",
+      "--subphase",
+      "board_yjs_runbook_residue",
+      "--",
+      process.execPath,
       tsxCli,
       migrationScript,
       "--apply",
@@ -56,7 +72,7 @@ try {
     status: "failed",
     error: error instanceof Error ? error.message : String(error),
   });
-  throw error;
+  process.exitCode = 1;
 }
 
 function readMode(argv: readonly string[]): BoardYjsRunbookDeployMode {
@@ -90,7 +106,8 @@ function runNode(args: string[]): void {
   const result = spawnSync(process.execPath, args, {
     cwd: repositoryRoot,
     env: process.env,
-    stdio: "inherit",
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -100,6 +117,7 @@ function runNode(args: string[]): void {
 
 async function writeAudit(input: { status: string; error?: string }): Promise<void> {
   const record = {
+    schema_version: "soulstream.database-release.v1",
     event: "board_yjs_runbook_migration",
     status: input.status,
     mode,
@@ -110,7 +128,7 @@ async function writeAudit(input: { status: string; error?: string }): Promise<vo
     occurredAt: new Date().toISOString(),
     ...(input.error ? { error: input.error } : {}),
   };
-  const line = JSON.stringify(record);
+  const line = serializeDatabaseReleaseResult(record, process.env);
   process.stdout.write(`${line}\n`);
   const backupDirectory = process.env.HANIEL_BACKUP_DIR?.trim();
   if (!backupDirectory) return;

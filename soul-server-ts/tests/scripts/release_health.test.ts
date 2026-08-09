@@ -34,6 +34,37 @@ function healthyFetch(url: URL) {
 }
 
 describe("release health contract", () => {
+  it("requires an explicit standalone or cluster scope", async () => {
+    await expect(verifyReleaseHealth({
+      taskId: null,
+      env: { ...env },
+      fetchImpl: healthyFetch,
+      mcpRead: async () => ({ ping: "ok" }),
+    })).rejects.toThrow("scope must be standalone or cluster");
+  });
+
+  it("keeps standalone health local and does not require upstream registration", async () => {
+    const fetchImpl = vi.fn(healthyFetch);
+    const nodeRead = vi.fn();
+    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_my_turn_items" }));
+    const standaloneEnv = { ...env };
+    delete (standaloneEnv as Partial<typeof env>).SOULSTREAM_UPSTREAM_URL;
+    delete (standaloneEnv as Partial<typeof env>).SOULSTREAM_NODE_ID;
+
+    const report = await verifyReleaseHealth({
+      scope: "standalone",
+      taskId: null,
+      env: standaloneEnv,
+      fetchImpl,
+      nodeRead,
+      mcpRead,
+    });
+
+    expect(report).toMatchObject({ status: "ok", scope: "standalone" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(nodeRead).not.toHaveBeenCalled();
+  });
+
   it("derives the orchestrator HTTP endpoint from the upstream WebSocket URL", () => {
     expect(deriveOrchestratorHealthUrl(env.SOULSTREAM_UPSTREAM_URL).toString()).toBe(
       "https://soulstream.example/api/health",
@@ -45,6 +76,7 @@ describe("release health contract", () => {
     const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "get_task" }));
 
     const report = await verifyReleaseHealth({
+      scope: "cluster",
       taskId: "task-1",
       env: { ...env },
       fetchImpl,
@@ -68,6 +100,7 @@ describe("release health contract", () => {
     const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_my_turn_items" }));
 
     const report = await verifyReleaseHealth({
+      scope: "cluster",
       taskId: null,
       env: { ...env },
       fetchImpl,
@@ -89,6 +122,7 @@ describe("release health contract", () => {
     });
 
     await expect(verifyReleaseHealth({
+      scope: "cluster",
       taskId: "task-1",
       env: { ...env },
       fetchImpl,
@@ -98,6 +132,7 @@ describe("release health contract", () => {
 
   it("fails when MCP is not explicitly enabled", async () => {
     await expect(verifyReleaseHealth({
+      scope: "cluster",
       taskId: "task-1",
       env: { ...env, MCP_ENABLED: "false" },
     })).rejects.toThrow("MCP_ENABLED must be true");
@@ -118,6 +153,7 @@ describe("release health contract", () => {
     });
 
     await expect(verifyReleaseHealth({
+      scope: "cluster",
       taskId: null,
       env: { ...env },
       fetchImpl,
