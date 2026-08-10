@@ -308,8 +308,7 @@ export async function composeWorkerRuntime(
   });
   const runnerRecoveryCoordinator = await startRunnerRecoveryCoordinator({
     env,
-    runnerProcessFactory: runnerProcess?.runtimeFactory,
-    releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
+    runnerProcessFactory: runnerProcess?.runtimeFactory, releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
@@ -464,11 +463,7 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump: eventOutboxPumpMux,
-        ...composeRunnerReconciliationReporter(
-          env,
-          runnerProcess?.runtimeFactory,
-          runnerRecoveryCoordinator,
-        ),
+        ...composeRunnerReconciliationReporter(env, runnerProcess?.runtimeFactory, runnerRecoveryCoordinator),
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );
