@@ -16,6 +16,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) {
         order.push("receipt-read");
+        expect(values).toEqual(["node-a", STREAM_ID, 2]);
         return [];
       }
       if (text.includes("SELECT event_append")) {
@@ -30,6 +31,14 @@ describe("EventIngressRepository", () => {
       }
       if (text.includes("INSERT INTO event_ingress_receipts")) {
         order.push("receipt-insert");
+        expect(values).toEqual([
+          "node-a",
+          STREAM_ID,
+          2,
+          "session-a",
+          "a".repeat(64),
+          41,
+        ]);
         return [];
       }
       throw new Error(`unexpected SQL: ${text}`);
@@ -48,7 +57,7 @@ describe("EventIngressRepository", () => {
         last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
         updated_at: "2026-08-06T00:00:00.000Z",
       },
-    }));
+    }, 2));
 
     expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(order).toEqual([
@@ -63,7 +72,7 @@ describe("EventIngressRepository", () => {
         last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
         updated_at: "2026-08-06T00:00:00.000Z",
       },
-    }).events[0], eventId: 41, duplicateReceipt: false }]);
+    }, 2).events[0], eventId: 41, duplicateReceipt: false }]);
   });
 
   it("returns an existing receipt without re-appending the semantic event", async () => {
@@ -96,15 +105,18 @@ describe("EventIngressRepository", () => {
   });
 });
 
-function batch(overrides: Partial<EventAppendBatch["events"][number]> = {}): EventAppendBatch {
+function batch(
+  overrides: Partial<EventAppendBatch["events"][number]> = {},
+  sourceSeq = 1,
+): EventAppendBatch {
   return {
     type: "event_append_batch",
     protocol_version: 1,
     stream_id: STREAM_ID,
-    first_seq: 1,
+    first_seq: sourceSeq,
     events: [{
       stream_id: STREAM_ID,
-      source_seq: 1,
+      source_seq: sourceSeq,
       session_id: "session-a",
       event_type: "assistant_message",
       payload: { type: "assistant_message", content: "done" },
