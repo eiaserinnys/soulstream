@@ -1,8 +1,12 @@
-import type {
-  EventOutbox,
-  EventOutboxBatch,
-  EventOutboxRecord,
-} from "./event_outbox.js";
+import type { EventOutboxBatch, EventOutboxRecord } from "./event_outbox.js";
+
+export type EventOutboxPumpStore = {
+  readonly streamId: string;
+  readonly ackedSeq: number;
+  onAppend(listener: () => void): () => void;
+  readBatch(): Promise<EventOutboxBatch | null>;
+  acknowledge(streamId: string, ackedThrough: number): Promise<void>;
+};
 
 export type EventAppendAck = {
   type: "event_append_ack";
@@ -35,10 +39,17 @@ export class EventOutboxPump {
   >();
 
   constructor(
-    private readonly outbox: EventOutbox,
+    private readonly outbox: EventOutboxPumpStore,
     private readonly onError: (error: unknown) => void,
   ) {
-    outbox.onAppend(() => this.scheduleFlush());
+    outbox.onAppend(() => this.notifyAvailable());
+  }
+
+  // Phase 3 uses this as the content-free IPC doorbell after the runner has
+  // durably appended in another process. The pump still reads the canonical
+  // record from its store; no event payload crosses this notification seam.
+  notifyAvailable(): void {
+    this.scheduleFlush();
   }
 
   connect(sender: (batch: EventOutboxBatch) => Promise<void>): void {

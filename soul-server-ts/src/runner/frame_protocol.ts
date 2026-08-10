@@ -82,6 +82,20 @@ function findJsonContractFailure(
   return null;
 }
 
+export function assertRunnerJsonValue(
+  value: unknown,
+  context = "runner JSON value",
+): void {
+  const failure = findJsonContractFailure(value);
+  if (!failure) return;
+  const path = failure.path.length === 0
+    ? "$"
+    : `$${failure.path.map((part) => typeof part === "number"
+      ? `[${part}]`
+      : `.${String(part)}`).join("")}`;
+  throw new Error(`${context} violates JSON contract at ${path}: ${failure.message}`);
+}
+
 function withJsonContract<T extends z.ZodType>(schema: T) {
   return z.preprocess((value, ctx) => {
     const failure = findJsonContractFailure(value);
