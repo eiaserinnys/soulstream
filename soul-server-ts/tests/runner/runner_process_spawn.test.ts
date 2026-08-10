@@ -28,6 +28,7 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase: vi.fn(async () => { calls.push("database"); }),
       validateEntry: vi.fn(async () => { calls.push("entry"); }),
       spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -54,6 +55,7 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase: async () => {},
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5001, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -65,6 +67,7 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase: async () => {},
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5002, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       isPidAlive: (pid) => pid === 4001 && alive,
       signalPid: (_pid, signal) => {
         signals.push(signal);
@@ -85,6 +88,7 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase: async () => {},
       validateEntry: async () => { throw new Error("snapshot entry missing"); },
       spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -93,6 +97,31 @@ describe("RunnerProcessSpawner", () => {
 
     await expect(spawner.spawn(await input())).rejects.toThrow("snapshot entry missing");
     expect(spawnProcess).not.toHaveBeenCalled();
+  });
+
+  it("kills the detached child when pid registration fails", async () => {
+    let alive = true;
+    const unref = vi.fn();
+    const signalPid = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      expect(signal).toBe("SIGKILL");
+      alive = false;
+    });
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase: async () => {},
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5004, unref }),
+      registerPid: async () => { throw new Error("pid registration denied"); },
+      isPidAlive: (pid) => pid === 5004 && alive,
+      signalPid,
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(spawner.spawn(await input())).rejects.toThrow("pid registration denied");
+
+    expect(signalPid).toHaveBeenCalledOnce();
+    expect(alive).toBe(false);
+    expect(unref).toHaveBeenCalledOnce();
   });
 });
 

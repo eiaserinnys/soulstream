@@ -69,6 +69,7 @@ interface SpawnDependencies {
     stdio: "ignore";
     env: NodeJS.ProcessEnv;
   }): Pick<ChildProcess, "pid" | "unref">;
+  registerPid(path: string, pid: number): Promise<void>;
   isPidAlive(pid: number): boolean;
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
@@ -120,9 +121,48 @@ export class RunnerProcessSpawner {
       env: input.childProcessEnv ?? process.env,
     });
     if (!child.pid) throw new Error("detached runner spawn returned no pid");
-    await writeFile(paths.pidPath, `${child.pid}\n`, { mode: 0o600 });
+    try {
+      await this.deps.registerPid(paths.pidPath, child.pid);
+    } catch (registrationError) {
+      const cleanupErrors: unknown[] = [];
+      try {
+        await this.terminateSpawnedChild(child, child.pid);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      try {
+        await unlinkIfPresent(paths.pidPath);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [registrationError, ...cleanupErrors],
+          `runner pid registration failed and child cleanup was incomplete: ${String(registrationError)}`,
+        );
+      }
+      throw registrationError;
+    }
     child.unref();
     return { pid: child.pid, paths, config: validatedConfig };
+  }
+
+  private async terminateSpawnedChild(
+    child: Pick<ChildProcess, "unref">,
+    pid: number,
+  ): Promise<void> {
+    try {
+      if (this.deps.isPidAlive(pid)) this.deps.signalPid(pid, "SIGKILL");
+      const deadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
+      while (this.deps.isPidAlive(pid) && this.deps.now() < deadline) {
+        await this.deps.delay(25);
+      }
+      if (this.deps.isPidAlive(pid)) {
+        throw new Error(`unregistered runner pid ${pid} did not terminate`);
+      }
+    } finally {
+      child.unref();
+    }
   }
 
   private async stopExistingRunner(paths: RunnerProcessPaths): Promise<void> {
@@ -152,6 +192,7 @@ function defaultDependencies(): SpawnDependencies {
     },
     validateEntry: async (path) => await access(path),
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
+    registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
     isPidAlive: (pid) => {
       try {
         process.kill(pid, 0);
