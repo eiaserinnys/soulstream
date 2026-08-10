@@ -9,7 +9,7 @@
   },
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsup --config tsup.config.ts && npm run verify:bundle",
+    "build": "tsup --config tsup.config.ts --target node22 && npm run verify:bundle",
     "dev": "tsx src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run",

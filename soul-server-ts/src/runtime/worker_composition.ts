@@ -22,11 +22,6 @@ import {
 import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
-import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
-import {
-  isPostResultDrainEvent,
-  markPostResultDrainEvent,
-} from "../engine/claude_event_phase.js";
 import type { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
@@ -68,6 +63,7 @@ import {
 } from "./task_runtime_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
+import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import type { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -236,24 +232,13 @@ export async function composeWorkerRuntime(
       })
     : undefined;
   let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;
-  const publishDetachedClaudeEvent = async (
-    sessionId: string,
-    event: Parameters<typeof mapClaudeClientEvent>[0],
-  ): Promise<void> => {
-    const task = taskManager.getTask(sessionId);
-    if (!task || !detachedClaudeEventPublisher) {
-      logger.warn(
-        { sessionId, eventType: event.type },
-        "Detached Claude runtime event has no in-memory task",
-      );
-      return;
-    }
-    for (const payload of mapClaudeClientEvent(event)) {
-      if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
-      await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
-      await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload);
-    }
-  };
+  const publishDetachedClaudeEvent = createDetachedClaudeEventBridge({
+    logger,
+    findTask: (sessionId) => taskManager.getTask(sessionId),
+    getPublisher: () => detachedClaudeEventPublisher,
+    collectDetached: async (task, payload) =>
+      await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload),
+  });
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
         enabled: true,
