@@ -24,6 +24,25 @@ afterEach(async () => {
 });
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+  it("adopts a live registered runner before its first durable bootstrap event", async () => {
+    const pending = {
+      ...registration(),
+      bootstrap: null,
+      lifecycle: null,
+    };
+    const subject = makeSubject([pending]);
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      undefined,
+      "adopt",
+    );
+    expect(subject.terminate).not.toHaveBeenCalled();
+  });
+
   it("runner death while the server lives drains offline, marks error, and auto-resumes", async () => {
     const subject = makeSubject([registration({ pidAlive: false })]);
 
@@ -90,8 +109,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("does not block server startup on a dead terminal runner waiting for upstream ACK", async () => {
-    const never = new Promise<void>(() => {});
-    const recoverRegisteredRunner = vi.fn(() => never);
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const recoverRegisteredRunner = vi.fn(() => recovery);
     const subject = makeSubject([registration({
       pidAlive: false,
       lifecycleState: "completed",
@@ -112,6 +132,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
     );
+    finishRecovery();
     await subject.coordinator.stop();
   });
 
@@ -176,6 +197,30 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
+
+  it("waits for an active recovery before stop returns", async () => {
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const subject = makeSubject([registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    })], Date.now(), [], {
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn(() => recovery),
+        restartRegisteredRunner: vi.fn(),
+      },
+    });
+    await subject.coordinator.scanOnce();
+
+    let stopped = false;
+    const stopping = subject.coordinator.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    finishRecovery();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
 });
 
 describe("classifyRunnerRegistration", () => {
@@ -195,6 +240,17 @@ describe("classifyRunnerRegistration", () => {
       now,
       120_000,
     )).toBe("reap_dead");
+  });
+
+  it("adopts a live pid during the pre-bootstrap registration lease", () => {
+    const pending = {
+      ...registration(),
+      registeredAtMs: now - 1_000,
+      bootstrap: null,
+      lifecycle: null,
+    };
+
+    expect(classifyRunnerRegistration(pending, now, 120_000)).toBe("adopt_prebootstrap");
   });
 
   it("gives a durable terminal state priority over process liveness", () => {

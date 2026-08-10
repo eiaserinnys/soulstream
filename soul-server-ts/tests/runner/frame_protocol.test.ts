@@ -34,6 +34,12 @@ const frames: RunnerFrame[] = [
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "command",
+    kind: "execution_status",
+    commandId: "status-1",
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
     kind: "close",
     commandId: "close-1",
   },
@@ -131,6 +137,12 @@ const frames: RunnerFrame[] = [
     kind: "tool_approval_response",
     correlationId: "approval-1",
     decision: "approved",
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "host_call_applied",
+    correlationId: "host-1",
   },
 ];
 

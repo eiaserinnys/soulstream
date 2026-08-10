@@ -27,6 +27,7 @@ export interface RunnerRegistrationScan {
 
 export type RunnerRecoveryDisposition =
   | "wait_for_bootstrap"
+  | "adopt_prebootstrap"
   | "adopt_running"
   | "replay_terminal"
   | "reap_dead"
@@ -73,7 +74,7 @@ export function classifyRunnerRegistration(
   if (lifecycle?.execution_state === "closed") return "closed";
   if (!lifecycle) {
     if (nowMs - registration.registeredAtMs < leaseTimeoutMs) {
-      return "wait_for_bootstrap";
+      return registration.pidAlive ? "adopt_prebootstrap" : "wait_for_bootstrap";
     }
     return registration.pidAlive ? "reap_stalled" : "reap_dead";
   }

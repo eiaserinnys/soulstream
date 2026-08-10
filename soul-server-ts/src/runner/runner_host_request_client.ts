@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  hostCallAppliedControlFrame,
   runnerRequestFrame,
   type RunnerControlFrame,
 } from "./frame_protocol.js";
@@ -63,7 +64,9 @@ export class RunnerHostRequestClient {
               signal: lifetime.signal,
               timeoutMs: Math.max(1, deadline - Date.now()),
             });
-            return readResponse(response);
+            const data = readResponse(response);
+            await connection.send(hostCallAppliedControlFrame(correlationId));
+            return data;
           } catch (error) {
             if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
             lastError = asError(error);

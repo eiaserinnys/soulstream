@@ -29,7 +29,7 @@ import { InProcessRunnerFrameChannel } from "./in_process_frame_channel.js";
 export interface RunnerCommandDispatcher {
   dispatch(frame: unknown): Promise<RunnerCommandResultFrame>;
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
-  recoverFrames?(commandId: string): AsyncIterable<RunnerEventFrame>;
+  recoverFrames?(commandId?: string): AsyncIterable<RunnerEventFrame>;
   prepareSession(agentSessionId: string): Promise<void>;
   interrupt(): Promise<boolean>;
   close(): Promise<void>;
@@ -68,6 +68,11 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
         case "execute":
           this.startExecution(command);
           break;
+        case "execution_status":
+          return runnerCommandResultFrame(command.commandId, {
+            status: "ok",
+            data: { executionCommandId: this.activeExecuteCommandId ?? null },
+          });
         case "interrupt": {
           const interrupted = await this.target.interrupt();
           return runnerCommandResultFrame(command.commandId, {
