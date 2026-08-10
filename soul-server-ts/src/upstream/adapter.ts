@@ -25,6 +25,8 @@ const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
 const APP_HEARTBEAT_INTERVAL_MS = 10_000;
 const APP_HEARTBEAT_MAX_MISSED = 2;
 const APP_HEARTBEAT_CLOSE_CODE = 1011;
+const INITIAL_SESSION_REPORT_MAX_ATTEMPTS = 5;
+const INITIAL_SESSION_REPORT_BASE_DELAY_MS = 100;
 
 export interface UpstreamConfig {
   url: string;
@@ -305,7 +307,7 @@ export class UpstreamAdapter {
       // 등록 직후 노드 쪽에서 능동 시작해야 half-open 연결(원격 서버 리셋 등)을 감지할 수 있다.
       // 양쪽 orch(Python/TS) 모두 노드발 ping에 pong으로 응답한다.
       this.startAppHeartbeat(ws);
-      await this.sendInitialSessions();
+      await this.sendInitialSessions(ws);
       await servePromise;
     } finally {
       this.deps.eventOutboxPump?.disconnect();
@@ -394,27 +396,46 @@ export class UpstreamAdapter {
     return false;
   }
 
-  private async sendInitialSessions(): Promise<void> {
+  private async sendInitialSessions(ws: WebSocket): Promise<void> {
     if (!this.deps.sessionDb) {
       this.logger.warn("sessionDb dependency missing — initial sessions_update skipped");
       return;
     }
 
-    try {
-      const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
-      await this.deps.waitForRunnerReconciliation?.();
-      const inMemorySessionIds = this.deps.taskManager.listTasks()
-        .filter((task) => task.status === "running")
-        .map((task) => task.agentSessionId);
-      const runningSessionIds = this.deps.listLiveRunnerSessionIds
-        ? [...new Set([
-            ...inMemorySessionIds,
-            ...await this.deps.listLiveRunnerSessionIds(),
-          ])]
-        : inMemorySessionIds;
-      await this.send(await commands.listSessions({ requestId: "", runningSessionIds }));
-    } catch (err) {
-      this.logger.warn({ err }, "initial sessions_update failed");
+    for (let attempt = 1; attempt <= INITIAL_SESSION_REPORT_MAX_ATTEMPTS; attempt += 1) {
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
+        await this.deps.waitForRunnerReconciliation?.();
+        const inMemorySessionIds = this.deps.taskManager.listTasks()
+          .filter((task) => task.status === "running")
+          .map((task) => task.agentSessionId);
+        const runningSessionIds = this.deps.listLiveRunnerSessionIds
+          ? [...new Set([
+              ...inMemorySessionIds,
+              ...await this.deps.listLiveRunnerSessionIds(),
+            ])]
+          : inMemorySessionIds;
+        const report = await commands.listSessions({ requestId: "", runningSessionIds });
+        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+        await this.sendOnSocket(ws, report);
+        return;
+      } catch (err) {
+        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+        if (attempt === INITIAL_SESSION_REPORT_MAX_ATTEMPTS) {
+          this.logger.error(
+            { err, attempts: attempt, nodeId: this.config.nodeId },
+            "initial sessions_update retry limit exhausted",
+          );
+          return;
+        }
+        const delayMs = INITIAL_SESSION_REPORT_BASE_DELAY_MS * 2 ** (attempt - 1);
+        this.logger.warn(
+          { err, attempt, delayMs, nodeId: this.config.nodeId },
+          "initial sessions_update failed — retrying on current connection",
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
   }
 

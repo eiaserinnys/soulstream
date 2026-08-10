@@ -154,6 +154,18 @@ export class SessionMutationRepository {
     return Number(rows[0]?.count ?? 0);
   }
 
+  async listRunningNodeIds(): Promise<string[]> {
+    const rows = await this.sql<Array<{ node_id: string }>>`
+      SELECT DISTINCT node_id
+      FROM sessions
+      WHERE status = 'running' AND node_id IS NOT NULL
+      ORDER BY node_id
+    `;
+    return rows
+      .map((row) => row.node_id)
+      .filter((nodeId) => typeof nodeId === "string" && nodeId.length > 0);
+  }
+
   async reconcileNodeStartup(
     nodeId: string,
     runningSessionIds: string[],

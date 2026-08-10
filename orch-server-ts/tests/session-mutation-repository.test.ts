@@ -254,6 +254,19 @@ describe("SessionMutationRepository", () => {
       (value) => Array.isArray(value) && value.includes("session-live"),
     ))).toBe(true);
   });
+
+  it("lists the distinct owner nodes that still have running sessions for startup grace", async () => {
+    const { sql, calls } = fakeSql((text) =>
+      text.includes("SELECT DISTINCT node_id")
+        ? [{ node_id: "node-b" }, { node_id: "node-a" }]
+        : [],
+    );
+    const repository = new SessionMutationRepository(sql);
+
+    await expect(repository.listRunningNodeIds()).resolves.toEqual(["node-b", "node-a"]);
+    expect(calls[0]?.text).toContain("status = 'running'");
+    expect(calls[0]?.text).toContain("node_id IS NOT NULL");
+  });
 });
 
 function fakeSql(

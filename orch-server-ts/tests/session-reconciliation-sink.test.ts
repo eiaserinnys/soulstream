@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSessionReconciliationSink } from
   "../src/node/session_reconciliation_sink.js";
+import {
+  InMemoryNodeRegistry,
+  type NodeRegistrationPayload,
+} from "../src/node/registry.js";
 
 describe("createSessionReconciliationSink", () => {
   afterEach(() => {
@@ -75,6 +79,23 @@ describe("createSessionReconciliationSink", () => {
     );
   });
 
+  it("keeps startup reconciliation inert when lease awareness is disabled", async () => {
+    const listRunningNodeIds = vi.fn(async () => ["node-a"]);
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => ({
+        listRunningNodeIds,
+        reconcileNodeDisconnected: vi.fn(),
+        reconcileNodeStartup: vi.fn(),
+      }),
+      logError: vi.fn(),
+      leaseAware: false,
+    });
+
+    await sink.start();
+
+    expect(listRunningNodeIds).not.toHaveBeenCalled();
+  });
+
   it("defers disconnect until the runner lease window expires and records an explicit timeout", async () => {
     vi.useFakeTimers();
     const now = new Date("2026-08-11T00:00:00.000Z");
@@ -128,6 +149,78 @@ describe("createSessionReconciliationSink", () => {
       "node-a",
       ["session-memory", "session-runner"],
       expect.any(Date),
+    );
+  });
+
+  it("preserves a live runner across disconnect, reconnect, and a complete inventory report", async () => {
+    vi.useFakeTimers();
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 1 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      leaseAware: true,
+      disconnectGraceMs: 10,
+    });
+    const registry = new InMemoryNodeRegistry();
+    const registration = nodeRegistration();
+    const first = registry.registerNode(registration);
+
+    sink([registry.disconnectNode("node-a", {
+      connectionId: first.node.connectionId,
+      reason: "socket_closed",
+    })]);
+    const second = registry.registerNode(registration);
+    sink(registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId: second.node.connectionId },
+      {
+        type: "sessions_update",
+        sessions: [],
+        running_session_ids: ["session-runner"],
+      } as never,
+    ));
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(repository.reconcileNodeStartup).toHaveBeenCalledWith(
+      "node-a",
+      ["session-runner"],
+      expect.any(Date),
+    );
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+  });
+
+  it("restores disconnect grace after an orch restart and expires an absent node explicitly", async () => {
+    vi.useFakeTimers();
+    const repository = {
+      listRunningNodeIds: vi.fn(async () => ["node-a"]),
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const beforeRestart = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      leaseAware: true,
+      disconnectGraceMs: 10,
+    });
+    beforeRestart([disconnectEvent("connection-before-restart")]);
+    await beforeRestart.close();
+
+    const afterRestart = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      leaseAware: true,
+      disconnectGraceMs: 10,
+    });
+    await afterRestart.start();
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(repository.listRunningNodeIds).toHaveBeenCalledOnce();
+    expect(repository.reconcileNodeDisconnected).toHaveBeenCalledWith(
+      "node-a",
+      expect.any(Date),
+      "node_disconnect_timeout",
     );
   });
 
@@ -227,5 +320,17 @@ function disconnectEvent(connectionId: string) {
     nodeId: "node-a",
     connectionId,
     reason: "socket_closed",
+  };
+}
+
+function nodeRegistration(): NodeRegistrationPayload {
+  return {
+    type: "node_register",
+    node_id: "node-a",
+    host: "127.0.0.1",
+    port: 4205,
+    agents: [],
+    capabilities: {},
+    supported_backends: ["claude"],
   };
 }
