@@ -85,6 +85,42 @@ describe("EventOutboxPump", () => {
     expect(secondConnection[0]).toEqual(firstConnection[0]);
   });
 
+  it("ignores an ACK older than the active batch without releasing that batch", async () => {
+    const outbox = await createOutbox();
+    const first = await outbox.append(eventInput("one"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: first.source_seq,
+      events: [{ source_seq: first.source_seq, event_id: 9031 }],
+    });
+
+    const second = await outbox.append(eventInput("two"));
+    await waitFor(() => sent.length === 2);
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: first.source_seq,
+      events: [{ source_seq: first.source_seq, event_id: 9031 }],
+    });
+    await outbox.append(eventInput("three"));
+    await Promise.resolve();
+    expect(sent).toHaveLength(2);
+
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: second.source_seq,
+      events: [{ source_seq: second.source_seq, event_id: 9032 }],
+    });
+    await waitFor(() => sent.length === 3);
+    expect(sent[2]?.events.map((event) => event.source_seq)).toEqual([3]);
+  });
+
   it("returns the orchestrator event id only after the durable ACK", async () => {
     const outbox = await createOutbox();
     const record = await outbox.append(eventInput("one"));

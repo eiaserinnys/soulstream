@@ -108,9 +108,14 @@ export class EventOutboxPump {
     if (ack.stream_id !== this.outbox.streamId) {
       throw new Error("event_append_ack stream mismatch");
     }
-    if (ack.acked_through <= this.outbox.ackedSeq) return;
+    const durableAckedThrough = this.outbox.ackedSeq;
     const batch = this.inFlight;
-    if (!batch) throw new Error("event_append_ack has no in-flight batch");
+    if (!batch) {
+      if (ack.acked_through <= durableAckedThrough) return;
+      throw new Error("event_append_ack has no in-flight batch");
+    }
+    const firstSeq = batch.events[0].source_seq;
+    if (ack.acked_through < firstSeq) return;
     const lastSeq = batch.events.at(-1)!.source_seq;
     if (ack.acked_through !== lastSeq || ack.events.length !== batch.events.length) {
       throw new Error("event_append_ack does not cover the in-flight batch");
@@ -120,7 +125,9 @@ export class EventOutboxPump {
         throw new Error("event_append_ack source_seq mapping differs from in-flight batch");
       }
     }
-    await this.outbox.acknowledge(ack.stream_id, ack.acked_through);
+    if (ack.acked_through > durableAckedThrough) {
+      await this.outbox.acknowledge(ack.stream_id, ack.acked_through);
+    }
     for (let index = 0; index < batch.events.length; index += 1) {
       const record = batch.events[index]!;
       const eventId = ack.events[index]!.event_id;

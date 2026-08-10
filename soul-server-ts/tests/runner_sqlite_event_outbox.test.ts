@@ -376,6 +376,47 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
+  it("drains the next event when another consumer durably ACKs the in-flight batch first", async () => {
+    const path = await temporaryDatabasePath();
+    const writer = await RunnerSqliteEventOutbox.open(path);
+    const bootstrap = await writer.initializeBootstrap(bootstrapInput());
+    const pumpConsumer = await RunnerSqliteEventOutbox.open(path);
+    const competingConsumer = await RunnerSqliteEventOutbox.open(path);
+    const sent: EventOutboxBatch[] = [];
+    const onError = vi.fn();
+    const pump = new EventOutboxPump(pumpConsumer, onError);
+
+    try {
+      const first = await writer.append(eventInput("one"));
+      pump.connect(async (batch) => sent.push(batch));
+      await waitFor(() => sent.length === 1);
+      const acknowledged = pump.waitForAcknowledgement(first);
+
+      await competingConsumer.acknowledge(bootstrap.stream_id, first.source_seq);
+      await pump.handleAck({
+        type: "event_append_ack",
+        stream_id: bootstrap.stream_id,
+        acked_through: first.source_seq,
+        events: [{ source_seq: first.source_seq, event_id: 9102 }],
+      });
+      await expect(Promise.race([
+        acknowledged,
+        new Promise((resolve) => setTimeout(() => resolve("pending"), 100)),
+      ])).resolves.toBe(9102);
+
+      const second = await writer.append(eventInput("two"));
+      pump.notifyAvailable();
+      await waitFor(() => sent.length === 2);
+
+      expect(sent[1]?.events.map((event) => event.source_seq)).toEqual([second.source_seq]);
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      writer.close();
+      pumpConsumer.close();
+      competingConsumer.close();
+    }
+  });
+
   it("lets a server-side consumer drain after a content-free cross-process doorbell", async () => {
     const path = await temporaryDatabasePath();
     const consumer = await RunnerSqliteEventOutbox.open(path);
