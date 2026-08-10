@@ -282,7 +282,7 @@ describe("ClaudeEngineAdapter options parity", () => {
 });
 
 describe("ClaudeEngineAdapter fake client flow", () => {
-  it("fake client session/text/complete를 SSE payload로 yield하고 onSession을 호출한다", async () => {
+  it("fake client session/text/complete를 runner engine_event frame으로 yield한다", async () => {
     const captured: ClaudeRunOptions[] = [];
     const client = makeClient(
       [
@@ -296,14 +296,15 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
       silentLogger,
     );
-    const onSession = vi.fn();
     const seen: SSEEventPayload[] = [];
 
-    for await (const event of engine.execute({ prompt: "hi", onSession })) {
-      seen.push(event);
+    for await (const frame of engine.executeFrames({ prompt: "hi" })) {
+      expect(frame.kind).toBe("engine_event");
+      if (frame.kind === "engine_event") {
+        seen.push(frame.payload as SSEEventPayload);
+      }
     }
 
-    expect(onSession).toHaveBeenCalledWith("claude-sess-1");
     expect(captured[0]).toMatchObject({
       prompt: "hi",
       workspaceDir: "/tmp/claude-work",

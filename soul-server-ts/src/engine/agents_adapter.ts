@@ -25,6 +25,11 @@ import {
 import type { Logger } from "pino";
 
 import type { AgentProfile, AgentsSdkConfig } from "../agent_registry.js";
+import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
+import {
+  engineEventFrame,
+  type RunnerEventFrame,
+} from "../runner/frame_protocol.js";
 
 import { mapAgentsGuardrailError, mapAgentsRunStreamEvent } from "./agents_event_mapper.js";
 import type {
@@ -116,6 +121,10 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
+    yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     if (this.closed) {
       throw new Error("AgentsEngineAdapter.execute called after close()");
     }
@@ -126,11 +135,10 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
 
     const sessionId = params.resumeSessionId ?? `agents-${randomUUID()}`;
     if (!params.resumeSessionId) {
-      await params.onSession?.(sessionId);
-      yield {
+      yield engineEventFrame({
         type: "session",
         session_id: sessionId,
-      } as SSEEventPayload;
+      });
     }
 
     await this.connectMcpServersOnce();
@@ -162,13 +170,15 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
         } catch (err) {
           const guardrailEvents = mapAgentsGuardrailError(err);
           if (guardrailEvents.length > 0) {
-            for (const payload of guardrailEvents) yield payload;
-            yield {
+            for (const payload of guardrailEvents) {
+              yield engineEventFrame(payload as Record<string, unknown>);
+            }
+            yield engineEventFrame({
               type: "complete",
               result: "Stopped by guardrail",
               attachments: [],
               timestamp: Date.now() / 1000,
-            } as SSEEventPayload;
+            });
             return;
           }
           throw err;
@@ -184,8 +194,7 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
               }
             }
             for (const payload of mapAgentsRunStreamEvent(sdkEvent)) {
-              await params.onEvent?.(payload);
-              yield payload;
+              yield engineEventFrame(payload as Record<string, unknown>);
             }
           }
           await result.completed;
@@ -196,13 +205,15 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
           }
           const guardrailEvents = mapAgentsGuardrailError(err);
           if (guardrailEvents.length > 0) {
-            for (const payload of guardrailEvents) yield payload;
-            yield {
+            for (const payload of guardrailEvents) {
+              yield engineEventFrame(payload as Record<string, unknown>);
+            }
+            yield engineEventFrame({
               type: "complete",
               result: "Stopped by guardrail",
               attachments: [],
               timestamp: Date.now() / 1000,
-            } as SSEEventPayload;
+            });
             return;
           }
           throw err;
@@ -244,17 +255,17 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
           schemaVersion: AGENTS_RUN_STATE_SCHEMA_VERSION,
         });
         const finalOutput = stringifyFinalOutput(result.finalOutput);
-        yield {
+        yield engineEventFrame({
           type: "assistant_message",
           content: finalOutput,
           timestamp: Date.now() / 1000,
-        } as SSEEventPayload;
-        yield {
+        });
+        yield engineEventFrame({
           type: "complete",
           result: finalOutput,
           attachments: [],
           timestamp: Date.now() / 1000,
-        } as SSEEventPayload;
+        });
         return;
       }
     } finally {
