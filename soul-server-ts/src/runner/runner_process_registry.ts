@@ -35,6 +35,13 @@ export type RunnerRecoveryDisposition =
   | "already_reaped"
   | "closed";
 
+export interface LiveRunnerSessionIdsOptions {
+  stateDirectory: string;
+  leaseTimeoutMs: number;
+  scan?: typeof scanRunnerRegistrations;
+  now?: () => number;
+}
+
 export async function scanRunnerRegistrations(
   stateDirectory: string,
 ): Promise<RunnerRegistrationScan> {
@@ -87,6 +94,38 @@ export function classifyRunnerRegistration(
   return nowMs - progressedAt >= leaseTimeoutMs
     ? "reap_stalled"
     : "adopt_running";
+}
+
+/**
+ * Returns the durable runner inventory that is safe to advertise as running.
+ * A partial scan is never returned: omitting an unreadable live registration
+ * would let orch turn a storage failure into a false terminal transition.
+ */
+export async function listLiveRunnerSessionIds(
+  options: LiveRunnerSessionIdsOptions,
+): Promise<string[]> {
+  const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory);
+  if (result.errors.length > 0) {
+    throw new AggregateError(
+      result.errors.map(({ error }) => error),
+      `runner registration scan incomplete: ${result.errors
+        .map(({ directory }) => directory)
+        .join(", ")}`,
+    );
+  }
+  const nowMs = (options.now ?? Date.now)();
+  const sessionIds = new Set<string>();
+  for (const registration of result.registrations) {
+    const disposition = classifyRunnerRegistration(
+      registration,
+      nowMs,
+      options.leaseTimeoutMs,
+    );
+    if (disposition === "adopt_prebootstrap" || disposition === "adopt_running") {
+      sessionIds.add(registration.config.sessionId);
+    }
+  }
+  return [...sessionIds].sort();
 }
 
 async function readRegistration(directory: string): Promise<RunnerRegistration> {

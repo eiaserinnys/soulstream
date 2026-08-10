@@ -63,10 +63,9 @@ import {
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
-import type { ClaudeRuntimeStartupRecovery } from
-  "./claude_runtime_startup_recovery.js";
+import type { ClaudeRuntimeStartupRecovery } from "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
-import { composeRunnerProcessRuntime, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { composeRunnerProcessRuntime, composeRunnerReconciliationReporter, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -464,6 +463,7 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump: eventOutboxPumpMux,
+        ...composeRunnerReconciliationReporter(env, runnerProcessFactory, runnerRecoveryCoordinator),
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );

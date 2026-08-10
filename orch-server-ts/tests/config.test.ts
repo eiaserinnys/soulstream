@@ -62,6 +62,8 @@ describe("orch-server-ts config scaffold", () => {
       CLAUDE_OAUTH_CLIENT_ID: "claude-client",
       CLAUDE_OAUTH_CALLBACK_URL: "https://example.com/claude/callback",
       TURN_SUMMARY_OPENAI_KEY: "turn-summary-key",
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: "120000",
     });
 
     expect(config).toEqual({
@@ -102,6 +104,8 @@ describe("orch-server-ts config scaffold", () => {
       claude_oauth_callback_url: "https://example.com/claude/callback",
       turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,
+      soul_runner_process_enabled: true,
+      soul_runner_lease_timeout_ms: 120_000,
     });
 
     expect(toOrchServerTsConfig(config)).toEqual({
@@ -140,6 +144,8 @@ describe("orch-server-ts config scaffold", () => {
       jwt_secret: "",
       turn_summary_openai_key: "",
       usage_summary_poll_interval_seconds: 300,
+      soul_runner_process_enabled: false,
+      soul_runner_lease_timeout_ms: 1_800_000,
     });
   });
 
@@ -152,6 +158,21 @@ describe("orch-server-ts config scaffold", () => {
       ...minimalEnvironment(),
       USAGE_SUMMARY_POLL_INTERVAL_SECONDS: "0",
     })).toThrow(/USAGE_SUMMARY_POLL_INTERVAL_SECONDS/);
+  });
+
+  it("shares the runner process flag and lease timeout contract with soul-server", () => {
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
+    })).toMatchObject({
+      soul_runner_process_enabled: true,
+      soul_runner_lease_timeout_ms: 90_000,
+    });
+    expect(() => loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: "0",
+    })).toThrow(/SOUL_RUNNER_LEASE_TIMEOUT_MS/);
   });
 
   it.each([

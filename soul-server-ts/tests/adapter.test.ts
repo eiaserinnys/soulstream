@@ -20,7 +20,9 @@ const codexAgent: AgentProfile = {
 function makeDeps(
   opts: {
     agents?: AgentProfile[];
-    runningCount?: number;
+    runningSessionIds?: string[];
+    listLiveRunnerSessionIds?: () => Promise<string[]>;
+    waitForRunnerReconciliation?: () => Promise<void>;
     sessionDb?: SessionDB;
     eventOutboxPump?: EventOutboxPump;
   } = {},
@@ -28,9 +30,10 @@ function makeDeps(
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
   const taskManager = {
     listTasks: () =>
-      Array(opts.runningCount ?? 0)
-        .fill(null)
-        .map(() => ({ status: "running" as const })),
+      (opts.runningSessionIds ?? []).map((agentSessionId) => ({
+        agentSessionId,
+        status: "running" as const,
+      })),
     createTask: async () => {
       throw new Error("createTask not stubbed in this test");
     },
@@ -49,6 +52,8 @@ function makeDeps(
     taskExecutor,
     sessionDb: opts.sessionDb,
     eventOutboxPump: opts.eventOutboxPump,
+    listLiveRunnerSessionIds: opts.listLiveRunnerSessionIds,
+    waitForRunnerReconciliation: opts.waitForRunnerReconciliation,
   };
 }
 
@@ -288,6 +293,7 @@ describe("UpstreamAdapter", () => {
   });
 
   it("sessionDb가 있으면 node_register 직후 현재 세션 dump를 sessions_update로 보낸다", async () => {
+    const reconciliationOrder: string[] = [];
     const sessionDb = {
       listSessionsForUpstreamDump: vi.fn(async () => ({
         sessions: [
@@ -321,7 +327,17 @@ describe("UpstreamAdapter", () => {
         isProduction: false,
       },
       silentLogger,
-      makeDeps({ sessionDb }),
+      makeDeps({
+        sessionDb,
+        runningSessionIds: ["sess-memory", "sess-shared"],
+        waitForRunnerReconciliation: async () => {
+          reconciliationOrder.push("drained");
+        },
+        listLiveRunnerSessionIds: async () => {
+          reconciliationOrder.push("scanned");
+          return ["sess-runner", "sess-shared"];
+        },
+      }),
     );
 
     void adapter.run();
@@ -343,11 +359,13 @@ describe("UpstreamAdapter", () => {
       type: "sessions_update",
       total: 1,
       requestId: "",
+      running_session_ids: ["sess-memory", "sess-shared", "sess-runner"],
     });
     expect((second.sessions as Array<Record<string, unknown>>)[0]).toMatchObject({
       session_id: "sess-1",
       last_event_id: 3,
     });
+    expect(reconciliationOrder).toEqual(["drained", "scanned"]);
 
     await adapter.shutdown();
   });

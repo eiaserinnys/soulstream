@@ -10,6 +10,7 @@ import {
 } from "../../src/runner/runner_recovery_coordinator.js";
 import {
   classifyRunnerRegistration,
+  listLiveRunnerSessionIds,
   scanRunnerRegistrations,
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
@@ -221,6 +222,31 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await stopping;
     expect(stopped).toBe(true);
   });
+
+  it("exposes a reconciliation barrier without stopping future scans", async () => {
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const subject = makeSubject([registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    })], Date.now(), [], {
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn(() => recovery),
+        restartRegisteredRunner: vi.fn(),
+      },
+    });
+    await subject.coordinator.scanOnce();
+
+    let settled = false;
+    const waiting = subject.coordinator.waitForSettled().then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    finishRecovery();
+    await waiting;
+    expect(settled).toBe(true);
+    await expect(subject.coordinator.scanOnce()).resolves.toBeUndefined();
+  });
 });
 
 describe("classifyRunnerRegistration", () => {
@@ -258,6 +284,37 @@ describe("classifyRunnerRegistration", () => {
       pidAlive: false,
       lifecycleState: "failed",
     }), now, 120_000)).toBe("replay_terminal");
+  });
+
+  it("reports only live lease dispositions and deduplicates the reconnect inventory", async () => {
+    const registrations = [
+      { ...registration({ sessionId: "session-pre" }), bootstrap: null, lifecycle: null },
+      registration({ sessionId: "session-live" }),
+      registration({ sessionId: "session-live" }),
+      registration({ sessionId: "session-dead", pidAlive: false }),
+      registration({ sessionId: "session-terminal", lifecycleState: "completed" }),
+    ];
+
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => now,
+      scan: async () => ({ registrations, errors: [] }),
+    })).resolves.toEqual(["session-live", "session-pre"]);
+  });
+
+  it("rejects an incomplete registry scan instead of reporting a destructive partial list", async () => {
+    const failure = new Error("runner registration unreadable");
+
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => now,
+      scan: async () => ({
+        registrations: [registration({ sessionId: "session-live" })],
+        errors: [{ directory: "/runner/session-unknown", error: failure }],
+      }),
+    })).rejects.toThrow(/incomplete/i);
   });
 
   it("reports a missing registered database without recreating empty recovery state", async () => {

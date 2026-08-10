@@ -132,12 +132,16 @@ export class SessionMutationRepository {
     });
   }
 
-  async reconcileNodeDisconnected(nodeId: string, updatedAt: Date): Promise<number> {
+  async reconcileNodeDisconnected(
+    nodeId: string,
+    updatedAt: Date,
+    terminationDetail: "node_disconnect" | "node_disconnect_timeout",
+  ): Promise<number> {
     const rows = await this.sql<Array<{ count: number }>>`
       WITH changed AS (
         UPDATE sessions
         SET status = 'interrupted', was_running_at_shutdown = TRUE,
-            termination_reason = 'killed', termination_detail = 'node_disconnect',
+            termination_reason = 'killed', termination_detail = ${terminationDetail},
             review_state = CASE
               WHEN review_required THEN 'needs_review'
               ELSE 'acknowledged'
@@ -148,6 +152,18 @@ export class SessionMutationRepository {
       ) SELECT COUNT(*)::int AS count FROM changed
     `;
     return Number(rows[0]?.count ?? 0);
+  }
+
+  async listRunningNodeIds(): Promise<string[]> {
+    const rows = await this.sql<Array<{ node_id: string }>>`
+      SELECT DISTINCT node_id
+      FROM sessions
+      WHERE status = 'running' AND node_id IS NOT NULL
+      ORDER BY node_id
+    `;
+    return rows
+      .map((row) => row.node_id)
+      .filter((nodeId) => typeof nodeId === "string" && nodeId.length > 0);
   }
 
   async reconcileNodeStartup(

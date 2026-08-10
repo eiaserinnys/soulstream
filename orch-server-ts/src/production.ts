@@ -216,6 +216,12 @@ export async function createLiveProductionApplication(
     onInfo: (event) => logPushNotification?.(event),
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
+  const sessionReconciliation = createSessionReconciliationSink({
+    repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
+    logError: (error, message) => context.warn(`${message}: ${String(error)}`),
+    leaseAware: config.soul_runner_process_enabled,
+    disconnectGraceMs: config.soul_runner_lease_timeout_ms,
+  });
   let providers: LiveOrchestratorProviderBundle;
   let pageYjsService: PageYjsService | undefined;
   let taskIdentityService: TaskIdentityService | undefined;
@@ -236,10 +242,7 @@ export async function createLiveProductionApplication(
     additionalNodeEventSinks: [
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
-      createSessionReconciliationSink({
-        repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
-        logError: (error, message) => context.warn(`${message}: ${String(error)}`),
-      }),
+      sessionReconciliation,
     ],
     boardYjsRoutes: {
       createService: (logger) => boardYjsService ??= new BoardYjsService({
@@ -439,6 +442,7 @@ export async function createLiveProductionApplication(
   return {
     app,
     startBackground: async () => {
+      await sessionReconciliation.start();
       await dbCatalogRepository.agentProfileRepository.list();
       startStableSessionOrderIndexMaintenance(
         stableSessionOrderIndexMaintenance,
@@ -452,6 +456,7 @@ export async function createLiveProductionApplication(
       if (resourcesClosed) return;
       resourcesClosed = true;
       maintenanceService.stop();
+      await sessionReconciliation.close();
       await usageSummaryService.stop();
       await turnSummaryPipeline?.drain();
       await pushNotifier.close();
