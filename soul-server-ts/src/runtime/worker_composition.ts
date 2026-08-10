@@ -55,8 +55,7 @@ import { UpstreamAdapter } from "../upstream/adapter.js";
 import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
-import { createRunnerProcessRuntimeFactory } from
-  "../runner/runner_process_runtime_factory.js";
+import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
 import {
   composeTaskRuntime,
   type TaskRuntimeComposition,
@@ -67,6 +66,7 @@ import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.
 import type { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
+import { composeRunnerProcessRuntime, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -96,6 +96,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   eventOutbox: EventOutbox;
   eventOutboxPump: EventOutboxPump;
   eventOutboxPumpMux: EventOutboxPumpMux;
+  runnerRecoveryCoordinator?: RunnerRecoveryCoordinator;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 /** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
@@ -283,22 +284,13 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
-  const runnerProcessFactory = env.SOUL_RUNNER_PROCESS_ENABLED
-    ? createRunnerProcessRuntimeFactory({
-        env,
-        logger,
-        pumpMux: eventOutboxPumpMux,
-        sessionStore: claudeSessionStore,
-        mcpConfigService,
-        codexCliPath,
-        buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
-        observeClaudeRuntime: claudeRuntime.backgroundLifecycle
-          ? async (sessionId, event) =>
-              await claudeRuntime.backgroundLifecycle!.observe(sessionId, event)
-          : undefined,
-        publishDetachedClaudeEvent,
-      })
-    : undefined;
+  const runnerProcessFactory = composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
+    env, logger, mcpConfigService, codexCliPath,
+    pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
+    buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
+    observeClaudeRuntime: claudeRuntime.backgroundLifecycle ? async (sessionId, event) =>
+      await claudeRuntime.backgroundLifecycle!.observe(sessionId, event) : undefined,
+  });
   taskRuntime = composeTaskRuntime({
     env,
     db,
@@ -314,6 +306,13 @@ export async function composeWorkerRuntime(
     orchProxyConfig,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
     ...(runnerProcessFactory ? { runnerProcessFactory } : {}),
+  });
+  const runnerRecoveryCoordinator = await startRunnerRecoveryCoordinator({
+    env,
+    runnerProcessFactory,
+    taskManager,
+    taskExecutor: taskRuntime.taskExecutor,
+    logger,
   });
   const taskService = new TaskService({ orch: orchProxyConfig, logger });
   db.configureTaskReader(taskService);
@@ -494,6 +493,7 @@ export async function composeWorkerRuntime(
     eventOutbox,
     eventOutboxPump,
     eventOutboxPumpMux,
+    ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
     createUpstreamAdapter,
   };
 }

@@ -16,7 +16,11 @@ import type {
 } from "../engine/protocol.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { McpConfigService } from "../mcp_config_service.js";
-import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
+import type {
+  RunnerProcessRuntimeFactory,
+  RunnerSnapshotPersistence,
+} from "../task/task_executor.js";
+import type { Task } from "../task/task_models.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { createTaskRunnerRuntime } from "./task_runner_runtime.js";
 import {
@@ -25,6 +29,7 @@ import {
 } from "./runner_process_dispatcher.js";
 import { RunnerProcessEngineProxy } from "./runner_process_engine_proxy.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
+import type { RunnerChildConfig, SpawnRunnerProcessInput } from "./runner_process_spawn.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -61,31 +66,18 @@ export function createRunnerProcessRuntimeFactory(
   );
   const spawner = options.spawner ?? new RunnerProcessSpawner();
 
-  return (task, agent, backend, snapshots) => {
-    const resolvedMcpServers = options.mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
-    const childProcessEnv = options.buildChildProcessEnv();
-    const codexHome = backend === "codex"
-      ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
-      : null;
+  const createRuntime = (
+    task: Task,
+    agent: import("../agent_registry.js").AgentProfile,
+    backend: import("../engine/protocol.js").BackendId,
+    snapshots: RunnerSnapshotPersistence,
+    spawn: SpawnRunnerProcessInput,
+    recoveryMode?: "adopt" | "offline",
+  ) => {
     const dispatcher = new RunnerProcessDispatcher({
-      spawn: {
-        stateDirectory,
-        sessionId: task.agentSessionId,
-        backend,
-        agent,
-        codeSha,
-        snapshotPath,
-        codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
-        codexCliPath: options.codexCliPath?.path,
-        claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-        claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
-        claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
-        claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
-        ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
-        codexHome,
-        rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
-        childProcessEnv,
-      },
+      spawn,
+      adoptExisting: recoveryMode === "adopt",
+      offlineExisting: recoveryMode === "offline",
       spawner,
       pumpMux: options.pumpMux,
       logger: options.logger,
@@ -98,6 +90,73 @@ export function createRunnerProcessRuntimeFactory(
     });
     const engine = new RunnerProcessEngineProxy(backend, agent.workspace_dir, dispatcher);
     return createTaskRunnerRuntime(engine, dispatcher, "runner");
+  };
+
+  const factory = ((task, agent, backend, snapshots) => {
+    const resolvedMcpServers = options.mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
+    const childProcessEnv = options.buildChildProcessEnv();
+    const codexHome = backend === "codex"
+      ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
+      : null;
+    return createRuntime(task, agent, backend, snapshots, {
+      stateDirectory,
+      sessionId: task.agentSessionId,
+      backend,
+      agent,
+      codeSha,
+      snapshotPath,
+      codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
+      codexCliPath: options.codexCliPath?.path,
+      claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+      claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+      claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+      claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+      ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
+      codexHome,
+      rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
+      childProcessEnv,
+    });
+  }) as RunnerProcessRuntimeFactory;
+  factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
+    task,
+    config.agent,
+    config.backend,
+    snapshots,
+    spawnInputFromConfig(stateDirectory, config),
+    mode,
+  );
+  factory.restart = (task, config, snapshots) => createRuntime(
+    task,
+    config.agent,
+    config.backend,
+    snapshots,
+    spawnInputFromConfig(stateDirectory, config),
+  );
+  return factory;
+}
+
+function spawnInputFromConfig(
+  stateDirectory: string,
+  config: RunnerChildConfig,
+): SpawnRunnerProcessInput {
+  return {
+    stateDirectory,
+    sessionId: config.sessionId,
+    backend: config.backend,
+    agent: config.agent,
+    codeSha: config.codeSha,
+    snapshotPath: config.snapshotPath,
+    codexAdapterMode: config.codexAdapterMode,
+    ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
+    claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
+    claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
+    claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
+    claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
+    ...(config.resolvedMcpServers
+      ? { resolvedMcpServers: config.resolvedMcpServers }
+      : {}),
+    codexHome: config.codexHome,
+    rolloutRoot: config.rolloutRoot,
   };
 }
 

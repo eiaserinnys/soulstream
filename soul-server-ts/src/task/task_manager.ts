@@ -24,13 +24,17 @@ import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_client_registry.js";
-import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
+import {
+  createMissingSessionMutationHost,
+  type SessionMutationHost,
+} from "../control_plane/persistence_host_clients.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
 import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
+import { TaskRunnerRecovery } from "./task_runner_recovery.js";
 import {
   TaskLifecycleRoute,
   type FinalizeTaskParams,
@@ -83,19 +87,6 @@ export type {
 } from "./task_intervention_route.js";
 export type { FinalizeTaskParams } from "./task_lifecycle_route.js";
 
-function missingSessionMutationHost(): SessionMutationHost {
-  const missing = async (): Promise<never> => {
-    throw new Error("session mutation host is required");
-  };
-  return {
-    registerSession: missing,
-    transitionSession: missing,
-    renameSession: missing,
-    deleteSession: missing,
-    acknowledgeReview: missing,
-  };
-}
-
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
   private readonly taskCreation: TaskCreation;
@@ -110,6 +101,7 @@ export class TaskManager {
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
   private readonly loadEvictedTask: (sessionId: string) => Promise<Task | null>;
   private readonly sessionMutations: SessionMutationHost;
+  private readonly runnerRecovery: TaskRunnerRecovery;
 
   constructor(
     private readonly nodeId: string,
@@ -132,7 +124,7 @@ export class TaskManager {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     sessionMutations?: SessionMutationHost,
   ) {
-    this.sessionMutations = sessionMutations ?? missingSessionMutationHost();
+    this.sessionMutations = sessionMutations ?? createMissingSessionMutationHost();
     this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
     const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
       ? sessionRuntimeControl
@@ -183,6 +175,13 @@ export class TaskManager {
       persistence,
       contextBuilder,
       agentRegistry,
+    });
+    this.runnerRecovery = new TaskRunnerRecovery({
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      loadTask: (sessionId) => this.loadEvictedTask(sessionId),
+      rememberTask: (task) => this.tasks.set(task.agentSessionId, task),
+      lifecycleTransition,
+      autoResumeTransition,
     });
     const deliveryRepository = deliveryRuntimeV2Enabled
       ? db.sessionDeliveries()
@@ -288,6 +287,18 @@ export class TaskManager {
 
   getTask(sessionId: string): Task | undefined {
     return this.tasks.get(sessionId);
+  }
+
+  async hydrateRunnerRecoveryTask(sessionId: string): Promise<Task | null> {
+    return await this.runnerRecovery.hydrate(sessionId);
+  }
+
+  async markRunnerFailureAndResume(
+    task: Task,
+    message: string,
+    onResume: StartExecutionCallback,
+  ): Promise<void> {
+    await this.runnerRecovery.markFailureAndResume(task, message, onResume);
   }
 
   getDeliveryConsumptionRecorder(): Pick<

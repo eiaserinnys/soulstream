@@ -48,29 +48,36 @@ export class RunnerHostRequestClient {
       operation,
       args,
     }, { timeoutMs: options.timeoutMs });
+    const lifetime = createRequestLifetime(options.signal, options.timeoutMs);
+    const deadline = Date.now() + options.timeoutMs;
     let lastError: Error | undefined;
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      if (options.signal?.aborted) throw abortReason(options.signal);
-      const connection = this.getConnection();
-      if (!connection) {
-        lastError = new Error("Runner host connection unavailable");
-      } else {
-        try {
-          const response = await connection.request(frame, {
-            signal: options.signal,
-            timeoutMs: options.timeoutMs,
-          });
-          return readResponse(response);
-        } catch (error) {
-          lastError = asError(error);
+    try {
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
+        const connection = this.getConnection();
+        if (!connection) {
+          lastError = new Error("Runner host connection unavailable");
+        } else {
+          try {
+            const response = await connection.request(frame, {
+              signal: lifetime.signal,
+              timeoutMs: Math.max(1, deadline - Date.now()),
+            });
+            return readResponse(response);
+          } catch (error) {
+            if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
+            lastError = asError(error);
+          }
         }
+        if (attempt < attempts) await this.delay(retryDelayMs, lifetime.signal);
       }
-      if (attempt < attempts) await this.delay(retryDelayMs, options.signal);
+      throw new Error(
+        `Runner host request ${service}.${operation} failed after ${attempts} attempts`,
+        { cause: lastError },
+      );
+    } finally {
+      lifetime.cleanup();
     }
-    throw new Error(
-      `Runner host request ${service}.${operation} failed after ${attempts} attempts`,
-      { cause: lastError },
-    );
   }
 }
 
@@ -104,6 +111,27 @@ function abortReason(signal: AbortSignal): Error {
   return signal.reason instanceof Error
     ? signal.reason
     : new Error(signal.reason ? String(signal.reason) : "Runner host request aborted");
+}
+
+function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs: number): {
+  signal: AbortSignal;
+  cleanup(): void;
+} {
+  const controller = new AbortController();
+  const relayParentAbort = () => controller.abort(parent?.reason);
+  if (parent?.aborted) relayParentAbort();
+  else parent?.addEventListener("abort", relayParentAbort, { once: true });
+  const timer = setTimeout(() => {
+    controller.abort(new Error(`Runner host request timed out after ${timeoutMs}ms`));
+  }, timeoutMs);
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      parent?.removeEventListener("abort", relayParentAbort);
+    },
+  };
 }
 
 function asError(error: unknown): Error {
