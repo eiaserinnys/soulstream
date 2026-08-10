@@ -114,7 +114,11 @@ export class EventPersistence {
   async enqueueMetadataEffect(
     sessionId: string,
     entry: Record<string, unknown>,
-    options: { replaceExistingType?: string; waitForAck?: boolean } = {},
+    options: {
+      replaceExistingType?: string;
+      waitForAck?: boolean;
+      semanticDedupeKey?: string;
+    } = {},
   ): Promise<number | null> {
     const timestamp = new Date().toISOString();
     const event = {
@@ -123,6 +127,9 @@ export class EventPersistence {
       value: entry.value,
       label: entry.label,
       timestamp,
+      ...(options.semanticDedupeKey
+        ? { [INTERNAL_DEDUPE_KEY]: options.semanticDedupeKey }
+        : {}),
     } as unknown as SSEEventPayload;
     const effect: EventOutboxSessionEffect = {
       kind: "append_metadata",

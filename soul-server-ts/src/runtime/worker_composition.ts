@@ -272,8 +272,7 @@ export async function composeWorkerRuntime(
     sessionMutations,
   );
   db.configureScheduleHost(new ScheduleHostClient({ orch: orchProxyConfig, logger }));
-  const scheduleService =
-    new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
+  const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({
     env,
     logger,
@@ -288,8 +287,9 @@ export async function composeWorkerRuntime(
     env, logger, mcpConfigService, codexCliPath,
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
-    observeClaudeRuntime: claudeRuntime.backgroundLifecycle ? async (sessionId, event) =>
-      await claudeRuntime.backgroundLifecycle!.observe(sessionId, event) : undefined,
+    observeClaudeRuntime: claudeRuntime.backgroundLifecycle
+      ? (sessionId, event, idempotencyKey) =>
+        claudeRuntime.backgroundLifecycle!.observe(sessionId, event, idempotencyKey) : undefined,
   });
   taskRuntime = composeTaskRuntime({
     env,

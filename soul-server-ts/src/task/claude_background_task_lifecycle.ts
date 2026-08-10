@@ -39,7 +39,11 @@ export class ClaudeBackgroundTaskLifecycle {
     this.now = deps.now ?? (() => new Date());
   }
 
-  async observe(sessionId: string, event: ClaudeClientEvent): Promise<boolean> {
+  async observe(
+    sessionId: string,
+    event: ClaudeClientEvent,
+    idempotencyKey?: string,
+  ): Promise<boolean> {
     const parsed = parseBackgroundEvent(event);
     if (!parsed) return true;
     const timestamp = "timestamp" in event ? event.timestamp : undefined;
@@ -48,6 +52,7 @@ export class ClaudeBackgroundTaskLifecycle {
       : this.now();
     if (!parsed.terminalStatus) {
       const row = await this.deps.repository.observe({
+        ...(idempotencyKey ? { idempotencyKey } : {}),
         sourceNode: this.deps.sourceNode,
         sessionId,
         taskId: parsed.taskId,
@@ -78,6 +83,7 @@ export class ClaudeBackgroundTaskLifecycle {
       createdAt: observedAt,
     });
     const result = await this.deps.repository.terminalize({
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       sourceNode: this.deps.sourceNode,
       sessionId,
       taskId: parsed.taskId,

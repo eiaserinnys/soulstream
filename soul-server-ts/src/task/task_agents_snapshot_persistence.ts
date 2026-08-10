@@ -25,6 +25,7 @@ export class TaskAgentsSnapshotPersistence {
   async persistRunStateSnapshot(
     task: Task,
     snapshot: EngineRunStateSnapshot,
+    idempotencyKey?: string,
   ): Promise<void> {
     if (snapshot.backendId !== "openai-agents") return;
 
@@ -51,18 +52,21 @@ export class TaskAgentsSnapshotPersistence {
     try {
       await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
         replaceExistingType: "agents_run_state",
+        ...(idempotencyKey ? { semanticDedupeKey: idempotencyKey } : {}),
       });
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "agents_run_state metadata update failed",
       );
+      if (idempotencyKey) throw err;
     }
   }
 
   async persistSessionItemsSnapshot(
     task: Task,
     snapshot: EngineSessionItemsSnapshot,
+    idempotencyKey?: string,
   ): Promise<void> {
     if (snapshot.backendId !== "openai-agents") return;
 
@@ -80,12 +84,14 @@ export class TaskAgentsSnapshotPersistence {
     try {
       await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
         replaceExistingType: "agents_session_items",
+        ...(idempotencyKey ? { semanticDedupeKey: idempotencyKey } : {}),
       });
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "agents_session_items metadata update failed",
       );
+      if (idempotencyKey) throw err;
     }
   }
 }

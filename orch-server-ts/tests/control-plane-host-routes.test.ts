@@ -291,6 +291,38 @@ describe("control-plane host routes", () => {
     expect(input.delivery.createdAt).toBeInstanceOf(Date);
   });
 
+  it("routes runner transcript correlation to the idempotent repository method", async () => {
+    const appendClaudeTranscriptEntriesIdempotent = vi.fn(async () => 1);
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeTranscripts: { appendClaudeTranscriptEntriesIdempotent },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/append_transcript_entries_idempotent",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: [{
+        idempotency_key: "runner:append:1",
+        session_id: "soul-session-a",
+        key: { project_key: "project-a", session_id: "session-a" },
+        entries: [],
+      }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(appendClaudeTranscriptEntriesIdempotent).toHaveBeenCalledWith({
+      idempotencyKey: "runner:append:1",
+      sessionId: "soul-session-a",
+      key: { projectKey: "project-a", sessionId: "session-a" },
+      entries: [],
+    });
+  });
+
   it("preserves session transition fields, idempotency, and timestamps across the host boundary", async () => {
     const transitionSession = vi.fn(async (input: unknown) => ({ input }));
     const app = Fastify();

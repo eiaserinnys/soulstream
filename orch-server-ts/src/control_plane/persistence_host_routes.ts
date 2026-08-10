@@ -48,10 +48,12 @@ const claudeRuntimeOperations = {
   get_background_task: ["claudeBackgroundTasks", null, "get"],
   active_background_tasks_for_node: ["claudeBackgroundTasks", null, "activeForNode"],
   append_transcript_entries: ["claudeTranscripts", null, "appendClaudeTranscriptEntries"],
+  append_transcript_entries_idempotent: ["claudeTranscripts", null, "appendClaudeTranscriptEntriesIdempotent"],
   load_transcript_entries: ["claudeTranscripts", null, "loadClaudeTranscriptEntries"],
   list_transcript_sessions: ["claudeTranscripts", null, "listClaudeTranscriptSessions"],
   list_transcript_subkeys: ["claudeTranscripts", null, "listClaudeTranscriptSubkeys"],
   delete_transcript: ["claudeTranscripts", null, "deleteClaudeTranscript"],
+  delete_transcript_idempotent: ["claudeTranscripts", null, "deleteClaudeTranscriptIdempotent"],
 } as const satisfies Record<string, OperationTarget>;
 
 const pageBindingOperations = {

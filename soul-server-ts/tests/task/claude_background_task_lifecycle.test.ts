@@ -61,11 +61,16 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     };
     attachClaudeBackgroundProvenance(event, "sdk_membership");
 
-    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+    await expect(lifecycle.observe(
+      "caller-session",
+      event,
+      "runner:observe:terminal",
+    )).resolves.toBe(true);
 
     expect(terminalize).toHaveBeenCalledTimes(1);
     expect(terminalize).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "caller-session",
+      idempotencyKey: "runner:observe:terminal",
       taskId: "background-agent",
       status: "completed",
     }));

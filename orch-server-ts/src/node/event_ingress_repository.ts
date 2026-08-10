@@ -69,22 +69,19 @@ export class EventIngressRepository {
           continue;
         }
 
-        const rows = await transaction<Array<{ event_id: number }>>`
-          SELECT event_append(
-            ${envelope.session_id},
-            ${envelope.event_type},
-            ${JSON.stringify(envelope.payload)},
-            ${envelope.searchable_text},
-            ${new Date(envelope.created_at)},
-            ${envelope.semantic_dedupe_key}
-          ) AS event_id
-        `;
-        const eventId = Number(rows[0]?.event_id);
+        const semanticReceipt = envelope.semantic_dedupe_key
+          ? await findSemanticEvent(
+              transaction,
+              envelope.session_id,
+              envelope.semantic_dedupe_key,
+            )
+          : undefined;
+        const eventId = semanticReceipt?.event_id ?? await appendEvent(transaction, envelope);
         if (!Number.isSafeInteger(eventId) || eventId <= 0) {
           throw new Error("event_append did not return a positive event id");
         }
 
-        if (envelope.session_effect !== null) {
+        if (!semanticReceipt && envelope.session_effect !== null) {
           if (!this.applySessionEffect) {
             throw new Error("typed session effects are not enabled in this release");
           }
@@ -109,6 +106,42 @@ export class EventIngressRepository {
       return committed;
     });
   }
+}
+
+async function appendEvent(
+  sql: EventIngressQuerySql,
+  envelope: EventIngressEnvelope,
+): Promise<number> {
+  const rows = await sql<Array<{ event_id: number }>>`
+    SELECT event_append(
+      ${envelope.session_id},
+      ${envelope.event_type},
+      ${JSON.stringify(envelope.payload)},
+      ${envelope.searchable_text},
+      ${new Date(envelope.created_at)},
+      ${envelope.semantic_dedupe_key}
+    ) AS event_id
+  `;
+  return Number(rows[0]?.event_id);
+}
+
+async function findSemanticEvent(
+  sql: EventIngressQuerySql,
+  sessionId: string,
+  dedupeKey: string,
+): Promise<{ event_id: number } | undefined> {
+  // This lock extends event_append's semantic uniqueness to its paired session
+  // effect. A retried event may receive a new transport source_seq, but it must
+  // never apply the domain mutation twice.
+  const lockKey = JSON.stringify([sessionId, dedupeKey]);
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+  const rows = await sql<Array<{ event_id: number }>>`
+    SELECT id AS event_id
+    FROM events
+    WHERE session_id = ${sessionId} AND dedupe_key = ${dedupeKey}
+    LIMIT 1
+  `;
+  return rows[0];
 }
 
 type ReceiptRow = {

@@ -178,6 +178,38 @@ describe("sanitizeJsonText", () => {
 });
 
 describe("EventPersistence durable ingress", () => {
+  it("maps runner snapshot correlation to semantic dedupe without leaking it into payload", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await ep.enqueueMetadataEffect("sess-1", {
+      type: "agents_run_state",
+      value: { serialized: "state" },
+    }, {
+      replaceExistingType: "agents_run_state",
+      semanticDedupeKey: "runner:snapshot:1",
+    });
+
+    expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "sess-1",
+      event_type: "metadata",
+      semantic_dedupe_key: "runner:snapshot:1",
+      payload: expect.not.objectContaining({ _dedupe_key: expect.anything() }),
+      session_effect: expect.objectContaining({
+        kind: "append_metadata",
+        replace_existing_type: "agents_run_state",
+      }),
+    }));
+  });
+
   it("sanitizes and fsync-enqueues persistent events without direct event DB calls", async () => {
     const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
