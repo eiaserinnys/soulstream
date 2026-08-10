@@ -63,7 +63,7 @@ describe("MCP stateless restart recovery", () => {
     }
   });
 
-  it("keeps one SDK client lossless across server replacement and preserves caller ownership", async () => {
+  it("keeps one SDK client lossless across request-scoped transport replacement and preserves caller ownership", async () => {
     const callerSessionIds: Array<string | undefined> = [];
     const runtime = makeRuntime();
     runtime.agentProfileSource = {
@@ -84,7 +84,6 @@ describe("MCP stateless restart recovery", () => {
 
     server = await buildStatelessServer(runtime);
     const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
-    const port = Number(new URL(baseUrl).port);
     client = new Client({ name: "stateless-restart-test", version: "0.0.0" });
     await client.connect(new StreamableHTTPClientTransport(
       new URL(`${baseUrl}/mcp`),
@@ -102,11 +101,9 @@ describe("MCP stateless restart recovery", () => {
       arguments: {},
     })).isError).not.toBe(true);
 
-    if (server.closeMcp) await server.closeMcp();
-    await server.close();
-    server = await buildStatelessServer(runtime);
-    await server.listen({ host: "127.0.0.1", port });
-
+    // Stateless mode discards the transport and McpServer after every POST.
+    // The second call therefore crosses the same MCP-state-loss boundary as a
+    // worker restart, without coupling this contract to TCP socket handover.
     expect((await client.callTool({
       name: "list_local_agents",
       arguments: {},
