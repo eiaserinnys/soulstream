@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 import type {
   SessionKey,
-  SessionStore,
   SessionStoreEntry,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
@@ -15,6 +14,7 @@ import type {
   EngineSessionItemsSnapshot,
 } from "../engine/protocol.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type {
   RunnerProcessRuntimeFactory,
@@ -46,12 +46,20 @@ export interface RunnerProcessRuntimeFactoryOptions {
   env: RunnerEnv;
   logger: Logger;
   pumpMux: EventOutboxPumpMux;
-  sessionStore: SessionStore;
+  sessionStore: IdempotentClaudeSessionStore;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   buildChildProcessEnv(): NodeJS.ProcessEnv;
-  observeClaudeRuntime?(sessionId: string, event: ClaudeClientEvent): Promise<unknown>;
-  publishDetachedClaudeEvent?(sessionId: string, event: ClaudeClientEvent): Promise<unknown>;
+  observeClaudeRuntime?(
+    sessionId: string,
+    event: ClaudeClientEvent,
+    idempotencyKey: string,
+  ): Promise<unknown>;
+  publishDetachedClaudeEvent?(
+    sessionId: string,
+    event: ClaudeClientEvent,
+    idempotencyKey: string,
+  ): Promise<unknown>;
   spawner?: Pick<RunnerProcessSpawner, "spawn">;
 }
 
@@ -81,7 +89,7 @@ export function createRunnerProcessRuntimeFactory(
       spawner,
       pumpMux: options.pumpMux,
       logger: options.logger,
-      handleHostCall: async (call) => await handleHostCall(
+      handleHostCall: async (call) => await applyRunnerHostCall(
         call,
         task.agentSessionId,
         snapshots,
@@ -160,17 +168,29 @@ function spawnInputFromConfig(
   };
 }
 
-async function handleHostCall(
+export async function applyRunnerHostCall(
   call: RunnerHostCall,
   expectedSessionId: string,
   snapshots: {
-    persistRunState(snapshot: EngineRunStateSnapshot): Promise<void>;
-    persistSessionItems(snapshot: EngineSessionItemsSnapshot): Promise<void>;
+    persistRunState(
+      snapshot: EngineRunStateSnapshot,
+      idempotencyKey?: string,
+    ): Promise<void>;
+    persistSessionItems(
+      snapshot: EngineSessionItemsSnapshot,
+      idempotencyKey?: string,
+    ): Promise<void>;
   },
   options: RunnerProcessRuntimeFactoryOptions,
 ): Promise<unknown> {
   if (call.service === "session_store") {
-    return await callSessionStore(options.sessionStore, call.operation, call.args);
+    return await callSessionStore(
+      options.sessionStore,
+      call.operation,
+      call.args,
+      call.correlationId,
+      expectedSessionId,
+    );
   }
   const sessionId = asString(call.args[0], "runner host session id");
   if (sessionId !== expectedSessionId) {
@@ -178,34 +198,47 @@ async function handleHostCall(
   }
   if (call.service === "snapshot") {
     if (call.operation === "persistRunState") {
-      await snapshots.persistRunState(call.args[1] as EngineRunStateSnapshot);
+      await snapshots.persistRunState(
+        call.args[1] as EngineRunStateSnapshot,
+        call.correlationId,
+      );
       return null;
     }
     if (call.operation === "persistSessionItems") {
-      await snapshots.persistSessionItems(call.args[1] as EngineSessionItemsSnapshot);
+      await snapshots.persistSessionItems(
+        call.args[1] as EngineSessionItemsSnapshot,
+        call.correlationId,
+      );
       return null;
     }
     throw new Error(`unsupported snapshot host operation: ${call.operation}`);
   }
   const event = call.args[1] as ClaudeClientEvent;
   if (call.service === "claude_runtime" && call.operation === "observe") {
-    return await options.observeClaudeRuntime?.(sessionId, event) ?? true;
+    return await options.observeClaudeRuntime?.(sessionId, event, call.correlationId) ?? true;
   }
   if (call.service === "detached_event" && call.operation === "publish") {
-    await options.publishDetachedClaudeEvent?.(sessionId, event);
+    await options.publishDetachedClaudeEvent?.(sessionId, event, call.correlationId);
     return null;
   }
   throw new Error(`unsupported runner host call: ${call.service}.${call.operation}`);
 }
 
 async function callSessionStore(
-  store: SessionStore,
+  store: IdempotentClaudeSessionStore,
   operation: string,
   args: unknown[],
+  idempotencyKey: string,
+  ownerSessionId: string,
 ): Promise<unknown> {
   switch (operation) {
     case "append":
-      await store.append(args[0] as SessionKey, args[1] as SessionStoreEntry[]);
+      await store.appendIdempotent(
+        args[0] as SessionKey,
+        args[1] as SessionStoreEntry[],
+        idempotencyKey,
+        ownerSessionId,
+      );
       return null;
     case "load":
       return await store.load(args[0] as SessionKey);
@@ -213,7 +246,11 @@ async function callSessionStore(
       if (!store.listSessions) throw new Error("SessionStore.listSessions unavailable");
       return await store.listSessions(asString(args[0], "project key"));
     case "delete":
-      await store.delete?.(args[0] as SessionKey);
+      await store.deleteIdempotent(
+        args[0] as SessionKey,
+        idempotencyKey,
+        ownerSessionId,
+      );
       return null;
     case "listSubkeys":
       if (!store.listSubkeys) throw new Error("SessionStore.listSubkeys unavailable");

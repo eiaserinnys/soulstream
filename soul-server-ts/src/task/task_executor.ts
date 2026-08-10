@@ -94,9 +94,13 @@ export interface RunnerProcessRuntimeFactory {
 }
 
 export interface RunnerSnapshotPersistence {
-    persistRunState(snapshot: import("../engine/protocol.js").EngineRunStateSnapshot): Promise<void>;
+    persistRunState(
+      snapshot: import("../engine/protocol.js").EngineRunStateSnapshot,
+      idempotencyKey?: string,
+    ): Promise<void>;
     persistSessionItems(
       snapshot: import("../engine/protocol.js").EngineSessionItemsSnapshot,
+      idempotencyKey?: string,
     ): Promise<void>;
 }
 
@@ -206,10 +210,18 @@ export class TaskExecutor {
     const backend = effectiveTaskBackend(task, agent);
     const runner = this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, {
-          persistRunState: async (snapshot) =>
-            await this.agentsSnapshotPersistence.persistRunStateSnapshot(task, snapshot),
-          persistSessionItems: async (snapshot) =>
-            await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
+          persistRunState: async (snapshot, idempotencyKey) =>
+            await this.agentsSnapshotPersistence.persistRunStateSnapshot(
+              task,
+              snapshot,
+              idempotencyKey,
+            ),
+          persistSessionItems: async (snapshot, idempotencyKey) =>
+            await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(
+              task,
+              snapshot,
+              idempotencyKey,
+            ),
         })
       : createInProcessTaskRunnerRuntime(
           task.modelPresetBackend
@@ -297,10 +309,18 @@ export class TaskExecutor {
 
   private snapshotPersistenceFor(task: Task): RunnerSnapshotPersistence {
     return {
-      persistRunState: async (snapshot) =>
-        await this.agentsSnapshotPersistence.persistRunStateSnapshot(task, snapshot),
-      persistSessionItems: async (snapshot) =>
-        await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
+      persistRunState: async (snapshot, idempotencyKey) =>
+        await this.agentsSnapshotPersistence.persistRunStateSnapshot(
+          task,
+          snapshot,
+          idempotencyKey,
+        ),
+      persistSessionItems: async (snapshot, idempotencyKey) =>
+        await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(
+          task,
+          snapshot,
+          idempotencyKey,
+        ),
     };
   }
 

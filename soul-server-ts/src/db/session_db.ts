@@ -383,6 +383,15 @@ export class SessionDB {
     return await this.claudeTranscripts().appendClaudeTranscriptEntries(key, entries);
   }
 
+  async appendClaudeTranscriptEntriesIdempotent(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    key: ClaudeTranscriptKey;
+    entries: ClaudeTranscriptEntry[];
+  }): Promise<number> {
+    return await this.claudeTranscripts().appendClaudeTranscriptEntriesIdempotent(input);
+  }
+
   async loadClaudeTranscriptEntries(
     key: ClaudeTranscriptKey,
   ): Promise<ClaudeTranscriptEntry[] | null> {
@@ -403,6 +412,14 @@ export class SessionDB {
 
   async deleteClaudeTranscript(key: ClaudeTranscriptKey): Promise<void> {
     await this.claudeTranscripts().deleteClaudeTranscript(key);
+  }
+
+  async deleteClaudeTranscriptIdempotent(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    key: ClaudeTranscriptKey;
+  }): Promise<void> {
+    await this.claudeTranscripts().deleteClaudeTranscriptIdempotent(input);
   }
 
   private claudeTranscripts(): ClaudeTranscriptRepository {

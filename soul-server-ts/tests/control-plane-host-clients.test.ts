@@ -165,4 +165,31 @@ describe("worker control-plane host clients", () => {
     );
     expect(result.row.created_at).toBeInstanceOf(Date);
   });
+
+  it("sends runner transcript correlation to the idempotent mutation owner", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        args: [{
+          idempotency_key: "runner:append:1",
+          session_id: "soul-session-a",
+          key: { project_key: "project-a", session_id: "session-a" },
+          entries: [{ type: "user", message: { content: "hello" } }],
+        }],
+      });
+      return new Response("1", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ClaudeRuntimeHostClient({ orch, logger });
+
+    await client.appendClaudeTranscriptEntriesIdempotent({
+      idempotencyKey: "runner:append:1",
+      sessionId: "soul-session-a",
+      key: { projectKey: "project-a", sessionId: "session-a" },
+      entries: [{ type: "user", message: { content: "hello" } }] as never,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/append_transcript_entries_idempotent",
+    );
+  });
 });

@@ -4,6 +4,7 @@ import type {
   SqlClient,
 } from "../control_plane_types.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";
+import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
 
 export type ClaudeBackgroundTaskStatus =
   | "pending"
@@ -36,6 +37,7 @@ export interface ClaudeBackgroundTaskRow {
   terminal_at: Date | null;
 }
 export interface ObserveClaudeBackgroundTaskParams {
+  idempotencyKey?: string;
   sourceNode: string;
   sessionId: string;
   taskId: string;
@@ -74,8 +76,23 @@ export class ClaudeBackgroundTaskRepository {
   async observe(
     params: ObserveClaudeBackgroundTaskParams,
   ): Promise<ClaudeBackgroundTaskRow> {
+    if (params.idempotencyKey) {
+      return await runIdempotentSessionMutation(
+        this.sql,
+        "runner_claude_background_observe",
+        { ...params, idempotencyKey: params.idempotencyKey },
+        async (sql) => await this.observeWithSql(sql, params),
+      );
+    }
+    return await this.observeWithSql(this.sql, params);
+  }
+
+  private async observeWithSql(
+    sql: SqlClient,
+    params: ObserveClaudeBackgroundTaskParams,
+  ): Promise<ClaudeBackgroundTaskRow> {
     const observedAt = params.observedAt ?? new Date();
-    const rows = await this.sql<ClaudeBackgroundTaskRow[]>`
+    const rows = await sql<ClaudeBackgroundTaskRow[]>`
       INSERT INTO claude_background_tasks (
         source_node, session_id, task_id, sdk_session_id, status,
         description, summary, output_file, tool_use_id, created_at, updated_at
@@ -99,7 +116,13 @@ export class ClaudeBackgroundTaskRepository {
       RETURNING *
     `;
     if (rows[0]) return rows[0];
-    const existing = await this.get(params.sourceNode, params.sessionId, params.taskId);
+    const existingRows = await sql<ClaudeBackgroundTaskRow[]>`
+      SELECT * FROM claude_background_tasks
+      WHERE source_node = ${params.sourceNode}
+        AND session_id = ${params.sessionId}
+        AND task_id = ${params.taskId}
+    `;
+    const existing = existingRows[0];
     if (!existing) throw new Error(`Claude background task disappeared: ${params.taskId}`);
     return existing;
   }
@@ -107,9 +130,24 @@ export class ClaudeBackgroundTaskRepository {
   async terminalize(
     params: TerminalizeClaudeBackgroundTaskParams,
   ): Promise<TerminalizeClaudeBackgroundTaskResult> {
-    return await this.sql.begin(async (transaction) => {
-      const observedAt = params.observedAt ?? new Date();
-      await transaction`
+    if (params.idempotencyKey) {
+      return await runIdempotentSessionMutation(
+        this.sql,
+        "runner_claude_background_terminalize",
+        { ...params, idempotencyKey: params.idempotencyKey },
+        async (sql) => await this.terminalizeWithSql(sql, params),
+      );
+    }
+    return await this.sql.begin(async (transaction) =>
+      await this.terminalizeWithSql(transaction as unknown as SqlClient, params));
+  }
+
+  private async terminalizeWithSql(
+    transaction: SqlClient,
+    params: TerminalizeClaudeBackgroundTaskParams,
+  ): Promise<TerminalizeClaudeBackgroundTaskResult> {
+    const observedAt = params.observedAt ?? new Date();
+    await transaction`
         INSERT INTO claude_background_tasks (
           source_node, session_id, task_id, sdk_session_id, status,
           description, summary, output_file, tool_use_id, created_at, updated_at
@@ -122,7 +160,7 @@ export class ClaudeBackgroundTaskRepository {
         )
         ON CONFLICT (source_node, session_id, task_id) DO NOTHING
       `;
-      const transitioned = await transaction<ClaudeBackgroundTaskRow[]>`
+    const transitioned = await transaction<ClaudeBackgroundTaskRow[]>`
         UPDATE claude_background_tasks
         SET
           sdk_session_id = COALESCE(${params.sdkSessionId ?? null}, sdk_session_id),
@@ -141,38 +179,36 @@ export class ClaudeBackgroundTaskRepository {
           AND status IN ('pending', 'running')
         RETURNING *
       `;
-      if (!transitioned[0]) {
-        const rows = await transaction<ClaudeBackgroundTaskRow[]>`
+    if (!transitioned[0]) {
+      const rows = await transaction<ClaudeBackgroundTaskRow[]>`
           SELECT * FROM claude_background_tasks
           WHERE source_node = ${params.sourceNode}
             AND session_id = ${params.sessionId}
             AND task_id = ${params.taskId}
         `;
-        if (!rows[0]) throw new Error(`Claude background task disappeared: ${params.taskId}`);
-        return { accepted: false, row: rows[0] };
-      }
+      if (!rows[0]) throw new Error(`Claude background task disappeared: ${params.taskId}`);
+      return { accepted: false, row: rows[0] };
+    }
 
-      const deliveries = new SessionDeliveryRepository(
-        transaction as unknown as SqlClient,
-      );
-      const targetExists = params.delivery.targetSessionId
-        ? await transaction<Array<{ present: number }>>`
+    const deliveries = new SessionDeliveryRepository(transaction);
+    const targetExists = params.delivery.targetSessionId
+      ? await transaction<Array<{ present: number }>>`
             SELECT 1 AS present
             FROM sessions
             WHERE session_id = ${params.delivery.targetSessionId}
             FOR KEY SHARE
           `
-        : [];
-      const registered = await deliveries.register({
-        ...params.delivery,
-        targetSessionId: targetExists[0]
-          ? params.delivery.targetSessionId
-          : undefined,
-      });
-      if (registered.conflict) {
-        throw new Error(`Claude background delivery identity conflict: ${params.delivery.deliveryId}`);
-      }
-      const rows = await transaction<ClaudeBackgroundTaskRow[]>`
+      : [];
+    const registered = await deliveries.register({
+      ...params.delivery,
+      targetSessionId: targetExists[0]
+        ? params.delivery.targetSessionId
+        : undefined,
+    });
+    if (registered.conflict) {
+      throw new Error(`Claude background delivery identity conflict: ${params.delivery.deliveryId}`);
+    }
+    const rows = await transaction<ClaudeBackgroundTaskRow[]>`
         UPDATE claude_background_tasks
         SET notification_delivery_id = ${registered.row.delivery_id}
         WHERE source_node = ${params.sourceNode}
@@ -180,12 +216,11 @@ export class ClaudeBackgroundTaskRepository {
           AND task_id = ${params.taskId}
         RETURNING *
       `;
-      return {
-        accepted: true,
-        row: rows[0]!,
-        delivery: registered.row,
-      };
-    });
+    return {
+      accepted: true,
+      row: rows[0]!,
+      delivery: registered.row,
+    };
   }
 
   async get(

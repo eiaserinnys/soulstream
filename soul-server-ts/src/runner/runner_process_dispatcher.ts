@@ -372,7 +372,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       } satisfies RunnerHostCall;
       const { data } = await this.hostCallIdempotency.execute(
         call,
-        async () => await this.options.handleHostCall(call),
+        async (idempotencyKey) => {
+          if (idempotencyKey !== call.correlationId) {
+            throw new Error("runner host-call idempotency key mismatch");
+          }
+          return await this.options.handleHostCall(call);
+        },
       );
       response = runnerControlResponseFrame(frame.correlationId, {
         status: "ok",

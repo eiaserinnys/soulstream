@@ -22,8 +22,8 @@ export interface RunnerHostRequestOptions {
 
 /**
  * Runner-side bounded proxy for host-owned state. Retries retain the same
- * correlation id so the host can return a cached response after reconnect
- * instead of applying a non-idempotent operation twice.
+ * correlation id so a replacement host can retry the same durable-owner
+ * mutation without committing its side effect twice.
  */
 export class RunnerHostRequestClient {
   constructor(

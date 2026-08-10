@@ -23,13 +23,52 @@ export interface ClaudeTranscriptStoreDb {
     key: Pick<ClaudeTranscriptKey, "projectKey" | "sessionId">,
   ): Promise<string[]>;
   deleteClaudeTranscript(key: ClaudeTranscriptKey): Promise<void>;
+  appendClaudeTranscriptEntriesIdempotent(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    key: ClaudeTranscriptKey;
+    entries: ClaudeTranscriptEntry[];
+  }): Promise<number>;
+  deleteClaudeTranscriptIdempotent(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    key: ClaudeTranscriptKey;
+  }): Promise<void>;
 }
 
-export class DbClaudeSessionStore implements SessionStore {
+export interface IdempotentClaudeSessionStore extends SessionStore {
+  appendIdempotent(
+    key: SessionKey,
+    entries: SessionStoreEntry[],
+    idempotencyKey: string,
+    ownerSessionId: string,
+  ): Promise<void>;
+  deleteIdempotent(
+    key: SessionKey,
+    idempotencyKey: string,
+    ownerSessionId: string,
+  ): Promise<void>;
+}
+
+export class DbClaudeSessionStore implements IdempotentClaudeSessionStore {
   constructor(private readonly db: ClaudeTranscriptStoreDb) {}
 
   async append(key: SessionKey, entries: SessionStoreEntry[]): Promise<void> {
     await this.db.appendClaudeTranscriptEntries(normalizeKey(key), entries);
+  }
+
+  async appendIdempotent(
+    key: SessionKey,
+    entries: SessionStoreEntry[],
+    idempotencyKey: string,
+    ownerSessionId: string,
+  ): Promise<void> {
+    await this.db.appendClaudeTranscriptEntriesIdempotent({
+      idempotencyKey,
+      sessionId: ownerSessionId,
+      key: normalizeKey(key),
+      entries,
+    });
   }
 
   async load(key: SessionKey): Promise<SessionStoreEntry[] | null> {
@@ -42,6 +81,18 @@ export class DbClaudeSessionStore implements SessionStore {
 
   async delete(key: SessionKey): Promise<void> {
     await this.db.deleteClaudeTranscript(normalizeKey(key));
+  }
+
+  async deleteIdempotent(
+    key: SessionKey,
+    idempotencyKey: string,
+    ownerSessionId: string,
+  ): Promise<void> {
+    await this.db.deleteClaudeTranscriptIdempotent({
+      idempotencyKey,
+      sessionId: ownerSessionId,
+      key: normalizeKey(key),
+    });
   }
 
   async listSubkeys(key: { projectKey: string; sessionId: string }): Promise<string[]> {

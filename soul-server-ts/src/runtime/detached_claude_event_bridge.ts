@@ -22,8 +22,8 @@ interface DetachedClaudeEventBridgeOptions {
 /** Maps child-owned Claude lifecycle events back onto the existing host publisher path. */
 export function createDetachedClaudeEventBridge(
   options: DetachedClaudeEventBridgeOptions,
-): (sessionId: string, event: ClaudeClientEvent) => Promise<void> {
-  return async (sessionId, event) => {
+): (sessionId: string, event: ClaudeClientEvent, idempotencyKey?: string) => Promise<void> {
+  return async (sessionId, event, idempotencyKey) => {
     const task = options.findTask(sessionId);
     const publisher = options.getPublisher();
     if (!task || !publisher) {
@@ -33,7 +33,10 @@ export function createDetachedClaudeEventBridge(
       );
       return;
     }
-    for (const payload of mapClaudeClientEvent(event)) {
+    for (const [index, payload] of mapClaudeClientEvent(event).entries()) {
+      if (idempotencyKey) {
+        (payload as Record<string, unknown>)._dedupe_key = `${idempotencyKey}:${index}`;
+      }
       if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
       await publisher.publishEngineEvent(task, payload);
       await options.collectDetached(task, payload);

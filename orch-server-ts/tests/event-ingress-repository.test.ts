@@ -19,6 +19,14 @@ describe("EventIngressRepository", () => {
         expect(values).toEqual(["node-a", STREAM_ID, 2]);
         return [];
       }
+      if (text.includes("pg_advisory_xact_lock")) {
+        order.push("semantic-lock");
+        return [];
+      }
+      if (text.includes("FROM events") && text.includes("dedupe_key")) {
+        order.push("semantic-read");
+        return [];
+      }
       if (text.includes("SELECT event_append")) {
         order.push("event-append");
         expect(values.slice(0, 3)).toEqual([
@@ -62,6 +70,8 @@ describe("EventIngressRepository", () => {
     expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(order).toEqual([
       "receipt-read",
+      "semantic-lock",
+      "semantic-read",
       "event-append",
       "session-effect",
       "receipt-insert",
@@ -102,6 +112,41 @@ describe("EventIngressRepository", () => {
       constructor: EventIngressProtocolConflict,
       statusCode: 409,
     });
+  });
+
+  it("applies a semantic event effect once across distinct transport receipts", async () => {
+    let semanticEventId: number | undefined;
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) {
+        return semanticEventId ? [{ event_id: semanticEventId }] : [];
+      }
+      if (text.includes("SELECT event_append")) {
+        semanticEventId = 41;
+        return [{ event_id: semanticEventId }];
+      }
+      if (text.includes("INSERT INTO event_ingress_receipts")) return [];
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const effect = vi.fn(async () => undefined);
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      effect,
+    );
+    const sessionEffect = {
+      kind: "append_metadata" as const,
+      entry: { type: "runner_snapshot", value: { state: "ready" } },
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+
+    await repository.commitBatch("node-a", batch({ session_effect: sessionEffect }, 2));
+    await repository.commitBatch("node-a", batch({
+      session_effect: sessionEffect,
+      payload_hash: "b".repeat(64),
+    }, 3));
+
+    expect(effect).toHaveBeenCalledOnce();
   });
 });
 

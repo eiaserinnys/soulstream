@@ -19,32 +19,36 @@ const OPERATION_MUTABILITY = {
   detached_event: { publish: true },
 } as const satisfies Record<HostService, Record<string, boolean>>;
 
-/** Durable, payload-free exactly-once guard for host-owned mutations. */
+/** Payload-free IPC replay receipt; exactly-once belongs to each mutation owner. */
 export class RunnerHostCallIdempotency {
   constructor(private readonly journal: RunnerSqliteEventOutbox) {}
 
   async execute(
     call: RunnerHostCall,
-    apply: () => Promise<unknown>,
+    apply: (idempotencyKey: string) => Promise<unknown>,
   ): Promise<{ data: unknown; replayed: boolean }> {
     if (!isMutatingRunnerHostCall(call.service, call.operation)) {
-      return { data: await apply(), replayed: false };
+      return { data: await apply(call.correlationId), replayed: false };
     }
     const applied = await this.journal.readHostCallApplied(call.correlationId);
     if (applied) {
       if (applied.service !== call.service || applied.operation !== call.operation) {
         throw new Error("runner host-call correlation id was reused for a different operation");
       }
-      return { data: null, replayed: true };
     }
-    const data = await apply();
-    await this.journal.recordHostCallApplied({
-      correlationId: call.correlationId,
-      service: call.service,
-      operation: call.operation,
-      createdAt: new Date().toISOString(),
-    });
-    return { data, replayed: false };
+    // The durable owner, not this runner-local journal, provides exactly-once.
+    // A new host must reapply the call to rebuild host memory; the owner consumes
+    // correlationId and returns its committed result without repeating mutation.
+    const data = await apply(call.correlationId);
+    if (!applied) {
+      await this.journal.recordHostCallApplied({
+        correlationId: call.correlationId,
+        service: call.service,
+        operation: call.operation,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return { data, replayed: applied !== null };
   }
 
   async acknowledge(correlationId: string): Promise<void> {

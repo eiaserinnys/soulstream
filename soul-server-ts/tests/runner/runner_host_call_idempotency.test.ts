@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 describe("RunnerHostCallIdempotency", () => {
-  it("does not reapply a mutation when a new host retries after the response was lost", async () => {
+  it("retries through the durable owner after apply committed but host receipt was not recorded", async () => {
     const directory = await mkdtemp(join(tmpdir(), "runner-host-call-"));
     directories.push(directory);
     const path = join(directory, "runner.sqlite");
@@ -27,7 +27,16 @@ describe("RunnerHostCallIdempotency", () => {
     const secondStore = await RunnerSqliteEventOutbox.open(path);
     const firstHost = new RunnerHostCallIdempotency(firstStore);
     const secondHost = new RunnerHostCallIdempotency(secondStore);
-    const apply = vi.fn(async () => null);
+    const ownerReceipts = new Set<string>();
+    let applications = 0;
+    const apply = vi.fn(async (idempotencyKey: string) => {
+      expect(idempotencyKey).toBe("host:mutation-one");
+      if (!ownerReceipts.has(idempotencyKey)) {
+        applications += 1;
+        ownerReceipts.add(idempotencyKey);
+      }
+      return null;
+    });
     const call = {
       correlationId: "host:mutation-one",
       service: "snapshot" as const,
@@ -35,17 +44,20 @@ describe("RunnerHostCallIdempotency", () => {
       args: ["session-a", { backendId: "openai-agents" }],
     };
 
-    await expect(firstHost.execute(call, apply)).resolves.toEqual({
+    vi.spyOn(firstStore, "recordHostCallApplied")
+      .mockRejectedValueOnce(new Error("host died before local receipt"));
+    // The durable owner committed, then the host died before the runner-local
+    // receipt. A new host must retry the owner with the same correlation key.
+    await expect(firstHost.execute(call, apply)).rejects.toThrow(
+      "host died before local receipt",
+    );
+    await expect(secondHost.execute(call, apply)).resolves.toEqual({
       data: null,
       replayed: false,
     });
-    // The first host applied and journaled the mutation, then its response was lost.
-    await expect(secondHost.execute(call, apply)).resolves.toEqual({
-      data: null,
-      replayed: true,
-    });
 
-    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(applications).toBe(1);
     await secondHost.acknowledge(call.correlationId);
     await expect(firstStore.readHostCallApplied(call.correlationId)).resolves.toBeNull();
     firstStore.close();
