@@ -1,0 +1,171 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  RunnerReleaseGarbageCollector,
+  type RunnerReleaseGarbageCollectorDependencies,
+} from "../../src/runner/runner_release_gc.js";
+import type {
+  RunnerReleaseDescriptor,
+  RunnerReleaseMaterializer,
+} from "../../src/runner/runner_release_materializer.js";
+import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
+import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+
+const directories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map(
+    async (directory) => await rm(directory, { recursive: true, force: true }),
+  ));
+});
+
+describe("RunnerReleaseGarbageCollector", () => {
+  it("can never remove a snapshot while any referencing runner pid is alive", async () => {
+    const subject = await makeSubject([registration({ pidAlive: true })], false);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "live_runner" }],
+    });
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+
+  it("retains a stopped terminal runner until outbox and IPC final ACK", async () => {
+    const subject = await makeSubject([registration()], true);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "final_ack_pending" }],
+    });
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+
+  it("retains a running lease record even when its pid probe is temporarily unavailable", async () => {
+    const active = registration();
+    active.lifecycle = { ...active.lifecycle!, execution_state: "running" };
+    const subject = await makeSubject([active], false);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "running_lifecycle" }],
+    });
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+
+  it("removes a release only after every registration is stopped, terminal, and fully ACKed", async () => {
+    const subject = await makeSubject([
+      registration({ sessionId: "session-a" }),
+      registration({ sessionId: "session-b" }),
+    ], false);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: ["release-a"],
+      retained: [],
+    });
+    expect(subject.materializer.remove).toHaveBeenCalledOnce();
+  });
+
+  it("retains a prewarmed release with no final-ACK evidence", async () => {
+    const subject = await makeSubject([], false);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "no_final_ack_evidence" }],
+    });
+  });
+
+  it("fails closed when any runner registration is unreadable", async () => {
+    const subject = await makeSubject([], false, [
+      { directory: "/broken", error: new Error("unreadable registration") },
+    ]);
+
+    await expect(subject.collector.collect()).rejects.toThrow("incomplete registration inventory");
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+});
+
+async function makeSubject(
+  registrations: RunnerRegistration[],
+  incomplete: boolean,
+  errors: Array<{ directory: string; error: Error }> = [],
+) {
+  const root = await temporaryDirectory();
+  const materializer = new FakeMaterializer();
+  const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
+  const release = pool.describe("release-a");
+  await pool.ensureRelease(release);
+  const deps: RunnerReleaseGarbageCollectorDependencies = {
+    scan: async () => ({ registrations, errors }),
+    hasIncompleteDurableWork: async () => incomplete,
+  };
+  return {
+    collector: new RunnerReleaseGarbageCollector(
+      pool,
+      join(root, "runner-state"),
+      { info: vi.fn() } as never,
+      deps,
+    ),
+    materializer,
+  };
+}
+
+class FakeMaterializer implements RunnerReleaseMaterializer {
+  readonly remove = vi.fn(async (release: RunnerReleaseDescriptor) => {
+    this.ready.delete(release.releaseId);
+    await rm(release.releaseRoot, { recursive: true, force: true });
+  });
+  private readonly ready = new Set<string>();
+
+  async resolveCurrentReleaseId(): Promise<string> {
+    return "release-a";
+  }
+
+  async materialize(release: RunnerReleaseDescriptor): Promise<void> {
+    await mkdir(release.runnerModuleRoot, { recursive: true });
+    await writeFile(join(release.runnerModuleRoot, "runner_entry.js"), "");
+    this.ready.add(release.releaseId);
+  }
+
+  async verify(release: RunnerReleaseDescriptor): Promise<void> {
+    if (!this.ready.has(release.releaseId)) {
+      throw Object.assign(new Error("not ready"), { code: "ENOENT" });
+    }
+  }
+}
+
+function registration(options: {
+  sessionId?: string;
+  pidAlive?: boolean;
+} = {}): RunnerRegistration {
+  const sessionId = options.sessionId ?? "session-a";
+  return {
+    config: {
+      sessionId,
+      codeSha: "release-a",
+      paths: { databasePath: `/state/${sessionId}/runner.sqlite` },
+    } as never,
+    pid: options.pidAlive ? 42 : null,
+    pidAlive: options.pidAlive ?? false,
+    registeredAtMs: Date.now(),
+    bootstrap: { payload: { code_sha: "release-a" } } as never,
+    lifecycle: {
+      session_id: sessionId,
+      runner_pid: 42,
+      execution_command_id: "execute-a",
+      execution_state: "completed",
+      progress_seq: 2,
+      progress_at: new Date().toISOString(),
+      terminal_error: null,
+    },
+  };
+}
+
+async function temporaryDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "runner-release-gc-"));
+  directories.push(directory);
+  return directory;
+}

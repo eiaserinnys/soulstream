@@ -10,6 +10,14 @@ import {
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
 import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
+import { RunnerReleaseGarbageCollector } from "../runner/runner_release_gc.js";
+import { BuildArtifactReleaseMaterializer } from "../runner/runner_release_materializer.js";
+import { RunnerReleasePool } from "../runner/runner_release_pool.js";
+
+export interface RunnerProcessComposition {
+  runtimeFactory: RunnerProcessRuntimeFactory;
+  releaseGarbageCollector: RunnerReleaseGarbageCollector;
+}
 
 export type RunnerReconciliationReporter = {
   listLiveRunnerSessionIds(): Promise<string[]>;
@@ -18,14 +26,34 @@ export type RunnerReconciliationReporter = {
 
 export function composeRunnerProcessRuntime(
   enabled: boolean,
-  options: RunnerProcessRuntimeFactoryOptions,
-): RunnerProcessRuntimeFactory | undefined {
-  return enabled ? createRunnerProcessRuntimeFactory(options) : undefined;
+  options: Omit<RunnerProcessRuntimeFactoryOptions, "releasePool">,
+): RunnerProcessComposition | undefined {
+  if (!enabled) return undefined;
+  const artifactDirectory = required(
+    options.env.SOUL_RUNNER_ARTIFACT_DIR,
+    "SOUL_RUNNER_ARTIFACT_DIR",
+  );
+  const releasesDirectory = required(
+    options.env.SOUL_RUNNER_RELEASES_DIR,
+    "SOUL_RUNNER_RELEASES_DIR",
+  );
+  const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
+  const materializer = new BuildArtifactReleaseMaterializer(artifactDirectory);
+  const releasePool = new RunnerReleasePool(releasesDirectory, materializer);
+  return {
+    runtimeFactory: createRunnerProcessRuntimeFactory({ ...options, releasePool }),
+    releaseGarbageCollector: new RunnerReleaseGarbageCollector(
+      releasePool,
+      stateDirectory,
+      options.logger,
+    ),
+  };
 }
 
 export async function startRunnerRecoveryCoordinator(options: {
   env: Env;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
+  releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
   taskManager: Pick<TaskManager, "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume">;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
   logger: Logger;
@@ -42,6 +70,9 @@ export async function startRunnerRecoveryCoordinator(options: {
     taskManager: options.taskManager,
     taskExecutor: options.taskExecutor,
     logger: options.logger,
+    ...(options.releaseGarbageCollector
+      ? { releaseGarbageCollector: options.releaseGarbageCollector }
+      : {}),
   });
   await coordinator.start();
   return coordinator;
@@ -64,4 +95,9 @@ export function composeRunnerReconciliationReporter(
     }),
     waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
   };
+}
+
+function required(value: string | undefined, key: string): string {
+  if (!value) throw new Error(`${key} required for runner process mode`);
+  return value;
 }

@@ -9,14 +9,14 @@
   },
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsup --config tsup.config.ts --target node22 && npm run verify:bundle",
+    "build": "tsup --config tsup.config.ts --target node22 && tsup --config tsup.runner.config.ts --target node22 && node scripts/write_runner_release_package.mjs && npm run verify:bundle",
     "dev": "tsx src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:contracts": "tsc --noEmit -p tsconfig.contracts.json",
-    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",
+    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node scripts/verify_runner_release_isolation.mjs",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts",
     "agent-profiles:import": "tsx scripts/import-agent-profiles.ts"
   },

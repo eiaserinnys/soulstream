@@ -143,6 +143,28 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
+  it("exposes final-ACK evidence across outbox and IPC journal for release GC", async () => {
+    const outbox = await RunnerSqliteEventOutbox.open(await temporaryDatabasePath());
+    const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
+
+    const event = await outbox.append(eventInput("pending"));
+    expect(await outbox.hasPendingDurableWork()).toBe(true);
+    await outbox.acknowledge(bootstrap.stream_id, event.source_seq);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
+
+    await outbox.recordHostCallApplied({
+      correlationId: "host-call-a",
+      service: "session_store",
+      operation: "append",
+      createdAt: "2026-08-11T01:00:00.000Z",
+    });
+    expect(await outbox.hasPendingDurableWork()).toBe(true);
+    await outbox.acknowledgeHostCall("host-call-a");
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
+    outbox.close();
+  });
+
   it("stores a monotonic progress lease on bootstrap without changing event lineage", async () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.open(path);

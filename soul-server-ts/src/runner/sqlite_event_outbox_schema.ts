@@ -109,6 +109,11 @@ export type RunnerResumeMaterial = {
   cwd: string;
   codex_home: string | null;
   rollout_root: string | null;
+  /**
+   * Opaque release id. The column name is retained for additive schema
+   * compatibility; the current materializer stores a deterministic runner
+   * build-artifact content hash rather than a git SHA.
+   */
   code_sha: string;
   snapshot_path: string;
 };

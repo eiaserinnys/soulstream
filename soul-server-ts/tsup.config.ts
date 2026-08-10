@@ -1,7 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/main.ts", "src/runner/runner_entry.ts"],
+  entry: [
+    "src/main.ts",
+    "src/runner/runner_release_prewarm.ts",
+  ],
   format: ["esm"],
   target: "node22",
   clean: true,

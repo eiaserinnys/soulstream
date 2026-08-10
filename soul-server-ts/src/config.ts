@@ -59,10 +59,10 @@ export const EnvSchema = z
       .transform((v) => v === "true"),
     /** Per-session socket, SQLite, pid, and lock files. Required only when enabled. */
     SOUL_RUNNER_STATE_DIR: z.string().min(1).optional(),
-    /** Immutable release identity embedded into the runner bootstrap record. */
-    SOUL_RUNNER_CODE_SHA: z.string().min(1).optional(),
-    /** Immutable release directory from which detached runner entrypoints spawn. */
-    SOUL_RUNNER_SNAPSHOT_PATH: z.string().min(1).optional(),
+    /** Self-contained runner build artifacts copied into immutable releases. */
+    SOUL_RUNNER_ARTIFACT_DIR: z.string().min(1).optional(),
+    /** Parent of immutable opaque release-id directories. */
+    SOUL_RUNNER_RELEASES_DIR: z.string().min(1).optional(),
     /** No-progress window before a live pid is classified as hung. */
     SOUL_RUNNER_LEASE_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
     /** Node-local registration scan cadence while process mode is enabled. */
@@ -203,8 +203,8 @@ export const EnvSchema = z
     if (env.SOUL_RUNNER_PROCESS_ENABLED) {
       for (const key of [
         "SOUL_RUNNER_STATE_DIR",
-        "SOUL_RUNNER_CODE_SHA",
-        "SOUL_RUNNER_SNAPSHOT_PATH",
+        "SOUL_RUNNER_ARTIFACT_DIR",
+        "SOUL_RUNNER_RELEASES_DIR",
       ] as const) {
         if (!env[key]) {
           ctx.addIssue({

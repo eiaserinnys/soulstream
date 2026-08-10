@@ -53,6 +53,8 @@ export function parseRunnerChildConfig(value: unknown): RunnerChildConfig {
 export interface SpawnRunnerProcessInput extends Omit<RunnerChildConfig, "schemaVersion" | "paths"> {
   stateDirectory: string;
   childProcessEnv?: NodeJS.ProcessEnv;
+  /** Host-only preparation; never serialized into the child config. */
+  prepareSnapshot?: () => Promise<void>;
 }
 
 export interface SpawnedRunnerProcess {
@@ -73,6 +75,7 @@ interface SpawnDependencies {
   spawnProcess(entry: string, args: string[], options: {
     detached: true;
     stdio: "ignore";
+    cwd: string;
     env: NodeJS.ProcessEnv;
   }): Pick<ChildProcess, "pid" | "unref">;
   registerPid(path: string, pid: number): Promise<void>;
@@ -119,11 +122,15 @@ export class RunnerProcessSpawner {
     await writeFile(paths.configPath, JSON.stringify(validatedConfig), { mode: 0o600 });
     await chmod(paths.configPath, 0o600);
 
-    const entry = join(input.snapshotPath, "dist", "runner", "runner_entry.js");
+    // Config + SQLite registration must exist before materialization. GC
+    // re-scans registrations under the same release lock before deletion.
+    await input.prepareSnapshot?.();
+    const entry = join(input.snapshotPath, "runner_entry.js");
     await this.deps.validateEntry(entry);
     const child = this.deps.spawnProcess(entry, ["--config", paths.configPath], {
       detached: true,
       stdio: "ignore",
+      cwd: input.snapshotPath,
       env: input.childProcessEnv ?? process.env,
     });
     if (!child.pid) throw new Error("detached runner spawn returned no pid");

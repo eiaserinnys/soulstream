@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 
 const directories: string[] = [];
 
@@ -19,9 +20,13 @@ describe("RunnerProcessSpawner", () => {
     const calls: string[] = [];
     const spawnProcess = vi.fn((entry: string, args: string[], options: unknown) => {
       calls.push("spawn");
-      expect(entry).toBe("/releases/sha-a/soul-server-ts/dist/runner/runner_entry.js");
+      expect(entry).toBe("/releases/sha-a/runner_entry.js");
       expect(args[0]).toBe("--config");
-      expect(options).toMatchObject({ detached: true, stdio: "ignore" });
+      expect(options).toMatchObject({
+        detached: true,
+        stdio: "ignore",
+        cwd: "/releases/sha-a",
+      });
       return { pid: 4123, unref: vi.fn() };
     });
     const spawner = new RunnerProcessSpawner({
@@ -35,16 +40,24 @@ describe("RunnerProcessSpawner", () => {
       delay: async () => {},
     });
 
-    const spawned = await spawner.spawn(await input());
+    const params = await input();
+    params.prepareSnapshot = vi.fn(async () => {
+      const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+      expect(JSON.parse(await readFile(paths.configPath, "utf8"))).toMatchObject({
+        codeSha: "sha-a",
+      });
+      calls.push("snapshot");
+    });
+    const spawned = await spawner.spawn(params);
 
-    expect(calls).toEqual(["database", "entry", "spawn"]);
+    expect(calls).toEqual(["database", "snapshot", "entry", "spawn"]);
     expect(spawned.pid).toBe(4123);
     expect(spawned.adopted).toBe(false);
     expect(await readFile(spawned.paths.pidPath, "utf8")).toBe("4123\n");
     expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
       sessionId: "session-a",
       codeSha: "sha-a",
-      snapshotPath: "/releases/sha-a/soul-server-ts",
+      snapshotPath: "/releases/sha-a",
     });
   });
 
@@ -132,6 +145,32 @@ describe("RunnerProcessSpawner", () => {
     expect(spawnProcess).not.toHaveBeenCalled();
   });
 
+  it("registers config before materialization and never spawns after materialization failure", async () => {
+    const spawnProcess = vi.fn(() => ({ pid: 5005, unref: vi.fn() }));
+    let configRegistered = false;
+    const params = await input();
+    params.prepareSnapshot = async () => {
+      const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+      configRegistered = JSON.parse(await readFile(paths.configPath, "utf8")).codeSha === "sha-a";
+      expect(configRegistered).toBe(true);
+      throw Object.assign(new Error("disk full while materializing"), { code: "ENOSPC" });
+    };
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase: async () => {},
+      validateEntry: async () => {},
+      spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(spawner.spawn(params)).rejects.toThrow("disk full while materializing");
+    expect(configRegistered).toBe(true);
+    expect(spawnProcess).not.toHaveBeenCalled();
+  });
+
   it("kills the detached child when pid registration fails", async () => {
     let alive = true;
     const unref = vi.fn();
@@ -172,7 +211,7 @@ async function input() {
       workspace_dir: "/workspace/agent-a",
     },
     codeSha: "sha-a",
-    snapshotPath: "/releases/sha-a/soul-server-ts",
+    snapshotPath: "/releases/sha-a",
     codexAdapterMode: "sdk" as const,
     claudeRuntimeV2Enabled: true,
     claudeRuntimeIdleTtlMs: 300_000,

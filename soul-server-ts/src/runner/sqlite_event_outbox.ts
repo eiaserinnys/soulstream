@@ -422,6 +422,24 @@ export class RunnerSqliteEventOutbox {
     }
   }
 
+  /** Final-ACK evidence used by release GC; true is fail-safe retention. */
+  async hasPendingDurableWork(): Promise<boolean> {
+    this.requireOpen();
+    const bootstrap = this.refreshBootstrap();
+    if (!bootstrap) return true;
+    const acknowledgedThrough = readAcknowledgedThrough(this.database);
+    const pendingEvent = this.database.prepare(`
+      SELECT 1 FROM runner_event_outbox
+      WHERE record_kind = 'event' AND source_seq > ?
+      LIMIT 1
+    `).get(acknowledgedThrough);
+    if (pendingEvent) return true;
+    const pendingIpc = this.database.prepare(`
+      SELECT 1 FROM runner_ipc_journal LIMIT 1
+    `).get();
+    return pendingIpc !== undefined;
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
