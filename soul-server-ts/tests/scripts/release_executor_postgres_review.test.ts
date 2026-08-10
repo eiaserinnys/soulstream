@@ -127,7 +127,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
   });
 
   it("changes the canonical fingerprint for same-count rename and replacement", async () => {
-    const admin = postgres(databaseUrl.replace(`/${DATABASE}`, "/postgres"), {
+    const admin = postgres(databaseUrlFor(databaseUrl, "postgres"), {
       max: 1,
       idle_timeout: 1,
     });
@@ -135,7 +135,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
     await admin.unsafe(`DROP DATABASE IF EXISTS ${database}`);
     await admin.unsafe(`CREATE DATABASE ${database}`);
     await admin.end({ timeout: 5 });
-    const url = safeTestDatabaseUrl(databaseUrl.replace(`/${DATABASE}`, `/${database}`));
+    const url = safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database));
     const sql = postgres(url, { max: 1, idle_timeout: 1 });
     try {
       await sql`CREATE TABLE public.review_original (id integer)`;
@@ -166,7 +166,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
   });
 
   it("reads the inventory as the unprivileged role that runs releases", async () => {
-    const admin = postgres(databaseUrl.replace(`/${DATABASE}`, "/postgres"), {
+    const admin = postgres(databaseUrlFor(databaseUrl, "postgres"), {
       max: 1,
       idle_timeout: 1,
     });
@@ -181,7 +181,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
     await admin.unsafe(`GRANT CONNECT ON DATABASE ${database} TO ${reader}`);
     await admin.end({ timeout: 5 });
 
-    const adminUrl = safeTestDatabaseUrl(databaseUrl.replace(`/${DATABASE}`, `/${database}`));
+    const adminUrl = safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database));
     const owner = postgres(adminUrl, { max: 1, idle_timeout: 1 });
     try {
       // The catalogs a non-superuser cannot read in full: pg_user_mapping is
@@ -203,7 +203,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       expect(kinds).toContain("subscription");
 
       const url = safeTestDatabaseUrl(
-        adminUrl.replace(`//${USER}:${PASSWORD}@`, `//${reader}:unprivileged-secret@`),
+        databaseUrlForRole(adminUrl, reader, "unprivileged-secret"),
       );
       const unprivileged = postgres(url, { max: 1, idle_timeout: 1 });
       try {
@@ -225,6 +225,19 @@ function safeTestDatabaseUrl(value: string) {
     throw new Error(`unsafe TEST_DATABASE_URL database name: ${database}`);
   }
   return value;
+}
+
+function databaseUrlFor(value: string, database: string): string {
+  const url = new URL(value);
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+function databaseUrlForRole(value: string, username: string, password: string): string {
+  const url = new URL(value);
+  url.username = username;
+  url.password = password;
+  return url.toString();
 }
 
 async function waitForPostgres(url: string) {
