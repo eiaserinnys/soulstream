@@ -63,6 +63,7 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `INCOMING_FILE_DIR` | `.local/incoming` | Files delivered by the orchestrator for agent turns. |
 | `MCP_ENABLED` | `false` | Enables the worker MCP endpoint. |
 | `MCP_PATH` | `/mcp` | Streamable HTTP MCP route. |
+| `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | Uses one sessionless transport per POST so MCP calls survive worker replacement without an in-memory session map. |
 | `MCP_REQUIRE_AUTH` | `false` | Requires bearer authentication for MCP requests. |
 | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated Host header allowlist. |
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | `true` | Persistent Claude Query runtime. Set `false` only as the emergency legacy kill switch. |

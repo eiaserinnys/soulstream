@@ -63,6 +63,8 @@ install:
           default: 'true'
         - key: MCP_PATH
           default: /mcp
+        - key: MCP_STATELESS_TRANSPORT_ENABLED
+          default: 'false'
         - key: MCP_REQUIRE_AUTH
           default: 'true'
         - key: ENVIRONMENT

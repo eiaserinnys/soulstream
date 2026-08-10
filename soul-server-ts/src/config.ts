@@ -136,6 +136,15 @@ export const EnvSchema = z
      */
     MCP_PATH: z.string().default("/mcp"),
     /**
+     * Stateless Streamable HTTP mode. Separate cutover flag because MCP is shared
+     * by in-process and runner-backed sessions. Default false preserves the
+     * process-local Mcp-Session-Id map until rollout is explicitly enabled.
+     */
+    MCP_STATELESS_TRANSPORT_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /**
      * MCP 호출에 bearer auth 강제. superRefine으로 production + MCP_ENABLED일 때 강제.
      */
     MCP_REQUIRE_AUTH: z

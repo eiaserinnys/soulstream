@@ -226,6 +226,14 @@ describe("parseEnv", () => {
       expect(env.MCP_PATH).toBe("/mcp");
     });
 
+    it("MCP_STATELESS_TRANSPORT_ENABLED defaults off and requires explicit opt-in", () => {
+      expect(parseEnv(minimal).MCP_STATELESS_TRANSPORT_ENABLED).toBe(false);
+      expect(parseEnv({
+        ...minimal,
+        MCP_STATELESS_TRANSPORT_ENABLED: "true",
+      }).MCP_STATELESS_TRANSPORT_ENABLED).toBe(true);
+    });
+
     it("MCP_REQUIRE_AUTH default false", () => {
       const env = parseEnv(minimal);
       expect(env.MCP_REQUIRE_AUTH).toBe(false);

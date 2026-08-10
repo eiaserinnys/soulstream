@@ -43,6 +43,8 @@ export interface ServerParams {
     runtime: McpRuntime;
     path: string;
     auth: McpAuthConfig;
+    /** Default false. Stateless mode creates one SDK transport per POST. */
+    statelessTransport?: boolean;
   };
   /** Node-local Cogito search route retained for MCP session-history search. */
   cogito?: CogitoSearchRouteConfig;
@@ -92,6 +94,7 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
     fastify.closeMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
       path: params.mcp.path,
       auth: params.mcp.auth,
+      statelessTransport: params.mcp.statelessTransport ?? false,
     });
   }
   if (params.cogito) {
