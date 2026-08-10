@@ -116,7 +116,9 @@ describe("database release CI contract", () => {
     expect(commands).toContain("release_executor_postgres_review.test.ts");
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("verify-vitest-contract-result.mjs");
-    expect(commands).toContain("29");
+    expect(commands).toContain(
+      "soul-server-ts/database-release-postgres-results.json 30",
+    );
     expect(commands).toContain("--maxWorkers=2 --minWorkers=1");
     expect(commands).toContain("--reporter=default --reporter=json");
     expect(commands).toContain(

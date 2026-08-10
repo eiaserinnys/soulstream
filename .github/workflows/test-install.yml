@@ -129,7 +129,7 @@ jobs:
             --reporter=default --reporter=json \
             --outputFile.json=database-release-postgres-results.json
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
-            soul-server-ts/database-release-postgres-results.json 29
+            soul-server-ts/database-release-postgres-results.json 30
 
   test-install:
     runs-on: windows-latest
