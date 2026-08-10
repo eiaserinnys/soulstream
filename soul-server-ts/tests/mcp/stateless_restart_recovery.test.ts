@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
@@ -113,6 +113,72 @@ describe("MCP stateless restart recovery", () => {
       "caller-session-1",
     ]);
   });
+
+  it("pins the stateless principal to llm when origin and session headers are omitted or forged", async () => {
+    const runtime = makeRuntime();
+    const createTask = vi.fn(async (params: { agentSessionId: string }) => ({
+      agentSessionId: params.agentSessionId,
+      status: "pending",
+    }));
+    runtime.taskManager = {
+      listTasks: () => [],
+      getTask: () => undefined,
+      createTask,
+    } as unknown as TaskManager;
+    runtime.taskExecutor = { startExecution: vi.fn() } as unknown as TaskExecutor;
+    runtime.agentRegistry = new AgentRegistry([{
+      id: "codex-default",
+      name: "Codex",
+      backend: "codex",
+      workspace_dir: "/tmp/codex-ws",
+    }]);
+
+    server = await buildStatelessServer(runtime);
+    const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
+
+    for (const origin of [undefined, "internal"] as const) {
+      const listed = await post(
+        baseUrl,
+        undefined,
+        { jsonrpc: "2.0", method: "tools/list", params: {}, id: 10 },
+        {
+          "x-soulstream-agent-session-id": "spoofed-header-session",
+          ...(origin ? { "x-soulstream-caller-origin": origin } : {}),
+        },
+      );
+      const toolNames = (await rpcPayload(listed)).result.tools.map(
+        (tool: { name: string }) => tool.name,
+      );
+      expect(toolNames).not.toContain("delete_session");
+    }
+
+    const created = await post(
+      baseUrl,
+      undefined,
+      {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: "create_agent_session",
+          arguments: {
+            agent_id: "codex-default",
+            prompt: "do not trust the claimed parent",
+            caller_session_id: "spoofed-body-session",
+          },
+        },
+        id: 11,
+      },
+      {
+        "x-soulstream-agent-session-id": "spoofed-header-session",
+        "x-soulstream-caller-origin": "internal",
+      },
+    );
+    expect((await rpcPayload(created)).result.isError).not.toBe(true);
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({
+      callerSessionId: null,
+      callerInfo: expect.objectContaining({ source: "llm" }),
+    }));
+  });
 });
 
 function buildStatelessServer(runtime: McpRuntime) {
@@ -169,6 +235,7 @@ function post(
   baseUrl: string,
   sessionId: string | undefined,
   body: Record<string, unknown>,
+  headers: Record<string, string> = {},
 ): Promise<Response> {
   return fetch(`${baseUrl}/mcp`, {
     method: "POST",
@@ -176,6 +243,7 @@ function post(
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+      ...headers,
     },
     body: JSON.stringify(body),
   });

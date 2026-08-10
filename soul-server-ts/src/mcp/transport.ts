@@ -48,6 +48,14 @@ interface StatelessEntry {
 }
 
 /**
+ * Stateless mode has no server-side initialize session in which to pin caller
+ * identity. Its endpoint is therefore an LLM-only principal by server policy;
+ * request headers are attribution hints, never authority inputs. Stateful mode
+ * retains initialize-time origin pinning for mixed internal/LLM clients.
+ */
+const STATELESS_CALLER_ORIGIN: McpCallerOrigin = "llm";
+
+/**
  * Fastify 라우트 등록. 본 함수가 반환하는 cleanup 함수는 서버 종료 시 호출하여
  * 모든 transport를 닫는다 (graceful shutdown).
  */
@@ -159,18 +167,12 @@ async function dispatchStatelessPost(
   active: Set<StatelessEntry>,
   runtime: McpRuntime,
 ): Promise<void> {
-  const requestedOrigin = parseCallerOriginHeader(req);
-  if (!requestedOrigin.ok) {
-    writeJsonRpcError(reply, 400, requestedOrigin.error);
-    return;
-  }
-  const callerOrigin = requestedOrigin.origin;
   await withMcpRequestContext(
     {
       callerSessionId: headerValue(
         req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
       ),
-      ...(callerOrigin ? { callerOrigin } : {}),
+      callerOrigin: STATELESS_CALLER_ORIGIN,
     },
     async () => {
       const blocked = guardMcpToolCallRequest(runtime, req.body);
