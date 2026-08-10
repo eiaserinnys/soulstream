@@ -1,0 +1,288 @@
+import { spawn } from "node:child_process";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import pino from "pino";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { RunnerProcessDispatcher } from
+  "../../src/runner/runner_process_dispatcher.js";
+import {
+  classifyRunnerRegistration,
+  scanRunnerRegistrations,
+} from "../../src/runner/runner_process_registry.js";
+import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
+import {
+  EventOutboxPump,
+  type EventOutboxPumpStore,
+} from "../../src/upstream/event_outbox_pump.js";
+import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
+
+const testDirectory = dirname(fileURLToPath(import.meta.url));
+const packageDirectory = resolve(testDirectory, "../..");
+const launcherPath = join(testDirectory, "fixtures/runner_process_e2e_launcher.ts");
+const childFixturePath = join(testDirectory, "fixtures/runner_process_e2e_child.ts");
+const directories: string[] = [];
+const childPids = new Set<number>();
+
+afterEach(async () => {
+  for (const pid of childPids) killIfAlive(pid);
+  childPids.clear();
+  await Promise.all(directories.splice(0).map(
+    async (directory) => await rm(directory, { recursive: true, force: true }),
+  ));
+});
+
+describe("runner process detach/reconnect E2E", () => {
+  it("survives its spawning parent and replays only events after the last host ACK", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-reconnect-e2e-"));
+    directories.push(root);
+    const stateDirectory = join(root, "state");
+    const snapshotPath = join(root, "snapshot");
+    const controlDirectory = join(root, "control");
+    await mkdir(join(snapshotPath, "dist/runner"), { recursive: true });
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(snapshotPath, "package.json"), JSON.stringify({ type: "module" }));
+    await writeFile(
+      join(snapshotPath, "dist/runner/runner_entry.js"),
+      `try {\n  await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n}`
+        + ` catch (error) {\n  const { writeFile } = await import("node:fs/promises");\n`
+        + `  await writeFile(process.env.RUNNER_E2E_CONTROL_DIR + "/child-error", String(error?.stack ?? error));\n`
+        + `  throw error;\n}\n`,
+    );
+    const input = spawnInput(stateDirectory, snapshotPath, controlDirectory);
+    const inputPath = join(root, "spawn-input.json");
+    await writeFile(inputPath, JSON.stringify(input));
+
+    const launcher = spawn(process.execPath, ["--import", "tsx", launcherPath, inputPath], {
+      cwd: packageDirectory,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const launcherResult = await collectExit(launcher);
+    expect(launcherResult.code, launcherResult.stderr).toBe(0);
+
+    const paths = runnerProcessPaths(stateDirectory, "session-e2e");
+    const pid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
+    childPids.add(pid);
+    expect(isPidAlive(pid)).toBe(true);
+    const childErrorPath = join(controlDirectory, "child-error");
+    await waitFor(async () => await pathExists(paths.socketPath) || await pathExists(childErrorPath));
+    if (await pathExists(childErrorPath)) {
+      throw new Error(await readFile(childErrorPath, "utf8"));
+    }
+
+    const { mux, batches } = autoAcknowledgingMux();
+    const firstHost = processDispatcher(input, mux);
+    const firstIterator = firstHost.executeFrames({
+      agentSessionId: "session-e2e",
+      prompt: "continue",
+    })[Symbol.asyncIterator]();
+    void firstIterator.next().catch(() => {});
+    await waitFor(async () => await pathExists(join(controlDirectory, "execute-started")));
+    const scan = await scanRunnerRegistrations(stateDirectory);
+    expect(scan.errors).toEqual([]);
+    expect(scan.registrations).toHaveLength(1);
+    expect(classifyRunnerRegistration(
+      scan.registrations[0]!,
+      Date.now(),
+      120_000,
+    )).toBe("adopt_prebootstrap");
+    await firstHost.detachHost();
+
+    const secondHost = processDispatcher(input, mux);
+    const secondIterator = secondHost.recoverFrames()[Symbol.asyncIterator]();
+    const firstEvent = secondIterator.next();
+    await writeFile(join(controlDirectory, "emit-first"), "go\n");
+    const first = await withTimeout(firstEvent);
+    expect(first).toMatchObject({
+      done: false,
+      value: { kind: "engine_event", payload: { content: "before-detach" } },
+    });
+
+    void secondIterator.next().catch(() => {});
+    await waitFor(async () => await pendingFrameCount(paths.databasePath) === 0);
+    await secondHost.detachHost();
+    await writeFile(join(controlDirectory, "emit-after-detach"), "go\n");
+    await waitFor(async () => await hasDurableEvent(paths.databasePath, 3));
+    expect(isPidAlive(pid)).toBe(true);
+
+    const thirdHost = processDispatcher(input, mux);
+    const thirdIterator = thirdHost.recoverFrames()[Symbol.asyncIterator]();
+    const second = await withTimeout(thirdIterator.next());
+    expect(second).toMatchObject({
+      done: false,
+      value: { kind: "engine_event", payload: { content: "after-detach" } },
+    });
+    const finished = thirdIterator.next();
+    await writeFile(join(controlDirectory, "finish"), "go\n");
+    await expect(withTimeout(finished)).resolves.toEqual({ done: true, value: undefined });
+    await waitFor(async () => await pendingFrameCount(paths.databasePath) === 0);
+
+    expect(batches.flatMap((batch) => batch.events.map(
+      (event) => (event.payload as { content?: string }).content,
+    ))).toEqual(["before-detach", "after-detach"]);
+    await thirdHost.close();
+    await waitFor(async () => !isPidAlive(pid));
+    childPids.delete(pid);
+  }, 30_000);
+});
+
+function processDispatcher(
+  input: ReturnType<typeof spawnInput>,
+  pumpMux: EventOutboxPumpMux,
+): RunnerProcessDispatcher {
+  return new RunnerProcessDispatcher({
+    spawn: input,
+    adoptExisting: true,
+    spawner: new RunnerProcessSpawner(),
+    pumpMux,
+    logger: pino({ level: "silent" }),
+    handleHostCall: async () => null,
+  });
+}
+
+function autoAcknowledgingMux(): { mux: EventOutboxPumpMux; batches: EventOutboxBatch[] } {
+  const mux = new EventOutboxPumpMux(new EventOutboxPump(emptyStore(), vi.fn()));
+  const batches: EventOutboxBatch[] = [];
+  mux.connect(async (batch) => {
+    batches.push(batch);
+    await mux.handleAck({
+      type: "event_append_ack",
+      stream_id: batch.stream_id,
+      acked_through: batch.events.at(-1)!.source_seq,
+      events: batch.events.map((event) => ({
+        source_seq: event.source_seq,
+        event_id: 10_000 + event.source_seq,
+      })),
+    });
+  });
+  return { mux, batches };
+}
+
+function emptyStore(): EventOutboxPumpStore {
+  return {
+    streamId: "node-primary",
+    ackedSeq: 0,
+    onAppend: () => () => {},
+    readBatch: async () => null,
+    acknowledge: async () => {},
+  };
+}
+
+function spawnInput(stateDirectory: string, snapshotPath: string, controlDirectory: string) {
+  return {
+    stateDirectory,
+    sessionId: "session-e2e",
+    backend: "openai-agents" as const,
+    agent: {
+      id: "agent-e2e",
+      name: "Agent E2E",
+      backend: "openai-agents" as const,
+      workspace_dir: controlDirectory,
+      agents_sdk: {
+        entry_agent: "root",
+        agents: [{
+          id: "root",
+          name: "Root",
+          instructions: "Runner process E2E fixture",
+        }],
+      },
+    },
+    codeSha: "e2e-sha",
+    snapshotPath,
+    codexAdapterMode: "sdk" as const,
+    claudeRuntimeV2Enabled: true,
+    claudeRuntimeIdleTtlMs: 300_000,
+    claudeRuntimeMaxEntries: 16,
+    claudeRuntimeTurnTimeoutMs: 1_800_000,
+    codexHome: null,
+    rolloutRoot: null,
+    childProcessEnv: {
+      ...process.env,
+      NODE_OPTIONS: "--import tsx",
+      RUNNER_E2E_CONTROL_DIR: controlDirectory,
+    },
+  };
+}
+
+async function collectExit(child: ReturnType<typeof spawn>): Promise<{
+  code: number | null;
+  stderr: string;
+}> {
+  let stderr = "";
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk: string) => { stderr += chunk; });
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  return { code, stderr };
+}
+
+async function pendingFrameCount(path: string): Promise<number> {
+  const outbox = await RunnerSqliteEventOutbox.open(path);
+  try {
+    return (await outbox.readPendingIpcFrames()).length;
+  } finally {
+    outbox.close();
+  }
+}
+
+async function hasDurableEvent(path: string, sourceSeq: number): Promise<boolean> {
+  const outbox = await RunnerSqliteEventOutbox.open(path);
+  try {
+    return await outbox.readRecord(sourceSeq) !== null;
+  } finally {
+    outbox.close();
+  }
+}
+
+async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) throw new Error("runner E2E wait timeout");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return await Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(
+      () => reject(new Error("runner E2E operation timed out")),
+      10_000,
+    )),
+  ]);
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function killIfAlive(pid: number): void {
+  if (!isPidAlive(pid)) return;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {}
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}

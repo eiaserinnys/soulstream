@@ -44,6 +44,9 @@ export class RunnerChildRuntime {
   constructor(
     private readonly config: RunnerChildConfig,
     private readonly logger: Logger,
+    private readonly deps: {
+      createEngine: typeof createRunnerChildEngine;
+    } = { createEngine: createRunnerChildEngine },
   ) {
     this.closedPromise = new Promise((resolve) => {
       this.resolveClosed = resolve;
@@ -61,7 +64,7 @@ export class RunnerChildRuntime {
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     this.dispatcher = new InProcessRunnerCommandDispatcher(
-      createRunnerChildEngine(this.config, host, this.logger),
+      this.deps.createEngine(this.config, host, this.logger),
     );
     await setRunnerOomScore();
     await this.endpoint.listen();

@@ -38,6 +38,7 @@ export interface RunnerRecoveryCoordinatorOptions {
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
+  private readonly scans = new Set<Promise<void>>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
 
@@ -47,6 +48,7 @@ export class RunnerRecoveryCoordinator {
     if (this.timer) return;
     this.stopped = false;
     await this.scanOnce();
+    if (this.stopped) return;
     this.timer = setInterval(() => {
       void this.scanOnce().catch((error) => {
         this.options.logger.error({ error }, "runner recovery scan failed");
@@ -57,6 +59,16 @@ export class RunnerRecoveryCoordinator {
 
   async scanOnce(): Promise<void> {
     if (this.stopped) return;
+    const scan = this.performScan();
+    this.scans.add(scan);
+    try {
+      await scan;
+    } finally {
+      this.scans.delete(scan);
+    }
+  }
+
+  private async performScan(): Promise<void> {
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
@@ -77,7 +89,8 @@ export class RunnerRecoveryCoordinator {
         || disposition === "closed"
       ) continue;
       if (
-        disposition === "adopt_running"
+        disposition === "adopt_prebootstrap"
+        || disposition === "adopt_running"
         || (disposition === "replay_terminal" && registration.pidAlive)
       ) {
         await this.handle(registration, disposition).catch((error) => {
@@ -100,6 +113,8 @@ export class RunnerRecoveryCoordinator {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    await Promise.allSettled([...this.scans]);
+    await Promise.allSettled([...this.active.values()]);
     this.active.clear();
   }
 
@@ -107,7 +122,11 @@ export class RunnerRecoveryCoordinator {
     registration: RunnerRegistration,
     disposition: RunnerRecoveryDisposition,
   ): Promise<void> {
-    if (disposition === "adopt_running" || disposition === "replay_terminal") {
+    if (
+      disposition === "adopt_prebootstrap"
+      || disposition === "adopt_running"
+      || disposition === "replay_terminal"
+    ) {
       await this.recoverRegistered(
         registration,
         registration.pidAlive ? "adopt" : "offline",
@@ -137,7 +156,6 @@ export class RunnerRecoveryCoordinator {
     mode: "adopt" | "offline",
   ): Promise<Task | null> {
     const lifecycle = registration.lifecycle;
-    if (!lifecycle) return null;
     const task = await this.options.taskManager.hydrateRunnerRecoveryTask(
       registration.config.sessionId,
     );
@@ -153,7 +171,7 @@ export class RunnerRecoveryCoordinator {
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,
       registration.config,
-      lifecycle.execution_command_id,
+      lifecycle?.execution_command_id,
       mode,
     );
     if (mode === "offline") {

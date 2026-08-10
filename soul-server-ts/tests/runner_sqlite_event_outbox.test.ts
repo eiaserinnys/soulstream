@@ -55,7 +55,8 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(outboxTable.sql).toContain("progress_seq");
       expect(outboxTable.sql).toContain("terminal_error_json");
       expect(journalTable.sql).toContain("frame_seq INTEGER PRIMARY KEY AUTOINCREMENT");
-      expect(journalTable.sql).toContain("outbox_source_seq INTEGER NOT NULL UNIQUE");
+      expect(journalTable.sql).toContain("outbox_source_seq INTEGER UNIQUE");
+      expect(journalTable.sql).toContain("correlation_id TEXT UNIQUE");
       expect(journalTable.sql).not.toMatch(/payload|metadata|session_effect/);
       expect(outboxTable.sql).toContain("STRICT");
       expect(journalTable.sql).toContain("STRICT");
@@ -555,6 +556,78 @@ describe("RunnerSqliteEventOutbox", () => {
     await outbox.acknowledge(record.stream_id, record.source_seq);
     expect(readJournalSequences(outboxDatabasePath(outbox))).toEqual([]);
     outbox.close();
+  });
+
+  it("recovers a payload-free host-call apply receipt and compacts it after runner ACK", async () => {
+    const path = await temporaryDatabasePath();
+    const firstHost = await RunnerSqliteEventOutbox.open(path);
+    const secondHost = await RunnerSqliteEventOutbox.open(path);
+
+    await firstHost.recordHostCallApplied({
+      correlationId: "host:one",
+      service: "snapshot",
+      operation: "persistRunState",
+      createdAt: "2026-08-11T01:00:00.000Z",
+    });
+
+    await expect(secondHost.readHostCallApplied("host:one")).resolves.toEqual({
+      correlationId: "host:one",
+      service: "snapshot",
+      operation: "persistRunState",
+    });
+    await secondHost.acknowledgeHostCall("host:one");
+    await expect(firstHost.readHostCallApplied("host:one")).resolves.toBeNull();
+    expect(readJournalSequences(path)).toEqual([]);
+
+    firstHost.close();
+    secondHost.close();
+  });
+
+  it("migrates the payload-free v3 event journal without losing pending frame order", async () => {
+    const path = await temporaryDatabasePath();
+    const current = await RunnerSqliteEventOutbox.open(path);
+    await current.initializeBootstrap(bootstrapInput());
+    await current.appendEngineFrame(eventInput("one"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "one" },
+    });
+    current.close();
+
+    const database = new DatabaseSync(path);
+    database.exec(`
+      ALTER TABLE runner_ipc_journal RENAME TO runner_ipc_journal_v4;
+      CREATE TABLE runner_ipc_journal (
+        frame_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        outbox_source_seq INTEGER NOT NULL UNIQUE,
+        frame_kind TEXT NOT NULL CHECK (frame_kind = 'engine_event'),
+        host_acked INTEGER NOT NULL DEFAULT 0 CHECK (host_acked IN (0, 1)),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (outbox_source_seq) REFERENCES runner_event_outbox(source_seq)
+      ) STRICT;
+      INSERT INTO runner_ipc_journal
+      SELECT frame_seq, outbox_source_seq, frame_kind, host_acked, created_at
+      FROM runner_ipc_journal_v4;
+      DROP TABLE runner_ipc_journal_v4;
+      PRAGMA user_version = 3;
+    `);
+    database.close();
+
+    const migrated = await RunnerSqliteEventOutbox.open(path);
+    await expect(migrated.readPendingIpcFrames()).resolves.toEqual([
+      expect.objectContaining({ frame_seq: 1, outbox_source_seq: 2 }),
+    ]);
+    await migrated.recordHostCallApplied({
+      correlationId: "host:migrated",
+      service: "snapshot",
+      operation: "persistSessionItems",
+      createdAt: "2026-08-11T01:00:00.000Z",
+    });
+    await expect(migrated.readHostCallApplied("host:migrated")).resolves.toMatchObject({
+      operation: "persistSessionItems",
+    });
+    migrated.close();
   });
 });
 

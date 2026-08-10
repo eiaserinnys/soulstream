@@ -11,6 +11,7 @@ import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import {
   closeCommandFrame,
   executeCommandFrame,
+  executionStatusCommandFrame,
   hostFrameAppliedControlFrame,
   interruptCommandFrame,
   invokeCommandFrame,
@@ -23,6 +24,7 @@ import {
   type RunnerFrame,
 } from "./frame_protocol.js";
 import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
+import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
 import type { RunnerIpcConnection } from "./runner_ipc_connection.js";
 import {
   RunnerProcessSpawner,
@@ -74,6 +76,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private latestPendingRecord: EventOutboxRecord | undefined;
   private readonly requestLifetimes = new Map<string, RequestLifetime>();
   private readonly recentHostResponses = new Map<string, RunnerControlFrame>();
+  private hostCallIdempotency!: RunnerHostCallIdempotency;
   private closed = false;
 
   constructor(private readonly options: RunnerProcessDispatcherOptions) {
@@ -103,7 +106,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return stream;
   }
 
-  recoverFrames(commandId: string): AsyncIterable<RunnerEventFrame> {
+  recoverFrames(commandId?: string): AsyncIterable<RunnerEventFrame> {
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.outbox.acknowledgeHostFrame(frameSeq);
       await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
@@ -192,6 +195,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
       this.socketPath = paths.socketPath;
       this.outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+      this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
       this.lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
       return;
     }
@@ -201,6 +205,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       : await spawner.spawn(this.options.spawn);
     this.socketPath = spawned.paths.socketPath;
     this.outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
     this.lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
     await this.connect(spawned.paths.socketPath);
   }
@@ -219,14 +224,25 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return adopted;
   }
 
-  private async startRecovery(commandId: string, stream: ProcessFrameStream): Promise<void> {
+  private async startRecovery(
+    requestedCommandId: string | undefined,
+    stream: ProcessFrameStream,
+  ): Promise<void> {
+    let commandId = requestedCommandId;
     try {
       await this.ready;
+      if (!commandId) {
+        commandId = readActiveExecutionCommandId(assertCommandAccepted(
+          await this.dispatch(executionStatusCommandFrame(`status:${randomUUID()}`)),
+        ));
+        this.activeExecuteCommandId = commandId;
+      }
       const lifecycle = this.lifecycle.read();
-      if (!lifecycle || lifecycle.execution_command_id !== commandId) {
+      if (lifecycle && lifecycle.execution_command_id !== commandId) {
         throw new Error(`runner recovery command unavailable: ${commandId}`);
       }
       await this.replayPendingFrames();
+      if (!lifecycle) return;
       if (lifecycle.execution_state === "running") return;
       if (lifecycle.execution_state === "completed" || lifecycle.execution_state === "closed") {
         stream.finish();
@@ -238,7 +254,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.clearActiveExecution(commandId);
     } catch (error) {
       stream.fail(asError(error));
-      this.clearActiveExecution(commandId);
+      if (commandId) this.clearActiveExecution(commandId);
     }
   }
 
@@ -323,6 +339,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       await this.replayPendingFrames();
       return;
     }
+    if (frame.kind === "host_call_applied") {
+      await this.hostCallIdempotency.acknowledge(frame.correlationId);
+      this.recentHostResponses.delete(frame.correlationId);
+      return;
+    }
     if (frame.kind === "execution_ended") {
       await this.replayPendingFrames();
       if (frame.error) this.activeStream?.fail(new Error(frame.error.message));
@@ -343,12 +364,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
     let response: RunnerControlFrame;
     try {
-      const data = await this.options.handleHostCall({
+      const call = {
         correlationId: frame.correlationId,
         service: frame.request.service,
         operation: frame.request.operation,
         args: frame.request.args,
-      });
+      } satisfies RunnerHostCall;
+      const { data } = await this.hostCallIdempotency.execute(
+        call,
+        async () => await this.options.handleHostCall(call),
+      );
       response = runnerControlResponseFrame(frame.correlationId, {
         status: "ok",
         ...(data !== undefined ? { data } : {}),
@@ -443,11 +468,23 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 }
 
-function assertCommandAccepted(frame: RunnerCommandResultFrame): void {
-  if (frame.result.status === "ok") return;
+function assertCommandAccepted(frame: RunnerCommandResultFrame): RunnerCommandResultFrame {
+  if (frame.result.status === "ok") return frame;
   throw new Error(
     `Runner command ${frame.commandId} failed (${frame.result.error.code}): ${frame.result.error.message}`,
   );
+}
+
+function readActiveExecutionCommandId(frame: RunnerCommandResultFrame): string {
+  if (
+    frame.result.status === "ok"
+    && isRecord(frame.result.data)
+    && typeof frame.result.data.executionCommandId === "string"
+    && frame.result.data.executionCommandId.length > 0
+  ) {
+    return frame.result.data.executionCommandId;
+  }
+  throw new Error("registered runner has no active execution command");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

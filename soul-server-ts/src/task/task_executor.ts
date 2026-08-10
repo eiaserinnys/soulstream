@@ -250,7 +250,7 @@ export class TaskExecutor {
     task: Task,
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
-    commandId: string,
+    commandId?: string,
   ): Promise<void> {
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
@@ -267,7 +267,7 @@ export class TaskExecutor {
   recoverRegisteredRunner(
     task: Task,
     config: RunnerChildConfig,
-    commandId: string,
+    commandId: string | undefined,
     mode: "adopt" | "offline",
   ): Promise<void> {
     const runner = this.runnerProcessFactory?.recover?.(

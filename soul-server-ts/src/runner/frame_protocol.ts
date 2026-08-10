@@ -78,6 +78,12 @@ export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("k
   z.object({
     protocolVersion,
     channel: z.literal("command"),
+    kind: z.literal("execution_status"),
+    commandId: correlationId,
+  }).passthrough(),
+  z.object({
+    protocolVersion,
+    channel: z.literal("command"),
     kind: z.literal("interrupt"),
     commandId: correlationId,
   }).passthrough(),
@@ -264,6 +270,12 @@ export const RunnerControlFrameSchema = withJsonContract(z.discriminatedUnion("k
     kind: z.literal("host_frame_applied"),
     frameSeq: z.number().int().positive(),
   }).passthrough(),
+  z.object({
+    protocolVersion,
+    channel: z.literal("control"),
+    kind: z.literal("host_call_applied"),
+    correlationId,
+  }).passthrough(),
 ]));
 
 export const RunnerFrameSchema = z.union([
@@ -384,6 +396,17 @@ export function interruptCommandFrame(
   }) as Extract<RunnerCommandFrame, { kind: "interrupt" }>;
 }
 
+export function executionStatusCommandFrame(
+  commandId: string,
+): Extract<RunnerCommandFrame, { kind: "execution_status" }> {
+  return RunnerCommandFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "execution_status",
+    commandId,
+  }) as Extract<RunnerCommandFrame, { kind: "execution_status" }>;
+}
+
 export function closeCommandFrame(
   commandId: string,
 ): Extract<RunnerCommandFrame, { kind: "close" }> {
@@ -443,6 +466,17 @@ export function hostFrameAppliedControlFrame(
     kind: "host_frame_applied",
     frameSeq,
   }) as Extract<RunnerControlFrame, { kind: "host_frame_applied" }>;
+}
+
+export function hostCallAppliedControlFrame(
+  correlationId: string,
+): Extract<RunnerControlFrame, { kind: "host_call_applied" }> {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "host_call_applied",
+    correlationId,
+  }) as Extract<RunnerControlFrame, { kind: "host_call_applied" }>;
 }
 
 export function runnerCommandResultFrame(
