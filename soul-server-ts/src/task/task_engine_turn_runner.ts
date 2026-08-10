@@ -14,10 +14,8 @@ import {
   runnerControlResponseFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
-import {
-  InProcessRunnerCommandDispatcher,
-  type RunnerCommandDispatcher,
-} from "../runner/runner_command_dispatcher.js";
+import type { RunnerCommandDispatcher } from "../runner/runner_command_dispatcher.js";
+import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import {
   ANTHROPIC_API_KEY_ENV,
   resolveModelPresetEnv,
@@ -45,8 +43,7 @@ export interface TaskAgentsSnapshotPersistencePort {
 export interface TaskEngineTurnRunnerParams {
   task: Task;
   agent: AgentProfile;
-  engine: EnginePort;
-  runnerCommandDispatcher?: RunnerCommandDispatcher;
+  runner: TaskRunnerRuntime;
   input: TaskEngineTurnInput;
 }
 
@@ -81,10 +78,10 @@ export class TaskEngineTurnRunner {
   executeTurn({
     task,
     agent,
-    engine,
-    runnerCommandDispatcher,
+    runner,
     input,
   }: TaskEngineTurnRunnerParams): AsyncIterable<SSEEventPayload> {
+    const { engine, dispatcher } = runner;
     const queuedToolApproval = task.agentsQueuedToolApproval;
     task.agentsQueuedToolApproval = undefined;
 
@@ -135,7 +132,6 @@ export class TaskEngineTurnRunner {
         ? { scheduleToolUseEnabled: true }
         : {}),
     };
-    const dispatcher = runnerCommandDispatcher ?? new InProcessRunnerCommandDispatcher(engine);
     const frames = dispatcher.executeFrames(executeParams);
 
     return consumeRunnerFrames(frames, {

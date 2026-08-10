@@ -1,6 +1,9 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
+import type { EnginePort } from "../../src/engine/protocol.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -34,7 +37,7 @@ describe("RunningInterventionTransition", () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const interruptForSteer = vi.fn().mockResolvedValue(true);
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
@@ -42,7 +45,7 @@ describe("RunningInterventionTransition", () => {
         async close() {},
         steerActiveTurn,
         interruptForSteer,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const persistenceDouble = makeEventPersistenceTestDouble();
@@ -82,7 +85,7 @@ describe("RunningInterventionTransition", () => {
   it("keeps the queued steer message when steer interrupt races with turn completion", async () => {
     const interruptForSteer = vi.fn().mockResolvedValue(false);
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
@@ -90,7 +93,7 @@ describe("RunningInterventionTransition", () => {
         async close() {},
         steerActiveTurn: vi.fn(),
         interruptForSteer,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
@@ -110,14 +113,14 @@ describe("RunningInterventionTransition", () => {
   it("delivers running interventions to a live engine and publishes intervention_sent immediately", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
         steerActiveTurn,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const persistenceDouble = makeEventPersistenceTestDouble();
@@ -158,14 +161,14 @@ describe("RunningInterventionTransition", () => {
       .mockResolvedValueOnce({ status: "delivered" });
     const sleep = vi.fn().mockResolvedValue(undefined);
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
         steerActiveTurn,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const persistenceDouble = makeEventPersistenceTestDouble();
@@ -197,14 +200,14 @@ describe("RunningInterventionTransition", () => {
       .mockResolvedValueOnce({ status: "no_active_turn" })
       .mockResolvedValueOnce({ status: "not_accepting_input" });
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
         steerActiveTurn,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const persistenceDouble = makeEventPersistenceTestDouble();
@@ -327,14 +330,14 @@ describe("RunningInterventionTransition", () => {
   it("does not deliver or queue an accepted intervention when persistence fails", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "codex",
         workspaceDir: "/tmp/codex",
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
         steerActiveTurn,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const transition = new RunningInterventionTransition({
@@ -362,14 +365,14 @@ describe("RunningInterventionTransition", () => {
       .mockResolvedValueOnce({ status: "no_active_turn" });
     const sleep = vi.fn().mockResolvedValue(undefined);
     const task = makeRunningTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
         steerActiveTurn,
-      } as unknown as Task["engine"],
+      } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const persistenceDouble = makeEventPersistenceTestDouble();

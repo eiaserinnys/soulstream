@@ -8,6 +8,8 @@ import type {
   EnginePort,
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { TaskManager as ProductionTaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -497,14 +499,14 @@ describe("TaskManager.deliverToolApproval", () => {
       profileId: "agent-openai",
     });
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "openai-agents",
       workspaceDir: "/tmp/agents",
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
       deliverToolApproval,
-    } as EnginePort & SupportsToolApproval;
+    } as EnginePort & SupportsToolApproval);
 
     const result = await tm.deliverToolApproval({
       agentSessionId: "sess-approval",
@@ -543,13 +545,13 @@ describe("TaskManager.deliverToolApproval", () => {
       prompt: "dangerous tool",
       profileId: "codex-default",
     });
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
-    } as EnginePort;
+    } as EnginePort);
 
     await expect(tm.deliverToolApproval({
       agentSessionId: "sess-no-approval",
@@ -807,14 +809,14 @@ describe("TaskManager.deliverInputResponse", () => {
       profileId: "claude-roselin",
     });
     const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude",
       deliverInputResponse,
       async *execute() {},
       async interrupt() { return true; },
       async close() {},
-    } as unknown as EnginePort;
+    } as unknown as EnginePort);
 
     const result = await tm.deliverInputResponse({
       agentSessionId: "sess-ask",
@@ -849,14 +851,14 @@ describe("TaskManager.deliverInputResponse", () => {
     } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "sess-ask", prompt: "p", profileId: "claude-roselin" });
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude",
       deliverInputResponse: vi.fn().mockResolvedValue({ status: engineStatus }),
       async *execute() {},
       async interrupt() { return true; },
       async close() {},
-    } as unknown as EnginePort;
+    } as unknown as EnginePort);
     enqueueEvent.mockClear();
 
     const result = await tm.deliverInputResponse({
@@ -903,13 +905,13 @@ describe("TaskManager.deliverInputResponse", () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "sess-codex", prompt: "p", profileId: "codex-default" });
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
       async *execute() {},
       async interrupt() { return true; },
       async close() {},
-    } as unknown as EnginePort;
+    } as unknown as EnginePort);
 
     await expect(tm.deliverInputResponse({
       agentSessionId: "sess-codex",
@@ -1109,7 +1111,9 @@ describe("TaskManager.cancelTask", () => {
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
-    task.engine = { interrupt } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(
+      { interrupt } as unknown as EnginePort,
+    );
 
     expect(task.status).toBe("running");
     const result = await tm.cancelTask("s1");
@@ -1129,7 +1133,9 @@ describe("TaskManager.cancelTask", () => {
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     task.status = "completed";
-    task.engine = { interrupt: vi.fn() } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(
+      { interrupt: vi.fn() } as unknown as EnginePort,
+    );
     expect(await tm.cancelTask("s1")).toBe(false);
   });
 });
@@ -1151,7 +1157,9 @@ describe("TaskManager.deleteTask", () => {
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
-    task.engine = { interrupt } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(
+      { interrupt } as unknown as EnginePort,
+    );
     task.executionPromise = Promise.resolve();
 
     await tm.deleteTask("s1");
@@ -1177,8 +1185,12 @@ describe("TaskManager.shutdown", () => {
     const t2 = await tm.createTask({ agentSessionId: "s2", prompt: "y", profileId: "p" });
     const int1 = vi.fn().mockResolvedValue(true);
     const int2 = vi.fn().mockResolvedValue(true);
-    t1.engine = { interrupt: int1 } as unknown as EnginePort;
-    t2.engine = { interrupt: int2 } as unknown as EnginePort;
+    t1.runner = createInProcessTaskRunnerRuntime(
+      { interrupt: int1 } as unknown as EnginePort,
+    );
+    t2.runner = createInProcessTaskRunnerRuntime(
+      { interrupt: int2 } as unknown as EnginePort,
+    );
     t1.executionPromise = Promise.resolve();
     t2.executionPromise = Promise.resolve();
 
@@ -1207,7 +1219,9 @@ describe("TaskManager.shutdown", () => {
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
-    task.engine = { interrupt } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(
+      { interrupt } as unknown as EnginePort,
+    );
     task.executionPromise = Promise.resolve();
 
     await tm.shutdown();
@@ -1227,14 +1241,14 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "codex-default",
     });
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
       steerActiveTurn,
-    } as unknown as EnginePort;
+    } as unknown as EnginePort);
 
     const result = await tm.addIntervention(
       {
@@ -1269,7 +1283,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     });
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const interruptForSteer = vi.fn().mockResolvedValue(true);
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude",
       async *execute(): AsyncIterable<never> {},
@@ -1277,7 +1291,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       async close() {},
       steerActiveTurn,
       interruptForSteer,
-    } as unknown as EnginePort;
+    } as unknown as EnginePort);
 
     const result = await tm.addIntervention(
       {
@@ -1557,7 +1571,9 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const finalizePromise = new Promise<void>((r) => { resolveFinalize = r; });
     task.executionPromise = finalizePromise;
     const engineCloseSpy = vi.fn().mockResolvedValue(undefined);
-    task.engine = { interrupt: async () => true, close: engineCloseSpy } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(
+      { interrupt: async () => true, close: engineCloseSpy } as unknown as EnginePort,
+    );
 
     const onResumeCalled: Task[] = [];
     const onResume = (t: Task) => onResumeCalled.push(t);
@@ -1568,17 +1584,17 @@ describe("TaskManager.addIntervention (B-4)", () => {
       onResume,
     );
 
-    // 잠시 후 finalize가 끝났다고 신호 + task.engine 정리(시뮬레이션)
+    // 잠시 후 finalize가 끝났다고 신호 + task.runner 정리(시뮬레이션)
     setTimeout(() => {
-      task.engine = undefined;
+      task.runner = undefined;
       resolveFinalize();
     }, 5);
 
     const result = await addPromise;
     expect(result).toEqual({ autoResumed: true });
     expect(onResumeCalled).toHaveLength(1);
-    // onResume이 호출된 시점에는 task.engine이 undefined여야 startExecution이 throw하지 않음.
-    expect(task.engine).toBeUndefined();
+    // onResume이 호출된 시점에는 task.runner가 undefined여야 startExecution이 throw하지 않음.
+    expect(task.runner).toBeUndefined();
   });
 
   it("completed task에 stale engine만 남아도 정리 후 auto-resume한다", async () => {
@@ -1593,17 +1609,17 @@ describe("TaskManager.addIntervention (B-4)", () => {
     task.completedAt = new Date();
 
     const close = vi.fn().mockResolvedValue(undefined);
-    task.engine = {
+    task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude-work",
       execute: vi.fn(),
       interrupt: vi.fn(),
       close,
-    } as unknown as EnginePort;
+    } as unknown as EnginePort);
     task.executionPromise = undefined;
 
     const onResume = vi.fn((resumedTask: Task) => {
-      expect(resumedTask.engine).toBeUndefined();
+      expect(resumedTask.runner).toBeUndefined();
     });
 
     await expect(
@@ -1611,7 +1627,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     ).resolves.toEqual({ autoResumed: true });
 
     expect(close).toHaveBeenCalledTimes(1);
-    expect(task.engine).toBeUndefined();
+    expect(task.runner).toBeUndefined();
     expect(onResume).toHaveBeenCalledWith(task);
   });
 
