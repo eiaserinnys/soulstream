@@ -43,10 +43,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v6
@@ -105,10 +105,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install repository dependencies
         shell: bash
@@ -126,9 +126,10 @@ jobs:
             tests/scripts/apply_schema.test.ts \
             tests/scripts/release_executor_postgres_review.test.ts \
             --maxWorkers=2 --minWorkers=1 \
-            --reporter=json --outputFile=database-release-postgres-results.json
+            --reporter=default --reporter=json \
+            --outputFile.json=database-release-postgres-results.json
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
-            soul-server-ts/database-release-postgres-results.json 29
+            soul-server-ts/database-release-postgres-results.json 30
 
   test-install:
     runs-on: windows-latest
@@ -167,10 +168,10 @@ jobs:
           python -m pip install --force-reinstall `
             git+https://github.com/eiaserinnys/Haniel.git@3d02d57eb4a78b2eca18acb69c9f099424537c6e
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install repository dependencies
         shell: pwsh

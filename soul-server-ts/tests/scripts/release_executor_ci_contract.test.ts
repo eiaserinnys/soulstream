@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,30 @@ import { parse } from "yaml";
 
 const workflowPath = fileURLToPath(new URL(
   "../../../.github/workflows/test-install.yml",
+  import.meta.url,
+));
+const workflowsDirectory = fileURLToPath(new URL(
+  "../../../.github/workflows/",
+  import.meta.url,
+));
+const soulServerPackagePath = fileURLToPath(new URL(
+  "../../package.json",
+  import.meta.url,
+));
+const soulServerTsupPath = fileURLToPath(new URL(
+  "../../tsup.config.ts",
+  import.meta.url,
+));
+const orchServerPackagePath = fileURLToPath(new URL(
+  "../../../orch-server-ts/package.json",
+  import.meta.url,
+));
+const orchServerTsupPath = fileURLToPath(new URL(
+  "../../../orch-server-ts/tsup.config.ts",
+  import.meta.url,
+));
+const pageModelPackagePath = fileURLToPath(new URL(
+  "../../../packages/page-model/package.json",
   import.meta.url,
 ));
 const gitAttributesPath = fileURLToPath(new URL(
@@ -28,13 +52,32 @@ describe("database release CI contract", () => {
     );
   });
 
-  it("pins a Node 20 compatible pnpm instead of resolving the moving Corepack latest", () => {
+  it("pins the Node 22 baseline and a fixed pnpm instead of moving Corepack latest", () => {
     const workflowText = readFileSync(workflowPath, "utf8");
     const workflow = parse(workflowText);
     expect(workflow.env.PNPM_VERSION).toBe("10.32.1");
     expect(workflowText.match(/corepack prepare pnpm@\$\{\{ env\.PNPM_VERSION \}\} --activate/g))
       .toHaveLength(3);
-    expect(workflowText.match(/node-version: '20'/g)).toHaveLength(3);
+    expect(workflowText.match(/node-version: '22'/g)).toHaveLength(3);
+    const allWorkflowSources = readdirSync(workflowsDirectory)
+      .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
+      .map((name) => readFileSync(`${workflowsDirectory}/${name}`, "utf8"))
+      .join("\n");
+    expect(allWorkflowSources).not.toContain("node-version: '20'");
+  });
+
+  it("aligns server build targets, Node types, and runtime floor on Node 22", () => {
+    const soulServerPackage = JSON.parse(readFileSync(soulServerPackagePath, "utf8"));
+    const orchServerPackage = JSON.parse(readFileSync(orchServerPackagePath, "utf8"));
+    const pageModelPackage = JSON.parse(readFileSync(pageModelPackagePath, "utf8"));
+
+    expect(soulServerPackage.engines).toEqual({ node: ">=22.5" });
+    expect(soulServerPackage.scripts.build).toContain("--target node22");
+    expect(soulServerPackage.devDependencies["@types/node"]).toMatch(/^\^22\./);
+    expect(orchServerPackage.devDependencies["@types/node"]).toMatch(/^\^22\./);
+    expect(pageModelPackage.devDependencies["@types/node"]).toMatch(/^\^22\./);
+    expect(readFileSync(soulServerTsupPath, "utf8")).toContain('target: "node22"');
+    expect(readFileSync(orchServerTsupPath, "utf8")).toContain('target: "node22"');
   });
 
   it("parses and triggers for every executor contract surface", () => {
@@ -81,8 +124,14 @@ describe("database release CI contract", () => {
     expect(commands).toContain("release_executor_postgres_review.test.ts");
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("verify-vitest-contract-result.mjs");
-    expect(commands).toContain("29");
+    expect(commands).toContain(
+      "soul-server-ts/database-release-postgres-results.json 30",
+    );
     expect(commands).toContain("--maxWorkers=2 --minWorkers=1");
+    expect(commands).toContain("--reporter=default --reporter=json");
+    expect(commands).toContain(
+      "--outputFile.json=database-release-postgres-results.json",
+    );
   });
 
   it("runs the real executor PostgreSQL suite without skips on Windows", () => {
