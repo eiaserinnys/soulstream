@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import type { Task } from "../../src/task/task_models.js";
 import {
   isOpenAiAgentsApprovalPending,
@@ -89,14 +91,14 @@ describe("Task turn loop transition", () => {
 
   it("persistent Claude runtime keeps background lifecycle orthogonal to foreground completion", () => {
     const task = makeTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         detachedClaudeRuntime: true,
         execute: async function* () {},
         interrupt: async () => false,
         close: async () => undefined,
-      },
+      }),
       claudeRuntime: {
         sessionState: "running",
         updatedAt: Date.now(),
