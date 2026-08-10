@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Logger } from "pino";
 import type {
   SessionStore,
@@ -6,8 +8,11 @@ import type {
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
+import { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import {
   engineEventFrame,
+  runnerRequestFrame,
+  type RunnerControlFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 import { readClaudeBackgroundDeliveryMetadata } from
@@ -146,6 +151,7 @@ export class ClaudeEngineAdapter
   >;
   private activeClient: ClaudeClient | null = null;
   private persistentSessionId: string | null = null;
+  private activeFrameChannel: InProcessRunnerFrameChannel | null = null;
   private currentTurn: AbortController | null = null;
   private closed = false;
   private readonly inputRequests = new Map<string, "pending" | "responded" | "expired">();
@@ -172,7 +178,16 @@ export class ClaudeEngineAdapter
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
   }
 
-  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+  executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    const channel = new InProcessRunnerFrameChannel();
+    channel.start(() => this.executeToFrames(params, channel));
+    return channel;
+  }
+
+  private async executeToFrames(
+    params: EngineExecuteParams,
+    channel: InProcessRunnerFrameChannel,
+  ): Promise<void> {
     if (this.closed) {
       throw new Error("ClaudeEngineAdapter.execute called after close()");
     }
@@ -184,7 +199,8 @@ export class ClaudeEngineAdapter
 
     const controller = new AbortController();
     this.currentTurn = controller;
-    const options = this.buildRunOptions(params);
+    this.activeFrameChannel = channel;
+    const options = this.buildRunOptions(params, channel);
     const client = this.resolveClient(params.agentSessionId);
     this.activeClient = client;
     let lastText: string | undefined;
@@ -207,10 +223,10 @@ export class ClaudeEngineAdapter
           fallbackResult: lastText,
         });
         for (const payload of payloads) {
-          yield engineEventFrame(
+          await channel.emit(engineEventFrame(
             { ...payload } as Record<string, unknown>,
             claudeEngineEventMetadata(payload),
-          );
+          ));
         }
 
         if (clientEvent.type === "error" && clientEvent.fatal !== false) {
@@ -230,12 +246,17 @@ export class ClaudeEngineAdapter
           fatal: true,
           timestamp: nowSeconds(),
         } as SSEEventPayload;
-        yield engineEventFrame(payload as Record<string, unknown>);
+        await channel.emit(engineEventFrame(payload as Record<string, unknown>));
       }
       throw err;
     } finally {
       this.currentTurn = null;
+      this.activeFrameChannel = null;
     }
+  }
+
+  sendControlFrame(frame: RunnerControlFrame): boolean {
+    return this.activeFrameChannel?.sendControl(frame) ?? false;
   }
 
   async interrupt(): Promise<boolean> {
@@ -361,7 +382,10 @@ export class ClaudeEngineAdapter
     this.activeClient = null;
   }
 
-  private buildRunOptions(params: EngineExecuteParams): ClaudeRunOptions {
+  private buildRunOptions(
+    params: EngineExecuteParams,
+    channel: InProcessRunnerFrameChannel,
+  ): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
     const env = withScratchWorkspaceEnv(
       buildClaudeEnvironment({
@@ -392,12 +416,44 @@ export class ClaudeEngineAdapter
         ? { claudePermissionMode: params.claudePermissionMode }
         : {}),
       env,
-      ...(params.onScheduleToolUse !== undefined
-        ? { onScheduleToolUse: params.onScheduleToolUse }
+      ...(params.scheduleToolUseEnabled && params.agentSessionId
+        ? {
+            onScheduleToolUse: (request: Parameters<ScheduleToolUseHandler>[0]) =>
+              this.requestScheduleToolUse(channel, request),
+          }
         : {}),
       ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
       ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
+    };
+  }
+
+  private async requestScheduleToolUse(
+    channel: InProcessRunnerFrameChannel,
+    request: Parameters<ScheduleToolUseHandler>[0],
+  ): Promise<Awaited<ReturnType<ScheduleToolUseHandler>>> {
+    const correlationId = randomUUID();
+    const control = await channel.request(runnerRequestFrame(correlationId, {
+        kind: "schedule_tool_use",
+        agentSessionId: request.agentSessionId,
+        toolUseId: request.toolUseId,
+        toolName: request.toolName,
+        input: request.input,
+        now: request.now.toISOString(),
+    }));
+    if (control.kind !== "response") {
+      throw new Error(`Unexpected schedule control frame: ${control.kind}`);
+    }
+    if (control.result.status === "error") {
+      throw new Error(control.result.error.message);
+    }
+    const data = control.result.data;
+    if (!isRecord(data) || typeof data.message !== "string") {
+      throw new Error(`Invalid schedule control response: ${correlationId}`);
+    }
+    return {
+      message: data.message,
+      ...(data.data !== undefined ? { data: data.data } : {}),
     };
   }
 
@@ -451,4 +507,8 @@ function claudeEngineEventMetadata(payload: SSEEventPayload): Record<string, unk
     ...(provenance ? { claudeBackgroundProvenance: provenance } : {}),
     ...(delivery ? { claudeBackgroundDelivery: delivery } : {}),
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

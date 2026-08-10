@@ -14,7 +14,10 @@
 
 import type { SessionEventEnvelope } from "@soulstream/wire-schema";
 
-import type { RunnerEventFrame } from "../runner/frame_protocol.js";
+import type {
+  RunnerControlFrame,
+  RunnerEventFrame,
+} from "../runner/frame_protocol.js";
 
 /**
  * SSE wire에 발행되는 단위. wire-schema `SessionEventEnvelope.event` 필드의 union
@@ -44,29 +47,10 @@ export const CLAUDE_PERMISSION_MODES = [
 
 export type ClaudePermissionMode = (typeof CLAUDE_PERMISSION_MODES)[number];
 
-/** 진행 상태 메시지 콜백 (예: "thread starting", "turn completed"). */
-export type ProgressCallback = (message: string) => Promise<void>;
-
 export interface EngineUserInput {
   prompt: string;
   imageAttachmentPaths?: string[];
 }
-
-export type InterventionInput = string | EngineUserInput;
-
-/**
- * 사용자 개입 메시지 요청 콜백. 호출자가 즉시 보낼 메시지를 반환하거나 null.
- *
- * Codex SDK 0.130.0은 turn 도중 input 주입 표면 없음(d.ts 검증) — 본 PR 어댑터는
- * 조용히 무시하고 turn 끝에 새 prompt fallback. B-3에서 task lifecycle와 결합.
- */
-export type InterventionCallback = () => Promise<InterventionInput | null>;
-
-/**
- * compact 이벤트 콜백 (Claude 고유 `/compact`). Codex는 발행 안 함 — Codex 어댑터에서
- * 호출되지 않음(no-op). interface에는 *미래 백엔드*를 위해 자리 둠.
- */
-export type CompactCallback = (sessionId: string, summary: string) => Promise<void>;
 
 export interface ScheduleToolUseRequest {
   agentSessionId: string;
@@ -134,17 +118,8 @@ export interface EngineExecuteParams {
   sessionItems?: unknown[];
   /** Approval decision queued before the resumed SDK engine is back in memory. */
   queuedToolApproval?: QueuedToolApprovalDecision;
-  onProgress?: ProgressCallback;
-  /**
-   * Legacy polling hook. TaskEngineTurnRunner must not pass this for Claude resumed turns.
-   * Running live delivery uses SupportsLiveTurnSteering; unsupported/unsafe boundary cases
-   * fall back to queue.
-   */
-  onIntervention?: InterventionCallback;
-  onCompact?: CompactCallback;
-  onRunStateSnapshot?: RunStateSnapshotCallback;
-  onSessionItemsSnapshot?: SessionItemsSnapshotCallback;
-  onScheduleToolUse?: ScheduleToolUseHandler;
+  /** Host has a consumer for correlated schedule request frames. */
+  scheduleToolUseEnabled?: boolean;
 }
 
 /**
@@ -170,8 +145,7 @@ export interface EnginePort {
    * - resumeSessionId 있으면 해당 세션 이어 실행. 없으면 새 thread/session 생성.
    * - 새 세션 시작 시 첫 runner `engine_event`는 보통 `session` 타입
    *   (session_id 운반, 호출자가 기존 SSE 경로로 영속).
-   * - onIntervention: legacy polling hook. Task queue resume is the intervention path.
-   * - onCompact: Codex는 호출되지 않음 (no-op).
+   * - Task queue resume remains the intervention path.
    */
   execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload>;
 
@@ -184,6 +158,9 @@ export interface EnginePort {
    * implement it; Phase 3 removes the legacy execute() fallback.
    */
   executeFrames?(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
+
+  /** Deliver one correlated response/control frame to the active runner turn. */
+  sendControlFrame?(frame: RunnerControlFrame): boolean;
 
   /**
    * 실행 중 turn 중단. 성공 시 true.
@@ -322,11 +299,6 @@ export interface EngineSessionItemsSnapshot {
   backendId: BackendId;
   items: unknown[];
 }
-
-export type RunStateSnapshotCallback = (snapshot: EngineRunStateSnapshot) => Promise<void>;
-export type SessionItemsSnapshotCallback = (
-  snapshot: EngineSessionItemsSnapshot,
-) => Promise<void>;
 
 export interface SupportsToolApproval {
   deliverToolApproval(

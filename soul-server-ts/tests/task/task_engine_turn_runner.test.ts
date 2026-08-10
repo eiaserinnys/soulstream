@@ -222,6 +222,118 @@ describe("TaskEngineTurnRunner", () => {
     expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
   });
 
+  it("answers schedule request frames through the correlated control boundary", async () => {
+    const task = makeTask();
+    const scheduleToolHandler = vi.fn().mockResolvedValue({
+      message: "scheduled",
+      data: { scheduleId: "schedule-1" },
+    });
+    const snapshotPersistence = {
+      persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
+      persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
+    };
+    let controlFrame: unknown;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames(params) {
+        expect(params.scheduleToolUseEnabled).toBe(true);
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "schedule-request-1",
+          request: {
+            kind: "schedule_tool_use" as const,
+            agentSessionId: task.agentSessionId,
+            toolUseId: "tool-use-1",
+            toolName: "ScheduleTask",
+            input: { prompt: "later" },
+            now: "2026-08-10T12:00:00.000Z",
+          },
+        };
+        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
+      },
+      sendControlFrame(frame) {
+        controlFrame = frame;
+        return true;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({ snapshotPersistence, scheduleToolHandler });
+
+    await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+
+    expect(scheduleToolHandler).toHaveBeenCalledWith({
+      agentSessionId: task.agentSessionId,
+      toolUseId: "tool-use-1",
+      toolName: "ScheduleTask",
+      input: { prompt: "later" },
+      now: new Date("2026-08-10T12:00:00.000Z"),
+    });
+    expect(controlFrame).toMatchObject({
+      kind: "response",
+      correlationId: "schedule-request-1",
+      result: {
+        status: "ok",
+        data: { message: "scheduled", data: { scheduleId: "schedule-1" } },
+      },
+    });
+  });
+
+  it("returns schedule handler failures as correlated error controls", async () => {
+    const task = makeTask();
+    const scheduleToolHandler = vi.fn().mockRejectedValue(new Error("scheduler unavailable"));
+    let controlFrame: unknown;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "schedule-request-error",
+          request: {
+            kind: "schedule_tool_use" as const,
+            agentSessionId: task.agentSessionId,
+            toolUseId: "tool-use-error",
+            toolName: "ScheduleTask",
+            input: {},
+            now: "2026-08-10T12:00:00.000Z",
+          },
+        };
+      },
+      sendControlFrame(frame) {
+        controlFrame = frame;
+        return true;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({
+      snapshotPersistence: {
+        persistRunStateSnapshot: vi.fn(),
+        persistSessionItemsSnapshot: vi.fn(),
+      },
+      scheduleToolHandler,
+    });
+
+    await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+
+    expect(controlFrame).toMatchObject({
+      kind: "response",
+      correlationId: "schedule-request-error",
+      result: {
+        status: "error",
+        error: { code: "schedule_handler_error", message: "scheduler unavailable" },
+      },
+    });
+  });
+
   it("falls back to agent tool policy when task-level policy is absent", async () => {
     const task = makeTask();
     let captured: EngineExecuteParams | undefined;
@@ -600,19 +712,36 @@ describe("TaskEngineTurnRunner", () => {
     expect(secondCaptured?.queuedToolApproval).toBeUndefined();
   });
 
-  it("wires Agents snapshot callbacks to the snapshot persistence boundary", async () => {
+  it("wires Agents snapshot frames to the snapshot persistence boundary", async () => {
     const task = makeTask();
-    const engine = makeEngine(async (params) => {
-      await params.onRunStateSnapshot?.({
-        backendId: "openai-agents",
-        serialized: "state-v2",
-        pendingApprovalId: "tool-1",
-      });
-      await params.onSessionItemsSnapshot?.({
-        backendId: "openai-agents",
-        items: [{ role: "user", content: "hi" }],
-      });
-    });
+    const engine: EnginePort = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "run_state_snapshot" as const,
+          snapshot: {
+            backendId: "openai-agents" as const,
+            serialized: "state-v2",
+            pendingApprovalId: "tool-1",
+          },
+        };
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "session_items_snapshot" as const,
+          snapshot: {
+            backendId: "openai-agents" as const,
+            items: [{ role: "user", content: "hi" }],
+          },
+        };
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
     const { runner, snapshotPersistence } = makeSubject();
 
     await drain(runner.executeTurn({

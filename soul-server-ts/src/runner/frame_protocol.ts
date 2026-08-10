@@ -131,6 +131,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
       alwaysReject: z.boolean().optional(),
     }).passthrough().optional(),
   }).passthrough().optional(),
+  scheduleToolUseEnabled: z.boolean().optional(),
 }).passthrough());
 
 export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("kind", [
@@ -303,4 +304,52 @@ export function engineEventFrame(payload: unknown, metadata?: unknown): RunnerEv
     payload,
     ...(metadata !== undefined ? { metadata } : {}),
   });
+}
+
+export function runStateSnapshotFrame(
+  snapshot: unknown,
+): Extract<RunnerEventFrame, { kind: "run_state_snapshot" }> {
+  return RunnerEventFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "event",
+    kind: "run_state_snapshot",
+    snapshot,
+  }) as Extract<RunnerEventFrame, { kind: "run_state_snapshot" }>;
+}
+
+export function sessionItemsSnapshotFrame(
+  snapshot: unknown,
+): Extract<RunnerEventFrame, { kind: "session_items_snapshot" }> {
+  return RunnerEventFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "event",
+    kind: "session_items_snapshot",
+    snapshot,
+  }) as Extract<RunnerEventFrame, { kind: "session_items_snapshot" }>;
+}
+
+export function runnerRequestFrame(
+  correlationId: string,
+  request: unknown,
+): Extract<RunnerEventFrame, { kind: "request" }> {
+  return RunnerEventFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "event",
+    kind: "request",
+    correlationId,
+    request,
+  }) as Extract<RunnerEventFrame, { kind: "request" }>;
+}
+
+export function runnerControlResponseFrame(
+  correlationId: string,
+  result: unknown,
+): Extract<RunnerControlFrame, { kind: "response" }> {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "response",
+    correlationId,
+    result,
+  }) as Extract<RunnerControlFrame, { kind: "response" }>;
 }
