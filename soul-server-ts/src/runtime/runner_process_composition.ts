@@ -9,6 +9,12 @@ import {
   type RunnerProcessRuntimeFactoryOptions,
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
+
+export type RunnerReconciliationReporter = {
+  listLiveRunnerSessionIds(): Promise<string[]>;
+  waitForRunnerReconciliation(): Promise<void>;
+};
 
 export function composeRunnerProcessRuntime(
   enabled: boolean,
@@ -39,4 +45,23 @@ export async function startRunnerRecoveryCoordinator(options: {
   });
   await coordinator.start();
   return coordinator;
+}
+
+export function composeRunnerReconciliationReporter(
+  env: Env,
+  runnerProcessFactory: RunnerProcessRuntimeFactory | undefined,
+  coordinator: RunnerRecoveryCoordinator | undefined,
+): Partial<RunnerReconciliationReporter> {
+  if (!runnerProcessFactory) return {};
+  const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
+  if (!stateDirectory || !coordinator) {
+    throw new Error("runner inventory requires state directory and recovery coordinator");
+  }
+  return {
+    listLiveRunnerSessionIds: async () => await listLiveRunnerSessionIds({
+      stateDirectory,
+      leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+    }),
+    waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
+  };
 }

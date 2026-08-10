@@ -56,7 +56,6 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
-import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import {
   composeTaskRuntime,
   type TaskRuntimeComposition,
@@ -64,10 +63,9 @@ import {
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
-import type { ClaudeRuntimeStartupRecovery } from
-  "./claude_runtime_startup_recovery.js";
+import type { ClaudeRuntimeStartupRecovery } from "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
-import { composeRunnerProcessRuntime, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { composeRunnerProcessRuntime, composeRunnerReconciliationReporter, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 export interface WorkerCompositionParams {
   env: Env;
   logger: Logger;
@@ -315,18 +313,6 @@ export async function composeWorkerRuntime(
     taskExecutor: taskRuntime.taskExecutor,
     logger,
   });
-  const liveRunnerSessionReporter = runnerProcessFactory
-    ? async (): Promise<string[]> => {
-        const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
-        if (!stateDirectory) {
-          throw new Error("SOUL_RUNNER_STATE_DIR required for runner inventory");
-        }
-        return await listLiveRunnerSessionIds({
-          stateDirectory,
-          leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-        });
-      }
-    : undefined;
   const taskService = new TaskService({ orch: orchProxyConfig, logger });
   db.configureTaskReader(taskService);
   const catalogService = new CatalogService(
@@ -477,13 +463,7 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump: eventOutboxPumpMux,
-        ...(liveRunnerSessionReporter
-          ? {
-              listLiveRunnerSessionIds: liveRunnerSessionReporter,
-              waitForRunnerReconciliation: async () =>
-                await runnerRecoveryCoordinator?.waitForSettled(),
-            }
-          : {}),
+        ...composeRunnerReconciliationReporter(env, runnerProcessFactory, runnerRecoveryCoordinator),
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );
