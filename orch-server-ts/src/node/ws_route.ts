@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 import {
   NodeWsFrameController,
+  type NodeRunnerRegistrationPolicy,
   type NodeWsFrameCloseResult,
   type NodeWsFrameControllerResult,
 } from "./ws_frame_controller.js";
@@ -32,6 +33,7 @@ export type NodeWsRouteOptions = {
   eventSink?: NodeRegistryEventSink;
   eventIngress?: NodeEventIngressCommitter;
   registrationTimeoutMs?: number;
+  runnerPolicy?: Omit<NodeRunnerRegistrationPolicy, "onWarning">;
 };
 
 export type NodeWsRouteSecurity = {
@@ -68,7 +70,20 @@ export function registerNodeWsRoute(
         }
       },
     }, (socket, _request) => {
-      const controller = new NodeWsFrameController({ registry: options.registry });
+      const controller = new NodeWsFrameController({
+        registry: options.registry,
+        ...(options.runnerPolicy
+          ? {
+              runnerPolicy: {
+                ...options.runnerPolicy,
+                onWarning: (warning) => app.log.warn(
+                  warning,
+                  "Node registered without runner process mode while orch lease reconciliation is enabled",
+                ),
+              },
+            }
+          : {}),
+      });
       const transport: NodeCommandTransport = {
         send: (data) => socket.send(data),
       };

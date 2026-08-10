@@ -37,6 +37,8 @@ export interface UpstreamConfig {
   userName: string;
   userPortraitPath: string;
   isProduction: boolean;
+  runnerProcessEnabled?: boolean;
+  runnerLeaseTimeoutMs?: number;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
 }
@@ -172,6 +174,8 @@ export class UpstreamAdapter {
       userPortraitPath: this.config.userPortraitPath,
       agentRegistry: this.deps.agentRegistry,
       modelCatalog: this.deps.modelCatalog,
+      runnerProcessEnabled: this.config.runnerProcessEnabled,
+      runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
       logger: this.logger,
     });
 
@@ -297,6 +301,8 @@ export class UpstreamAdapter {
           userPortraitPath: this.config.userPortraitPath,
           agentRegistry: this.deps.agentRegistry,
           modelCatalog: this.deps.modelCatalog,
+          runnerProcessEnabled: this.config.runnerProcessEnabled,
+          runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
           logger: this.logger,
         }),
       );

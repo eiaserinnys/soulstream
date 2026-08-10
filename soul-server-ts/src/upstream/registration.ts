@@ -15,6 +15,8 @@ export interface RegistrationParams {
   userPortraitPath?: string;
   agentRegistry: AgentRegistry;
   modelCatalog?: Pick<ModelCatalog, "advertise">;
+  runnerProcessEnabled?: boolean;
+  runnerLeaseTimeoutMs?: number;
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
    * 실패는 silent (테스트·legacy 호환).
@@ -104,6 +106,12 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       max_concurrent: agents.length,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      ...(params.runnerProcessEnabled === undefined
+        ? {}
+        : {
+            runner_process_v1: params.runnerProcessEnabled,
+            runner_lease_timeout_ms: params.runnerLeaseTimeoutMs,
+          }),
     },
     supported_backends: supportedBackends,
     ...(modelPresets ? { model_presets: modelPresets } : {}),

@@ -8,10 +8,25 @@ import type {
 export type NodeWsFrameRegistrationRejectCode =
   | "EXPECTED_NODE_REGISTER"
   | "NODE_ID_REQUIRED"
-  | "NODE_ID_INVALID";
+  | "NODE_ID_INVALID"
+  | "RUNNER_REQUIRES_LEASE_RECONCILIATION"
+  | "RUNNER_LEASE_TIMEOUT_INVALID"
+  | "RUNNER_LEASE_TIMEOUT_MISMATCH";
+
+export type NodeRunnerRegistrationWarning = {
+  nodeId: string;
+  reason: "runner_process_not_enabled";
+};
+
+export type NodeRunnerRegistrationPolicy = {
+  leaseAware: boolean;
+  leaseTimeoutMs: number;
+  onWarning?(warning: NodeRunnerRegistrationWarning): void;
+};
 
 export type NodeWsFrameControllerOptions = {
   registry: InMemoryNodeRegistry;
+  runnerPolicy?: NodeRunnerRegistrationPolicy;
 };
 
 export type NodeWsFrameRegistrationRejectedResult = {
@@ -82,6 +97,7 @@ export type NodeWsFrameCloseResult =
 
 export class NodeWsFrameController {
   private readonly registry: InMemoryNodeRegistry;
+  private readonly runnerPolicy: NodeRunnerRegistrationPolicy | undefined;
   private registered:
     | {
         nodeId: string;
@@ -92,6 +108,7 @@ export class NodeWsFrameController {
 
   constructor(options: NodeWsFrameControllerOptions) {
     this.registry = options.registry;
+    this.runnerPolicy = options.runnerPolicy;
   }
 
   handleFrame(frame: Record<string, unknown>): NodeWsFrameControllerResult {
@@ -102,6 +119,8 @@ export class NodeWsFrameController {
       return this.handleRegistrationFrame(frame);
     }
     if (frame.type === "node_register") {
+      const rejection = validateRunnerCompatibility(frame, this.runnerPolicy);
+      if (rejection !== undefined) return rejection;
       return this.handleRegistrationRefresh(frame);
     }
 
@@ -145,7 +164,7 @@ export class NodeWsFrameController {
   private handleRegistrationFrame(
     frame: Record<string, unknown>,
   ): NodeWsFrameRegistrationRejectedResult | NodeWsFrameRegisteredResult {
-    const rejection = validateRegistrationFrame(frame);
+    const rejection = validateRegistrationFrame(frame, this.runnerPolicy);
     if (rejection !== undefined) return rejection;
 
     const registration = frame as NodeRegistrationPayload;
@@ -188,6 +207,7 @@ export class NodeWsFrameController {
 
 function validateRegistrationFrame(
   frame: Record<string, unknown>,
+  runnerPolicy: NodeRunnerRegistrationPolicy | undefined,
 ): NodeWsFrameRegistrationRejectedResult | undefined {
   if (frame.type !== "node_register") {
     return {
@@ -210,7 +230,46 @@ function validateRegistrationFrame(
       messageType: "node_register",
     };
   }
+  return validateRunnerCompatibility(frame, runnerPolicy);
+}
+
+function validateRunnerCompatibility(
+  frame: Record<string, unknown>,
+  policy: NodeRunnerRegistrationPolicy | undefined,
+): NodeWsFrameRegistrationRejectedResult | undefined {
+  if (!policy) return undefined;
+  const capabilities = isRecord(frame.capabilities) ? frame.capabilities : {};
+  const runnerEnabled = capabilities.runner_process_v1 === true;
+  if (!runnerEnabled) {
+    if (policy.leaseAware && typeof frame.node_id === "string") {
+      policy.onWarning?.({
+        nodeId: frame.node_id,
+        reason: "runner_process_not_enabled",
+      });
+    }
+    return undefined;
+  }
+  if (!policy.leaseAware) {
+    return runnerRejection("RUNNER_REQUIRES_LEASE_RECONCILIATION");
+  }
+  const leaseTimeoutMs = capabilities.runner_lease_timeout_ms;
+  if (!Number.isInteger(leaseTimeoutMs) || (leaseTimeoutMs as number) <= 0) {
+    return runnerRejection("RUNNER_LEASE_TIMEOUT_INVALID");
+  }
+  if (leaseTimeoutMs !== policy.leaseTimeoutMs) {
+    return runnerRejection("RUNNER_LEASE_TIMEOUT_MISMATCH");
+  }
   return undefined;
+}
+
+function runnerRejection(
+  code: Extract<NodeWsFrameRegistrationRejectCode, `RUNNER_${string}`>,
+): NodeWsFrameRegistrationRejectedResult {
+  return { type: "registration_rejected", code, messageType: "node_register" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function messageType(frame: Record<string, unknown>): string {

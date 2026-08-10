@@ -224,6 +224,26 @@ export const EnvSchema = z
         }
       }
     }
+    if (env.MCP_STATELESS_TRANSPORT_ENABLED && !env.MCP_ENABLED) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MCP_ENABLED"],
+        message:
+          "MCP_ENABLED must be true when MCP_STATELESS_TRANSPORT_ENABLED=true",
+      });
+    }
+    if (
+      env.SOUL_RUNNER_PROCESS_ENABLED
+      && env.MCP_ENABLED
+      && !env.MCP_STATELESS_TRANSPORT_ENABLED
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MCP_STATELESS_TRANSPORT_ENABLED"],
+        message:
+          "MCP_STATELESS_TRANSPORT_ENABLED must be true when runner process mode and MCP are enabled",
+      });
+    }
   });
 
 export type Env = z.infer<typeof EnvSchema>;

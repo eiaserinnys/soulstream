@@ -282,7 +282,7 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
-  const runnerProcess = composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
+  const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
     env, logger, mcpConfigService, codexCliPath,
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
@@ -447,6 +447,8 @@ export async function composeWorkerRuntime(
         userName: env.DASH_USER_NAME,
         userPortraitPath: env.DASH_USER_PORTRAIT,
         isProduction: env.ENVIRONMENT === "production",
+        runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
+        runnerLeaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       },
       logger,
       {
