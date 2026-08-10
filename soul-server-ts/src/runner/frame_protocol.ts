@@ -237,6 +237,7 @@ export const RunnerEventFrameSchema = withJsonContract(z.discriminatedUnion("kin
     channel: z.literal("event"),
     kind: z.literal("request"),
     correlationId,
+    timeoutMs: z.number().int().positive().optional(),
     request: RunnerRequestSchema,
   }).passthrough(),
 ]));
@@ -331,12 +332,14 @@ export function sessionItemsSnapshotFrame(
 export function runnerRequestFrame(
   correlationId: string,
   request: unknown,
+  options: { timeoutMs?: number } = {},
 ): Extract<RunnerEventFrame, { kind: "request" }> {
   return RunnerEventFrameSchema.parse({
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "event",
     kind: "request",
     correlationId,
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     request,
   }) as Extract<RunnerEventFrame, { kind: "request" }>;
 }

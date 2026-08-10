@@ -58,6 +58,9 @@ export interface ScheduleToolUseRequest {
   toolName: string;
   input: Record<string, unknown>;
   now: Date;
+  /** Host-side request lifetime. Present when crossing the runner frame boundary. */
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface ScheduleToolUseResult {

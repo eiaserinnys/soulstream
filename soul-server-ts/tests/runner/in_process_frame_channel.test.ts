@@ -80,4 +80,106 @@ describe("InProcessRunnerFrameChannel", () => {
     await expect(iterator.next()).resolves.toMatchObject({ done: false });
     await expect(iterator.next()).rejects.toThrow("producer failed");
   });
+
+  it("interrupts an unanswered request, clears pending state, and drains execution", async () => {
+    const channel = new InProcessRunnerFrameChannel();
+    const controller = new AbortController();
+    let rejection: unknown;
+    channel.start(async () => {
+      try {
+        await channel.request({
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event",
+          kind: "request",
+          correlationId: "request-interrupt",
+          timeoutMs: 1_000,
+          request: {
+            kind: "schedule_tool_use",
+            agentSessionId: "session-1",
+            toolUseId: "tool-1",
+            toolName: "ScheduleTask",
+            input: {},
+            now: "2026-08-10T12:00:00.000Z",
+          },
+        }, { signal: controller.signal, timeoutMs: 1_000 });
+      } catch (error) {
+        rejection = error;
+      }
+    });
+    const iterator = channel[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { kind: "request", correlationId: "request-interrupt" },
+    });
+    expect(channel.pendingControlCount).toBe(1);
+
+    controller.abort(new Error("interrupted"));
+
+    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
+    expect(channel.pendingControlCount).toBe(0);
+    expect(rejection).toMatchObject({ message: "interrupted" });
+  });
+
+  it("times out and removes an unanswered request before it can leak", async () => {
+    const channel = new InProcessRunnerFrameChannel();
+    channel.start(async () => {
+      await channel.request({
+        protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+        channel: "event",
+        kind: "request",
+        correlationId: "request-timeout",
+        timeoutMs: 10,
+        request: {
+          kind: "schedule_tool_use",
+          agentSessionId: "session-1",
+          toolUseId: "tool-1",
+          toolName: "ScheduleTask",
+          input: {},
+          now: "2026-08-10T12:00:00.000Z",
+        },
+      }, { timeoutMs: 10 });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(channel.pendingControlCount).toBe(0);
+    await expect(channel[Symbol.asyncIterator]().next()).rejects.toThrow(
+      "Runner request timed out after 10ms",
+    );
+  });
+
+  it("aborts and removes pending controls when the consumer closes", async () => {
+    const channel = new InProcessRunnerFrameChannel();
+    let rejection: unknown;
+    channel.start(async () => {
+      try {
+        await channel.request({
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event",
+          kind: "request",
+          correlationId: "request-close",
+          request: {
+            kind: "schedule_tool_use",
+            agentSessionId: "session-1",
+            toolUseId: "tool-1",
+            toolName: "ScheduleTask",
+            input: {},
+            now: "2026-08-10T12:00:00.000Z",
+          },
+        });
+      } catch (error) {
+        rejection = error;
+      }
+    });
+    const iterator = channel[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.return?.();
+
+    expect(channel.pendingControlCount).toBe(0);
+    await vi.waitFor(() => {
+      expect(rejection).toMatchObject({ message: "In-process runner frame channel closed" });
+    });
+  });
 });

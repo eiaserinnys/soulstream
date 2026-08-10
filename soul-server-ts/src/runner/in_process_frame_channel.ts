@@ -19,9 +19,19 @@ interface NextWaiter {
 interface PendingControl {
   resolve: (frame: RunnerControlFrame) => void;
   reject: (error: Error) => void;
+  signal: AbortSignal;
+  timeoutMs: number;
+  abort: (error: Error) => void;
+  cleanup: () => void;
 }
 
 const CHANNEL_CLOSED_MESSAGE = "In-process runner frame channel closed";
+export const DEFAULT_RUNNER_REQUEST_TIMEOUT_MS = 30_000;
+
+export interface RunnerFrameRequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
 
 /**
  * Acknowledged in-process transport for the future runner IPC contract.
@@ -72,23 +82,63 @@ export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFra
 
   async request(
     frame: Extract<RunnerEventFrame, { kind: "request" }>,
+    options: RunnerFrameRequestOptions = {},
   ): Promise<RunnerControlFrame> {
     if (this.pendingControls.has(frame.correlationId)) {
       throw new Error(`Duplicate runner correlation id: ${frame.correlationId}`);
     }
+    const timeoutMs = options.timeoutMs ?? DEFAULT_RUNNER_REQUEST_TIMEOUT_MS;
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(`Runner request timeoutMs must be a positive integer: ${timeoutMs}`);
+    }
+    const lifetime = createRequestLifetime(options.signal, timeoutMs);
+    if (lifetime.signal.aborted) {
+      lifetime.cleanup();
+      throw abortReason(lifetime.signal);
+    }
     let pending!: PendingControl;
     const response = new Promise<RunnerControlFrame>((resolve, reject) => {
-      pending = { resolve, reject };
+      const rejectOnAbort = () => reject(abortReason(lifetime.signal));
+      lifetime.signal.addEventListener("abort", rejectOnAbort, { once: true });
+      pending = {
+        resolve,
+        reject,
+        signal: lifetime.signal,
+        timeoutMs,
+        abort: lifetime.abort,
+        cleanup: () => {
+          lifetime.signal.removeEventListener("abort", rejectOnAbort);
+          lifetime.cleanup();
+        },
+      };
     });
     this.pendingControls.set(frame.correlationId, pending);
     try {
       const [, control] = await Promise.all([this.emit(frame), response]);
       return control;
     } finally {
+      if (pending.signal.aborted) {
+        this.cancelRequestFrame(frame.correlationId, abortReason(pending.signal));
+      }
       if (this.pendingControls.get(frame.correlationId) === pending) {
         this.pendingControls.delete(frame.correlationId);
       }
+      pending.cleanup();
     }
+  }
+
+  requestContext(correlationId: string): {
+    signal: AbortSignal;
+    timeoutMs: number;
+  } | undefined {
+    const pending = this.pendingControls.get(correlationId);
+    return pending
+      ? { signal: pending.signal, timeoutMs: pending.timeoutMs }
+      : undefined;
+  }
+
+  get pendingControlCount(): number {
+    return this.pendingControls.size;
   }
 
   sendControl(frame: RunnerControlFrame): boolean {
@@ -96,6 +146,7 @@ export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFra
     const pending = this.pendingControls.get(parsed.correlationId);
     if (!pending) return false;
     this.pendingControls.delete(parsed.correlationId);
+    pending.cleanup();
     pending.resolve(parsed);
     return true;
   }
@@ -170,10 +221,67 @@ export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFra
     delivered.resolve();
   }
 
+  private cancelRequestFrame(correlationId: string, error: Error): void {
+    const queuedIndex = this.queued.findIndex(
+      ({ frame }) => frame.kind === "request" && frame.correlationId === correlationId,
+    );
+    if (queuedIndex >= 0) {
+      this.queued.splice(queuedIndex, 1)[0]?.reject(error);
+    }
+    if (
+      this.delivered?.frame.kind === "request"
+      && this.delivered.frame.correlationId === correlationId
+    ) {
+      const delivered = this.delivered;
+      this.delivered = undefined;
+      delivered.reject(error);
+    }
+  }
+
   private rejectPendingControls(error: Error): void {
-    for (const pending of this.pendingControls.values()) pending.reject(error);
+    for (const pending of this.pendingControls.values()) {
+      pending.abort(error);
+      pending.reject(error);
+      pending.cleanup();
+    }
     this.pendingControls.clear();
   }
+}
+
+function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs: number): {
+  signal: AbortSignal;
+  abort: (error: Error) => void;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const abort = (error: Error) => {
+    if (!controller.signal.aborted) controller.abort(error);
+  };
+  const abortFromParent = () => abort(abortReason(parent!));
+  if (parent?.aborted) {
+    abortFromParent();
+  } else {
+    parent?.addEventListener("abort", abortFromParent, { once: true });
+  }
+  const timer = setTimeout(
+    () => abort(new Error(`Runner request timed out after ${timeoutMs}ms`)),
+    timeoutMs,
+  );
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    abort,
+    cleanup: () => {
+      clearTimeout(timer);
+      parent?.removeEventListener("abort", abortFromParent);
+    },
+  };
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error(signal.reason ? String(signal.reason) : "Runner request aborted");
 }
 
 function asError(error: unknown): Error {
