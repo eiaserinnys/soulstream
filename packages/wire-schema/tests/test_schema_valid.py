@@ -210,6 +210,30 @@ def test_documented_message_inventory_counts_match_schema() -> None:
     assert expected in GENERATED_PY_PATH.read_text(encoding="utf-8")
 
 
+def test_every_persisted_event_has_an_explicit_durability_class() -> None:
+    schema = _load_schema()
+    durability = schema["x-soulstream-event-durability"]
+    persistence_only_event_types = set(
+        schema["x-soulstream-persistence-only-event-types"]
+    )
+    sse_event_types = {
+        definition["properties"]["type"]["const"]
+        for name, definition in schema["$defs"].items()
+        if name.startswith("SSEEvent")
+    }
+
+    assert len(sse_event_types) == 61
+    assert persistence_only_event_types == {"metadata", "system_message"}
+    assert persistence_only_event_types.isdisjoint(sse_event_types)
+    assert set(durability) == sse_event_types | persistence_only_event_types
+    assert set(durability.values()) == {"durable", "transient"}
+    assert {
+        event_type
+        for event_type, classification in durability.items()
+        if classification == "transient"
+    } == {"text_start", "text_delta", "text_end"}
+
+
 def test_context_manifest_event_contract() -> None:
     schema = _load_schema()
     manifest = schema["$defs"]["SSEEventContextManifest"]

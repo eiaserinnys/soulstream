@@ -8,7 +8,7 @@
  *   2. task.runner 설정 (engine capability와 command dispatcher를 원자적으로 구성)
  *   3. engine.execute() AsyncIterable drain
  *   4. 매 yield 이벤트: 저장 대상은 persistEvent → emitEventEnvelope → handleSideEffects,
- *      `_live_only`는 영속화 없이 emitEventEnvelope → handleSideEffects
+ *      wire-schema의 transient 분류는 영속화 없이 emitEventEnvelope → handleSideEffects
  *   5. session event 첫 yield: task.codexThreadId 박기
  *   6. 종료 시: terminal event + terminal_transition effect를 ACK barrier까지 반영
  *
