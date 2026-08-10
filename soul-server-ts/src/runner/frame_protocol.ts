@@ -169,6 +169,24 @@ const RunnerSessionItemsSnapshotSchema = z.object({
   items: z.array(z.json()),
 }).passthrough();
 
+const RunnerEngineEventMetadataSchema = z.object({
+  claudeBackgroundProvenance: z.enum([
+    "sdk_membership",
+    "explicit_background_tool_result",
+    "runtime_close",
+  ]).optional(),
+  claudeBackgroundDelivery: z.object({
+    deliveryId: z.string(),
+    completionId: z.string(),
+    relationKey: z.string(),
+    producerTerminalRevision: z.string(),
+    deliveryCreatedAt: z.string(),
+    source: z.string(),
+    storedPayload: jsonRecord,
+    storedPayloadHash: z.string(),
+  }).passthrough().optional(),
+}).passthrough();
+
 const RunnerRequestSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("schedule_tool_use"),
@@ -199,6 +217,7 @@ export const RunnerEventFrameSchema = withJsonContract(z.discriminatedUnion("kin
     channel: z.literal("event"),
     kind: z.literal("engine_event"),
     payload: jsonRecord,
+    metadata: RunnerEngineEventMetadataSchema.optional(),
   }).passthrough(),
   z.object({
     protocolVersion,
@@ -276,11 +295,12 @@ export type RunnerEventFrame = z.infer<typeof RunnerEventFrameSchema>;
 export type RunnerControlFrame = z.infer<typeof RunnerControlFrameSchema>;
 export type RunnerFrame = z.infer<typeof RunnerFrameSchema>;
 
-export function engineEventFrame(payload: unknown): RunnerEventFrame {
+export function engineEventFrame(payload: unknown, metadata?: unknown): RunnerEventFrame {
   return RunnerEventFrameSchema.parse({
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "event",
     kind: "engine_event",
     payload,
+    ...(metadata !== undefined ? { metadata } : {}),
   });
 }

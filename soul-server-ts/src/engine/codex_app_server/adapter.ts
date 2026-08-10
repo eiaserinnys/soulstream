@@ -1,6 +1,11 @@
 import type { Logger } from "pino";
 
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
+import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
+import {
+  engineEventFrame,
+  type RunnerEventFrame,
+} from "../../runner/frame_protocol.js";
 import { sanitizeCodexEnv } from "../codex_env.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import type {
@@ -122,6 +127,10 @@ export class CodexAppServerEngineAdapter
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
+    yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     if (this.closed) {
       throw new Error("CodexAppServerEngineAdapter.execute called after close()");
     }
@@ -172,22 +181,21 @@ export class CodexAppServerEngineAdapter
       }
 
       for await (const payload of queue) {
-        if (params.onEvent) {
-          await params.onEvent(payload);
-        }
-        yield payload;
+        yield engineEventFrame(payload as Record<string, unknown>);
       }
     } catch (error) {
       if (this.closed) {
         for await (const payload of queue) {
-          if (params.onEvent) {
-            await params.onEvent(payload);
-          }
-          yield payload;
+          yield engineEventFrame(payload as Record<string, unknown>);
         }
         return;
       }
-      yield fatalErrorPayload(error instanceof Error ? error : new Error(String(error)));
+      yield engineEventFrame(
+        fatalErrorPayload(error instanceof Error ? error : new Error(String(error))) as Record<
+          string,
+          unknown
+        >,
+      );
     } finally {
       for (const off of unsubscribe) off();
       this.notificationLifecycle = clearActiveTurn(this.notificationLifecycle);
@@ -301,9 +309,6 @@ export class CodexAppServerEngineAdapter
     if (opened.emitSession) {
       const payload = { type: "session", session_id: threadId } as SSEEventPayload;
       queue.push(payload);
-    }
-    if (opened.reportSession) {
-      await params.onSession?.(threadId);
     }
     return threadId;
   }

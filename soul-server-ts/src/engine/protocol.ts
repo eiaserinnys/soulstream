@@ -14,6 +14,8 @@
 
 import type { SessionEventEnvelope } from "@soulstream/wire-schema";
 
+import type { RunnerEventFrame } from "../runner/frame_protocol.js";
+
 /**
  * SSE wire에 발행되는 단위. wire-schema `SessionEventEnvelope.event` 필드의 union
  * (SSEEventInit | SSEEventComplete | SSEEventTextEnd | ... 28종).
@@ -42,22 +44,8 @@ export const CLAUDE_PERMISSION_MODES = [
 
 export type ClaudePermissionMode = (typeof CLAUDE_PERMISSION_MODES)[number];
 
-// === 콜백 시그니처 ===
-
-/**
- * EnginePort.execute 도중 추가 SSE 발행 콜백.
- *
- * Python EnginePort는 EngineEvent 객체를 콜백으로 전달하지만, TS 정본은
- * SSEEventPayload 직접 발행으로 단순화 (4차 캐시 §7.3 시그니처 동등 의무 없음).
- * 본 PR의 어댑터는 yield AsyncIterable을 메인 경로로 사용하고 onEvent는 옵셔널 부가 출력.
- */
-export type EventCallback = (payload: SSEEventPayload) => Promise<void>;
-
 /** 진행 상태 메시지 콜백 (예: "thread starting", "turn completed"). */
 export type ProgressCallback = (message: string) => Promise<void>;
-
-/** 새 세션이 시작될 때 backend session id 전달. 호출자가 task에 영속. */
-export type SessionCallback = (sessionId: string) => Promise<void>;
 
 export interface EngineUserInput {
   prompt: string;
@@ -146,9 +134,7 @@ export interface EngineExecuteParams {
   sessionItems?: unknown[];
   /** Approval decision queued before the resumed SDK engine is back in memory. */
   queuedToolApproval?: QueuedToolApprovalDecision;
-  onEvent?: EventCallback;
   onProgress?: ProgressCallback;
-  onSession?: SessionCallback;
   /**
    * Legacy polling hook. TaskEngineTurnRunner must not pass this for Claude resumed turns.
    * Running live delivery uses SupportsLiveTurnSteering; unsupported/unsafe boundary cases
@@ -182,12 +168,22 @@ export interface EnginePort {
    * 시작하려면 `interrupt()` 호출 후 직전 turn의 generator를 drain.
    *
    * - resumeSessionId 있으면 해당 세션 이어 실행. 없으면 새 thread/session 생성.
-   * - 새 세션 시작 시 onSession 콜백으로 sessionId 통지 (호출자가 task에 영속).
-   * - 첫 yield되는 SSEEvent는 보통 `session` 타입 (session_id 운반).
+   * - 새 세션 시작 시 첫 runner `engine_event`는 보통 `session` 타입
+   *   (session_id 운반, 호출자가 기존 SSE 경로로 영속).
    * - onIntervention: legacy polling hook. Task queue resume is the intervention path.
    * - onCompact: Codex는 호출되지 않음 (no-op).
    */
   execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload>;
+
+  /**
+   * Phase 1 in-process runner boundary. Production adapters emit versioned,
+   * JSON-serializable frames here; TaskEngineTurnRunner consumes them before
+   * publishing the unchanged SSE payloads.
+   *
+   * Optional only while legacy test doubles migrate. Runtime adapters must
+   * implement it; Phase 3 removes the legacy execute() fallback.
+   */
+  executeFrames?(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
 
   /**
    * 실행 중 turn 중단. 성공 시 true.

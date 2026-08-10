@@ -7,6 +7,12 @@ import type {
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
+import { readClaudeBackgroundProvenance } from
+  "../../src/engine/claude_background_provenance.js";
+import {
+  engineEventFrame,
+  RUNNER_FRAME_PROTOCOL_VERSION,
+} from "../../src/runner/frame_protocol.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -139,6 +145,81 @@ describe("TaskEngineTurnRunner", () => {
       extraEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token" },
     });
     expect(captured?.onIntervention).toBeUndefined();
+  });
+
+  it("consumes engine events and snapshots from the in-process runner frame stream", async () => {
+    const task = makeTask();
+    const engine: EnginePort = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        throw new Error("legacy execute path must not be used");
+      },
+      async *executeFrames() {
+        yield engineEventFrame({ type: "session", session_id: "agents-1" });
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "run_state_snapshot" as const,
+          snapshot: { backendId: "openai-agents" as const, serialized: "state-1" },
+        };
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "session_items_snapshot" as const,
+          snapshot: { backendId: "openai-agents" as const, items: [{ role: "user" }] },
+        };
+        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const { runner, snapshotPersistence } = makeSubject();
+
+    const events = await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, backend: "openai-agents" },
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
+    expect(events.map((event) => event.type)).toEqual(["session", "complete"]);
+    expect(snapshotPersistence.persistRunStateSnapshot).toHaveBeenCalledWith(
+      task,
+      { backendId: "openai-agents", serialized: "state-1" },
+    );
+    expect(snapshotPersistence.persistSessionItemsSnapshot).toHaveBeenCalledWith(
+      task,
+      { backendId: "openai-agents", items: [{ role: "user" }] },
+    );
+  });
+
+  it("restores Claude frame metadata on the production turn consumer", async () => {
+    const task = makeTask();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield engineEventFrame(
+          { type: "task_notification", task_id: "task-1" },
+          { claudeBackgroundProvenance: "sdk_membership" },
+        );
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const { runner } = makeSubject();
+
+    const [event] = await drain(runner.executeTurn({
+      task,
+      agent,
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
+    expect(event).toBeDefined();
+    expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
   });
 
   it("falls back to agent tool policy when task-level policy is absent", async () => {

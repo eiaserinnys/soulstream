@@ -516,7 +516,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
     });
   });
 
-  it("onSession 콜백이 thread.started 시 호출됨", async () => {
+  it("thread.started를 session runner frame으로 발행함", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({
@@ -528,18 +528,15 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       silentLogger(),
     );
     const sessions: string[] = [];
-    for await (const _ of engine.execute({
-      prompt: "x",
-      onSession: async (id) => {
-        sessions.push(id);
-      },
-    })) {
-      // drain
+    for await (const frame of engine.executeFrames({ prompt: "x" })) {
+      if (frame.kind === "engine_event" && frame.payload.type === "session") {
+        sessions.push(frame.payload.session_id as string);
+      }
     }
     expect(sessions).toEqual(["thr-x"]);
   });
 
-  it("onEvent 콜백이 매핑된 SSE payload마다 호출됨 (yield와 별도)", async () => {
+  it("매핑된 SSE payload를 각각 runner frame으로 감싼다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({
@@ -562,13 +559,10 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       silentLogger(),
     );
     const observed: string[] = [];
-    for await (const _ of engine.execute({
-      prompt: "x",
-      onEvent: async (p) => {
-        observed.push(p.type);
-      },
-    })) {
-      // drain
+    for await (const frame of engine.executeFrames({ prompt: "x" })) {
+      if (frame.kind === "engine_event") {
+        observed.push(frame.payload.type as string);
+      }
     }
     expect(observed).toEqual(["session", "complete"]);
   });

@@ -5,6 +5,14 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
+import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
+import {
+  engineEventFrame,
+  type RunnerEventFrame,
+} from "../runner/frame_protocol.js";
+import { readClaudeBackgroundDeliveryMetadata } from
+  "./claude_background_delivery_metadata.js";
+import { readClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import type {
   BackendId,
   EngineUserInput,
@@ -161,6 +169,10 @@ export class ClaudeEngineAdapter
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
+    yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     if (this.closed) {
       throw new Error("ClaudeEngineAdapter.execute called after close()");
     }
@@ -187,12 +199,6 @@ export class ClaudeEngineAdapter
       for await (const clientEvent of events) {
         this.trackInputRequest(clientEvent);
 
-        if (clientEvent.type === "session") {
-          if (params.onSession) {
-            await params.onSession(clientEvent.sessionId);
-          }
-        }
-
         if (clientEvent.type === "text") {
           lastText = clientEvent.text;
         }
@@ -201,8 +207,10 @@ export class ClaudeEngineAdapter
           fallbackResult: lastText,
         });
         for (const payload of payloads) {
-          if (params.onEvent) await params.onEvent(payload);
-          yield payload;
+          yield engineEventFrame(
+            { ...payload } as Record<string, unknown>,
+            claudeEngineEventMetadata(payload),
+          );
         }
 
         if (clientEvent.type === "error" && clientEvent.fatal !== false) {
@@ -222,8 +230,7 @@ export class ClaudeEngineAdapter
           fatal: true,
           timestamp: nowSeconds(),
         } as SSEEventPayload;
-        if (params.onEvent) await params.onEvent(payload);
-        yield payload;
+        yield engineEventFrame(payload as Record<string, unknown>);
       }
       throw err;
     } finally {
@@ -434,4 +441,14 @@ class ClaudeClientFatalEventError extends Error {}
 
 function nowSeconds(): number {
   return Date.now() / 1000;
+}
+
+function claudeEngineEventMetadata(payload: SSEEventPayload): Record<string, unknown> | undefined {
+  const provenance = readClaudeBackgroundProvenance(payload);
+  const delivery = readClaudeBackgroundDeliveryMetadata(payload);
+  if (!provenance && !delivery) return undefined;
+  return {
+    ...(provenance ? { claudeBackgroundProvenance: provenance } : {}),
+    ...(delivery ? { claudeBackgroundDelivery: delivery } : {}),
+  };
 }

@@ -1,5 +1,6 @@
 import type { AgentProfile } from "../agent_registry.js";
 import type {
+  EngineExecuteParams,
   EnginePort,
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
@@ -7,6 +8,11 @@ import type {
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
+import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
+import {
+  engineEventFrame,
+  type RunnerEventFrame,
+} from "../runner/frame_protocol.js";
 import {
   ANTHROPIC_API_KEY_ENV,
   resolveModelPresetEnv,
@@ -88,7 +94,7 @@ export class TaskEngineTurnRunner {
         })
       : undefined;
 
-    return engine.execute({
+    const executeParams: EngineExecuteParams = {
       agentSessionId: task.agentSessionId,
       prompt: input.prompt,
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
@@ -121,6 +127,41 @@ export class TaskEngineTurnRunner {
       ...(this.deps.scheduleToolHandler !== undefined
         ? { onScheduleToolUse: this.deps.scheduleToolHandler }
         : {}),
-    });
+    };
+    const frames = engine.executeFrames
+      ? engine.executeFrames(executeParams)
+      : legacyEngineEventFrames(engine.execute(executeParams));
+
+    return consumeRunnerFrames(frames, task, this.deps.snapshotPersistence);
+  }
+}
+
+async function* consumeRunnerFrames(
+  frames: AsyncIterable<RunnerEventFrame>,
+  task: Task,
+  snapshotPersistence: TaskAgentsSnapshotPersistencePort,
+): AsyncIterable<SSEEventPayload> {
+  for await (const frame of frames) {
+    if (frame.kind === "engine_event") {
+      yield sseEventFromRunnerFrame(frame);
+      continue;
+    }
+    if (frame.kind === "run_state_snapshot") {
+      await snapshotPersistence.persistRunStateSnapshot(task, frame.snapshot);
+      continue;
+    }
+    if (frame.kind === "session_items_snapshot") {
+      await snapshotPersistence.persistSessionItemsSnapshot(task, frame.snapshot);
+      continue;
+    }
+    throw new Error(`Unhandled runner request frame: ${frame.request.kind}`);
+  }
+}
+
+async function* legacyEngineEventFrames(
+  events: AsyncIterable<SSEEventPayload>,
+): AsyncIterable<RunnerEventFrame> {
+  for await (const event of events) {
+    yield engineEventFrame(event as Record<string, unknown>);
   }
 }
