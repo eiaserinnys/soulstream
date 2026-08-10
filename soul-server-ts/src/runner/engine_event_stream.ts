@@ -27,6 +27,12 @@ export async function* sseEventsFromRunnerFrames(
   for await (const frame of frames) {
     if (frame.kind === "engine_event") {
       yield sseEventFromRunnerFrame(frame);
+      continue;
+    }
+    if (frame.kind === "request") {
+      throw new Error(
+        "Runner request frames require executeFrames() and a control response consumer",
+      );
     }
   }
 }

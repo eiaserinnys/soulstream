@@ -26,8 +26,11 @@ import type { Logger } from "pino";
 
 import type { AgentProfile, AgentsSdkConfig } from "../agent_registry.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
+import { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import {
   engineEventFrame,
+  runStateSnapshotFrame,
+  sessionItemsSnapshotFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 
@@ -36,7 +39,7 @@ import type {
   BackendId,
   EngineExecuteParams,
   EnginePort,
-  SessionItemsSnapshotCallback,
+  EngineSessionItemsSnapshot,
   SSEEventPayload,
   SupportsToolApproval,
   QueuedToolApprovalDecision,
@@ -58,6 +61,7 @@ interface PendingApprovalDecision {
 }
 
 type AnyAgent = Agent<any, any>;
+type SessionItemsSnapshotSink = (snapshot: EngineSessionItemsSnapshot) => Promise<void>;
 const AGENTS_RUN_STATE_SCHEMA_VERSION = "1.11";
 
 export interface AgentsAdapterConfig {
@@ -124,7 +128,16 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
   }
 
-  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+  executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    const channel = new InProcessRunnerFrameChannel();
+    channel.start(() => this.executeToFrames(params, channel));
+    return channel;
+  }
+
+  private async executeToFrames(
+    params: EngineExecuteParams,
+    channel: InProcessRunnerFrameChannel,
+  ): Promise<void> {
     if (this.closed) {
       throw new Error("AgentsEngineAdapter.execute called after close()");
     }
@@ -135,17 +148,17 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
 
     const sessionId = params.resumeSessionId ?? `agents-${randomUUID()}`;
     if (!params.resumeSessionId) {
-      yield engineEventFrame({
+      await channel.emit(engineEventFrame({
         type: "session",
         session_id: sessionId,
-      });
+      }));
     }
 
     await this.connectMcpServersOnce();
     const sdkSession = new SoulstreamAgentsSession(
       sessionId,
       params.sessionItems,
-      params.onSessionItemsSnapshot,
+      (snapshot) => channel.emit(sessionItemsSnapshotFrame(snapshot)),
     );
     let nextInput: string | RunState<any, AnyAgent> = params.resumeRunState
       ? await RunState.fromString(this.entryAgent, params.resumeRunState)
@@ -171,14 +184,14 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
           const guardrailEvents = mapAgentsGuardrailError(err);
           if (guardrailEvents.length > 0) {
             for (const payload of guardrailEvents) {
-              yield engineEventFrame(payload as Record<string, unknown>);
+              await channel.emit(engineEventFrame(payload as Record<string, unknown>));
             }
-            yield engineEventFrame({
+            await channel.emit(engineEventFrame({
               type: "complete",
               result: "Stopped by guardrail",
               attachments: [],
               timestamp: Date.now() / 1000,
-            });
+            }));
             return;
           }
           throw err;
@@ -194,7 +207,7 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
               }
             }
             for (const payload of mapAgentsRunStreamEvent(sdkEvent)) {
-              yield engineEventFrame(payload as Record<string, unknown>);
+              await channel.emit(engineEventFrame(payload as Record<string, unknown>));
             }
           }
           await result.completed;
@@ -206,14 +219,14 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
           const guardrailEvents = mapAgentsGuardrailError(err);
           if (guardrailEvents.length > 0) {
             for (const payload of guardrailEvents) {
-              yield engineEventFrame(payload as Record<string, unknown>);
+              await channel.emit(engineEventFrame(payload as Record<string, unknown>));
             }
-            yield engineEventFrame({
+            await channel.emit(engineEventFrame({
               type: "complete",
               result: "Stopped by guardrail",
               attachments: [],
               timestamp: Date.now() / 1000,
-            });
+            }));
             return;
           }
           throw err;
@@ -223,7 +236,7 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
 
         const pending = approvalId ? this.pendingApprovals.get(approvalId) : undefined;
         if (pending) {
-          await persistRunStateSnapshot(params, result, approvalId);
+          await emitRunStateSnapshot(channel, result, approvalId);
           const decision = await pending.promise;
           if (this.closed) return;
           if (decision.decision === "approved") {
@@ -241,31 +254,32 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
             });
           }
           this.pendingApprovals.delete(approvalId!);
-          await persistRunStateSnapshot(params, result, null);
+          await emitRunStateSnapshot(channel, result, null);
           nextInput = result.state as RunState<any, AnyAgent>;
           continue;
         }
 
-        await params.onRunStateSnapshot?.({
+        await channel.emit(runStateSnapshotFrame({
           backendId: "openai-agents",
           serialized: null,
           pendingApprovalId: null,
-          previousResponseId: result.lastResponseId ?? statePreviousResponseId(result.state) ?? null,
+          previousResponseId:
+            result.lastResponseId ?? statePreviousResponseId(result.state) ?? null,
           conversationId: stateConversationId(result.state) ?? null,
           schemaVersion: AGENTS_RUN_STATE_SCHEMA_VERSION,
-        });
+        }));
         const finalOutput = stringifyFinalOutput(result.finalOutput);
-        yield engineEventFrame({
+        await channel.emit(engineEventFrame({
           type: "assistant_message",
           content: finalOutput,
           timestamp: Date.now() / 1000,
-        });
-        yield engineEventFrame({
+        }));
+        await channel.emit(engineEventFrame({
           type: "complete",
           result: finalOutput,
           attachments: [],
           timestamp: Date.now() / 1000,
-        });
+        }));
         return;
       }
     } finally {
@@ -609,7 +623,7 @@ class SoulstreamAgentsSession implements Session {
   constructor(
     private readonly sessionId: string,
     initialItems: unknown[] | undefined,
-    private readonly onSnapshot: SessionItemsSnapshotCallback | undefined,
+    private readonly onSnapshot: SessionItemsSnapshotSink,
   ) {
     this.items = (initialItems ?? []) as AgentInputItem[];
   }
@@ -640,26 +654,26 @@ class SoulstreamAgentsSession implements Session {
   }
 
   private async persist(): Promise<void> {
-    await this.onSnapshot?.({
+    await this.onSnapshot({
       backendId: "openai-agents",
       items: [...this.items],
     });
   }
 }
 
-async function persistRunStateSnapshot(
-  params: EngineExecuteParams,
+async function emitRunStateSnapshot(
+  channel: InProcessRunnerFrameChannel,
   result: StreamedRunResult<any, AnyAgent>,
   pendingApprovalId: string | null,
 ): Promise<void> {
-  await params.onRunStateSnapshot?.({
+  await channel.emit(runStateSnapshotFrame({
     backendId: "openai-agents",
     serialized: result.state.toString(),
     pendingApprovalId,
     previousResponseId: result.lastResponseId ?? statePreviousResponseId(result.state) ?? null,
     conversationId: stateConversationId(result.state) ?? null,
     schemaVersion: AGENTS_RUN_STATE_SCHEMA_VERSION,
-  });
+  }));
 }
 
 function applyQueuedToolApproval(

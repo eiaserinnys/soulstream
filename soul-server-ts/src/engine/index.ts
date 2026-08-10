@@ -7,11 +7,8 @@
 
 export type {
   BackendId,
-  CompactCallback,
   EngineExecuteParams,
   EnginePort,
-  InterventionCallback,
-  ProgressCallback,
   SSEEventPayload,
   SupportsCompact,
   SupportsThreadFork,

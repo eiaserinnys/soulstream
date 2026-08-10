@@ -4,6 +4,7 @@ import type { AgentProfile } from "../../src/agent_registry.js";
 import type {
   EngineExecuteParams,
   EnginePort,
+  ScheduleToolUseHandler,
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
@@ -12,7 +13,12 @@ import { readClaudeBackgroundProvenance } from
 import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
+  runnerRequestFrame,
 } from "../../src/runner/frame_protocol.js";
+import {
+  DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+  InProcessRunnerFrameChannel,
+} from "../../src/runner/in_process_frame_channel.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -220,6 +226,186 @@ describe("TaskEngineTurnRunner", () => {
 
     expect(event).toBeDefined();
     expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
+  });
+
+  it("answers schedule request frames through the correlated control boundary", async () => {
+    const task = makeTask();
+    const scheduleToolHandler = vi.fn().mockResolvedValue({
+      message: "scheduled",
+      data: { scheduleId: "schedule-1" },
+    });
+    const snapshotPersistence = {
+      persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
+      persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
+    };
+    let controlFrame: unknown;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames(params) {
+        expect(params.scheduleToolUseEnabled).toBe(true);
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "schedule-request-1",
+          request: {
+            kind: "schedule_tool_use" as const,
+            agentSessionId: task.agentSessionId,
+            toolUseId: "tool-use-1",
+            toolName: "ScheduleTask",
+            input: { prompt: "later" },
+            now: "2026-08-10T12:00:00.000Z",
+          },
+        };
+        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
+      },
+      sendControlFrame(frame) {
+        controlFrame = frame;
+        return true;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({ snapshotPersistence, scheduleToolHandler });
+
+    await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+
+    expect(scheduleToolHandler).toHaveBeenCalledWith(expect.objectContaining({
+      agentSessionId: task.agentSessionId,
+      toolUseId: "tool-use-1",
+      toolName: "ScheduleTask",
+      input: { prompt: "later" },
+      now: new Date("2026-08-10T12:00:00.000Z"),
+      signal: expect.any(AbortSignal),
+      timeoutMs: DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+    }));
+    expect(controlFrame).toMatchObject({
+      kind: "response",
+      correlationId: "schedule-request-1",
+      result: {
+        status: "ok",
+        data: { message: "scheduled", data: { scheduleId: "schedule-1" } },
+      },
+    });
+  });
+
+  it("passes the channel abort signal to an unanswered handler and drains on interrupt", async () => {
+    const task = makeTask();
+    const channel = new InProcessRunnerFrameChannel();
+    const controller = new AbortController();
+    let hostSignal: AbortSignal | undefined;
+    let notifyHandlerStarted!: () => void;
+    const handlerStarted = new Promise<void>((resolve) => {
+      notifyHandlerStarted = resolve;
+    });
+    const scheduleToolHandler: ScheduleToolUseHandler = async (request) => {
+      hostSignal = request.signal;
+      notifyHandlerStarted();
+      return await new Promise<never>(() => undefined);
+    };
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      executeFrames() {
+        channel.start(async () => {
+          try {
+            await channel.request(runnerRequestFrame("schedule-interrupt", {
+              kind: "schedule_tool_use",
+              agentSessionId: task.agentSessionId,
+              toolUseId: "tool-use-interrupt",
+              toolName: "ScheduleTask",
+              input: {},
+              now: "2026-08-10T12:00:00.000Z",
+            }, { timeoutMs: 1_000 }), {
+              signal: controller.signal,
+              timeoutMs: 1_000,
+            });
+          } catch (error) {
+            if (!controller.signal.aborted) throw error;
+          }
+        });
+        return channel;
+      },
+      sendControlFrame(frame) {
+        return channel.sendControl(frame);
+      },
+      async interrupt() {
+        controller.abort(new Error("interrupted"));
+        return true;
+      },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({
+      snapshotPersistence: {
+        persistRunStateSnapshot: vi.fn(),
+        persistSessionItemsSnapshot: vi.fn(),
+      },
+      scheduleToolHandler,
+    });
+
+    const execution = drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+    await handlerStarted;
+
+    expect(hostSignal).toBe(channel.requestContext("schedule-interrupt")?.signal);
+    await engine.interrupt();
+
+    await expect(execution).resolves.toEqual([]);
+    expect(hostSignal?.aborted).toBe(true);
+    expect(channel.pendingControlCount).toBe(0);
+  });
+
+  it("returns schedule handler failures as correlated error controls", async () => {
+    const task = makeTask();
+    const scheduleToolHandler = vi.fn().mockRejectedValue(new Error("scheduler unavailable"));
+    let controlFrame: unknown;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "schedule-request-error",
+          request: {
+            kind: "schedule_tool_use" as const,
+            agentSessionId: task.agentSessionId,
+            toolUseId: "tool-use-error",
+            toolName: "ScheduleTask",
+            input: {},
+            now: "2026-08-10T12:00:00.000Z",
+          },
+        };
+      },
+      sendControlFrame(frame) {
+        controlFrame = frame;
+        return true;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({
+      snapshotPersistence: {
+        persistRunStateSnapshot: vi.fn(),
+        persistSessionItemsSnapshot: vi.fn(),
+      },
+      scheduleToolHandler,
+    });
+
+    await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+
+    expect(controlFrame).toMatchObject({
+      kind: "response",
+      correlationId: "schedule-request-error",
+      result: {
+        status: "error",
+        error: { code: "schedule_handler_error", message: "scheduler unavailable" },
+      },
+    });
   });
 
   it("falls back to agent tool policy when task-level policy is absent", async () => {
@@ -600,19 +786,36 @@ describe("TaskEngineTurnRunner", () => {
     expect(secondCaptured?.queuedToolApproval).toBeUndefined();
   });
 
-  it("wires Agents snapshot callbacks to the snapshot persistence boundary", async () => {
+  it("wires Agents snapshot frames to the snapshot persistence boundary", async () => {
     const task = makeTask();
-    const engine = makeEngine(async (params) => {
-      await params.onRunStateSnapshot?.({
-        backendId: "openai-agents",
-        serialized: "state-v2",
-        pendingApprovalId: "tool-1",
-      });
-      await params.onSessionItemsSnapshot?.({
-        backendId: "openai-agents",
-        items: [{ role: "user", content: "hi" }],
-      });
-    });
+    const engine: EnginePort = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "run_state_snapshot" as const,
+          snapshot: {
+            backendId: "openai-agents" as const,
+            serialized: "state-v2",
+            pendingApprovalId: "tool-1",
+          },
+        };
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "session_items_snapshot" as const,
+          snapshot: {
+            backendId: "openai-agents" as const,
+            items: [{ role: "user", content: "hi" }],
+          },
+        };
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
     const { runner, snapshotPersistence } = makeSubject();
 
     await drain(runner.executeTurn({

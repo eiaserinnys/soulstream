@@ -18,6 +18,7 @@ import {
   SOULSTREAM_AGENT_ID_ENV,
 } from "../../src/engine/scratch_workspace_env.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
+import { RUNNER_FRAME_PROTOCOL_VERSION } from "../../src/runner/frame_protocol.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -282,6 +283,66 @@ describe("ClaudeEngineAdapter options parity", () => {
 });
 
 describe("ClaudeEngineAdapter fake client flow", () => {
+  it("schedule tool callback을 correlated request/control frame으로 왕복한다", async () => {
+    let scheduleResult: unknown;
+    const client: ClaudeClient = {
+      async *run(options) {
+        scheduleResult = await options.onScheduleToolUse?.({
+          agentSessionId: "session-1",
+          toolUseId: "tool-use-1",
+          toolName: "ScheduleTask",
+          input: { prompt: "later" },
+          now: new Date("2026-08-10T12:00:00.000Z"),
+        });
+        yield { type: "complete" };
+      },
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+    const iterator = engine.executeFrames({
+      agentSessionId: "session-1",
+      prompt: "hi",
+      scheduleToolUseEnabled: true,
+    })[Symbol.asyncIterator]();
+
+    const request = await iterator.next();
+
+    expect(request.value).toMatchObject({
+      kind: "request",
+      request: {
+        kind: "schedule_tool_use",
+        agentSessionId: "session-1",
+        toolUseId: "tool-use-1",
+        now: "2026-08-10T12:00:00.000Z",
+      },
+    });
+    const correlationId = request.value?.kind === "request"
+      ? request.value.correlationId
+      : "missing";
+    expect(engine.sendControlFrame({
+      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+      channel: "control",
+      kind: "response",
+      correlationId,
+      result: {
+        status: "ok",
+        data: { message: "scheduled", data: { scheduleId: "schedule-1" } },
+      },
+    })).toBe(true);
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { kind: "engine_event", payload: { type: "complete" } },
+    });
+    await expect(iterator.next()).resolves.toMatchObject({ done: true });
+    expect(scheduleResult).toEqual({
+      message: "scheduled",
+      data: { scheduleId: "schedule-1" },
+    });
+  });
+
   it("fake client session/text/complete를 runner engine_event frame으로 yield한다", async () => {
     const captured: ClaudeRunOptions[] = [];
     const client = makeClient(
