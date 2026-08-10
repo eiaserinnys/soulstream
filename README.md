@@ -1,6 +1,6 @@
 # Soulstream
 
-![Soulstream dashboard](assets/soulstream-dashboard.png)
+![Soulstream architecture](assets/soulstream-architecture.png)
 
 **Soulstream is a self-hosted control plane for running coding agents as an ongoing service.** It combines a live operations dashboard, durable sessions and workspaces, multi-node execution, and agent-facing MCP tools in one system.
 
@@ -17,18 +17,6 @@ Instead of treating an agent as a terminal process that disappears after one pro
 - **Release-safe operations** through Haniel manifests that separate central database migration authority from worker-only updates.
 
 ## Architecture
-
-```mermaid
-flowchart LR
-  Dashboard["Unified dashboard<br/>tasks · pages · sessions"] -->|"HTTP + SSE"| Orchestrator["orch-server-ts<br/>control plane"]
-  Clients["API clients"] -->|"HTTP + SSE"| Orchestrator
-  Orchestrator -->|"canonical state"| Postgres[(PostgreSQL)]
-  Orchestrator <-->|"authenticated WebSocket<br/>commands + events"| Workers["soul-server-ts<br/>execution workers"]
-  MCP["MCP clients"] -->|"Streamable HTTP"| Workers
-  Workers --> Engines["Claude · Codex · OpenAI Agents"]
-  Haniel["Haniel"] -.->|"release manifests"| Orchestrator
-  Haniel -.->|"service lifecycle"| Workers
-```
 
 The production control plane is `orch-server-ts`. It serves the built dashboard, owns the public HTTP/SSE surface, keeps the connected-node registry, and persists canonical state in PostgreSQL. `soul-server-ts` workers execute agent turns and connect upstream over WebSocket; their local HTTP surface is limited to health, optional MCP, and node-local support routes.
 
