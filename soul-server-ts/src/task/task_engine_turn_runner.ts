@@ -10,6 +10,10 @@ import type {
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
 import {
+  DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+  InProcessRunnerFrameChannel,
+} from "../runner/in_process_frame_channel.js";
+import {
   engineEventFrame,
   runnerControlResponseFrame,
   type RunnerEventFrame,
@@ -164,15 +168,23 @@ async function* consumeRunnerFrames(
     if (!deps.scheduleToolHandler || !deps.engine.sendControlFrame) {
       throw new Error("Runner emitted schedule request without a host control boundary");
     }
+    const timeoutMs = frame.timeoutMs ?? DEFAULT_RUNNER_REQUEST_TIMEOUT_MS;
+    const channelContext = frames instanceof InProcessRunnerFrameChannel
+      ? frames.requestContext(frame.correlationId)
+      : undefined;
+    const fallbackLifetime = channelContext ? undefined : createTimeoutLifetime(timeoutMs);
+    const signal = channelContext?.signal ?? fallbackLifetime!.signal;
     let response: ReturnType<typeof runnerControlResponseFrame>;
     try {
-      const result = await deps.scheduleToolHandler({
+      const result = await raceWithSignal(deps.scheduleToolHandler({
         agentSessionId: frame.request.agentSessionId,
         toolUseId: frame.request.toolUseId,
         toolName: frame.request.toolName,
         input: frame.request.input,
         now: new Date(frame.request.now),
-      });
+        signal,
+        timeoutMs,
+      }), signal);
       response = runnerControlResponseFrame(frame.correlationId, {
         status: "ok",
         data: {
@@ -181,6 +193,10 @@ async function* consumeRunnerFrames(
         },
       });
     } catch (error) {
+      if (signal.aborted) {
+        fallbackLifetime?.cleanup();
+        continue;
+      }
       response = runnerControlResponseFrame(frame.correlationId, {
         status: "error",
         error: {
@@ -188,12 +204,54 @@ async function* consumeRunnerFrames(
           message: error instanceof Error ? error.message : String(error),
         },
       });
+    } finally {
+      fallbackLifetime?.cleanup();
     }
-    const delivered = deps.engine.sendControlFrame(response);
+    const delivered = await deps.engine.sendControlFrame(response);
     if (!delivered) {
       throw new Error(`Runner rejected control response: ${frame.correlationId}`);
     }
   }
+}
+
+function createTimeoutLifetime(timeoutMs: number): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Runner request timed out after ${timeoutMs}ms`)),
+    timeoutMs,
+  );
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
+async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortReason(signal);
+  return await new Promise<T>((resolve, reject) => {
+    const rejectOnAbort = () => reject(abortReason(signal));
+    signal.addEventListener("abort", rejectOnAbort, { once: true });
+    void promise.then(
+      (value) => {
+        signal.removeEventListener("abort", rejectOnAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", rejectOnAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error(signal.reason ? String(signal.reason) : "Runner request aborted");
 }
 
 async function* legacyEngineEventFrames(

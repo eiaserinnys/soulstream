@@ -4,6 +4,7 @@ import type { AgentProfile } from "../../src/agent_registry.js";
 import type {
   EngineExecuteParams,
   EnginePort,
+  ScheduleToolUseHandler,
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
@@ -12,7 +13,12 @@ import { readClaudeBackgroundProvenance } from
 import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
+  runnerRequestFrame,
 } from "../../src/runner/frame_protocol.js";
+import {
+  DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+  InProcessRunnerFrameChannel,
+} from "../../src/runner/in_process_frame_channel.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -266,13 +272,15 @@ describe("TaskEngineTurnRunner", () => {
 
     await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
 
-    expect(scheduleToolHandler).toHaveBeenCalledWith({
+    expect(scheduleToolHandler).toHaveBeenCalledWith(expect.objectContaining({
       agentSessionId: task.agentSessionId,
       toolUseId: "tool-use-1",
       toolName: "ScheduleTask",
       input: { prompt: "later" },
       now: new Date("2026-08-10T12:00:00.000Z"),
-    });
+      signal: expect.any(AbortSignal),
+      timeoutMs: DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+    }));
     expect(controlFrame).toMatchObject({
       kind: "response",
       correlationId: "schedule-request-1",
@@ -281,6 +289,72 @@ describe("TaskEngineTurnRunner", () => {
         data: { message: "scheduled", data: { scheduleId: "schedule-1" } },
       },
     });
+  });
+
+  it("passes the channel abort signal to an unanswered handler and drains on interrupt", async () => {
+    const task = makeTask();
+    const channel = new InProcessRunnerFrameChannel();
+    const controller = new AbortController();
+    let hostSignal: AbortSignal | undefined;
+    let notifyHandlerStarted!: () => void;
+    const handlerStarted = new Promise<void>((resolve) => {
+      notifyHandlerStarted = resolve;
+    });
+    const scheduleToolHandler: ScheduleToolUseHandler = async (request) => {
+      hostSignal = request.signal;
+      notifyHandlerStarted();
+      return await new Promise<never>(() => undefined);
+    };
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      executeFrames() {
+        channel.start(async () => {
+          try {
+            await channel.request(runnerRequestFrame("schedule-interrupt", {
+              kind: "schedule_tool_use",
+              agentSessionId: task.agentSessionId,
+              toolUseId: "tool-use-interrupt",
+              toolName: "ScheduleTask",
+              input: {},
+              now: "2026-08-10T12:00:00.000Z",
+            }, { timeoutMs: 1_000 }), {
+              signal: controller.signal,
+              timeoutMs: 1_000,
+            });
+          } catch (error) {
+            if (!controller.signal.aborted) throw error;
+          }
+        });
+        return channel;
+      },
+      sendControlFrame(frame) {
+        return channel.sendControl(frame);
+      },
+      async interrupt() {
+        controller.abort(new Error("interrupted"));
+        return true;
+      },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({
+      snapshotPersistence: {
+        persistRunStateSnapshot: vi.fn(),
+        persistSessionItemsSnapshot: vi.fn(),
+      },
+      scheduleToolHandler,
+    });
+
+    const execution = drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+    await handlerStarted;
+
+    expect(hostSignal).toBe(channel.requestContext("schedule-interrupt")?.signal);
+    await engine.interrupt();
+
+    await expect(execution).resolves.toEqual([]);
+    expect(hostSignal?.aborted).toBe(true);
+    expect(channel.pendingControlCount).toBe(0);
   });
 
   it("returns schedule handler failures as correlated error controls", async () => {

@@ -8,7 +8,10 @@ import type {
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
-import { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
+import {
+  DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+  InProcessRunnerFrameChannel,
+} from "../runner/in_process_frame_channel.js";
 import {
   engineEventFrame,
   runnerRequestFrame,
@@ -200,7 +203,7 @@ export class ClaudeEngineAdapter
     const controller = new AbortController();
     this.currentTurn = controller;
     this.activeFrameChannel = channel;
-    const options = this.buildRunOptions(params, channel);
+    const options = this.buildRunOptions(params, channel, controller.signal);
     const client = this.resolveClient(params.agentSessionId);
     this.activeClient = client;
     let lastText: string | undefined;
@@ -385,6 +388,7 @@ export class ClaudeEngineAdapter
   private buildRunOptions(
     params: EngineExecuteParams,
     channel: InProcessRunnerFrameChannel,
+    signal: AbortSignal,
   ): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
     const env = withScratchWorkspaceEnv(
@@ -419,7 +423,7 @@ export class ClaudeEngineAdapter
       ...(params.scheduleToolUseEnabled && params.agentSessionId
         ? {
             onScheduleToolUse: (request: Parameters<ScheduleToolUseHandler>[0]) =>
-              this.requestScheduleToolUse(channel, request),
+              this.requestScheduleToolUse(channel, request, signal),
           }
         : {}),
       ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
@@ -431,8 +435,10 @@ export class ClaudeEngineAdapter
   private async requestScheduleToolUse(
     channel: InProcessRunnerFrameChannel,
     request: Parameters<ScheduleToolUseHandler>[0],
+    signal: AbortSignal,
   ): Promise<Awaited<ReturnType<ScheduleToolUseHandler>>> {
     const correlationId = randomUUID();
+    const timeoutMs = DEFAULT_RUNNER_REQUEST_TIMEOUT_MS;
     const control = await channel.request(runnerRequestFrame(correlationId, {
         kind: "schedule_tool_use",
         agentSessionId: request.agentSessionId,
@@ -440,7 +446,7 @@ export class ClaudeEngineAdapter
         toolName: request.toolName,
         input: request.input,
         now: request.now.toISOString(),
-    }));
+    }, { timeoutMs }), { signal, timeoutMs });
     if (control.kind !== "response") {
       throw new Error(`Unexpected schedule control frame: ${control.kind}`);
     }
