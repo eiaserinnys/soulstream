@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 import type {
   SessionKey,
-  SessionStore,
   SessionStoreEntry,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
@@ -15,8 +14,13 @@ import type {
   EngineSessionItemsSnapshot,
 } from "../engine/protocol.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
-import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
+import type {
+  RunnerProcessRuntimeFactory,
+  RunnerSnapshotPersistence,
+} from "../task/task_executor.js";
+import type { Task } from "../task/task_models.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { createTaskRunnerRuntime } from "./task_runner_runtime.js";
 import {
@@ -25,6 +29,7 @@ import {
 } from "./runner_process_dispatcher.js";
 import { RunnerProcessEngineProxy } from "./runner_process_engine_proxy.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
+import type { RunnerChildConfig, SpawnRunnerProcessInput } from "./runner_process_spawn.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -41,12 +46,20 @@ export interface RunnerProcessRuntimeFactoryOptions {
   env: RunnerEnv;
   logger: Logger;
   pumpMux: EventOutboxPumpMux;
-  sessionStore: SessionStore;
+  sessionStore: IdempotentClaudeSessionStore;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   buildChildProcessEnv(): NodeJS.ProcessEnv;
-  observeClaudeRuntime?(sessionId: string, event: ClaudeClientEvent): Promise<unknown>;
-  publishDetachedClaudeEvent?(sessionId: string, event: ClaudeClientEvent): Promise<unknown>;
+  observeClaudeRuntime?(
+    sessionId: string,
+    event: ClaudeClientEvent,
+    idempotencyKey: string,
+  ): Promise<unknown>;
+  publishDetachedClaudeEvent?(
+    sessionId: string,
+    event: ClaudeClientEvent,
+    idempotencyKey: string,
+  ): Promise<unknown>;
   spawner?: Pick<RunnerProcessSpawner, "spawn">;
 }
 
@@ -61,35 +74,22 @@ export function createRunnerProcessRuntimeFactory(
   );
   const spawner = options.spawner ?? new RunnerProcessSpawner();
 
-  return (task, agent, backend, snapshots) => {
-    const resolvedMcpServers = options.mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
-    const childProcessEnv = options.buildChildProcessEnv();
-    const codexHome = backend === "codex"
-      ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
-      : null;
+  const createRuntime = (
+    task: Task,
+    agent: import("../agent_registry.js").AgentProfile,
+    backend: import("../engine/protocol.js").BackendId,
+    snapshots: RunnerSnapshotPersistence,
+    spawn: SpawnRunnerProcessInput,
+    recoveryMode?: "adopt" | "offline",
+  ) => {
     const dispatcher = new RunnerProcessDispatcher({
-      spawn: {
-        stateDirectory,
-        sessionId: task.agentSessionId,
-        backend,
-        agent,
-        codeSha,
-        snapshotPath,
-        codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
-        codexCliPath: options.codexCliPath?.path,
-        claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-        claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
-        claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
-        claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
-        ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
-        codexHome,
-        rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
-        childProcessEnv,
-      },
+      spawn,
+      adoptExisting: recoveryMode === "adopt",
+      offlineExisting: recoveryMode === "offline",
       spawner,
       pumpMux: options.pumpMux,
       logger: options.logger,
-      handleHostCall: async (call) => await handleHostCall(
+      handleHostCall: async (call) => await applyRunnerHostCall(
         call,
         task.agentSessionId,
         snapshots,
@@ -99,19 +99,98 @@ export function createRunnerProcessRuntimeFactory(
     const engine = new RunnerProcessEngineProxy(backend, agent.workspace_dir, dispatcher);
     return createTaskRunnerRuntime(engine, dispatcher, "runner");
   };
+
+  const factory = ((task, agent, backend, snapshots) => {
+    const resolvedMcpServers = options.mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
+    const childProcessEnv = options.buildChildProcessEnv();
+    const codexHome = backend === "codex"
+      ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
+      : null;
+    return createRuntime(task, agent, backend, snapshots, {
+      stateDirectory,
+      sessionId: task.agentSessionId,
+      backend,
+      agent,
+      codeSha,
+      snapshotPath,
+      codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
+      codexCliPath: options.codexCliPath?.path,
+      claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+      claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+      claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+      claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+      ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
+      codexHome,
+      rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
+      childProcessEnv,
+    });
+  }) as RunnerProcessRuntimeFactory;
+  factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
+    task,
+    config.agent,
+    config.backend,
+    snapshots,
+    spawnInputFromConfig(stateDirectory, config),
+    mode,
+  );
+  factory.restart = (task, config, snapshots) => createRuntime(
+    task,
+    config.agent,
+    config.backend,
+    snapshots,
+    spawnInputFromConfig(stateDirectory, config),
+  );
+  return factory;
 }
 
-async function handleHostCall(
+function spawnInputFromConfig(
+  stateDirectory: string,
+  config: RunnerChildConfig,
+): SpawnRunnerProcessInput {
+  return {
+    stateDirectory,
+    sessionId: config.sessionId,
+    backend: config.backend,
+    agent: config.agent,
+    codeSha: config.codeSha,
+    snapshotPath: config.snapshotPath,
+    codexAdapterMode: config.codexAdapterMode,
+    ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
+    claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
+    claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
+    claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
+    claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
+    ...(config.resolvedMcpServers
+      ? { resolvedMcpServers: config.resolvedMcpServers }
+      : {}),
+    codexHome: config.codexHome,
+    rolloutRoot: config.rolloutRoot,
+  };
+}
+
+export async function applyRunnerHostCall(
   call: RunnerHostCall,
   expectedSessionId: string,
   snapshots: {
-    persistRunState(snapshot: EngineRunStateSnapshot): Promise<void>;
-    persistSessionItems(snapshot: EngineSessionItemsSnapshot): Promise<void>;
+    persistRunState(
+      snapshot: EngineRunStateSnapshot,
+      idempotencyKey?: string,
+    ): Promise<void>;
+    persistSessionItems(
+      snapshot: EngineSessionItemsSnapshot,
+      idempotencyKey?: string,
+    ): Promise<void>;
   },
   options: RunnerProcessRuntimeFactoryOptions,
 ): Promise<unknown> {
   if (call.service === "session_store") {
-    return await callSessionStore(options.sessionStore, call.operation, call.args);
+    return await callSessionStore(
+      options.sessionStore,
+      call.operation,
+      call.args,
+      call.correlationId,
+      expectedSessionId,
+    );
   }
   const sessionId = asString(call.args[0], "runner host session id");
   if (sessionId !== expectedSessionId) {
@@ -119,34 +198,47 @@ async function handleHostCall(
   }
   if (call.service === "snapshot") {
     if (call.operation === "persistRunState") {
-      await snapshots.persistRunState(call.args[1] as EngineRunStateSnapshot);
+      await snapshots.persistRunState(
+        call.args[1] as EngineRunStateSnapshot,
+        call.correlationId,
+      );
       return null;
     }
     if (call.operation === "persistSessionItems") {
-      await snapshots.persistSessionItems(call.args[1] as EngineSessionItemsSnapshot);
+      await snapshots.persistSessionItems(
+        call.args[1] as EngineSessionItemsSnapshot,
+        call.correlationId,
+      );
       return null;
     }
     throw new Error(`unsupported snapshot host operation: ${call.operation}`);
   }
   const event = call.args[1] as ClaudeClientEvent;
   if (call.service === "claude_runtime" && call.operation === "observe") {
-    return await options.observeClaudeRuntime?.(sessionId, event) ?? true;
+    return await options.observeClaudeRuntime?.(sessionId, event, call.correlationId) ?? true;
   }
   if (call.service === "detached_event" && call.operation === "publish") {
-    await options.publishDetachedClaudeEvent?.(sessionId, event);
+    await options.publishDetachedClaudeEvent?.(sessionId, event, call.correlationId);
     return null;
   }
   throw new Error(`unsupported runner host call: ${call.service}.${call.operation}`);
 }
 
 async function callSessionStore(
-  store: SessionStore,
+  store: IdempotentClaudeSessionStore,
   operation: string,
   args: unknown[],
+  idempotencyKey: string,
+  ownerSessionId: string,
 ): Promise<unknown> {
   switch (operation) {
     case "append":
-      await store.append(args[0] as SessionKey, args[1] as SessionStoreEntry[]);
+      await store.appendIdempotent(
+        args[0] as SessionKey,
+        args[1] as SessionStoreEntry[],
+        idempotencyKey,
+        ownerSessionId,
+      );
       return null;
     case "load":
       return await store.load(args[0] as SessionKey);
@@ -154,7 +246,11 @@ async function callSessionStore(
       if (!store.listSessions) throw new Error("SessionStore.listSessions unavailable");
       return await store.listSessions(asString(args[0], "project key"));
     case "delete":
-      await store.delete?.(args[0] as SessionKey);
+      await store.deleteIdempotent(
+        args[0] as SessionKey,
+        idempotencyKey,
+        ownerSessionId,
+      );
       return null;
     case "listSubkeys":
       if (!store.listSubkeys) throw new Error("SessionStore.listSubkeys unavailable");

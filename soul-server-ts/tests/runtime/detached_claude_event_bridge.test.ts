@@ -31,4 +31,28 @@ describe("createDetachedClaudeEventBridge", () => {
     });
     expect(order).toEqual(["publish", "collect"]);
   });
+
+  it("derives per-payload semantic keys from the runner correlation", async () => {
+    const task = { agentSessionId: "session-a" } as never;
+    const publishEngineEvent = vi.fn(async () => undefined);
+    const bridge = createDetachedClaudeEventBridge({
+      logger: pino({ level: "silent" }),
+      findTask: () => task,
+      getPublisher: () => ({ publishEngineEvent }),
+      collectDetached: async () => undefined,
+    });
+
+    await bridge(
+      "session-a",
+      { type: "text", text: "hello", timestamp: 1 },
+      "runner:detached:1",
+    );
+
+    expect(publishEngineEvent).toHaveBeenCalledWith(task, {
+      type: "assistant_message",
+      content: "hello",
+      timestamp: 1,
+      _dedupe_key: "runner:detached:1:0",
+    });
+  });
 });

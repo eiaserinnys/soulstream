@@ -39,6 +39,7 @@ describe("RunnerProcessSpawner", () => {
 
     expect(calls).toEqual(["database", "entry", "spawn"]);
     expect(spawned.pid).toBe(4123);
+    expect(spawned.adopted).toBe(false);
     expect(await readFile(spawned.paths.pidPath, "utf8")).toBe("4123\n");
     expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
       sessionId: "session-a",
@@ -80,6 +81,38 @@ describe("RunnerProcessSpawner", () => {
     await replacement.spawn(params);
 
     expect(signals).toEqual(["SIGTERM"]);
+  });
+
+  it("adopts a live registered runner without spawning or replacing it", async () => {
+    const params = await input();
+    const first = new RunnerProcessSpawner({
+      prepareDatabase: async () => {},
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5101, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+    const registered = await first.spawn(params);
+    const spawnProcess = vi.fn(() => ({ pid: 5102, unref: vi.fn() }));
+    const adopter = new RunnerProcessSpawner({
+      prepareDatabase: async () => {},
+      validateEntry: async () => {},
+      spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      isPidAlive: (pid) => pid === 5101,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(adopter.adopt({
+      stateDirectory: params.stateDirectory,
+      sessionId: params.sessionId,
+    })).resolves.toEqual({ ...registered, adopted: true });
+    expect(spawnProcess).not.toHaveBeenCalled();
   });
 
   it("fails before spawn when the immutable snapshot entry is unavailable", async () => {

@@ -117,6 +117,19 @@ export interface SessionMutationHost {
   ): Promise<AcknowledgeReviewOutcome>;
 }
 
+export function createMissingSessionMutationHost(): SessionMutationHost {
+  const missing = async (): Promise<never> => {
+    throw new Error("session mutation host is required");
+  };
+  return {
+    registerSession: missing,
+    transitionSession: missing,
+    renameSession: missing,
+    deleteSession: missing,
+    acknowledgeReview: missing,
+  };
+}
+
 export class SessionMutationHostClient implements SessionMutationHost {
   private readonly transport: PersistenceHostTransport;
 
@@ -327,6 +340,7 @@ export interface ClaudeBackgroundTaskRow {
   created_at: Date; updated_at: Date; terminal_at: Date | null;
 }
 export interface ObserveClaudeBackgroundTaskParams {
+  idempotencyKey?: string;
   sourceNode: string; sessionId: string; taskId: string; sdkSessionId?: string;
   status?: "pending" | "running"; description?: string; summary?: string;
   outputFile?: string; toolUseId?: string; observedAt?: Date;
@@ -357,6 +371,14 @@ export class ClaudeRuntimeHostClient {
   appendClaudeTranscriptEntries(key: ClaudeTranscriptKey, entries: ClaudeTranscriptEntry[]): Promise<number> {
     return this.transport.request("claude-runtime", "append_transcript_entries", [key, entries]);
   }
+  appendClaudeTranscriptEntriesIdempotent(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    key: ClaudeTranscriptKey;
+    entries: ClaudeTranscriptEntry[];
+  }): Promise<number> {
+    return this.transport.request("claude-runtime", "append_transcript_entries_idempotent", [input]);
+  }
   loadClaudeTranscriptEntries(key: ClaudeTranscriptKey): Promise<ClaudeTranscriptEntry[] | null> {
     return this.transport.request("claude-runtime", "load_transcript_entries", [key]);
   }
@@ -368,6 +390,13 @@ export class ClaudeRuntimeHostClient {
   }
   deleteClaudeTranscript(key: ClaudeTranscriptKey): Promise<void> {
     return this.transport.request("claude-runtime", "delete_transcript", [key]);
+  }
+  deleteClaudeTranscriptIdempotent(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    key: ClaudeTranscriptKey;
+  }): Promise<void> {
+    return this.transport.request("claude-runtime", "delete_transcript_idempotent", [input]);
   }
 }
 

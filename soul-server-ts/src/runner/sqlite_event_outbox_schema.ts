@@ -1,7 +1,39 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 2;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 4;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
+
+export const RUNNER_IPC_JOURNAL_DDL = `
+CREATE TABLE IF NOT EXISTS runner_ipc_journal (
+  frame_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  outbox_source_seq INTEGER UNIQUE,
+  correlation_id TEXT UNIQUE,
+  frame_kind TEXT NOT NULL CHECK (frame_kind IN ('engine_event', 'host_call')),
+  host_acked INTEGER NOT NULL DEFAULT 0 CHECK (host_acked IN (0, 1)),
+  service TEXT,
+  operation TEXT,
+  created_at TEXT NOT NULL,
+  CHECK (
+    (
+      frame_kind = 'engine_event'
+      AND outbox_source_seq IS NOT NULL
+      AND correlation_id IS NULL
+      AND service IS NULL
+      AND operation IS NULL
+    )
+    OR
+    (
+      frame_kind = 'host_call'
+      AND outbox_source_seq IS NULL
+      AND correlation_id IS NOT NULL
+      AND service IS NOT NULL
+      AND operation IS NOT NULL
+      AND host_acked = 1
+    )
+  ),
+  FOREIGN KEY (outbox_source_seq) REFERENCES runner_event_outbox(source_seq)
+) STRICT;
+`;
 
 // Additive-only contract: never rename/drop columns or change an existing
 // column's meaning. Future revisions may only add nullable/defaulted columns or
@@ -30,6 +62,18 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
     runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
   ),
   acked_through INTEGER,
+  runner_pid INTEGER,
+  execution_command_id TEXT,
+  execution_state TEXT CHECK (
+    execution_state IS NULL OR execution_state IN (
+      'running', 'completed', 'failed', 'reaped', 'closed'
+    )
+  ),
+  progress_seq INTEGER NOT NULL DEFAULT 0 CHECK (progress_seq >= 0),
+  progress_at TEXT,
+  terminal_error_json TEXT CHECK (
+    terminal_error_json IS NULL OR json_valid(terminal_error_json)
+  ),
   CHECK (
     (
       record_kind = 'bootstrap'
@@ -51,14 +95,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS runner_event_outbox_one_bootstrap
 ON runner_event_outbox(record_kind)
 WHERE record_kind = 'bootstrap';
 
-CREATE TABLE IF NOT EXISTS runner_ipc_journal (
-  frame_seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  outbox_source_seq INTEGER NOT NULL UNIQUE,
-  frame_kind TEXT NOT NULL CHECK (frame_kind = 'engine_event'),
-  host_acked INTEGER NOT NULL DEFAULT 0 CHECK (host_acked IN (0, 1)),
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (outbox_source_seq) REFERENCES runner_event_outbox(source_seq)
-) STRICT;
+${RUNNER_IPC_JOURNAL_DDL}
 `;
 
 export type RunnerResumeMaterial = {
@@ -105,12 +142,28 @@ export type RunnerEventOutboxRow = {
   payload_hash: string;
   runner_metadata_json: string | null;
   acked_through: number | null;
+  runner_pid: number | null;
+  execution_command_id: string | null;
+  execution_state: RunnerExecutionState | null;
+  progress_seq: number;
+  progress_at: string | null;
+  terminal_error_json: string | null;
 };
+
+export type RunnerExecutionState =
+  | "running"
+  | "completed"
+  | "failed"
+  | "reaped"
+  | "closed";
 
 export type RunnerIpcJournalRow = {
   frame_seq: number;
-  outbox_source_seq: number;
-  frame_kind: "engine_event";
+  outbox_source_seq: number | null;
+  correlation_id: string | null;
+  frame_kind: "engine_event" | "host_call";
   host_acked: 0 | 1;
+  service: string | null;
+  operation: string | null;
   created_at: string;
 };

@@ -15,7 +15,12 @@ import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
-import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
+import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import {
+  TaskExecutor,
+  isTerminalStatus,
+  type RunnerProcessRuntimeFactory,
+} from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
@@ -1608,6 +1613,105 @@ describe("TaskExecutor.startExecution", () => {
     expect(notify).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("TaskExecutor runner process boundary", () => {
+  it("selects the process runtime without touching the in-process engine factory", async () => {
+    const mocks = makeMocks();
+    const engineFactory = vi.fn(() => makeFakeEngine([]));
+    const { runner, dispatcher } = makeRunnerProcessRuntime([
+      { type: "complete", result: "done", timestamp: 1 },
+    ]);
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    const executor = new TaskExecutor(
+      engineFactory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(processFactory).toHaveBeenCalledWith(
+      task,
+      agent,
+      "codex",
+      expect.objectContaining({
+        persistRunState: expect.any(Function),
+        persistSessionItems: expect.any(Function),
+      }),
+    );
+    expect(engineFactory).not.toHaveBeenCalled();
+    expect(dispatcher.prepareSession).toHaveBeenCalledWith(task.agentSessionId);
+    expect(dispatcher.executeFrames).toHaveBeenCalledOnce();
+    expect(task.status).toBe("completed");
+  });
+
+  it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([
+      { type: "assistant_message", content: "replayed" },
+      { type: "complete", result: "done", timestamp: 1 },
+    ]);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    await executor.recoverRunnerExecution(task, agent, runner, "execute-old");
+
+    expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old");
+    expect(dispatcher.prepareSession).not.toHaveBeenCalled();
+    expect(dispatcher.waitForSessionAck).toHaveBeenCalled();
+    expect(task.lastEventId).toBeGreaterThan(0);
+    expect(task.lastAssistantText).toBe("replayed");
+    expect(task.status).toBe("completed");
+  });
+});
+
+function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
+  runner: TaskRunnerRuntime;
+  dispatcher: Record<string, ReturnType<typeof vi.fn>>;
+} {
+  const dispatcher = {
+    dispatch: vi.fn(),
+    executeFrames: vi.fn(() => frameStream(events)),
+    recoverFrames: vi.fn(() => frameStream(events)),
+    prepareSession: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => true),
+    close: vi.fn(async () => {}),
+    detachHost: vi.fn(async () => {}),
+    sendControlFrame: vi.fn(async () => true),
+    requestContext: vi.fn(),
+    waitForSessionAck: vi.fn(async () => 12),
+    invoke: vi.fn(),
+  };
+  return {
+    runner: {
+      engine: makeFakeEngine([]),
+      dispatcher: dispatcher as never,
+      eventPersistence: "runner",
+    },
+    dispatcher,
+  };
+}
+
+async function* frameStream(events: SSEEventPayload[]) {
+  for (const event of events) yield engineEventFrame(event);
+}
 
 describe("isTerminalStatus", () => {
   it("completed/error/interrupted는 terminal", () => {

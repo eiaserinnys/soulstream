@@ -206,4 +206,38 @@ describe("TaskAgentsSnapshotPersistence", () => {
     expect(deps.enqueueMetadataEffect).not.toHaveBeenCalled();
     expect(deps.logger.warn).not.toHaveBeenCalled();
   });
+
+  it("threads runner correlation to the durable metadata owner", async () => {
+    const deps = makeDeps();
+    const persistence = new TaskAgentsSnapshotPersistence(deps);
+    const task = makeTask();
+
+    await persistence.persistRunStateSnapshot(task, {
+      backendId: "openai-agents",
+      serialized: "state-v2",
+    }, "runner:snapshot:1");
+
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledWith(
+      "sess-1",
+      task.metadata?.at(-1),
+      {
+        replaceExistingType: "agents_run_state",
+        semanticDedupeKey: "runner:snapshot:1",
+      },
+    );
+  });
+
+  it("retries runner snapshots instead of swallowing durable owner failures", async () => {
+    const deps = makeDeps();
+    deps.enqueueMetadataEffect.mockRejectedValueOnce(new Error("outbox unavailable"));
+    const persistence = new TaskAgentsSnapshotPersistence(deps);
+    const task = makeTask();
+
+    await expect(persistence.persistSessionItemsSnapshot(task, {
+      backendId: "openai-agents",
+      items: [{ role: "user", content: "hello" }],
+    }, "runner:snapshot:items:1")).rejects.toThrow("outbox unavailable");
+
+    expect(deps.logger.warn).toHaveBeenCalledOnce();
+  });
 });

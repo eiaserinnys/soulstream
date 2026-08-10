@@ -14,6 +14,8 @@ describe("DbClaudeSessionStore", () => {
       ]),
       listClaudeTranscriptSubkeys: vi.fn(async () => ["subagents/agent-a"]),
       deleteClaudeTranscript: vi.fn(async () => undefined),
+      appendClaudeTranscriptEntriesIdempotent: vi.fn(async () => 2),
+      deleteClaudeTranscriptIdempotent: vi.fn(async () => undefined),
     };
     const store = new DbClaudeSessionStore(db);
     const key = {
@@ -37,6 +39,10 @@ describe("DbClaudeSessionStore", () => {
       store.listSubkeys?.({ projectKey: "project-a", sessionId: "claude-sess-1" }),
     ).resolves.toEqual(["subagents/agent-a"]);
     await store.delete?.(key);
+    await store.appendIdempotent(key, [
+      { type: "user", uuid: "u2", message: { content: "retry" } },
+    ], "runner:append:1", "soul-session-a");
+    await store.deleteIdempotent(key, "runner:delete:1", "soul-session-a");
 
     expect(db.appendClaudeTranscriptEntries).toHaveBeenCalledWith(key, [
       { type: "user", uuid: "u1", message: { content: "hi" } },
@@ -49,5 +55,16 @@ describe("DbClaudeSessionStore", () => {
       sessionId: "claude-sess-1",
     });
     expect(db.deleteClaudeTranscript).toHaveBeenCalledWith(key);
+    expect(db.appendClaudeTranscriptEntriesIdempotent).toHaveBeenCalledWith({
+      idempotencyKey: "runner:append:1",
+      sessionId: "soul-session-a",
+      key,
+      entries: [{ type: "user", uuid: "u2", message: { content: "retry" } }],
+    });
+    expect(db.deleteClaudeTranscriptIdempotent).toHaveBeenCalledWith({
+      idempotencyKey: "runner:delete:1",
+      sessionId: "soul-session-a",
+      key,
+    });
   });
 });

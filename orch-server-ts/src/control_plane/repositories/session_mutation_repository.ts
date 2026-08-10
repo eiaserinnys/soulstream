@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
-
 import { sanitizePgText } from "../../node/pg_text_sanitizer.js";
 import type { SqlClient } from "../control_plane_types.js";
 import type { SessionDeletionPort } from "../../session/session_deletion_service.js";
+import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
 
 export type SessionTransitionFields = {
   status?: string;
@@ -34,13 +33,6 @@ export type RegisterSessionMutation = {
   notifyCompletion?: boolean | null;
   reviewRequired?: boolean;
   reviewState?: string;
-};
-
-type MutationReceipt = {
-  operation: string;
-  session_id: string;
-  request_hash: string;
-  result_json: unknown;
 };
 
 export class SessionMutationRepository {
@@ -204,45 +196,7 @@ export class SessionMutationRepository {
     input: { idempotencyKey: string; sessionId: string },
     mutate: (sql: SqlClient) => Promise<T>,
   ): Promise<T> {
-    if (!input.idempotencyKey) throw hostError(422, "idempotencyKey is required");
-    // Transport retries may reconstruct operational timestamps. The key owns the
-    // original committed time; semantic fields must still match exactly.
-    const requestHash = createHash("sha256")
-      .update(JSON.stringify(input, (key, value) =>
-        key === "createdAt" || key === "updatedAt" ? undefined : value))
-      .digest("hex");
-    const result = await this.sql.begin(async (sql) => {
-      const transaction = sql as unknown as SqlClient;
-      await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${input.idempotencyKey}, 0))`;
-      const receipts = await transaction<MutationReceipt[]>`
-        SELECT operation, session_id, request_hash, result_json
-        FROM session_mutation_receipts
-        WHERE idempotency_key = ${input.idempotencyKey}
-        FOR UPDATE
-      `;
-      const receipt = receipts[0];
-      if (receipt) {
-        if (
-          receipt.operation !== operation
-          || receipt.session_id !== input.sessionId
-          || receipt.request_hash !== requestHash
-        ) {
-          throw hostError(409, `idempotency key conflict: ${input.idempotencyKey}`);
-        }
-        return receipt.result_json as T;
-      }
-      const result = await mutate(transaction);
-      await transaction`
-        INSERT INTO session_mutation_receipts (
-          idempotency_key, operation, session_id, request_hash, result_json
-        ) VALUES (
-          ${input.idempotencyKey}, ${operation}, ${input.sessionId}, ${requestHash},
-          ${transaction.json(result as never)}
-        )
-      `;
-      return result;
-    });
-    return result as T;
+    return await runIdempotentSessionMutation(this.sql, operation, input, mutate);
   }
 }
 

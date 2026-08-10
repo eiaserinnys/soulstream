@@ -23,10 +23,7 @@ import {
   type RunnerEventOutboxRow,
   type RunnerIpcJournalRow,
 } from "./sqlite_event_outbox_schema.js";
-import {
-  engineEventFrame,
-  type RunnerEventFrame,
-} from "./frame_protocol.js";
+import { engineEventFrame, type RunnerEventFrame } from "./frame_protocol.js";
 import {
   assertRunnerEventFits,
   buildRunnerEventBatch,
@@ -45,12 +42,16 @@ import {
   runnerRowCount as rowCount,
   runnerTableHasColumn as hasColumn,
 } from "./sqlite_event_outbox_database.js";
+import { ensureRunnerLifecycleColumns } from "./sqlite_runner_lifecycle.js";
+import {
+  acknowledgeRunnerHostCall,
+  ensureRunnerIpcJournalV4,
+  readRunnerHostCallApplied,
+  recordRunnerHostCallApplied,
+} from "./sqlite_ipc_journal.js";
 
-export type {
-  RunnerBootstrapInput,
-  RunnerBootstrapRecord,
-  RunnerResumeMaterial,
-} from "./sqlite_event_outbox_schema.js";
+export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
+  from "./sqlite_event_outbox_schema.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
@@ -96,6 +97,8 @@ export class RunnerSqliteEventOutbox {
           )
         `);
       }
+      ensureRunnerLifecycleColumns(database);
+      ensureRunnerIpcJournalV4(database);
       if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
         database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);
       }
@@ -284,6 +287,9 @@ export class RunnerSqliteEventOutbox {
       ORDER BY journal.frame_seq
     `).all() as unknown as Array<RunnerIpcJournalRow & RunnerEventOutboxRow>;
     return rows.map((row) => {
+      if (row.outbox_source_seq === null || row.frame_kind !== "engine_event") {
+        throw new Error("runner IPC event journal row is invalid");
+      }
       const record = runnerRowToRecord(row);
       const metadata = row.runner_metadata_json === null
         ? undefined
@@ -312,6 +318,30 @@ export class RunnerSqliteEventOutbox {
     });
     this.compactJournal();
     this.compactIfNeeded();
+  }
+
+  async recordHostCallApplied(input: {
+    correlationId: string;
+    service: string;
+    operation: string;
+    createdAt: string;
+  }): Promise<void> {
+    this.requireOpen();
+    recordRunnerHostCallApplied(this.database, input);
+  }
+
+  async readHostCallApplied(correlationId: string): Promise<{
+    correlationId: string;
+    service: string;
+    operation: string;
+  } | null> {
+    this.requireOpen();
+    return readRunnerHostCallApplied(this.database, correlationId);
+  }
+
+  async acknowledgeHostCall(correlationId: string): Promise<void> {
+    this.requireOpen();
+    acknowledgeRunnerHostCall(this.database, correlationId);
   }
 
   async readBatch(): Promise<EventOutboxBatch | null> {

@@ -19,6 +19,7 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
@@ -50,8 +51,12 @@ describe("RunnerSqliteEventOutbox", () => {
       const journalTable = tables.find((table) => table.name === "runner_ipc_journal")!;
       expect(outboxTable.sql).toContain("source_seq INTEGER PRIMARY KEY AUTOINCREMENT");
       expect(outboxTable.sql).toContain("runner_metadata_json");
+      expect(outboxTable.sql).toContain("execution_command_id");
+      expect(outboxTable.sql).toContain("progress_seq");
+      expect(outboxTable.sql).toContain("terminal_error_json");
       expect(journalTable.sql).toContain("frame_seq INTEGER PRIMARY KEY AUTOINCREMENT");
-      expect(journalTable.sql).toContain("outbox_source_seq INTEGER NOT NULL UNIQUE");
+      expect(journalTable.sql).toContain("outbox_source_seq INTEGER UNIQUE");
+      expect(journalTable.sql).toContain("correlation_id TEXT UNIQUE");
       expect(journalTable.sql).not.toMatch(/payload|metadata|session_effect/);
       expect(outboxTable.sql).toContain("STRICT");
       expect(journalTable.sql).toContain("STRICT");
@@ -135,6 +140,67 @@ describe("RunnerSqliteEventOutbox", () => {
       ...bootstrapInput(),
       resume: { ...bootstrapInput().resume, code_sha: "different" },
     })).rejects.toThrow("runner bootstrap record conflicts with durable record");
+    outbox.close();
+  });
+
+  it("stores a monotonic progress lease on bootstrap without changing event lineage", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
+    const lifecycle = RunnerSqliteLifecycle.open(path);
+
+    expect(lifecycle.read()).toBeNull();
+    expect(lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    })).toMatchObject({
+      session_id: "session-a",
+      runner_pid: 4123,
+      execution_command_id: "execute-a",
+      execution_state: "running",
+      progress_seq: 1,
+      terminal_error: null,
+    });
+    expect(lifecycle.progress("execute-a", "2026-08-11T01:00:01.000Z"))
+      .toMatchObject({ progress_seq: 2, progress_at: "2026-08-11T01:00:01.000Z" });
+    expect(lifecycle.finish(
+      "execute-a",
+      "completed",
+      "2026-08-11T01:00:02.000Z",
+    )).toMatchObject({ execution_state: "completed", progress_seq: 3 });
+
+    expect((await outbox.readBootstrap())?.payload_hash).toBe(bootstrap.payload_hash);
+    expect(outbox.ackedSeq).toBe(1);
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("rejects stale lifecycle writers and records a loud reap error", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const lifecycle = RunnerSqliteLifecycle.open(path);
+    lifecycle.begin({
+      pid: 5001,
+      commandId: "execute-current",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    });
+
+    expect(() => lifecycle.progress(
+      "execute-stale",
+      "2026-08-11T01:00:01.000Z",
+    )).toThrow("runner lifecycle command mismatch");
+    expect(lifecycle.reap(
+      "execute-current",
+      "2026-08-11T01:02:00.000Z",
+      { code: "lease_expired", message: "runner made no progress" },
+    )).toMatchObject({
+      execution_state: "reaped",
+      terminal_error: { code: "lease_expired", message: "runner made no progress" },
+    });
+
+    lifecycle.close();
     outbox.close();
   });
 
@@ -490,6 +556,78 @@ describe("RunnerSqliteEventOutbox", () => {
     await outbox.acknowledge(record.stream_id, record.source_seq);
     expect(readJournalSequences(outboxDatabasePath(outbox))).toEqual([]);
     outbox.close();
+  });
+
+  it("recovers a payload-free host-call apply receipt and compacts it after runner ACK", async () => {
+    const path = await temporaryDatabasePath();
+    const firstHost = await RunnerSqliteEventOutbox.open(path);
+    const secondHost = await RunnerSqliteEventOutbox.open(path);
+
+    await firstHost.recordHostCallApplied({
+      correlationId: "host:one",
+      service: "snapshot",
+      operation: "persistRunState",
+      createdAt: "2026-08-11T01:00:00.000Z",
+    });
+
+    await expect(secondHost.readHostCallApplied("host:one")).resolves.toEqual({
+      correlationId: "host:one",
+      service: "snapshot",
+      operation: "persistRunState",
+    });
+    await secondHost.acknowledgeHostCall("host:one");
+    await expect(firstHost.readHostCallApplied("host:one")).resolves.toBeNull();
+    expect(readJournalSequences(path)).toEqual([]);
+
+    firstHost.close();
+    secondHost.close();
+  });
+
+  it("migrates the payload-free v3 event journal without losing pending frame order", async () => {
+    const path = await temporaryDatabasePath();
+    const current = await RunnerSqliteEventOutbox.open(path);
+    await current.initializeBootstrap(bootstrapInput());
+    await current.appendEngineFrame(eventInput("one"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "one" },
+    });
+    current.close();
+
+    const database = new DatabaseSync(path);
+    database.exec(`
+      ALTER TABLE runner_ipc_journal RENAME TO runner_ipc_journal_v4;
+      CREATE TABLE runner_ipc_journal (
+        frame_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        outbox_source_seq INTEGER NOT NULL UNIQUE,
+        frame_kind TEXT NOT NULL CHECK (frame_kind = 'engine_event'),
+        host_acked INTEGER NOT NULL DEFAULT 0 CHECK (host_acked IN (0, 1)),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (outbox_source_seq) REFERENCES runner_event_outbox(source_seq)
+      ) STRICT;
+      INSERT INTO runner_ipc_journal
+      SELECT frame_seq, outbox_source_seq, frame_kind, host_acked, created_at
+      FROM runner_ipc_journal_v4;
+      DROP TABLE runner_ipc_journal_v4;
+      PRAGMA user_version = 3;
+    `);
+    database.close();
+
+    const migrated = await RunnerSqliteEventOutbox.open(path);
+    await expect(migrated.readPendingIpcFrames()).resolves.toEqual([
+      expect.objectContaining({ frame_seq: 1, outbox_source_seq: 2 }),
+    ]);
+    await migrated.recordHostCallApplied({
+      correlationId: "host:migrated",
+      service: "snapshot",
+      operation: "persistSessionItems",
+      createdAt: "2026-08-11T01:00:00.000Z",
+    });
+    await expect(migrated.readHostCallApplied("host:migrated")).resolves.toMatchObject({
+      operation: "persistSessionItems",
+    });
+    migrated.close();
   });
 });
 

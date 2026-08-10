@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   buildDurableRunnerEvent,
+  isSqliteFullError,
   setRunnerOomScore,
 } from "../../src/runner/runner_child_runtime.js";
 
@@ -44,5 +45,13 @@ describe("buildDurableRunnerEvent", () => {
     expect(await readFile(scorePath, "utf8")).toBe("0\n");
     await setRunnerOomScore("linux", scorePath);
     expect(await readFile(scorePath, "utf8")).toBe("500\n");
+  });
+
+  it("classifies SQLite full as an immediate loud runner storage failure", () => {
+    expect(isSqliteFullError(Object.assign(
+      new Error("database or disk is full"),
+      { code: "SQLITE_FULL" },
+    ))).toBe(true);
+    expect(isSqliteFullError(new Error("engine exited"))).toBe(false);
   });
 });

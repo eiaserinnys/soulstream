@@ -5,6 +5,7 @@ import { RunnerHostRequestClient } from "../../src/runner/runner_host_request_cl
 
 describe("RunnerHostRequestClient", () => {
   it("retries with one correlation id and returns a recovered host response", async () => {
+    const send = vi.fn(async () => {});
     const request = vi.fn()
       .mockRejectedValueOnce(new Error("connection closed"))
       .mockImplementationOnce(async (frame) => runnerControlResponseFrame(
@@ -12,7 +13,7 @@ describe("RunnerHostRequestClient", () => {
         { status: "ok", data: ["entry"] },
       ));
     const client = new RunnerHostRequestClient(
-      () => ({ request } as never),
+      () => ({ request, send } as never),
       async () => {},
     );
 
@@ -25,6 +26,10 @@ describe("RunnerHostRequestClient", () => {
     expect(request.mock.calls[0]?.[0].correlationId).toBe(
       request.mock.calls[1]?.[0].correlationId,
     );
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "host_call_applied",
+      correlationId: request.mock.calls[1]?.[0].correlationId,
+    }));
   });
 
   it("bounds server-absent retries instead of blocking forever", async () => {
@@ -50,5 +55,22 @@ describe("RunnerHostRequestClient", () => {
       attempts: 3,
     })).rejects.toThrow("runner stopping");
     expect(delay).toHaveBeenCalledOnce();
+  });
+
+  it("applies one deadline across retries when a connected host stops responding", async () => {
+    const request = vi.fn(async (_frame, options: { signal: AbortSignal }) =>
+      await new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+          once: true,
+        });
+      }));
+    const client = new RunnerHostRequestClient(() => ({ request } as never));
+
+    await expect(client.call("session_store", "load", [{}], {
+      timeoutMs: 10,
+      attempts: 61,
+      retryDelayMs: 1,
+    })).rejects.toThrow("timed out after 10ms");
+    expect(request).toHaveBeenCalledOnce();
   });
 });

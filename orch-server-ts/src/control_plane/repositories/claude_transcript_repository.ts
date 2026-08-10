@@ -8,6 +8,20 @@ import {
   isClaudeTranscriptEntry,
   normalizeTranscriptSubpath,
 } from "../repository_helpers.js";
+import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
+
+export interface IdempotentClaudeTranscriptAppend {
+  idempotencyKey: string;
+  sessionId: string;
+  key: ClaudeTranscriptKey;
+  entries: ClaudeTranscriptEntry[];
+}
+
+export interface IdempotentClaudeTranscriptDelete {
+  idempotencyKey: string;
+  sessionId: string;
+  key: ClaudeTranscriptKey;
+}
 
 export class ClaudeTranscriptRepository {
   constructor(private readonly sql: SqlClient) {}
@@ -16,17 +30,32 @@ export class ClaudeTranscriptRepository {
     key: ClaudeTranscriptKey,
     entries: ClaudeTranscriptEntry[],
   ): Promise<number> {
-    if (entries.length === 0) return 0;
-    const rows = await this.sql<{ claude_transcript_append: string | number }[]>`
-      SELECT claude_transcript_append(
-        ${key.projectKey},
-        ${key.sessionId},
-        ${normalizeTranscriptSubpath(key.subpath)},
-        ${JSON.stringify(entries)},
-        ${new Date()}
-      ) AS claude_transcript_append
-    `;
-    return Number(rows[0]?.claude_transcript_append ?? 0);
+    return await appendClaudeTranscriptEntries(this.sql, key, entries);
+  }
+
+  async appendClaudeTranscriptEntriesIdempotent(
+    input: IdempotentClaudeTranscriptAppend,
+  ): Promise<number> {
+    return await runIdempotentSessionMutation(
+      this.sql,
+      "runner_claude_transcript_append",
+      input,
+      async (sql) => await appendClaudeTranscriptEntries(sql, input.key, input.entries),
+    );
+  }
+
+  async deleteClaudeTranscriptIdempotent(
+    input: IdempotentClaudeTranscriptDelete,
+  ): Promise<void> {
+    await runIdempotentSessionMutation(
+      this.sql,
+      "runner_claude_transcript_delete",
+      input,
+      async (sql) => {
+        await deleteClaudeTranscript(sql, input.key);
+        return null;
+      },
+    );
   }
 
   async loadClaudeTranscriptEntries(
@@ -67,12 +96,37 @@ export class ClaudeTranscriptRepository {
   }
 
   async deleteClaudeTranscript(key: ClaudeTranscriptKey): Promise<void> {
-    await this.sql`
-      SELECT claude_transcript_delete(
-        ${key.projectKey},
-        ${key.sessionId},
-        ${normalizeTranscriptSubpath(key.subpath)}
-      )
-    `;
+    await deleteClaudeTranscript(this.sql, key);
   }
+}
+
+async function appendClaudeTranscriptEntries(
+  sql: SqlClient,
+  key: ClaudeTranscriptKey,
+  entries: ClaudeTranscriptEntry[],
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  const rows = await sql<{ claude_transcript_append: string | number }[]>`
+    SELECT claude_transcript_append(
+      ${key.projectKey},
+      ${key.sessionId},
+      ${normalizeTranscriptSubpath(key.subpath)},
+      ${JSON.stringify(entries)},
+      ${new Date()}
+    ) AS claude_transcript_append
+  `;
+  return Number(rows[0]?.claude_transcript_append ?? 0);
+}
+
+async function deleteClaudeTranscript(
+  sql: SqlClient,
+  key: ClaudeTranscriptKey,
+): Promise<void> {
+  await sql`
+    SELECT claude_transcript_delete(
+      ${key.projectKey},
+      ${key.sessionId},
+      ${normalizeTranscriptSubpath(key.subpath)}
+    )
+  `;
 }

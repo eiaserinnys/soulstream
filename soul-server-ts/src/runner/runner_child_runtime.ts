@@ -24,23 +24,29 @@ import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
 
-const REQUIRED_HOST_SEND_ATTEMPTS = 3;
-const REQUIRED_HOST_SEND_RETRY_MS = 100;
+const REQUIRED_HOST_SEND_ATTEMPTS = 61;
+const REQUIRED_HOST_SEND_RETRY_MS = 500;
 
 export class RunnerChildRuntime {
   private endpoint!: RunnerSocketEndpoint;
   private outbox!: RunnerSqliteEventOutbox;
+  private lifecycle!: RunnerSqliteLifecycle;
   private lock!: RunnerWriterLock;
   private dispatcher!: InProcessRunnerCommandDispatcher;
   private readonly closedPromise: Promise<void>;
   private resolveClosed!: () => void;
   private closing = false;
+  private activeCommandId: string | undefined;
 
   constructor(
     private readonly config: RunnerChildConfig,
     private readonly logger: Logger,
+    private readonly deps: {
+      createEngine: typeof createRunnerChildEngine;
+    } = { createEngine: createRunnerChildEngine },
   ) {
     this.closedPromise = new Promise((resolve) => {
       this.resolveClosed = resolve;
@@ -50,6 +56,7 @@ export class RunnerChildRuntime {
   async start(): Promise<void> {
     this.lock = await RunnerWriterLock.acquire(this.config.paths.lockPath);
     this.outbox = await RunnerSqliteEventOutbox.open(this.config.paths.databasePath);
+    this.lifecycle = RunnerSqliteLifecycle.open(this.config.paths.databasePath);
     this.endpoint = new RunnerSocketEndpoint(
       this.config.paths.socketPath,
       async (frame) => await this.handleFrame(frame),
@@ -57,7 +64,7 @@ export class RunnerChildRuntime {
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     this.dispatcher = new InProcessRunnerCommandDispatcher(
-      createRunnerChildEngine(this.config, host, this.logger),
+      this.deps.createEngine(this.config, host, this.logger),
     );
     await setRunnerOomScore();
     await this.endpoint.listen();
@@ -75,6 +82,7 @@ export class RunnerChildRuntime {
         this.logger.warn({ error }, "Runner engine close failed during shutdown");
       });
       await this.endpoint?.close();
+      this.lifecycle?.close();
       this.outbox?.close();
       await this.lock?.release();
     } finally {
@@ -92,6 +100,7 @@ export class RunnerChildRuntime {
     }
     if (frame.kind === "host_frame_applied") {
       await this.outbox.acknowledgeHostFrame(frame.frameSeq);
+      this.recordProgress();
       return;
     }
     if (
@@ -112,12 +121,21 @@ export class RunnerChildRuntime {
     await connection.send(result);
     if (result.result.status !== "ok") return;
     if (command.kind === "execute") {
+      this.activeCommandId = command.commandId;
       void this.drainExecution(command).catch((error) => {
         this.logger.error({ error }, "Runner execution drain failed");
       });
       return;
     }
     if (command.kind === "close") {
+      const lifecycle = this.lifecycle.read();
+      if (lifecycle) {
+        this.lifecycle.finish(
+          lifecycle.execution_command_id,
+          "closed",
+          new Date().toISOString(),
+        );
+      }
       queueMicrotask(() => { void this.shutdown(); });
     }
   }
@@ -126,42 +144,54 @@ export class RunnerChildRuntime {
     command: Extract<RunnerCommandFrame, { kind: "execute" }>,
   ): Promise<void> {
     let terminalError: { code: string; message: string } | undefined;
+    let storageFailure = false;
     try {
       if (command.params.resumeSessionId) {
-        await this.ensureBootstrap(command.params.resumeSessionId);
+        await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
       }
       for await (const frame of this.dispatcher.events(command.commandId)) {
         await this.forwardRunnerFrame(frame);
       }
     } catch (error) {
       await this.dispatcher.interrupt().catch(() => false);
+      storageFailure = isSqliteFullError(error);
       terminalError = {
-        code: "execution_failed",
+        code: storageFailure ? "runner_storage_full" : "execution_failed",
         message: error instanceof Error ? error.message : String(error),
       };
+    }
+    try {
+      await this.finishLifecycle(command.commandId, terminalError);
+    } catch (error) {
+      this.logger.error({ error }, "Runner terminal lifecycle record failed");
     }
     const ended = executionEndedControlFrame(command.commandId, terminalError);
     await this.sendRequired(ended).catch((error) => {
       this.logger.warn({ error }, "Runner execution end could not reach host");
     });
+    if (storageFailure) queueMicrotask(() => { void this.shutdown(); });
   }
 
   private async forwardRunnerFrame(frame: RunnerEventFrame): Promise<void> {
     if (frame.kind === "run_state_snapshot") {
       await this.callHostSnapshot("persistRunState", frame.snapshot);
+      this.recordProgress();
       return;
     }
     if (frame.kind === "session_items_snapshot") {
       await this.callHostSnapshot("persistSessionItems", frame.snapshot);
+      this.recordProgress();
       return;
     }
     if (frame.kind === "request") {
       await this.sendRequired(frame);
+      this.recordProgress();
       return;
     }
     const event = frame.payload as SSEEventPayload;
     if (!shouldPersistEvent(event)) {
       await this.sendBestEffort(frame);
+      this.recordProgress();
       return;
     }
     const effect = sessionIdEffect(event);
@@ -169,7 +199,7 @@ export class RunnerChildRuntime {
       ? effect.backend_session_id
       : null;
     if (!(await this.outbox.readBootstrap())) {
-      await this.ensureBootstrap(backendSessionId);
+      await this.ensureBootstrap(backendSessionId, this.requireActiveCommandId());
     }
     const durableEvent = buildDurableRunnerEvent(
       this.config.sessionId,
@@ -182,9 +212,13 @@ export class RunnerChildRuntime {
       durableEvent.frame,
     );
     await this.sendBestEffort(outboxAvailableControlFrame(durable.source_seq));
+    this.recordProgress();
   }
 
-  private async ensureBootstrap(backendSessionId: string | null): Promise<void> {
+  private async ensureBootstrap(
+    backendSessionId: string | null,
+    commandId: string,
+  ): Promise<void> {
     await this.outbox.initializeBootstrap({
       session_id: this.config.sessionId,
       created_at: new Date().toISOString(),
@@ -198,14 +232,22 @@ export class RunnerChildRuntime {
         snapshot_path: this.config.snapshotPath,
       },
     });
+    const existing = this.lifecycle.read();
+    if (!existing || existing.execution_command_id !== commandId) {
+      this.lifecycle.begin({
+        pid: process.pid,
+        commandId,
+        progressedAt: new Date().toISOString(),
+      });
+    }
   }
 
   private async callHostSnapshot(operation: string, snapshot: unknown): Promise<void> {
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     await host.call("snapshot", operation, [this.config.sessionId, snapshot], {
       timeoutMs: 30_000,
-      attempts: 3,
-      retryDelayMs: 100,
+      attempts: 61,
+      retryDelayMs: 500,
     });
   }
 
@@ -236,6 +278,29 @@ export class RunnerChildRuntime {
       }
     }
     throw new Error("Required runner frame could not reach host", { cause: lastError });
+  }
+
+  private recordProgress(): void {
+    if (!this.activeCommandId || !this.lifecycle.read()) return;
+    this.lifecycle.progress(this.activeCommandId, new Date().toISOString());
+  }
+
+  private async finishLifecycle(
+    commandId: string,
+    terminalError: { code: string; message: string } | undefined,
+  ): Promise<void> {
+    if (!this.lifecycle.read()) return;
+    this.lifecycle.finish(
+      commandId,
+      terminalError ? "failed" : "completed",
+      new Date().toISOString(),
+      terminalError ?? null,
+    );
+  }
+
+  private requireActiveCommandId(): string {
+    if (!this.activeCommandId) throw new Error("runner active command id unavailable");
+    return this.activeCommandId;
   }
 }
 
@@ -269,4 +334,10 @@ export async function setRunnerOomScore(
 ): Promise<void> {
   if (platform !== "linux") return;
   await writeFile(path, "500\n");
+}
+
+export function isSqliteFullError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  return code === "SQLITE_FULL" || /database or disk is full/i.test(error.message);
 }

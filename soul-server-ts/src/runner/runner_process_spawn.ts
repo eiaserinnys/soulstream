@@ -59,6 +59,12 @@ export interface SpawnedRunnerProcess {
   pid: number;
   paths: RunnerProcessPaths;
   config: RunnerChildConfig;
+  adopted: boolean;
+}
+
+export interface AdoptRunnerProcessInput {
+  stateDirectory: string;
+  sessionId: string;
 }
 
 interface SpawnDependencies {
@@ -144,7 +150,22 @@ export class RunnerProcessSpawner {
       throw registrationError;
     }
     child.unref();
-    return { pid: child.pid, paths, config: validatedConfig };
+    return { pid: child.pid, paths, config: validatedConfig, adopted: false };
+  }
+
+  async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
+    const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
+    const pid = await readRunnerPid(paths.pidPath);
+    if (pid === null || !this.deps.isPidAlive(pid)) return null;
+    const config = await readRunnerChildConfig(paths.configPath);
+    if (config.sessionId !== input.sessionId || !samePaths(config.paths, paths)) {
+      throw new Error(`runner registration mismatch for ${input.sessionId}`);
+    }
+    return { pid, paths, config, adopted: true };
+  }
+
+  async terminate(paths: RunnerProcessPaths): Promise<void> {
+    await this.stopExistingRunner(paths);
   }
 
   private async terminateSpawnedChild(
@@ -166,7 +187,7 @@ export class RunnerProcessSpawner {
   }
 
   private async stopExistingRunner(paths: RunnerProcessPaths): Promise<void> {
-    const pid = await readPid(paths.pidPath);
+    const pid = await readRunnerPid(paths.pidPath);
     if (pid !== null && this.deps.isPidAlive(pid)) {
       this.deps.signalPid(pid, "SIGTERM");
       const deadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
@@ -207,7 +228,7 @@ function defaultDependencies(): SpawnDependencies {
   };
 }
 
-async function readPid(path: string): Promise<number | null> {
+export async function readRunnerPid(path: string): Promise<number | null> {
   try {
     const value = Number.parseInt((await readFile(path, "utf8")).trim(), 10);
     if (!Number.isSafeInteger(value) || value <= 0) {
@@ -218,6 +239,26 @@ async function readPid(path: string): Promise<number | null> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+}
+
+export async function readRunnerChildConfig(path: string): Promise<RunnerChildConfig> {
+  try {
+    return parseRunnerChildConfig(JSON.parse(await readFile(path, "utf8")) as unknown);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`runner config missing: ${path}`, { cause: error });
+    }
+    throw error;
+  }
+}
+
+function samePaths(left: RunnerProcessPaths, right: RunnerProcessPaths): boolean {
+  return left.sessionDirectory === right.sessionDirectory
+    && left.databasePath === right.databasePath
+    && left.socketPath === right.socketPath
+    && left.pidPath === right.pidPath
+    && left.lockPath === right.lockPath
+    && left.configPath === right.configPath;
 }
 
 async function unlinkIfPresent(path: string): Promise<void> {
