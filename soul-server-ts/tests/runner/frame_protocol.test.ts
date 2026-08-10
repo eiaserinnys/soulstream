@@ -73,6 +73,18 @@ const frames: RunnerFrame[] = [
   },
 ];
 
+class JsonLookingClassInstance {
+  value = "looks serializable";
+}
+
+const forbiddenJsonValues = [
+  ["function", () => undefined],
+  ["Symbol", Symbol("process-local")],
+  ["Date", new Date("2026-08-10T12:00:00.000Z")],
+  ["Buffer", Buffer.from("process-local")],
+  ["class instance", new JsonLookingClassInstance()],
+] as const;
+
 describe("runner frame protocol", () => {
   it.each(frames)("round-trips JSON frame $channel/$kind", (frame) => {
     const encoded = JSON.stringify(frame);
@@ -94,15 +106,37 @@ describe("runner frame protocol", () => {
     expect(RunnerFrameSchema.parse(frame)).toMatchObject(frame);
   });
 
-  it("rejects process-local values and an unknown protocol version", () => {
+  it.each(forbiddenJsonValues)("rejects %s in a known JSON field", (_name, value) => {
+    const execute = frames[0] as Extract<RunnerFrame, { kind: "execute" }>;
     expect(RunnerFrameSchema.safeParse({
-      ...frames[0],
-      params: {
-        ...(frames[0] as Extract<RunnerFrame, { kind: "execute" }>).params,
-        sessionItems: [new Date()],
-      },
+      ...execute,
+      params: { ...execute.params, sessionItems: [value] },
     }).success).toBe(false);
+  });
 
+  it.each(forbiddenJsonValues)("rejects %s in an additive unknown field", (_name, value) => {
+    expect(RunnerFrameSchema.safeParse({
+      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+      channel: "command",
+      kind: "close",
+      commandId: "close-1",
+      futureField: value,
+    }).success).toBe(false);
+  });
+
+  it("rejects Symbol keys that JSON.stringify would silently omit", () => {
+    const frame = {
+      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+      channel: "command",
+      kind: "close",
+      commandId: "close-1",
+    };
+    Object.defineProperty(frame, Symbol("process-local"), { value: true });
+
+    expect(RunnerFrameSchema.safeParse(frame).success).toBe(false);
+  });
+
+  it("rejects an unknown protocol version", () => {
     expect(RunnerFrameSchema.safeParse({
       ...frames[0],
       protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION + 1,

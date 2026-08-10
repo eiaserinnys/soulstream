@@ -17,7 +17,86 @@ const protocolVersion = z.literal(RUNNER_FRAME_PROTOCOL_VERSION);
 const correlationId = z.string().min(1);
 const jsonRecord = z.record(z.string(), z.json());
 
-export const RunnerExecuteParamsSchema = z.object({
+interface JsonContractFailure {
+  path: PropertyKey[];
+  message: string;
+}
+
+function findJsonContractFailure(
+  value: unknown,
+  path: PropertyKey[] = [],
+  seen: WeakSet<object> = new WeakSet(),
+): JsonContractFailure | null {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value)
+      ? null
+      : { path, message: "JSON numbers must be finite" };
+  }
+  if (typeof value !== "object") {
+    return { path, message: `${typeof value} is not a JSON value` };
+  }
+  if (seen.has(value)) {
+    return { path, message: "Repeated or cyclic object references are not JSON values" };
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    const expectedKeys = new Set(Array.from({ length: value.length }, (_, index) => String(index)));
+    for (const key of Reflect.ownKeys(value)) {
+      if (key === "length") continue;
+      if (typeof key !== "string" || !expectedKeys.has(key)) {
+        return { path: [...path, key], message: "Array properties must be JSON indices" };
+      }
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.hasOwn(value, index)) {
+        return { path: [...path, index], message: "Sparse arrays are not JSON values" };
+      }
+      const failure = findJsonContractFailure(value[index], [...path, index], seen);
+      if (failure) return failure;
+    }
+    return null;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return { path, message: "JSON objects must be plain objects" };
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      return { path: [...path, key], message: "JSON objects cannot have Symbol keys" };
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable) {
+      return { path: [...path, key], message: "JSON object fields must be enumerable" };
+    }
+    if (!("value" in descriptor)) {
+      return { path: [...path, key], message: "JSON object fields cannot be accessors" };
+    }
+    const failure = findJsonContractFailure(descriptor.value, [...path, key], seen);
+    if (failure) return failure;
+  }
+  return null;
+}
+
+function withJsonContract<T extends z.ZodType>(schema: T) {
+  return z.preprocess((value, ctx) => {
+    const failure = findJsonContractFailure(value);
+    if (failure) {
+      ctx.addIssue({
+        code: "custom",
+        path: failure.path,
+        message: failure.message,
+      });
+    }
+    return value;
+  }, schema);
+}
+
+export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   agentSessionId: z.string().min(1),
   prompt: z.string(),
   inputUuid: z.string().min(1).optional(),
@@ -52,9 +131,9 @@ export const RunnerExecuteParamsSchema = z.object({
       alwaysReject: z.boolean().optional(),
     }).passthrough().optional(),
   }).passthrough().optional(),
-}).passthrough();
+}).passthrough());
 
-export const RunnerCommandFrameSchema = z.discriminatedUnion("kind", [
+export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("kind", [
   z.object({
     protocolVersion,
     channel: z.literal("command"),
@@ -74,7 +153,7 @@ export const RunnerCommandFrameSchema = z.discriminatedUnion("kind", [
     kind: z.literal("close"),
     commandId: correlationId,
   }).passthrough(),
-]);
+]));
 
 const RunnerRunStateSnapshotSchema = z.object({
   backendId: z.enum(["codex", "claude", "openai-agents"]),
@@ -114,7 +193,7 @@ const RunnerRequestSchema = z.discriminatedUnion("kind", [
   }).passthrough(),
 ]);
 
-export const RunnerEventFrameSchema = z.discriminatedUnion("kind", [
+export const RunnerEventFrameSchema = withJsonContract(z.discriminatedUnion("kind", [
   z.object({
     protocolVersion,
     channel: z.literal("event"),
@@ -140,7 +219,7 @@ export const RunnerEventFrameSchema = z.discriminatedUnion("kind", [
     correlationId,
     request: RunnerRequestSchema,
   }).passthrough(),
-]);
+]));
 
 const RunnerControlResultSchema = z.discriminatedUnion("status", [
   z.object({
@@ -156,7 +235,7 @@ const RunnerControlResultSchema = z.discriminatedUnion("status", [
   }).passthrough(),
 ]);
 
-export const RunnerControlFrameSchema = z.discriminatedUnion("kind", [
+export const RunnerControlFrameSchema = withJsonContract(z.discriminatedUnion("kind", [
   z.object({
     protocolVersion,
     channel: z.literal("control"),
@@ -183,7 +262,7 @@ export const RunnerControlFrameSchema = z.discriminatedUnion("kind", [
       alwaysReject: z.boolean().optional(),
     }).passthrough().optional(),
   }).passthrough(),
-]);
+]));
 
 export const RunnerFrameSchema = z.union([
   RunnerCommandFrameSchema,
@@ -197,11 +276,11 @@ export type RunnerEventFrame = z.infer<typeof RunnerEventFrameSchema>;
 export type RunnerControlFrame = z.infer<typeof RunnerControlFrameSchema>;
 export type RunnerFrame = z.infer<typeof RunnerFrameSchema>;
 
-export function engineEventFrame(payload: Record<string, unknown>): RunnerEventFrame {
-  return {
+export function engineEventFrame(payload: unknown): RunnerEventFrame {
+  return RunnerEventFrameSchema.parse({
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "event",
     kind: "engine_event",
     payload,
-  };
+  });
 }
