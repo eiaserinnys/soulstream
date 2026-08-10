@@ -40,28 +40,17 @@ function makeMocks() {
 }
 
 describe("TaskLifecycleTransition.cancelRunningTask", () => {
-  it("marks running tasks interrupted before calling engine.interrupt", async () => {
+  it("marks running tasks interrupted before the interrupt command ACK", async () => {
     const { transition } = makeMocks();
     const task = makeTask();
     const interrupt = vi.fn(async () => {
       expect(task.status).toBe("interrupted");
       return true;
     });
-    task.engine = { interrupt } as unknown as EnginePort;
-
-    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
-
-    expect(task.status).toBe("interrupted");
-    expect(interrupt).toHaveBeenCalledTimes(1);
-  });
-
-  it("routes production cancellation through an interrupt command ACK", async () => {
-    const { transition } = makeMocks();
-    const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
     const dispatch = vi.spyOn(runnerCommandDispatcher, "dispatch");
-    const task = makeTask({ engine, runnerCommandDispatcher });
+    task.runner = { engine, dispatcher: runnerCommandDispatcher };
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
 
@@ -76,7 +65,11 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
   it("returns false without mutation when task is missing, terminal, or has no engine", async () => {
     const { transition } = makeMocks();
     const terminal = makeTask({ status: "completed" });
-    terminal.engine = { interrupt: vi.fn() } as unknown as EnginePort;
+    const engine = { interrupt: vi.fn() } as unknown as EnginePort;
+    terminal.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
     const noEngine = makeTask();
 
     await expect(transition.cancelRunningTask(undefined)).resolves.toBe(false);
@@ -309,7 +302,11 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
       executionPromise: Promise.reject(new Error("drain rejected")),
     });
     const interrupt = vi.fn().mockRejectedValue(new Error("already closed"));
-    task.engine = { interrupt } as unknown as EnginePort;
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
 
     await expect(transition.interruptAndDrain(task)).resolves.toBeUndefined();
 
@@ -324,7 +321,11 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
     });
     const task = makeTask({ executionPromise: drain });
     const interrupt = vi.fn().mockResolvedValue(true);
-    task.engine = { interrupt } as unknown as EnginePort;
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
 
     await transition.interruptForShutdown(task);
     const drainPromise = transition.getDrainPromise(task);

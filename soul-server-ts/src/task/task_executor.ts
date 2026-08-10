@@ -5,7 +5,7 @@
  *
  * 책임:
  *   1. EnginePort 인스턴스를 engineFactory(agent)로 생성
- *   2. task.engine 설정 (cancelTask가 interrupt 신호 보낼 수 있도록)
+ *   2. task.runner 설정 (engine capability와 command dispatcher를 원자적으로 구성)
  *   3. engine.execute() AsyncIterable drain
  *   4. 매 yield 이벤트: 저장 대상은 persistEvent → emitEventEnvelope → handleSideEffects,
  *      `_live_only`는 영속화 없이 emitEventEnvelope → handleSideEffects
@@ -30,8 +30,10 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
-import { InProcessRunnerCommandDispatcher } from
-  "../runner/runner_command_dispatcher.js";
+import {
+  createInProcessTaskRunnerRuntime,
+  type TaskRunnerRuntime,
+} from "../runner/task_runner_runtime.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
@@ -155,9 +157,9 @@ export class TaskExecutor {
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
   startExecution(task: Task, agent: AgentProfile): void {
-    if (task.engine) {
+    if (task.runner) {
       throw new Error(
-        `Task ${task.agentSessionId} already has an engine — concurrent execute not supported`,
+        `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
       );
     }
     const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
@@ -176,13 +178,12 @@ export class TaskExecutor {
     const engine = task.modelPresetBackend
       ? this.engineFactory(agent, backend)
       : this.engineFactory(agent);
-    const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
-    task.engine = engine;
-    task.runnerCommandDispatcher = runnerCommandDispatcher;
+    const runner = createInProcessTaskRunnerRuntime(engine);
+    task.runner = runner;
 
     const promise = (async () => {
-      await runnerCommandDispatcher.prepareSession(task.agentSessionId);
-      await this._consumeEventStream(task, engine, agent);
+      await runner.dispatcher.prepareSession(task.agentSessionId);
+      await this._consumeEventStream(task, runner, agent);
     })().catch(
       async (err: unknown) => {
         // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
@@ -226,9 +227,10 @@ export class TaskExecutor {
    */
   private async _consumeEventStream(
     task: Task,
-    engine: EnginePort,
+    runner: TaskRunnerRuntime,
     agent: AgentProfile,
   ): Promise<void> {
+    const { engine } = runner;
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
     let turnPrompt = initialTurnInput.prompt;
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
@@ -254,8 +256,7 @@ export class TaskExecutor {
           for await (const event of this.engineTurnRunner.executeTurn({
             task,
             agent,
-            engine,
-            runnerCommandDispatcher: task.runnerCommandDispatcher,
+            runner,
             input: {
               prompt: turnPrompt,
               ...(turnInputUuid !== undefined ? { inputUuid: turnInputUuid } : {}),

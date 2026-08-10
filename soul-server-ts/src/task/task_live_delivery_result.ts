@@ -41,7 +41,7 @@ export interface LiveInputResponseResult {
 
 export interface LiveToolApprovalParams {
   task: Task;
-  engine: NonNullable<Task["engine"]> & SupportsToolApproval;
+  engine: NonNullable<Task["runner"]>["engine"] & SupportsToolApproval;
   params: ToolApprovalRequest;
 }
 
@@ -131,7 +131,7 @@ export function resolveTaskBackend(
   task: Task,
   agentRegistry?: AgentBackendLookup,
 ): BackendId | string | undefined {
-  if (task.engine?.backendId) return task.engine.backendId;
+  if (task.runner?.engine.backendId) return task.runner.engine.backendId;
   if (task.agentProfileSnapshot) return task.agentProfileSnapshot.backend;
   if (task.profileId && agentRegistry) {
     return agentRegistry.get(task.profileId)?.backend;

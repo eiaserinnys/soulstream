@@ -6,6 +6,8 @@ import type { ExecutionContextBuilder } from "../../src/context/context_builder.
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import type { Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
@@ -312,7 +314,7 @@ describe("AutoResumeTransition", () => {
       close,
     } as unknown as EnginePort;
     const task = makeTerminalTask({
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       executionPromise: Promise.resolve(),
     });
     const persistenceDouble = makeEventPersistenceTestDouble(async () => {
@@ -340,7 +342,7 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((resumedTask: Task) => {
       order.push("onResume");
-      expect(resumedTask.engine).toBeUndefined();
+      expect(resumedTask.runner).toBeUndefined();
       expect(resumedTask.executionPromise).toBeUndefined();
     });
 
@@ -354,7 +356,7 @@ describe("AutoResumeTransition", () => {
     );
 
     expect(close).toHaveBeenCalledTimes(1);
-    expect(task.engine).toBeUndefined();
+    expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
     expect(order).toEqual([
       "close",

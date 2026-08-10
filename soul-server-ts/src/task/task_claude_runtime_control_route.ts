@@ -66,7 +66,7 @@ export class TaskClaudeRuntimeControlRoute {
     }
 
     const registryAvailable = this.deps.sessionRuntimeControl?.has(sessionId) === true;
-    const activeEngine = this.deps.getTask(sessionId)?.engine;
+    const activeEngine = this.deps.getTask(sessionId)?.runner?.engine;
     const result =
       registryAvailable
         ? await this.stopThroughRegistry(sessionId, taskId)
@@ -91,7 +91,7 @@ export class TaskClaudeRuntimeControlRoute {
   ): Promise<ClaudeRuntimeBackgroundTasksResult> {
     await this.resolveState(sessionId);
     const registryAvailable = this.deps.sessionRuntimeControl?.has(sessionId) === true;
-    const activeEngine = this.deps.getTask(sessionId)?.engine;
+    const activeEngine = this.deps.getTask(sessionId)?.runner?.engine;
     const result =
       registryAvailable
         ? await this.backgroundThroughRegistry(sessionId, toolUseId)

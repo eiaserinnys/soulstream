@@ -2,6 +2,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import {
   TaskLifecycleRoute,
   type TaskLifecycleTransitionPort,
@@ -170,8 +172,12 @@ describe("TaskLifecycleRoute.shutdown", () => {
       status: "completed",
     });
     const noEngine = makeTask({ agentSessionId: "no-engine" });
-    running.engine = { interrupt: vi.fn() } as unknown as EnginePort;
-    terminalWithEngine.engine = { interrupt: vi.fn() } as unknown as EnginePort;
+    running.runner = createInProcessTaskRunnerRuntime(
+      { interrupt: vi.fn() } as unknown as EnginePort,
+    );
+    terminalWithEngine.runner = createInProcessTaskRunnerRuntime(
+      { interrupt: vi.fn() } as unknown as EnginePort,
+    );
     const { route, lifecycleTransition } = makeRoute([
       running,
       terminalWithEngine,

@@ -19,13 +19,12 @@ import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
   BackendId,
   ClaudePermissionMode,
-  EnginePort,
   QueuedToolApprovalDecision,
   ReasoningEffort,
 } from "../engine/protocol.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
-import type { RunnerCommandDispatcher } from "../runner/runner_command_dispatcher.js";
+import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
@@ -351,11 +350,8 @@ export interface Task {
   /** 지연된 Claude runtime follow-up retry 전 중간 종료임을 finalizer에 알리는 런타임 플래그. */
   pendingClaudeRuntimeFollowupRetry?: boolean;
 
-  /** 진행 중 turn의 어댑터. 선택 capability와 runner endpoint 구현을 보유한다. */
-  engine?: EnginePort;
-
-  /** 모든 execute/interrupt/close 명령이 통과하는 runner 경계. */
-  runnerCommandDispatcher?: RunnerCommandDispatcher;
+  /** 진행 중 runner의 단일 정본. 엔진 capability와 command dispatcher는 원자적으로 구성된다. */
+  runner?: TaskRunnerRuntime;
 
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;

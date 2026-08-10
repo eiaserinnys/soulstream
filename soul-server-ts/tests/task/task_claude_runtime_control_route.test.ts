@@ -1,6 +1,8 @@
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { SupportsClaudeBackgroundTasks } from "../../src/engine/protocol.js";
+import type { EnginePort, SupportsClaudeBackgroundTasks } from "../../src/engine/protocol.js";
 import type { ClaudeSessionRuntimeControl } from "../../src/engine/claude_session_client_registry.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { TaskClaudeRuntimeControlRoute } from "../../src/task/task_claude_runtime_control_route.js";
 import type { ClaudeRuntimeState, Task } from "../../src/task/task_models.js";
 import { describe, expect, it, vi } from "vitest";
@@ -70,10 +72,11 @@ describe("TaskClaudeRuntimeControlRoute", () => {
     const stopClaudeRuntimeTask = vi.fn().mockResolvedValue({ status: "ok" });
     const backgroundClaudeRuntimeTasks = vi.fn().mockResolvedValue({ status: "ok" });
     task.status = "running";
-    task.engine = {
+    const engine = {
       stopClaudeRuntimeTask,
       backgroundClaudeRuntimeTasks,
-    } as unknown as SupportsClaudeBackgroundTasks & Task["engine"];
+    } as unknown as SupportsClaudeBackgroundTasks & EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(engine);
     const route = new TaskClaudeRuntimeControlRoute({
       db: {} as SessionDB,
       getTask: () => task,
@@ -91,10 +94,11 @@ describe("TaskClaudeRuntimeControlRoute", () => {
     const engineStop = vi.fn().mockResolvedValue({ status: "ok" });
     const engineBackground = vi.fn().mockResolvedValue({ status: "ok" });
     task.status = "running";
-    task.engine = {
+    const engine = {
       stopClaudeRuntimeTask: engineStop,
       backgroundClaudeRuntimeTasks: engineBackground,
-    } as unknown as SupportsClaudeBackgroundTasks & Task["engine"];
+    } as unknown as SupportsClaudeBackgroundTasks & EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(engine);
     const registry = makeRegistryControl();
     const route = new TaskClaudeRuntimeControlRoute({
       db: {} as SessionDB,

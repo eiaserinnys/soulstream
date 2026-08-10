@@ -24,7 +24,7 @@ export function classifyInterventionTaskActivity(task: Task): InterventionTaskAc
     return "terminal";
   }
 
-  if (task.hydratedFromDb === true && !task.engine && !task.executionPromise) {
+  if (task.hydratedFromDb === true && !task.runner && !task.executionPromise) {
     return "detached-hydrated-running";
   }
 

@@ -5,6 +5,8 @@ import type {
   SupportsInputResponse,
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { TaskLiveDeliveryResult } from "../../src/task/task_live_delivery_result.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -60,17 +62,18 @@ function makeSubject() {
 describe("TaskLiveDeliveryResult.deliverInputResponse", () => {
   it("delivers to the live engine, publishes the resolved event, and returns eventId", async () => {
     const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
+    const engine = {
+      ...makeBaseEngine(),
+      deliverInputResponse,
+    } as EnginePort & SupportsInputResponse;
     const task = makeTask({
-      engine: {
-        ...makeBaseEngine(),
-        deliverInputResponse,
-      } as EnginePort & SupportsInputResponse,
+      runner: createInProcessTaskRunnerRuntime(engine),
     });
     const { resultBoundary, responseEventPublisher } = makeSubject();
 
     await expect(resultBoundary.deliverInputResponse({
       task,
-      engine: task.engine as NonNullable<Task["engine"]> & SupportsInputResponse,
+      engine,
       requestId: "ask-1",
       answers: { choice: "yes" },
     })).resolves.toEqual({
@@ -85,27 +88,29 @@ describe("TaskLiveDeliveryResult.deliverInputResponse", () => {
   });
 
   it("maps engine failure shapes without publishing response events", async () => {
-    const expiredTask = makeTask({
-      engine: {
+    const expiredEngine = {
         ...makeBaseEngine(),
         deliverInputResponse: vi.fn().mockResolvedValue({
           status: "expired",
           message: "request expired",
         }),
-      } as EnginePort & SupportsInputResponse,
+      } as EnginePort & SupportsInputResponse;
+    const unsupportedEngine = {
+        ...makeBaseEngine({ backendId: "codex" }),
+        deliverInputResponse: vi.fn().mockResolvedValue({ status: "not_supported" }),
+      } as EnginePort & SupportsInputResponse;
+    const expiredTask = makeTask({
+      runner: createInProcessTaskRunnerRuntime(expiredEngine),
     });
     const unsupportedTask = makeTask({
       profileId: "agent-codex",
-      engine: {
-        ...makeBaseEngine({ backendId: "codex" }),
-        deliverInputResponse: vi.fn().mockResolvedValue({ status: "not_supported" }),
-      } as EnginePort & SupportsInputResponse,
+      runner: createInProcessTaskRunnerRuntime(unsupportedEngine),
     });
     const { resultBoundary, responseEventPublisher } = makeSubject();
 
     await expect(resultBoundary.deliverInputResponse({
       task: expiredTask,
-      engine: expiredTask.engine as NonNullable<Task["engine"]> & SupportsInputResponse,
+      engine: expiredEngine,
       requestId: "ask-1",
       answers: { choice: "late" },
     })).resolves.toEqual({
@@ -116,7 +121,7 @@ describe("TaskLiveDeliveryResult.deliverInputResponse", () => {
 
     await expect(resultBoundary.deliverInputResponse({
       task: unsupportedTask,
-      engine: unsupportedTask.engine as NonNullable<Task["engine"]> & SupportsInputResponse,
+      engine: unsupportedEngine,
       requestId: "ask-2",
       answers: {},
     })).resolves.toEqual({
@@ -131,17 +136,18 @@ describe("TaskLiveDeliveryResult.deliverInputResponse", () => {
 describe("TaskLiveDeliveryResult.deliverToolApproval", () => {
   it("delivers to the live engine, publishes the resolved event, and returns eventId", async () => {
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
+    const engine = {
+      ...makeBaseEngine({ backendId: "openai-agents" }),
+      deliverToolApproval,
+    } as EnginePort & SupportsToolApproval;
     const task = makeTask({
-      engine: {
-        ...makeBaseEngine({ backendId: "openai-agents" }),
-        deliverToolApproval,
-      } as EnginePort & SupportsToolApproval,
+      runner: createInProcessTaskRunnerRuntime(engine),
     });
     const { resultBoundary, responseEventPublisher } = makeSubject();
 
     await expect(resultBoundary.deliverToolApproval({
       task,
-      engine: task.engine as NonNullable<Task["engine"]> & SupportsToolApproval,
+      engine,
       params: {
         agentSessionId: "sess-live-delivery",
         approvalId: "approval-1",
@@ -167,27 +173,29 @@ describe("TaskLiveDeliveryResult.deliverToolApproval", () => {
   });
 
   it("maps engine failure shapes without publishing response events", async () => {
-    const alreadyResolvedTask = makeTask({
-      engine: {
+    const alreadyResolvedEngine = {
         ...makeBaseEngine({ backendId: "openai-agents" }),
         deliverToolApproval: vi.fn().mockResolvedValue({
           status: "already_resolved",
           message: "already done",
         }),
-      } as EnginePort & SupportsToolApproval,
+      } as EnginePort & SupportsToolApproval;
+    const unsupportedEngine = {
+        ...makeBaseEngine({ backendId: "openai-agents" }),
+        deliverToolApproval: vi.fn().mockResolvedValue({ status: "not_supported" }),
+      } as EnginePort & SupportsToolApproval;
+    const alreadyResolvedTask = makeTask({
+      runner: createInProcessTaskRunnerRuntime(alreadyResolvedEngine),
     });
     const unsupportedTask = makeTask({
       profileId: "agent-openai",
-      engine: {
-        ...makeBaseEngine({ backendId: "openai-agents" }),
-        deliverToolApproval: vi.fn().mockResolvedValue({ status: "not_supported" }),
-      } as EnginePort & SupportsToolApproval,
+      runner: createInProcessTaskRunnerRuntime(unsupportedEngine),
     });
     const { resultBoundary, responseEventPublisher } = makeSubject();
 
     await expect(resultBoundary.deliverToolApproval({
       task: alreadyResolvedTask,
-      engine: alreadyResolvedTask.engine as NonNullable<Task["engine"]> & SupportsToolApproval,
+      engine: alreadyResolvedEngine,
       params: {
         agentSessionId: "sess-live-delivery",
         approvalId: "approval-1",
@@ -202,7 +210,7 @@ describe("TaskLiveDeliveryResult.deliverToolApproval", () => {
 
     await expect(resultBoundary.deliverToolApproval({
       task: unsupportedTask,
-      engine: unsupportedTask.engine as NonNullable<Task["engine"]> & SupportsToolApproval,
+      engine: unsupportedEngine,
       params: {
         agentSessionId: "sess-live-delivery",
         approvalId: "approval-2",
