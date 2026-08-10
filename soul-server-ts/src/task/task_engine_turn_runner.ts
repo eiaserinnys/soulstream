@@ -11,6 +11,7 @@ import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
 import {
   engineEventFrame,
+  runnerControlResponseFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 import {
@@ -107,12 +108,6 @@ export class TaskEngineTurnRunner {
       conversationId: task.agentsConversationId,
       sessionItems: task.agentsSessionItems,
       ...(queuedToolApproval ? { queuedToolApproval } : {}),
-      onRunStateSnapshot: (snapshot) =>
-        this.deps.snapshotPersistence.persistRunStateSnapshot(task, snapshot),
-      onSessionItemsSnapshot: (snapshot) =>
-        this.deps.snapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
-      // Do not pass the legacy polling hook. Running interventions use the engine
-      // live-steering capability; unsupported/idle-race cases remain queued.
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
       ...(effectiveDisallowedTools !== undefined
@@ -125,21 +120,30 @@ export class TaskEngineTurnRunner {
       ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
       ...(extraEnv !== undefined ? { extraEnv } : {}),
       ...(this.deps.scheduleToolHandler !== undefined
-        ? { onScheduleToolUse: this.deps.scheduleToolHandler }
+        ? { scheduleToolUseEnabled: true }
         : {}),
     };
     const frames = engine.executeFrames
       ? engine.executeFrames(executeParams)
       : legacyEngineEventFrames(engine.execute(executeParams));
 
-    return consumeRunnerFrames(frames, task, this.deps.snapshotPersistence);
+    return consumeRunnerFrames(frames, {
+      task,
+      engine,
+      snapshotPersistence: this.deps.snapshotPersistence,
+      scheduleToolHandler: this.deps.scheduleToolHandler,
+    });
   }
 }
 
 async function* consumeRunnerFrames(
   frames: AsyncIterable<RunnerEventFrame>,
-  task: Task,
-  snapshotPersistence: TaskAgentsSnapshotPersistencePort,
+  deps: {
+    task: Task;
+    engine: EnginePort;
+    snapshotPersistence: TaskAgentsSnapshotPersistencePort;
+    scheduleToolHandler?: ScheduleToolUseHandler;
+  },
 ): AsyncIterable<SSEEventPayload> {
   for await (const frame of frames) {
     if (frame.kind === "engine_event") {
@@ -147,14 +151,48 @@ async function* consumeRunnerFrames(
       continue;
     }
     if (frame.kind === "run_state_snapshot") {
-      await snapshotPersistence.persistRunStateSnapshot(task, frame.snapshot);
+      await deps.snapshotPersistence.persistRunStateSnapshot(deps.task, frame.snapshot);
       continue;
     }
     if (frame.kind === "session_items_snapshot") {
-      await snapshotPersistence.persistSessionItemsSnapshot(task, frame.snapshot);
+      await deps.snapshotPersistence.persistSessionItemsSnapshot(deps.task, frame.snapshot);
       continue;
     }
-    throw new Error(`Unhandled runner request frame: ${frame.request.kind}`);
+    if (frame.request.kind !== "schedule_tool_use") {
+      throw new Error(`Unhandled runner request frame: ${frame.request.kind}`);
+    }
+    if (!deps.scheduleToolHandler || !deps.engine.sendControlFrame) {
+      throw new Error("Runner emitted schedule request without a host control boundary");
+    }
+    let response: ReturnType<typeof runnerControlResponseFrame>;
+    try {
+      const result = await deps.scheduleToolHandler({
+        agentSessionId: frame.request.agentSessionId,
+        toolUseId: frame.request.toolUseId,
+        toolName: frame.request.toolName,
+        input: frame.request.input,
+        now: new Date(frame.request.now),
+      });
+      response = runnerControlResponseFrame(frame.correlationId, {
+        status: "ok",
+        data: {
+          message: result.message,
+          ...(result.data !== undefined ? { data: result.data } : {}),
+        },
+      });
+    } catch (error) {
+      response = runnerControlResponseFrame(frame.correlationId, {
+        status: "error",
+        error: {
+          code: "schedule_handler_error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+    const delivered = deps.engine.sendControlFrame(response);
+    if (!delivered) {
+      throw new Error(`Runner rejected control response: ${frame.correlationId}`);
+    }
   }
 }
 

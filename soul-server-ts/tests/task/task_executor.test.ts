@@ -11,6 +11,10 @@ import type {
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { UnknownModelPresetError } from "../../src/model_catalog.js";
+import {
+  engineEventFrame,
+  RUNNER_FRAME_PROTOCOL_VERSION,
+} from "../../src/runner/frame_protocol.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
@@ -753,26 +757,37 @@ describe("TaskExecutor.startExecution", () => {
     const engine: EnginePort = {
       backendId: "openai-agents",
       workspaceDir: "/tmp/agents",
-      async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames(params: EngineExecuteParams) {
         captured = params;
-        await params.onRunStateSnapshot?.({
-          backendId: "openai-agents",
-          serialized: "state-v2",
-          pendingApprovalId: "danger-call-1",
-          previousResponseId: "resp-2",
-          conversationId: "conv-2",
-          schemaVersion: "1.11",
-        });
-        await params.onSessionItemsSnapshot?.({
-          backendId: "openai-agents",
-          items: [{ role: "user", content: "hi" }],
-        });
         yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "run_state_snapshot" as const,
+          snapshot: {
+            backendId: "openai-agents" as const,
+            serialized: "state-v2",
+            pendingApprovalId: "danger-call-1",
+            previousResponseId: "resp-2",
+            conversationId: "conv-2",
+            schemaVersion: "1.11",
+          },
+        };
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "session_items_snapshot" as const,
+          snapshot: {
+            backendId: "openai-agents" as const,
+            items: [{ role: "user", content: "hi" }],
+          },
+        };
+        yield engineEventFrame({
           type: "complete",
           result: "resumed",
           attachments: [],
           timestamp: 4,
-        } as SSEEventPayload;
+        });
       },
       async interrupt() { return true; },
       async close() {},
