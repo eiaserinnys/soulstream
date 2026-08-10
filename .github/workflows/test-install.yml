@@ -43,10 +43,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v6
@@ -105,10 +105,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install repository dependencies
         shell: bash
@@ -167,10 +167,10 @@ jobs:
           python -m pip install --force-reinstall `
             git+https://github.com/eiaserinnys/Haniel.git@3d02d57eb4a78b2eca18acb69c9f099424537c6e
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install repository dependencies
         shell: pwsh

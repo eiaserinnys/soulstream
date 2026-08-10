@@ -4,9 +4,12 @@
   "private": true,
   "description": "Soulstream TypeScript execution worker for Claude, Codex, OpenAI Agents, MCP, and realtime services.",
   "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsup src/main.ts --format esm --target node20 --clean && npm run verify:bundle",
+    "build": "tsup src/main.ts --format esm --target node22 --clean && npm run verify:bundle",
     "dev": "tsx src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run",
@@ -40,7 +43,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
     "postgres": "^3.4.9",
     "tsup": "^8.3.0",

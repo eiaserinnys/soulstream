@@ -64,8 +64,8 @@ importers:
         specifier: 3.4.4
         version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
       '@types/node':
-        specifier: ^20.11.0
-        version: 20.19.41
+        specifier: ^22.0.0
+        version: 22.19.15
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
@@ -103,8 +103,8 @@ importers:
         version: link:../fractional-position
     devDependencies:
       '@types/node':
-        specifier: ^20.11.0
-        version: 20.19.41
+        specifier: ^22.0.0
+        version: 22.19.15
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -372,8 +372,8 @@ importers:
         version: 4.3.6
     devDependencies:
       '@types/node':
-        specifier: ^20.11.0
-        version: 20.19.41
+        specifier: ^22.0.0
+        version: 22.19.15
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.1
