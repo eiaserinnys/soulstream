@@ -90,7 +90,7 @@ export class TaskLifecycleRoute {
           shutdownAt,
         );
       }
-      const hadEngine = Boolean(task.engine);
+      const hadEngine = Boolean(task.runner);
       await this.deps.lifecycleTransition.interruptForShutdown(task);
       const drain = hadEngine
         ? this.deps.lifecycleTransition.getDrainPromise(task)

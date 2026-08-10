@@ -27,18 +27,18 @@ export class TaskLifecycleTransition {
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
     if (task.status !== "running") return false;
-    if (!task.engine) return false;
+    if (!task.runner) return false;
 
     task.status = "interrupted";
     recordTerminationHint(task, "killed", "cancelled");
-    return await task.engine.interrupt();
+    return await task.runner.dispatcher.interrupt();
   }
 
   async interruptAndDrain(task: Task): Promise<void> {
-    if (!task.engine) return;
+    if (!task.runner) return;
 
     try {
-      await task.engine.interrupt();
+      await task.runner.dispatcher.interrupt();
     } catch {
       // interrupt is idempotent; cleanup must continue.
     }
@@ -64,10 +64,10 @@ export class TaskLifecycleTransition {
   }
 
   async interruptForShutdown(task: Task): Promise<void> {
-    if (!task.engine) return;
+    if (!task.runner) return;
 
     try {
-      await task.engine.interrupt();
+      await task.runner.dispatcher.interrupt();
     } catch {
       // idempotent; shutdown drain collection must continue.
     }

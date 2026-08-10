@@ -52,8 +52,8 @@ export function resolveTurnLoopTransition(
 }
 
 function hasDetachedClaudeRuntime(task: Task): boolean {
-  const engine = task.engine as
-    | (Task["engine"] & Partial<SupportsDetachedClaudeRuntime>)
+  const engine = task.runner?.engine as
+    | (NonNullable<Task["runner"]>["engine"] & Partial<SupportsDetachedClaudeRuntime>)
     | undefined;
   return engine?.detachedClaudeRuntime === true;
 }

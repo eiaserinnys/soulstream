@@ -101,11 +101,11 @@ export class AutoResumeTransition {
   }
 
   private async closeStaleEngine(task: Task): Promise<void> {
-    if (!task.engine) return;
-    const engine = task.engine;
-    task.engine = undefined;
+    if (!task.runner) return;
+    const runner = task.runner;
+    task.runner = undefined;
     try {
-      await engine.close();
+      await runner.dispatcher.close();
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },

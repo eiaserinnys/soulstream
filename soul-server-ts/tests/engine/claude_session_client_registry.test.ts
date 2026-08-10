@@ -118,13 +118,13 @@ describe("ClaudeSessionClientRegistry", () => {
   });
 
   it("keeps background and AskUserQuestion controls reachable after foreground release", async () => {
-    const deliverInputResponse = vi.fn().mockReturnValue(true);
+    const sendControlFrame = vi.fn().mockReturnValue(true);
     const backgroundClaudeRuntimeTasks = vi.fn().mockResolvedValue({ status: "ok" });
     const stopClaudeRuntimeTask = vi.fn().mockResolvedValue({ status: "ok" });
     const registry = new ClaudeSessionClientRegistry(
       (): ClaudeClient => ({
         async *run() {},
-        deliverInputResponse,
+        sendControlFrame,
         backgroundClaudeRuntimeTasks,
         stopClaudeRuntimeTask,
         persistentRuntimeActivity: () => ({
@@ -154,20 +154,25 @@ describe("ClaudeSessionClientRegistry", () => {
       "bg-1",
     )).resolves.toEqual({ status: "ok" });
 
-    expect(deliverInputResponse).toHaveBeenCalledWith("ask-1", { answer: "yes" });
+    expect(sendControlFrame).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "control",
+      kind: "input_response",
+      correlationId: "ask-1",
+      answers: { answer: "yes" },
+    }));
     expect(backgroundClaudeRuntimeTasks).toHaveBeenCalledWith("tool-1");
     expect(stopClaudeRuntimeTask).toHaveBeenCalledWith("bg-1");
     await registry.shutdown();
   });
 
   it("owns bind-window controls as soon as the session slot is reserved", async () => {
-    const deliverInputResponse = vi.fn().mockReturnValue(true);
+    const sendControlFrame = vi.fn().mockReturnValue(true);
     const backgroundClaudeRuntimeTasks = vi.fn().mockResolvedValue({ status: "ok" });
     const stopClaudeRuntimeTask = vi.fn().mockResolvedValue({ status: "ok" });
     const registry = new ClaudeSessionClientRegistry(
       (): ClaudeClient => ({
         async *run() {},
-        deliverInputResponse,
+        sendControlFrame,
         backgroundClaudeRuntimeTasks,
         stopClaudeRuntimeTask,
       }),
@@ -190,7 +195,12 @@ describe("ClaudeSessionClientRegistry", () => {
     await expect(input).resolves.toEqual({ status: "delivered" });
     await expect(background).resolves.toEqual({ status: "ok" });
     await expect(stop).resolves.toEqual({ status: "ok" });
-    expect(deliverInputResponse).toHaveBeenCalledWith("ask-bind", { answer: "yes" });
+    expect(sendControlFrame).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "control",
+      kind: "input_response",
+      correlationId: "ask-bind",
+      answers: { answer: "yes" },
+    }));
     expect(backgroundClaudeRuntimeTasks).toHaveBeenCalledWith("tool-bind");
     expect(stopClaudeRuntimeTask).toHaveBeenCalledWith("task-bind");
     await registry.shutdown();

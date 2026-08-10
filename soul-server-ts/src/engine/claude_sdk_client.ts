@@ -8,6 +8,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
+import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
@@ -292,8 +293,9 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
   }
 
-  deliverInputResponse(requestId: string, answers: Record<string, unknown>): boolean {
-    return this.toolPermissionController.deliverInputResponse(requestId, answers);
+  sendControlFrame(frame: RunnerControlFrame): boolean {
+    if (frame.kind !== "input_response") return false;
+    return this.toolPermissionController.deliverInputResponse(frame.correlationId, frame.answers);
   }
 
   persistentRuntimeActivity(): ClaudePersistentRuntimeActivity | null {

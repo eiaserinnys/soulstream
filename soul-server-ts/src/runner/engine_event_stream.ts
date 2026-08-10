@@ -30,6 +30,14 @@ export async function* sseEventsFromRunnerFrames(
       continue;
     }
     if (frame.kind === "request") {
+      if (
+        frame.request.kind === "can_use_tool" ||
+        frame.request.kind === "tool_approval"
+      ) {
+        // Compatibility callers deliver these controls asynchronously through
+        // SupportsInputResponse/SupportsToolApproval. They have no SSE payload.
+        continue;
+      }
       throw new Error(
         "Runner request frames require executeFrames() and a control response consumer",
       );

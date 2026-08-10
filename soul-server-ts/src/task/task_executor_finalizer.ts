@@ -20,15 +20,16 @@ export class TaskExecutorFinalizer {
   }
 
   private async closeEngine(task: Task): Promise<void> {
+    const runner = task.runner;
     try {
-      await task.engine?.close();
+      await runner?.dispatcher.close();
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "engine.close failed",
       );
     }
-    task.engine = undefined;
+    task.runner = undefined;
   }
 
   private async notifyCompletion(task: Task): Promise<void> {

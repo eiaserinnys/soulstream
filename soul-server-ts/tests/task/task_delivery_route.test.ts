@@ -5,6 +5,8 @@ import type {
   SupportsInputResponse,
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { TaskDeliveryRoute } from "../../src/task/task_delivery_route.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -82,10 +84,10 @@ describe("TaskDeliveryRoute.deliverInputResponse", () => {
   it("delivers to live engine and returns the public event id shape", async () => {
     const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         ...makeBaseEngine(),
         deliverInputResponse,
-      } as EnginePort & SupportsInputResponse,
+      } as EnginePort & SupportsInputResponse),
     });
     const { route, responseEventPublisher } = makeSubject([task]);
 
@@ -109,17 +111,19 @@ describe("TaskDeliveryRoute.deliverInputResponse", () => {
     const unsupportedTask = makeTask({
       agentSessionId: "sess-unsupported",
       profileId: "agent-codex",
-      engine: makeBaseEngine({ backendId: "codex" }),
+      runner: createInProcessTaskRunnerRuntime(
+        makeBaseEngine({ backendId: "codex" }),
+      ),
     });
     const failingEngineTask = makeTask({
       agentSessionId: "sess-expired",
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         ...makeBaseEngine(),
         deliverInputResponse: vi.fn().mockResolvedValue({
           status: "expired",
           message: "request expired",
         }),
-      } as EnginePort & SupportsInputResponse,
+      } as EnginePort & SupportsInputResponse),
     });
     const { route, responseEventPublisher } = makeSubject([
       completedTask,
@@ -166,7 +170,7 @@ describe("TaskDeliveryRoute.deliverInputResponse", () => {
   });
 
   it("delivers a pending response through the session registry after foreground completion", async () => {
-    const completedTask = makeTask({ status: "completed", engine: undefined });
+    const completedTask = makeTask({ status: "completed", runner: undefined });
     const sessionRuntimeControl = {
       has: vi.fn().mockReturnValue(true),
       deliverInputResponse: vi.fn().mockResolvedValue({ status: "delivered" as const }),
@@ -198,10 +202,10 @@ describe("TaskDeliveryRoute.deliverInputResponse", () => {
   it("routes a bind-window response through the reserved registry, not the turn engine", async () => {
     const engineDelivery = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         ...makeBaseEngine(),
         deliverInputResponse: engineDelivery,
-      } as EnginePort & SupportsInputResponse,
+      } as EnginePort & SupportsInputResponse),
     });
     const sessionRuntimeControl = {
       has: vi.fn().mockReturnValue(true),
@@ -227,10 +231,10 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
   it("delivers to live approval-capable engine and returns the public event id shape", async () => {
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeTask({
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         ...makeBaseEngine({ backendId: "openai-agents" }),
         deliverToolApproval,
-      } as EnginePort & SupportsToolApproval,
+      } as EnginePort & SupportsToolApproval),
     });
     const { route, toolApprovalRecovery, responseEventPublisher } = makeSubject([task]);
 
@@ -259,7 +263,9 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
   it("uses recovery fallback for approval-capability miss before returning not_supported", async () => {
     const task = makeTask({
       profileId: "agent-openai",
-      engine: makeBaseEngine({ backendId: "openai-agents" }),
+      runner: createInProcessTaskRunnerRuntime(
+        makeBaseEngine({ backendId: "openai-agents" }),
+      ),
     });
     const { route, toolApprovalRecovery, responseEventPublisher } = makeSubject([task]);
     const onResume = vi.fn();
@@ -302,13 +308,13 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
     const completedTask = makeTask({ status: "completed" });
     const failingTask = makeTask({
       agentSessionId: "sess-failure",
-      engine: {
+      runner: createInProcessTaskRunnerRuntime({
         ...makeBaseEngine({ backendId: "openai-agents" }),
         deliverToolApproval: vi.fn().mockResolvedValue({
           status: "already_resolved",
           message: "already done",
         }),
-      } as EnginePort & SupportsToolApproval,
+      } as EnginePort & SupportsToolApproval),
     });
     const { route, responseEventPublisher } = makeSubject([completedTask, failingTask]);
 

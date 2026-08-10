@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { Logger } from "pino";
 import type {
   SessionStore,
@@ -14,6 +12,7 @@ import {
 } from "../runner/in_process_frame_channel.js";
 import {
   engineEventFrame,
+  inputResponseControlFrame,
   runnerRequestFrame,
   type RunnerControlFrame,
   type RunnerEventFrame,
@@ -30,7 +29,6 @@ import type {
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
   LiveTurnSteerResult,
-  ScheduleToolUseHandler,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
@@ -81,7 +79,9 @@ export interface ClaudeRunOptions {
   /** Claude Agent SDK permissionMode. undefined면 legacy bypassPermissions. */
   claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
-  onScheduleToolUse?: ScheduleToolUseHandler;
+  runnerRequest?: (
+    frame: Extract<RunnerEventFrame, { kind: "request" }>,
+  ) => Promise<RunnerControlFrame>;
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
@@ -94,9 +94,8 @@ export interface ClaudeClient {
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent>;
   compact?(sessionId: string): Promise<void>;
-  deliverInputResponse?(
-    requestId: string,
-    answers: Record<string, unknown>,
+  sendControlFrame?(
+    frame: RunnerControlFrame,
   ): Promise<boolean> | boolean;
   backgroundClaudeRuntimeTasks?(
     toolUseId?: string,
@@ -183,11 +182,11 @@ export class ClaudeEngineAdapter
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     const channel = new InProcessRunnerFrameChannel();
-    channel.start(() => this.executeToFrames(params, channel));
+    channel.start(() => this.executeToFrameChannel(params, channel));
     return channel;
   }
 
-  private async executeToFrames(
+  async executeToFrameChannel(
     params: EngineExecuteParams,
     channel: InProcessRunnerFrameChannel,
   ): Promise<void> {
@@ -231,6 +230,15 @@ export class ClaudeEngineAdapter
             claudeEngineEventMetadata(payload),
           ));
         }
+        if (clientEvent.type === "input_request") {
+          await channel.emit(runnerRequestFrame(clientEvent.requestId, {
+            kind: "can_use_tool",
+            ...(params.agentSessionId ? { agentSessionId: params.agentSessionId } : {}),
+            ...(clientEvent.toolUseId ? { toolUseId: clientEvent.toolUseId } : {}),
+            toolName: "AskUserQuestion",
+            input: { questions: clientEvent.questions },
+          }));
+        }
 
         if (clientEvent.type === "error" && clientEvent.fatal !== false) {
           throw new ClaudeClientFatalEventError(clientEvent.message);
@@ -258,8 +266,12 @@ export class ClaudeEngineAdapter
     }
   }
 
-  sendControlFrame(frame: RunnerControlFrame): boolean {
-    return this.activeFrameChannel?.sendControl(frame) ?? false;
+  async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {
+    if (frame.kind === "response") {
+      return this.activeFrameChannel?.sendControl(frame) ?? false;
+    }
+    const client = this.activeClient ?? this.client;
+    return await client.sendControlFrame?.(frame) ?? false;
   }
 
   async interrupt(): Promise<boolean> {
@@ -354,14 +366,14 @@ export class ClaudeEngineAdapter
       return { status: "already_responded" };
     }
     const client = this.activeClient ?? this.client;
-    if (!client.deliverInputResponse) {
+    if (!client.sendControlFrame) {
       return {
         status: "not_supported",
         message: "Claude client does not support input responses",
       };
     }
 
-    const delivered = await client.deliverInputResponse(requestId, answers);
+    const delivered = await this.sendControlFrame(inputResponseControlFrame(requestId, answers));
     if (!delivered) {
       return { status: "request_not_pending" };
     }
@@ -422,44 +434,16 @@ export class ClaudeEngineAdapter
       env,
       ...(params.scheduleToolUseEnabled && params.agentSessionId
         ? {
-            onScheduleToolUse: (request: Parameters<ScheduleToolUseHandler>[0]) =>
-              this.requestScheduleToolUse(channel, request, signal),
+            runnerRequest: (frame: Extract<RunnerEventFrame, { kind: "request" }>) =>
+              channel.request(frame, {
+                signal,
+                timeoutMs: frame.timeoutMs ?? DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
+              }),
           }
         : {}),
       ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
       ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
-    };
-  }
-
-  private async requestScheduleToolUse(
-    channel: InProcessRunnerFrameChannel,
-    request: Parameters<ScheduleToolUseHandler>[0],
-    signal: AbortSignal,
-  ): Promise<Awaited<ReturnType<ScheduleToolUseHandler>>> {
-    const correlationId = randomUUID();
-    const timeoutMs = DEFAULT_RUNNER_REQUEST_TIMEOUT_MS;
-    const control = await channel.request(runnerRequestFrame(correlationId, {
-        kind: "schedule_tool_use",
-        agentSessionId: request.agentSessionId,
-        toolUseId: request.toolUseId,
-        toolName: request.toolName,
-        input: request.input,
-        now: request.now.toISOString(),
-    }, { timeoutMs }), { signal, timeoutMs });
-    if (control.kind !== "response") {
-      throw new Error(`Unexpected schedule control frame: ${control.kind}`);
-    }
-    if (control.result.status === "error") {
-      throw new Error(control.result.error.message);
-    }
-    const data = control.result.data;
-    if (!isRecord(data) || typeof data.message !== "string") {
-      throw new Error(`Invalid schedule control response: ${correlationId}`);
-    }
-    return {
-      message: data.message,
-      ...(data.data !== undefined ? { data: data.data } : {}),
     };
   }
 
@@ -513,8 +497,4 @@ function claudeEngineEventMetadata(payload: SSEEventPayload): Record<string, unk
     ...(provenance ? { claudeBackgroundProvenance: provenance } : {}),
     ...(delivery ? { claudeBackgroundDelivery: delivery } : {}),
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

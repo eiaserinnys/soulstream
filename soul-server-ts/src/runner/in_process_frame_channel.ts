@@ -143,6 +143,7 @@ export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFra
 
   sendControl(frame: RunnerControlFrame): boolean {
     const parsed = RunnerControlFrameSchema.parse(frame);
+    if (parsed.kind === "command_result") return false;
     const pending = this.pendingControls.get(parsed.correlationId);
     if (!pending) return false;
     this.pendingControls.delete(parsed.correlationId);

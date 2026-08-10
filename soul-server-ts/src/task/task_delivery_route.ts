@@ -126,8 +126,8 @@ export class TaskDeliveryRoute {
               answers,
             ),
           }
-      : supportsInputResponse(task.engine)
-        ? task.engine
+      : supportsInputResponse(task.runner?.engine)
+        ? task.runner.engine
         : undefined;
     if (!supportsInputResponse(engine)) {
       return {
@@ -168,7 +168,7 @@ export class TaskDeliveryRoute {
       };
     }
 
-    const engine = task.engine;
+    const engine = task.runner?.engine;
     if (!supportsToolApproval(engine)) {
       const queued = await this.deps.toolApprovalRecovery.tryQueueAgentsResume(
         task,
@@ -203,8 +203,8 @@ function supportsInputResponse(
 }
 
 function supportsToolApproval(
-  engine: Task["engine"],
-): engine is NonNullable<Task["engine"]> & SupportsToolApproval {
+  engine: NonNullable<Task["runner"]>["engine"] | undefined,
+): engine is NonNullable<Task["runner"]>["engine"] & SupportsToolApproval {
   return Boolean(
     engine &&
       typeof (engine as unknown as Partial<SupportsToolApproval>).deliverToolApproval ===

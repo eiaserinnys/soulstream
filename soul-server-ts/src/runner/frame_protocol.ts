@@ -138,6 +138,13 @@ export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("k
   z.object({
     protocolVersion,
     channel: z.literal("command"),
+    kind: z.literal("prepare_session"),
+    commandId: correlationId,
+    agentSessionId: z.string().min(1),
+  }).passthrough(),
+  z.object({
+    protocolVersion,
+    channel: z.literal("command"),
     kind: z.literal("execute"),
     commandId: correlationId,
     params: RunnerExecuteParamsSchema,
@@ -260,6 +267,13 @@ export const RunnerControlFrameSchema = withJsonContract(z.discriminatedUnion("k
   z.object({
     protocolVersion,
     channel: z.literal("control"),
+    kind: z.literal("command_result"),
+    commandId: correlationId,
+    result: RunnerControlResultSchema,
+  }).passthrough(),
+  z.object({
+    protocolVersion,
+    channel: z.literal("control"),
     kind: z.literal("response"),
     correlationId,
     result: RunnerControlResultSchema,
@@ -295,7 +309,13 @@ export type RunnerExecuteParams = z.infer<typeof RunnerExecuteParamsSchema>;
 export type RunnerCommandFrame = z.infer<typeof RunnerCommandFrameSchema>;
 export type RunnerEventFrame = z.infer<typeof RunnerEventFrameSchema>;
 export type RunnerControlFrame = z.infer<typeof RunnerControlFrameSchema>;
+export type RunnerCommandResultFrame = Extract<RunnerControlFrame, { kind: "command_result" }>;
 export type RunnerFrame = z.infer<typeof RunnerFrameSchema>;
+
+export function parseRunnerCommandJsonRoundTrip(value: unknown): RunnerCommandFrame {
+  const parsed = RunnerCommandFrameSchema.parse(value);
+  return RunnerCommandFrameSchema.parse(JSON.parse(JSON.stringify(parsed)));
+}
 
 export function engineEventFrame(payload: unknown, metadata?: unknown): RunnerEventFrame {
   return RunnerEventFrameSchema.parse({
@@ -355,4 +375,93 @@ export function runnerControlResponseFrame(
     correlationId,
     result,
   }) as Extract<RunnerControlFrame, { kind: "response" }>;
+}
+
+export function prepareSessionCommandFrame(
+  commandId: string,
+  agentSessionId: string,
+): Extract<RunnerCommandFrame, { kind: "prepare_session" }> {
+  return RunnerCommandFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "prepare_session",
+    commandId,
+    agentSessionId,
+  }) as Extract<RunnerCommandFrame, { kind: "prepare_session" }>;
+}
+
+export function executeCommandFrame(
+  commandId: string,
+  params: unknown,
+): Extract<RunnerCommandFrame, { kind: "execute" }> {
+  return RunnerCommandFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "execute",
+    commandId,
+    params,
+  }) as Extract<RunnerCommandFrame, { kind: "execute" }>;
+}
+
+export function interruptCommandFrame(
+  commandId: string,
+): Extract<RunnerCommandFrame, { kind: "interrupt" }> {
+  return RunnerCommandFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "interrupt",
+    commandId,
+  }) as Extract<RunnerCommandFrame, { kind: "interrupt" }>;
+}
+
+export function closeCommandFrame(
+  commandId: string,
+): Extract<RunnerCommandFrame, { kind: "close" }> {
+  return RunnerCommandFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "close",
+    commandId,
+  }) as Extract<RunnerCommandFrame, { kind: "close" }>;
+}
+
+export function runnerCommandResultFrame(
+  commandId: string,
+  result: unknown,
+): RunnerCommandResultFrame {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "command_result",
+    commandId,
+    result,
+  }) as RunnerCommandResultFrame;
+}
+
+export function inputResponseControlFrame(
+  correlationId: string,
+  answers: unknown,
+): Extract<RunnerControlFrame, { kind: "input_response" }> {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "input_response",
+    correlationId,
+    answers,
+  }) as Extract<RunnerControlFrame, { kind: "input_response" }>;
+}
+
+export function toolApprovalControlFrame(
+  correlationId: string,
+  decision: "approved" | "rejected",
+  options?: unknown,
+): Extract<RunnerControlFrame, { kind: "tool_approval_response" }> {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "tool_approval_response",
+    correlationId,
+    decision,
+    ...(options !== undefined ? { options } : {}),
+  }) as Extract<RunnerControlFrame, { kind: "tool_approval_response" }>;
 }

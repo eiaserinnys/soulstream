@@ -127,6 +127,29 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("sends a prepare_session command frame before starting the event stream", async () => {
+    const mocks = makeMocks();
+    const prepareSessionRuntime = vi.fn();
+    const engine: EnginePort = {
+      ...makeFakeEngine([{ type: "complete", timestamp: 1 }]),
+      backendId: "claude",
+      prepareSessionRuntime,
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, claudeAgent);
+
+    await task.executionPromise;
+    expect(prepareSessionRuntime).toHaveBeenCalledWith(task.agentSessionId);
+  });
+
   it("keeps the legacy factory call exact when no preset is selected", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => makeFakeEngine([
@@ -462,7 +485,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.lastEventId).toBe(4);
     expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(task.engine).toBeUndefined();
+    expect(task.runner).toBeUndefined();
 
     expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-1",
@@ -729,7 +752,7 @@ describe("TaskExecutor.startExecution", () => {
     await waitFor(() => mocks.persistEvent.mock.calls.some(
       (c) => (c[1] as { type: string }).type === "tool_approval_requested",
     ));
-    const approvalResult = await (task.engine as EnginePort & SupportsToolApproval)
+    const approvalResult = await (task.runner?.engine as EnginePort & SupportsToolApproval)
       .deliverToolApproval("danger-call-1", "rejected", { message: "no prod write" });
     await task.executionPromise;
 
@@ -1070,7 +1093,7 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toBe("Claude runtime drain timed out after 30ms; closing query.");
-    expect(task.engine).toBeUndefined();
+    expect(task.runner).toBeUndefined();
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.claudeRuntime).toMatchObject({
       sessionState: "idle",
@@ -1131,7 +1154,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("completed");
     expect(task.error).toBeUndefined();
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(task.engine).toBeUndefined();
+    expect(task.runner).toBeUndefined();
     expect(task.claudeRuntime).toMatchObject({
       sessionState: "idle",
       tasks: {
@@ -1197,7 +1220,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("error");
     expect(task.error).toContain("Claude runtime session remained active after the engine turn ended");
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(task.engine).toBeUndefined();
+    expect(task.runner).toBeUndefined();
     expect(task.claudeRuntime).toMatchObject({
       sessionState: "idle",
       tasks: {
@@ -1380,7 +1403,7 @@ describe("TaskExecutor.startExecution", () => {
     const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
     executor.startExecution(task, agent);
-    expect(() => executor.startExecution(task, agent)).toThrow(/already has an engine/);
+    expect(() => executor.startExecution(task, agent)).toThrow(/already has a runner/);
   });
 
   it("interrupt 경로: cancelTask가 status='interrupted' 박은 뒤 정상 drain → completed로 안 덮임 (code-reviewer P1)", async () => {
@@ -1426,8 +1449,8 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     // startExecution 자체는 engine 설정 단계에서 throw 발생 — *동기 throw*는 호출자에게 직접 전파
     expect(() => executor.startExecution(task, agent)).toThrow(/factory boom/);
-    // task.engine은 설정 안 됨
-    expect(task.engine).toBeUndefined();
+    // task.runner는 설정 안 됨
+    expect(task.runner).toBeUndefined();
   });
 
   it("outer execution failure finalizes and notifies skipped queued interventions", async () => {

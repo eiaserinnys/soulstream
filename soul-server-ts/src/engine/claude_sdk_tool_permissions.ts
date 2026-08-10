@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 
+import { runnerRequestFrame } from "../runner/frame_protocol.js";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import { SOULSTREAM_SCHEDULE_TOOLS } from "./claude_sdk_constants.js";
@@ -92,7 +93,7 @@ export class ClaudeSdkToolPermissionController {
         }
 
         if (SOULSTREAM_SCHEDULE_TOOLS.has(toolName)) {
-          if (!options.onScheduleToolUse || !options.agentSessionId) {
+          if (!options.runnerRequest || !options.agentSessionId) {
             return {
               behavior: "deny",
               message: "Soulstream durable scheduler is not configured for this turn.",
@@ -100,13 +101,30 @@ export class ClaudeSdkToolPermissionController {
             };
           }
           try {
-            const result = await options.onScheduleToolUse({
+            const correlationId = randomUUID();
+            const control = await options.runnerRequest(runnerRequestFrame(correlationId, {
+              kind: "schedule_tool_use",
               agentSessionId: options.agentSessionId,
               toolUseId: context.toolUseID,
               toolName,
               input: asRecord(input) ?? {},
-              now: new Date(),
-            });
+              now: new Date().toISOString(),
+            }));
+            if (control.kind !== "response") {
+              throw new Error(`Unexpected schedule control frame: ${control.kind}`);
+            }
+            if (control.correlationId !== correlationId) {
+              throw new Error(
+                `Mismatched schedule control correlation: ${control.correlationId}`,
+              );
+            }
+            if (control.result.status === "error") {
+              throw new Error(control.result.error.message);
+            }
+            const result = asRecord(control.result.data);
+            if (!result || typeof result.message !== "string") {
+              throw new Error(`Invalid schedule control response: ${correlationId}`);
+            }
             this.eventMapper.markInterceptedScheduleToolUse(context.toolUseID);
             return {
               behavior: "deny",

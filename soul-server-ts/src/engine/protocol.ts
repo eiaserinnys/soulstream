@@ -18,6 +18,7 @@ import type {
   RunnerControlFrame,
   RunnerEventFrame,
 } from "../runner/frame_protocol.js";
+import type { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 
 /**
  * SSE wire에 발행되는 단위. wire-schema `SessionEventEnvelope.event` 필드의 union
@@ -162,8 +163,22 @@ export interface EnginePort {
    */
   executeFrames?(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
 
+  /**
+   * Runner-side execution entry used by the in-process command dispatcher.
+   * Runtime adapters implement this so the dispatcher, rather than the
+   * adapter, owns the frame channel. `executeFrames()` remains a compatibility
+   * surface for focused adapter tests until the process transport lands.
+   */
+  executeToFrameChannel?(
+    params: EngineExecuteParams,
+    channel: InProcessRunnerFrameChannel,
+  ): Promise<void>;
+
+  /** Runner-side prepare_session command handler. */
+  prepareSessionRuntime?(agentSessionId: string): Promise<void> | void;
+
   /** Deliver one correlated response/control frame to the active runner turn. */
-  sendControlFrame?(frame: RunnerControlFrame): boolean;
+  sendControlFrame?(frame: RunnerControlFrame): Promise<boolean> | boolean;
 
   /**
    * 실행 중 turn 중단. 성공 시 true.

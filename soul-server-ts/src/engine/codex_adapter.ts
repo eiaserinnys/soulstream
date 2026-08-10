@@ -25,6 +25,7 @@ import {
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
+import type { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
@@ -128,6 +129,13 @@ export class CodexEngineAdapter implements EnginePort {
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
   }
 
+  async executeToFrameChannel(
+    params: EngineExecuteParams,
+    channel: InProcessRunnerFrameChannel,
+  ): Promise<void> {
+    for await (const frame of this.executeFrames(params)) await channel.emit(frame);
+  }
+
   async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     if (this.closed) {
       throw new Error("CodexEngineAdapter.execute called after close()");
@@ -223,8 +231,8 @@ export class CodexEngineAdapter implements EnginePort {
       this.logger.debug({ workspaceDir: this.workspaceDir }, "Started new Codex thread");
     }
 
-    // 새 thread면 첫 yield는 thread.started → session SSE.
-    // 기존 thread resume이면 thread.id가 이미 있음 — onSession 콜백 호출.
+    // 새 thread면 첫 frame은 thread.started → session SSE.
+    // 기존 thread resume이면 thread.id를 session engine_event frame으로 먼저 발행한다.
     let streamedTurn;
     try {
       streamedTurn = await thread.runStreamed(buildCodexInput(params), {

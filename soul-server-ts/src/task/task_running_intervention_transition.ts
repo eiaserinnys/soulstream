@@ -106,7 +106,7 @@ export class RunningInterventionTransition {
     task: Task,
     message: InterventionMessage,
   ): Promise<RunningInterventionResult | null> {
-    const engine = task.engine;
+    const engine = task.runner?.engine;
     if (!isSteerInterruptEngine(engine)) {
       return null;
     }
@@ -161,7 +161,7 @@ export class RunningInterventionTransition {
     task: Task,
     message: InterventionMessage,
   ): Promise<LiveTurnSteerResult> {
-    const engine = task.engine;
+    const engine = task.runner?.engine;
     if (!isLiveTurnSteeringEngine(engine)) {
       return { status: "not_supported" };
     }
@@ -187,16 +187,16 @@ function isTransientSteerBoundary(status: LiveTurnSteerStatus): boolean {
 }
 
 function isLiveTurnSteeringEngine(
-  engine: Task["engine"],
-): engine is Task["engine"] & SupportsLiveTurnSteering {
+  engine: NonNullable<Task["runner"]>["engine"] | undefined,
+): engine is NonNullable<Task["runner"]>["engine"] & SupportsLiveTurnSteering {
   return Boolean(
     engine && typeof (engine as Partial<SupportsLiveTurnSteering>).steerActiveTurn === "function",
   );
 }
 
 function isSteerInterruptEngine(
-  engine: Task["engine"],
-): engine is Task["engine"] &
+  engine: NonNullable<Task["runner"]>["engine"] | undefined,
+): engine is NonNullable<Task["runner"]>["engine"] &
   SupportsLiveTurnSteering &
   Required<Pick<SupportsLiveTurnSteering, "interruptForSteer">> {
   return Boolean(

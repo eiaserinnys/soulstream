@@ -19,6 +19,8 @@ import {
   DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
   InProcessRunnerFrameChannel,
 } from "../../src/runner/in_process_frame_channel.js";
+import { createInProcessTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -122,7 +124,7 @@ describe("TaskEngineTurnRunner", () => {
     await drain(runner.executeTurn({
       task,
       agent,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: {
         prompt: "turn prompt",
         imageAttachmentPaths: ["/tmp/a.png"],
@@ -185,7 +187,7 @@ describe("TaskEngineTurnRunner", () => {
     const events = await drain(runner.executeTurn({
       task,
       agent: { ...agent, backend: "openai-agents" },
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
@@ -220,12 +222,66 @@ describe("TaskEngineTurnRunner", () => {
     const [event] = await drain(runner.executeTurn({
       task,
       agent,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
     expect(event).toBeDefined();
     expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
+  });
+
+  it("accepts externally resolved canUseTool and approval request frames without changing SSE", async () => {
+    const task = makeTask();
+    const sendControlFrame = vi.fn();
+    const engine: EnginePort = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "ask-1",
+          request: {
+            kind: "can_use_tool" as const,
+            agentSessionId: task.agentSessionId,
+            toolUseId: "tool-use-ask",
+            toolName: "AskUserQuestion",
+            input: { questions: [] },
+          },
+        };
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "approval-1",
+          request: {
+            kind: "tool_approval" as const,
+            approvalId: "approval-1",
+            toolName: "drop_rows",
+            input: { table: "events" },
+          },
+        };
+        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
+      },
+      sendControlFrame,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({
+      snapshotPersistence: {
+        persistRunStateSnapshot: vi.fn(),
+        persistSessionItemsSnapshot: vi.fn(),
+      },
+    });
+
+    const events = await drain(
+      runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }),
+    );
+
+    expect(events).toEqual([{ type: "complete", result: "done", timestamp: 1 }]);
+    expect(sendControlFrame).not.toHaveBeenCalled();
   });
 
   it("answers schedule request frames through the correlated control boundary", async () => {
@@ -270,7 +326,7 @@ describe("TaskEngineTurnRunner", () => {
     };
     const runner = new TaskEngineTurnRunner({ snapshotPersistence, scheduleToolHandler });
 
-    await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+    await drain(runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }));
 
     expect(scheduleToolHandler).toHaveBeenCalledWith(expect.objectContaining({
       agentSessionId: task.agentSessionId,
@@ -346,7 +402,7 @@ describe("TaskEngineTurnRunner", () => {
       scheduleToolHandler,
     });
 
-    const execution = drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+    const execution = drain(runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }));
     await handlerStarted;
 
     expect(hostSignal).toBe(channel.requestContext("schedule-interrupt")?.signal);
@@ -396,7 +452,7 @@ describe("TaskEngineTurnRunner", () => {
       scheduleToolHandler,
     });
 
-    await drain(runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }));
+    await drain(runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }));
 
     expect(controlFrame).toMatchObject({
       kind: "response",
@@ -419,7 +475,7 @@ describe("TaskEngineTurnRunner", () => {
     await drain(runner.executeTurn({
       task,
       agent,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt", imageAttachmentPaths: [] },
     }));
 
@@ -442,7 +498,7 @@ describe("TaskEngineTurnRunner", () => {
     await drain(runner.executeTurn({
       task,
       agent: { ...agent, model: "gpt-5.3-codex-spark" },
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt", imageAttachmentPaths: [] },
     }));
 
@@ -460,7 +516,7 @@ describe("TaskEngineTurnRunner", () => {
     await drain(runner.executeTurn({
       task,
       agent: { ...agent, model: "gpt-5.3-codex-spark" },
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt", imageAttachmentPaths: [] },
     }));
 
@@ -492,7 +548,7 @@ describe("TaskEngineTurnRunner", () => {
           ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
         },
       } as AgentProfile,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
@@ -517,7 +573,7 @@ describe("TaskEngineTurnRunner", () => {
           ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
         },
       } as AgentProfile,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
@@ -553,7 +609,7 @@ describe("TaskEngineTurnRunner", () => {
           ANTHROPIC_BASE_URL: "https://legacy.example/anthropic",
         },
       } as AgentProfile,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
@@ -585,7 +641,7 @@ describe("TaskEngineTurnRunner", () => {
           ANTHROPIC_BASE_URL: "https://legacy.example/anthropic",
         },
       } as AgentProfile,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
@@ -615,7 +671,7 @@ describe("TaskEngineTurnRunner", () => {
           ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
         },
       } as AgentProfile,
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "resume prompt" },
     }));
 
@@ -641,7 +697,7 @@ describe("TaskEngineTurnRunner", () => {
             ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
           },
         } as AgentProfile,
-        engine,
+        runner: createInProcessTaskRunnerRuntime(engine),
         input: { prompt: "turn prompt" },
       }),
     ).toThrow(
@@ -664,7 +720,7 @@ describe("TaskEngineTurnRunner", () => {
       runner.executeTurn({
         task,
         agent,
-        engine,
+        runner: createInProcessTaskRunnerRuntime(engine),
         input: { prompt: "turn prompt" },
       }),
     ).toThrow(
@@ -686,7 +742,7 @@ describe("TaskEngineTurnRunner", () => {
             ANTHROPIC_API_KEY: "kimi-secret",
           },
         } as AgentProfile,
-        engine,
+        runner: createInProcessTaskRunnerRuntime(engine),
         input: { prompt: "turn prompt" },
       }),
     ).toThrow(/ANTHROPIC_API_KEY.*ANTHROPIC_BASE_URL/);
@@ -706,7 +762,7 @@ describe("TaskEngineTurnRunner", () => {
             ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
           },
         } as AgentProfile,
-        engine,
+        runner: createInProcessTaskRunnerRuntime(engine),
         input: { prompt: "turn prompt" },
       }),
     ).toThrow(/ANTHROPIC_API_KEY.*ANTHROPIC_BASE_URL/);
@@ -728,7 +784,7 @@ describe("TaskEngineTurnRunner", () => {
             [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token",
           },
         } as AgentProfile,
-        engine,
+        runner: createInProcessTaskRunnerRuntime(engine),
         input: { prompt: "turn prompt" },
       }),
     ).toThrow(/CLAUDE_CODE_OAUTH_TOKEN/);
@@ -759,7 +815,7 @@ describe("TaskEngineTurnRunner", () => {
     const iterable = runner.executeTurn({
       task,
       agent: { ...agent, backend: "openai-agents" },
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "resume", imageAttachmentPaths: [] },
     });
 
@@ -768,18 +824,19 @@ describe("TaskEngineTurnRunner", () => {
     expect(iterable).toBeDefined();
 
     let secondCaptured: EngineExecuteParams | undefined;
+    const secondEngine: EnginePort = {
+      ...engine,
+      execute(params): AsyncIterable<SSEEventPayload> {
+        secondCaptured = params;
+        return (async function* () {
+          yield { type: "complete", result: "done again", timestamp: 2 } as SSEEventPayload;
+        })();
+      },
+    };
     runner.executeTurn({
       task,
       agent: { ...agent, backend: "openai-agents" },
-      engine: {
-        ...engine,
-        execute(params): AsyncIterable<SSEEventPayload> {
-          secondCaptured = params;
-          return (async function* () {
-            yield { type: "complete", result: "done again", timestamp: 2 } as SSEEventPayload;
-          })();
-        },
-      },
+      runner: createInProcessTaskRunnerRuntime(secondEngine),
       input: { prompt: "resume again", imageAttachmentPaths: [] },
     });
 
@@ -821,7 +878,7 @@ describe("TaskEngineTurnRunner", () => {
     await drain(runner.executeTurn({
       task,
       agent: { ...agent, backend: "openai-agents" },
-      engine,
+      runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "resume", imageAttachmentPaths: [] },
     }));
 
