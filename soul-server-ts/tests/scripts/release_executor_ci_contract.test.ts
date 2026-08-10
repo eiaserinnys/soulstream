@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,10 @@ import { parse } from "yaml";
 
 const workflowPath = fileURLToPath(new URL(
   "../../../.github/workflows/test-install.yml",
+  import.meta.url,
+));
+const workflowsDirectory = fileURLToPath(new URL(
+  "../../../.github/workflows/",
   import.meta.url,
 ));
 const soulServerPackagePath = fileURLToPath(new URL(
@@ -55,7 +59,11 @@ describe("database release CI contract", () => {
     expect(workflowText.match(/corepack prepare pnpm@\$\{\{ env\.PNPM_VERSION \}\} --activate/g))
       .toHaveLength(3);
     expect(workflowText.match(/node-version: '22'/g)).toHaveLength(3);
-    expect(workflowText).not.toContain("node-version: '20'");
+    const allWorkflowSources = readdirSync(workflowsDirectory)
+      .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
+      .map((name) => readFileSync(`${workflowsDirectory}/${name}`, "utf8"))
+      .join("\n");
+    expect(allWorkflowSources).not.toContain("node-version: '20'");
   });
 
   it("aligns server build targets, Node types, and runtime floor on Node 22", () => {
