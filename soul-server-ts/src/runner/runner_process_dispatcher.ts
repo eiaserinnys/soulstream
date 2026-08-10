@@ -28,8 +28,11 @@ import {
   RunnerProcessSpawner,
   type SpawnRunnerProcessInput,
 } from "./runner_process_spawn.js";
+import { runnerProcessPaths } from "./runner_process_paths.js";
+import { ProcessFrameStream } from "./runner_process_frame_stream.js";
 import { connectRunnerSocket } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 const RECENT_HOST_RESPONSE_LIMIT = 128;
@@ -49,7 +52,9 @@ export interface RunnerHostCall {
 
 export interface RunnerProcessDispatcherOptions {
   spawn: SpawnRunnerProcessInput;
-  spawner?: Pick<RunnerProcessSpawner, "spawn">;
+  spawner?: Pick<RunnerProcessSpawner, "spawn"> & Partial<Pick<RunnerProcessSpawner, "adopt">>;
+  adoptExisting?: boolean;
+  offlineExisting?: boolean;
   pumpMux: EventOutboxPumpMux;
   logger: Logger;
   handleHostCall(call: RunnerHostCall): Promise<unknown>;
@@ -60,6 +65,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private connection: RunnerIpcConnection | undefined;
   private socketPath: string | undefined;
   private outbox!: RunnerSqliteEventOutbox;
+  private lifecycle!: RunnerSqliteLifecycle;
   private pump: EventOutboxPump | undefined;
   private unregisterPump: (() => void) | undefined;
   private connecting: Promise<RunnerIpcConnection> | undefined;
@@ -97,6 +103,17 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return stream;
   }
 
+  recoverFrames(commandId: string): AsyncIterable<RunnerEventFrame> {
+    const stream = new ProcessFrameStream(async (frameSeq) => {
+      await this.outbox.acknowledgeHostFrame(frameSeq);
+      await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
+    });
+    this.activeExecuteCommandId = commandId;
+    this.activeStream = stream;
+    void this.startRecovery(commandId, stream);
+    return stream;
+  }
+
   async prepareSession(agentSessionId: string): Promise<void> {
     assertCommandAccepted(await this.dispatch(
       prepareSessionCommandFrame(`prepare:${agentSessionId}`, agentSessionId),
@@ -116,15 +133,22 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (this.closed) return;
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner closed"));
+    if (this.options.offlineExisting) {
+      this.releaseHostResources();
+      return;
+    }
     try {
       assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
     } finally {
-      this.connection?.close();
-      this.connection = undefined;
-      this.unregisterPump?.();
-      this.unregisterPump = undefined;
-      this.outbox?.close();
+      this.releaseHostResources();
     }
+  }
+
+  async detachHost(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    this.abortRequestLifetimes(new Error("Runner host detached"));
+    this.releaseHostResources();
   }
 
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {
@@ -161,12 +185,61 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async initialize(): Promise<void> {
-    const spawned = await (this.options.spawner ?? new RunnerProcessSpawner()).spawn(
-      this.options.spawn,
-    );
+    if (this.options.offlineExisting) {
+      const paths = runnerProcessPaths(
+        this.options.spawn.stateDirectory,
+        this.options.spawn.sessionId,
+      );
+      this.socketPath = paths.socketPath;
+      this.outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+      this.lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+      return;
+    }
+    const spawner = this.options.spawner ?? new RunnerProcessSpawner();
+    const spawned = this.options.adoptExisting
+      ? await this.adoptExisting(spawner)
+      : await spawner.spawn(this.options.spawn);
     this.socketPath = spawned.paths.socketPath;
     this.outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    this.lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
     await this.connect(spawned.paths.socketPath);
+  }
+
+  private async adoptExisting(
+    spawner: RunnerProcessDispatcherOptions["spawner"] | RunnerProcessSpawner,
+  ) {
+    if (!spawner?.adopt) throw new Error("runner adopter unavailable");
+    const adopted = await spawner.adopt({
+      stateDirectory: this.options.spawn.stateDirectory,
+      sessionId: this.options.spawn.sessionId,
+    });
+    if (!adopted) {
+      throw new Error(`registered runner is not alive: ${this.options.spawn.sessionId}`);
+    }
+    return adopted;
+  }
+
+  private async startRecovery(commandId: string, stream: ProcessFrameStream): Promise<void> {
+    try {
+      await this.ready;
+      const lifecycle = this.lifecycle.read();
+      if (!lifecycle || lifecycle.execution_command_id !== commandId) {
+        throw new Error(`runner recovery command unavailable: ${commandId}`);
+      }
+      await this.replayPendingFrames();
+      if (lifecycle.execution_state === "running") return;
+      if (lifecycle.execution_state === "completed" || lifecycle.execution_state === "closed") {
+        stream.finish();
+      } else {
+        stream.fail(new Error(
+          lifecycle.terminal_error?.message ?? `runner ${lifecycle.execution_state}`,
+        ));
+      }
+      this.clearActiveExecution(commandId);
+    } catch (error) {
+      stream.fail(asError(error));
+      this.clearActiveExecution(commandId);
+    }
   }
 
   private async startExecute(
@@ -359,61 +432,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.options.logger.warn({ error }, "Runner host response dropped during reconnect");
     });
   }
-}
 
-interface QueuedFrame {
-  frame: RunnerEventFrame;
-  frameSeq?: number;
-}
-
-class ProcessFrameStream implements AsyncIterable<RunnerEventFrame> {
-  private readonly queue: QueuedFrame[] = [];
-  private readonly seenFrameSeq = new Set<number>();
-  private waiter: (() => void) | undefined;
-  private delivered: QueuedFrame | undefined;
-  private ended = false;
-  private error: Error | undefined;
-
-  constructor(private readonly acknowledge: (frameSeq: number) => Promise<void>) {}
-
-  push(frame: RunnerEventFrame, frameSeq?: number): boolean {
-    if (this.ended || this.error) return false;
-    if (frameSeq !== undefined && this.seenFrameSeq.has(frameSeq)) return false;
-    if (frameSeq !== undefined) this.seenFrameSeq.add(frameSeq);
-    this.queue.push({ frame, ...(frameSeq !== undefined ? { frameSeq } : {}) });
-    this.waiter?.();
-    this.waiter = undefined;
-    return true;
-  }
-
-  finish(): void {
-    this.ended = true;
-    this.waiter?.();
-    this.waiter = undefined;
-  }
-
-  fail(error: Error): void {
-    this.error = error;
-    this.waiter?.();
-    this.waiter = undefined;
-  }
-
-  async *[Symbol.asyncIterator](): AsyncIterator<RunnerEventFrame> {
-    while (true) {
-      if (this.delivered?.frameSeq !== undefined) {
-        await this.acknowledge(this.delivered.frameSeq);
-      }
-      this.delivered = undefined;
-      const next = this.queue.shift();
-      if (next) {
-        this.delivered = next;
-        yield next.frame;
-        continue;
-      }
-      if (this.error) throw this.error;
-      if (this.ended) return;
-      await new Promise<void>((resolve) => { this.waiter = resolve; });
-    }
+  private releaseHostResources(): void {
+    this.connection?.close();
+    this.connection = undefined;
+    this.unregisterPump?.();
+    this.unregisterPump = undefined;
+    this.lifecycle?.close();
+    this.outbox?.close();
   }
 }
 

@@ -1,6 +1,6 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 2;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 3;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 // Additive-only contract: never rename/drop columns or change an existing
@@ -30,6 +30,18 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
     runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
   ),
   acked_through INTEGER,
+  runner_pid INTEGER,
+  execution_command_id TEXT,
+  execution_state TEXT CHECK (
+    execution_state IS NULL OR execution_state IN (
+      'running', 'completed', 'failed', 'reaped', 'closed'
+    )
+  ),
+  progress_seq INTEGER NOT NULL DEFAULT 0 CHECK (progress_seq >= 0),
+  progress_at TEXT,
+  terminal_error_json TEXT CHECK (
+    terminal_error_json IS NULL OR json_valid(terminal_error_json)
+  ),
   CHECK (
     (
       record_kind = 'bootstrap'
@@ -105,7 +117,20 @@ export type RunnerEventOutboxRow = {
   payload_hash: string;
   runner_metadata_json: string | null;
   acked_through: number | null;
+  runner_pid: number | null;
+  execution_command_id: string | null;
+  execution_state: RunnerExecutionState | null;
+  progress_seq: number;
+  progress_at: string | null;
+  terminal_error_json: string | null;
 };
+
+export type RunnerExecutionState =
+  | "running"
+  | "completed"
+  | "failed"
+  | "reaped"
+  | "closed";
 
 export type RunnerIpcJournalRow = {
   frame_seq: number;

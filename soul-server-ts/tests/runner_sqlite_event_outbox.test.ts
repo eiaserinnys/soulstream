@@ -19,6 +19,7 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
@@ -50,6 +51,9 @@ describe("RunnerSqliteEventOutbox", () => {
       const journalTable = tables.find((table) => table.name === "runner_ipc_journal")!;
       expect(outboxTable.sql).toContain("source_seq INTEGER PRIMARY KEY AUTOINCREMENT");
       expect(outboxTable.sql).toContain("runner_metadata_json");
+      expect(outboxTable.sql).toContain("execution_command_id");
+      expect(outboxTable.sql).toContain("progress_seq");
+      expect(outboxTable.sql).toContain("terminal_error_json");
       expect(journalTable.sql).toContain("frame_seq INTEGER PRIMARY KEY AUTOINCREMENT");
       expect(journalTable.sql).toContain("outbox_source_seq INTEGER NOT NULL UNIQUE");
       expect(journalTable.sql).not.toMatch(/payload|metadata|session_effect/);
@@ -135,6 +139,67 @@ describe("RunnerSqliteEventOutbox", () => {
       ...bootstrapInput(),
       resume: { ...bootstrapInput().resume, code_sha: "different" },
     })).rejects.toThrow("runner bootstrap record conflicts with durable record");
+    outbox.close();
+  });
+
+  it("stores a monotonic progress lease on bootstrap without changing event lineage", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
+    const lifecycle = RunnerSqliteLifecycle.open(path);
+
+    expect(lifecycle.read()).toBeNull();
+    expect(lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    })).toMatchObject({
+      session_id: "session-a",
+      runner_pid: 4123,
+      execution_command_id: "execute-a",
+      execution_state: "running",
+      progress_seq: 1,
+      terminal_error: null,
+    });
+    expect(lifecycle.progress("execute-a", "2026-08-11T01:00:01.000Z"))
+      .toMatchObject({ progress_seq: 2, progress_at: "2026-08-11T01:00:01.000Z" });
+    expect(lifecycle.finish(
+      "execute-a",
+      "completed",
+      "2026-08-11T01:00:02.000Z",
+    )).toMatchObject({ execution_state: "completed", progress_seq: 3 });
+
+    expect((await outbox.readBootstrap())?.payload_hash).toBe(bootstrap.payload_hash);
+    expect(outbox.ackedSeq).toBe(1);
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("rejects stale lifecycle writers and records a loud reap error", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const lifecycle = RunnerSqliteLifecycle.open(path);
+    lifecycle.begin({
+      pid: 5001,
+      commandId: "execute-current",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    });
+
+    expect(() => lifecycle.progress(
+      "execute-stale",
+      "2026-08-11T01:00:01.000Z",
+    )).toThrow("runner lifecycle command mismatch");
+    expect(lifecycle.reap(
+      "execute-current",
+      "2026-08-11T01:02:00.000Z",
+      { code: "lease_expired", message: "runner made no progress" },
+    )).toMatchObject({
+      execution_state: "reaped",
+      terminal_error: { code: "lease_expired", message: "runner made no progress" },
+    });
+
+    lifecycle.close();
     outbox.close();
   });
 

@@ -125,7 +125,7 @@ class HostSessionStore implements SessionStore {
 function hostOptions() {
   return {
     timeoutMs: HOST_REQUEST_TIMEOUT_MS,
-    attempts: 3,
-    retryDelayMs: 100,
+    attempts: 61,
+    retryDelayMs: 500,
   };
 }

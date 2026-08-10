@@ -29,9 +29,11 @@ import { InProcessRunnerFrameChannel } from "./in_process_frame_channel.js";
 export interface RunnerCommandDispatcher {
   dispatch(frame: unknown): Promise<RunnerCommandResultFrame>;
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
+  recoverFrames?(commandId: string): AsyncIterable<RunnerEventFrame>;
   prepareSession(agentSessionId: string): Promise<void>;
   interrupt(): Promise<boolean>;
   close(): Promise<void>;
+  detachHost(): Promise<void>;
   sendControlFrame(frame: RunnerControlFrame): Promise<boolean>;
   requestContext(correlationId: string): {
     signal: AbortSignal;
@@ -124,6 +126,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
 
   async close(): Promise<void> {
     assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
+  }
+
+  async detachHost(): Promise<void> {
+    await this.close();
   }
 
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {

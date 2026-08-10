@@ -34,6 +34,7 @@ import {
   createInProcessTaskRunnerRuntime,
   type TaskRunnerRuntime,
 } from "../runner/task_runner_runtime.js";
+import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
@@ -72,17 +73,32 @@ export type EngineFactory = (
   backendOverride?: BackendId,
 ) => EnginePort;
 
-export type RunnerProcessRuntimeFactory = (
-  task: Task,
-  agent: AgentProfile,
-  backend: BackendId,
-  snapshots: {
+export interface RunnerProcessRuntimeFactory {
+  (
+    task: Task,
+    agent: AgentProfile,
+    backend: BackendId,
+    snapshots: RunnerSnapshotPersistence,
+  ): TaskRunnerRuntime;
+  recover?(
+    task: Task,
+    config: RunnerChildConfig,
+    snapshots: RunnerSnapshotPersistence,
+    mode?: "adopt" | "offline",
+  ): TaskRunnerRuntime;
+  restart?(
+    task: Task,
+    config: RunnerChildConfig,
+    snapshots: RunnerSnapshotPersistence,
+  ): TaskRunnerRuntime;
+}
+
+export interface RunnerSnapshotPersistence {
     persistRunState(snapshot: import("../engine/protocol.js").EngineRunStateSnapshot): Promise<void>;
     persistSessionItems(
       snapshot: import("../engine/protocol.js").EngineSessionItemsSnapshot,
     ): Promise<void>;
-  },
-) => TaskRunnerRuntime;
+}
 
 export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
@@ -200,6 +216,19 @@ export class TaskExecutor {
             ? this.engineFactory(agent, backend)
             : this.engineFactory(agent),
         );
+    this.startExecutionWithRunner(task, agent, runner);
+  }
+
+  startExecutionWithRunner(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+  ): void {
+    if (task.runner) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
+      );
+    }
     task.runner = runner;
 
     const promise = (async () => {
@@ -214,6 +243,65 @@ export class TaskExecutor {
       },
     );
     task.executionPromise = promise;
+  }
+
+  /** Reattaches host-side consumption to an execution already owned by a runner child. */
+  recoverRunnerExecution(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    commandId: string,
+  ): Promise<void> {
+    if (task.runner) {
+      throw new Error(`Task ${task.agentSessionId} already has a runner`);
+    }
+    const frames = runner.dispatcher.recoverFrames?.(commandId);
+    if (!frames) throw new Error("runner dispatcher does not support execution recovery");
+    task.runner = runner;
+    task.status = "running";
+    const promise = this.consumeRecoveredRunnerFrames(task, agent, runner, frames);
+    task.executionPromise = promise;
+    return promise;
+  }
+
+  recoverRegisteredRunner(
+    task: Task,
+    config: RunnerChildConfig,
+    commandId: string,
+    mode: "adopt" | "offline",
+  ): Promise<void> {
+    const runner = this.runnerProcessFactory?.recover?.(
+      task,
+      config,
+      this.snapshotPersistenceFor(task),
+      mode,
+    );
+    if (!runner) throw new Error("runner process recovery factory unavailable");
+    return this.recoverRunnerExecution(
+      task,
+      config.agent,
+      runner,
+      commandId,
+    );
+  }
+
+  restartRegisteredRunner(task: Task, config: RunnerChildConfig): void {
+    const runner = this.runnerProcessFactory?.restart?.(
+      task,
+      config,
+      this.snapshotPersistenceFor(task),
+    );
+    if (!runner) throw new Error("runner process restart factory unavailable");
+    this.startExecutionWithRunner(task, config.agent, runner);
+  }
+
+  private snapshotPersistenceFor(task: Task): RunnerSnapshotPersistence {
+    return {
+      persistRunState: async (snapshot) =>
+        await this.agentsSnapshotPersistence.persistRunStateSnapshot(task, snapshot),
+      persistSessionItems: async (snapshot) =>
+        await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
+    };
   }
 
   async failScheduledClaudeRuntimeFollowupsForShutdown(): Promise<void> {
@@ -332,6 +420,45 @@ export class TaskExecutor {
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }
+      await this._finalize(task);
+    }
+  }
+
+  private async consumeRecoveredRunnerFrames(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    frames: AsyncIterable<import("../runner/frame_protocol.js").RunnerEventFrame>,
+  ): Promise<void> {
+    try {
+      for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
+        await this.engineEventPublisher.publishEngineEvent(task, event, {
+          alreadyPersisted: true,
+        });
+        this.collectClaudeRuntimeTaskFollowup(task, event);
+      }
+      const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
+      if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
+      await this.flushClaudeRuntimeTaskFollowups(task);
+      const transition = resolveTurnLoopTransition(task, agent);
+      if (transition.kind === "awaiting_runtime") {
+        await this.publishPendingClaudeRuntimeAfterTurnError(task);
+      } else if (transition.kind === "continue") {
+        throw new Error("recovered runner cannot contain an unpersisted intervention queue");
+      }
+    } catch (error) {
+      await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
+    } finally {
+      try {
+        const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
+        if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
+      } catch (error) {
+        this.logger.warn(
+          { error, sessionId: task.agentSessionId },
+          "runner recovery ACK drain failed",
+        );
+      }
+      task.completedAt = new Date();
       await this._finalize(task);
     }
   }

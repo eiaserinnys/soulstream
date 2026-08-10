@@ -117,6 +117,19 @@ export interface SessionMutationHost {
   ): Promise<AcknowledgeReviewOutcome>;
 }
 
+export function createMissingSessionMutationHost(): SessionMutationHost {
+  const missing = async (): Promise<never> => {
+    throw new Error("session mutation host is required");
+  };
+  return {
+    registerSession: missing,
+    transitionSession: missing,
+    renameSession: missing,
+    deleteSession: missing,
+    acknowledgeReview: missing,
+  };
+}
+
 export class SessionMutationHostClient implements SessionMutationHost {
   private readonly transport: PersistenceHostTransport;
 

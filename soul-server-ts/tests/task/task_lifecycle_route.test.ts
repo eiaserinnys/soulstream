@@ -165,6 +165,28 @@ describe("TaskLifecycleRoute.deleteTask", () => {
 });
 
 describe("TaskLifecycleRoute.shutdown", () => {
+  it("detaches process runners without interrupting or marking their sessions terminal", async () => {
+    const detachHost = vi.fn(async () => {});
+    const processTask = makeTask({
+      runner: {
+        engine: {} as EnginePort,
+        dispatcher: { detachHost } as never,
+        eventPersistence: "runner",
+      },
+      executionPromise: new Promise<void>(() => {}),
+    });
+    const { route, lifecycleTransition } = makeRoute([processTask]);
+
+    await route.shutdown();
+
+    expect(detachHost).toHaveBeenCalledOnce();
+    expect(processTask.status).toBe("running");
+    expect(processTask.runner).toBeUndefined();
+    expect(processTask.executionPromise).toBeUndefined();
+    expect(lifecycleTransition.markRunningTaskInterruptedForShutdown).not.toHaveBeenCalled();
+    expect(lifecycleTransition.interruptForShutdown).not.toHaveBeenCalled();
+  });
+
   it("marks running tasks, interrupts every task, and collects drains only for tasks that had engines", async () => {
     const running = makeTask({ agentSessionId: "running" });
     const terminalWithEngine = makeTask({

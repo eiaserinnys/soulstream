@@ -16,6 +16,7 @@ import { RunnerProcessDispatcher } from
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerSocketEndpoint } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
@@ -83,6 +84,7 @@ describe("RunnerProcessDispatcher", () => {
         pid: 1001,
         paths,
         config: {} as never,
+        adopted: false,
       }) },
       pumpMux: mux,
       logger: pino({ level: "silent" }),
@@ -148,7 +150,9 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.listen();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => ({ pid: 1001, paths, config: {} as never }) },
+      spawner: { spawn: async () => ({
+        pid: 1001, paths, config: {} as never, adopted: false,
+      }) },
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -168,6 +172,74 @@ describe("RunnerProcessDispatcher", () => {
     expect(dispatcher.requestContext("schedule:1")).toBeUndefined();
 
     await dispatcher.close();
+    await endpoint.close();
+  });
+
+  it("adopts a live runner and finishes replay from its durable terminal state", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    await writer.appendEngineFrame({
+      session_id: "session-a",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "replayed" },
+      searchable_text: "replayed",
+      created_at: "2026-08-11T00:00:01.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    }, {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "replayed" },
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 1001,
+      commandId: "execute-old",
+      progressedAt: "2026-08-11T00:00:01.000Z",
+    });
+    lifecycle.finish("execute-old", "completed", "2026-08-11T00:00:02.000Z");
+    lifecycle.close();
+    const endpoint = new RunnerSocketEndpoint(paths.socketPath, async () => {}, vi.fn());
+    await endpoint.listen();
+    const spawn = vi.fn(async () => { throw new Error("must not spawn"); });
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      adoptExisting: true,
+      spawner: {
+        spawn,
+        adopt: async () => ({ pid: 1001, paths, config: {} as never, adopted: true }),
+      },
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    await expect(collect(dispatcher.recoverFrames("execute-old"))).resolves.toEqual([
+      expect.objectContaining({
+        kind: "engine_event",
+        payload: { type: "assistant_message", content: "replayed" },
+      }),
+    ]);
+    expect(spawn).not.toHaveBeenCalled();
+
+    await dispatcher.detachHost();
+    writer.close();
     await endpoint.close();
   });
 });

@@ -103,6 +103,8 @@ describe("parseEnv", () => {
 
   it("session runner process는 default off이며 opt-in 경로·스냅샷을 함께 요구한다", () => {
     expect(parseEnv(minimal).SOUL_RUNNER_PROCESS_ENABLED).toBe(false);
+    expect(parseEnv(minimal).SOUL_RUNNER_LEASE_TIMEOUT_MS).toBe(1_800_000);
+    expect(parseEnv(minimal).SOUL_RUNNER_REAPER_INTERVAL_MS).toBe(15_000);
     expect(() => parseEnv({
       ...minimal,
       SOUL_RUNNER_PROCESS_ENABLED: "true",
@@ -113,11 +115,15 @@ describe("parseEnv", () => {
       SOUL_RUNNER_STATE_DIR: "/var/lib/soulstream/runners",
       SOUL_RUNNER_CODE_SHA: "f5d69e57",
       SOUL_RUNNER_SNAPSHOT_PATH: "/var/lib/haniel/releases/f5d69e57/soul-server-ts",
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
+      SOUL_RUNNER_REAPER_INTERVAL_MS: "10000",
     })).toMatchObject({
       SOUL_RUNNER_PROCESS_ENABLED: true,
       SOUL_RUNNER_STATE_DIR: "/var/lib/soulstream/runners",
       SOUL_RUNNER_CODE_SHA: "f5d69e57",
       SOUL_RUNNER_SNAPSHOT_PATH: "/var/lib/haniel/releases/f5d69e57/soul-server-ts",
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: 90_000,
+      SOUL_RUNNER_REAPER_INTERVAL_MS: 10_000,
     });
   });
 

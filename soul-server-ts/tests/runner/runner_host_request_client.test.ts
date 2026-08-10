@@ -51,4 +51,21 @@ describe("RunnerHostRequestClient", () => {
     })).rejects.toThrow("runner stopping");
     expect(delay).toHaveBeenCalledOnce();
   });
+
+  it("applies one deadline across retries when a connected host stops responding", async () => {
+    const request = vi.fn(async (_frame, options: { signal: AbortSignal }) =>
+      await new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+          once: true,
+        });
+      }));
+    const client = new RunnerHostRequestClient(() => ({ request } as never));
+
+    await expect(client.call("session_store", "load", [{}], {
+      timeoutMs: 10,
+      attempts: 61,
+      retryDelayMs: 1,
+    })).rejects.toThrow("timed out after 10ms");
+    expect(request).toHaveBeenCalledOnce();
+  });
 });

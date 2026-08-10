@@ -45,6 +45,7 @@ import {
   runnerRowCount as rowCount,
   runnerTableHasColumn as hasColumn,
 } from "./sqlite_event_outbox_database.js";
+import { ensureRunnerLifecycleColumns } from "./sqlite_runner_lifecycle.js";
 
 export type {
   RunnerBootstrapInput,
@@ -96,6 +97,7 @@ export class RunnerSqliteEventOutbox {
           )
         `);
       }
+      ensureRunnerLifecycleColumns(database);
       if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
         database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);
       }

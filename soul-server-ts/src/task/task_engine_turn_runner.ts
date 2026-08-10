@@ -141,9 +141,22 @@ export class TaskEngineTurnRunner {
       scheduleToolHandler: this.deps.scheduleToolHandler,
     });
   }
+
+  recoverTurn(
+    task: Task,
+    runner: TaskRunnerRuntime,
+    frames: AsyncIterable<RunnerEventFrame>,
+  ): AsyncIterable<SSEEventPayload> {
+    return consumeRunnerFrames(frames, {
+      task,
+      runnerCommandDispatcher: runner.dispatcher,
+      snapshotPersistence: this.deps.snapshotPersistence,
+      scheduleToolHandler: this.deps.scheduleToolHandler,
+    });
+  }
 }
 
-async function* consumeRunnerFrames(
+export async function* consumeRunnerFrames(
   frames: AsyncIterable<RunnerEventFrame>,
   deps: {
     task: Task;

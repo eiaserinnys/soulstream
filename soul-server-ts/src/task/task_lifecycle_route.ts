@@ -84,6 +84,12 @@ export class TaskLifecycleRoute {
     const drains: Promise<void>[] = [];
     const shutdownAt = new Date();
     for (const task of this.deps.listTasks()) {
+      if (task.runner?.eventPersistence === "runner") {
+        await task.runner.dispatcher.detachHost();
+        task.runner = undefined;
+        task.executionPromise = undefined;
+        continue;
+      }
       if (task.status === "running") {
         await this.deps.lifecycleTransition.markRunningTaskInterruptedForShutdown(
           task,

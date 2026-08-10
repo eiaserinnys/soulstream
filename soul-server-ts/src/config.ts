@@ -63,6 +63,10 @@ export const EnvSchema = z
     SOUL_RUNNER_CODE_SHA: z.string().min(1).optional(),
     /** Immutable release directory from which detached runner entrypoints spawn. */
     SOUL_RUNNER_SNAPSHOT_PATH: z.string().min(1).optional(),
+    /** No-progress window before a live pid is classified as hung. */
+    SOUL_RUNNER_LEASE_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
+    /** Node-local registration scan cadence while process mode is enabled. */
+    SOUL_RUNNER_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
     /**
      * agent_registry yaml 경로 (Phase B-3).
      * Haniel cwd `services/soulstream/` 기준 상대 경로 default — `.env.soul-server-ts`
