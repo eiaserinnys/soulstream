@@ -8,6 +8,7 @@ import type {
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
+import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
 import {
   engineEventFrame,
   type RunnerEventFrame,
@@ -142,7 +143,7 @@ async function* consumeRunnerFrames(
 ): AsyncIterable<SSEEventPayload> {
   for await (const frame of frames) {
     if (frame.kind === "engine_event") {
-      yield frame.payload as SSEEventPayload;
+      yield sseEventFromRunnerFrame(frame);
       continue;
     }
     if (frame.kind === "run_state_snapshot") {

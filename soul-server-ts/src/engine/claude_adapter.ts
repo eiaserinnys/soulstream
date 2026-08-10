@@ -10,6 +10,9 @@ import {
   engineEventFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
+import { readClaudeBackgroundDeliveryMetadata } from
+  "./claude_background_delivery_metadata.js";
+import { readClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import type {
   BackendId,
   EngineUserInput,
@@ -204,7 +207,10 @@ export class ClaudeEngineAdapter
           fallbackResult: lastText,
         });
         for (const payload of payloads) {
-          yield engineEventFrame(payload as Record<string, unknown>);
+          yield engineEventFrame(
+            { ...payload } as Record<string, unknown>,
+            claudeEngineEventMetadata(payload),
+          );
         }
 
         if (clientEvent.type === "error" && clientEvent.fatal !== false) {
@@ -435,4 +441,14 @@ class ClaudeClientFatalEventError extends Error {}
 
 function nowSeconds(): number {
   return Date.now() / 1000;
+}
+
+function claudeEngineEventMetadata(payload: SSEEventPayload): Record<string, unknown> | undefined {
+  const provenance = readClaudeBackgroundProvenance(payload);
+  const delivery = readClaudeBackgroundDeliveryMetadata(payload);
+  if (!provenance && !delivery) return undefined;
+  return {
+    ...(provenance ? { claudeBackgroundProvenance: provenance } : {}),
+    ...(delivery ? { claudeBackgroundDelivery: delivery } : {}),
+  };
 }

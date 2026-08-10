@@ -7,6 +7,8 @@ import type {
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
+import { readClaudeBackgroundProvenance } from
+  "../../src/engine/claude_background_provenance.js";
 import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
@@ -190,6 +192,34 @@ describe("TaskEngineTurnRunner", () => {
       task,
       { backendId: "openai-agents", items: [{ role: "user" }] },
     );
+  });
+
+  it("restores Claude frame metadata on the production turn consumer", async () => {
+    const task = makeTask();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield engineEventFrame(
+          { type: "task_notification", task_id: "task-1" },
+          { claudeBackgroundProvenance: "sdk_membership" },
+        );
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const { runner } = makeSubject();
+
+    const [event] = await drain(runner.executeTurn({
+      task,
+      agent,
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
+    expect(event).toBeDefined();
+    expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
   });
 
   it("falls back to agent tool policy when task-level policy is absent", async () => {
