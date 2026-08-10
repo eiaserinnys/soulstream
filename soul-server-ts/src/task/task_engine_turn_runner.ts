@@ -174,6 +174,9 @@ async function* consumeRunnerFrames(
       // boundary explicit; it does not add another wire event or ACK.
       continue;
     }
+    if (frame.request.kind === "host_call") {
+      throw new Error("Runner host_call leaked past the process dispatcher");
+    }
     if (!deps.scheduleToolHandler) {
       throw new Error("Runner emitted schedule request without a host control boundary");
     }

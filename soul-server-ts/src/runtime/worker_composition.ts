@@ -59,6 +59,9 @@ import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
 import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
+import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
+import { createRunnerProcessRuntimeFactory } from
+  "../runner/runner_process_runtime_factory.js";
 import {
   composeTaskRuntime,
   type TaskRuntimeComposition,
@@ -96,6 +99,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   claudeRuntimeStartupRecovery?: ClaudeRuntimeStartupRecovery;
   eventOutbox: EventOutbox;
   eventOutboxPump: EventOutboxPump;
+  eventOutboxPumpMux: EventOutboxPumpMux;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 /** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
@@ -129,6 +133,7 @@ export async function composeWorkerRuntime(
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
     logger.error({ error }, "Durable event outbox pump failed");
   });
+  const eventOutboxPumpMux = new EventOutboxPumpMux(eventOutboxPump);
   const db = new SessionDB();
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const send = async (data: unknown): Promise<void> => {
@@ -231,6 +236,24 @@ export async function composeWorkerRuntime(
       })
     : undefined;
   let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;
+  const publishDetachedClaudeEvent = async (
+    sessionId: string,
+    event: Parameters<typeof mapClaudeClientEvent>[0],
+  ): Promise<void> => {
+    const task = taskManager.getTask(sessionId);
+    if (!task || !detachedClaudeEventPublisher) {
+      logger.warn(
+        { sessionId, eventType: event.type },
+        "Detached Claude runtime event has no in-memory task",
+      );
+      return;
+    }
+    for (const payload of mapClaudeClientEvent(event)) {
+      if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
+      await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
+      await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload);
+    }
+  };
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
         enabled: true,
@@ -243,21 +266,7 @@ export async function composeWorkerRuntime(
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
-        detachedEventSink: async (sessionId, event) => {
-          const task = taskManager.getTask(sessionId);
-          if (!task || !detachedClaudeEventPublisher) {
-            logger.warn(
-              { sessionId, eventType: event.type },
-              "Detached Claude runtime event has no in-memory task",
-            );
-            return;
-          }
-          for (const payload of mapClaudeClientEvent(event)) {
-            if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
-            await detachedClaudeEventPublisher.publishEngineEvent(task, payload);
-            await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload);
-          }
-        },
+        detachedEventSink: publishDetachedClaudeEvent,
       })
     : {};
   const claudeSessionClientRegistry = claudeRuntime.registry;
@@ -289,6 +298,22 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
+  const runnerProcessFactory = env.SOUL_RUNNER_PROCESS_ENABLED
+    ? createRunnerProcessRuntimeFactory({
+        env,
+        logger,
+        pumpMux: eventOutboxPumpMux,
+        sessionStore: claudeSessionStore,
+        mcpConfigService,
+        codexCliPath,
+        buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
+        observeClaudeRuntime: claudeRuntime.backgroundLifecycle
+          ? async (sessionId, event) =>
+              await claudeRuntime.backgroundLifecycle!.observe(sessionId, event)
+          : undefined,
+        publishDetachedClaudeEvent,
+      })
+    : undefined;
   taskRuntime = composeTaskRuntime({
     env,
     db,
@@ -303,6 +328,7 @@ export async function composeWorkerRuntime(
     scheduleService,
     orchProxyConfig,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
+    ...(runnerProcessFactory ? { runnerProcessFactory } : {}),
   });
   const taskService = new TaskService({ orch: orchProxyConfig, logger });
   db.configureTaskReader(taskService);
@@ -453,7 +479,7 @@ export async function composeWorkerRuntime(
         scheduleCommands: scheduleService,
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
-        eventOutboxPump,
+        eventOutboxPump: eventOutboxPumpMux,
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );
@@ -482,6 +508,7 @@ export async function composeWorkerRuntime(
       : {}),
     eventOutbox,
     eventOutboxPump,
+    eventOutboxPumpMux,
     createUpstreamAdapter,
   };
 }

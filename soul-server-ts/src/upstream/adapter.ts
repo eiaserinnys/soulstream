@@ -17,7 +17,7 @@ import { CommandDispatcher } from "./dispatcher.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
-import type { EventOutboxPump } from "./event_outbox_pump.js";
+import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 
 const APP_HEARTBEAT_PING = "app_heartbeat_ping";
@@ -53,7 +53,7 @@ export interface UpstreamDependencies {
   scheduleCommands?: ClaudeRuntimeScheduleCommands;
   deliveryV2Enabled?: boolean;
   modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
-  eventOutboxPump?: EventOutboxPump;
+  eventOutboxPump?: EventOutboxPumpTransport;
   agentProfileSource?: NewSessionAgentProfileSource;
 }
 

@@ -15,6 +15,13 @@ export type EventAppendAck = {
   events: Array<{ source_seq: number; event_id: number }>;
 };
 
+export interface EventOutboxPumpTransport {
+  connect(sender: (batch: EventOutboxBatch) => Promise<void>): void;
+  disconnect(): void;
+  isAck(value: unknown): value is EventAppendAck;
+  handleAck(ack: EventAppendAck): Promise<void>;
+}
+
 // An ACK may arrive in the microtask between EventOutbox.append() returning and
 // a DB-event-ID barrier registering its waiter. One batch has at most 64 rows;
 // two batches retain enough exact results to bridge that scheduling race while
@@ -43,6 +50,10 @@ export class EventOutboxPump {
     private readonly onError: (error: unknown) => void,
   ) {
     outbox.onAppend(() => this.notifyAvailable());
+  }
+
+  get streamId(): string {
+    return this.outbox.streamId;
   }
 
   // Phase 3 uses this as the content-free IPC doorbell after the runner has

@@ -50,6 +50,20 @@ export const EnvSchema = z
      */
     EVENT_OUTBOX_DIR: z.string().min(1, "EVENT_OUTBOX_DIR required"),
     /**
+     * Session-per-process runner extraction. Disabled unless explicitly opted in;
+     * the in-process TaskRunnerRuntime remains the production default.
+     */
+    SOUL_RUNNER_PROCESS_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /** Per-session socket, SQLite, pid, and lock files. Required only when enabled. */
+    SOUL_RUNNER_STATE_DIR: z.string().min(1).optional(),
+    /** Immutable release identity embedded into the runner bootstrap record. */
+    SOUL_RUNNER_CODE_SHA: z.string().min(1).optional(),
+    /** Immutable release directory from which detached runner entrypoints spawn. */
+    SOUL_RUNNER_SNAPSHOT_PATH: z.string().min(1).optional(),
+    /**
      * agent_registry yaml 경로 (Phase B-3).
      * Haniel cwd `services/soulstream/` 기준 상대 경로 default — `.env.soul-server-ts`
      * dotenv 로딩과 같은 cwd 협약. 운영에서 변경 시 절대 경로 설정.
@@ -181,6 +195,21 @@ export const EnvSchema = z
         path: ["JWT_SECRET"],
         message: "JWT_SECRET is required when GOOGLE_CLIENT_ID enables dashboard auth",
       });
+    }
+    if (env.SOUL_RUNNER_PROCESS_ENABLED) {
+      for (const key of [
+        "SOUL_RUNNER_STATE_DIR",
+        "SOUL_RUNNER_CODE_SHA",
+        "SOUL_RUNNER_SNAPSHOT_PATH",
+      ] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when SOUL_RUNNER_PROCESS_ENABLED=true`,
+          });
+        }
+      }
     }
   });
 

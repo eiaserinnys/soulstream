@@ -1,13 +1,14 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 1;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 2;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 // Additive-only contract: never rename/drop columns or change an existing
 // column's meaning. Future revisions may only add nullable/defaulted columns or
 // indexes; record_kind meanings are immutable.
-// The runner owns exactly this one user table; the bootstrap row also owns the
-// ACK cursor so no second durable state ledger can diverge from the event log.
+// The runner owns one domain event ledger plus one payload-free IPC ordering
+// journal. The journal may only reference source_seq and record host apply ACK;
+// it is never a second source of domain state.
 export const RUNNER_EVENT_OUTBOX_DDL = `
 CREATE TABLE IF NOT EXISTS runner_event_outbox (
   source_seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,6 +25,9 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
   ),
   payload_hash TEXT NOT NULL CHECK (
     length(payload_hash) = 64 AND payload_hash = lower(payload_hash)
+  ),
+  runner_metadata_json TEXT CHECK (
+    runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
   ),
   acked_through INTEGER,
   CHECK (
@@ -46,6 +50,15 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
 CREATE UNIQUE INDEX IF NOT EXISTS runner_event_outbox_one_bootstrap
 ON runner_event_outbox(record_kind)
 WHERE record_kind = 'bootstrap';
+
+CREATE TABLE IF NOT EXISTS runner_ipc_journal (
+  frame_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  outbox_source_seq INTEGER NOT NULL UNIQUE,
+  frame_kind TEXT NOT NULL CHECK (frame_kind = 'engine_event'),
+  host_acked INTEGER NOT NULL DEFAULT 0 CHECK (host_acked IN (0, 1)),
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (outbox_source_seq) REFERENCES runner_event_outbox(source_seq)
+) STRICT;
 `;
 
 export type RunnerResumeMaterial = {
@@ -90,5 +103,14 @@ export type RunnerEventOutboxRow = {
   semantic_dedupe_key: string | null;
   session_effect_json: string | null;
   payload_hash: string;
+  runner_metadata_json: string | null;
   acked_through: number | null;
+};
+
+export type RunnerIpcJournalRow = {
+  frame_seq: number;
+  outbox_source_seq: number;
+  frame_kind: "engine_event";
+  host_acked: 0 | 1;
+  created_at: string;
 };

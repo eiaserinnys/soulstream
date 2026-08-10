@@ -28,7 +28,11 @@ export interface TaskEngineEventPublisherDeps {
 export class TaskEngineEventPublisher {
   constructor(private readonly deps: TaskEngineEventPublisherDeps) {}
 
-  async publishEngineEvent(task: Task, event: SSEEventPayload): Promise<void> {
+  async publishEngineEvent(
+    task: Task,
+    event: SSEEventPayload,
+    options: { alreadyPersisted?: boolean } = {},
+  ): Promise<void> {
     const eventType = (event as { type: string }).type;
 
     const sessionEffect = this.captureSessionId(task, event, eventType);
@@ -36,7 +40,10 @@ export class TaskEngineEventPublisher {
     this.captureCompactReinjectionNeed(task, eventType);
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
-    const persistent = await this.enqueuePersistentEventIfNeeded(task, event, sessionEffect);
+    const persistent = options.alreadyPersisted && shouldPersistEvent(event)
+      ? true
+      : await this.enqueuePersistentEventIfNeeded(task, event, sessionEffect);
+    if (options.alreadyPersisted) clearEventPersistenceInternals(event);
     if (!persistent) {
       await this.broadcastTransientEvent(task, event, eventType);
     }
