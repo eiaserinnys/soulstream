@@ -1,5 +1,6 @@
 import pino from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { EVENT_DURABILITY } from "@soulstream/wire-schema";
 
 import {
   EventPersistence,
@@ -14,6 +15,92 @@ import type { Task } from "../../src/task/task_models.js";
 import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
 import type { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+const SECTION_7_TRANSIENT_STREAMING_TYPES = [
+  "text_start",
+  "text_delta",
+  "text_end",
+] as const;
+
+const SECTION_7_DURABLE_ENGINE_DOMAIN_TYPES = [
+  "progress",
+  "session",
+  "intervention_sent",
+  "session_notification",
+  "user_message",
+  "assistant_message",
+  "input_request",
+  "input_request_expired",
+  "input_request_responded",
+  "debug",
+  "complete",
+  "error",
+  "credential_alert",
+  "session_ended",
+  "thinking",
+  "tool_start",
+  "tool_result",
+  "agent_updated",
+  "handoff_requested",
+  "handoff_occurred",
+  "tool_approval_requested",
+  "tool_approval_resolved",
+  "guardrail_tripwire",
+  "realtime_status",
+  "realtime_transcript",
+  "result",
+  "prompt_suggestion",
+  "subagent_start",
+  "subagent_stop",
+  "claude_runtime_session_state",
+  "claude_runtime_task_started",
+  "claude_runtime_task_created",
+  "claude_runtime_task_updated",
+  "claude_runtime_task_progress",
+  "claude_runtime_task_completed",
+  "claude_runtime_task_notification",
+  "claude_runtime_notification",
+  "claude_runtime_remote_trigger",
+  "claude_runtime_transcript_mirror_error",
+  "claude_runtime_hook_event",
+  "claude_runtime_mode_state",
+  "claude_runtime_schedule_updated",
+  "claude_runtime_schedule_deleted",
+  "context_usage",
+  "context_manifest",
+  "compact",
+  "assistant_error",
+  "away_summary",
+] as const;
+
+const SECTION_7_ORCH_DERIVED_DURABLE_TYPES = ["turn_summary"] as const;
+const SECTION_7_SSE_CONTROL_TYPES = ["init", "history_sync"] as const;
+const SECTION_7_STATE_NOTIFICATION_TYPES = [
+  "task_updated",
+  "custom_view_updated",
+] as const;
+const SECTION_7_RESERVED_TYPES = [
+  "reconnected",
+  "memory",
+  "runbook_updated",
+  "reconnect",
+  "metadata_updated",
+] as const;
+
+const SECTION_7_ALL_EVENT_TYPES = [
+  ...SECTION_7_TRANSIENT_STREAMING_TYPES,
+  ...SECTION_7_DURABLE_ENGINE_DOMAIN_TYPES,
+  ...SECTION_7_ORCH_DERIVED_DURABLE_TYPES,
+  ...SECTION_7_SSE_CONTROL_TYPES,
+  ...SECTION_7_STATE_NOTIFICATION_TYPES,
+  ...SECTION_7_RESERVED_TYPES,
+] as const;
+
+const PERSISTENCE_ONLY_EVENT_TYPES = ["metadata", "system_message"] as const;
+const ALL_PERSISTENCE_EVENT_TYPES = [
+  ...SECTION_7_ALL_EVENT_TYPES,
+  ...PERSISTENCE_ONLY_EVENT_TYPES,
+] as const;
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -249,6 +336,44 @@ describe("extractSearchableText", () => {
 });
 
 describe("EventPersistence transient boundary", () => {
+  it("§7의 SSE event 61종을 wire schema 분류와 빠짐없이 일치시킨다", () => {
+    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(61);
+
+    const transientTypes = new Set<string>(SECTION_7_TRANSIENT_STREAMING_TYPES);
+    for (const eventType of SECTION_7_ALL_EVENT_TYPES) {
+      const expectedDurability = transientTypes.has(eventType) ? "transient" : "durable";
+      const event = {
+        type: eventType,
+        ...(transientTypes.has(eventType) ? { _live_only: true } : {}),
+      } as unknown as SSEEventPayload;
+      expect(EVENT_DURABILITY[eventType]).toBe(expectedDurability);
+      expect(shouldPersistEvent(event)).toBe(expectedDurability === "durable");
+    }
+  });
+
+  it("SSE 밖에서 outbox를 쓰는 내부 이벤트도 같은 분류 정본에 고정한다", () => {
+    expect(PERSISTENCE_ONLY_EVENT_TYPES).toHaveLength(2);
+    expect(new Set(Object.keys(EVENT_DURABILITY))).toEqual(
+      new Set(ALL_PERSISTENCE_EVENT_TYPES),
+    );
+
+    for (const eventType of PERSISTENCE_ONLY_EVENT_TYPES) {
+      const event = { type: eventType } as unknown as SSEEventPayload;
+      expect(EVENT_DURABILITY[eventType]).toBe("durable");
+      expect(shouldPersistEvent(event)).toBe(true);
+    }
+  });
+
+  it("producer의 _live_only 표기는 durable 타입을 임의로 휘발화하지 못한다", () => {
+    const event = {
+      type: "progress",
+      _live_only: true,
+    } as unknown as SSEEventPayload;
+
+    expect(isLiveOnlyEvent(event)).toBe(true);
+    expect(shouldPersistEvent(event)).toBe(true);
+  });
+
   it("live-only event는 durable outbox 대상이 아니다", async () => {
     const { db, appendEvent } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

@@ -12,6 +12,10 @@
  */
 
 import type { Logger } from "pino";
+import {
+  EVENT_DURABILITY,
+  type EventDurability,
+} from "@soulstream/wire-schema";
 
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "../task/task_models.js";
@@ -54,8 +58,6 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   session_notification: "text",
   realtime_transcript: "text",
 };
-
-const TRANSIENT_TEXT_EVENT_TYPES = new Set(["text_start", "text_delta", "text_end"]);
 
 export class EventPersistence {
   private readonly latestPendingAckBySession = new Map<
@@ -229,11 +231,22 @@ export function isLiveOnlyEvent(event: SSEEventPayload): boolean {
 }
 
 export function isTransientTextEvent(event: SSEEventPayload): boolean {
-  return TRANSIENT_TEXT_EVENT_TYPES.has((event as { type: string }).type);
+  return resolveEventDurability(event) === "transient";
 }
 
 export function shouldPersistEvent(event: SSEEventPayload): boolean {
-  return !isLiveOnlyEvent(event) && !isTransientTextEvent(event);
+  return resolveEventDurability(event) === "durable";
+}
+
+function resolveEventDurability(event: SSEEventPayload): EventDurability {
+  const eventType = (event as { type: string }).type;
+  const durability = (
+    EVENT_DURABILITY as Record<string, EventDurability | undefined>
+  )[eventType];
+  if (durability === undefined) {
+    throw new Error(`unclassified event durability: ${eventType}`);
+  }
+  return durability;
 }
 
 export function clearEventPersistenceInternals(event: SSEEventPayload): void {
