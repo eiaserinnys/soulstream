@@ -118,6 +118,10 @@ describe("database release CI contract", () => {
     expect(commands).toContain("verify-vitest-contract-result.mjs");
     expect(commands).toContain("29");
     expect(commands).toContain("--maxWorkers=2 --minWorkers=1");
+    expect(commands).toContain("--reporter=default --reporter=json");
+    expect(commands).toContain(
+      "--outputFile.json=database-release-postgres-results.json",
+    );
   });
 
   it("runs the real executor PostgreSQL suite without skips on Windows", () => {

@@ -126,7 +126,8 @@ jobs:
             tests/scripts/apply_schema.test.ts \
             tests/scripts/release_executor_postgres_review.test.ts \
             --maxWorkers=2 --minWorkers=1 \
-            --reporter=json --outputFile=database-release-postgres-results.json
+            --reporter=default --reporter=json \
+            --outputFile.json=database-release-postgres-results.json
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
             soul-server-ts/database-release-postgres-results.json 29
 
