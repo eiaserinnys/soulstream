@@ -25,6 +25,10 @@ import {
 } from "../../src/engine/claude_event_mapper.js";
 import { ClaudeSdkEventMapper } from "../../src/engine/claude_sdk_event_mapper.js";
 import { ClaudeRuntimeState } from "../../src/engine/claude_sdk_runtime_state.js";
+import {
+  inputResponseControlFrame,
+  runnerControlResponseFrame,
+} from "../../src/runner/frame_protocol.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -297,10 +301,14 @@ describe("ClaudeSdkClient", () => {
 
   it("intercepts Claude schedule tools into the Soulstream durable scheduler and suppresses native denial noise", async () => {
     const permissionResults: PermissionResult[] = [];
-    const scheduleHandler = vi.fn(async () => ({
-      message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
-      data: { scheduleId: "sched-1" },
-    }));
+    const runnerRequest = vi.fn(async (frame: { correlationId: string }) =>
+      runnerControlResponseFrame(frame.correlationId, {
+        status: "ok",
+        data: {
+          message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
+          data: { scheduleId: "sched-1" },
+        },
+      }));
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -351,19 +359,22 @@ describe("ClaudeSdkClient", () => {
           workspaceDir: "/tmp/claude-work",
           env: {},
           agentSessionId: "sess-1",
-          onScheduleToolUse: scheduleHandler,
+          runnerRequest,
         },
         new AbortController().signal,
       ),
     );
 
-    expect(scheduleHandler).toHaveBeenCalledWith(
+    expect(runnerRequest).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentSessionId: "sess-1",
-        toolUseId: "toolu-schedule",
-        toolName: "ScheduleWakeup",
-        input: { delaySeconds: 60, prompt: "wake me" },
-        now: expect.any(Date),
+        kind: "request",
+        request: expect.objectContaining({
+          agentSessionId: "sess-1",
+          toolUseId: "toolu-schedule",
+          toolName: "ScheduleWakeup",
+          input: { delaySeconds: 60, prompt: "wake me" },
+          now: expect.any(String),
+        }),
       }),
     );
     expect(permissionResults).toEqual([
@@ -382,17 +393,21 @@ describe("ClaudeSdkClient", () => {
 
   it("passes CronList schedule details through the permission-deny message so the model can choose ids", async () => {
     const permissionResults: PermissionResult[] = [];
-    const scheduleHandler = vi.fn(async () => ({
-      message:
-        "Soulstream durable scheduler has 1 schedule(s).\n"
-        + 'id=sched-visible kind=cron status=active nextRunAt=2026-01-01T01:00:00.000Z prompt="summarize open loops"',
-      data: {
-        schedules: [{
-          scheduleId: "sched-visible",
-          nextRunAt: "2026-01-01T01:00:00.000Z",
-        }],
-      },
-    }));
+    const runnerRequest = vi.fn(async (frame: { correlationId: string }) =>
+      runnerControlResponseFrame(frame.correlationId, {
+        status: "ok",
+        data: {
+          message:
+            "Soulstream durable scheduler has 1 schedule(s).\n"
+            + 'id=sched-visible kind=cron status=active nextRunAt=2026-01-01T01:00:00.000Z prompt="summarize open loops"',
+          data: {
+            schedules: [{
+              scheduleId: "sched-visible",
+              nextRunAt: "2026-01-01T01:00:00.000Z",
+            }],
+          },
+        },
+      }));
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -421,7 +436,7 @@ describe("ClaudeSdkClient", () => {
           workspaceDir: "/tmp/claude-work",
           env: {},
           agentSessionId: "sess-1",
-          onScheduleToolUse: scheduleHandler,
+          runnerRequest,
         },
         new AbortController().signal,
       ),
@@ -482,10 +497,16 @@ describe("ClaudeSdkClient", () => {
           workspaceDir: "/tmp/claude-work",
           env: {},
           agentSessionId: "sess-1",
-          onScheduleToolUse: async () => ({
-            message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
-            data: { scheduleId: "sched-1" },
-          }),
+          runnerRequest: async (frame) => runnerControlResponseFrame(
+            frame.correlationId,
+            {
+              status: "ok",
+              data: {
+                message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
+                data: { scheduleId: "sched-1" },
+              },
+            },
+          ),
         },
         new AbortController().signal,
       ),
@@ -1595,9 +1616,10 @@ describe("ClaudeSdkClient", () => {
       questions: [{ question: "진행할까요?" }],
     });
     expect(
-      client.deliverInputResponse((first.value as Extract<ClaudeClientEvent, { type: "input_request" }>).requestId, {
-        "진행할까요?": "진행",
-      }),
+      client.sendControlFrame(inputResponseControlFrame(
+        (first.value as Extract<ClaudeClientEvent, { type: "input_request" }>).requestId,
+        { "진행할까요?": "진행" },
+      )),
     ).toBe(true);
 
     const remaining = await collectIterator(iter);

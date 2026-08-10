@@ -162,8 +162,14 @@ async function* consumeRunnerFrames(
       await deps.snapshotPersistence.persistSessionItemsSnapshot(deps.task, frame.snapshot);
       continue;
     }
-    if (frame.request.kind !== "schedule_tool_use") {
-      throw new Error(`Unhandled runner request frame: ${frame.request.kind}`);
+    if (
+      frame.request.kind === "can_use_tool" ||
+      frame.request.kind === "tool_approval"
+    ) {
+      // AskUserQuestion and tool approvals are resolved asynchronously through
+      // the existing delivery route. The request frame only makes that runner
+      // boundary explicit; it does not add another wire event or ACK.
+      continue;
     }
     if (!deps.scheduleToolHandler || !deps.engine.sendControlFrame) {
       throw new Error("Runner emitted schedule request without a host control boundary");

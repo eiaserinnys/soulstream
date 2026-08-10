@@ -228,6 +228,60 @@ describe("TaskEngineTurnRunner", () => {
     expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
   });
 
+  it("accepts externally resolved canUseTool and approval request frames without changing SSE", async () => {
+    const task = makeTask();
+    const sendControlFrame = vi.fn();
+    const engine: EnginePort = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agent",
+      async *execute(): AsyncIterable<SSEEventPayload> {},
+      async *executeFrames() {
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "ask-1",
+          request: {
+            kind: "can_use_tool" as const,
+            agentSessionId: task.agentSessionId,
+            toolUseId: "tool-use-ask",
+            toolName: "AskUserQuestion",
+            input: { questions: [] },
+          },
+        };
+        yield {
+          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+          channel: "event" as const,
+          kind: "request" as const,
+          correlationId: "approval-1",
+          request: {
+            kind: "tool_approval" as const,
+            approvalId: "approval-1",
+            toolName: "drop_rows",
+            input: { table: "events" },
+          },
+        };
+        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
+      },
+      sendControlFrame,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const runner = new TaskEngineTurnRunner({
+      snapshotPersistence: {
+        persistRunStateSnapshot: vi.fn(),
+        persistSessionItemsSnapshot: vi.fn(),
+      },
+    });
+
+    const events = await drain(
+      runner.executeTurn({ task, agent, engine, input: { prompt: "turn" } }),
+    );
+
+    expect(events).toEqual([{ type: "complete", result: "done", timestamp: 1 }]);
+    expect(sendControlFrame).not.toHaveBeenCalled();
+  });
+
   it("answers schedule request frames through the correlated control boundary", async () => {
     const task = makeTask();
     const scheduleToolHandler = vi.fn().mockResolvedValue({

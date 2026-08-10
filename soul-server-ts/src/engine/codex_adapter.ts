@@ -223,8 +223,8 @@ export class CodexEngineAdapter implements EnginePort {
       this.logger.debug({ workspaceDir: this.workspaceDir }, "Started new Codex thread");
     }
 
-    // 새 thread면 첫 yield는 thread.started → session SSE.
-    // 기존 thread resume이면 thread.id가 이미 있음 — onSession 콜백 호출.
+    // 새 thread면 첫 frame은 thread.started → session SSE.
+    // 기존 thread resume이면 thread.id를 session engine_event frame으로 먼저 발행한다.
     let streamedTurn;
     try {
       streamedTurn = await thread.runStreamed(buildCodexInput(params), {

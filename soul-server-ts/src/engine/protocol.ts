@@ -15,6 +15,7 @@
 import type { SessionEventEnvelope } from "@soulstream/wire-schema";
 
 import type {
+  RunnerCommandFrame,
   RunnerControlFrame,
   RunnerEventFrame,
 } from "../runner/frame_protocol.js";
@@ -162,8 +163,11 @@ export interface EnginePort {
    */
   executeFrames?(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
 
+  /** Deliver a serialized lifecycle command to the runner boundary. */
+  sendCommandFrame?(frame: RunnerCommandFrame): boolean;
+
   /** Deliver one correlated response/control frame to the active runner turn. */
-  sendControlFrame?(frame: RunnerControlFrame): boolean;
+  sendControlFrame?(frame: RunnerControlFrame): Promise<boolean> | boolean;
 
   /**
    * 실행 중 turn 중단. 성공 시 true.
