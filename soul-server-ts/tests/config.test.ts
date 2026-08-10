@@ -26,6 +26,7 @@ describe("parseEnv", () => {
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
     expect(env.EVENT_OUTBOX_DIR).toBe("/tmp/soulstream-event-outbox-test");
     expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(true);
+    expect(env.SOUL_RUNNER_PROCESS_ENABLED).toBe(false);
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -98,6 +99,26 @@ describe("parseEnv", () => {
     const { EVENT_OUTBOX_DIR: _, ...rest } = minimal;
     void _;
     expect(() => parseEnv(rest)).toThrow(ZodError);
+  });
+
+  it("session runner process는 default off이며 opt-in 경로·스냅샷을 함께 요구한다", () => {
+    expect(parseEnv(minimal).SOUL_RUNNER_PROCESS_ENABLED).toBe(false);
+    expect(() => parseEnv({
+      ...minimal,
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+    })).toThrow(ZodError);
+    expect(parseEnv({
+      ...minimal,
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+      SOUL_RUNNER_STATE_DIR: "/var/lib/soulstream/runners",
+      SOUL_RUNNER_CODE_SHA: "f5d69e57",
+      SOUL_RUNNER_SNAPSHOT_PATH: "/var/lib/haniel/releases/f5d69e57/soul-server-ts",
+    })).toMatchObject({
+      SOUL_RUNNER_PROCESS_ENABLED: true,
+      SOUL_RUNNER_STATE_DIR: "/var/lib/soulstream/runners",
+      SOUL_RUNNER_CODE_SHA: "f5d69e57",
+      SOUL_RUNNER_SNAPSHOT_PATH: "/var/lib/haniel/releases/f5d69e57/soul-server-ts",
+    });
   });
 
   it("AGENTS_CONFIG_PATH 미지정 시 default 'config/agents.yaml'", () => {

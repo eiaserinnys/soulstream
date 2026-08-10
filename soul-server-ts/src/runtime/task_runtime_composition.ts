@@ -8,7 +8,10 @@ import type { ModelCatalog } from "../model_catalog.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
-import type { EngineFactory } from "../task/task_executor.js";
+import type {
+  EngineFactory,
+  RunnerProcessRuntimeFactory,
+} from "../task/task_executor.js";
 import { TaskExecutor } from "../task/task_executor.js";
 import {
   TaskCompletionNotifier,
@@ -40,6 +43,7 @@ export interface TaskRuntimeCompositionParams {
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
+  runnerProcessFactory?: RunnerProcessRuntimeFactory;
 }
 
 export interface TaskRuntimeComposition {
@@ -66,6 +70,7 @@ export function composeTaskRuntime(
     taskManager,
     engineFactory,
     modelCatalog,
+    runnerProcessFactory,
     contextBuilder,
     persistence,
     broadcaster,
@@ -142,6 +147,7 @@ export function composeTaskRuntime(
       ? taskManager.getDeliveryConsumptionRecorder()
       : undefined,
     modelCatalog,
+    runnerProcessFactory,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

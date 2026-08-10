@@ -7,6 +7,7 @@ import {
   engineEventFrame,
   executeCommandFrame,
   interruptCommandFrame,
+  invokeCommandFrame,
   prepareSessionCommandFrame,
 } from "../../src/runner/frame_protocol.js";
 import { InProcessRunnerCommandDispatcher } from
@@ -126,5 +127,24 @@ describe("RunnerCommandDispatcher", () => {
           error: { code: "interrupt_failed", message: "interrupt failed" },
         },
       });
+  });
+
+  it("dispatches optional engine capabilities through the same command boundary", async () => {
+    const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
+    const engine = makeEngine() as EnginePort & {
+      deliverInputResponse: typeof deliverInputResponse;
+    };
+    engine.deliverInputResponse = deliverInputResponse;
+    const dispatcher = new InProcessRunnerCommandDispatcher(engine);
+
+    await expect(dispatcher.dispatch(invokeCommandFrame(
+      "invoke-1",
+      "deliverInputResponse",
+      ["request-1", { answer: "yes" }],
+    ))).resolves.toMatchObject({
+      commandId: "invoke-1",
+      result: { status: "ok", data: { status: "delivered" } },
+    });
+    expect(deliverInputResponse).toHaveBeenCalledWith("request-1", { answer: "yes" });
   });
 });

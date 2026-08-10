@@ -21,17 +21,30 @@ import {
   type RunnerBootstrapInput,
   type RunnerBootstrapRecord,
   type RunnerEventOutboxRow,
+  type RunnerIpcJournalRow,
 } from "./sqlite_event_outbox_schema.js";
+import {
+  engineEventFrame,
+  type RunnerEventFrame,
+} from "./frame_protocol.js";
 import {
   assertRunnerEventFits,
   buildRunnerEventBatch,
   runnerRowToBootstrap,
   runnerRowToRecord,
   sameRunnerBootstrapInput,
-  stringifyRunnerJson,
   validateRunnerAppendInput,
   validateRunnerBootstrapInput,
 } from "./sqlite_event_outbox_records.js";
+import {
+  insertRunnerRecord as insertRecord,
+  latestRunnerSequence as latestSequence,
+  readRunnerAcknowledgedThrough as readAcknowledgedThrough,
+  readRunnerSchemaVersion as readUserVersion,
+  recoverRunnerOutbox as recover,
+  runnerRowCount as rowCount,
+  runnerTableHasColumn as hasColumn,
+} from "./sqlite_event_outbox_database.js";
 
 export type {
   RunnerBootstrapInput,
@@ -49,6 +62,7 @@ export class RunnerSqliteEventOutbox {
 
   private constructor(
     private readonly database: SqliteDatabase,
+    readonly databasePath: string,
     private bootstrap: RunnerBootstrapRecord | null,
     private acknowledgedThrough: number,
   ) {}
@@ -74,12 +88,21 @@ export class RunnerSqliteEventOutbox {
       if (version > RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
         throw new Error(`runner event outbox schema version ${version} is not supported`);
       }
-      if (version === 0) {
+      if (!hasColumn(database, "runner_event_outbox", "runner_metadata_json")) {
+        database.exec(`
+          ALTER TABLE runner_event_outbox
+          ADD COLUMN runner_metadata_json TEXT CHECK (
+            runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
+          )
+        `);
+      }
+      if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
         database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);
       }
       const recovered = recover(database);
       return new RunnerSqliteEventOutbox(
         database,
+        databasePath,
         recovered.bootstrap,
         recovered.ackedThrough,
       );
@@ -189,6 +212,108 @@ export class RunnerSqliteEventOutbox {
     return record;
   }
 
+  /**
+   * Atomically appends one orch-bound event and a payload-free IPC ordering
+   * reference. The journal never stores domain payload or metadata; replay
+   * reconstructs the frame from runner_event_outbox.
+   */
+  async appendEngineFrame(
+    input: EventOutboxAppendInput,
+    frame: Extract<RunnerEventFrame, { kind: "engine_event" }>,
+  ): Promise<EventOutboxRecord & { ipc_frame_seq: number }> {
+    const bootstrap = this.requireBootstrap();
+    validateRunnerAppendInput(input);
+    if (input.session_id !== bootstrap.session_id) {
+      throw new Error("runner event session_id differs from bootstrap record");
+    }
+    const parsedFrame = engineEventFrame(frame.payload, frame.metadata);
+    if (JSON.stringify(parsedFrame.payload) !== JSON.stringify(input.payload)) {
+      throw new Error("runner frame payload differs from durable event payload");
+    }
+
+    let record!: EventOutboxRecord;
+    let frameSeq!: number;
+    this.transaction(() => {
+      const sourceSeq = latestSequence(this.database) + 1;
+      const unsigned = {
+        stream_id: bootstrap.stream_id,
+        source_seq: sourceSeq,
+        ...input,
+      };
+      record = {
+        ...unsigned,
+        payload_hash: computeEventOutboxPayloadHash(unsigned),
+      };
+      assertRunnerEventFits(record);
+      insertRecord(
+        this.database,
+        "event",
+        record,
+        null,
+        parsedFrame.metadata ?? null,
+      );
+      const result = this.database.prepare(`
+        INSERT INTO runner_ipc_journal (
+          outbox_source_seq, frame_kind, host_acked, created_at
+        ) VALUES (?, 'engine_event', 0, ?)
+      `).run(record.source_seq, record.created_at);
+      frameSeq = Number(result.lastInsertRowid);
+    });
+    for (const listener of this.appendListeners) listener();
+    return { ...record, ipc_frame_seq: frameSeq };
+  }
+
+  async readPendingIpcFrames(): Promise<Array<{
+    frame_seq: number;
+    outbox_source_seq: number;
+    frame: Extract<RunnerEventFrame, { kind: "engine_event" }>;
+  }>> {
+    this.requireOpen();
+    const rows = this.database.prepare(`
+      SELECT
+        journal.frame_seq,
+        journal.outbox_source_seq,
+        journal.frame_kind,
+        journal.host_acked,
+        journal.created_at,
+        outbox.*
+      FROM runner_ipc_journal AS journal
+      JOIN runner_event_outbox AS outbox
+        ON outbox.source_seq = journal.outbox_source_seq
+      WHERE journal.host_acked = 0
+      ORDER BY journal.frame_seq
+    `).all() as unknown as Array<RunnerIpcJournalRow & RunnerEventOutboxRow>;
+    return rows.map((row) => {
+      const record = runnerRowToRecord(row);
+      const metadata = row.runner_metadata_json === null
+        ? undefined
+        : JSON.parse(row.runner_metadata_json) as unknown;
+      return {
+        frame_seq: row.frame_seq,
+        outbox_source_seq: row.outbox_source_seq,
+        frame: engineEventFrame(record.payload, metadata) as Extract<
+          RunnerEventFrame,
+          { kind: "engine_event" }
+        >,
+      };
+    });
+  }
+
+  async acknowledgeHostFrame(frameSeq: number): Promise<void> {
+    this.requireOpen();
+    if (!Number.isSafeInteger(frameSeq) || frameSeq <= 0) {
+      throw new Error("runner IPC host ACK cursor must be a positive integer");
+    }
+    this.transaction(() => {
+      this.database.prepare(`
+        UPDATE runner_ipc_journal SET host_acked = 1
+        WHERE frame_seq = ?
+      `).run(frameSeq);
+    });
+    this.compactJournal();
+    this.compactIfNeeded();
+  }
+
   async readBatch(): Promise<EventOutboxBatch | null> {
     this.requireOpen();
     const bootstrap = this.refreshBootstrap();
@@ -229,6 +354,15 @@ export class RunnerSqliteEventOutbox {
     );
   }
 
+  async readRecord(sourceSeq: number): Promise<EventOutboxRecord | null> {
+    this.requireOpen();
+    const row = this.database.prepare(`
+      SELECT * FROM runner_event_outbox WHERE source_seq = ?
+    `).get(sourceSeq) as unknown as RunnerEventOutboxRow | undefined;
+    if (!row || row.record_kind !== "event") return null;
+    return runnerRowToRecord(row);
+  }
+
   async acknowledge(streamId: string, ackedThrough: number): Promise<void> {
     const bootstrap = this.requireBootstrap();
     if (streamId !== bootstrap.stream_id) {
@@ -252,7 +386,10 @@ export class RunnerSqliteEventOutbox {
       return ackedThrough;
     });
     this.acknowledgedThrough = Math.max(previousCursor, durableCursor);
-    if (this.acknowledgedThrough > previousCursor) this.compactIfNeeded();
+    if (this.acknowledgedThrough > previousCursor) {
+      this.compactJournal();
+      this.compactIfNeeded();
+    }
   }
 
   close(): void {
@@ -280,6 +417,19 @@ export class RunnerSqliteEventOutbox {
       this.database.prepare(`
         DELETE FROM runner_event_outbox
         WHERE record_kind = 'event' AND source_seq <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM runner_ipc_journal
+            WHERE outbox_source_seq = runner_event_outbox.source_seq
+          )
+      `).run(this.acknowledgedThrough);
+    });
+  }
+
+  private compactJournal(): void {
+    this.transaction(() => {
+      this.database.prepare(`
+        DELETE FROM runner_ipc_journal
+        WHERE host_acked = 1 AND outbox_source_seq <= ?
       `).run(this.acknowledgedThrough);
     });
   }
@@ -317,117 +467,4 @@ export class RunnerSqliteEventOutbox {
   private requireOpen(): void {
     if (this.closed) throw new Error("runner event outbox is closed");
   }
-}
-
-function recover(database: SqliteDatabase): {
-  bootstrap: RunnerBootstrapRecord | null;
-  ackedThrough: number;
-} {
-  database.exec("BEGIN");
-  try {
-    const recovered = recoverSnapshot(database);
-    database.exec("COMMIT");
-    return recovered;
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
-}
-
-function recoverSnapshot(database: SqliteDatabase): {
-  bootstrap: RunnerBootstrapRecord | null;
-  ackedThrough: number;
-} {
-  const rows = database.prepare(
-    "SELECT * FROM runner_event_outbox ORDER BY source_seq",
-  ).all() as unknown as RunnerEventOutboxRow[];
-  if (rows.length === 0) return { bootstrap: null, ackedThrough: 0 };
-
-  const bootstrapRow = rows[0]!;
-  if (bootstrapRow.record_kind !== "bootstrap" || bootstrapRow.source_seq !== 1) {
-    throw new Error("runner bootstrap record must be source_seq 1");
-  }
-  const bootstrap = runnerRowToBootstrap(bootstrapRow);
-  const ackedThrough = bootstrapRow.acked_through;
-  if (ackedThrough === null || ackedThrough < 1) {
-    throw new Error("runner event outbox ACK cursor is invalid");
-  }
-
-  const eventRows = rows.slice(1);
-  let previous = eventRows[0]?.source_seq === 2 ? 1 : ackedThrough;
-  for (const row of eventRows) {
-    if (row.record_kind !== "event") throw new Error("runner event outbox record kind is invalid");
-    if (row.stream_id !== bootstrap.stream_id) throw new Error("event outbox record stream mismatch");
-    if (row.session_id !== bootstrap.session_id) throw new Error("event outbox record session mismatch");
-    if (row.source_seq !== previous + 1) throw new Error("event outbox source_seq gap detected");
-    runnerRowToRecord(row);
-    previous = row.source_seq;
-  }
-  const latest = latestSequence(database);
-  const lastDurable = eventRows.at(-1)?.source_seq ?? 1;
-  if (latest > ackedThrough && lastDurable < latest) {
-    throw new Error("event outbox durable unacknowledged prefix has a gap");
-  }
-  if (ackedThrough > latest) throw new Error("event outbox ACK exceeds durable append cursor");
-  return { bootstrap, ackedThrough };
-}
-
-function insertRecord(
-  database: SqliteDatabase,
-  kind: "bootstrap" | "event",
-  record: EventOutboxRecord,
-  ackedThrough: number | null,
-): void {
-  database.prepare(`
-    INSERT INTO runner_event_outbox (
-      source_seq, record_kind, stream_id, session_id, event_type,
-      payload_json, searchable_text, created_at, semantic_dedupe_key,
-      session_effect_json, payload_hash, acked_through
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    record.source_seq,
-    kind,
-    record.stream_id,
-    record.session_id,
-    record.event_type,
-    stringifyRunnerJson(record.payload, "payload"),
-    record.searchable_text,
-    record.created_at,
-    record.semantic_dedupe_key,
-    record.session_effect === null
-      ? null
-      : stringifyRunnerJson(record.session_effect, "session_effect"),
-    record.payload_hash,
-    ackedThrough,
-  );
-}
-
-function latestSequence(database: SqliteDatabase): number {
-  const row = database.prepare(
-    "SELECT seq FROM sqlite_sequence WHERE name = 'runner_event_outbox'",
-  ).get() as { seq: number } | undefined;
-  return row?.seq ?? 0;
-}
-
-function rowCount(database: SqliteDatabase): number {
-  const row = database.prepare(
-    "SELECT COUNT(*) AS count FROM runner_event_outbox",
-  ).get() as { count: number };
-  return row.count;
-}
-
-function readUserVersion(database: SqliteDatabase): number {
-  const row = database.prepare("PRAGMA user_version").get() as { user_version: number };
-  return row.user_version;
-}
-
-function readAcknowledgedThrough(database: SqliteDatabase): number {
-  const row = database.prepare(`
-    SELECT acked_through FROM runner_event_outbox
-    WHERE record_kind = 'bootstrap'
-  `).get() as { acked_through: number } | undefined;
-  if (!row || !Number.isSafeInteger(row.acked_through) || row.acked_through < 1) {
-    throw new Error("runner event outbox ACK cursor is invalid");
-  }
-  return row.acked_through;
 }

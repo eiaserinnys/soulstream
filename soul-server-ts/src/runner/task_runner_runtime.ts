@@ -13,21 +13,24 @@ import {
 export interface TaskRunnerRuntime {
   readonly engine: EnginePort;
   readonly dispatcher: RunnerCommandDispatcher;
+  readonly eventPersistence: "host" | "runner";
 }
 
 export function createTaskRunnerRuntime(
   engine: EnginePort,
   dispatcher: RunnerCommandDispatcher,
+  eventPersistence: "host" | "runner" = "host",
 ): TaskRunnerRuntime {
   if (!dispatcher) {
     throw new Error("Task runner command dispatcher is required");
   }
-  return { engine, dispatcher };
+  return { engine, dispatcher, eventPersistence };
 }
 
 export function createInProcessTaskRunnerRuntime(engine: EnginePort): TaskRunnerRuntime {
   return createTaskRunnerRuntime(
     engine,
     new InProcessRunnerCommandDispatcher(engine),
+    "host",
   );
 }

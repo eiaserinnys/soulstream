@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 describe("RunnerSqliteEventOutbox", () => {
-  it("uses WAL and one additive-only user table", async () => {
+  it("uses WAL with one event ledger and one payload-free IPC ordering journal", async () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.open(path);
     outbox.close();
@@ -42,10 +42,19 @@ describe("RunnerSqliteEventOutbox", () => {
       const tables = database.prepare(
         "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
       ).all() as Array<{ name: string; sql: string }>;
-      expect(tables).toHaveLength(1);
-      expect(tables[0]?.name).toBe("runner_event_outbox");
-      expect(tables[0]?.sql).toContain("source_seq INTEGER PRIMARY KEY AUTOINCREMENT");
-      expect(tables[0]?.sql).toContain("STRICT");
+      expect(tables.map((table) => table.name)).toEqual([
+        "runner_event_outbox",
+        "runner_ipc_journal",
+      ]);
+      const outboxTable = tables.find((table) => table.name === "runner_event_outbox")!;
+      const journalTable = tables.find((table) => table.name === "runner_ipc_journal")!;
+      expect(outboxTable.sql).toContain("source_seq INTEGER PRIMARY KEY AUTOINCREMENT");
+      expect(outboxTable.sql).toContain("runner_metadata_json");
+      expect(journalTable.sql).toContain("frame_seq INTEGER PRIMARY KEY AUTOINCREMENT");
+      expect(journalTable.sql).toContain("outbox_source_seq INTEGER NOT NULL UNIQUE");
+      expect(journalTable.sql).not.toMatch(/payload|metadata|session_effect/);
+      expect(outboxTable.sql).toContain("STRICT");
+      expect(journalTable.sql).toContain("STRICT");
     } finally {
       database.close();
     }
@@ -442,6 +451,46 @@ describe("RunnerSqliteEventOutbox", () => {
     writer.close();
     consumer.close();
   });
+
+  it("journals only an outbox reference and reconstructs the durable frame from the event ledger", async () => {
+    const outbox = await createOutbox();
+    const frame = {
+      protocolVersion: 1,
+      channel: "event" as const,
+      kind: "engine_event" as const,
+      payload: { type: "assistant_message", content: "one" },
+      metadata: { claudeBackgroundProvenance: "sdk_membership" as const },
+    };
+
+    const durable = await outbox.appendEngineFrame(eventInput("one"), frame);
+    const pending = await outbox.readPendingIpcFrames();
+
+    expect(pending).toEqual([{
+      frame_seq: 1,
+      outbox_source_seq: durable.source_seq,
+      frame,
+    }]);
+    outbox.close();
+  });
+
+  it("compacts journal rows only after both host apply ACK and orch outbox ACK", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.appendEngineFrame(eventInput("one"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "one" },
+    });
+    const [entry] = await outbox.readPendingIpcFrames();
+
+    await outbox.acknowledgeHostFrame(entry!.frame_seq);
+    expect(await outbox.readPendingIpcFrames()).toEqual([]);
+    expect(readJournalSequences(outboxDatabasePath(outbox))).toEqual([entry!.frame_seq]);
+
+    await outbox.acknowledge(record.stream_id, record.source_seq);
+    expect(readJournalSequences(outboxDatabasePath(outbox))).toEqual([]);
+    outbox.close();
+  });
 });
 
 async function createOutbox(): Promise<RunnerSqliteEventOutbox> {
@@ -543,6 +592,21 @@ function readStoredSequences(path: string): number[] {
   } finally {
     database.close();
   }
+}
+
+function readJournalSequences(path: string): number[] {
+  const database = new DatabaseSync(path);
+  try {
+    return (database.prepare(
+      "SELECT frame_seq FROM runner_ipc_journal ORDER BY frame_seq",
+    ).all() as Array<{ frame_seq: number }>).map((row) => row.frame_seq);
+  } finally {
+    database.close();
+  }
+}
+
+function outboxDatabasePath(outbox: RunnerSqliteEventOutbox): string {
+  return outbox.databasePath;
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

@@ -85,23 +85,9 @@ export class EventPersistence {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
     }
-    const dedupeKey = extractInternalDedupeKey(event);
-    const safeEvent = stripInternalPersistenceFields(
-      sanitizeJsonValue(event),
-    ) as SSEEventPayload;
-    const eventType = (safeEvent as { type: string }).type;
-    const searchable = extractSearchableText(safeEvent);
-    const createdAt = extractTimestamp(event) ?? new Date();
-    const sessionEffect = explicitEffect ?? buildLastMessageEffect(safeEvent, createdAt);
-    const record = await this.outbox.append({
-      session_id: sessionId,
-      event_type: eventType,
-      payload: safeEvent,
-      searchable_text: searchable,
-      created_at: createdAt.toISOString(),
-      semantic_dedupe_key: dedupeKey,
-      session_effect: sessionEffect,
-    });
+    const record = await this.outbox.append(
+      buildEventOutboxAppendInput(sessionId, event, explicitEffect),
+    );
     this.latestPendingAckBySession.set(sessionId, record);
     return record;
   }
@@ -193,6 +179,31 @@ export class EventPersistence {
     }
 
   }
+}
+
+export function buildEventOutboxAppendInput(
+  sessionId: string,
+  event: SSEEventPayload,
+  explicitEffect?: EventOutboxSessionEffect,
+): import("../upstream/event_outbox.js").EventOutboxAppendInput {
+  if (!shouldPersistEvent(event)) {
+    throw new Error("transient live events must not be persisted");
+  }
+  const dedupeKey = extractInternalDedupeKey(event);
+  const safeEvent = stripInternalPersistenceFields(
+    sanitizeJsonValue(event),
+  ) as SSEEventPayload;
+  const eventType = (safeEvent as { type: string }).type;
+  const createdAt = extractTimestamp(event) ?? new Date();
+  return {
+    session_id: sessionId,
+    event_type: eventType,
+    payload: safeEvent,
+    searchable_text: extractSearchableText(safeEvent),
+    created_at: createdAt.toISOString(),
+    semantic_dedupe_key: dedupeKey,
+    session_effect: explicitEffect ?? buildLastMessageEffect(safeEvent, createdAt),
+  };
 }
 
 function buildLastMessageEffect(

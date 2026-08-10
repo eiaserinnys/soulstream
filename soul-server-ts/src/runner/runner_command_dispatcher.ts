@@ -37,6 +37,7 @@ export interface RunnerCommandDispatcher {
     signal: AbortSignal;
     timeoutMs: number;
   } | undefined;
+  waitForSessionAck(): Promise<number | null>;
 }
 
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
@@ -75,6 +76,17 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
         case "close":
           await this.target.close();
           break;
+        case "invoke": {
+          const data = await invokeEngineCapability(
+            this.target,
+            command.capability,
+            command.args,
+          );
+          return runnerCommandResultFrame(command.commandId, {
+            status: "ok",
+            ...(data !== undefined ? { data } : {}),
+          });
+        }
       }
       return runnerCommandResultFrame(command.commandId, { status: "ok" });
     } catch (error) {
@@ -137,6 +149,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     return this.eventStreams.get(this.activeExecuteCommandId)?.requestContext(correlationId);
   }
 
+  async waitForSessionAck(): Promise<number | null> {
+    return null;
+  }
+
   private startExecution(command: Extract<RunnerCommandFrame, { kind: "execute" }>): void {
     if (this.activeExecuteCommandId !== undefined) {
       throw new Error(
@@ -183,6 +199,18 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       }
     }
   }
+}
+
+export async function invokeEngineCapability(
+  target: EnginePort,
+  capability: string,
+  args: unknown[],
+): Promise<unknown> {
+  const method = (target as unknown as Record<string, unknown>)[capability];
+  if (typeof method !== "function") {
+    return { status: "not_supported" };
+  }
+  return await Reflect.apply(method, target, args);
 }
 
 function pipeFrames(frames: AsyncIterable<RunnerEventFrame>): InProcessRunnerFrameChannel {

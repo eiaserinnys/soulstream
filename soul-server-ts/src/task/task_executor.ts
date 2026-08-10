@@ -72,6 +72,18 @@ export type EngineFactory = (
   backendOverride?: BackendId,
 ) => EnginePort;
 
+export type RunnerProcessRuntimeFactory = (
+  task: Task,
+  agent: AgentProfile,
+  backend: BackendId,
+  snapshots: {
+    persistRunState(snapshot: import("../engine/protocol.js").EngineRunStateSnapshot): Promise<void>;
+    persistSessionItems(
+      snapshot: import("../engine/protocol.js").EngineSessionItemsSnapshot,
+    ): Promise<void>;
+  },
+) => TaskRunnerRuntime;
+
 export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
@@ -108,6 +120,7 @@ export class TaskExecutor {
       "recordConsumed" | "recordTurnStarted"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
+    private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -175,10 +188,18 @@ export class TaskExecutor {
       );
     }
     const backend = effectiveTaskBackend(task, agent);
-    const engine = task.modelPresetBackend
-      ? this.engineFactory(agent, backend)
-      : this.engineFactory(agent);
-    const runner = createInProcessTaskRunnerRuntime(engine);
+    const runner = this.runnerProcessFactory
+      ? this.runnerProcessFactory(task, agent, backend, {
+          persistRunState: async (snapshot) =>
+            await this.agentsSnapshotPersistence.persistRunStateSnapshot(task, snapshot),
+          persistSessionItems: async (snapshot) =>
+            await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
+        })
+      : createInProcessTaskRunnerRuntime(
+          task.modelPresetBackend
+            ? this.engineFactory(agent, backend)
+            : this.engineFactory(agent),
+        );
     task.runner = runner;
 
     const promise = (async () => {
@@ -265,16 +286,18 @@ export class TaskExecutor {
             },
           })) {
             if (turnReceipt) await turnReceipt.observe(task, event);
-            await this.engineEventPublisher.publishEngineEvent(task, event);
+            await this.engineEventPublisher.publishEngineEvent(task, event, {
+              alreadyPersisted: runner.eventPersistence === "runner",
+            });
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
           await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
         }
-        const lastAcknowledgedEventId = await this.persistence.waitForSessionAck(
-          task.agentSessionId,
-        );
+        const lastAcknowledgedEventId = runner.eventPersistence === "runner"
+          ? await runner.dispatcher.waitForSessionAck()
+          : await this.persistence.waitForSessionAck(task.agentSessionId);
         if (lastAcknowledgedEventId !== null) {
           task.lastEventId = lastAcknowledgedEventId;
         }
