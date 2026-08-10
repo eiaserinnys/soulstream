@@ -21,13 +21,18 @@ export class TaskExecutorFinalizer {
 
   private async closeEngine(task: Task): Promise<void> {
     try {
-      await task.engine?.close();
+      if (task.runnerCommandDispatcher) {
+        await task.runnerCommandDispatcher.close();
+      } else {
+        await task.engine?.close();
+      }
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "engine.close failed",
       );
     }
+    task.runnerCommandDispatcher = undefined;
     task.engine = undefined;
   }
 

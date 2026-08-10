@@ -2,6 +2,8 @@ import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { InProcessRunnerCommandDispatcher } from
+  "../../src/runner/runner_command_dispatcher.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -60,6 +62,28 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(task.engine).toBeUndefined();
     expect(notify).toHaveBeenCalledWith(task);
+  });
+
+  it("routes production cleanup through a close command ACK", async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    const engine = makeEngine(close);
+    const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
+    const dispatch = vi.spyOn(runnerCommandDispatcher, "dispatch");
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: makeLogger(),
+    });
+    const task = makeTask({ engine, runnerCommandDispatcher });
+
+    await finalizer.finalize(task);
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "command",
+      kind: "close",
+      commandId: expect.any(String),
+    }));
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runnerCommandDispatcher).toBeUndefined();
   });
 
   it("isolates engine close failure and still clears engine before notification", async () => {

@@ -30,7 +30,8 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
-import { prepareSessionCommandFrame } from "../runner/frame_protocol.js";
+import { InProcessRunnerCommandDispatcher } from
+  "../runner/runner_command_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
@@ -175,18 +176,14 @@ export class TaskExecutor {
     const engine = task.modelPresetBackend
       ? this.engineFactory(agent, backend)
       : this.engineFactory(agent);
-    if (engine.sendCommandFrame) {
-      const accepted = engine.sendCommandFrame(prepareSessionCommandFrame(
-        `prepare:${task.agentSessionId}`,
-        task.agentSessionId,
-      ));
-      if (!accepted) {
-        throw new Error(`Engine rejected prepare_session command: ${task.agentSessionId}`);
-      }
-    }
+    const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
     task.engine = engine;
+    task.runnerCommandDispatcher = runnerCommandDispatcher;
 
-    const promise = this._consumeEventStream(task, engine, agent).catch(
+    const promise = (async () => {
+      await runnerCommandDispatcher.prepareSession(task.agentSessionId);
+      await this._consumeEventStream(task, engine, agent);
+    })().catch(
       async (err: unknown) => {
         // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
         await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
@@ -258,6 +255,7 @@ export class TaskExecutor {
             task,
             agent,
             engine,
+            runnerCommandDispatcher: task.runnerCommandDispatcher,
             input: {
               prompt: turnPrompt,
               ...(turnInputUuid !== undefined ? { inputUuid: turnInputUuid } : {}),

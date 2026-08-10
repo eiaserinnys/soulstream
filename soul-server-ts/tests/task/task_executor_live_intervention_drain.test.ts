@@ -115,8 +115,8 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
     expect(turnInputs).toHaveLength(2);
     expect(turnInputs[0]).toMatchObject({
       prompt: "initial prompt",
-      resumeSessionId: undefined,
     });
+    expect(turnInputs[0]).not.toHaveProperty("resumeSessionId");
     expect(turnInputs[1]?.prompt).toContain("same turn intervention");
     expect(turnInputs[1]?.prompt).toContain("/tmp/readme.pdf");
     expect(turnInputs[1]?.imageAttachmentPaths).toEqual(["/tmp/a.png"]);

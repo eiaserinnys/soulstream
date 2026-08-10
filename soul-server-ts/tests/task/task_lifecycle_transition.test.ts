@@ -2,6 +2,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { InProcessRunnerCommandDispatcher } from
+  "../../src/runner/runner_command_dispatcher.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -51,6 +53,24 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
     expect(task.status).toBe("interrupted");
     expect(interrupt).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes production cancellation through an interrupt command ACK", async () => {
+    const { transition } = makeMocks();
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const engine = { interrupt } as unknown as EnginePort;
+    const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
+    const dispatch = vi.spyOn(runnerCommandDispatcher, "dispatch");
+    const task = makeTask({ engine, runnerCommandDispatcher });
+
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "command",
+      kind: "interrupt",
+      commandId: expect.any(String),
+    }));
+    expect(interrupt).toHaveBeenCalledOnce();
   });
 
   it("returns false without mutation when task is missing, terminal, or has no engine", async () => {

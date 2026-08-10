@@ -9,15 +9,15 @@ import type {
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
+import { DEFAULT_RUNNER_REQUEST_TIMEOUT_MS } from "../runner/in_process_frame_channel.js";
 import {
-  DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
-  InProcessRunnerFrameChannel,
-} from "../runner/in_process_frame_channel.js";
-import {
-  engineEventFrame,
   runnerControlResponseFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
+import {
+  InProcessRunnerCommandDispatcher,
+  type RunnerCommandDispatcher,
+} from "../runner/runner_command_dispatcher.js";
 import {
   ANTHROPIC_API_KEY_ENV,
   resolveModelPresetEnv,
@@ -46,6 +46,7 @@ export interface TaskEngineTurnRunnerParams {
   task: Task;
   agent: AgentProfile;
   engine: EnginePort;
+  runnerCommandDispatcher?: RunnerCommandDispatcher;
   input: TaskEngineTurnInput;
 }
 
@@ -81,6 +82,7 @@ export class TaskEngineTurnRunner {
     task,
     agent,
     engine,
+    runnerCommandDispatcher,
     input,
   }: TaskEngineTurnRunnerParams): AsyncIterable<SSEEventPayload> {
     const queuedToolApproval = task.agentsQueuedToolApproval;
@@ -103,14 +105,20 @@ export class TaskEngineTurnRunner {
       agentSessionId: task.agentSessionId,
       prompt: input.prompt,
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
-      imageAttachmentPaths: input.imageAttachmentPaths,
-      model: effectiveModel,
-      reasoningEffort: task.reasoningEffort,
-      resumeSessionId: task.codexThreadId,
-      resumeRunState: task.agentsRunState,
-      previousResponseId: task.agentsPreviousResponseId,
-      conversationId: task.agentsConversationId,
-      sessionItems: task.agentsSessionItems,
+      ...(input.imageAttachmentPaths !== undefined
+        ? { imageAttachmentPaths: input.imageAttachmentPaths }
+        : {}),
+      ...(effectiveModel !== undefined ? { model: effectiveModel } : {}),
+      ...(task.reasoningEffort !== undefined ? { reasoningEffort: task.reasoningEffort } : {}),
+      ...(task.codexThreadId !== undefined ? { resumeSessionId: task.codexThreadId } : {}),
+      ...(task.agentsRunState !== undefined ? { resumeRunState: task.agentsRunState } : {}),
+      ...(task.agentsPreviousResponseId !== undefined
+        ? { previousResponseId: task.agentsPreviousResponseId }
+        : {}),
+      ...(task.agentsConversationId !== undefined
+        ? { conversationId: task.agentsConversationId }
+        : {}),
+      ...(task.agentsSessionItems !== undefined ? { sessionItems: task.agentsSessionItems } : {}),
       ...(queuedToolApproval ? { queuedToolApproval } : {}),
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
@@ -127,13 +135,12 @@ export class TaskEngineTurnRunner {
         ? { scheduleToolUseEnabled: true }
         : {}),
     };
-    const frames = engine.executeFrames
-      ? engine.executeFrames(executeParams)
-      : legacyEngineEventFrames(engine.execute(executeParams));
+    const dispatcher = runnerCommandDispatcher ?? new InProcessRunnerCommandDispatcher(engine);
+    const frames = dispatcher.executeFrames(executeParams);
 
     return consumeRunnerFrames(frames, {
       task,
-      engine,
+      runnerCommandDispatcher: dispatcher,
       snapshotPersistence: this.deps.snapshotPersistence,
       scheduleToolHandler: this.deps.scheduleToolHandler,
     });
@@ -144,7 +151,7 @@ async function* consumeRunnerFrames(
   frames: AsyncIterable<RunnerEventFrame>,
   deps: {
     task: Task;
-    engine: EnginePort;
+    runnerCommandDispatcher: RunnerCommandDispatcher;
     snapshotPersistence: TaskAgentsSnapshotPersistencePort;
     scheduleToolHandler?: ScheduleToolUseHandler;
   },
@@ -171,13 +178,11 @@ async function* consumeRunnerFrames(
       // boundary explicit; it does not add another wire event or ACK.
       continue;
     }
-    if (!deps.scheduleToolHandler || !deps.engine.sendControlFrame) {
+    if (!deps.scheduleToolHandler) {
       throw new Error("Runner emitted schedule request without a host control boundary");
     }
     const timeoutMs = frame.timeoutMs ?? DEFAULT_RUNNER_REQUEST_TIMEOUT_MS;
-    const channelContext = frames instanceof InProcessRunnerFrameChannel
-      ? frames.requestContext(frame.correlationId)
-      : undefined;
+    const channelContext = deps.runnerCommandDispatcher.requestContext(frame.correlationId);
     const fallbackLifetime = channelContext ? undefined : createTimeoutLifetime(timeoutMs);
     const signal = channelContext?.signal ?? fallbackLifetime!.signal;
     let response: ReturnType<typeof runnerControlResponseFrame>;
@@ -213,7 +218,7 @@ async function* consumeRunnerFrames(
     } finally {
       fallbackLifetime?.cleanup();
     }
-    const delivered = await deps.engine.sendControlFrame(response);
+    const delivered = await deps.runnerCommandDispatcher.sendControlFrame(response);
     if (!delivered) {
       throw new Error(`Runner rejected control response: ${frame.correlationId}`);
     }
@@ -258,12 +263,4 @@ function abortReason(signal: AbortSignal): Error {
   return signal.reason instanceof Error
     ? signal.reason
     : new Error(signal.reason ? String(signal.reason) : "Runner request aborted");
-}
-
-async function* legacyEngineEventFrames(
-  events: AsyncIterable<SSEEventPayload>,
-): AsyncIterable<RunnerEventFrame> {
-  for await (const event of events) {
-    yield engineEventFrame(event as Record<string, unknown>);
-  }
 }
