@@ -31,14 +31,20 @@ export class TaskLifecycleTransition {
 
     task.status = "interrupted";
     recordTerminationHint(task, "killed", "cancelled");
-    return await task.engine.interrupt();
+    return task.runnerCommandDispatcher
+      ? await task.runnerCommandDispatcher.interrupt()
+      : await task.engine.interrupt();
   }
 
   async interruptAndDrain(task: Task): Promise<void> {
     if (!task.engine) return;
 
     try {
-      await task.engine.interrupt();
+      if (task.runnerCommandDispatcher) {
+        await task.runnerCommandDispatcher.interrupt();
+      } else {
+        await task.engine.interrupt();
+      }
     } catch {
       // interrupt is idempotent; cleanup must continue.
     }
@@ -67,7 +73,11 @@ export class TaskLifecycleTransition {
     if (!task.engine) return;
 
     try {
-      await task.engine.interrupt();
+      if (task.runnerCommandDispatcher) {
+        await task.runnerCommandDispatcher.interrupt();
+      } else {
+        await task.engine.interrupt();
+      }
     } catch {
       // idempotent; shutdown drain collection must continue.
     }

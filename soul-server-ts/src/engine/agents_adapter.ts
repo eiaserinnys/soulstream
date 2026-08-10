@@ -133,11 +133,11 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     const channel = new InProcessRunnerFrameChannel();
-    channel.start(() => this.executeToFrames(params, channel));
+    channel.start(() => this.executeToFrameChannel(params, channel));
     return channel;
   }
 
-  private async executeToFrames(
+  async executeToFrameChannel(
     params: EngineExecuteParams,
     channel: InProcessRunnerFrameChannel,
   ): Promise<void> {

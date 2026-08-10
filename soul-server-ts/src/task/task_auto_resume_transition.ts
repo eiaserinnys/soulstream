@@ -103,9 +103,15 @@ export class AutoResumeTransition {
   private async closeStaleEngine(task: Task): Promise<void> {
     if (!task.engine) return;
     const engine = task.engine;
+    const runnerCommandDispatcher = task.runnerCommandDispatcher;
     task.engine = undefined;
+    task.runnerCommandDispatcher = undefined;
     try {
-      await engine.close();
+      if (runnerCommandDispatcher) {
+        await runnerCommandDispatcher.close();
+      } else {
+        await engine.close();
+      }
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },

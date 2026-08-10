@@ -97,6 +97,13 @@ const frames: RunnerFrame[] = [
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "control",
+    kind: "command_result",
+    commandId: "execute-1",
+    result: { status: "ok", data: { accepted: true } },
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
     kind: "response",
     correlationId: "request-1",
     result: { status: "ok", data: { message: "scheduled" } },

@@ -25,6 +25,7 @@ import {
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
+import type { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
@@ -126,6 +127,13 @@ export class CodexEngineAdapter implements EnginePort {
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async executeToFrameChannel(
+    params: EngineExecuteParams,
+    channel: InProcessRunnerFrameChannel,
+  ): Promise<void> {
+    for await (const frame of this.executeFrames(params)) await channel.emit(frame);
   }
 
   async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {

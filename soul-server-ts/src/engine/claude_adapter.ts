@@ -14,7 +14,6 @@ import {
   engineEventFrame,
   inputResponseControlFrame,
   runnerRequestFrame,
-  type RunnerCommandFrame,
   type RunnerControlFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
@@ -173,10 +172,8 @@ export class ClaudeEngineAdapter
     this.logger = logger;
   }
 
-  sendCommandFrame(frame: RunnerCommandFrame): boolean {
-    if (frame.kind !== "prepare_session") return false;
-    this.persistentSessionRegistry?.reserve(frame.agentSessionId);
-    return true;
+  prepareSessionRuntime(agentSessionId: string): void {
+    this.persistentSessionRegistry?.reserve(agentSessionId);
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
@@ -185,11 +182,11 @@ export class ClaudeEngineAdapter
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     const channel = new InProcessRunnerFrameChannel();
-    channel.start(() => this.executeToFrames(params, channel));
+    channel.start(() => this.executeToFrameChannel(params, channel));
     return channel;
   }
 
-  private async executeToFrames(
+  async executeToFrameChannel(
     params: EngineExecuteParams,
     channel: InProcessRunnerFrameChannel,
   ): Promise<void> {
