@@ -30,6 +30,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
+import { prepareSessionCommandFrame } from "../runner/frame_protocol.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
@@ -174,11 +175,14 @@ export class TaskExecutor {
     const engine = task.modelPresetBackend
       ? this.engineFactory(agent, backend)
       : this.engineFactory(agent);
-    if (
-      "prepareSessionRuntime" in engine &&
-      typeof engine.prepareSessionRuntime === "function"
-    ) {
-      engine.prepareSessionRuntime(task.agentSessionId);
+    if (engine.sendCommandFrame) {
+      const accepted = engine.sendCommandFrame(prepareSessionCommandFrame(
+        `prepare:${task.agentSessionId}`,
+        task.agentSessionId,
+      ));
+      if (!accepted) {
+        throw new Error(`Engine rejected prepare_session command: ${task.agentSessionId}`);
+      }
     }
     task.engine = engine;
 

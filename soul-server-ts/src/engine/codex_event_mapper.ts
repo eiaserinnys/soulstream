@@ -109,7 +109,7 @@ function emitAssistantMessage(
 export function mapThreadEvent(event: ThreadEvent | RawCodexEvent): SSEEventPayload[] {
   switch (typeOf(event)) {
     case "thread.started":
-      // 새 스레드 시작 — session_id 운반. 어댑터가 추가로 onSession 콜백 호출.
+      // 새 스레드 시작 — session_id를 session engine_event로 운반.
       return [{
         type: "session",
         session_id: fieldString(event, "thread_id") ?? "",

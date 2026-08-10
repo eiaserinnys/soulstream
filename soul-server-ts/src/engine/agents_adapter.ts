@@ -30,7 +30,10 @@ import { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.
 import {
   engineEventFrame,
   runStateSnapshotFrame,
+  runnerRequestFrame,
   sessionItemsSnapshotFrame,
+  toolApprovalControlFrame,
+  type RunnerControlFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 
@@ -206,8 +209,20 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
                 this.registerPendingApproval(approvalId, sdkEvent.item);
               }
             }
-            for (const payload of mapAgentsRunStreamEvent(sdkEvent)) {
+            const payloads = mapAgentsRunStreamEvent(sdkEvent);
+            for (const payload of payloads) {
               await channel.emit(engineEventFrame(payload as Record<string, unknown>));
+              if (approvalId && payload.type === "tool_approval_requested") {
+                await channel.emit(runnerRequestFrame(approvalId, {
+                  kind: "tool_approval",
+                  approvalId,
+                  toolName:
+                    typeof payload.tool_name === "string"
+                      ? payload.tool_name
+                      : "unknown",
+                  input: isJsonRecord(payload.tool_input) ? payload.tool_input : {},
+                }));
+              }
             }
           }
           await result.completed;
@@ -293,15 +308,37 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
     decision: ToolApprovalDecision,
     options: ToolApprovalDeliveryOptions = {},
   ): ToolApprovalDeliveryResult {
-    const pending = this.pendingApprovals.get(approvalId);
+    return this.handleToolApprovalControl(
+      toolApprovalControlFrame(approvalId, decision, options),
+    );
+  }
+
+  sendControlFrame(frame: RunnerControlFrame): boolean {
+    if (frame.kind !== "tool_approval_response") return false;
+    return this.handleToolApprovalControl(frame).status === "delivered";
+  }
+
+  private handleToolApprovalControl(
+    frame: Extract<RunnerControlFrame, { kind: "tool_approval_response" }>,
+  ): ToolApprovalDeliveryResult {
+    const pending = this.pendingApprovals.get(frame.correlationId);
     if (!pending) {
-      return { status: "approval_not_pending", message: `Approval not pending: ${approvalId}` };
+      return {
+        status: "approval_not_pending",
+        message: `Approval not pending: ${frame.correlationId}`,
+      };
     }
     if (pending.resolved) {
-      return { status: "already_resolved", message: `Approval already resolved: ${approvalId}` };
+      return {
+        status: "already_resolved",
+        message: `Approval already resolved: ${frame.correlationId}`,
+      };
     }
     pending.resolved = true;
-    pending.resolve({ decision, options });
+    pending.resolve({
+      decision: frame.decision,
+      options: frame.options ?? {},
+    });
     return { status: "delivered" };
   }
 
@@ -762,6 +799,10 @@ function isToolApprovalEvent(event: unknown): event is {
 function approvalIdFromItem(item: RunToolApprovalItem): string {
   const raw = item.rawItem as { callId?: string; call_id?: string; id?: string };
   return raw.callId ?? raw.call_id ?? raw.id ?? "";
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringifyFinalOutput(value: unknown): string {

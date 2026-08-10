@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import { inputResponseControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient } from "./claude_adapter.js";
 import type {
   ClaudeBackgroundTaskControlResult,
@@ -147,8 +148,10 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
     const entry = await this.boundEntry(sessionId);
     if (!entry?.client) return { status: "request_not_pending" };
     this.touch(entry);
-    if (!entry.client.deliverInputResponse) return { status: "not_supported" };
-    const delivered = await entry.client.deliverInputResponse(requestId, answers);
+    if (!entry.client.sendControlFrame) return { status: "not_supported" };
+    const delivered = await entry.client.sendControlFrame(
+      inputResponseControlFrame(requestId, answers),
+    );
     return delivered ? { status: "delivered" } : { status: "request_not_pending" };
   }
 

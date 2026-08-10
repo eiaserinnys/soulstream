@@ -18,7 +18,11 @@ import {
   SOULSTREAM_AGENT_ID_ENV,
 } from "../../src/engine/scratch_workspace_env.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
-import { RUNNER_FRAME_PROTOCOL_VERSION } from "../../src/runner/frame_protocol.js";
+import {
+  RUNNER_FRAME_PROTOCOL_VERSION,
+  runnerRequestFrame,
+  type RunnerEventFrame,
+} from "../../src/runner/frame_protocol.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -287,13 +291,14 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     let scheduleResult: unknown;
     const client: ClaudeClient = {
       async *run(options) {
-        scheduleResult = await options.onScheduleToolUse?.({
+        scheduleResult = await options.runnerRequest?.(runnerRequestFrame("sdk-request-1", {
+          kind: "schedule_tool_use",
           agentSessionId: "session-1",
           toolUseId: "tool-use-1",
           toolName: "ScheduleTask",
           input: { prompt: "later" },
-          now: new Date("2026-08-10T12:00:00.000Z"),
-        });
+          now: "2026-08-10T12:00:00.000Z",
+        }));
         yield { type: "complete" };
       },
     };
@@ -321,7 +326,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     const correlationId = request.value?.kind === "request"
       ? request.value.correlationId
       : "missing";
-    expect(engine.sendControlFrame({
+    await expect(engine.sendControlFrame({
       protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
       channel: "control",
       kind: "response",
@@ -330,16 +335,19 @@ describe("ClaudeEngineAdapter fake client flow", () => {
         status: "ok",
         data: { message: "scheduled", data: { scheduleId: "schedule-1" } },
       },
-    })).toBe(true);
+    })).resolves.toBe(true);
 
     await expect(iterator.next()).resolves.toMatchObject({
       done: false,
       value: { kind: "engine_event", payload: { type: "complete" } },
     });
     await expect(iterator.next()).resolves.toMatchObject({ done: true });
-    expect(scheduleResult).toEqual({
-      message: "scheduled",
-      data: { scheduleId: "schedule-1" },
+    expect(scheduleResult).toMatchObject({
+      kind: "response",
+      result: {
+        status: "ok",
+        data: { message: "scheduled", data: { scheduleId: "schedule-1" } },
+      },
     });
   });
 
@@ -448,6 +456,14 @@ describe("ClaudeEngineAdapter fake client flow", () => {
             { type: "compact", trigger: "auto", message: "compacted", timestamp: 7 },
             { type: "subagent_start", agentId: "sub-1", agentType: "explorer", timestamp: 8 },
             { type: "subagent_stop", agentId: "sub-1", timestamp: 9 },
+            {
+              type: "claude_runtime_hook_event",
+              hookEventName: "PostToolUse",
+              toolName: "Read",
+              toolUseId: "toolu_1",
+              hookInput: { file_path: "a.ts" },
+              timestamp: 10,
+            },
           ],
           captured,
         ),
@@ -471,6 +487,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       "compact",
       "subagent_start",
       "subagent_stop",
+      "claude_runtime_hook_event",
     ]);
     expect(seen[0]).toMatchObject({
       type: "tool_start",
@@ -483,10 +500,16 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       status: "allowed_warning",
       utilization: 0.91,
     });
+    expect(seen[9]).toMatchObject({
+      type: "claude_runtime_hook_event",
+      hook_event_name: "PostToolUse",
+      tool_name: "Read",
+      tool_use_id: "toolu_1",
+    });
   });
 
-  it("fake client input_request를 SSE로 yield하고 deliverInputResponse를 client에 전달한다", async () => {
-    const delivered: Array<{ requestId: string; answers: Record<string, unknown> }> = [];
+  it("fake client input_request를 SSE로 yield하고 input_response control frame을 client에 전달한다", async () => {
+    const delivered: unknown[] = [];
     const release = deferred<void>();
     const client: ClaudeClient = {
       async *run(): AsyncIterable<ClaudeClientEvent> {
@@ -502,8 +525,8 @@ describe("ClaudeEngineAdapter fake client flow", () => {
         await release.promise;
         yield { type: "complete", result: "done", timestamp: 11 };
       },
-      async deliverInputResponse(requestId, answers) {
-        delivered.push({ requestId, answers });
+      async sendControlFrame(frame) {
+        delivered.push(frame);
         return true;
       },
     };
@@ -524,7 +547,12 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       engine.deliverInputResponse("ask-1", { "진행할까요?": "진행" }),
     ).resolves.toEqual({ status: "delivered" });
     expect(delivered).toEqual([
-      { requestId: "ask-1", answers: { "진행할까요?": "진행" } },
+      expect.objectContaining({
+        channel: "control",
+        kind: "input_response",
+        correlationId: "ask-1",
+        answers: { "진행할까요?": "진행" },
+      }),
     ]);
 
     await expect(
@@ -535,6 +563,62 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     const second = await iter.next();
     expect(second.value).toMatchObject({ type: "complete", result: "done" });
     await expect(iter.next()).resolves.toMatchObject({ done: true });
+  });
+
+  it("emits AskUserQuestion as a correlated can_use_tool runner request", async () => {
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        yield {
+          type: "input_request",
+          requestId: "ask-frame-1",
+          toolUseId: "toolu-frame-1",
+          questions: [{ question: "계속할까요?", header: "확인", options: [] }],
+          startedAt: 1779264000,
+          timeoutSec: 300,
+          timestamp: 10,
+        };
+        yield { type: "complete", result: "done", timestamp: 11 };
+      },
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+    const frames: RunnerEventFrame[] = [];
+
+    for await (const frame of engine.executeFrames({
+      agentSessionId: "session-frame-1",
+      prompt: "hi",
+    })) {
+      frames.push(frame);
+    }
+
+    expect(frames).toEqual([
+      expect.objectContaining({
+        kind: "engine_event",
+        payload: expect.objectContaining({
+          type: "input_request",
+          request_id: "ask-frame-1",
+        }),
+      }),
+      expect.objectContaining({
+        kind: "request",
+        correlationId: "ask-frame-1",
+        request: {
+          kind: "can_use_tool",
+          agentSessionId: "session-frame-1",
+          toolUseId: "toolu-frame-1",
+          toolName: "AskUserQuestion",
+          input: {
+            questions: [{ question: "계속할까요?", header: "확인", options: [] }],
+          },
+        },
+      }),
+      expect.objectContaining({
+        kind: "engine_event",
+        payload: expect.objectContaining({ type: "complete", result: "done" }),
+      }),
+    ]);
   });
 
   it("expired input_request 이후 late response는 delivered가 아니다", async () => {
@@ -549,7 +633,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
         };
         yield { type: "input_request_expired", requestId: "ask-expired" };
       },
-      async deliverInputResponse() {
+      async sendControlFrame() {
         throw new Error("should not be called after expired");
       },
     };

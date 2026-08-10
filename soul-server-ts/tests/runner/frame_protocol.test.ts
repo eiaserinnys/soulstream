@@ -10,6 +10,13 @@ const frames: RunnerFrame[] = [
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "command",
+    kind: "prepare_session",
+    commandId: "prepare-1",
+    agentSessionId: "session-1",
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
     kind: "execute",
     commandId: "command-1",
     params: {
@@ -17,6 +24,18 @@ const frames: RunnerFrame[] = [
       prompt: "hello",
       sessionItems: [{ role: "user", content: "hello" }],
     },
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "interrupt",
+    commandId: "interrupt-1",
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "close",
+    commandId: "close-1",
   },
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
@@ -52,10 +71,45 @@ const frames: RunnerFrame[] = [
   },
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "event",
+    kind: "request",
+    correlationId: "ask-1",
+    request: {
+      kind: "can_use_tool",
+      agentSessionId: "session-1",
+      toolUseId: "tool-use-ask",
+      toolName: "AskUserQuestion",
+      input: { questions: [] },
+    },
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "event",
+    kind: "request",
+    correlationId: "approval-1",
+    request: {
+      kind: "tool_approval",
+      approvalId: "approval-1",
+      toolName: "drop_rows",
+      input: { table: "events" },
+    },
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "control",
     kind: "response",
     correlationId: "request-1",
     result: { status: "ok", data: { message: "scheduled" } },
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "response",
+    correlationId: "request-error-1",
+    result: {
+      status: "error",
+      error: { code: "handler_error", message: "failed" },
+    },
   },
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
@@ -94,11 +148,15 @@ describe("runner frame protocol", () => {
   });
 
   it("accepts additive fields on a known v1 frame", () => {
+    const execute = frames.find(
+      (frame): frame is Extract<RunnerFrame, { kind: "execute" }> => frame.kind === "execute",
+    );
+    expect(execute).toBeDefined();
     const frame = {
-      ...frames[0],
+      ...execute,
       futureEnvelopeField: "ignored-by-v1",
       params: {
-        ...(frames[0] as Extract<RunnerFrame, { kind: "execute" }>).params,
+        ...execute?.params,
         futureParam: true,
       },
     };
@@ -107,10 +165,13 @@ describe("runner frame protocol", () => {
   });
 
   it.each(forbiddenJsonValues)("rejects %s in a known JSON field", (_name, value) => {
-    const execute = frames[0] as Extract<RunnerFrame, { kind: "execute" }>;
+    const execute = frames.find(
+      (frame): frame is Extract<RunnerFrame, { kind: "execute" }> => frame.kind === "execute",
+    );
+    expect(execute).toBeDefined();
     expect(RunnerFrameSchema.safeParse({
       ...execute,
-      params: { ...execute.params, sessionItems: [value] },
+      params: { ...execute?.params, sessionItems: [value] },
     }).success).toBe(false);
   });
 

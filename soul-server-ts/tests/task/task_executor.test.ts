@@ -127,6 +127,34 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("sends a prepare_session command frame before starting the event stream", async () => {
+    const mocks = makeMocks();
+    const sendCommandFrame = vi.fn().mockReturnValue(true);
+    const engine: EnginePort = {
+      ...makeFakeEngine([{ type: "complete", timestamp: 1 }]),
+      backendId: "claude",
+      sendCommandFrame,
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    executor.startExecution(task, claudeAgent);
+
+    expect(sendCommandFrame).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "command",
+      kind: "prepare_session",
+      commandId: `prepare:${task.agentSessionId}`,
+      agentSessionId: task.agentSessionId,
+    }));
+    await task.executionPromise;
+  });
+
   it("keeps the legacy factory call exact when no preset is selected", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => makeFakeEngine([

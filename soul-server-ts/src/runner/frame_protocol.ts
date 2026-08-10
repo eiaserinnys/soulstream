@@ -138,6 +138,13 @@ export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("k
   z.object({
     protocolVersion,
     channel: z.literal("command"),
+    kind: z.literal("prepare_session"),
+    commandId: correlationId,
+    agentSessionId: z.string().min(1),
+  }).passthrough(),
+  z.object({
+    protocolVersion,
+    channel: z.literal("command"),
     kind: z.literal("execute"),
     commandId: correlationId,
     params: RunnerExecuteParamsSchema,
@@ -355,4 +362,45 @@ export function runnerControlResponseFrame(
     correlationId,
     result,
   }) as Extract<RunnerControlFrame, { kind: "response" }>;
+}
+
+export function prepareSessionCommandFrame(
+  commandId: string,
+  agentSessionId: string,
+): Extract<RunnerCommandFrame, { kind: "prepare_session" }> {
+  return RunnerCommandFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "command",
+    kind: "prepare_session",
+    commandId,
+    agentSessionId,
+  }) as Extract<RunnerCommandFrame, { kind: "prepare_session" }>;
+}
+
+export function inputResponseControlFrame(
+  correlationId: string,
+  answers: unknown,
+): Extract<RunnerControlFrame, { kind: "input_response" }> {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "input_response",
+    correlationId,
+    answers,
+  }) as Extract<RunnerControlFrame, { kind: "input_response" }>;
+}
+
+export function toolApprovalControlFrame(
+  correlationId: string,
+  decision: "approved" | "rejected",
+  options?: unknown,
+): Extract<RunnerControlFrame, { kind: "tool_approval_response" }> {
+  return RunnerControlFrameSchema.parse({
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "control",
+    kind: "tool_approval_response",
+    correlationId,
+    decision,
+    ...(options !== undefined ? { options } : {}),
+  }) as Extract<RunnerControlFrame, { kind: "tool_approval_response" }>;
 }
