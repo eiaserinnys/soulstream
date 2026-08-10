@@ -200,6 +200,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
     await expect(sessionMutations.reconcileNodeDisconnected(
       "node-review",
       new Date("2026-07-12T00:05:00Z"),
+      "node_disconnect",
     )).resolves.toBe(1);
 
     await expect(db.getSession("sess-review")).resolves.toMatchObject({

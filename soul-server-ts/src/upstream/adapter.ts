@@ -55,6 +55,8 @@ export interface UpstreamDependencies {
   modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
   eventOutboxPump?: EventOutboxPumpTransport;
   agentProfileSource?: NewSessionAgentProfileSource;
+  listLiveRunnerSessionIds?: () => Promise<string[]>;
+  waitForRunnerReconciliation?: () => Promise<void>;
 }
 
 /**
@@ -400,9 +402,16 @@ export class UpstreamAdapter {
 
     try {
       const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
-      const runningSessionIds = this.deps.taskManager.listTasks()
+      await this.deps.waitForRunnerReconciliation?.();
+      const inMemorySessionIds = this.deps.taskManager.listTasks()
         .filter((task) => task.status === "running")
         .map((task) => task.agentSessionId);
+      const runningSessionIds = this.deps.listLiveRunnerSessionIds
+        ? [...new Set([
+            ...inMemorySessionIds,
+            ...await this.deps.listLiveRunnerSessionIds(),
+          ])]
+        : inMemorySessionIds;
       await this.send(await commands.listSessions({ requestId: "", runningSessionIds }));
     } catch (err) {
       this.logger.warn({ err }, "initial sessions_update failed");

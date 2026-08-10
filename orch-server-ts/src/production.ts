@@ -239,6 +239,8 @@ export async function createLiveProductionApplication(
       createSessionReconciliationSink({
         repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
         logError: (error, message) => context.warn(`${message}: ${String(error)}`),
+        leaseAware: config.soul_runner_process_enabled,
+        disconnectGraceMs: config.soul_runner_lease_timeout_ms,
       }),
     ],
     boardYjsRoutes: {

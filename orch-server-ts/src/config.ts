@@ -56,6 +56,8 @@ export type OrchServerEnvironmentConfig = {
   readonly claude_oauth_callback_url: string;
   readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
+  readonly soul_runner_process_enabled: boolean;
+  readonly soul_runner_lease_timeout_ms: number;
 };
 
 export type EnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -67,6 +69,7 @@ export type EnvironmentConfigProvider = {
 
 export const DEFAULT_ORCH_SERVER_PORT = 5200;
 export const DEFAULT_USAGE_SUMMARY_POLL_INTERVAL_SECONDS = 300;
+export const DEFAULT_SOUL_RUNNER_LEASE_TIMEOUT_MS = 1_800_000;
 
 export function parseOrchServerConfig(input: unknown): OrchServerTsConfig {
   return ConfigSchema.parse(input);
@@ -115,6 +118,16 @@ export function loadOrchServerEnvironment(
       env.USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
       "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
       DEFAULT_USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
+    ),
+    soul_runner_process_enabled: parseBoolean(
+      env.SOUL_RUNNER_PROCESS_ENABLED,
+      "SOUL_RUNNER_PROCESS_ENABLED",
+      false,
+    ),
+    soul_runner_lease_timeout_ms: parsePositiveInteger(
+      env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      "SOUL_RUNNER_LEASE_TIMEOUT_MS",
+      DEFAULT_SOUL_RUNNER_LEASE_TIMEOUT_MS,
     ),
   };
 }

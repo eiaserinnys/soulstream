@@ -113,9 +113,18 @@ export class RunnerRecoveryCoordinator {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    await Promise.allSettled([...this.scans]);
-    await Promise.allSettled([...this.active.values()]);
+    await this.waitForSettled();
     this.active.clear();
+  }
+
+  /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
+  async waitForSettled(): Promise<void> {
+    while (this.scans.size > 0 || this.active.size > 0) {
+      await Promise.allSettled([
+        ...this.scans,
+        ...this.active.values(),
+      ]);
+    }
   }
 
   private async handle(

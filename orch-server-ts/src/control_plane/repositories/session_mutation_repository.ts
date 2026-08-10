@@ -132,12 +132,16 @@ export class SessionMutationRepository {
     });
   }
 
-  async reconcileNodeDisconnected(nodeId: string, updatedAt: Date): Promise<number> {
+  async reconcileNodeDisconnected(
+    nodeId: string,
+    updatedAt: Date,
+    terminationDetail: "node_disconnect" | "node_disconnect_timeout",
+  ): Promise<number> {
     const rows = await this.sql<Array<{ count: number }>>`
       WITH changed AS (
         UPDATE sessions
         SET status = 'interrupted', was_running_at_shutdown = TRUE,
-            termination_reason = 'killed', termination_detail = 'node_disconnect',
+            termination_reason = 'killed', termination_detail = ${terminationDetail},
             review_state = CASE
               WHEN review_required THEN 'needs_review'
               ELSE 'acknowledged'

@@ -56,6 +56,7 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import {
   composeTaskRuntime,
   type TaskRuntimeComposition,
@@ -314,6 +315,18 @@ export async function composeWorkerRuntime(
     taskExecutor: taskRuntime.taskExecutor,
     logger,
   });
+  const liveRunnerSessionReporter = runnerProcessFactory
+    ? async (): Promise<string[]> => {
+        const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
+        if (!stateDirectory) {
+          throw new Error("SOUL_RUNNER_STATE_DIR required for runner inventory");
+        }
+        return await listLiveRunnerSessionIds({
+          stateDirectory,
+          leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+        });
+      }
+    : undefined;
   const taskService = new TaskService({ orch: orchProxyConfig, logger });
   db.configureTaskReader(taskService);
   const catalogService = new CatalogService(
@@ -464,6 +477,13 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump: eventOutboxPumpMux,
+        ...(liveRunnerSessionReporter
+          ? {
+              listLiveRunnerSessionIds: liveRunnerSessionReporter,
+              waitForRunnerReconciliation: async () =>
+                await runnerRecoveryCoordinator?.waitForSettled(),
+            }
+          : {}),
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );

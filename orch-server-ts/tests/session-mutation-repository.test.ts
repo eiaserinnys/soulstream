@@ -232,12 +232,21 @@ describe("SessionMutationRepository", () => {
     const repository = new SessionMutationRepository(sql);
     const now = new Date("2026-08-06T00:00:00.000Z");
 
-    await expect(repository.reconcileNodeDisconnected("node-a", now)).resolves.toBe(2);
+    for (const detail of ["node_disconnect", "node_disconnect_timeout"] as const) {
+      await expect(repository.reconcileNodeDisconnected(
+        "node-a",
+        now,
+        detail,
+      )).resolves.toBe(2);
+    }
     await expect(repository.reconcileNodeStartup("node-a", ["session-live"], now))
       .resolves.toEqual({ interrupted: 2, restored: 2 });
 
     const statements = calls.map((call) => call.text).join("\n");
-    expect(statements).toContain("termination_detail = 'node_disconnect'");
+    expect(calls.some((call) =>
+      call.values.includes("node_disconnect_timeout")
+    )).toBe(true);
+    expect(calls.some((call) => call.values.includes("node_disconnect"))).toBe(true);
     expect(statements).toContain("termination_detail = 'startup_reconciliation'");
     expect(statements).toContain("WHEN review_required THEN 'needs_review'");
     expect(statements).toContain("review_state = 'not_required'");
