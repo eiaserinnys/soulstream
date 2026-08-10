@@ -20,6 +20,11 @@
 import { Codex, type Thread, type ThreadEvent, type Input } from "@openai/codex-sdk";
 import type { Logger } from "pino";
 
+import {
+  engineEventFrame,
+  type RunnerEventFrame,
+} from "../runner/frame_protocol.js";
+import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
@@ -120,6 +125,10 @@ export class CodexEngineAdapter implements EnginePort {
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
+    yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     if (this.closed) {
       throw new Error("CodexEngineAdapter.execute called after close()");
     }
@@ -231,11 +240,11 @@ export class CodexEngineAdapter implements EnginePort {
         return;
       }
       this.logger.warn({ err }, "thread.runStreamed throw");
-      yield {
+      yield engineEventFrame({
         type: "error",
         message: formatCodexExecutionErrorMessage(err, this.codexPathOverride),
         fatal: true,
-      } as SSEEventPayload;
+      });
       this.currentTurn = null;
       return;
     }
@@ -251,11 +260,6 @@ export class CodexEngineAdapter implements EnginePort {
     let lastAgentText: string | undefined;
     try {
       for await (const threadEvent of streamedTurn.events) {
-        // thread.started 발견 시 onSession 콜백 (호출자가 task에 영속).
-        if (threadEvent.type === "thread.started" && params.onSession) {
-          await params.onSession(threadEvent.thread_id);
-        }
-
         // last agent_message text 추적 — turn.completed 시점에 complete.result로 주입.
         // codex_event_mapper.ts:213-233에 따르면 item.completed(agent_message)는 텍스트 누적값을
         // 운반한다 (codex-rs는 progressive streaming을 안 emit). 한 turn에 agent_message가
@@ -279,11 +283,7 @@ export class CodexEngineAdapter implements EnginePort {
           ) {
             (payload as Record<string, unknown>).result = lastAgentText;
           }
-          // onEvent 부가 콜백 — yield와 *별도로* 같은 페이로드 발행.
-          if (params.onEvent) {
-            await params.onEvent(payload);
-          }
-          yield payload;
+          yield engineEventFrame(payload as Record<string, unknown>);
         }
       }
     } catch (err) {
@@ -292,11 +292,11 @@ export class CodexEngineAdapter implements EnginePort {
         this.logger.info("Codex turn aborted by interrupt()");
       } else {
         this.logger.warn({ err }, "Codex stream error mid-turn");
-        yield {
+        yield engineEventFrame({
           type: "error",
           message: formatCodexExecutionErrorMessage(err, this.codexPathOverride),
           fatal: true,
-        } as SSEEventPayload;
+        });
       }
     } finally {
       this.currentTurn = null;
