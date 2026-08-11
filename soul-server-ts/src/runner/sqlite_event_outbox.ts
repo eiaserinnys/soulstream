@@ -34,6 +34,8 @@ import {
   validateRunnerBootstrapInput,
 } from "./sqlite_event_outbox_records.js";
 import {
+  assertRunnerAckCheckpoint,
+  computeRunnerAckCheckpointHash,
   insertRunnerRecord as insertRecord,
   latestRunnerSequence as latestSequence,
   readRunnerAcknowledgedThrough as readAcknowledgedThrough,
@@ -99,10 +101,12 @@ export class RunnerSqliteEventOutbox {
       }
       ensureRunnerLifecycleColumns(database);
       ensureRunnerIpcJournalV4(database);
+      const recovered = recover(database, {
+        migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
+      });
       if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
         database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);
       }
-      const recovered = recover(database);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,
@@ -166,6 +170,7 @@ export class RunnerSqliteEventOutbox {
         WHERE record_kind = 'bootstrap'
       `).get() as unknown as RunnerEventOutboxRow | undefined;
       if (existingRow) {
+        assertRunnerAckCheckpoint(existingRow);
         const existing = runnerRowToBootstrap(existingRow);
         if (!sameRunnerBootstrapInput(existing, input)) {
           throw new Error("runner bootstrap record conflicts with durable record");
@@ -175,7 +180,14 @@ export class RunnerSqliteEventOutbox {
       if (rowCount(this.database) !== 0) {
         throw new Error("runner bootstrap record must be the first durable record");
       }
-      insertRecord(this.database, "bootstrap", record, 1);
+      insertRecord(
+        this.database,
+        "bootstrap",
+        record,
+        1,
+        null,
+        computeRunnerAckCheckpointHash(record.stream_id, record.session_id, 1),
+      );
       return record;
     });
     this.bootstrap = durable;
@@ -403,17 +415,44 @@ export class RunnerSqliteEventOutbox {
     }
     const previousCursor = this.acknowledgedThrough;
     const durableCursor = this.transaction(() => {
-      const currentCursor = readAcknowledgedThrough(this.database);
+      const checkpoint = this.database.prepare(`
+        SELECT stream_id, session_id, acked_through, ack_checkpoint_hash
+        FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+      `).get() as Pick<
+        RunnerEventOutboxRow,
+        "stream_id" | "session_id" | "acked_through" | "ack_checkpoint_hash"
+      > | undefined;
+      if (!checkpoint) throw new Error("runner bootstrap record is missing");
+      assertRunnerAckCheckpoint(checkpoint);
+      const currentCursor = checkpoint.acked_through!;
       if (ackedThrough <= currentCursor) return currentCursor;
       if (ackedThrough > latestSequence(this.database)) {
         throw new Error("event outbox ACK exceeds durable append cursor");
       }
-      this.database.prepare(`
+      const nextHash = computeRunnerAckCheckpointHash(
+        checkpoint.stream_id,
+        checkpoint.session_id,
+        ackedThrough,
+      );
+      const result = this.database.prepare(`
         UPDATE runner_event_outbox
-        SET acked_through = ?
-        WHERE record_kind = 'bootstrap' AND acked_through < ?
-      `).run(ackedThrough, ackedThrough);
-      return ackedThrough;
+        SET acked_through = ?, ack_checkpoint_hash = ?
+        WHERE record_kind = 'bootstrap'
+          AND acked_through = ? AND ack_checkpoint_hash = ?
+      `).run(
+        ackedThrough,
+        nextHash,
+        currentCursor,
+        checkpoint.ack_checkpoint_hash,
+      );
+      if (Number(result.changes) !== 1) {
+        throw new Error("runner event outbox ACK checkpoint changed concurrently");
+      }
+      const verifiedCursor = readAcknowledgedThrough(this.database);
+      if (verifiedCursor !== ackedThrough) {
+        throw new Error("runner event outbox ACK checkpoint update was not durable");
+      }
+      return verifiedCursor;
     });
     this.acknowledgedThrough = Math.max(previousCursor, durableCursor);
     if (this.acknowledgedThrough > previousCursor) {
