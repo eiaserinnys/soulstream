@@ -393,6 +393,16 @@
                   },
                   {
                     "type": "object",
+                    "required": ["kind", "review_state", "updated_at"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "running_transition" },
+                      "review_state": { "type": "string", "minLength": 1 },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  },
+                  {
+                    "type": "object",
                     "required": ["kind", "status", "termination_reason", "termination_detail", "review_state", "updated_at"],
                     "additionalProperties": false,
                     "properties": {

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import jsonschema
+import pytest
 
 SCHEMA_PATH = Path(__file__).parent.parent / "src" / "upstream.schema.json"
 README_PATH = Path(__file__).parent.parent / "src" / "README.md"
@@ -23,6 +24,30 @@ ORCH_CONSTANTS_PATH = (
 
 def _load_schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _event_append_batch_with_effect(effect: dict) -> dict:
+    stream_id = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10"
+    return {
+        "type": "event_append_batch",
+        "protocol_version": 1,
+        "stream_id": stream_id,
+        "first_seq": 1,
+        "events": [
+            {
+                "stream_id": stream_id,
+                "source_seq": 1,
+                "session_id": "session-a",
+                "event_type": "system_message",
+                "payload": {"type": "system_message", "content": "running"},
+                "searchable_text": None,
+                "created_at": "2026-08-11T00:00:00.000Z",
+                "semantic_dedupe_key": "running_transition:session-a:start",
+                "session_effect": effect,
+                "payload_hash": "a" * 64,
+            }
+        ],
+    }
 
 
 def _message_inventory_summary(schema: dict) -> str:
@@ -64,6 +89,40 @@ def test_schema_top_level_keys() -> None:
     assert "$defs" in schema
     assert "oneOf" in schema
     assert schema["discriminator"]["propertyName"] == "type"
+
+
+def test_event_append_batch_accepts_running_transition_effect() -> None:
+    schema = _load_schema()
+    frame = _event_append_batch_with_effect(
+        {
+            "kind": "running_transition",
+            "review_state": "none",
+            "updated_at": "2026-08-11T00:00:00.000Z",
+        }
+    )
+
+    jsonschema.Draft202012Validator(schema).validate(frame)
+    assert 'kind: "running_transition"' in GENERATED_TS_PATH.read_text(
+        encoding="utf-8"
+    )
+    assert "kind: Literal['running_transition']" in GENERATED_PY_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_event_append_batch_rejects_unknown_running_transition_field() -> None:
+    schema = _load_schema()
+    frame = _event_append_batch_with_effect(
+        {
+            "kind": "running_transition",
+            "review_state": "none",
+            "updated_at": "2026-08-11T00:00:00.000Z",
+            "unexpected": True,
+        }
+    )
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate(frame)
 
 
 def test_schema_has_all_message_types() -> None:

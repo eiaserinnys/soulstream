@@ -189,6 +189,7 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     };
   }
   if (value.kind === "running_transition") {
+    assertExactKeys(value, ["kind", "review_state", "updated_at"], field);
     return {
       kind: value.kind,
       review_state: nonEmptyString(value.review_state, `${field}.review_state`),
@@ -229,6 +230,20 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
 function recordValue(value: unknown, field: string): Record<string, unknown> {
   if (!isRecord(value)) throw new EventIngressValidationError(`${field} must be an object`);
   return value;
+}
+
+function assertExactKeys(
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+  field: string,
+): void {
+  const expected = new Set(expectedKeys);
+  const unexpected = Object.keys(value).filter((key) => !expected.has(key)).sort();
+  if (unexpected.length > 0) {
+    throw new EventIngressValidationError(
+      `${field} has unexpected fields: ${unexpected.join(", ")}`,
+    );
+  }
 }
 
 function isoTimestamp(value: unknown, field: string): string {
