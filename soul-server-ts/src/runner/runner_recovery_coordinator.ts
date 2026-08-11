@@ -5,6 +5,8 @@ import type { TaskManager } from "../task/task_manager.js";
 import type { Task } from "../task/task_models.js";
 import {
   classifyRunnerRegistration,
+  hydrateRunnerRegistration,
+  runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
   type RunnerRegistration,
   type RunnerRecoveryDisposition,
@@ -12,6 +14,7 @@ import {
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
+import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
   stateDirectory: string;
@@ -28,6 +31,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   logger: Pick<Logger, "error" | "info" | "warn">;
   spawner?: Pick<RunnerProcessSpawner, "terminate">;
   scan?: typeof scanRunnerRegistrations;
+  hydrate?: typeof hydrateRunnerRegistration;
   now?: () => number;
   markReaped?: (
     registration: RunnerRegistration,
@@ -35,12 +39,14 @@ export interface RunnerRecoveryCoordinatorOptions {
     error: { code: string; message: string },
   ) => Promise<void>;
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
+  sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
 }
 
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
   private readonly scans = new Set<Promise<void>>();
+  private releaseGarbageCollectionFingerprint: string | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
 
@@ -109,11 +115,23 @@ export class RunnerRecoveryCoordinator {
         });
       this.active.set(sessionId, recovery);
     }
-    if (this.options.releaseGarbageCollector) {
+    const releaseFingerprint = runnerReleaseGcCandidateFingerprint(scan);
+    if (
+      this.options.releaseGarbageCollector
+      && releaseFingerprint !== this.releaseGarbageCollectionFingerprint
+    ) {
       try {
-        await this.options.releaseGarbageCollector.collect();
+        await this.options.releaseGarbageCollector.collect(scan);
+        this.releaseGarbageCollectionFingerprint = releaseFingerprint;
       } catch (error) {
         this.options.logger.error({ error }, "runner release GC failed");
+      }
+    }
+    if (this.options.sessionGarbageCollector) {
+      try {
+        await this.options.sessionGarbageCollector.collect(scan);
+      } catch (error) {
+        this.options.logger.error({ error }, "runner session GC failed");
       }
     }
   }
@@ -173,7 +191,6 @@ export class RunnerRecoveryCoordinator {
     registration: RunnerRegistration,
     mode: "adopt" | "offline",
   ): Promise<Task | null> {
-    const lifecycle = registration.lifecycle;
     const task = await this.options.taskManager.hydrateRunnerRecoveryTask(
       registration.config.sessionId,
     );
@@ -185,10 +202,12 @@ export class RunnerRecoveryCoordinator {
       return null;
     }
     if (task.runner || task.executionPromise) return task;
-    prepareRecoveredTask(task, registration);
+    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+    const lifecycle = hydrated.lifecycle;
+    prepareRecoveredTask(task, hydrated);
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,
-      registration.config,
+      hydrated.config,
       lifecycle?.execution_command_id,
       mode,
     );
@@ -209,6 +228,23 @@ export class RunnerRecoveryCoordinator {
     registration: RunnerRegistration,
     disposition: "reap_dead" | "reap_stalled",
   ): Promise<void> {
+    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+    const verifiedDisposition = classifyRunnerRegistration(
+      hydrated,
+      (this.options.now ?? Date.now)(),
+      this.options.leaseTimeoutMs,
+    );
+    if (verifiedDisposition !== disposition) {
+      if (
+        verifiedDisposition === "adopt_prebootstrap"
+        || verifiedDisposition === "adopt_running"
+        || verifiedDisposition === "replay_terminal"
+      ) {
+        await this.recoverRegistered(hydrated, hydrated.pidAlive ? "adopt" : "offline");
+      }
+      return;
+    }
+    registration = hydrated;
     const message = disposition === "reap_stalled"
       ? "runner progress lease expired"
       : "runner process exited before execution completed";

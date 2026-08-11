@@ -123,6 +123,7 @@ describe("parseEnv", () => {
     expect(parseEnv(minimal).SOUL_RUNNER_PROCESS_ENABLED).toBe(false);
     expect(parseEnv(minimal).SOUL_RUNNER_LEASE_TIMEOUT_MS).toBe(1_800_000);
     expect(parseEnv(minimal).SOUL_RUNNER_REAPER_INTERVAL_MS).toBe(15_000);
+    expect(parseEnv(minimal).SOUL_RUNNER_TERMINAL_RETENTION_MS).toBe(86_400_000);
     expect(() => parseEnv({
       ...minimal,
       SOUL_RUNNER_PROCESS_ENABLED: "true",
@@ -135,6 +136,7 @@ describe("parseEnv", () => {
       SOUL_RUNNER_RELEASES_DIR: "/var/lib/soulstream/runner-releases",
       SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
       SOUL_RUNNER_REAPER_INTERVAL_MS: "10000",
+      SOUL_RUNNER_TERMINAL_RETENTION_MS: "3600000",
     })).toMatchObject({
       SOUL_RUNNER_PROCESS_ENABLED: true,
       SOUL_RUNNER_STATE_DIR: "/var/lib/soulstream/runners",
@@ -142,6 +144,7 @@ describe("parseEnv", () => {
       SOUL_RUNNER_RELEASES_DIR: "/var/lib/soulstream/runner-releases",
       SOUL_RUNNER_LEASE_TIMEOUT_MS: 90_000,
       SOUL_RUNNER_REAPER_INTERVAL_MS: 10_000,
+      SOUL_RUNNER_TERMINAL_RETENTION_MS: 3_600_000,
     });
   });
 

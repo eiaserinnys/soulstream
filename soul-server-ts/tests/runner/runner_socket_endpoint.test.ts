@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,7 @@ import {
   RunnerSocketEndpoint,
 } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
+import type { ProcessOwnershipLockDependencies } from "../../src/runner/runner_process_lock.js";
 
 const directories: string[] = [];
 
@@ -70,15 +71,39 @@ describe("runner socket ownership", () => {
 
   it("permits exactly one writer lock holder", async () => {
     const lockPath = await temporaryPath("runner.lock");
-    const first = await RunnerWriterLock.acquire(lockPath, 1001);
+    const first = await RunnerWriterLock.acquire(lockPath);
 
-    await expect(RunnerWriterLock.acquire(lockPath, 1002))
+    await expect(RunnerWriterLock.acquire(lockPath))
       .rejects.toThrow("writer lock already held");
     await first.release();
-    const replacement = await RunnerWriterLock.acquire(lockPath, 1002);
+    const replacement = await RunnerWriterLock.acquire(lockPath);
+    await replacement.release();
+  });
+
+  it("migrates a legacy pid-only lock only after proving that pid is dead", async () => {
+    const lockPath = await temporaryPath("legacy-runner.lock");
+    await writeFile(lockPath, "1001\n");
+    const live = ownershipDependencies(true);
+
+    await expect(RunnerWriterLock.acquire(lockPath, live))
+      .rejects.toThrow("writer lock already held");
+
+    const replacement = await RunnerWriterLock.acquire(
+      lockPath,
+      ownershipDependencies(false),
+    );
     await replacement.release();
   });
 });
+
+function ownershipDependencies(alive: boolean): ProcessOwnershipLockDependencies {
+  return {
+    now: () => 0,
+    delay: async () => {},
+    currentOwner: async () => ({ pid: 2002, startIdentity: "replacement" }),
+    inspectProcess: async () => ({ alive, startIdentity: alive ? "unknown-live" : null }),
+  };
+}
 
 async function temporaryPath(name: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "soulstream-runner-socket-"));

@@ -42,6 +42,7 @@ describe("runner process composition feature gate", () => {
         SOUL_RUNNER_STATE_DIR: join(root, "state"),
         SOUL_RUNNER_ARTIFACT_DIR: artifacts,
         SOUL_RUNNER_RELEASES_DIR: releases,
+        SOUL_RUNNER_TERMINAL_RETENTION_MS: 86_400_000,
       },
       logger: {} as never,
     } as never);
@@ -53,6 +54,38 @@ describe("runner process composition feature gate", () => {
     releaseDirectories.push(join(releases, releaseId!));
     expect(await readFile(join(releases, releaseId!, "runner_entry.js"), "utf8"))
       .toBe("export const ready = true;\n");
+    await composed!.hostOwnership.release();
+  });
+
+  it("refuses a second live host before it can scan or spawn in the same state directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-composition-owner-"));
+    directories.push(root);
+    const artifacts = join(root, "artifacts");
+    const releases = join(root, "releases");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(artifacts));
+    await writeFile(join(artifacts, "package.json"), '{"type":"module"}\n');
+    await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+    const options = {
+      env: {
+        SOUL_RUNNER_STATE_DIR: join(root, "state"),
+        SOUL_RUNNER_ARTIFACT_DIR: artifacts,
+        SOUL_RUNNER_RELEASES_DIR: releases,
+        SOUL_RUNNER_TERMINAL_RETENTION_MS: 86_400_000,
+      },
+      logger: {} as never,
+    } as never;
+
+    const first = await composeRunnerProcessRuntime(true, options);
+    const ready = await import("node:fs/promises").then(({ readdir }) => readdir(releases));
+    const releaseId = ready.find((entry) => entry.startsWith("sha256-"));
+    expect(releaseId).toBeDefined();
+    releaseDirectories.push(join(releases, releaseId!));
+    await expect(composeRunnerProcessRuntime(true, options))
+      .rejects.toThrow("runner state host ownership already held");
+
+    await first!.hostOwnership.release();
+    const replacement = await composeRunnerProcessRuntime(true, options);
+    await replacement!.hostOwnership.release();
   });
 
   it("fails enabled startup loudly when runner build artifacts are absent", async () => {
@@ -63,6 +96,7 @@ describe("runner process composition feature gate", () => {
         SOUL_RUNNER_STATE_DIR: join(root, "state"),
         SOUL_RUNNER_ARTIFACT_DIR: join(root, "missing-artifacts"),
         SOUL_RUNNER_RELEASES_DIR: join(root, "releases"),
+        SOUL_RUNNER_TERMINAL_RETENTION_MS: 86_400_000,
       },
       logger: {} as never,
     } as never)).rejects.toMatchObject({ code: "ENOENT" });

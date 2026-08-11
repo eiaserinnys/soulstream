@@ -71,6 +71,9 @@ export const EnvSchema = z
     SOUL_RUNNER_LEASE_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
     /** Node-local registration scan cadence while process mode is enabled. */
     SOUL_RUNNER_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+    /** Retention window before fully ACKed terminal session state is deleted. */
+    SOUL_RUNNER_TERMINAL_RETENTION_MS: z.coerce
+      .number().int().positive().default(86_400_000),
     /**
      * agent_registry yaml 경로 (Phase B-3).
      * Haniel cwd `services/soulstream/` 기준 상대 경로 default — `.env.soul-server-ts`

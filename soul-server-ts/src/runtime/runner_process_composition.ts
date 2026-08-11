@@ -13,10 +13,14 @@ import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import { RunnerReleaseGarbageCollector } from "../runner/runner_release_gc.js";
 import { BuildArtifactReleaseMaterializer } from "../runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../runner/runner_release_pool.js";
+import { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
+import { RunnerSessionGarbageCollector } from "../runner/runner_session_gc.js";
 
 export interface RunnerProcessComposition {
   runtimeFactory: RunnerProcessRuntimeFactory;
   releaseGarbageCollector: RunnerReleaseGarbageCollector;
+  hostOwnership: RunnerStateHostLock;
+  sessionGarbageCollector: RunnerSessionGarbageCollector;
 }
 
 export type RunnerReconciliationReporter = {
@@ -38,24 +42,37 @@ export async function composeRunnerProcessRuntime(
     "SOUL_RUNNER_RELEASES_DIR",
   );
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
-  const materializer = new BuildArtifactReleaseMaterializer(artifactDirectory);
-  const releasePool = new RunnerReleasePool(releasesDirectory, materializer);
-  const release = await releasePool.resolveCurrentRelease();
-  await releasePool.ensureRelease(release);
-  return {
-    runtimeFactory: createRunnerProcessRuntimeFactory({ ...options, releasePool }),
-    releaseGarbageCollector: new RunnerReleaseGarbageCollector(
-      releasePool,
-      stateDirectory,
-      options.logger,
-    ),
-  };
+  const hostOwnership = await RunnerStateHostLock.acquire(stateDirectory);
+  try {
+    const materializer = new BuildArtifactReleaseMaterializer(artifactDirectory);
+    const releasePool = new RunnerReleasePool(releasesDirectory, materializer);
+    const release = await releasePool.resolveCurrentRelease();
+    await releasePool.ensureRelease(release);
+    return {
+      runtimeFactory: createRunnerProcessRuntimeFactory({ ...options, releasePool }),
+      releaseGarbageCollector: new RunnerReleaseGarbageCollector(
+        releasePool,
+        stateDirectory,
+        options.logger,
+      ),
+      hostOwnership,
+      sessionGarbageCollector: new RunnerSessionGarbageCollector(
+        stateDirectory,
+        options.env.SOUL_RUNNER_TERMINAL_RETENTION_MS,
+        options.logger,
+      ),
+    };
+  } catch (error) {
+    await hostOwnership.release();
+    throw error;
+  }
 }
 
 export async function startRunnerRecoveryCoordinator(options: {
   env: Env;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
+  sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
   taskManager: Pick<TaskManager, "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume">;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
   logger: Logger;
@@ -74,6 +91,9 @@ export async function startRunnerRecoveryCoordinator(options: {
     logger: options.logger,
     ...(options.releaseGarbageCollector
       ? { releaseGarbageCollector: options.releaseGarbageCollector }
+      : {}),
+    ...(options.sessionGarbageCollector
+      ? { sessionGarbageCollector: options.sessionGarbageCollector }
       : {}),
   });
   await coordinator.start();

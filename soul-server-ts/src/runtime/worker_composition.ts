@@ -96,9 +96,9 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   eventOutboxPump: EventOutboxPump;
   eventOutboxPumpMux: EventOutboxPumpMux;
   runnerRecoveryCoordinator?: RunnerRecoveryCoordinator;
+  runnerStateHostOwnership?: import("../runner/runner_state_host_lock.js").RunnerStateHostLock;
   createUpstreamAdapter(): UpstreamAdapter;
 }
-/** Builds the complete worker object graph without starting HTTP or WebSocket loops. */
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
@@ -204,7 +204,6 @@ export async function composeWorkerRuntime(
     new DefaultPageContextAssembler(),
     logger,
   );
-
   const contextBuilder = new ExecutionContextBuilder(
     db,
     agentRegistry,
@@ -308,7 +307,9 @@ export async function composeWorkerRuntime(
   });
   const runnerRecoveryCoordinator = await startRunnerRecoveryCoordinator({
     env,
-    runnerProcessFactory: runnerProcess?.runtimeFactory, releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
+    runnerProcessFactory: runnerProcess?.runtimeFactory,
+    releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
+    sessionGarbageCollector: runnerProcess?.sessionGarbageCollector,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
@@ -468,7 +469,6 @@ export async function composeWorkerRuntime(
     );
     return upstreamAdapter;
   };
-
   return {
     ...taskRuntime,
     db,
@@ -493,6 +493,7 @@ export async function composeWorkerRuntime(
     eventOutboxPump,
     eventOutboxPumpMux,
     ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
+    ...(runnerProcess ? { runnerStateHostOwnership: runnerProcess.hostOwnership } : {}),
     createUpstreamAdapter,
   };
 }

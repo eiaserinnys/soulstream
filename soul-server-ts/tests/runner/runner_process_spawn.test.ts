@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import { readRunnerRegistrationIdentity } from "../../src/runner/runner_registration_identity.js";
 
 const directories: string[] = [];
 
@@ -34,6 +35,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: vi.fn(async () => { calls.push("entry"); }),
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -54,6 +56,14 @@ describe("RunnerProcessSpawner", () => {
     expect(spawned.pid).toBe(4123);
     expect(spawned.adopted).toBe(false);
     expect(await readFile(spawned.paths.pidPath, "utf8")).toBe("4123\n");
+    await expect(readRunnerRegistrationIdentity(spawned.paths.sessionDirectory)).resolves.toEqual({
+      schemaVersion: 1,
+      registrationId: expect.any(String),
+      sessionId: "session-a",
+      codeSha: "sha-a",
+      pid: 4123,
+      startIdentity: "test-4123",
+    });
     expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
       sessionId: "session-a",
       codeSha: "sha-a",
@@ -71,6 +81,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5001, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -83,6 +94,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5002, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: (pid) => pid === 4001 && alive,
       signalPid: (_pid, signal) => {
         signals.push(signal);
@@ -97,6 +109,29 @@ describe("RunnerProcessSpawner", () => {
     expect(signals).toEqual(["SIGTERM"]);
   });
 
+  it("never removes writer-lock ownership evidence while preparing a replacement", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.lockPath, "prior-runner-ownership\n");
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase: async () => {},
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5006, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await spawner.spawn(params);
+
+    await expect(readFile(paths.lockPath, "utf8"))
+      .resolves.toBe("prior-runner-ownership\n");
+  });
+
   it("adopts a live registered runner without spawning or replacing it", async () => {
     const params = await input();
     const first = new RunnerProcessSpawner({
@@ -104,6 +139,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5101, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -116,6 +152,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => {},
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: (pid) => pid === 5101,
       signalPid: vi.fn(),
       now: () => 0,
@@ -136,6 +173,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => { throw new Error("snapshot entry missing"); },
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -161,6 +199,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => {},
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: () => false,
       signalPid: vi.fn(),
       now: () => 0,
@@ -184,6 +223,7 @@ describe("RunnerProcessSpawner", () => {
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5004, unref }),
       registerPid: async () => { throw new Error("pid registration denied"); },
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
       isPidAlive: (pid) => pid === 5004 && alive,
       signalPid,
       now: () => 0,

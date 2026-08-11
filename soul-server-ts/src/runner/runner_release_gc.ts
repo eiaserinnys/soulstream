@@ -1,15 +1,16 @@
 import type { Logger } from "pino";
 
 import {
+  inspectRunnerDurableState,
   scanRunnerRegistrations,
   type RunnerRegistration,
+  type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
 import { RunnerReleasePool } from "./runner_release_pool.js";
-import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 
 export interface RunnerReleaseGarbageCollectorDependencies {
   scan(stateDirectory: string): ReturnType<typeof scanRunnerRegistrations>;
-  hasIncompleteDurableWork(registration: RunnerRegistration): Promise<boolean>;
+  inspect(registration: RunnerRegistration): ReturnType<typeof inspectRunnerDurableState>;
 }
 
 export interface RunnerReleaseGcResult {
@@ -31,77 +32,121 @@ export class RunnerReleaseGarbageCollector {
     if (!stateDirectory) throw new Error("runner state directory required for release GC");
   }
 
-  async collect(): Promise<RunnerReleaseGcResult> {
+  async collect(_existingScan?: RunnerRegistrationScan): Promise<RunnerReleaseGcResult> {
     const result: RunnerReleaseGcResult = { removed: [], retained: [] };
-    for (const release of await this.pool.listReadyReleases()) {
-      await this.pool.withReleaseLock(release.releaseId, async () => {
-        // Re-scan under the same per-release lock used by materialization. A
-        // spawn that registered SQLite/config before ensure therefore becomes
-        // visible before GC can remove the newly ensured release.
+    const releases = await this.pool.listReadyReleases();
+    if (releases.length === 0) return result;
+    return await this.pool.withReleaseLocks(
+      releases.map((release) => release.releaseId),
+      async () => {
+        // Registration and process ownership are re-read only after every
+        // candidate release is fenced. The periodic scan is never deletion proof.
         const scan = await this.deps.scan(this.stateDirectory);
-        if (scan.errors.length > 0) {
+        const unknownFailures = scan.errors.filter((failure) => !failure.codeSha);
+        if (unknownFailures.length > 0) {
           this.logger.warn(
-            { failures: scan.errors.map((failure) => failure.directory) },
+            { failures: unknownFailures.map((failure) => failure.directory) },
             "runner release GC retained all releases because registration evidence is incomplete",
           );
-          throw new AggregateError(
-            scan.errors.map((failure) => failure.error),
-            "runner release GC refused an incomplete registration inventory",
-          );
-        }
-        const registrations = scan.registrations.filter(
-          (registration) => registration.config.codeSha === release.releaseId,
-        );
-        if (registrations.length === 0) {
-          result.retained.push({ releaseId: release.releaseId, reason: "no_final_ack_evidence" });
-          return;
-        }
-        for (const registration of registrations) {
-          const reason = await referenceReason(registration, this.deps);
-          if (reason) {
-            result.retained.push({ releaseId: release.releaseId, reason });
-            if (reason === "pid_evidence_missing") {
-              this.logger.warn(
-                { releaseId: release.releaseId, sessionId: registration.config.sessionId },
-                "runner release GC retained release because PID evidence is missing",
-              );
-            }
-            return;
+          for (const release of releases) {
+            result.retained.push({ releaseId: release.releaseId, reason: "inventory_incomplete" });
           }
+          return result;
         }
-        await this.pool.removeReleaseLocked(release);
-        result.removed.push(release.releaseId);
-        this.logger.info({ releaseId: release.releaseId }, "removed unreferenced runner release");
-      });
-    }
-    return result;
+        releaseLoop: for (const release of releases) {
+          if (scan.errors.some((failure) => failure.codeSha === release.releaseId)) {
+            result.retained.push({ releaseId: release.releaseId, reason: "inventory_incomplete" });
+            continue;
+          }
+          const registrations = scan.registrations.filter(
+            (registration) => registration.config.codeSha === release.releaseId,
+          );
+          if (registrations.length === 0) {
+            result.retained.push({ releaseId: release.releaseId, reason: "no_final_ack_evidence" });
+            continue;
+          }
+          for (const registration of registrations) {
+            const lightweightReason = lightweightReferenceReason(registration);
+            if (lightweightReason) {
+              result.retained.push({ releaseId: release.releaseId, reason: lightweightReason });
+              if (lightweightReason === "pid_evidence_missing") {
+                this.logger.warn(
+                  { releaseId: release.releaseId, sessionId: registration.config.sessionId },
+                  "runner release GC retained release because PID evidence is missing",
+                );
+              }
+              continue releaseLoop;
+            }
+            let inspection: Awaited<ReturnType<typeof inspectRunnerDurableState>>;
+            try {
+              inspection = await this.deps.inspect(registration);
+            } catch (error) {
+              result.retained.push({ releaseId: release.releaseId, reason: "evidence_unreadable" });
+              this.logger.warn(
+                { error, releaseId: release.releaseId, sessionId: registration.config.sessionId },
+                "runner release GC retained release because session evidence is unreadable",
+              );
+              continue releaseLoop;
+            }
+            const reason = referenceReason(
+              inspection.registration,
+              inspection.incompleteDurableWork,
+            );
+            if (reason) {
+              result.retained.push({ releaseId: release.releaseId, reason });
+              if (reason === "pid_evidence_missing") {
+                this.logger.warn(
+                  { releaseId: release.releaseId, sessionId: registration.config.sessionId },
+                  "runner release GC retained release because PID evidence is missing",
+                );
+              }
+              continue releaseLoop;
+            }
+          }
+          await this.pool.removeReleaseLocked(release);
+          result.removed.push(release.releaseId);
+          this.logger.info({ releaseId: release.releaseId }, "removed unreferenced runner release");
+        }
+        return result;
+      },
+    );
   }
 }
 
-async function referenceReason(
+function referenceReason(
   registration: RunnerRegistration,
-  deps: RunnerReleaseGarbageCollectorDependencies,
-): Promise<string | null> {
+  incompleteDurableWork: boolean,
+): string | null {
   // PID liveness is deliberately stronger than a progress lease for deletion:
   // reaper must terminate a stale process before its executable tree can go.
   if (registration.pid === null) return "pid_evidence_missing";
   if (registration.pidAlive) return "live_runner";
+  if (!registration.registrationId || !registration.pidStartIdentity) {
+    return "ownership_evidence_missing";
+  }
   if (!registration.bootstrap || !registration.lifecycle) return "incomplete_bootstrap";
   if (registration.lifecycle.execution_state === "running") return "running_lifecycle";
-  if (await deps.hasIncompleteDurableWork(registration)) return "final_ack_pending";
+  if (incompleteDurableWork) return "final_ack_pending";
+  return null;
+}
+
+function lightweightReferenceReason(registration: RunnerRegistration): string | null {
+  if (registration.pid === null) return "pid_evidence_missing";
+  if (registration.pidAlive) return "live_runner";
+  if (!registration.registrationId || !registration.pidStartIdentity) {
+    return "ownership_evidence_missing";
+  }
+  if (!registration.lifecycle) return "lifecycle_missing";
+  if (registration.lifecycle.execution_state === "running") return "running_lifecycle";
   return null;
 }
 
 function defaultDependencies(): RunnerReleaseGarbageCollectorDependencies {
   return {
-    scan: scanRunnerRegistrations,
-    hasIncompleteDurableWork: async (registration) => {
-      const outbox = await RunnerSqliteEventOutbox.open(registration.config.paths.databasePath);
-      try {
-        return await outbox.hasPendingDurableWork();
-      } finally {
-        outbox.close();
-      }
-    },
+    scan: async (stateDirectory) => await scanRunnerRegistrations(
+      stateDirectory,
+      { verifyProcessIdentity: true },
+    ),
+    inspect: inspectRunnerDurableState,
   };
 }

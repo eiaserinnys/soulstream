@@ -1,4 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
+import { readFile } from "node:fs/promises";
+import { renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { loadNodeSqlite } from "./node_sqlite.js";
 import type { RunnerExecutionState } from "./sqlite_event_outbox_schema.js";
@@ -20,6 +23,25 @@ export interface BeginRunnerExecutionInput {
   progressedAt: string;
 }
 
+const LIFECYCLE_SUMMARY_FILE = "runner-lifecycle.json";
+
+export function runnerLifecycleSummaryPath(databasePath: string): string {
+  return join(dirname(databasePath), LIFECYCLE_SUMMARY_FILE);
+}
+
+export async function readRunnerLifecycleSummary(
+  databasePath: string,
+): Promise<RunnerLifecycleRecord | null> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(runnerLifecycleSummaryPath(databasePath), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  return validateLifecycleSummary(parsed);
+}
+
 /**
  * Operational lease stored on the bootstrap row. It is not domain state and
  * never participates in payload hashes, source_seq, or orch receipts.
@@ -31,6 +53,7 @@ export class RunnerSqliteLifecycle {
 
   private constructor(
     private readonly database: DatabaseSync,
+    private readonly databaseFilePath: string,
     private readonly sessionId?: string,
   ) {}
 
@@ -38,7 +61,7 @@ export class RunnerSqliteLifecycle {
     const { DatabaseSync } = loadNodeSqlite();
     const database = new DatabaseSync(databasePath);
     database.exec("PRAGMA busy_timeout = 5000");
-    return new RunnerSqliteLifecycle(database, sessionId);
+    return new RunnerSqliteLifecycle(database, databasePath, sessionId);
   }
 
   read(): RunnerLifecycleRecord | null {
@@ -85,7 +108,7 @@ export class RunnerSqliteLifecycle {
           progress_at = excluded.progress_at,
           terminal_error_json = NULL
       `).run(this.sessionId, input.pid, input.commandId, input.progressedAt);
-      return this.requireLifecycle();
+      return this.persistSummary(this.requireLifecycle());
     }
 
     const pending = this.database.prepare(`
@@ -123,7 +146,7 @@ export class RunnerSqliteLifecycle {
       this.database.exec("ROLLBACK");
       throw error;
     }
-    return this.requireLifecycle();
+    return this.persistSummary(this.requireLifecycle());
   }
 
   progress(commandId: string, progressedAt: string): RunnerLifecycleRecord {
@@ -131,7 +154,7 @@ export class RunnerSqliteLifecycle {
     this.updateActive(commandId, `
       progress_seq = progress_seq + 1, progress_at = ?
     `, [progressedAt]);
-    return this.requireLifecycle();
+    return this.persistSummary(this.requireLifecycle());
   }
 
   finish(
@@ -151,7 +174,7 @@ export class RunnerSqliteLifecycle {
       execution_state = ?, progress_seq = progress_seq + 1,
       progress_at = ?, terminal_error_json = ?
     `, [state, progressedAt, terminalError]);
-    return this.requireLifecycle();
+    return this.persistSummary(this.requireLifecycle());
   }
 
   reap(commandId: string, progressedAt: string, error: {
@@ -163,7 +186,7 @@ export class RunnerSqliteLifecycle {
       execution_state = 'reaped', progress_seq = progress_seq + 1,
       progress_at = ?, terminal_error_json = ?
     `, [progressedAt, stringifyRunnerJson(error, "runner reap error")]);
-    return this.requireLifecycle();
+    return this.persistSummary(this.requireLifecycle());
   }
 
   close(): void {
@@ -206,6 +229,14 @@ export class RunnerSqliteLifecycle {
     return lifecycle;
   }
 
+  private persistSummary(lifecycle: RunnerLifecycleRecord): RunnerLifecycleRecord {
+    const path = runnerLifecycleSummaryPath(this.databaseFilePath);
+    const temporaryPath = `${path}.tmp-${process.pid}`;
+    writeFileSync(temporaryPath, `${JSON.stringify(lifecycle)}\n`, { mode: 0o600 });
+    renameSync(temporaryPath, path);
+    return lifecycle;
+  }
+
   private requireOpen(): void {
     if (this.closed) throw new Error("runner lifecycle store is closed");
   }
@@ -227,6 +258,33 @@ function lifecycleRecord(row: LifecycleRow): RunnerLifecycleRecord {
       ? null
       : JSON.parse(row.terminal_error_json) as { code: string; message: string },
   };
+}
+
+function validateLifecycleSummary(value: unknown): RunnerLifecycleRecord {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("runner lifecycle summary invalid");
+  }
+  const record = value as Partial<RunnerLifecycleRecord>;
+  if (
+    typeof record.session_id !== "string"
+    || !record.session_id
+    || !Number.isSafeInteger(record.runner_pid)
+    || (record.runner_pid ?? 0) <= 0
+    || typeof record.execution_command_id !== "string"
+    || !record.execution_command_id
+    || !["running", "completed", "failed", "reaped", "closed"].includes(
+      record.execution_state ?? "",
+    )
+    || !Number.isSafeInteger(record.progress_seq)
+    || (record.progress_seq ?? -1) < 0
+    || typeof record.progress_at !== "string"
+    || !Number.isFinite(Date.parse(record.progress_at))
+    || !(record.terminal_error === null
+      || (typeof record.terminal_error === "object"
+        && typeof record.terminal_error?.code === "string"
+        && typeof record.terminal_error?.message === "string"))
+  ) throw new Error("runner lifecycle summary invalid");
+  return record as RunnerLifecycleRecord;
 }
 
 export function ensureRunnerLifecycleColumns(database: DatabaseSync): void {

@@ -13,6 +13,7 @@
 | orch-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | node disconnect 즉시 kill 대신 lease-aware reconciliation 사용 | soul-server보다 먼저 ON 가능. soul-server만 먼저 ON이면 등록 거부 |
 | 양쪽 | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | 러너 진행 lease와 orch disconnect 유예 창 | 양쪽 runner ON일 때 값이 정확히 같아야 등록됨 |
 | soul-server | `SOUL_RUNNER_REAPER_INTERVAL_MS` | `15000` | node-local runner scan/reap 주기 | lease timeout보다 짧게 유지 |
+| soul-server | `SOUL_RUNNER_TERMINAL_RETENTION_MS` | `86400000` | 최종 ACK가 끝난 terminal 세션 상태 보존기한 | 경과 뒤에만 세션 디렉토리 GC. 삭제 직전 registration과 PID 시작 identity를 다시 증명하지 못하면 보존 |
 
 스냅샷 풀에는 별도 flag가 없다. `SOUL_RUNNER_PROCESS_ENABLED=true`가 release materialization·GC·spawn을 함께 여는 단일 게이트다.
 
@@ -23,7 +24,7 @@
 3. 모든 프로세스에서 같은 `SOUL_RUNNER_LEASE_TIMEOUT_MS`를 설정한다.
 4. orch에서 `SOUL_RUNNER_PROCESS_ENABLED=true`를 설정하고 orch를 재시작한다. 아직 runner OFF인 노드는 경고만 남기며 연결된다.
 5. MCP를 쓰는 soul-server는 `MCP_ENABLED=true`, `MCP_STATELESS_TRANSPORT_ENABLED=true`, production auth 설정을 먼저 적용한다. `MCP_INTERNAL_PORT`는 명시하거나 `PORT+1` 파생값을 사용하되, nginx 설정에 이 포트를 추가하지 않았는지 확인한다. LLM 클라이언트는 public listener의 stateless `/mcp`, 러너의 Claude SDK를 포함한 내부 소비자는 별도 loopback listener의 stateless `/mcp/internal`로 분리된다. 내부 route는 host 재시작 뒤 stale `Mcp-Session-Id`가 와도 request-scoped transport로 처리한다.
-6. soul-server별 state/artifact/releases 경로와 권한을 준비한 뒤 `SOUL_RUNNER_PROCESS_ENABLED=true`로 재시작한다. 기동 중 현재 release materialization이 실패하면 서버가 명시적으로 실패한다.
+6. soul-server별 state/artifact/releases 경로와 권한을 준비한 뒤 `SOUL_RUNNER_PROCESS_ENABLED=true`로 재시작한다. 한 state 디렉토리는 pid+프로세스 시작 identity로 증명된 단일 host만 소유하며, 기존 host가 살아 있으면 새 host가 복구 스캔 전에 기동을 거부한다. 기동 중 현재 release materialization이 실패하면 서버가 명시적으로 실패한다.
 7. node registration에서 `runner_process_v1=true`와 orch와 동일한 `runner_lease_timeout_ms`가 승인되는지 확인한다.
 
 역순인 soul-server runner ON → orch lease OFF는 금지된다. orch는 해당 node registration을 `RUNNER_REQUIRES_LEASE_RECONCILIATION`으로 거부한다. 양쪽 TTL이 다르면 `RUNNER_LEASE_TIMEOUT_MISMATCH`로 거부한다.
@@ -33,7 +34,7 @@
 | 준비물 | 요구사항 |
 |---|---|
 | Node.js | 러너 ON이면 기동 시 `node:sqlite` 실제 import probe 통과 필수. 22.5.0–22.12.x와 23.0.0–23.3.x는 `--experimental-sqlite` 필요; 무플래그 운영은 22.13+ 또는 23.4+ 사용. 러너 OFF면 probe하지 않음 |
-| `SOUL_RUNNER_STATE_DIR` | 서비스 계정 전용 read/write/execute. 세션별 SQLite·pid·lock·config·Unix socket을 보관. Windows는 named pipe를 사용 |
+| `SOUL_RUNNER_STATE_DIR` | 서비스 계정 전용 read/write/execute. 세션별 SQLite·pid·lock·config·독립 `runner-identity.json`·lifecycle 요약·Unix socket을 보관. Windows는 named pipe를 사용. 15초 스캔은 경량 증거만 읽고 SQLite 전 행 검증은 복구·변경된 GC 후보에만 수행 |
 | `SOUL_RUNNER_ARTIFACT_DIR` | 현재 배포의 self-contained runner build 산출물 디렉토리. 서비스 계정 read 권한 |
 | `SOUL_RUNNER_RELEASES_DIR` | 서비스 계정 read/write/execute. live checkout 밖의 불변 content-hash release 풀 |
 | `EVENT_OUTBOX_DIR` | 기존 node-global JSONL outbox 경로. Phase 7에서도 유지 |
@@ -53,5 +54,9 @@
 - all-on 전구간 스모크: `soul-server-ts/tests/runner/runner_cutover_integration.e2e.test.ts`
 - public LLM + node-local internal stateless 동시 계약: `soul-server-ts/tests/mcp/stateless_restart_recovery.test.ts`
 - release GC fail-closed: `soul-server-ts/tests/runner/runner_release_gc.test.ts`
-- release ready fast-path + stale-lock 회수: `soul-server-ts/tests/runner/runner_release_pool.test.ts`
+- terminal session retention GC: `soul-server-ts/tests/runner/runner_session_gc.test.ts`
+- runner config가 손상돼도 독립 identity sidecar, 이어 SQLite 순서로 session ID를 복구한다. 둘 다 실패하면 live inventory 전체를 명시적으로 거부하고 upstream 재시도에 맡긴다. 부분 inventory는 발행하지 않는다.
+- release GC는 경량 registration fingerprint가 바뀐 경우만 durable evidence를 열며, 모든 후보 release lock 안에서 registration과 PID 시작 identity를 다시 읽고 삭제한다.
+- state host ownership fence: `soul-server-ts/tests/runner/runner_state_host_lock.test.ts`
+- release 소유권 직렬화 + stale-lock 회수: `soul-server-ts/tests/runner/runner_release_pool.test.ts`
 - self-contained release: `soul-server-ts/scripts/verify_runner_release_isolation.mjs`
