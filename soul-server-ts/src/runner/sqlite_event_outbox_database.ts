@@ -45,19 +45,31 @@ function recoverSnapshot(database: DatabaseSync): {
     throw new Error("runner event outbox ACK cursor is invalid");
   }
   const eventRows = rows.slice(1);
-  let previous = eventRows[0]?.source_seq === 2 ? 1 : ackedThrough;
+  let previousUnacknowledged = ackedThrough;
   for (const row of eventRows) {
     if (row.record_kind !== "event") throw new Error("runner event outbox record kind is invalid");
     if (row.stream_id !== bootstrap.stream_id) throw new Error("event outbox record stream mismatch");
     if (row.session_id !== bootstrap.session_id) throw new Error("event outbox record session mismatch");
-    if (row.source_seq !== previous + 1) throw new Error("event outbox source_seq gap detected");
     runnerRowToRecord(row);
-    previous = row.source_seq;
+    // ACKed rows may be sparse: compaction deletes every ACKed event that is
+    // no longer pinned by the IPC journal, while host-unacknowledged frames
+    // retain their corresponding event rows. Only the unacknowledged suffix
+    // is an orch replay contract and must remain contiguous.
+    if (row.source_seq <= ackedThrough) continue;
+    if (row.source_seq !== previousUnacknowledged + 1) {
+      throw new Error(
+        `event outbox source_seq gap detected: expected ${previousUnacknowledged + 1}, `
+        + `found ${row.source_seq}, acked_through ${ackedThrough}`,
+      );
+    }
+    previousUnacknowledged = row.source_seq;
   }
   const latest = latestRunnerSequence(database);
-  const lastDurable = eventRows.at(-1)?.source_seq ?? 1;
-  if (latest > ackedThrough && lastDurable < latest) {
-    throw new Error("event outbox durable unacknowledged prefix has a gap");
+  if (latest > ackedThrough && previousUnacknowledged < latest) {
+    throw new Error(
+      `event outbox durable unacknowledged suffix has a gap: expected through ${latest}, `
+      + `found through ${previousUnacknowledged}, acked_through ${ackedThrough}`,
+    );
   }
   if (ackedThrough > latest) throw new Error("event outbox ACK exceeds durable append cursor");
   return { bootstrap, ackedThrough };

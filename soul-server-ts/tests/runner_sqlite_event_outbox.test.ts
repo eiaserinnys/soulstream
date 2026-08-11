@@ -19,6 +19,7 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
+import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
@@ -36,6 +37,14 @@ describe("RunnerSqliteEventOutbox", () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.open(path);
     outbox.close();
+
+    expect(inspectRunnerOutboxCopy(path)).toMatchObject({
+      status: "healthy",
+      ackedThrough: null,
+      latestSequence: 0,
+      retainedEventCount: 0,
+      unacknowledgedEventCount: 0,
+    });
 
     const database = new DatabaseSync(path);
     try {
@@ -484,6 +493,105 @@ describe("RunnerSqliteEventOutbox", () => {
       EVENT_OUTBOX_COMPACT_ROWS + 2,
       EVENT_OUTBOX_COMPACT_ROWS + 3,
     ]);
+  });
+
+  it("reopens when ACK compaction retains only a host-unacknowledged journal event", async () => {
+    const path = await temporaryDatabasePath();
+    const initial = await RunnerSqliteEventOutbox.open(path);
+    const bootstrap = await initial.initializeBootstrap(bootstrapInput());
+    initial.close();
+    insertFixtureEvents(path, bootstrap.stream_id, EVENT_OUTBOX_COMPACT_ROWS);
+
+    const writer = await RunnerSqliteEventOutbox.open(path);
+    const retained = await writer.appendEngineFrame(eventInput("host pending"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "host pending" },
+    });
+    await writer.acknowledge(bootstrap.stream_id, retained.source_seq);
+    expect(readStoredSequences(path)).toEqual([1, retained.source_seq]);
+    writer.close();
+
+    expect(inspectRunnerOutboxCopy(path)).toMatchObject({
+      status: "compacted_acknowledged_prefix",
+      ackedThrough: retained.source_seq,
+      latestSequence: retained.source_seq,
+      firstRetainedEventSequence: retained.source_seq,
+      retainedEventCount: 1,
+      unacknowledgedEventCount: 0,
+    });
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.readBatch()).resolves.toBeNull();
+    await expect(recovered.readPendingIpcFrames()).resolves.toMatchObject([{
+      outbox_source_seq: retained.source_seq,
+    }]);
+    recovered.close();
+  });
+
+  it("does not burn source_seq when an append transaction rolls back", async () => {
+    const path = await temporaryDatabasePath();
+    const initial = await RunnerSqliteEventOutbox.open(path);
+    await initial.initializeBootstrap(bootstrapInput());
+    initial.close();
+
+    const fixture = new DatabaseSync(path);
+    fixture.exec(`
+      CREATE TRIGGER fail_runner_ipc_journal_insert
+      BEFORE INSERT ON runner_ipc_journal
+      BEGIN
+        SELECT RAISE(ABORT, 'injected journal failure');
+      END
+    `);
+    fixture.close();
+
+    const failing = await RunnerSqliteEventOutbox.open(path);
+    await expect(failing.appendEngineFrame(eventInput("rolled back"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "rolled back" },
+    })).rejects.toThrow("injected journal failure");
+    failing.close();
+
+    const cleanup = new DatabaseSync(path);
+    cleanup.exec("DROP TRIGGER fail_runner_ipc_journal_insert");
+    cleanup.close();
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.append(eventInput("committed"))).resolves.toMatchObject({
+      source_seq: 2,
+    });
+    recovered.close();
+    expect(readStoredSequences(path)).toEqual([1, 2]);
+  });
+
+  it("fails closed when the unacknowledged replay suffix has a source_seq gap", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    await outbox.append(eventInput("missing"));
+    await outbox.append(eventInput("retained"));
+    outbox.close();
+
+    const fixture = new DatabaseSync(path);
+    fixture.prepare(
+      "DELETE FROM runner_event_outbox WHERE source_seq = ?",
+    ).run(2);
+    fixture.close();
+
+    expect(inspectRunnerOutboxCopy(path)).toMatchObject({
+      status: "quarantine_required",
+      ackedThrough: 1,
+      latestSequence: 3,
+      firstRetainedEventSequence: 3,
+      unacknowledgedEventCount: 1,
+      error: "event outbox source_seq gap detected: expected 2, found 3, acked_through 1",
+    });
+    await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
+      "event outbox source_seq gap detected: expected 2, found 3, acked_through 1",
+    );
   });
 
   it("compacts an acknowledged prefix after its records reach 8 MiB", async () => {
