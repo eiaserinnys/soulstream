@@ -9,6 +9,7 @@ import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
+import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
 import { startServer } from "./server.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
 
@@ -37,6 +38,11 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   }
+
+  assertRunnerNodeRuntime({
+    runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
+    nodeVersion: process.versions.node,
+  });
 
   const logger = createLogger(env.LOG_LEVEL);
   let modelCatalog: ReturnType<typeof loadModelCatalog>;

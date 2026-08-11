@@ -1,13 +1,8 @@
-import { createRequire } from "node:module";
-
 import type { DatabaseSync } from "node:sqlite";
 
+import { loadNodeSqlite } from "./node_sqlite.js";
 import type { RunnerExecutionState } from "./sqlite_event_outbox_schema.js";
 import { stringifyRunnerJson } from "./sqlite_event_outbox_records.js";
-
-const { DatabaseSync: RuntimeDatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
-) as typeof import("node:sqlite");
 
 export interface RunnerLifecycleRecord {
   session_id: string;
@@ -40,7 +35,8 @@ export class RunnerSqliteLifecycle {
   ) {}
 
   static open(databasePath: string, sessionId?: string): RunnerSqliteLifecycle {
-    const database = new RuntimeDatabaseSync(databasePath);
+    const { DatabaseSync } = loadNodeSqlite();
+    const database = new DatabaseSync(databasePath);
     database.exec("PRAGMA busy_timeout = 5000");
     return new RunnerSqliteLifecycle(database, sessionId);
   }

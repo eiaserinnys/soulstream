@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  assertRunnerStateDirectoryCompatible,
+} from "./runner/runner_process_paths.js";
+
 /**
  * 환경 변수 스키마. design-principles §4(명시적 실패) — 필수 키 default 없음.
  * 선택 키는 zod default로 명시. 코드의 `process.env.X ?? "default"` 안티패턴 금지.
@@ -220,6 +224,17 @@ export const EnvSchema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} is required when SOUL_RUNNER_PROCESS_ENABLED=true`,
+          });
+        }
+      }
+      if (env.SOUL_RUNNER_STATE_DIR && process.platform !== "win32") {
+        try {
+          assertRunnerStateDirectoryCompatible(env.SOUL_RUNNER_STATE_DIR);
+        } catch (error) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["SOUL_RUNNER_STATE_DIR"],
+            message: error instanceof Error ? error.message : String(error),
           });
         }
       }
