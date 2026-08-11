@@ -226,11 +226,32 @@ describe("SessionMutationRepository", () => {
   });
 
   it("reconciles node disconnect and startup with terminal review semantics", async () => {
-    const { sql, calls } = fakeSql((text) =>
-      text.includes("COUNT(*)::int") ? [{ count: 2 }] : [],
-    );
-    const repository = new SessionMutationRepository(sql);
     const now = new Date("2026-08-06T00:00:00.000Z");
+    const { sql, calls } = fakeSql((text) => {
+      if (text.includes("COUNT(*)::int")) return [{ count: 2 }];
+      if (text.includes("termination_detail = 'startup_reconciliation'")) {
+        return ["old-a", "old-b"].map((session_id) => ({
+          session_id,
+          status: "interrupted",
+          termination_reason: "killed",
+          termination_detail: "startup_reconciliation",
+          review_state: "acknowledged",
+          updated_at: now,
+        }));
+      }
+      if (text.includes("SET status = 'running'")) {
+        return ["session-live-a", "session-live-b"].map((session_id) => ({
+          session_id,
+          status: "running",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: "not_required",
+          updated_at: now,
+        }));
+      }
+      return [];
+    });
+    const repository = new SessionMutationRepository(sql);
 
     for (const detail of ["node_disconnect", "node_disconnect_timeout"] as const) {
       await expect(repository.reconcileNodeDisconnected(
@@ -240,7 +261,16 @@ describe("SessionMutationRepository", () => {
       )).resolves.toBe(2);
     }
     await expect(repository.reconcileNodeStartup("node-a", ["session-live"], now))
-      .resolves.toEqual({ interrupted: 2, restored: 2 });
+      .resolves.toMatchObject({
+        interrupted: 2,
+        restored: 2,
+        updates: [
+          expect.objectContaining({ sessionId: "old-a", status: "interrupted" }),
+          expect.objectContaining({ sessionId: "old-b", status: "interrupted" }),
+          expect.objectContaining({ sessionId: "session-live-a", status: "running" }),
+          expect.objectContaining({ sessionId: "session-live-b", status: "running" }),
+        ],
+      });
 
     const statements = calls.map((call) => call.text).join("\n");
     expect(calls.some((call) =>

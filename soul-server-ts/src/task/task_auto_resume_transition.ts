@@ -3,9 +3,6 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
-import type { SessionDB } from "../db/session_db.js";
-import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
-import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
@@ -20,9 +17,6 @@ import {
 export type AutoResumeCallback = (task: Task) => void;
 
 export interface AutoResumeTransitionDeps {
-  db: SessionDB;
-  sessionMutations: SessionMutationHost;
-  broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
   contextBuilder?: ExecutionContextBuilder;
@@ -35,8 +29,10 @@ export interface AutoResumeTransitionDeps {
  * Owns the ordered side effects that turn a completed/error/interrupted task
  * back into a running task for the next user turn:
  * resume capability validation -> caller metadata promotion -> user_message
- * persistence -> task state transition -> user_message broadcast -> host status
- * transition -> session_updated -> executor resume callback.
+ * persistence + separate durable running effect -> task state transition ->
+ * user_message broadcast -> executor resume callback. Orch projects the
+ * running status from the durable effect, so a closed host WebSocket cannot
+ * lose the transition.
  */
 export class AutoResumeTransition {
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
@@ -62,16 +58,23 @@ export class AutoResumeTransition {
           attachmentPaths: message.attachmentPaths,
           contextItems: message.context,
         });
+    const resumedReviewState = reviewStateAfterFollowup(
+      task.reviewState ?? "not_required",
+    );
     if (userMessageEvent) {
       await persistUserMessageEvent(task, userMessageEvent, this.deps);
     }
+    if (!this.deps.persistence) {
+      throw new Error("running transition durable event persistence is required");
+    }
+    await this.deps.persistence.enqueueRunningTransition(task.agentSessionId, {
+      reviewState: resumedReviewState,
+      transitionId: `resume:${transitionRevision}`,
+    });
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {
       await finishUserMessageEvent(task, userMessageEvent, this.deps);
     }
-    await this.updateSessionStatus(task, transitionRevision);
-    await this.broadcastSessionUpdated(task);
-
     onResume(task);
     return { autoResumed: true };
   }
@@ -139,29 +142,6 @@ export class AutoResumeTransition {
     }
   }
 
-  private async updateSessionStatus(task: Task, transitionRevision: number): Promise<void> {
-    await this.deps.sessionMutations.transitionSession(
-      task.agentSessionId,
-      {
-        status: "running",
-        termination_reason: null,
-        termination_detail: null,
-        review_state: task.reviewState,
-      },
-      `transition_session:${task.agentSessionId}:resume:${transitionRevision}`,
-    );
-  }
-
-  private async broadcastSessionUpdated(task: Task): Promise<void> {
-    try {
-      await this.deps.broadcaster.emitSessionUpdated(task);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "session_updated (auto-resume) broadcast failed",
-      );
-    }
-  }
 }
 
 function transitionTaskToRunning(task: Task, message: InterventionMessage): void {

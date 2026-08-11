@@ -72,6 +72,41 @@ export function makeEventPersistenceTestDouble(
       return null;
     },
   );
+  const enqueueRunningTransition = vi.fn(
+    async (
+      sessionId: string,
+      input: { reviewState: string; transitionId: string; updatedAt?: Date },
+    ): Promise<EventOutboxRecord> => {
+      const timestamp = (input.updatedAt ?? new Date()).toISOString();
+      sourceSeq += 1;
+      latestBySession.set(sessionId, sourceSeq);
+      return makeRecord(
+        sourceSeq,
+        sessionId,
+        {
+          type: "metadata",
+          metadata_type: "session_status_transition",
+          value: { status: "running", transition_id: input.transitionId },
+          timestamp,
+        } as unknown as SSEEventPayload,
+        {
+          kind: "running_transition",
+          review_state: input.reviewState,
+          updated_at: timestamp,
+        },
+      );
+    },
+  );
+  const enqueueRunningTransitionAndWaitForAck = vi.fn(
+    async (
+      sessionId: string,
+      input: { reviewState: string; transitionId: string; updatedAt?: Date },
+    ): Promise<number> => {
+      const record = await enqueueRunningTransition(sessionId, input);
+      latestBySession.delete(sessionId);
+      return record.source_seq;
+    },
+  );
   const handleSideEffects = vi.fn(
     sideEffect ?? (async () => undefined),
   );
@@ -79,6 +114,8 @@ export function makeEventPersistenceTestDouble(
     enqueueEvent,
     enqueueEventAndWaitForSessionAck,
     enqueueMetadataEffect,
+    enqueueRunningTransition,
+    enqueueRunningTransitionAndWaitForAck,
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;
@@ -88,6 +125,8 @@ export function makeEventPersistenceTestDouble(
     enqueueEvent,
     enqueueEventAndWaitForSessionAck,
     enqueueMetadataEffect,
+    enqueueRunningTransition,
+    enqueueRunningTransitionAndWaitForAck,
     waitForSessionAck,
     handleSideEffects,
   };

@@ -170,39 +170,49 @@ export class SessionMutationRepository {
     nodeId: string,
     runningSessionIds: string[],
     updatedAt: Date,
-  ): Promise<{ interrupted: number; restored: number }> {
+  ): Promise<{
+    interrupted: number;
+    restored: number;
+    updates: Array<{
+      sessionId: string;
+      status: "interrupted" | "running";
+      terminationReason: string | null;
+      terminationDetail: string | null;
+      reviewState: string;
+      updatedAt: Date;
+    }>;
+  }> {
     return await this.sql.begin(async (sql) => {
-      const interruptedRows = await sql<Array<{ count: number }>>`
-        WITH changed AS (
-          UPDATE sessions
-          SET status = 'interrupted', was_running_at_shutdown = TRUE,
-              termination_reason = 'killed', termination_detail = 'startup_reconciliation',
-              review_state = CASE
-                WHEN review_required THEN 'needs_review'
-                ELSE 'acknowledged'
-              END,
-              updated_at = ${updatedAt}
-          WHERE node_id = ${nodeId} AND status = 'running'
-            AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
-          RETURNING 1
-        ) SELECT COUNT(*)::int AS count FROM changed
+      const interruptedRows = await sql<Array<ReconciledSessionRow>>`
+        UPDATE sessions
+        SET status = 'interrupted', was_running_at_shutdown = TRUE,
+            termination_reason = 'killed', termination_detail = 'startup_reconciliation',
+            review_state = CASE
+              WHEN review_required THEN 'needs_review'
+              ELSE 'acknowledged'
+            END,
+            updated_at = ${updatedAt}
+        WHERE node_id = ${nodeId} AND status = 'running'
+          AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
+        RETURNING session_id, status, termination_reason, termination_detail,
+                  review_state, updated_at
       `;
-      const restoredRows = await sql<Array<{ count: number }>>`
-        WITH changed AS (
-          UPDATE sessions
-          SET status = 'running', was_running_at_shutdown = FALSE,
-              termination_reason = NULL, termination_detail = NULL,
-              review_state = 'not_required',
-              updated_at = ${updatedAt}
-          WHERE node_id = ${nodeId}
-            AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-            AND status <> 'running'
-          RETURNING 1
-        ) SELECT COUNT(*)::int AS count FROM changed
+      const restoredRows = await sql<Array<ReconciledSessionRow>>`
+        UPDATE sessions
+        SET status = 'running', was_running_at_shutdown = FALSE,
+            termination_reason = NULL, termination_detail = NULL,
+            review_state = 'not_required',
+            updated_at = ${updatedAt}
+        WHERE node_id = ${nodeId}
+          AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
+          AND status <> 'running'
+        RETURNING session_id, status, termination_reason, termination_detail,
+                  review_state, updated_at
       `;
       return {
-        interrupted: Number(interruptedRows[0]?.count ?? 0),
-        restored: Number(restoredRows[0]?.count ?? 0),
+        interrupted: interruptedRows.length,
+        restored: restoredRows.length,
+        updates: [...interruptedRows, ...restoredRows].map(mapReconciledSessionRow),
       };
     });
   }
@@ -214,6 +224,26 @@ export class SessionMutationRepository {
   ): Promise<T> {
     return await runIdempotentSessionMutation(this.sql, operation, input, mutate);
   }
+}
+
+type ReconciledSessionRow = {
+  session_id: string;
+  status: "interrupted" | "running";
+  termination_reason: string | null;
+  termination_detail: string | null;
+  review_state: string;
+  updated_at: Date | string;
+};
+
+function mapReconciledSessionRow(row: ReconciledSessionRow) {
+  return {
+    sessionId: row.session_id,
+    status: row.status,
+    terminationReason: row.termination_reason,
+    terminationDetail: row.termination_detail,
+    reviewState: row.review_state,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
+  };
 }
 
 const TRANSITION_FIELD_KEYS = new Set<keyof SessionTransitionFields>([

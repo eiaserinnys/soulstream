@@ -73,16 +73,8 @@ describe("Node registry and per-node session cache primitive", () => {
         commandType: "create_session",
       },
     ]);
-    expect(sessionCache.findSession("sess-contract")).toMatchObject({
-      nodeId: "fake-node",
-      agentSessionId: "sess-contract",
-      status: "created",
-      fresh: true,
-      lastEventId: undefined,
-    });
-    expect(registry.findConnectedNodeForSession("sess-contract")?.connectionId).toBe(
-      registered.node.connectionId,
-    );
+    expect(sessionCache.findSession("sess-contract")).toBeUndefined();
+    expect(registry.findConnectedNodeForSession("sess-contract")).toBeUndefined();
 
     const relayEffects = registry.receiveNodeMessage(
       "fake-node",
@@ -303,10 +295,7 @@ describe("Node registry and per-node session cache primitive", () => {
       lastSeenAtMs: 1_300,
       pendingCommandCount: 0,
     });
-    expect(sessionCache.findSession("sess-contract")).toMatchObject({
-      connectionId: second.node.connectionId,
-      fresh: true,
-    });
+    expect(sessionCache.findSession("sess-contract")).toBeUndefined();
   });
 
   it("tracks heartbeat observations without owning a second liveness timeout", () => {

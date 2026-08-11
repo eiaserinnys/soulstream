@@ -87,10 +87,13 @@ describe("live execute proxy provider", () => {
       agents: [{ id: "claude-agent", backend: "claude" }],
       supportedBackends: ["claude"],
     });
-    harness.registry.sessionCache.upsertFromCommandAck({
+    harness.registry.sessionCache.upsertFromSessionCreated({
       nodeId: "node-a",
       connectionId,
-      response: { type: "session_created", agentSessionId: "sess-existing" },
+      message: {
+        type: "session_created",
+        session: { agent_session_id: "sess-existing", status: "running" },
+      },
       nowMs: 1_700_000_000_000,
     });
     const sent = harness.attachTransport("node-a", connectionId, (message) => {

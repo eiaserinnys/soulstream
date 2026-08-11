@@ -82,10 +82,12 @@ export class NodeEventIngressController {
           agentSessionId: item.envelope.session_id,
           event: payload,
         });
-        const sessionUpdate = committedEffectSessionUpdate(item.envelope.session_effect, {
-          sessionId: item.envelope.session_id,
-          eventId: item.eventId,
-        });
+        const sessionUpdate = item.duplicateReceipt
+          ? null
+          : committedEffectSessionUpdate(item.envelope.session_effect, {
+              sessionId: item.envelope.session_id,
+              eventId: item.eventId,
+            });
         // receiveCommittedEvent updates the session cache as a side effect. Apply the
         // effect before publishing session_ended so cache-reading sinks such as
         // PushNotifier observe the committed final assistant text.
@@ -143,6 +145,18 @@ function committedEffectSessionUpdate(
       type: "session_updated",
       agentSessionId: input.sessionId,
       last_message: effect.last_message,
+      updated_at: effect.updated_at,
+      last_event_id: input.eventId,
+    };
+  }
+  if (effect.kind === "running_transition") {
+    return {
+      type: "session_updated",
+      agentSessionId: input.sessionId,
+      status: "running",
+      termination_reason: null,
+      termination_detail: null,
+      review_state: effect.review_state,
       updated_at: effect.updated_at,
       last_event_id: input.eventId,
     };

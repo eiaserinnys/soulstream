@@ -129,6 +129,10 @@ function createExistingSession(registry: InMemoryNodeRegistry): void {
     reconnectFixture().command as CreateSessionNodeCommandPayload,
   );
   registry.receiveNodeMessage("fake-node", {
+    type: "session_created",
+    session: { agent_session_id: "sess-contract", status: "running" },
+  });
+  registry.receiveNodeMessage("fake-node", {
     ...reconnectFixture().ack,
     requestId: command.requestId,
   });

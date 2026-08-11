@@ -263,6 +263,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     commandId?: string,
+    mode: "adopt" | "offline" = "adopt",
   ): Promise<void> {
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
@@ -271,7 +272,21 @@ export class TaskExecutor {
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
     task.runner = runner;
     task.status = "running";
-    const promise = this.consumeRecoveredRunnerFrames(task, agent, runner, frames);
+    const promise = (async () => {
+      // Adoption must establish the same durable running projection as a new
+      // turn before replaying runner frames. A stable execution command id
+      // suppresses duplicate client updates across repeated host restarts.
+      if (mode === "adopt") {
+        await this.persistence.enqueueRunningTransitionAndWaitForAck(
+          task.agentSessionId,
+          {
+            reviewState: task.reviewState ?? "not_required",
+            transitionId: `adopt:${commandId ?? task.lastEventId}`,
+          },
+        );
+      }
+      await this.consumeRecoveredRunnerFrames(task, agent, runner, frames);
+    })();
     task.executionPromise = promise;
     return promise;
   }
@@ -294,6 +309,7 @@ export class TaskExecutor {
       config.agent,
       runner,
       commandId,
+      mode,
     );
   }
 

@@ -38,6 +38,26 @@ describe("sanitizePgJsonValue", () => {
 });
 
 describe("parseEventAppendBatch sanitization", () => {
+  it("accepts exactly the closed running_transition field set", () => {
+    const effect = {
+      kind: "running_transition",
+      review_state: "none",
+      updated_at: "2026-08-11T00:00:00.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    expect(() =>
+      parseEventAppendBatch(
+        batchWithEffect({
+          ...effect,
+          unexpected: "must not be discarded",
+        }),
+      ),
+    ).toThrow("session_effect has unexpected fields: unexpected");
+  });
+
   it("sanitizes payload, searchable_text, dedupe key, and session effect", () => {
     const batch = parseEventAppendBatch({
       type: "event_append_batch",
@@ -110,3 +130,24 @@ describe("parseEventAppendBatch sanitization", () => {
     expect(batch.events[0]!.searchable_text).toBe("정상 본문 🙂");
   });
 });
+
+function batchWithEffect(sessionEffect: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: "event_append_batch",
+    protocol_version: 1,
+    stream_id: STREAM_ID,
+    first_seq: 1,
+    events: [{
+      stream_id: STREAM_ID,
+      source_seq: 1,
+      session_id: "session-a",
+      event_type: "system_message",
+      payload: { type: "system_message", content: "running" },
+      searchable_text: null,
+      created_at: "2026-08-11T00:00:00.000Z",
+      semantic_dedupe_key: "running_transition:session-a:start",
+      session_effect: sessionEffect,
+      payload_hash: PAYLOAD_HASH,
+    }],
+  };
+}

@@ -308,6 +308,71 @@ describe("EventPersistence durable ingress", () => {
     expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
   });
 
+  it("persists an idempotent running transition without waiting for host recovery", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueRunningTransition("sess-1", {
+      reviewState: "not_required",
+      transitionId: "resume:7",
+      updatedAt: new Date("2026-08-11T00:00:00.000Z"),
+    })).resolves.toBe(ingress.record);
+
+    expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "sess-1",
+      semantic_dedupe_key: "running_transition:sess-1:resume:7",
+      session_effect: expect.objectContaining({ kind: "running_transition" }),
+    }));
+    expect(ingress.waitForAcknowledgement).not.toHaveBeenCalled();
+  });
+
+  it("persists an idempotent runner-adopt transition and waits for its ACK", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueRunningTransitionAndWaitForAck("sess-1", {
+      reviewState: "not_required",
+      transitionId: "adopt:command-1",
+      updatedAt: new Date("2026-08-11T00:00:00.000Z"),
+    })).resolves.toBe(42);
+
+    expect(ingress.append).toHaveBeenCalledWith({
+      session_id: "sess-1",
+      event_type: "metadata",
+      payload: {
+        type: "metadata",
+        metadata_type: "session_status_transition",
+        value: { status: "running", transition_id: "adopt:command-1" },
+        timestamp: "2026-08-11T00:00:00.000Z",
+      },
+      searchable_text: "",
+      created_at: "2026-08-11T00:00:00.000Z",
+      semantic_dedupe_key: "running_transition:sess-1:adopt:command-1",
+      session_effect: {
+        kind: "running_transition",
+        review_state: "not_required",
+        updated_at: "2026-08-11T00:00:00.000Z",
+      },
+    });
+    expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
+  });
+
   it("waits for the last event enqueued for the session at the turn boundary", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

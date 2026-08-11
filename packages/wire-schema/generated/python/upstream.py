@@ -143,6 +143,16 @@ class SessionEffect2(TypedDict, closed=True):
     Event와 같은 ingress transaction에서 적용되는 typed session effect.
     """
 
+    kind: Literal['running_transition']
+    review_state: str
+    updated_at: str
+
+
+class SessionEffect3(TypedDict, closed=True):
+    """
+    Event와 같은 ingress transaction에서 적용되는 typed session effect.
+    """
+
     kind: Literal['terminal_transition']
     status: str
     termination_reason: str
@@ -151,7 +161,7 @@ class SessionEffect2(TypedDict, closed=True):
     updated_at: str
 
 
-class SessionEffect3(TypedDict, closed=True):
+class SessionEffect4(TypedDict, closed=True):
     """
     Event와 같은 ingress transaction에서 적용되는 typed session effect.
     """
@@ -172,7 +182,12 @@ class Event(TypedDict, closed=True):
     created_at: str
     semantic_dedupe_key: str | None
     session_effect: (
-        SessionEffect | SessionEffect1 | SessionEffect2 | SessionEffect3 | None
+        SessionEffect
+        | SessionEffect1
+        | SessionEffect2
+        | SessionEffect3
+        | SessionEffect4
+        | None
     )
     payload_hash: str
 

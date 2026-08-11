@@ -4,12 +4,10 @@ import { withoutSessionContextSourceMarkers } from "../context/session_context_s
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { CallerInfo, Task } from "./task_models.js";
 
 export interface UserMessageEventPublisherDeps {
-  broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
 }

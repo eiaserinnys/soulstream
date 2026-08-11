@@ -15,6 +15,11 @@ export type EventSessionEffect =
     }
   | { kind: "set_backend_session_id"; backend_session_id: string }
   | {
+      kind: "running_transition";
+      review_state: string;
+      updated_at: string;
+    }
+  | {
       kind: "terminal_transition";
       status: string;
       termination_reason: string;
@@ -183,6 +188,14 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       backend_session_id: nonEmptyString(value.backend_session_id, `${field}.backend_session_id`),
     };
   }
+  if (value.kind === "running_transition") {
+    assertExactKeys(value, ["kind", "review_state", "updated_at"], field);
+    return {
+      kind: value.kind,
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "terminal_transition") {
     return {
       kind: value.kind,
@@ -217,6 +230,20 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
 function recordValue(value: unknown, field: string): Record<string, unknown> {
   if (!isRecord(value)) throw new EventIngressValidationError(`${field} must be an object`);
   return value;
+}
+
+function assertExactKeys(
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+  field: string,
+): void {
+  const expected = new Set(expectedKeys);
+  const unexpected = Object.keys(value).filter((key) => !expected.has(key)).sort();
+  if (unexpected.length > 0) {
+    throw new EventIngressValidationError(
+      `${field} has unexpected fields: ${unexpected.join(", ")}`,
+    );
+  }
 }
 
 function isoTimestamp(value: unknown, field: string): string {

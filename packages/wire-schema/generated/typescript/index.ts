@@ -971,6 +971,11 @@ export interface EventAppendBatch {
             backend_session_id: string;
           }
         | {
+            kind: "running_transition";
+            review_state: string;
+            updated_at: string;
+          }
+        | {
             kind: "terminal_transition";
             status: string;
             termination_reason: string;
@@ -1012,6 +1017,11 @@ export interface EventAppendBatch {
         | {
             kind: "set_backend_session_id";
             backend_session_id: string;
+          }
+        | {
+            kind: "running_transition";
+            review_state: string;
+            updated_at: string;
           }
         | {
             kind: "terminal_transition";

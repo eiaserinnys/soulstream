@@ -191,6 +191,82 @@ describe("createSessionReconciliationSink", () => {
     expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
   });
 
+  it("restores an adopted runner in DB, cache, and client exactly once before replay", async () => {
+    const registry = new InMemoryNodeRegistry();
+    const registered = registry.registerNode(nodeRegistration());
+    const inventory = {
+      type: "sessions_update",
+      sessions: [{ agentSessionId: "session-runner", status: "interrupted" }],
+      running_session_ids: ["session-runner"],
+    };
+    const firstInventoryEvents = registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId: registered.node.connectionId },
+      inventory as never,
+    );
+    let durableStatus: "interrupted" | "running" = "interrupted";
+    const clientStatuses: string[] = [];
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 0),
+      reconcileNodeStartup: vi.fn(async () => {
+        if (durableStatus === "running") {
+          return { interrupted: 0, restored: 0, updates: [] };
+        }
+        durableStatus = "running";
+        return {
+          interrupted: 0,
+          restored: 1,
+          updates: [{
+            sessionId: "session-runner",
+            status: "running" as const,
+            terminationReason: null,
+            terminationDetail: null,
+            reviewState: "not_required",
+            updatedAt: new Date("2026-08-11T00:00:00.000Z"),
+          }],
+        };
+      }),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      leaseAware: true,
+      disconnectGraceMs: 10,
+      publishSessionUpdate: (update) => {
+        const events = registry.receiveNodeMessage(
+          { nodeId: update.nodeId, connectionId: registered.node.connectionId },
+          {
+            type: "session_updated",
+            agentSessionId: update.agentSessionId,
+            status: update.status,
+            review_state: update.reviewState,
+          },
+        );
+        if (events.some((event) => event.type === "node_session_session_updated")) {
+          clientStatuses.push(update.status);
+        }
+      },
+    });
+
+    sink(firstInventoryEvents);
+    await vi.waitFor(() => expect(durableStatus).toBe("running"));
+    expect(registry.sessionCache.findSession("session-runner")?.status).toBe("running");
+    expect(clientStatuses).toEqual(["running"]);
+
+    // The next complete inventory reflects the durable transition even before
+    // runner event replay, and the reconciliation itself remains a no-op.
+    sink(registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId: registered.node.connectionId },
+      {
+        ...inventory,
+        sessions: [{ agentSessionId: "session-runner", status: "running" }],
+      } as never,
+    ));
+    await vi.waitFor(() => expect(repository.reconcileNodeStartup).toHaveBeenCalledTimes(2));
+    expect(durableStatus).toBe("running");
+    expect(registry.sessionCache.findSession("session-runner")?.status).toBe("running");
+    expect(clientStatuses).toEqual(["running"]);
+  });
+
   it("restores disconnect grace after an orch restart and expires an absent node explicitly", async () => {
     vi.useFakeTimers();
     const repository = {

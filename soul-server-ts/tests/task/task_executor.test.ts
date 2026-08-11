@@ -112,6 +112,8 @@ function makeMocks() {
     waitForSessionAck: persistenceDouble.waitForSessionAck,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueRunningTransitionAndWaitForAck:
+      persistenceDouble.enqueueRunningTransitionAndWaitForAck,
     enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
@@ -487,7 +489,7 @@ describe("TaskExecutor.startExecution", () => {
     });
 
     expect(task.status).toBe("completed");
-    expect(task.lastEventId).toBe(4);
+    expect(task.lastEventId).toBe(5);
     expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.runner).toBeUndefined();
@@ -576,7 +578,7 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
       undefined,
     ]);
-    expect(task.lastEventId).toBe(3);
+    expect(task.lastEventId).toBe(4);
     expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
@@ -1658,6 +1660,12 @@ describe("TaskExecutor runner process boundary", () => {
 
   it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
     const mocks = makeMocks();
+    let releaseRunningTransition!: () => void;
+    mocks.enqueueRunningTransitionAndWaitForAck.mockImplementationOnce(
+      () => new Promise<number>((resolve) => {
+        releaseRunningTransition = () => resolve(101);
+      }),
+    );
     const { runner, dispatcher } = makeRunnerProcessRuntime([
       { type: "assistant_message", content: "replayed" },
       { type: "complete", result: "done", timestamp: 1 },
@@ -1671,9 +1679,22 @@ describe("TaskExecutor runner process boundary", () => {
     );
     const task = makeTask();
 
-    await executor.recoverRunnerExecution(task, agent, runner, "execute-old");
+    const recovery = executor.recoverRunnerExecution(task, agent, runner, "execute-old");
 
+    await vi.waitFor(() => expect(mocks.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledWith(
+      task.agentSessionId,
+      {
+        reviewState: "not_required",
+        transitionId: "adopt:execute-old",
+      },
+    ));
     expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old");
+    expect(dispatcher.waitForSessionAck).not.toHaveBeenCalled();
+    expect(task.lastAssistantText).toBeUndefined();
+
+    releaseRunningTransition();
+    await recovery;
+
     expect(dispatcher.prepareSession).not.toHaveBeenCalled();
     expect(dispatcher.waitForSessionAck).toHaveBeenCalled();
     expect(task.lastEventId).toBeGreaterThan(0);

@@ -163,6 +163,12 @@ describe("orchestrator runtime composition harness", () => {
         : undefined,
     );
 
+    // Production task creation broadcasts the complete session before its
+    // correlation-only command ACK.
+    ws.send(JSON.stringify({
+      type: "session_created",
+      session: { agent_session_id: agentSessionId, status: "running" },
+    }));
     ws.send(
       JSON.stringify({
         type: "session_created",
@@ -184,7 +190,7 @@ describe("orchestrator runtime composition harness", () => {
       fresh: true,
       connected: true,
     });
-    expect(runtime.sessionBroadcaster.latestEventId).toBe(0);
+    expect(runtime.sessionBroadcaster.latestEventId).toBe(1);
     const snapshotResponse = await runtime.app.inject({
       method: "GET",
       url: "/api/sessions",
@@ -193,7 +199,7 @@ describe("orchestrator runtime composition harness", () => {
       agent_session_id: agentSessionId,
       agentSessionId,
       nodeId: "fake-node",
-      status: "created",
+      status: "running",
       connected: true,
       fresh: true,
     });

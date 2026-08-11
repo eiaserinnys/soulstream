@@ -59,6 +59,10 @@ describe("session command HTTP route harness", () => {
       reconnect.command as CreateSessionNodeCommandPayload,
     );
     registry.receiveNodeMessage("fake-node", {
+      type: "session_created",
+      session: { agent_session_id: "sess-contract", status: "running" },
+    });
+    registry.receiveNodeMessage("fake-node", {
       ...reconnect.ack,
       requestId: command.requestId,
     });

@@ -41,6 +41,44 @@ describe("PerNodeSessionCache retention", () => {
     })).resolves.toBe(false);
   });
 
+  it("keeps running through a status-less create ACK and last-message effect", () => {
+    const cache = new PerNodeSessionCache();
+    cache.upsertFromSessionCreated({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      message: {
+        type: "session_created",
+        session: { agent_session_id: "session-a", status: "running" },
+      },
+      nowMs: 1_000,
+    });
+
+    cache.upsertFromCommandAck({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      response: { type: "session_created", agentSessionId: "session-a" },
+      nowMs: 1_001,
+    });
+    cache.upsertFromSessionUpdated({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      message: {
+        type: "session_updated",
+        agentSessionId: "session-a",
+        last_message: { type: "user_message", preview: "hello" },
+      },
+      nowMs: 1_002,
+    });
+
+    expect(cache.findSession("session-a")).toMatchObject({
+      status: "running",
+      payload: expect.objectContaining({
+        status: "running",
+        last_message: { type: "user_message", preview: "hello" },
+      }),
+    });
+  });
+
   it("keeps terminal enrichment during the grace window then removes both indexes", () => {
     const cache = new PerNodeSessionCache();
     cache.upsertFromSessionUpdated({

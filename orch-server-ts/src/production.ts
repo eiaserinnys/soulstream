@@ -216,11 +216,15 @@ export async function createLiveProductionApplication(
     onInfo: (event) => logPushNotification?.(event),
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
+  let publishReconciledSessionUpdate:
+    NonNullable<Parameters<typeof createSessionReconciliationSink>[0]["publishSessionUpdate"]>
+      = () => undefined;
   const sessionReconciliation = createSessionReconciliationSink({
     repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
     logError: (error, message) => context.warn(`${message}: ${String(error)}`),
     leaseAware: config.soul_runner_process_enabled,
     disconnectGraceMs: config.soul_runner_lease_timeout_ms,
+    publishSessionUpdate: (update) => publishReconciledSessionUpdate(update),
   });
   let providers: LiveOrchestratorProviderBundle;
   let pageYjsService: PageYjsService | undefined;
@@ -297,6 +301,23 @@ export async function createLiveProductionApplication(
       }),
     },
   });
+  publishReconciledSessionUpdate = (update) => {
+    const node = registry.getConnectedNode(update.nodeId);
+    if (!node) return;
+    const events = registry.receiveNodeMessage(
+      { nodeId: update.nodeId, connectionId: node.connectionId },
+      {
+        type: "session_updated",
+        agentSessionId: update.agentSessionId,
+        status: update.status,
+        termination_reason: update.terminationReason,
+        termination_detail: update.terminationDetail,
+        review_state: update.reviewState,
+        updated_at: update.updatedAt.toISOString(),
+      },
+    );
+    runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
+  };
   const memoryStats = createOrchestratorMemoryStatsCollector({
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     sessionCache: registry.sessionCache,

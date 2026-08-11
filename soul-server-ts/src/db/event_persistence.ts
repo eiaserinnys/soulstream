@@ -146,6 +146,42 @@ export class EventPersistence {
     return null;
   }
 
+  /**
+   * Appends a state-only running transition independently from timeline
+   * events. A user_message must retain its last_message effect; folding this
+   * transition into that record would silently replace the preview update.
+   */
+  async enqueueRunningTransition(
+    sessionId: string,
+    input: {
+      reviewState: string;
+      transitionId: string;
+      updatedAt?: Date;
+    },
+  ): Promise<EventOutboxRecord> {
+    const { event, effect } = buildRunningTransitionRecord(sessionId, input);
+    return this.enqueueEvent(sessionId, event, effect);
+  }
+
+  /**
+   * Runner adoption must not replay frames until orch has committed running.
+   * Other start/resume paths use enqueueRunningTransition so host downtime
+   * cannot block local execution after the durable append.
+   */
+  async enqueueRunningTransitionAndWaitForAck(
+    sessionId: string,
+    input: {
+      reviewState: string;
+      transitionId: string;
+      updatedAt?: Date;
+    },
+  ): Promise<number> {
+    const record = await this.enqueueRunningTransition(sessionId, input);
+    const eventId = await this.outboxPump.waitForAcknowledgement(record);
+    this.clearPendingAckTarget(sessionId, record.source_seq);
+    return eventId;
+  }
+
   private clearPendingAckTarget(sessionId: string, sourceSeq: number): void {
     if (this.latestPendingAckBySession.get(sessionId)?.source_seq === sourceSeq) {
       this.latestPendingAckBySession.delete(sessionId);
@@ -186,6 +222,35 @@ export class EventPersistence {
     }
 
   }
+}
+
+function buildRunningTransitionRecord(
+  sessionId: string,
+  input: {
+    reviewState: string;
+    transitionId: string;
+    updatedAt?: Date;
+  },
+): { event: SSEEventPayload; effect: EventOutboxSessionEffect } {
+  const timestamp = (input.updatedAt ?? new Date()).toISOString();
+  return {
+    event: {
+      type: "metadata",
+      metadata_type: "session_status_transition",
+      value: {
+        status: "running",
+        transition_id: input.transitionId,
+      },
+      timestamp,
+      [INTERNAL_DEDUPE_KEY]:
+        `running_transition:${sessionId}:${input.transitionId}`,
+    } as unknown as SSEEventPayload,
+    effect: {
+      kind: "running_transition",
+      review_state: input.reviewState,
+      updated_at: timestamp,
+    },
+  };
 }
 
 export function buildEventOutboxAppendInput(
