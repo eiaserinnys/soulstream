@@ -21,44 +21,47 @@ function findJsonContractFailure(
     return { path, message: "Repeated or cyclic object references are not JSON values" };
   }
   seen.add(value);
-
-  if (Array.isArray(value)) {
-    const expectedKeys = new Set(Array.from({ length: value.length }, (_, index) => String(index)));
-    for (const key of Reflect.ownKeys(value)) {
-      if (key === "length") continue;
-      if (typeof key !== "string" || !expectedKeys.has(key)) {
-        return { path: [...path, key], message: "Array properties must be JSON indices" };
+  try {
+    if (Array.isArray(value)) {
+      const expectedKeys = new Set(Array.from({ length: value.length }, (_, index) => String(index)));
+      for (const key of Reflect.ownKeys(value)) {
+        if (key === "length") continue;
+        if (typeof key !== "string" || !expectedKeys.has(key)) {
+          return { path: [...path, key], message: "Array properties must be JSON indices" };
+        }
       }
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+          return { path: [...path, index], message: "Sparse arrays are not JSON values" };
+        }
+        const failure = findJsonContractFailure(value[index], [...path, index], seen);
+        if (failure) return failure;
+      }
+      return null;
     }
-    for (let index = 0; index < value.length; index += 1) {
-      if (!Object.hasOwn(value, index)) {
-        return { path: [...path, index], message: "Sparse arrays are not JSON values" };
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return { path, message: "JSON objects must be plain objects" };
+    }
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") {
+        return { path: [...path, key], message: "JSON objects cannot have Symbol keys" };
       }
-      const failure = findJsonContractFailure(value[index], [...path, index], seen);
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor?.enumerable) {
+        return { path: [...path, key], message: "JSON object fields must be enumerable" };
+      }
+      if (!("value" in descriptor)) {
+        return { path: [...path, key], message: "JSON object fields cannot be accessors" };
+      }
+      const failure = findJsonContractFailure(descriptor.value, [...path, key], seen);
       if (failure) return failure;
     }
     return null;
+  } finally {
+    seen.delete(value);
   }
-
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    return { path, message: "JSON objects must be plain objects" };
-  }
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string") {
-      return { path: [...path, key], message: "JSON objects cannot have Symbol keys" };
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor?.enumerable) {
-      return { path: [...path, key], message: "JSON object fields must be enumerable" };
-    }
-    if (!("value" in descriptor)) {
-      return { path: [...path, key], message: "JSON object fields cannot be accessors" };
-    }
-    const failure = findJsonContractFailure(descriptor.value, [...path, key], seen);
-    if (failure) return failure;
-  }
-  return null;
 }
 
 export function assertRunnerJsonValue(value: unknown, context = "runner JSON value"): void {

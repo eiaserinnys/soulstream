@@ -6,13 +6,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   classifyRunnerRegistration,
+  inspectRunnerDurableState,
   listLiveRunnerSessionIds,
   scanRunnerRegistrations,
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-import { runnerLifecycleSummaryPath } from "../../src/runner/sqlite_runner_lifecycle.js";
+import {
+  runnerLifecycleSummaryPath,
+  RunnerSqliteLifecycle,
+} from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
   pendingRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
@@ -150,7 +154,7 @@ describe("runner process registry", () => {
     const stateDirectory = await temporaryDirectory("sqlite");
     const paths = runnerProcessPaths(stateDirectory, "session-sqlite");
     await mkdir(paths.sessionDirectory, { recursive: true });
-    const outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
     await outbox.initializeBootstrap({
       session_id: "session-sqlite",
       created_at: "2026-08-11T00:00:00.000Z",
@@ -173,6 +177,51 @@ describe("runner process registry", () => {
     });
     await expect(listLiveRunnerSessionIds({ stateDirectory, leaseTimeoutMs: 120_000 }))
       .resolves.toEqual(["session-sqlite"]);
+  });
+
+  it("drops orphaned host-call receipts while inspecting a dead terminal runner", async () => {
+    const stateDirectory = await temporaryDirectory("terminal-host-call");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "release-a",
+        snapshot_path: "/release/release-a/soul-server-ts",
+      },
+    });
+    await outbox.recordHostCallApplied({
+      correlationId: "host:orphaned",
+      service: "snapshot",
+      operation: "persistRunState",
+      createdAt: "2026-08-11T00:00:01.000Z",
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T00:00:01.000Z",
+    });
+    lifecycle.finish("execute-a", "completed", "2026-08-11T00:00:02.000Z");
+    lifecycle.close();
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.config = { ...current.config, paths };
+
+    await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
+      incompleteDurableWork: false,
+      registration: { lifecycle: { execution_state: "completed" } },
+    });
+    const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    await expect(recovered.readHostCallApplied("host:orphaned")).resolves.toBeNull();
+    recovered.close();
   });
 });
 

@@ -82,7 +82,7 @@ describe("runner process detach/reconnect E2E", () => {
       prompt: "fail before ID",
     }))).rejects.toThrow(expectedError);
 
-    const outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    const outbox = await RunnerSqliteEventOutbox.create(spawned.paths.databasePath);
     expect(await outbox.readBootstrap()).toBeNull();
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
@@ -147,7 +147,7 @@ describe("runner process detach/reconnect E2E", () => {
       "session",
       "assistant_message",
     ]);
-    const outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    const outbox = await RunnerSqliteEventOutbox.create(spawned.paths.databasePath);
     expect((await outbox.readBootstrap())?.payload.backend_session_id)
       .toBe("backend-session-e2e");
     outbox.close();
@@ -382,7 +382,7 @@ async function collectFrames(
 }
 
 async function pendingFrameCount(path: string): Promise<number> {
-  const outbox = await RunnerSqliteEventOutbox.open(path);
+  const outbox = await RunnerSqliteEventOutbox.create(path);
   try {
     return (await outbox.readPendingIpcFrames()).length;
   } finally {
@@ -391,7 +391,7 @@ async function pendingFrameCount(path: string): Promise<number> {
 }
 
 async function hasDurableEvent(path: string, sourceSeq: number): Promise<boolean> {
-  const outbox = await RunnerSqliteEventOutbox.open(path);
+  const outbox = await RunnerSqliteEventOutbox.create(path);
   try {
     return await outbox.readRecord(sourceSeq) !== null;
   } finally {

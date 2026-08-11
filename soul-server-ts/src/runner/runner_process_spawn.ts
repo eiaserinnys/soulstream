@@ -264,7 +264,7 @@ export class RunnerProcessSpawner {
 function defaultDependencies(): SpawnDependencies {
   return {
     prepareDatabase: async (path) => {
-      const outbox = await RunnerSqliteEventOutbox.open(path);
+      const outbox = await RunnerSqliteEventOutbox.create(path);
       outbox.close();
     },
     validateEntry: async (path) => await access(path),

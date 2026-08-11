@@ -69,6 +69,14 @@ try {
     codexHome: null,
     rolloutRoot: null,
   }));
+  const initializeDatabase = await runProcess(process.execPath, [
+    join(packageRoot, "dist/runner/runner_release_prewarm.js"),
+    "--database",
+    paths.databasePath,
+  ], { cwd: temporaryRoot, env: sanitizedEnvironment() });
+  if (initializeDatabase.code !== 0) {
+    throw new Error(`runner database initialization failed:\n${initializeDatabase.stderr}`);
+  }
 
   runner = spawn(process.execPath, [
     join(release.release_root, "runner_entry.js"),

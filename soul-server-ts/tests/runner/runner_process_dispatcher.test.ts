@@ -34,7 +34,7 @@ describe("RunnerProcessDispatcher", () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
-    const writer = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
     const bootstrap = await writer.initializeBootstrap({
       session_id: "session-a",
       created_at: "2026-08-11T00:00:00.000Z",
@@ -115,7 +115,7 @@ describe("RunnerProcessDispatcher", () => {
     })]);
     await expect(dispatcher.waitForSessionAck()).resolves.toBe(9000);
     await vi.waitFor(async () => {
-      const observer = await RunnerSqliteEventOutbox.open(paths.databasePath);
+      const observer = await RunnerSqliteEventOutbox.create(paths.databasePath);
       try {
         expect(await observer.readPendingIpcFrames()).toEqual([]);
       } finally {
@@ -131,6 +131,8 @@ describe("RunnerProcessDispatcher", () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
     let endpoint!: RunnerSocketEndpoint;
     endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
       if (frame.channel !== "command") return;
@@ -179,7 +181,7 @@ describe("RunnerProcessDispatcher", () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
-    const writer = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
     await writer.initializeBootstrap({
       session_id: "session-a",
       created_at: "2026-08-11T00:00:00.000Z",

@@ -292,20 +292,32 @@ export async function inspectRunnerDurableState(
   registration: RunnerRegistration,
 ): Promise<RunnerDurableInspection> {
   const outbox = await RunnerSqliteEventOutbox.open(registration.config.paths.databasePath);
+  let lifecycle: RunnerLifecycleRecord | null;
+  try {
+    const lifecycleStore = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
+    try {
+      lifecycle = lifecycleStore.read();
+    } finally {
+      lifecycleStore.close();
+    }
+  } catch (error) {
+    outbox.close();
+    throw error;
+  }
   let bootstrap: RunnerBootstrapRecord | null;
   let incompleteDurableWork: boolean;
   try {
     bootstrap = await outbox.readBootstrap();
+    if (
+      !registration.pidAlive
+      && lifecycle !== null
+      && lifecycle.execution_state !== "running"
+    ) {
+      await outbox.compactAppliedHostCallsForTerminalRecovery();
+    }
     incompleteDurableWork = await outbox.hasPendingDurableWork();
   } finally {
     outbox.close();
-  }
-  const lifecycleStore = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
-  let lifecycle: RunnerLifecycleRecord | null;
-  try {
-    lifecycle = lifecycleStore.read();
-  } finally {
-    lifecycleStore.close();
   }
   return {
     registration: { ...registration, bootstrap, lifecycle },

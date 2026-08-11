@@ -41,6 +41,33 @@ describe("EventOutboxPumpMux", () => {
     await vi.waitFor(() => expect(sent.some((batch) => batch.stream_id === "runner-stream")).toBe(true));
     unregister();
   });
+
+  it("ignores an ACK racing unregister and advances after durable retransmission", async () => {
+    const primary = new EventOutboxPump(makeStore("node-stream"), vi.fn());
+    const runnerStore = makeStore("runner-stream");
+    const mux = new EventOutboxPumpMux(primary);
+    const sent: EventOutboxBatch[] = [];
+    mux.connect(async (batch) => { sent.push(batch); });
+    const firstPump = new EventOutboxPump(runnerStore, vi.fn());
+    const unregister = mux.register(firstPump);
+    firstPump.notifyAvailable();
+    await vi.waitFor(() => expect(
+      sent.filter((batch) => batch.stream_id === "runner-stream"),
+    ).toHaveLength(1));
+
+    unregister();
+    await expect(mux.handleAck(ack("runner-stream", 1, 91))).resolves.toBeUndefined();
+    expect(runnerStore.acknowledge).not.toHaveBeenCalled();
+
+    const recoveredPump = new EventOutboxPump(runnerStore, vi.fn());
+    mux.register(recoveredPump);
+    recoveredPump.notifyAvailable();
+    await vi.waitFor(() => expect(
+      sent.filter((batch) => batch.stream_id === "runner-stream"),
+    ).toHaveLength(2));
+    await mux.handleAck(ack("runner-stream", 1, 92));
+    expect(runnerStore.acknowledge).toHaveBeenCalledWith("runner-stream", 1);
+  });
 });
 
 function makeStore(streamId: string) {

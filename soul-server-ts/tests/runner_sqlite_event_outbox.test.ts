@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,9 +37,23 @@ afterEach(async () => {
 });
 
 describe("RunnerSqliteEventOutbox", () => {
+  it("opens only existing non-empty databases and never recreates missing lineage", async () => {
+    const missingPath = await temporaryDatabasePath();
+    await expect(RunnerSqliteEventOutbox.open(missingPath)).rejects.toThrow(
+      "SQLite file is missing",
+    );
+    await writeFile(missingPath, "");
+    await expect(RunnerSqliteEventOutbox.open(missingPath)).rejects.toThrow(
+      "SQLite file is empty or invalid",
+    );
+    await expect(RunnerSqliteEventOutbox.create(missingPath)).rejects.toThrow(
+      "empty SQLite file",
+    );
+  });
+
   it("uses WAL with one event ledger, one IPC journal, and a payload-free pre-bootstrap lease", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     outbox.close();
 
     expect(inspectRunnerOutboxCopy(path)).toMatchObject({
@@ -85,7 +99,7 @@ describe("RunnerSqliteEventOutbox", () => {
     }
   });
 
-  it("waits for a concurrent fresh-database opener before enabling WAL", async () => {
+  it("rejects a zero-byte database created by a concurrent opener", async () => {
     const path = await temporaryDatabasePath();
     const worker = new Worker(`
       const { DatabaseSync } = require("node:sqlite");
@@ -106,18 +120,18 @@ describe("RunnerSqliteEventOutbox", () => {
     });
     await new Promise<void>((resolve) => worker.once("message", () => resolve()));
 
-    let outbox: RunnerSqliteEventOutbox | undefined;
     try {
-      outbox = await RunnerSqliteEventOutbox.open(path);
+      await expect(RunnerSqliteEventOutbox.create(path)).rejects.toThrow(
+        "empty SQLite file",
+      );
     } finally {
-      outbox?.close();
       await workerExit;
     }
   });
 
   it("makes the resume material the first durable record and events start at seq 2", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     const event = await outbox.append(eventInput("one"));
 
@@ -136,7 +150,7 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(outbox.ackedSeq).toBe(1);
 
     outbox.close();
-    const reopened = await RunnerSqliteEventOutbox.open(path);
+    const reopened = await RunnerSqliteEventOutbox.create(path);
     expect(await reopened.readBootstrap()).toEqual(bootstrap);
     expect(await reopened.readBatch()).toEqual({
       type: "event_append_batch",
@@ -150,7 +164,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("requires bootstrap before append and keeps initialization idempotent", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
 
     await expect(outbox.append(eventInput("too early")))
       .rejects.toThrow("runner bootstrap record required before event append");
@@ -164,7 +178,7 @@ describe("RunnerSqliteEventOutbox", () => {
   });
 
   it("exposes final-ACK evidence across outbox and IPC journal for release GC", async () => {
-    const outbox = await RunnerSqliteEventOutbox.open(await temporaryDatabasePath());
+    const outbox = await RunnerSqliteEventOutbox.create(await temporaryDatabasePath());
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     expect(await outbox.hasPendingDurableWork()).toBe(false);
 
@@ -187,7 +201,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("stores a monotonic progress lease on bootstrap without changing event lineage", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     const lifecycle = RunnerSqliteLifecycle.open(path);
 
@@ -226,7 +240,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("records pre-bootstrap failure and promotes only the succeeding execution lease", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
 
     lifecycle.begin({
@@ -281,7 +295,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("rejects stale lifecycle writers and records a loud reap error", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
     const lifecycle = RunnerSqliteLifecycle.open(path);
     lifecycle.begin({
@@ -309,8 +323,8 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("keeps bootstrap initialization idempotent across two SQLite connections", async () => {
     const path = await temporaryDatabasePath();
-    const first = await RunnerSqliteEventOutbox.open(path);
-    const second = await RunnerSqliteEventOutbox.open(path);
+    const first = await RunnerSqliteEventOutbox.create(path);
+    const second = await RunnerSqliteEventOutbox.create(path);
 
     const durable = await first.initializeBootstrap(bootstrapInput());
     await expect(second.initializeBootstrap(bootstrapInput())).resolves.toEqual(durable);
@@ -321,7 +335,7 @@ describe("RunnerSqliteEventOutbox", () => {
   });
 
   it("treats explicit null resume identifiers as a final no-resume state", async () => {
-    const outbox = await RunnerSqliteEventOutbox.open(await temporaryDatabasePath());
+    const outbox = await RunnerSqliteEventOutbox.create(await temporaryDatabasePath());
     const input: RunnerBootstrapInput = {
       ...bootstrapInput(),
       resume: {
@@ -359,7 +373,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("applies the shared JSON contract to resume material and session effects", async () => {
     const path = await temporaryDatabasePath();
-    const uninitialized = await RunnerSqliteEventOutbox.open(path);
+    const uninitialized = await RunnerSqliteEventOutbox.create(path);
     const resumeWithHandle = {
       ...bootstrapInput().resume,
       process_local_handle: () => undefined,
@@ -399,7 +413,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("mirrors the Phase 11 64-event batch and durable ACK cursor contract", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     const records = [];
     for (let index = 0; index < 65; index += 1) {
@@ -415,7 +429,7 @@ describe("RunnerSqliteEventOutbox", () => {
     expect((await outbox.readBatch())?.events.map((record) => record.source_seq)).toEqual([66]);
 
     outbox.close();
-    const reopened = await RunnerSqliteEventOutbox.open(path);
+    const reopened = await RunnerSqliteEventOutbox.create(path);
     expect(reopened.streamId).toBe(bootstrap.stream_id);
     expect(reopened.ackedSeq).toBe(65);
     expect((await reopened.readBatch())?.events).toEqual([records.at(-1)]);
@@ -437,10 +451,10 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("never regresses the durable ACK cursor across overlapping consumers", async () => {
     const path = await temporaryDatabasePath();
-    const writer = await RunnerSqliteEventOutbox.open(path);
+    const writer = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await writer.initializeBootstrap(bootstrapInput());
-    const firstConsumer = await RunnerSqliteEventOutbox.open(path);
-    const staleConsumer = await RunnerSqliteEventOutbox.open(path);
+    const firstConsumer = await RunnerSqliteEventOutbox.create(path);
+    const staleConsumer = await RunnerSqliteEventOutbox.create(path);
     const first = await writer.append(eventInput("one"));
     const second = await writer.append(eventInput("two"));
 
@@ -452,7 +466,7 @@ describe("RunnerSqliteEventOutbox", () => {
     firstConsumer.close();
     staleConsumer.close();
 
-    const recovered = await RunnerSqliteEventOutbox.open(path);
+    const recovered = await RunnerSqliteEventOutbox.create(path);
     expect(recovered.ackedSeq).toBe(second.source_seq);
     expect(await recovered.readBatch()).toBeNull();
     recovered.close();
@@ -487,12 +501,12 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("compacts a 1,000-row acknowledged prefix while retaining bootstrap and the tail", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     outbox.close();
     insertFixtureEvents(path, bootstrap.stream_id, EVENT_OUTBOX_COMPACT_ROWS + 1);
 
-    const reopened = await RunnerSqliteEventOutbox.open(path);
+    const reopened = await RunnerSqliteEventOutbox.create(path);
     await reopened.acknowledge(bootstrap.stream_id, EVENT_OUTBOX_COMPACT_ROWS + 1);
     const afterCompaction = await reopened.append(eventInput("after compaction"));
     expect(afterCompaction.source_seq).toBe(EVENT_OUTBOX_COMPACT_ROWS + 3);
@@ -507,12 +521,12 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("reopens when ACK compaction retains only a host-unacknowledged journal event", async () => {
     const path = await temporaryDatabasePath();
-    const initial = await RunnerSqliteEventOutbox.open(path);
+    const initial = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await initial.initializeBootstrap(bootstrapInput());
     initial.close();
     insertFixtureEvents(path, bootstrap.stream_id, EVENT_OUTBOX_COMPACT_ROWS);
 
-    const writer = await RunnerSqliteEventOutbox.open(path);
+    const writer = await RunnerSqliteEventOutbox.create(path);
     const retained = await writer.appendEngineFrame(eventInput("host pending"), {
       protocolVersion: 1,
       channel: "event",
@@ -532,7 +546,7 @@ describe("RunnerSqliteEventOutbox", () => {
       unacknowledgedEventCount: 0,
     });
 
-    const recovered = await RunnerSqliteEventOutbox.open(path);
+    const recovered = await RunnerSqliteEventOutbox.create(path);
     await expect(recovered.readBatch()).resolves.toBeNull();
     await expect(recovered.readPendingIpcFrames()).resolves.toMatchObject([{
       outbox_source_seq: retained.source_seq,
@@ -542,7 +556,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("does not burn source_seq when an append transaction rolls back", async () => {
     const path = await temporaryDatabasePath();
-    const initial = await RunnerSqliteEventOutbox.open(path);
+    const initial = await RunnerSqliteEventOutbox.create(path);
     await initial.initializeBootstrap(bootstrapInput());
     initial.close();
 
@@ -556,7 +570,7 @@ describe("RunnerSqliteEventOutbox", () => {
     `);
     fixture.close();
 
-    const failing = await RunnerSqliteEventOutbox.open(path);
+    const failing = await RunnerSqliteEventOutbox.create(path);
     await expect(failing.appendEngineFrame(eventInput("rolled back"), {
       protocolVersion: 1,
       channel: "event",
@@ -569,7 +583,7 @@ describe("RunnerSqliteEventOutbox", () => {
     cleanup.exec("DROP TRIGGER fail_runner_ipc_journal_insert");
     cleanup.close();
 
-    const recovered = await RunnerSqliteEventOutbox.open(path);
+    const recovered = await RunnerSqliteEventOutbox.create(path);
     await expect(recovered.append(eventInput("committed"))).resolves.toMatchObject({
       source_seq: 2,
     });
@@ -579,7 +593,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("fails closed when the unacknowledged replay suffix has a source_seq gap", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
     await outbox.append(eventInput("missing"));
     await outbox.append(eventInput("retained"));
@@ -599,14 +613,14 @@ describe("RunnerSqliteEventOutbox", () => {
       unacknowledgedEventCount: 1,
       error: "event outbox source_seq gap detected: expected 2, found 3, acked_through 1",
     });
-    await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
+    await expect(RunnerSqliteEventOutbox.create(path)).rejects.toThrow(
       "event outbox source_seq gap detected: expected 2, found 3, acked_through 1",
     );
   });
 
   it("fails closed when acked_through is changed without its checkpoint hash", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
     await outbox.append(eventInput("still pending one"));
     await outbox.append(eventInput("still pending two"));
@@ -627,14 +641,14 @@ describe("RunnerSqliteEventOutbox", () => {
       unacknowledgedEventCount: 0,
       error: "runner event outbox ACK checkpoint hash mismatch",
     });
-    await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
+    await expect(RunnerSqliteEventOutbox.create(path)).rejects.toThrow(
       "runner event outbox ACK checkpoint hash mismatch",
     );
   });
 
   it("migrates a legacy v5 ACK cursor once before accepting new writes", async () => {
     const path = await temporaryDatabasePath();
-    const initial = await RunnerSqliteEventOutbox.open(path);
+    const initial = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await initial.initializeBootstrap(bootstrapInput());
     const pending = await initial.append(eventInput("pending after migration"));
     initial.close();
@@ -652,7 +666,7 @@ describe("RunnerSqliteEventOutbox", () => {
       error: "legacy runner outbox requires writable v5-to-v6 ACK checkpoint migration",
     });
 
-    const migrated = await RunnerSqliteEventOutbox.open(path);
+    const migrated = await RunnerSqliteEventOutbox.create(path);
     await expect(migrated.readBatch()).resolves.toMatchObject({
       events: [expect.objectContaining({ source_seq: pending.source_seq })],
     });
@@ -679,7 +693,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("rolls back an ACK when same-transaction checkpoint verification fails", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     const pending = await outbox.append(eventInput("pending"));
     outbox.close();
@@ -695,7 +709,7 @@ describe("RunnerSqliteEventOutbox", () => {
     `);
     fixture.close();
 
-    const failing = await RunnerSqliteEventOutbox.open(path);
+    const failing = await RunnerSqliteEventOutbox.create(path);
     await expect(failing.acknowledge(bootstrap.stream_id, pending.source_seq)).rejects.toThrow(
       "runner event outbox ACK checkpoint hash mismatch",
     );
@@ -721,13 +735,13 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("compacts an acknowledged prefix after its records reach 8 MiB", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     outbox.close();
     const eventCount = Math.ceil(EVENT_OUTBOX_COMPACT_BYTES / (245 * 1024)) + 1;
     insertFixtureEvents(path, bootstrap.stream_id, eventCount + 1, 245 * 1024);
 
-    const reopened = await RunnerSqliteEventOutbox.open(path);
+    const reopened = await RunnerSqliteEventOutbox.create(path);
     await reopened.acknowledge(bootstrap.stream_id, eventCount + 1);
     reopened.close();
 
@@ -736,7 +750,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("detects a durable payload hash mutation during recovery", async () => {
     const path = await temporaryDatabasePath();
-    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
     const event = await outbox.append(eventInput("one"));
     outbox.close();
@@ -747,7 +761,7 @@ describe("RunnerSqliteEventOutbox", () => {
     ).run(JSON.stringify({ type: "assistant_message", content: "tampered" }), event.source_seq);
     database.close();
 
-    await expect(RunnerSqliteEventOutbox.open(path))
+    await expect(RunnerSqliteEventOutbox.create(path))
       .rejects.toThrow(`event outbox payload hash mismatch at source_seq ${event.source_seq}`);
   });
 
@@ -770,10 +784,10 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("drains the next event when another consumer durably ACKs the in-flight batch first", async () => {
     const path = await temporaryDatabasePath();
-    const writer = await RunnerSqliteEventOutbox.open(path);
+    const writer = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await writer.initializeBootstrap(bootstrapInput());
-    const pumpConsumer = await RunnerSqliteEventOutbox.open(path);
-    const competingConsumer = await RunnerSqliteEventOutbox.open(path);
+    const pumpConsumer = await RunnerSqliteEventOutbox.create(path);
+    const competingConsumer = await RunnerSqliteEventOutbox.create(path);
     const sent: EventOutboxBatch[] = [];
     const onError = vi.fn();
     const pump = new EventOutboxPump(pumpConsumer, onError);
@@ -811,14 +825,14 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("lets a server-side consumer drain after a content-free cross-process doorbell", async () => {
     const path = await temporaryDatabasePath();
-    const consumer = await RunnerSqliteEventOutbox.open(path);
+    const consumer = await RunnerSqliteEventOutbox.create(path);
     const sent: EventOutboxBatch[] = [];
     const onError = vi.fn();
     const pump = new EventOutboxPump(consumer, onError);
     pump.connect(async (batch) => sent.push(batch));
     await pump.drainScheduled();
 
-    const writer = await RunnerSqliteEventOutbox.open(path);
+    const writer = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await writer.initializeBootstrap(bootstrapInput());
     const event = await writer.append(eventInput("one"));
     expect(sent).toEqual([]);
@@ -877,8 +891,8 @@ describe("RunnerSqliteEventOutbox", () => {
 
   it("recovers a payload-free host-call apply receipt and compacts it after runner ACK", async () => {
     const path = await temporaryDatabasePath();
-    const firstHost = await RunnerSqliteEventOutbox.open(path);
-    const secondHost = await RunnerSqliteEventOutbox.open(path);
+    const firstHost = await RunnerSqliteEventOutbox.create(path);
+    const secondHost = await RunnerSqliteEventOutbox.create(path);
 
     await firstHost.recordHostCallApplied({
       correlationId: "host:one",
@@ -900,9 +914,26 @@ describe("RunnerSqliteEventOutbox", () => {
     secondHost.close();
   });
 
+  it("compacts orphaned applied host-call receipts only during terminal recovery", async () => {
+    const outbox = await createOutbox();
+    await outbox.recordHostCallApplied({
+      correlationId: "host:orphaned",
+      service: "snapshot",
+      operation: "persistRunState",
+      createdAt: "2026-08-11T01:00:00.000Z",
+    });
+    expect(await outbox.hasPendingDurableWork()).toBe(true);
+
+    await outbox.compactAppliedHostCallsForTerminalRecovery();
+
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
+    await expect(outbox.readHostCallApplied("host:orphaned")).resolves.toBeNull();
+    outbox.close();
+  });
+
   it("migrates the payload-free v3 event journal without losing pending frame order", async () => {
     const path = await temporaryDatabasePath();
-    const current = await RunnerSqliteEventOutbox.open(path);
+    const current = await RunnerSqliteEventOutbox.create(path);
     await current.initializeBootstrap(bootstrapInput());
     await current.appendEngineFrame(eventInput("one"), {
       protocolVersion: 1,
@@ -931,7 +962,7 @@ describe("RunnerSqliteEventOutbox", () => {
     `);
     database.close();
 
-    const migrated = await RunnerSqliteEventOutbox.open(path);
+    const migrated = await RunnerSqliteEventOutbox.create(path);
     await expect(migrated.readPendingIpcFrames()).resolves.toEqual([
       expect.objectContaining({ frame_seq: 1, outbox_source_seq: 2 }),
     ]);
@@ -950,7 +981,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
 async function createOutbox(): Promise<RunnerSqliteEventOutbox> {
   const path = await temporaryDatabasePath();
-  const outbox = await RunnerSqliteEventOutbox.open(path);
+  const outbox = await RunnerSqliteEventOutbox.create(path);
   await outbox.initializeBootstrap(bootstrapInput());
   return outbox;
 }
