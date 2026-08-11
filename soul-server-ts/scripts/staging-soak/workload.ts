@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ResolvedSoakConfig } from "./config.js";
@@ -48,6 +48,7 @@ export async function runSoakWorkload(input: {
   await mkdir(captureDirectory, { recursive: true, mode: 0o700 });
   const actions: SoakAction[] = [];
   const startedAt = new Date();
+  const soulLogStartOffset = await fileSize(config.paths.soulLog);
   const session = await postJson<{ agentSessionId: string }>(
     `http://${config.host}:${config.orchPort}/api/sessions`,
     bearerToken,
@@ -131,7 +132,7 @@ export async function runSoakWorkload(input: {
     join(captureDirectory, "fixture-candidates.jsonl"),
     collector.envelopes,
   );
-  const dropSummaries = await readDropSummaries(config.paths.soulLog);
+  const dropSummaries = await readDropSummaries(config.paths.soulLog, soulLogStartOffset);
   const result: SoakResult = {
     runId,
     backend,
@@ -270,8 +271,12 @@ function findSessionStatus(value: unknown, sessionId: string): string {
   return "";
 }
 
-async function readDropSummaries(logPath: string): Promise<Record<string, unknown>[]> {
-  const text = await readFile(logPath, "utf8");
+async function readDropSummaries(
+  logPath: string,
+  startOffset: number,
+): Promise<Record<string, unknown>[]> {
+  const bytes = await readFile(logPath);
+  const text = bytes.subarray(Math.min(startOffset, bytes.length)).toString("utf8");
   const drops: Record<string, unknown>[] = [];
   for (const line of text.split("\n")) {
     if (!line.includes("Invalid observational runner frame dropped")) continue;
@@ -288,6 +293,15 @@ async function readDropSummaries(logPath: string): Promise<Record<string, unknow
     }
   }
   return drops;
+}
+
+async function fileSize(path: string): Promise<number> {
+  try {
+    return (await stat(path)).size;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw error;
+  }
 }
 
 async function delay(ms: number): Promise<void> {
