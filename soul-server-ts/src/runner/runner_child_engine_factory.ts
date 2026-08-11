@@ -9,6 +9,7 @@ import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import {
   ClaudeEngineAdapter,
   ClaudeSdkClient,
+  claudeEngineEventMetadata,
 } from "../engine/claude_adapter.js";
 import { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
@@ -64,10 +65,22 @@ export function createRunnerChildEngine(
     ? new ClaudeSessionClientRegistry(
         (sessionId) => new ClaudeSdkClient({
           runtimeEventSink: async (event) => {
-            await host.call("claude_runtime", "observe", [sessionId, event], hostOptions());
+            const metadata = claudeEngineEventMetadata(event);
+            await host.call(
+              "claude_runtime",
+              "observe",
+              [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
+              hostOptions(),
+            );
           },
           detachedEventSink: async (event) => {
-            await host.call("detached_event", "publish", [sessionId, event], hostOptions());
+            const metadata = claudeEngineEventMetadata(event);
+            await host.call(
+              "detached_event",
+              "publish",
+              [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
+              hostOptions(),
+            );
           },
           persistentTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
         }, logger),

@@ -4,20 +4,31 @@ import { attachClaudeBackgroundDeliveryMetadata } from
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
 
-import type { RunnerEventFrame } from "./frame_protocol.js";
+import {
+  RunnerEngineEventMetadataSchema,
+  type RunnerEventFrame,
+} from "./frame_protocol.js";
 
 export function sseEventFromRunnerFrame(
   frame: Extract<RunnerEventFrame, { kind: "engine_event" }>,
 ): SSEEventPayload {
   const payload = frame.payload as SSEEventPayload;
-  const metadata = frame.metadata;
+  restoreRunnerEngineEventMetadata(payload, frame.metadata);
+  return payload;
+}
+
+export function restoreRunnerEngineEventMetadata(
+  payload: object,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  const metadata = RunnerEngineEventMetadataSchema.parse(value);
   if (metadata?.claudeBackgroundProvenance) {
     attachClaudeBackgroundProvenance(payload, metadata.claudeBackgroundProvenance);
   }
   if (metadata?.claudeBackgroundDelivery) {
     attachClaudeBackgroundDeliveryMetadata(payload, metadata.claudeBackgroundDelivery);
   }
-  return payload;
 }
 
 /** Compatibility view for callers that still consume EnginePort SSE events directly. */

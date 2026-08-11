@@ -13,6 +13,7 @@ import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
 } from "../engine/protocol.js";
+import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
@@ -225,6 +226,7 @@ export async function applyRunnerHostCall(
     throw new Error(`unsupported snapshot host operation: ${call.operation}`);
   }
   const event = call.args[1] as ClaudeClientEvent;
+  restoreRunnerEngineEventMetadata(event, call.args[2]);
   if (call.service === "claude_runtime" && call.operation === "observe") {
     return await options.observeClaudeRuntime?.(sessionId, event, call.correlationId) ?? true;
   }

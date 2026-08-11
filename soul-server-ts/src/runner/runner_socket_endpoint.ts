@@ -1,13 +1,17 @@
 import { createServer, connect, type Server, type Socket } from "node:net";
 import { chmod, unlink } from "node:fs/promises";
 
-import { RunnerIpcConnection } from "./runner_ipc_connection.js";
+import {
+  RunnerIpcConnection,
+  type RunnerDroppedFrame,
+} from "./runner_ipc_connection.js";
 
 export interface ConnectRunnerSocketOptions {
   timeoutMs: number;
   /** Absolute wall-clock budget across connect attempts and retry delays. */
   deadlineMs?: number;
   retryDelayMs?: number;
+  onFrameDropped?(drop: RunnerDroppedFrame): void;
 }
 
 export const RUNNER_SOCKET_RETRYABLE_ERROR_CODES = [
@@ -29,6 +33,7 @@ export class RunnerSocketEndpoint {
     private readonly socketPath: string,
     private readonly handleFrame: (frame: import("./frame_protocol.js").RunnerFrame) => Promise<void>,
     private readonly handleFailure: (error: Error) => void,
+    private readonly handleDroppedFrame: (drop: RunnerDroppedFrame) => void = () => {},
   ) {}
 
   get currentConnection(): RunnerIpcConnection | undefined {
@@ -63,7 +68,9 @@ export class RunnerSocketEndpoint {
 
   private accept(socket: Socket): void {
     this.connection?.close();
-    const connection = new RunnerIpcConnection(socket);
+    const connection = new RunnerIpcConnection(socket, {
+      onFrameDropped: this.handleDroppedFrame,
+    });
     this.connection = connection;
     connection.onFrame(this.handleFrame);
     connection.onFailure((error) => {
@@ -88,10 +95,10 @@ export async function connectRunnerSocket(
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs <= 0) break;
     try {
-      return new RunnerIpcConnection(await connectOnce(
-        socketPath,
-        Math.min(options.timeoutMs, remainingMs),
-      ));
+      return new RunnerIpcConnection(
+        await connectOnce(socketPath, Math.min(options.timeoutMs, remainingMs)),
+        { onFrameDropped: options.onFrameDropped },
+      );
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       if (!isRetryableSocketError(error)) throw lastError;

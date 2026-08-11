@@ -61,6 +61,7 @@ export class RunnerChildRuntime {
       this.config.paths.socketPath,
       async (frame) => await this.handleFrame(frame),
       (error) => this.logger.warn({ error }, "Runner host socket disconnected"),
+      (drop) => this.logger.error(drop, "Invalid observational runner frame dropped"),
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     this.dispatcher = new InProcessRunnerCommandDispatcher(

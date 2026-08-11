@@ -2,11 +2,13 @@ import type { Socket } from "node:net";
 
 import {
   RunnerFrameSchema,
+  isRunnerObservationalFrame,
   type RunnerCommandFrame,
   type RunnerControlFrame,
   type RunnerEventFrame,
   type RunnerFrame,
 } from "./frame_protocol.js";
+import { stripRunnerJsonUndefined } from "./runner_json_contract.js";
 
 const MAX_FRAME_BYTES = 2 * 1024 * 1024 + 64 * 1024;
 const CONNECTION_CLOSED = "Runner IPC connection closed";
@@ -22,6 +24,25 @@ interface PendingRequest {
   cleanup(): void;
 }
 
+export interface RunnerDroppedFrame {
+  channel: "event";
+  kind: string;
+  service?: string;
+  operation?: string;
+  error: Error;
+}
+
+export interface RunnerIpcConnectionOptions {
+  onFrameDropped?(drop: RunnerDroppedFrame): void;
+}
+
+export class RunnerObservationDroppedError extends Error {
+  constructor() {
+    super("Observational runner IPC frame was dropped");
+    this.name = "RunnerObservationDroppedError";
+  }
+}
+
 /** One newline-delimited, JSON-validated runner socket connection. */
 export class RunnerIpcConnection {
   private buffer = "";
@@ -31,7 +52,10 @@ export class RunnerIpcConnection {
   private handling = Promise.resolve();
   private closed = false;
 
-  constructor(private readonly socket: Socket) {
+  constructor(
+    private readonly socket: Socket,
+    private readonly options: RunnerIpcConnectionOptions = {},
+  ) {
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => this.receive(chunk));
     socket.once("error", (error) => this.fail(asError(error)));
@@ -50,9 +74,20 @@ export class RunnerIpcConnection {
     return this.pending.size;
   }
 
-  async send(frame: RunnerFrame): Promise<void> {
+  async send(frame: RunnerFrame): Promise<boolean> {
     if (this.closed) throw new Error(CONNECTION_CLOSED);
-    const parsed = RunnerFrameSchema.parse(frame);
+    const observational = isRunnerObservationalFrame(frame);
+    const candidate = observational ? stripRunnerJsonUndefined(frame) : frame;
+    const result = RunnerFrameSchema.safeParse(candidate);
+    if (!result.success) {
+      if (!observational) throw result.error;
+      const error = new Error("Invalid observational runner IPC frame dropped", {
+        cause: result.error,
+      });
+      this.options.onFrameDropped?.({ ...frameSummary(frame), error });
+      return false;
+    }
+    const parsed = result.data;
     const line = `${JSON.stringify(parsed)}\n`;
     if (Buffer.byteLength(line, "utf8") > MAX_FRAME_BYTES) {
       throw new Error("Runner IPC frame exceeds transport ceiling");
@@ -60,6 +95,7 @@ export class RunnerIpcConnection {
     await new Promise<void>((resolve, reject) => {
       this.socket.write(line, (error) => error ? reject(error) : resolve());
     });
+    return true;
   }
 
   async request(
@@ -101,9 +137,15 @@ export class RunnerIpcConnection {
       };
     });
     this.pending.set(key, pending);
+    const responseOutcome = response.then(
+      (control) => ({ status: "resolved" as const, control }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
     try {
-      const [, control] = await Promise.all([this.send(frame), response]);
-      return control;
+      if (!(await this.send(frame))) throw new RunnerObservationDroppedError();
+      const outcome = await responseOutcome;
+      if (outcome.status === "rejected") throw outcome.error;
+      return outcome.control;
     } finally {
       if (this.pending.get(key) === pending) this.pending.delete(key);
       pending.cleanup();
@@ -192,4 +234,16 @@ function abortReason(signal: AbortSignal): Error {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function frameSummary(frame: RunnerFrame): Omit<RunnerDroppedFrame, "error"> {
+  if (frame.kind === "request" && frame.request.kind === "host_call") {
+    return {
+      channel: "event",
+      kind: frame.kind,
+      service: frame.request.service,
+      operation: frame.request.operation,
+    };
+  }
+  return { channel: "event", kind: frame.kind };
 }

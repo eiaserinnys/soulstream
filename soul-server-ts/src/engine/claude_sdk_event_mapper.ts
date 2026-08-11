@@ -207,7 +207,7 @@ export class ClaudeSdkEventMapper {
       const toolName = toolUseId ? this.toolNamesById.get(toolUseId) : undefined;
       events.push({
         type: "tool_result",
-        toolName,
+        ...(toolName !== undefined ? { toolName } : {}),
         toolUseId,
         result: record.content,
         isError: Boolean(record.is_error),
@@ -231,17 +231,22 @@ export class ClaudeSdkEventMapper {
         asString(message.result) ??
         asString(message.subtype) ??
         "";
+    const usage = message.usage;
+    const totalCostUsd = asNumber(message.total_cost_usd);
+    const stopReason = asNullableString(message.stop_reason);
+    const terminalReason = asNullableString(message.terminal_reason);
+    const modelUsage = asRecord(message.modelUsage);
     const resultEvent: ClaudeClientEvent = {
       type: "result",
       success,
       output,
       error: success ? null : output,
-      usage: message.usage,
-      totalCostUsd: asNumber(message.total_cost_usd) ?? null,
-      stopReason: asNullableString(message.stop_reason),
-      terminalReason: asNullableString(message.terminal_reason),
+      ...(usage !== undefined ? { usage } : {}),
+      totalCostUsd: totalCostUsd ?? null,
+      ...(stopReason !== undefined ? { stopReason } : {}),
+      ...(terminalReason !== undefined ? { terminalReason } : {}),
       errors: asStringArray(message.errors),
-      modelUsage: asRecord(message.modelUsage),
+      ...(modelUsage !== undefined ? { modelUsage } : {}),
       permissionDenials: permissionDenialsToStrings(message.permission_denials),
     };
     const contextUsageEvent = makeContextUsageEvent(message.usage);
@@ -260,14 +265,13 @@ export class ClaudeSdkEventMapper {
       ], message);
     }
 
+    const claudeSessionId = asString(message.session_id);
     const completeEvent: ClaudeClientEvent = {
       type: "complete",
       result: output,
-      claudeSessionId: asString(message.session_id),
-      usage: message.usage,
-      ...(asNumber(message.total_cost_usd) !== undefined
-        ? { totalCostUsd: asNumber(message.total_cost_usd) }
-        : {}),
+      ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
+      ...(usage !== undefined ? { usage } : {}),
+      ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
     };
     return this.withSdkMessageDedupe([
       resultEvent,
@@ -287,14 +291,17 @@ export class ClaudeSdkEventMapper {
     // Defensive parser — SDK 0.2.x 타입은 camelCase(resetsAt/rateLimitType)이나
     // Python wire 또는 fixture에서 snake_case가 들어올 수 있음. ISO string도 그대로 수용.
     const resetsAtRaw = info.resetsAt ?? info.resets_at;
+    const status = asString(info.status);
+    const resetsAt = coerceResetsAt(resetsAtRaw);
     const rateLimitTypeRaw = asString(info.rateLimitType) ?? asString(info.rate_limit_type);
+    const utilization = asNumber(info.utilization);
     return [
       {
         type: "rate_limit",
-        status: asString(info.status),
-        resetsAt: coerceResetsAt(resetsAtRaw),
-        rateLimitType: rateLimitTypeRaw,
-        utilization: asNumber(info.utilization),
+        ...(status !== undefined ? { status } : {}),
+        ...(resetsAt !== undefined ? { resetsAt } : {}),
+        ...(rateLimitTypeRaw !== undefined ? { rateLimitType: rateLimitTypeRaw } : {}),
+        ...(utilization !== undefined ? { utilization } : {}),
       },
     ];
   }
