@@ -17,6 +17,7 @@ import {
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import {
   EventOutboxPump,
@@ -41,6 +42,70 @@ afterEach(async () => {
 });
 
 describe("runner process detach/reconnect E2E", () => {
+  it.each([
+    ["initial-crash", "fixture crashed before backend session ID"],
+    ["frame-count-overflow", "exceeded 1024 events before its backend session ID"],
+    ["byte-overflow", "exceeded 8388608 bytes before its backend session ID"],
+  ])("isolates %s pre-bootstrap failure from the next actual child execution", async (
+    scenario,
+    expectedError,
+  ) => {
+    const root = await mkdtemp(join(tmpdir(), `runner-prebootstrap-${scenario}-`));
+    directories.push(root);
+    const stateDirectory = join(root, "state");
+    const snapshotPath = join(root, "snapshot");
+    const controlDirectory = join(root, "control");
+    await mkdir(snapshotPath, { recursive: true });
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(snapshotPath, "package.json"), JSON.stringify({ type: "module" }));
+    await writeFile(
+      join(snapshotPath, "runner_entry.js"),
+      `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
+    );
+    const baseInput = spawnInput(stateDirectory, snapshotPath, controlDirectory);
+    const input = {
+      ...baseInput,
+      backend: "claude" as const,
+      agent: { ...baseInput.agent, backend: "claude" as const },
+      childProcessEnv: {
+        ...baseInput.childProcessEnv,
+        RUNNER_E2E_PRE_BOOTSTRAP_SCENARIO: scenario,
+      },
+    };
+    const spawned = await new RunnerProcessSpawner().spawn(input);
+    childPids.add(spawned.pid);
+    const { mux, batches } = autoAcknowledgingMux();
+    const host = processDispatcher(input, mux);
+
+    await expect(collectFrames(host.executeFrames({
+      agentSessionId: "session-e2e",
+      prompt: "fail before ID",
+    }))).rejects.toThrow(expectedError);
+
+    const outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    expect(await outbox.readBootstrap()).toBeNull();
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
+    expect(lifecycle.read()).toMatchObject({ execution_state: "failed" });
+    lifecycle.close();
+
+    const second = await collectFrames(host.executeFrames({
+      agentSessionId: "session-e2e",
+      prompt: "succeed with ID",
+    }));
+    expect(second.map((frame) => frame.payload)).toEqual([
+      { type: "session", session_id: "backend-session-e2e" },
+      { type: "assistant_message", content: "execution-2", timestamp: 3 },
+    ]);
+    expect(batches.flatMap((batch) => batch.events).some((event) =>
+      event.event_type === "claude_runtime_hook_event"
+    )).toBe(false);
+
+    await host.close();
+    await waitFor(async () => !isPidAlive(spawned.pid));
+    childPids.delete(spawned.pid);
+  }, 30_000);
+
   it("buffers ID-bearing events until bootstrap and accepts a resumed second turn", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-bootstrap-e2e-"));
     directories.push(root);

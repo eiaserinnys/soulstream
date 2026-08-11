@@ -34,6 +34,12 @@ import { RunnerWriterLock } from "./runner_writer_lock.js";
 const REQUIRED_HOST_SEND_ATTEMPTS = 61;
 const REQUIRED_HOST_SEND_RETRY_MS = 500;
 const PRE_BOOTSTRAP_EVENT_LIMIT = 1_024;
+const PRE_BOOTSTRAP_BYTE_LIMIT = 8 * 1024 * 1024;
+
+interface PreBootstrapFrameBuffer {
+  frames: RunnerEventFrame[];
+  bytes: number;
+}
 
 export class RunnerChildRuntime {
   private endpoint!: RunnerSocketEndpoint;
@@ -46,7 +52,6 @@ export class RunnerChildRuntime {
   private closing = false;
   private activeCommandId: string | undefined;
   private droppedFrameCount = 0;
-  private readonly preBootstrapFrames: RunnerEventFrame[] = [];
 
   constructor(
     private readonly config: RunnerChildConfig,
@@ -63,7 +68,10 @@ export class RunnerChildRuntime {
   async start(): Promise<void> {
     this.lock = await RunnerWriterLock.acquire(this.config.paths.lockPath);
     this.outbox = await RunnerSqliteEventOutbox.open(this.config.paths.databasePath);
-    this.lifecycle = RunnerSqliteLifecycle.open(this.config.paths.databasePath);
+    this.lifecycle = RunnerSqliteLifecycle.open(
+      this.config.paths.databasePath,
+      this.config.sessionId,
+    );
     this.endpoint = new RunnerSocketEndpoint(
       this.config.paths.socketPath,
       async (frame) => await this.handleFrame(frame),
@@ -159,16 +167,28 @@ export class RunnerChildRuntime {
   private async drainExecution(
     command: Extract<RunnerCommandFrame, { kind: "execute" }>,
   ): Promise<void> {
+    const preBootstrap = createPreBootstrapFrameBuffer();
+    try {
+      await this.drainExecutionWithBuffer(command, preBootstrap);
+    } finally {
+      this.discardPreBootstrapFrames(preBootstrap, "execution_terminal");
+      if (this.activeCommandId === command.commandId) this.activeCommandId = undefined;
+    }
+  }
+
+  private async drainExecutionWithBuffer(
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
+    preBootstrap: PreBootstrapFrameBuffer,
+  ): Promise<void> {
     let terminalError: { code: string; message: string } | undefined;
     let storageFailure = false;
     try {
       await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
-        await this.forwardRunnerFrame(frame);
+        await this.forwardRunnerFrame(frame, preBootstrap);
       }
       if (requiresBackendSessionId(this.config.backend) && !(await this.outbox.readBootstrap())) {
-        await this.ensureBootstrap(null, command.commandId);
-        await this.flushPreBootstrapFrames();
+        this.discardPreBootstrapFrames(preBootstrap, "backend_session_id_missing");
         throw new Error(
           `${this.config.backend} execution ended before publishing its backend session ID`,
         );
@@ -193,7 +213,10 @@ export class RunnerChildRuntime {
     if (storageFailure) queueMicrotask(() => { void this.shutdown(); });
   }
 
-  private async forwardRunnerFrame(frame: RunnerEventFrame): Promise<void> {
+  private async forwardRunnerFrame(
+    frame: RunnerEventFrame,
+    preBootstrap: PreBootstrapFrameBuffer,
+  ): Promise<void> {
     if (frame.kind === "run_state_snapshot") {
       await this.callHostSnapshot("persistRunState", frame.snapshot);
       this.recordProgress();
@@ -217,16 +240,23 @@ export class RunnerChildRuntime {
     const bootstrap = await this.outbox.readBootstrap();
     if (!bootstrap && requiresBackendSessionId(this.config.backend)) {
       if (backendSessionId === null) {
-        if (this.preBootstrapFrames.length >= PRE_BOOTSTRAP_EVENT_LIMIT) {
+        const frameBytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+        if (preBootstrap.frames.length >= PRE_BOOTSTRAP_EVENT_LIMIT) {
           throw new Error(
             `${this.config.backend} exceeded ${PRE_BOOTSTRAP_EVENT_LIMIT} events before its backend session ID`,
           );
         }
-        this.preBootstrapFrames.push(frame);
+        if (preBootstrap.bytes + frameBytes > PRE_BOOTSTRAP_BYTE_LIMIT) {
+          throw new Error(
+            `${this.config.backend} exceeded ${PRE_BOOTSTRAP_BYTE_LIMIT} bytes before its backend session ID`,
+          );
+        }
+        preBootstrap.frames.push(frame);
+        preBootstrap.bytes += frameBytes;
         return;
       }
       await this.ensureBootstrap(backendSessionId, this.requireActiveCommandId());
-      await this.flushPreBootstrapFrames();
+      await this.flushPreBootstrapFrames(preBootstrap);
     } else if (!bootstrap) {
       await this.ensureBootstrap(null, this.requireActiveCommandId());
     }
@@ -257,8 +287,9 @@ export class RunnerChildRuntime {
     this.recordProgress();
   }
 
-  private async flushPreBootstrapFrames(): Promise<void> {
-    const pending = this.preBootstrapFrames.splice(0);
+  private async flushPreBootstrapFrames(buffer: PreBootstrapFrameBuffer): Promise<void> {
+    const pending = buffer.frames.splice(0);
+    buffer.bytes = 0;
     for (const frame of pending) {
       const event = frame.payload as SSEEventPayload;
       await this.forwardBootstrappedEvent(frame, event, sessionIdEffect(event));
@@ -286,7 +317,9 @@ export class RunnerChildRuntime {
     }
     if (!requiresBackendSessionId(this.config.backend)) {
       await this.ensureBootstrap(null, command.commandId);
+      return;
     }
+    this.beginLifecycle(command.commandId);
   }
 
   private async ensureBootstrap(
@@ -306,7 +339,14 @@ export class RunnerChildRuntime {
         snapshot_path: this.config.snapshotPath,
       },
     });
-    this.beginLifecycle(commandId);
+    // Force the pre-bootstrap execution lease, when present, into the durable
+    // bootstrap row. A same-command fast path in beginLifecycle() would leave
+    // the temporary row behind and split lifecycle ownership.
+    this.lifecycle.begin({
+      pid: process.pid,
+      commandId,
+      progressedAt: new Date().toISOString(),
+    });
   }
 
   private beginLifecycle(commandId: string): void {
@@ -318,6 +358,21 @@ export class RunnerChildRuntime {
         progressedAt: new Date().toISOString(),
       });
     }
+  }
+
+  private discardPreBootstrapFrames(
+    buffer: PreBootstrapFrameBuffer,
+    reason: string,
+  ): void {
+    if (buffer.frames.length > 0) {
+      this.logger.warn({
+        reason,
+        frameCount: buffer.frames.length,
+        byteCount: buffer.bytes,
+      }, "Discarding pre-bootstrap runner frames");
+    }
+    buffer.frames.length = 0;
+    buffer.bytes = 0;
   }
 
   private async callHostSnapshot(operation: string, snapshot: unknown): Promise<void> {
@@ -380,6 +435,10 @@ export class RunnerChildRuntime {
     if (!this.activeCommandId) throw new Error("runner active command id unavailable");
     return this.activeCommandId;
   }
+}
+
+function createPreBootstrapFrameBuffer(): PreBootstrapFrameBuffer {
+  return { frames: [], bytes: 0 };
 }
 
 export function buildDurableRunnerEvent(

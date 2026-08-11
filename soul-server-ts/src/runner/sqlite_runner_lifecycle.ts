@@ -34,12 +34,15 @@ export interface BeginRunnerExecutionInput {
 export class RunnerSqliteLifecycle {
   private closed = false;
 
-  private constructor(private readonly database: DatabaseSync) {}
+  private constructor(
+    private readonly database: DatabaseSync,
+    private readonly sessionId?: string,
+  ) {}
 
-  static open(databasePath: string): RunnerSqliteLifecycle {
+  static open(databasePath: string, sessionId?: string): RunnerSqliteLifecycle {
     const database = new RuntimeDatabaseSync(databasePath);
     database.exec("PRAGMA busy_timeout = 5000");
-    return new RunnerSqliteLifecycle(database);
+    return new RunnerSqliteLifecycle(database, sessionId);
   }
 
   read(): RunnerLifecycleRecord | null {
@@ -49,31 +52,81 @@ export class RunnerSqliteLifecycle {
              progress_seq, progress_at, terminal_error_json
       FROM runner_event_outbox WHERE record_kind = 'bootstrap'
     `).get() as LifecycleRow | undefined;
-    if (!row || row.runner_pid === null || row.execution_command_id === null
-      || row.execution_state === null || row.progress_at === null) {
-      return null;
+    if (row && row.runner_pid !== null && row.execution_command_id !== null
+      && row.execution_state !== null && row.progress_at !== null) {
+      return lifecycleRecord(row);
     }
-    return {
-      session_id: row.session_id,
-      runner_pid: row.runner_pid,
-      execution_command_id: row.execution_command_id,
-      execution_state: row.execution_state,
-      progress_seq: row.progress_seq,
-      progress_at: row.progress_at,
-      terminal_error: row.terminal_error_json === null
-        ? null
-        : JSON.parse(row.terminal_error_json) as { code: string; message: string },
-    };
+    const prebootstrap = this.database.prepare(`
+      SELECT session_id, runner_pid, execution_command_id, execution_state,
+             progress_seq, progress_at, terminal_error_json
+      FROM runner_prebootstrap_lifecycle WHERE singleton = 1
+    `).get() as LifecycleRow | undefined;
+    return prebootstrap ? lifecycleRecord(prebootstrap) : null;
   }
 
   begin(input: BeginRunnerExecutionInput): RunnerLifecycleRecord {
     validatePositiveInteger(input.pid, "runner pid");
     if (!input.commandId) throw new Error("runner execution command id required");
     validateTimestamp(input.progressedAt, "runner progress timestamp");
-    this.updateBootstrap(`
-      runner_pid = ?, execution_command_id = ?, execution_state = 'running',
-      progress_seq = progress_seq + 1, progress_at = ?, terminal_error_json = NULL
-    `, [input.pid, input.commandId, input.progressedAt]);
+    const bootstrap = this.database.prepare(`
+      SELECT 1 FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+    `).get();
+    if (!bootstrap) {
+      if (!this.sessionId) {
+        throw new Error("runner session id required before bootstrap lifecycle");
+      }
+      this.database.prepare(`
+        INSERT INTO runner_prebootstrap_lifecycle (
+          singleton, session_id, runner_pid, execution_command_id,
+          execution_state, progress_seq, progress_at, terminal_error_json
+        ) VALUES (1, ?, ?, ?, 'running', 1, ?, NULL)
+        ON CONFLICT(singleton) DO UPDATE SET
+          session_id = excluded.session_id,
+          runner_pid = excluded.runner_pid,
+          execution_command_id = excluded.execution_command_id,
+          execution_state = 'running',
+          progress_seq = runner_prebootstrap_lifecycle.progress_seq + 1,
+          progress_at = excluded.progress_at,
+          terminal_error_json = NULL
+      `).run(this.sessionId, input.pid, input.commandId, input.progressedAt);
+      return this.requireLifecycle();
+    }
+
+    const pending = this.database.prepare(`
+      SELECT session_id, runner_pid, execution_command_id, execution_state,
+             progress_seq, progress_at, terminal_error_json
+      FROM runner_prebootstrap_lifecycle WHERE singleton = 1
+    `).get() as LifecycleRow | undefined;
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      if (pending?.execution_command_id === input.commandId) {
+        this.database.prepare(`
+          UPDATE runner_event_outbox SET
+            runner_pid = ?, execution_command_id = ?, execution_state = ?,
+            progress_seq = ?, progress_at = ?, terminal_error_json = ?
+          WHERE record_kind = 'bootstrap'
+        `).run(
+          pending.runner_pid,
+          pending.execution_command_id,
+          pending.execution_state,
+          pending.progress_seq,
+          pending.progress_at,
+          pending.terminal_error_json,
+        );
+      } else {
+        this.updateBootstrap(`
+          runner_pid = ?, execution_command_id = ?, execution_state = 'running',
+          progress_seq = progress_seq + 1, progress_at = ?, terminal_error_json = NULL
+        `, [input.pid, input.commandId, input.progressedAt]);
+      }
+      this.database.prepare(
+        "DELETE FROM runner_prebootstrap_lifecycle WHERE singleton = 1",
+      ).run();
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
     return this.requireLifecycle();
   }
 
@@ -125,10 +178,16 @@ export class RunnerSqliteLifecycle {
 
   private updateActive(commandId: string, assignments: string, args: SqlParameter[]): void {
     if (!commandId) throw new Error("runner execution command id required");
-    const result = this.database.prepare(`
+    let result = this.database.prepare(`
       UPDATE runner_event_outbox SET ${assignments}
       WHERE record_kind = 'bootstrap' AND execution_command_id = ?
     `).run(...args, commandId);
+    if (result.changes === 0) {
+      result = this.database.prepare(`
+        UPDATE runner_prebootstrap_lifecycle SET ${assignments}
+        WHERE singleton = 1 AND execution_command_id = ?
+      `).run(...args, commandId);
+    }
     if (result.changes !== 1) {
       throw new Error(`runner lifecycle command mismatch: ${commandId}`);
     }
@@ -154,6 +213,24 @@ export class RunnerSqliteLifecycle {
   private requireOpen(): void {
     if (this.closed) throw new Error("runner lifecycle store is closed");
   }
+}
+
+function lifecycleRecord(row: LifecycleRow): RunnerLifecycleRecord {
+  if (row.runner_pid === null || row.execution_command_id === null
+    || row.execution_state === null || row.progress_at === null) {
+    throw new Error("runner lifecycle row incomplete");
+  }
+  return {
+    session_id: row.session_id,
+    runner_pid: row.runner_pid,
+    execution_command_id: row.execution_command_id,
+    execution_state: row.execution_state,
+    progress_seq: row.progress_seq,
+    progress_at: row.progress_at,
+    terminal_error: row.terminal_error_json === null
+      ? null
+      : JSON.parse(row.terminal_error_json) as { code: string; message: string },
+  };
 }
 
 export function ensureRunnerLifecycleColumns(database: DatabaseSync): void {

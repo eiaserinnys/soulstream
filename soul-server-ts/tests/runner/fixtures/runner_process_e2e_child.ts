@@ -33,6 +33,34 @@ class ControlledEngine implements EnginePort {
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
   async *executeFrames(_params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    const preBootstrapScenario = process.env.RUNNER_E2E_PRE_BOOTSTRAP_SCENARIO;
+    if (preBootstrapScenario) {
+      this.executionCount += 1;
+      if (this.executionCount === 1) {
+        if (preBootstrapScenario === "initial-crash") {
+          yield preBootstrapHook("discarded-crash");
+          throw new Error("fixture crashed before backend session ID");
+        }
+        if (preBootstrapScenario === "frame-count-overflow") {
+          for (let index = 0; index <= 1_024; index += 1) {
+            yield preBootstrapHook(`discarded-count-${index}`);
+          }
+          return;
+        }
+        if (preBootstrapScenario === "byte-overflow") {
+          yield preBootstrapHook("discarded-bytes", "x".repeat(8 * 1024 * 1024));
+          return;
+        }
+        throw new Error(`unknown pre-bootstrap scenario: ${preBootstrapScenario}`);
+      }
+      yield engineEventFrame({ type: "session", session_id: "backend-session-e2e" });
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: `execution-${this.executionCount}`,
+        timestamp: this.executionCount + 1,
+      });
+      return;
+    }
     if (process.env.RUNNER_E2E_ID_BOOTSTRAP === "1") {
       this.executionCount += 1;
       if (this.executionCount === 1) {
@@ -80,6 +108,17 @@ class ControlledEngine implements EnginePort {
   }
 
   async close(): Promise<void> {}
+}
+
+function preBootstrapHook(label: string, blob?: string): RunnerEventFrame {
+  return engineEventFrame({
+    type: "claude_runtime_hook_event",
+    hook_event_name: "UserPromptSubmit",
+    session_id: "backend-session-e2e",
+    tool_use_id: label,
+    hook_input: blob === undefined ? {} : { blob },
+    timestamp: 1,
+  });
 }
 
 async function exerciseInternalMcp(): Promise<void> {

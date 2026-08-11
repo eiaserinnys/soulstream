@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-11T08:41:45.000Z",
+  "purpose": "Sanitized evidence manifest for the isolated runner cutover staging soak",
+  "releaseContentSha256": "a5de438d16ce4d0916aa9dc95b73c1267f32ad2fa5dab0530de562c98c4d0c16",
+  "sanitization": {
+    "omitted": [
+      "agent session identifiers",
+      "prompts and message content",
+      "tool inputs and outputs",
+      "OAuth credentials and authorization headers",
+      "absolute snapshot and credential paths"
+    ],
+    "rawEvidence": "Retained only in the gitignored .local/runner-staging-soak/captures directory of the originating workspace",
+    "verification": "Each raw evidence file is identified by byte length, line count, and SHA-256 below"
+  },
+  "runs": [
+    {
+      "runId": "claude-2026-08-11T06-55-42-171Z",
+      "backend": "claude",
+      "startedAt": "2026-08-11T06:55:42.171Z",
+      "completedAt": "2026-08-11T07:30:44.313Z",
+      "durationMinutes": 35,
+      "finalStatus": "completed",
+      "runnerPidBeforeRestart": 227877,
+      "runnerPidAfterRestart": 227877,
+      "runnerSurvivedRestart": true,
+      "mcpRoundTripObserved": true,
+      "dropCount": 0,
+      "durableEventCount": 355,
+      "ipcJournalCount": 0,
+      "fixtureCandidateCount": 388,
+      "eventTypeCounts": {
+        "init": 1,
+        "history_sync": 1,
+        "context_manifest": 1,
+        "user_message": 8,
+        "metadata": 16,
+        "claude_runtime_hook_event": 116,
+        "session": 8,
+        "credential_alert": 7,
+        "tool_start": 56,
+        "tool_result": 56,
+        "assistant_message": 10,
+        "subagent_start": 20,
+        "claude_runtime_task_started": 20,
+        "subagent_stop": 20,
+        "claude_runtime_task_notification": 20,
+        "result": 7,
+        "context_usage": 7,
+        "complete": 7,
+        "session_ended": 7
+      },
+      "files": [
+        {
+          "path": ".local/runner-staging-soak/captures/claude-2026-08-11T06-55-42-171Z/soak-result.json",
+          "bytes": 2172,
+          "lines": 98,
+          "sha256": "92ae33f1dbada36de5adcbcf5a1226c960a041722992d5b1c850220c4b352b6e"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/claude-2026-08-11T06-55-42-171Z/runner-events.jsonl",
+          "bytes": 433623,
+          "lines": 355,
+          "sha256": "a5c8e147765bf538bfc0cc634edb3dccd4ed18451a457e952876e1f3ac97261c"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/claude-2026-08-11T06-55-42-171Z/orch-session-sse.jsonl",
+          "bytes": 237057,
+          "lines": 388,
+          "sha256": "bd7bdb7e19fa5ef26363d64f73a72c53fc4b12670d8edf0d0129db3e18e58d85"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/claude-2026-08-11T06-55-42-171Z/fixture-candidates.jsonl",
+          "bytes": 211230,
+          "lines": 388,
+          "sha256": "800e699d636796affa4abc3476250c94b0f3c0d5c7678112dde80fa5b8068190"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/claude-2026-08-11T06-55-42-171Z/runner-ipc-journal.jsonl",
+          "bytes": 0,
+          "lines": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "runId": "codex-2026-08-11T07-31-11-438Z",
+      "backend": "codex",
+      "startedAt": "2026-08-11T07:31:11.439Z",
+      "completedAt": "2026-08-11T08:06:13.507Z",
+      "durationMinutes": 35,
+      "finalStatus": "completed",
+      "runnerPidBeforeRestart": 283890,
+      "runnerPidAfterRestart": 283890,
+      "runnerSurvivedRestart": true,
+      "mcpRoundTripObserved": true,
+      "dropCount": 0,
+      "durableEventCount": 375,
+      "ipcJournalCount": 0,
+      "fixtureCandidateCount": 1039,
+      "eventTypeCounts": {
+        "init": 1,
+        "history_sync": 1,
+        "context_manifest": 1,
+        "user_message": 8,
+        "metadata": 16,
+        "debug": 209,
+        "session": 1,
+        "progress": 28,
+        "text_start": 19,
+        "text_delta": 1033,
+        "text_end": 19,
+        "assistant_message": 19,
+        "tool_start": 55,
+        "tool_result": 55,
+        "complete": 7,
+        "session_ended": 7
+      },
+      "files": [
+        {
+          "path": ".local/runner-staging-soak/captures/codex-2026-08-11T07-31-11-438Z/soak-result.json",
+          "bytes": 2035,
+          "lines": 95,
+          "sha256": "663e52eb23851620305decd23151f040ecd1cc62576b765554f72de293190afb"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/codex-2026-08-11T07-31-11-438Z/runner-events.jsonl",
+          "bytes": 342660,
+          "lines": 375,
+          "sha256": "f3bd124bffb5da1a17e8ce67c8183680e07ed8160aa4052eac0be91c9f18f5bd"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/codex-2026-08-11T07-31-11-438Z/orch-session-sse.jsonl",
+          "bytes": 540128,
+          "lines": 1479,
+          "sha256": "6cb1a08e31aba204295b7a2547c120615f5034d4d8a79b0484d06a00149f174d"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/codex-2026-08-11T07-31-11-438Z/fixture-candidates.jsonl",
+          "bytes": 320694,
+          "lines": 1039,
+          "sha256": "8cd0deb770ab3161ca90c7908f6c69fae3fac49fa56180967d9f9bab797bd1b0"
+        },
+        {
+          "path": ".local/runner-staging-soak/captures/codex-2026-08-11T07-31-11-438Z/runner-ipc-journal.jsonl",
+          "bytes": 0,
+          "lines": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ]
+}
