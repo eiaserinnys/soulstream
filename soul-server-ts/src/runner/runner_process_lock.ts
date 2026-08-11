@@ -6,6 +6,10 @@ import { promisify } from "node:util";
 
 const LOCK_RETRY_MS = 50;
 const execFileAsync = promisify(execFile);
+const currentProcessFallbackIdentity = `node-start-${Math.round(
+  Date.now() - process.uptime() * 1_000,
+)}`;
+let currentProcessStartIdentity: Promise<string> | undefined;
 
 export interface ProcessLockOwner {
   pid: number;
@@ -126,11 +130,16 @@ export function defaultProcessOwnershipLockDependencies(): ProcessOwnershipLockD
     delay: async (ms) => await new Promise((resolveDelay) => setTimeout(resolveDelay, ms)),
     currentOwner: async () => ({
       pid: process.pid,
-      startIdentity: await readProcessStartIdentity(process.pid)
-        ?? `node-start-${Math.round(Date.now() - process.uptime() * 1_000)}`,
+      startIdentity: await getCurrentProcessStartIdentity(),
     }),
     inspectProcess: inspectProcessIdentity,
   };
+}
+
+async function getCurrentProcessStartIdentity(): Promise<string> {
+  currentProcessStartIdentity ??= readProcessStartIdentity(process.pid)
+    .then((identity) => identity ?? currentProcessFallbackIdentity);
+  return await currentProcessStartIdentity;
 }
 
 export async function inspectProcessIdentity(pid: number): Promise<ProcessIdentity> {

@@ -8,7 +8,10 @@ import {
   RunnerStateHostLock,
   runnerStateHostLockPath,
 } from "../../src/runner/runner_state_host_lock.js";
-import type { ProcessOwnershipLockDependencies } from "../../src/runner/runner_process_lock.js";
+import {
+  defaultProcessOwnershipLockDependencies,
+  type ProcessOwnershipLockDependencies,
+} from "../../src/runner/runner_process_lock.js";
 
 const directories: string[] = [];
 
@@ -19,6 +22,18 @@ afterEach(async () => {
 });
 
 describe("RunnerStateHostLock", () => {
+  it("reuses one stable start identity for the current host process", async () => {
+    const dependencies = defaultProcessOwnershipLockDependencies();
+
+    const [first, second] = await Promise.all([
+      dependencies.currentOwner(),
+      dependencies.currentOwner(),
+    ]);
+
+    expect(first).toEqual(second);
+    expect(first.startIdentity).toBeTruthy();
+  });
+
   it("rejects a second host while the exact owner process is alive", async () => {
     const stateDirectory = await temporaryStateDirectory();
     const first = await RunnerStateHostLock.acquire(
