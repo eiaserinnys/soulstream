@@ -905,16 +905,12 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       },
     ]);
     expect(getSession).toHaveBeenCalledWith(sessionId);
-    expect(updateSession).toHaveBeenCalledWith(sessionId, {
-      status: "running",
-      termination_reason: null,
-      termination_detail: null,
-      review_state: "not_required",
-    });
+    expect(updateSession).not.toHaveBeenCalled();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       sessionId,
       expect.objectContaining({ type: "user_message", text: "이어가" }),
     );
+    expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(startExecution).toHaveBeenCalledTimes(1);
     const [resumedTask, agent] = startExecution.mock.calls[0] as [Task, AgentProfile];
     expect(agent).toBe(prodClaudeAgent);

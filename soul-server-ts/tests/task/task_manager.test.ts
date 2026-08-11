@@ -95,6 +95,7 @@ function makeMocks() {
     enqueueEvent: persistenceDouble.enqueueEvent,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueRunningTransition: persistenceDouble.enqueueRunningTransition,
     db,
     broadcaster,
     registerSession,
@@ -1350,11 +1351,11 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(r2).toEqual({ queued: true, queuePosition: 2 });
   });
 
-  it("completed task → user_message wire (UI 흰색) + status=running + session_updated + onResume + autoResumed", async () => {
+  it("completed task → user_message + durable running effect + onResume + autoResumed", async () => {
     // 결함 A 정정 (PR #55): completed/error/interrupted → intervention_sent가 아닌
     // user_message로 wire 박힘 (Python `create_task(prompt=text)` 모델 정합).
-    // 결함 B 정정: session_updated wire를 *상태 전환 직후* broadcast하여 soul-app TypingIndicator
-    // (session.status === "running")가 즉시 표시.
+    // 결함 B 정정: running 전이는 durable effect에서 투영되어 닫힌 host
+    // WebSocket 뒤에도 soul-app TypingIndicator 상태가 복구된다.
     const broadcasterMocks = makeMocks();
     const tm = new TaskManager(
       "n",
@@ -1391,15 +1392,15 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
-    // session_updated가 status=running 박힌 task로 broadcast
-    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
-    expect(broadcasterMocks.emitSessionUpdated.mock.calls[0][0]).toBe(task);
-    expect(broadcasterMocks.updateSession).toHaveBeenCalledWith("s1", {
-      status: "running",
-      termination_reason: null,
-      termination_detail: null,
-      review_state: "not_required",
-    });
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        reviewState: "not_required",
+        transitionId: expect.stringMatching(/^resume:/),
+      }),
+    );
+    expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
+    expect(broadcasterMocks.updateSession).not.toHaveBeenCalled();
   });
 
   it("T-1 (Phase A context 정본): completed task auto-resume은 user_message를 executor initial path로 넘김", async () => {
@@ -1452,8 +1453,9 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(task.prompt).toBe("resume");
     expect(task.interventionQueue).toHaveLength(1);
   });
@@ -1498,8 +1500,9 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
   it("T-1c: contextBuilder 미주입 시에도 auto-resume 상태 전환은 유지", async () => {
@@ -1528,8 +1531,9 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(task.prompt).toBe("resume");
   });
 
@@ -1834,14 +1838,16 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     expect(task.interventionQueue).toEqual([{ text: "추가", user: "u" }]);
   });
 
-  it("completed task → user_message 접수 후 session_updated + onResume", async () => {
+  it("completed task → durable running effect + user_message 접수 후 onResume", async () => {
     const mocks = makeMocks();
     const enqueueEvent = vi.fn().mockResolvedValue(2);
     const enqueueMetadataEffect = vi.fn().mockResolvedValue(null);
+    const enqueueRunningTransition = vi.fn().mockResolvedValue({ source_seq: 2 });
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
     const persistence = {
       enqueueEvent,
       enqueueMetadataEffect,
+      enqueueRunningTransition,
       handleSideEffects,
     } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
@@ -1859,16 +1865,15 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       expect.objectContaining({ type: "user_message", text: "이어서" }),
     );
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    expect(enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
 
-    // session_updated가 status="running" 박힌 task로 broadcast (결함 B fix)
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
-    const updatedTask = mocks.emitSessionUpdated.mock.calls[0][0] as Task;
-    expect(updatedTask.status).toBe("running");
-    expect(updatedTask.prompt).toBe("이어서");
-    expect(updatedTask.clientId).toBe("alice");
-    expect(updatedTask.callerInfo).toEqual({ source: "slack", display_name: "Alice" });
-    expect(updatedTask.metadata).toContainEqual({
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    expect(task.status).toBe("running");
+    expect(task.prompt).toBe("이어서");
+    expect(task.clientId).toBe("alice");
+    expect(task.callerInfo).toEqual({ source: "slack", display_name: "Alice" });
+    expect(task.metadata).toContainEqual({
       type: "caller_info",
       value: { source: "slack", display_name: "Alice" },
     });
@@ -1898,11 +1903,12 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       "s1",
       expect.objectContaining({ type: "user_message", text: "재개" }),
     );
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
-  it("auto-resume addIntervention은 user_message와 session_updated를 즉시 발행", async () => {
+  it("auto-resume addIntervention은 durable running effect와 user_message를 발행", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
@@ -1915,8 +1921,9 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       "s1",
       expect.objectContaining({ type: "user_message", text: "x" }),
     );
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 });
 
@@ -2027,14 +2034,10 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       "sess-evicted",
       expect.objectContaining({ type: "user_message", text: "이어서" }),
     );
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-evicted", {
-      status: "running",
-      termination_reason: null,
-      termination_detail: null,
-      review_state: "not_required",
-    });
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    expect(mocks.updateSession).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
@@ -2087,13 +2090,9 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
         text: "resume from last event",
       }),
     );
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-evicted-claude", {
-      status: "running",
-      termination_reason: null,
-      termination_detail: null,
-      review_state: "not_required",
-    });
+    expect(mocks.updateSession).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
@@ -2137,13 +2136,9 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       "sess-stale-running",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-stale-running", {
-      status: "running",
-      termination_reason: null,
-      termination_detail: null,
-      review_state: "not_required",
-    });
+    expect(mocks.updateSession).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 

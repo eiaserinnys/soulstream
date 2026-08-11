@@ -308,7 +308,33 @@ describe("EventPersistence durable ingress", () => {
     expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
   });
 
-  it("persists an idempotent running transition and waits for its ACK", async () => {
+  it("persists an idempotent running transition without waiting for host recovery", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueRunningTransition("sess-1", {
+      reviewState: "not_required",
+      transitionId: "resume:7",
+      updatedAt: new Date("2026-08-11T00:00:00.000Z"),
+    })).resolves.toBe(ingress.record);
+
+    expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "sess-1",
+      semantic_dedupe_key: "running_transition:sess-1:resume:7",
+      session_effect: expect.objectContaining({ kind: "running_transition" }),
+    }));
+    expect(ingress.waitForAcknowledgement).not.toHaveBeenCalled();
+  });
+
+  it("persists an idempotent runner-adopt transition and waits for its ACK", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();

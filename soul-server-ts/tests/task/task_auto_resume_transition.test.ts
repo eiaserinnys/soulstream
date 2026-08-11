@@ -52,12 +52,17 @@ describe("AutoResumeTransition", () => {
         caller_info: callerInfo,
         attachments: ["/tmp/a.png"],
       });
-      expect(effect).toMatchObject({
-        kind: "running_transition",
-        review_state: "not_required",
-      });
+      expect(effect).toBeUndefined();
       expect((event as Record<string, unknown>)._event_id).toBeUndefined();
       return { source_seq: 1 };
+    });
+    const enqueueRunningTransition = vi.fn(async (_sessionId, input) => {
+      order.push("enqueueRunningTransition");
+      expect(input).toMatchObject({
+        reviewState: "not_required",
+        transitionId: "resume:7",
+      });
+      return { source_seq: 2 };
     });
     const handleSideEffects = vi.fn(async (_sessionId, event, handledTask) => {
       order.push("handleSideEffects");
@@ -67,6 +72,7 @@ describe("AutoResumeTransition", () => {
     });
     const persistence = {
       enqueueEvent,
+      enqueueRunningTransition,
       handleSideEffects,
       enqueueMetadataEffect: appendMetadata,
     } as unknown as EventPersistence;
@@ -94,6 +100,7 @@ describe("AutoResumeTransition", () => {
     expect(order).toEqual([
       "appendMetadata",
       "enqueueEvent",
+      "enqueueRunningTransition",
       "handleSideEffects",
       "onResume",
     ]);
@@ -102,6 +109,7 @@ describe("AutoResumeTransition", () => {
     expect(task.callerInfo).toBe(callerInfo);
     expect(task.attachmentPaths).toEqual(["/tmp/a.png"]);
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    expect(enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
     expect(task.metadata).toContainEqual({ type: "caller_info", value: callerInfo });
     expect(appendMetadata).toHaveBeenCalledWith("s1", {
@@ -197,8 +205,8 @@ describe("AutoResumeTransition", () => {
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "user_message", text: "retry" }),
-      expect.objectContaining({ kind: "running_transition" }),
     );
+    expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(task.terminationReason).toBe("limit_hit");
     expect(task.terminationDetail).toBe("fresh limit");
     expect(task.terminationEventRecorded).toBe(true);
@@ -283,10 +291,10 @@ describe("AutoResumeTransition", () => {
       expect.objectContaining({
         type: "user_message",
       }),
-      expect.objectContaining({
-        kind: "running_transition",
-        review_state: "acknowledged",
-      }),
+    );
+    expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ reviewState: "acknowledged" }),
     );
   });
 
@@ -334,8 +342,8 @@ describe("AutoResumeTransition", () => {
         text: "resume",
         context: [contextItem],
       }),
-      expect.objectContaining({ kind: "running_transition" }),
     );
+    expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(task.contextItems).toEqual([contextItem]);
   });
 });

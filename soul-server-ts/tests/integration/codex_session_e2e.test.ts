@@ -228,6 +228,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     );
     expect(durableTypes).toEqual([
       "user_message",
+      "metadata",
       "session",
       "assistant_message",
       "complete",
@@ -247,6 +248,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     expect(outbox.append.mock.calls.map(([input]) =>
       (input as Record<string, unknown>).session_effect)).toEqual([
       expect.objectContaining({ kind: "last_message" }),
+      expect.objectContaining({ kind: "running_transition" }),
       { kind: "set_backend_session_id", backend_session_id: "thr-codex-1" },
       expect.objectContaining({ kind: "last_message" }),
       null,
@@ -260,7 +262,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
-    expect(task!.lastEventId).toBe(5);  // user_message + session + assistant_message + complete + session_ended
+    expect(task!.lastEventId).toBe(6);  // user_message + running + session + assistant_message + complete + session_ended
     expect(task!.lastAssistantText).toBe("Hello world");
   });
 

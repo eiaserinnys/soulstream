@@ -152,8 +152,12 @@ describe("NodeEventIngressController", () => {
 
   it("replays a lost auto-resume running transition exactly once after reconnect", async () => {
     const value = batch(1);
-    value.events[0]!.event_type = "user_message";
-    value.events[0]!.payload = { type: "user_message", text: "resume" };
+    value.events[0]!.event_type = "metadata";
+    value.events[0]!.payload = {
+      type: "metadata",
+      metadata_type: "session_status_transition",
+      value: { status: "running", transition_id: "resume:7" },
+    };
     value.events[0]!.session_effect = {
       kind: "running_transition",
       review_state: "not_required",

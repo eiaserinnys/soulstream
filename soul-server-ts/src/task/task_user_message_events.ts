@@ -4,7 +4,6 @@ import { withoutSessionContextSourceMarkers } from "../context/session_context_s
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 
 import type { CallerInfo, Task } from "./task_models.js";
 
@@ -49,7 +48,6 @@ export async function persistUserMessageEvent(
   task: Task,
   event: Record<string, unknown>,
   deps: UserMessageEventPublisherDeps,
-  effect?: EventOutboxSessionEffect,
 ): Promise<void> {
   if (!deps.persistence) {
     throw new Error("user_message durable event persistence is required");
@@ -57,19 +55,7 @@ export async function persistUserMessageEvent(
   await deps.persistence.enqueueEvent(
     task.agentSessionId,
     event as SSEEventPayload,
-    effect,
   );
-}
-
-export function runningTransitionEffect(
-  reviewState: string,
-  updatedAt: Date = new Date(),
-): EventOutboxSessionEffect {
-  return {
-    kind: "running_transition",
-    review_state: reviewState,
-    updated_at: updatedAt.toISOString(),
-  };
 }
 
 export async function finishUserMessageEvent(

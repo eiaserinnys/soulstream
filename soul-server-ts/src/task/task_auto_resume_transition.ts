@@ -12,7 +12,6 @@ import {
   buildUserMessageEvent,
   finishUserMessageEvent,
   persistUserMessageEvent,
-  runningTransitionEffect,
 } from "./task_user_message_events.js";
 
 export type AutoResumeCallback = (task: Task) => void;
@@ -30,7 +29,7 @@ export interface AutoResumeTransitionDeps {
  * Owns the ordered side effects that turn a completed/error/interrupted task
  * back into a running task for the next user turn:
  * resume capability validation -> caller metadata promotion -> user_message
- * persistence with a durable running effect -> task state transition ->
+ * persistence + separate durable running effect -> task state transition ->
  * user_message broadcast -> executor resume callback. Orch projects the
  * running status from the durable effect, so a closed host WebSocket cannot
  * lose the transition.
@@ -63,24 +62,15 @@ export class AutoResumeTransition {
       task.reviewState ?? "not_required",
     );
     if (userMessageEvent) {
-      await persistUserMessageEvent(
-        task,
-        userMessageEvent,
-        this.deps,
-        runningTransitionEffect(resumedReviewState),
-      );
-    } else {
-      if (!this.deps.persistence) {
-        throw new Error("running transition durable event persistence is required");
-      }
-      await this.deps.persistence.enqueueRunningTransitionAndWaitForAck(
-        task.agentSessionId,
-        {
-          reviewState: resumedReviewState,
-          transitionId: `resume:${transitionRevision}`,
-        },
-      );
+      await persistUserMessageEvent(task, userMessageEvent, this.deps);
     }
+    if (!this.deps.persistence) {
+      throw new Error("running transition durable event persistence is required");
+    }
+    await this.deps.persistence.enqueueRunningTransition(task.agentSessionId, {
+      reviewState: resumedReviewState,
+      transitionId: `resume:${transitionRevision}`,
+    });
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {
       await finishUserMessageEvent(task, userMessageEvent, this.deps);
