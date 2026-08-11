@@ -345,6 +345,7 @@ function spawnInput(stateDirectory: string, snapshotPath: string, controlDirecto
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1_800_000,
+    internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: null,
     rolloutRoot: null,
     childProcessEnv: {

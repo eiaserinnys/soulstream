@@ -127,6 +127,7 @@ async function exerciseInternalMcp(): Promise<void> {
     workspaceDir: config.agent.workspace_dir,
     agentSessionId: config.sessionId,
     resolvedMcpServers: config.resolvedMcpServers,
+    internalMcpUrl: config.internalMcpUrl,
   } satisfies ClaudeRunOptions, pino({ level: "silent" }));
   const servers = options.mcpServers as Record<string, {
     type?: string;

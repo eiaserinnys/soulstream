@@ -47,6 +47,7 @@ afterEach(async () => {
   childPids.clear();
   for (const server of mcpServers.splice(0)) {
     if (server.closeMcp) await server.closeMcp();
+    if (server.internalMcpServer) await server.internalMcpServer.close();
     await server.close();
   }
   for (const release of readOnlyReleases.splice(0)) {
@@ -76,7 +77,11 @@ describe("runner cutover all-flags-on integration", () => {
         + `  throw error;\n}\n`,
     );
 
-    const { baseUrl: mcpBaseUrl, callerSessionIds } = await startInternalMcpServer();
+    const {
+      baseUrl: mcpBaseUrl,
+      internalUrl: mcpInternalUrl,
+      callerSessionIds,
+    } = await startInternalMcpServer();
     const agentsConfigPath = join(root, "agents.yaml");
     const registryPath = join(root, "mcp-registry.yaml");
     const profilesPath = join(root, "mcp-profiles.yaml");
@@ -105,6 +110,7 @@ describe("runner cutover all-flags-on integration", () => {
       SOUL_RUNNER_RELEASES_DIR: releasesDirectory,
       SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
       MCP_ENABLED: "true",
+      MCP_INTERNAL_PORT: new URL(mcpInternalUrl).port,
       MCP_STATELESS_TRANSPORT_ENABLED: "true",
     });
     expect(env).toMatchObject({
@@ -199,7 +205,13 @@ describe("runner cutover all-flags-on integration", () => {
       undefined,
       "adopt",
     );
-    await waitFor(async () => durableContents(batches).includes("after-detach"));
+    let recoveryFailure: Error | undefined;
+    void recovery.catch((error: unknown) => {
+      recoveryFailure = error instanceof Error ? error : new Error(String(error));
+    });
+    await waitFor(async () =>
+      recoveryFailure !== undefined || durableContents(batches).includes("after-detach"));
+    if (recoveryFailure) throw recoveryFailure;
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
@@ -337,6 +349,7 @@ function makeAgent(workspaceDirectory: string): AgentProfile {
 
 async function startInternalMcpServer(): Promise<{
   baseUrl: string;
+  internalUrl: string;
   callerSessionIds: Array<string | undefined>;
 }> {
   const callerSessionIds: Array<string | undefined> = [];
@@ -377,7 +390,12 @@ async function startInternalMcpServer(): Promise<{
     },
   });
   mcpServers.push(server);
-  return { baseUrl: await server.listen({ host: "127.0.0.1", port: 0 }), callerSessionIds };
+  if (!server.internalMcpServer) {
+    throw new Error("internal MCP companion was not composed");
+  }
+  const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
+  const internalUrl = await server.internalMcpServer.listen({ host: "127.0.0.1", port: 0 });
+  return { baseUrl, internalUrl, callerSessionIds };
 }
 
 async function writeExecutionControls(controlDirectory: string): Promise<void> {
