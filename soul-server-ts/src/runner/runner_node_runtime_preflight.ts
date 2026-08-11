@@ -1,3 +1,7 @@
+import { createRequire } from "node:module";
+
+const requireNodeBuiltin = createRequire(import.meta.url);
+
 export interface RunnerNodeRuntimePreflightOptions {
   runnerProcessEnabled: boolean;
   nodeVersion: string;
@@ -38,5 +42,5 @@ export function nodeSqliteCapabilityError(options: {
 }
 
 async function probeNodeSqlite(): Promise<unknown> {
-  return await import("node:sqlite");
+  return requireNodeBuiltin("node:sqlite");
 }
