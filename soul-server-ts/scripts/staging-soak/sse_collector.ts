@@ -42,9 +42,12 @@ export class SessionSseCollector {
     let completed = false;
     for (const envelope of this.envelopes) {
       const event = nestedEvent(envelope.data);
-      const toolName = typeof event?.toolName === "string" ? event.toolName : undefined;
-      if (event?.type === "tool_start" && toolName?.includes("mcp__soulstream")) started = true;
-      if (event?.type === "tool_result" && toolName?.includes("mcp__soulstream")) completed = true;
+      const rawToolName = event?.toolName ?? event?.tool_name;
+      const toolName = typeof rawToolName === "string" ? rawToolName : undefined;
+      const isSoulstreamMcp = toolName?.includes("mcp__soulstream")
+        || toolName?.includes("mcp/soulstream/");
+      if (event?.type === "tool_start" && isSoulstreamMcp) started = true;
+      if (event?.type === "tool_result" && isSoulstreamMcp) completed = true;
     }
     return started && completed;
   }

@@ -17,6 +17,7 @@ interface SoakAction {
 
 export interface SoakResult {
   runId: string;
+  backend: "claude" | "codex";
   sessionId: string;
   startedAt: string;
   completedAt: string;
@@ -39,9 +40,10 @@ export async function runSoakWorkload(input: {
   config: ResolvedSoakConfig;
   bearerToken: string;
   controller: SoakProcessController;
+  backend: "claude" | "codex";
 }): Promise<SoakResult> {
-  const { config, bearerToken, controller } = input;
-  const runId = new Date().toISOString().replaceAll(/[:.]/g, "-");
+  const { config, bearerToken, controller, backend } = input;
+  const runId = `${backend}-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
   const captureDirectory = join(config.paths.captures, runId);
   await mkdir(captureDirectory, { recursive: true, mode: 0o700 });
   const actions: SoakAction[] = [];
@@ -50,9 +52,9 @@ export async function runSoakWorkload(input: {
     `http://${config.host}:${config.orchPort}/api/sessions`,
     bearerToken,
     {
-      prompt: initialPrompt(config.restartAfterMinutes),
-      profile: config.profile,
-      model_preset: config.modelPreset,
+      prompt: initialPrompt(config.restartAfterMinutes, backend),
+      profile: backend === "claude" ? config.profile : config.codexProfile,
+      model_preset: backend === "claude" ? config.modelPreset : config.codexModelPreset,
       caller_info: { source: "staging_soak", display_name: "Runner staging soak" },
     },
   );
@@ -131,6 +133,7 @@ export async function runSoakWorkload(input: {
   const dropSummaries = await readDropSummaries(config.paths.soulLog);
   const result: SoakResult = {
     runId,
+    backend,
     sessionId: session.agentSessionId,
     startedAt: startedAt.toISOString(),
     completedAt: new Date().toISOString(),
@@ -158,15 +161,19 @@ export async function runSoakWorkload(input: {
   return result;
 }
 
-function initialPrompt(restartAfterMinutes: number): string {
+function initialPrompt(
+  restartAfterMinutes: number,
+  backend: "claude" | "codex",
+): string {
   const longSleepSeconds = Math.max(120, Math.ceil((restartAfterMinutes + 2) * 60));
   const longSleepTimeoutMs = (longSleepSeconds + 60) * 1_000;
   return [
     "이것은 격리된 Soulstream 러너 스테이징 소크다.",
     "현재 세션 ID로 soulstream MCP의 get_session_name 도구를 반드시 한 번 호출하라.",
-    "그 뒤 Bash 도구를 각각 별도 호출로 6번 사용해 pwd, node --version, date, printf SOAK_PRE_1/2/3을 실행하라.",
-    `그 다음 Bash로 \"sleep ${longSleepSeconds}; printf SOAK_LONG_TURN_DONE\"을 timeout ${longSleepTimeoutMs}ms로 실행하라. 중간 개입이 오면 반영하고 계속하라.`,
-    "마지막으로 Bash 4회를 더 호출해 printf SOAK_POST_1/2/3 및 git rev-parse --short HEAD를 실행하라.",
+    `현재 backend는 ${backend}다.`,
+    "그 뒤 셸 명령 도구를 각각 별도 호출로 6번 사용해 pwd, node --version, date, printf SOAK_PRE_1/2/3을 실행하라.",
+    `그 다음 셸 명령 도구로 \"sleep ${longSleepSeconds}; printf SOAK_LONG_TURN_DONE\"을 timeout ${longSleepTimeoutMs}ms로 실행하라. 중간 개입이 오면 반영하고 계속하라.`,
+    "마지막으로 셸 명령 도구를 4회 더 호출해 printf SOAK_POST_1/2/3 및 git rev-parse --short HEAD를 실행하라.",
     "작업 경로 밖의 파일을 수정하거나 외부 네트워크를 직접 호출하지 마라.",
   ].join("\n");
 }
@@ -174,7 +181,7 @@ function initialPrompt(restartAfterMinutes: number): string {
 function interventionPrompt(index: number): string {
   return [
     `스테이징 소크 체크포인트 ${index}다.`,
-    `Bash를 세 번 별도 호출해 printf SOAK_INTERVENTION_${index}_A/B/C를 실행하라.`,
+    `셸 명령 도구를 세 번 별도 호출해 printf SOAK_INTERVENTION_${index}_A/B/C를 실행하라.`,
     "soulstream MCP의 get_session_name을 현재 세션 ID로 다시 한 번 호출하라.",
     "이전 장기 작업이 남아 있으면 이어서 완료하라.",
   ].join("\n");

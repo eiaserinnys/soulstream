@@ -34,9 +34,12 @@ function validConfig(overrides: Partial<SoakConfigFile> = {}): SoakConfigFile {
     databaseAdminUrlEnv: "SOUL_RUNNER_SOAK_DATABASE_ADMIN_URL",
     authBearerTokenEnv: "SOUL_RUNNER_SOAK_AUTH_BEARER_TOKEN",
     claudeAuthTokenPathEnv: "SOUL_RUNNER_SOAK_CLAUDE_AUTH_TOKEN_PATH",
+    codexHomePathEnv: "SOUL_RUNNER_SOAK_CODEX_HOME_PATH",
     claudeOauthClientId: "staging-soak-unused",
     profile: "runner-soak-claude",
     modelPreset: "claude-sonnet",
+    codexProfile: "runner-soak-codex",
+    codexModelPreset: "codex-5.6-sol",
     durationMinutes: 35,
     restartAfterMinutes: 10,
     interventionEveryMinutes: 5,
@@ -73,6 +76,7 @@ describe("runner staging soak isolation contract", () => {
       databaseUrl: "postgresql://staging.example/soulstream_runner_soak",
       authBearerToken: "staging-secret",
       claudeAuthTokenPath: "/secure/staging-claude-oauth.json",
+      codexHomePath: "/secure/staging-codex-home",
     });
 
     expect(environments.orch).toMatchObject({
@@ -89,10 +93,16 @@ describe("runner staging soak isolation contract", () => {
       MCP_ENABLED: "true",
       MCP_STATELESS_TRANSPORT_ENABLED: "true",
       CLAUDE_AUTH_TOKEN_PATH: "/secure/staging-claude-oauth.json",
+      CODEX_HOME: "/secure/staging-codex-home",
+      CODEX_ADAPTER_MODE: "app-server",
     });
-    expect(environments.soul.SOUL_RUNNER_STATE_DIR).toContain(
+    expect(environments.soul.SOUL_RUNNER_STATE_DIR).toMatch(
+      /^\/tmp\/soul-runner-soak-[a-f0-9]{12}$/,
+    );
+    expect(config.paths.runnerStateStorage).toBe(
       "/srv/soulstream/.local/runner-staging-soak/runtime/runner-state",
     );
+    expect(`${config.paths.runnerState}/${"a".repeat(24)}/runner.sock`.length).toBeLessThan(108);
     expect(environments.orch.PORT).not.toBe("5200");
     expect(environments.soul.PORT).not.toBe("3105");
     expect(environments.soul.PORT).not.toBe("4205");

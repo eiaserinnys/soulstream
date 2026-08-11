@@ -27,6 +27,7 @@ async function main(): Promise<void> {
   if (command === "doctor") {
     const secrets = resolveInputSecrets(config, false);
     await access(secrets.sourceClaudeAuthTokenPath);
+    await access(resolve(secrets.sourceCodexHomePath, "auth.json"));
     await assertBuildArtifacts(config);
     report({ status: "ok", command, isolation: isolationSummary(config) });
     return;
@@ -41,7 +42,11 @@ async function main(): Promise<void> {
   requireApproval();
   const secrets = resolveInputSecrets(config, true);
   if (command === "prepare") {
-    await prepareSoakWorkspace(config, secrets.sourceClaudeAuthTokenPath);
+    await prepareSoakWorkspace(
+      config,
+      secrets.sourceClaudeAuthTokenPath,
+      secrets.sourceCodexHomePath,
+    );
     const prepared = await prepareStagingDatabase(config, secrets.databaseAdminUrl);
     report({
       status: "ok",
@@ -58,6 +63,7 @@ async function main(): Promise<void> {
     databaseUrl: stagingDatabaseUrl(secrets.databaseAdminUrl, config.databaseName),
     authBearerToken: secrets.authBearerToken,
     claudeAuthTokenPath: config.paths.claudeAuthToken,
+    codexHomePath: config.paths.codexHome,
   });
   const controller = new SoakProcessController(config, environments);
   if (command === "start") {
@@ -71,10 +77,15 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "run") {
+    const backend = argumentValue("--backend") ?? "claude";
+    if (backend !== "claude" && backend !== "codex") {
+      throw new Error("--backend must be claude or codex");
+    }
     const result = await runSoakWorkload({
       config,
       bearerToken: secrets.authBearerToken,
       controller,
+      backend,
     });
     report({ status: "ok", command, result });
     return;
@@ -91,13 +102,20 @@ function resolveInputSecrets(config: ResolvedSoakConfig, requireAuth: boolean): 
   databaseAdminUrl: string;
   authBearerToken: string;
   sourceClaudeAuthTokenPath: string;
+  sourceCodexHomePath: string;
 } {
   const databaseAdminUrl = requiredEnv(config.databaseAdminUrlEnv);
   const sourceClaudeAuthTokenPath = requiredEnv(config.claudeAuthTokenPathEnv);
+  const sourceCodexHomePath = requiredEnv(config.codexHomePathEnv);
   const authBearerToken = requireAuth ? requiredEnv(config.authBearerTokenEnv) :
     process.env[config.authBearerTokenEnv]?.trim() ?? "doctor-not-used";
   stagingDatabaseUrl(databaseAdminUrl, config.databaseName);
-  return { databaseAdminUrl, authBearerToken, sourceClaudeAuthTokenPath };
+  return {
+    databaseAdminUrl,
+    authBearerToken,
+    sourceClaudeAuthTokenPath,
+    sourceCodexHomePath,
+  };
 }
 
 async function assertBuildArtifacts(config: ResolvedSoakConfig): Promise<void> {
@@ -149,6 +167,6 @@ function report(value: unknown): void {
 function usage(): never {
   throw new Error(
     "usage: pnpm soak:runner <doctor|prepare|start|restart-soul|run|stop> "
-      + "--config <path> [--confirm-staging-only]",
+      + "--config <path> [--backend claude|codex] [--confirm-staging-only]",
   );
 }

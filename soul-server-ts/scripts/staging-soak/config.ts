@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 const LIVE_PORTS = new Set([3_105, 5_200, 4_205]);
@@ -14,9 +15,12 @@ export interface SoakConfigFile {
   databaseAdminUrlEnv: string;
   authBearerTokenEnv: string;
   claudeAuthTokenPathEnv: string;
+  codexHomePathEnv: string;
   claudeOauthClientId: string;
   profile: string;
   modelPreset: string;
+  codexProfile: string;
+  codexModelPreset: string;
   durationMinutes: number;
   restartAfterMinutes: number;
   interventionEveryMinutes: number;
@@ -31,6 +35,7 @@ export interface SoakPaths {
   config: string;
   runtime: string;
   runnerState: string;
+  runnerStateStorage: string;
   runnerReleases: string;
   eventOutbox: string;
   incoming: string;
@@ -45,6 +50,7 @@ export interface SoakPaths {
   mcpProfiles: string;
   agentProfileCache: string;
   claudeAuthToken: string;
+  codexHome: string;
   orchLog: string;
   soulLog: string;
   orchPid: string;
@@ -60,6 +66,7 @@ export interface SoakSecrets {
   databaseUrl: string;
   authBearerToken: string;
   claudeAuthTokenPath: string;
+  codexHomePath: string;
 }
 
 export interface ServiceEnvironments {
@@ -85,9 +92,12 @@ export function resolveSoakConfig(
     "databaseAdminUrlEnv",
     "authBearerTokenEnv",
     "claudeAuthTokenPathEnv",
+    "codexHomePathEnv",
     "claudeOauthClientId",
     "profile",
     "modelPreset",
+    "codexProfile",
+    "codexModelPreset",
   ] as const) {
     if (!value[key]?.trim()) throw new Error(`${key} is required`);
   }
@@ -155,6 +165,8 @@ export function buildServiceEnvironments(
       MODEL_CATALOG_PATH: config.paths.modelCatalog,
       INCOMING_FILE_DIR: config.paths.incoming,
       CLAUDE_AUTH_TOKEN_PATH: secrets.claudeAuthTokenPath,
+      CODEX_HOME: secrets.codexHomePath,
+      CODEX_ADAPTER_MODE: "app-server",
       CLAUDE_SESSION_RUNTIME_V2_ENABLED: "true",
       CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: String(config.turnTimeoutMs),
       ATOM_ENABLED: "false",
@@ -173,11 +185,20 @@ function derivePaths(root: string): SoakPaths {
   const runtime = join(root, "runtime");
   const logs = join(root, "logs");
   const pids = join(root, "pids");
+  const runnerStateStorage = join(runtime, "runner-state");
+  const runnerStateAlias = join(
+    "/tmp",
+    `soul-runner-soak-${createHash("sha256").update(root).digest("hex").slice(0, 12)}`,
+  );
   return {
     root,
     config,
     runtime,
-    runnerState: join(runtime, "runner-state"),
+    // Linux sockaddr_un is limited to 108 bytes. The worktree path is much
+    // longer, so runtime addresses use a short, validated symlink while all
+    // durable bytes remain under the owned staging root.
+    runnerState: runnerStateAlias,
+    runnerStateStorage,
     runnerReleases: join(runtime, "runner-releases"),
     eventOutbox: join(runtime, "event-outbox"),
     incoming: join(runtime, "incoming"),
@@ -192,6 +213,7 @@ function derivePaths(root: string): SoakPaths {
     mcpProfiles: join(config, "mcp-profiles.yaml"),
     agentProfileCache: join(runtime, "agent-profiles.json"),
     claudeAuthToken: join(runtime, "claude-auth.json"),
+    codexHome: join(runtime, "codex-home"),
     orchLog: join(logs, "orch.log"),
     soulLog: join(logs, "soul.log"),
     orchPid: join(pids, "orch.json"),
