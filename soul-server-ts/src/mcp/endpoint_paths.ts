@@ -1,7 +1,7 @@
 const INTERNAL_MCP_PATH_SUFFIX = "/internal";
 
 /**
- * Derive the stateful endpoint reserved for Soulstream-owned agent SDKs.
+ * Derive the node-local endpoint reserved for Soulstream-owned agent SDKs.
  * Kept separate from transport implementation so runner-side option building
  * does not import the server transport graph.
  */

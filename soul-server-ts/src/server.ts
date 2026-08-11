@@ -106,13 +106,14 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       path: params.mcp.path,
       auth: params.mcp.auth,
       statelessTransport: params.mcp.statelessTransport ?? false,
+      statelessCallerOrigin: "llm",
     });
     const internalMcpServer = await buildInternalMcpServer({
       logger: params.logger,
       runtime: params.mcp.runtime,
       path: internalMcpPath(params.mcp.path),
       auth: params.mcp.auth,
-      statelessTransport: false,
+      statelessTransport: true,
     });
     fastify.internalMcpServer = internalMcpServer;
     fastify.closeMcp = async () => {
@@ -152,6 +153,7 @@ export async function buildInternalMcpServer(
     path: params.path,
     auth: params.auth,
     statelessTransport: params.statelessTransport,
+    statelessCallerOrigin: "internal",
   });
   fastify.closeMcp = closeInternalMcp;
   return fastify;
