@@ -163,17 +163,17 @@ export async function runSoakWorkload(input: {
 }
 
 function initialPrompt(
-  restartAfterMinutes: number,
+  _restartAfterMinutes: number,
   backend: "claude" | "codex",
 ): string {
-  const longSleepSeconds = Math.max(120, Math.ceil((restartAfterMinutes + 2) * 60));
-  const longSleepTimeoutMs = (longSleepSeconds + 60) * 1_000;
   return [
     "이것은 격리된 Soulstream 러너 스테이징 소크다.",
     "현재 세션 ID로 soulstream MCP의 get_session_name 도구를 반드시 한 번 호출하라.",
     `현재 backend는 ${backend}다.`,
     "그 뒤 셸 명령 도구를 각각 별도 호출로 6번 사용해 pwd, node --version, date, printf SOAK_PRE_1/2/3을 실행하라.",
-    `그 다음 셸 명령 도구로 \"sleep ${longSleepSeconds}; printf SOAK_LONG_TURN_DONE\"을 timeout ${longSleepTimeoutMs}ms로 실행하라. 중간 개입이 오면 반영하고 계속하라.`,
+    "그 다음 셸 명령 도구를 절대로 병렬·백그라운드·예약 실행하지 말고 한 번에 하나씩 정확히 20회 호출하라.",
+    "각 호출은 `sleep 8; printf SOAK_CHAIN_NN` 형식이며 NN은 01부터 20까지 순서대로 증가한다. 앞 호출 결과를 받은 뒤에만 다음 호출을 시작하라.",
+    "ScheduleWakeup이나 background task를 사용하지 말고, 중간 개입이 오면 반영한 뒤 남은 순서를 계속하라.",
     "마지막으로 셸 명령 도구를 4회 더 호출해 printf SOAK_POST_1/2/3 및 git rev-parse --short HEAD를 실행하라.",
     "작업 경로 밖의 파일을 수정하거나 외부 네트워크를 직접 호출하지 마라.",
   ].join("\n");
