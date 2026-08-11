@@ -1,10 +1,8 @@
 import { createServer, connect, type Server, type Socket } from "node:net";
 import { chmod, unlink } from "node:fs/promises";
 
-import {
-  RunnerIpcConnection,
-  type RunnerDroppedFrame,
-} from "./runner_ipc_connection.js";
+import { RunnerIpcConnection } from "./runner_ipc_connection.js";
+import type { RunnerDroppedFrame } from "./runner_frame_drop.js";
 
 export interface ConnectRunnerSocketOptions {
   timeoutMs: number;

@@ -4,14 +4,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
+  engineEventFrame,
   prepareSessionCommandFrame,
   runnerControlResponseFrame,
   runnerCommandResultFrame,
 } from "../../src/runner/frame_protocol.js";
 import {
   RunnerIpcConnection,
-  runnerDroppedFrameLogContext,
 } from "../../src/runner/runner_ipc_connection.js";
+import { runnerDroppedFrameLogContext } from "../../src/runner/runner_frame_drop.js";
 import { RunnerHostRequestClient } from
   "../../src/runner/runner_host_request_client.js";
 
@@ -156,12 +157,10 @@ describe("RunnerIpcConnection", () => {
       received.push(frame);
     });
 
-    await expect(runnerConnection.send({
-      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-      channel: "event",
-      kind: "engine_event",
-      payload: { type: "debug", invalid: Symbol("process-local") },
-    } as never)).resolves.toBe(false);
+    await expect(runnerConnection.send(engineEventFrame({
+      type: "debug",
+      invalid: Symbol("process-local"),
+    }))).resolves.toBe(false);
     await expect(runnerConnection.send({
       protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
       channel: "event",
@@ -180,6 +179,26 @@ describe("RunnerIpcConnection", () => {
     expect(received[0]).toMatchObject({
       kind: "engine_event",
       payload: { type: "debug", message: "still alive" },
+    });
+  });
+
+  it("normalizes deep undefined in engine events at the emission boundary", async () => {
+    const [host, runner] = await socketPair();
+    const received: unknown[] = [];
+    const hostConnection = new RunnerIpcConnection(host);
+    const runnerConnection = new RunnerIpcConnection(runner);
+    hostConnection.onFrame(async (frame) => received.push(frame));
+
+    await expect(runnerConnection.send(engineEventFrame({
+      type: "debug",
+      nested: { missing: undefined },
+      values: [undefined],
+    }))).resolves.toBe(true);
+
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+    expect(received[0]).toMatchObject({
+      kind: "engine_event",
+      payload: { type: "debug", nested: {}, values: [null] },
     });
   });
 

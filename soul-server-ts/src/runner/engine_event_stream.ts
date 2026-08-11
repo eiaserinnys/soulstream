@@ -3,6 +3,7 @@ import { attachClaudeBackgroundDeliveryMetadata } from
   "../engine/claude_background_delivery_metadata.js";
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
+import { markPostResultDrainEvent } from "../engine/claude_event_phase.js";
 
 import {
   RunnerEngineEventMetadataSchema,
@@ -23,6 +24,7 @@ export function restoreRunnerEngineEventMetadata(
 ): void {
   if (value === undefined) return;
   const metadata = RunnerEngineEventMetadataSchema.parse(value);
+  if (metadata?.claudePostResultDrain) markPostResultDrainEvent(payload);
   if (metadata?.claudeBackgroundProvenance) {
     attachClaudeBackgroundProvenance(payload, metadata.claudeBackgroundProvenance);
   }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
   RunnerFrameSchema,
+  engineEventFrame,
   type RunnerFrame,
 } from "../../src/runner/frame_protocol.js";
 
@@ -159,6 +160,17 @@ const forbiddenJsonValues = [
 ] as const;
 
 describe("runner frame protocol", () => {
+  it("normalizes deep undefined while constructing observational engine frames", () => {
+    expect(engineEventFrame({
+      type: "debug",
+      nested: { missing: undefined },
+      values: [undefined],
+    })).toMatchObject({
+      kind: "engine_event",
+      payload: { type: "debug", nested: {}, values: [null] },
+    });
+  });
+
   it.each(frames)("round-trips JSON frame $channel/$kind", (frame) => {
     const encoded = JSON.stringify(frame);
     const decoded: unknown = JSON.parse(encoded);

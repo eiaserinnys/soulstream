@@ -8,6 +8,26 @@ import {
 } from "../../src/runner/frame_protocol.js";
 
 describe("InProcessRunnerFrameChannel", () => {
+  it("drops a residual invalid engine event and continues with the next event", async () => {
+    const dropped = vi.fn();
+    const channel = new InProcessRunnerFrameChannel({ onFrameDropped: dropped });
+    channel.start(async () => {
+      await channel.emit(engineEventFrame({ type: "debug", invalid: Symbol("local") }));
+      await channel.emit(engineEventFrame({ type: "debug", message: "still alive" }));
+    });
+
+    const events: RunnerEventFrame[] = [];
+    for await (const frame of channel) events.push(frame);
+
+    expect(dropped).toHaveBeenCalledOnce();
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: "engine_event",
+        payload: { type: "debug", message: "still alive" },
+      }),
+    ]);
+  });
+
   it("ACKs an emitted frame only when the consumer advances", async () => {
     const channel = new InProcessRunnerFrameChannel();
     const afterAck = vi.fn();
