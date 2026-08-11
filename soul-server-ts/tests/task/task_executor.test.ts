@@ -489,7 +489,7 @@ describe("TaskExecutor.startExecution", () => {
     });
 
     expect(task.status).toBe("completed");
-    expect(task.lastEventId).toBe(4);
+    expect(task.lastEventId).toBe(5);
     expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.runner).toBeUndefined();
@@ -578,7 +578,7 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
       undefined,
     ]);
-    expect(task.lastEventId).toBe(3);
+    expect(task.lastEventId).toBe(4);
     expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
