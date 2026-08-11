@@ -56,6 +56,43 @@ describe("createSessionReconciliationSink", () => {
     );
   });
 
+  it("captures the inventory snapshot fence before queued work can observe newer sessions", async () => {
+    let current = new Date("2026-08-06T00:00:00.000Z");
+    let releaseDisconnect!: () => void;
+    const disconnectGate = new Promise<void>((resolve) => {
+      releaseDisconnect = resolve;
+    });
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => {
+        await disconnectGate;
+        return 0;
+      }),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      now: () => current,
+    });
+
+    sink([{ type: "node_unregistered", nodeId: "node-a" } as never]);
+    const snapshotAt = current;
+    sink([{
+      type: "node_session_sessions_update",
+      nodeId: "node-a",
+      data: { running_session_ids: ["session-live"] },
+    }]);
+    current = new Date("2026-08-06T00:01:00.000Z");
+    releaseDisconnect();
+
+    await vi.waitFor(() => expect(repository.reconcileNodeStartup).toHaveBeenCalled());
+    expect(repository.reconcileNodeStartup).toHaveBeenCalledWith(
+      "node-a",
+      ["session-live"],
+      snapshotAt,
+    );
+  });
+
   it("logs reconciliation rejection and keeps the next operation runnable", async () => {
     const logError = vi.fn();
     const reconcileNodeDisconnected = vi.fn()

@@ -29,6 +29,28 @@ describe("applyEventSessionEffect", () => {
     expect(statements[0]).toContain(procedure);
     expect(statements[0]).not.toContain("last_event_id");
   });
+
+  it("guards running transitions from reviving terminal sessions", async () => {
+    const statements: string[] = [];
+    const values: unknown[][] = [];
+    const sql = (async (strings: TemplateStringsArray, ...params: unknown[]) => {
+      statements.push(strings.join("?"));
+      values.push(params);
+      return [];
+    }) as EventIngressQuerySql;
+    const running = effect("running_transition");
+
+    await applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 42,
+      envelope: envelope(running),
+      effect: running,
+    });
+
+    expect(statements[0]).toContain("WHERE NOT EXISTS");
+    expect(statements[0]).toContain("status IN ('completed', 'error')");
+    expect(values[0]).toContain("session-a");
+  });
 });
 
 function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
