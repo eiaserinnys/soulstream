@@ -14,6 +14,7 @@ import {
   asString,
 } from "./claude_sdk_helpers.js";
 import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
+import { internalMcpPath } from "../mcp/endpoint_paths.js";
 
 const MCP_CONFIG_FILES = ["mcp_config.json", ".mcp.json"] as const;
 const SOULSTREAM_MCP_SERVER_NAMES = new Set([
@@ -37,7 +38,7 @@ export function buildMcpOptions(
     : loadMcpServers(options.workspaceDir, logger);
   if (mcpServers === undefined) return {};
   return {
-    mcpServers: injectAgentSessionHeaderIntoMcpServers(
+    mcpServers: prepareSoulstreamInternalMcpServers(
       mcpServers,
       options.agentSessionId,
     ),
@@ -127,29 +128,28 @@ function loadMcpServers(
   return servers as Record<string, McpServerConfig>;
 }
 
-function injectAgentSessionHeaderIntoMcpServers(
+function prepareSoulstreamInternalMcpServers(
   servers: Record<string, McpServerConfig>,
   agentSessionId: string | undefined,
 ): Record<string, McpServerConfig> {
   const callerSessionId = agentSessionId?.trim();
-  if (!callerSessionId) return servers;
 
   const patched: Record<string, McpServerConfig> = {};
   for (const [name, config] of Object.entries(servers)) {
-    patched[name] = shouldInjectAgentSessionHeader(name)
-      ? injectAgentSessionHeaderIntoMcpServer(config, callerSessionId)
+    patched[name] = shouldPrepareSoulstreamInternalServer(name)
+      ? prepareSoulstreamInternalMcpServer(config, callerSessionId)
       : config;
   }
   return patched;
 }
 
-function shouldInjectAgentSessionHeader(serverName: string): boolean {
+function shouldPrepareSoulstreamInternalServer(serverName: string): boolean {
   return SOULSTREAM_MCP_SERVER_NAMES.has(serverName);
 }
 
-function injectAgentSessionHeaderIntoMcpServer(
+function prepareSoulstreamInternalMcpServer(
   config: McpServerConfig,
-  agentSessionId: string,
+  agentSessionId: string | undefined,
 ): McpServerConfig {
   const record = asRecord(config);
   const type = asString(record?.type);
@@ -159,8 +159,21 @@ function injectAgentSessionHeaderIntoMcpServer(
 
   return {
     ...record,
-    headers: mergeAgentSessionHeader(record?.headers, agentSessionId),
+    ...(type === "sse" ? {} : { url: internalMcpUrl(record?.url) }),
+    ...(agentSessionId
+      ? { headers: mergeAgentSessionHeader(record?.headers, agentSessionId) }
+      : {}),
   } as McpServerConfig;
+}
+
+function internalMcpUrl(value: unknown): string {
+  const raw = asString(value);
+  if (!raw) {
+    throw new Error("Soulstream internal HTTP MCP server requires a URL");
+  }
+  const url = new URL(raw);
+  url.pathname = internalMcpPath(url.pathname);
+  return url.toString();
 }
 
 function mergeAgentSessionHeader(

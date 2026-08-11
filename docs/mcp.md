@@ -12,7 +12,9 @@ The TS MCP server uses Streamable HTTP and is mounted at `MCP_PATH` on the TS no
 http://localhost:4205/mcp   (Streamable HTTP transport)
 ```
 
-`MCP_STATELESS_TRANSPORT_ENABLED=false` preserves the existing stateful transport by default. Set it to `true` during the restart-safe cutover to use the SDK's stateless mode: each POST receives a fresh transport, no `Mcp-Session-Id` is issued, and GET/DELETE return 405 because this server does not use server-initiated notifications or elicitation. The stateless endpoint is an LLM-only principal by server policy; caller-origin and agent-session headers cannot upgrade its authority or establish a parent session. Mixed internal/LLM callers must remain on stateful mode, where origin is pinned at initialize time.
+`MCP_STATELESS_TRANSPORT_ENABLED=false` preserves the public route's existing stateful transport by default. Set it to `true` during the restart-safe cutover to use the SDK's stateless mode: each POST receives a fresh transport, no `Mcp-Session-Id` is issued, and GET/DELETE return 405 because this server does not use server-initiated notifications or elicitation. The public endpoint is an LLM-only principal by server policy; caller-origin and agent-session headers cannot upgrade its authority or establish a parent session.
+
+Soulstream's own Claude SDK clients use the separate `${MCP_PATH}/internal` route (default `/mcp/internal`). That route always remains stateful and preserves initialize-time origin pinning plus agent-session ownership. The server mounts both routes together, and known internal server names (`soulstream`, `soulstream-cogito`, `soul-server-ts`) are rewritten to the internal path when Claude SDK options are built. External MCP servers and legacy SSE URLs are unchanged.
 
 Add it to `.mcp.json` in the workspace:
 

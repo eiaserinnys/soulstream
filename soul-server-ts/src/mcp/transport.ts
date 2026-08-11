@@ -2,7 +2,7 @@
  * MCP Streamable HTTP transport — Fastify 라우트 + stateful/stateless mode.
  *
  * SDK는 Node `IncomingMessage`/`ServerResponse`에 직접 쓰므로 Fastify v5의 `reply.hijack()`로
- * 자동 응답을 끄고 raw 객체를 위임한다. POST/GET/DELETE 모두 같은 경로(env.MCP_PATH).
+ * 자동 응답을 끄고 raw 객체를 위임한다. POST/GET/DELETE 모두 config.path에 등록된다.
  *
  * Lifecycle (stateful):
  *   - POST + body가 initialize 요청 + Mcp-Session-Id 없음 → 새 transport 생성, sessionIdGenerator

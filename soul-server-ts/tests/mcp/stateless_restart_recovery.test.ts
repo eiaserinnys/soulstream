@@ -179,6 +179,80 @@ describe("MCP stateless restart recovery", () => {
       callerInfo: expect.objectContaining({ source: "llm" }),
     }));
   });
+
+  it("serves LLM stateless and internal stateful principals on separate production paths", async () => {
+    const callerSessionIds: Array<string | undefined> = [];
+    const runtime = makeRuntime();
+    runtime.agentProfileSource = {
+      async list() {
+        callerSessionIds.push(getCurrentMcpCallerSessionId());
+        return [];
+      },
+    } as never;
+    server = await buildStatelessServer(runtime);
+    const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
+
+    const publicList = await post(
+      baseUrl,
+      undefined,
+      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 20 },
+      {
+        "x-soulstream-agent-session-id": "forged-public-session",
+        "x-soulstream-caller-origin": "internal",
+      },
+    );
+    const publicNames = (await rpcPayload(publicList)).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+    expect(publicNames).not.toContain("delete_session");
+
+    const initialized = await postAtPath(
+      baseUrl,
+      "/mcp/internal",
+      undefined,
+      {
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "internal-sdk", version: "0.0.0" },
+        },
+        id: 21,
+      },
+      { "x-soulstream-agent-session-id": "internal-agent-session" },
+    );
+    const internalSessionId = initialized.headers.get("mcp-session-id");
+    expect(internalSessionId).toBeTruthy();
+    await initialized.text();
+
+    const internalList = await postAtPath(
+      baseUrl,
+      "/mcp/internal",
+      internalSessionId!,
+      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 22 },
+      { "x-soulstream-agent-session-id": "internal-agent-session" },
+    );
+    const internalNames = (await rpcPayload(internalList)).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+    expect(internalNames).toContain("delete_session");
+
+    const called = await postAtPath(
+      baseUrl,
+      "/mcp/internal",
+      internalSessionId!,
+      {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: "list_local_agents", arguments: {} },
+        id: 23,
+      },
+      { "x-soulstream-agent-session-id": "internal-agent-session" },
+    );
+    expect((await rpcPayload(called)).result.isError).not.toBe(true);
+    expect(callerSessionIds).toEqual(["internal-agent-session"]);
+  });
 });
 
 function buildStatelessServer(runtime: McpRuntime) {
@@ -237,7 +311,17 @@ function post(
   body: Record<string, unknown>,
   headers: Record<string, string> = {},
 ): Promise<Response> {
-  return fetch(`${baseUrl}/mcp`, {
+  return postAtPath(baseUrl, "/mcp", sessionId, body, headers);
+}
+
+function postAtPath(
+  baseUrl: string,
+  path: string,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {},
+): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",

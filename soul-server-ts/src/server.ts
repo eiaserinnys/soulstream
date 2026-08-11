@@ -2,6 +2,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
 import type { McpAuthConfig } from "./mcp/auth.js";
 import type { McpRuntime } from "./mcp/runtime.js";
+import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
 import {
   registerCogitoSearchRoute,
@@ -91,11 +92,19 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }));
 
   if (params.mcp) {
-    fastify.closeMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
+    const closePublicMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
       path: params.mcp.path,
       auth: params.mcp.auth,
       statelessTransport: params.mcp.statelessTransport ?? false,
     });
+    const closeInternalMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
+      path: internalMcpPath(params.mcp.path),
+      auth: params.mcp.auth,
+      statelessTransport: false,
+    });
+    fastify.closeMcp = async () => {
+      await Promise.all([closePublicMcp(), closeInternalMcp()]);
+    };
   }
   if (params.cogito) {
     registerCogitoSearchRoute(fastify, params.cogito);
