@@ -20,6 +20,10 @@ import {
 } from "./frame_protocol.js";
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import { RunnerHostRequestClient } from "./runner_host_request_client.js";
+import {
+  runnerDroppedFrameLogContext,
+  type RunnerDroppedFrame,
+} from "./runner_ipc_connection.js";
 import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
@@ -40,6 +44,7 @@ export class RunnerChildRuntime {
   private resolveClosed!: () => void;
   private closing = false;
   private activeCommandId: string | undefined;
+  private droppedFrameCount = 0;
 
   constructor(
     private readonly config: RunnerChildConfig,
@@ -61,7 +66,7 @@ export class RunnerChildRuntime {
       this.config.paths.socketPath,
       async (frame) => await this.handleFrame(frame),
       (error) => this.logger.warn({ error }, "Runner host socket disconnected"),
-      (drop) => this.logger.error(drop, "Invalid observational runner frame dropped"),
+      (drop) => this.logDroppedFrame(drop),
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     this.dispatcher = new InProcessRunnerCommandDispatcher(
@@ -69,6 +74,14 @@ export class RunnerChildRuntime {
     );
     await setRunnerOomScore();
     await this.endpoint.listen();
+  }
+
+  private logDroppedFrame(drop: RunnerDroppedFrame): void {
+    this.droppedFrameCount += 1;
+    this.logger.error(
+      runnerDroppedFrameLogContext(drop, this.droppedFrameCount),
+      "Invalid observational runner frame dropped",
+    );
   }
 
   async waitUntilClosed(): Promise<void> {

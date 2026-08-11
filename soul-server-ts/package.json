@@ -18,6 +18,7 @@
     "typecheck:contracts": "tsc --noEmit -p tsconfig.contracts.json",
     "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node scripts/verify_runner_release_isolation.mjs",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts",
+    "soak:runner": "tsx scripts/staging-soak/cli.ts",
     "agent-profiles:import": "tsx scripts/import-agent-profiles.ts"
   },
   "dependencies": {
