@@ -65,6 +65,10 @@ describe("Session command router primitive", () => {
       reconnect.command as CreateSessionNodeCommandPayload,
     );
     registry.receiveNodeMessage(nodeId, {
+      type: "session_created",
+      session: { agent_session_id: "sess-contract", status: "running" },
+    });
+    registry.receiveNodeMessage(nodeId, {
       ...reconnect.ack,
       requestId: command.requestId,
     });
