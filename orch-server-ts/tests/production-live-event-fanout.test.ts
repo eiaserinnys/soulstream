@@ -319,9 +319,72 @@ describe("production live event fanout", () => {
       await application.closeResources();
     }
   });
+
+  it("publishes timeout reconciliation through the production catalog without a live node", async () => {
+    const updatedAt = new Date("2026-08-12T01:00:00.000Z");
+    const database = createFakeSql({
+      runningNodeId: "offline-node",
+      reconciledSession: {
+        session_id: "offline-session",
+        status: "interrupted",
+        termination_reason: "killed",
+        termination_detail: "node_disconnect_timeout",
+        review_state: "needs_review",
+        updated_at: updatedAt,
+      },
+    });
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => database.sql),
+      close: vi.fn(async () => undefined),
+    };
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment({
+        ...minimalEnvironment(),
+        SOUL_RUNNER_PROCESS_ENABLED: "true",
+        SOUL_RUNNER_LEASE_TIMEOUT_MS: "10",
+      }),
+      { warn: vi.fn() },
+      { sqlResolver },
+    );
+    await application.app.listen({ host: "127.0.0.1", port: 0 });
+    const catalogController = new AbortController();
+    try {
+      const catalog = await connectSse(
+        `${application.app.listeningOrigin}/api/sessions/stream`,
+        { authorization: "Bearer production-service-token" },
+        catalogController.signal,
+      );
+      await catalog.next("session_list");
+      await application.startBackground();
+
+      expect((await catalog.next("session_updated", 1_000)).data).toMatchObject({
+        agent_session_id: "offline-session",
+        nodeId: "offline-node",
+        status: "interrupted",
+        termination_reason: "killed",
+        termination_detail: "node_disconnect_timeout",
+        review_state: "needs_review",
+        updated_at: updatedAt.toISOString(),
+      });
+    } finally {
+      catalogController.abort();
+      await application.app.close();
+      await application.closeResources();
+    }
+  });
 });
 
-function createFakeSql(): {
+function createFakeSql(options: {
+  runningNodeId?: string;
+  reconciledSession?: {
+    session_id: string;
+    status: "interrupted";
+    termination_reason: "killed";
+    termination_detail: "node_disconnect_timeout";
+    review_state: string;
+    updated_at: Date;
+  };
+} = {}): {
   sql: LivePostgresSql;
   queries: string[];
 } {
@@ -329,13 +392,24 @@ function createFakeSql(): {
   const query = vi.fn(async (strings: TemplateStringsArray) => {
     const text = strings.join("?");
     queries.push(text.replace(/\s+/g, " ").trim());
+    if (text.includes("SELECT DISTINCT node_id") && options.runningNodeId) {
+      return [{ node_id: options.runningNodeId }];
+    }
+    if (text.includes("UPDATE sessions") && options.reconciledSession) {
+      return [options.reconciledSession];
+    }
     if (text.includes("session_count")) return [{ count: 0 }];
     if (text.includes("MAX(id)")) return [{ last_event_id: 40 }];
     return [];
   });
   const sql = Object.assign(query, {
     json: vi.fn((value: unknown) => ({ jsonValue: value })),
-  }) as unknown as LivePostgresSql;
+    array: vi.fn((values: readonly unknown[]) => values),
+  }) as unknown as LivePostgresSql & {
+    begin<T>(callback: (transaction: LivePostgresSql) => Promise<T>): Promise<T>;
+  };
+  sql.begin = async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) =>
+    await callback(sql);
   return {
     sql,
     queries,

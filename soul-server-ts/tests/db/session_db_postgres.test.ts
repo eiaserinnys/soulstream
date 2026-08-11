@@ -201,7 +201,17 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       "node-review",
       new Date("2026-07-12T00:05:00Z"),
       "node_disconnect",
-    )).resolves.toBe(1);
+    )).resolves.toMatchObject({
+      interrupted: 1,
+      updates: [
+        expect.objectContaining({
+          sessionId: "sess-review",
+          status: "interrupted",
+          terminationDetail: "node_disconnect",
+          reviewState: "needs_review",
+        }),
+      ],
+    });
 
     await expect(db.getSession("sess-review")).resolves.toMatchObject({
       status: "interrupted",

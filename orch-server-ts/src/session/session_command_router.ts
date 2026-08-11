@@ -1,4 +1,5 @@
 import type {
+  FireAndForgetNodeCommandPayload,
   NodeCommandResponse,
   NodeFireAndForgetCommand,
   PendingNodeCommand,
@@ -45,7 +46,7 @@ export type ExistingSessionPendingNodeCommandPayload =
   };
 
 export type RoutedFireAndForgetSessionCommand<
-  TPayload extends SubscribeEventsNodeCommandPayload,
+  TPayload extends FireAndForgetNodeCommandPayload,
 > = {
   node: NodeConnectionSnapshot;
   command: NodeFireAndForgetCommand<TPayload>;

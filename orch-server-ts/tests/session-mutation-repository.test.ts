@@ -227,8 +227,22 @@ describe("SessionMutationRepository", () => {
 
   it("reconciles node disconnect and startup with terminal review semantics", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
-    const { sql, calls } = fakeSql((text) => {
-      if (text.includes("COUNT(*)::int")) return [{ count: 2 }];
+    const { sql, calls } = fakeSql((text, values) => {
+      if (
+        text.includes("SET status = 'interrupted'")
+        && !text.includes("termination_detail = 'startup_reconciliation'")
+      ) {
+        return ["old-a", "old-b"].map((session_id) => ({
+          session_id,
+          status: "interrupted",
+          termination_reason: "killed",
+          termination_detail: values.find((value) =>
+            value === "node_disconnect" || value === "node_disconnect_timeout"
+          ),
+          review_state: "acknowledged",
+          updated_at: now,
+        }));
+      }
       if (text.includes("termination_detail = 'startup_reconciliation'")) {
         return ["old-a", "old-b"].map((session_id) => ({
           session_id,
@@ -258,7 +272,13 @@ describe("SessionMutationRepository", () => {
         "node-a",
         now,
         detail,
-      )).resolves.toBe(2);
+      )).resolves.toMatchObject({
+        interrupted: 2,
+        updates: [
+          expect.objectContaining({ sessionId: "old-a", status: "interrupted" }),
+          expect.objectContaining({ sessionId: "old-b", status: "interrupted" }),
+        ],
+      });
     }
     await expect(repository.reconcileNodeStartup("node-a", ["session-live"], now))
       .resolves.toMatchObject({

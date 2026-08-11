@@ -11,10 +11,14 @@ type ReconciledSessionUpdate = {
   updatedAt: Date;
 };
 
-type ReconciliationRepository = Pick<
-  SessionMutationRepository,
-  "reconcileNodeDisconnected"
-> & {
+type ReconciliationRepository = {
+  reconcileNodeDisconnected(
+    nodeId: string,
+    updatedAt: Date,
+    terminationDetail: "node_disconnect" | "node_disconnect_timeout",
+  ): Promise<
+    number | { interrupted: number; updates?: ReconciledSessionUpdate[] }
+  >;
   reconcileNodeStartup(
     nodeId: string,
     runningSessionIds: string[],
@@ -26,10 +30,13 @@ type ReconciliationOperation = (
   repository: ReconciliationRepository,
 ) => Promise<unknown>;
 
-type PendingDisconnect = {
+export const SESSION_INVENTORY_MAX_REQUESTS = 3;
+
+type PendingReconciliation = {
   connectionId: string;
   token: symbol;
   timer: ReturnType<typeof setTimeout>;
+  inventoryRequests: number;
 };
 
 export type SessionReconciliationSink = {
@@ -42,8 +49,11 @@ export function createSessionReconciliationSink(input: {
   repositoryProvider(): Promise<ReconciliationRepository>;
   logError(error: unknown, message: string): void;
   now?: () => Date;
-  leaseAware?: boolean;
+  isLeaseAwareNode?(nodeId: string): boolean;
+  restoreLeaseGraceOnStartup?: boolean;
   disconnectGraceMs?: number;
+  getConnectedNode?(nodeId: string): { connectionId: string } | undefined;
+  requestSessionInventory?(nodeId: string): Promise<void>;
   publishSessionUpdate?(input: {
     nodeId: string;
     agentSessionId: string;
@@ -55,15 +65,24 @@ export function createSessionReconciliationSink(input: {
   }): void;
 }): SessionReconciliationSink {
   const tails = new Map<string, Promise<void>>();
-  const pendingDisconnects = new Map<string, PendingDisconnect>();
+  const pendingReconciliations = new Map<string, PendingReconciliation>();
   const reportedNodes = new Set<string>();
   const now = input.now ?? (() => new Date());
-  const leaseAware = input.leaseAware ?? false;
+  const restoreLeaseGraceOnStartup = input.restoreLeaseGraceOnStartup ?? false;
   const disconnectGraceMs = input.disconnectGraceMs ?? 0;
+  const inventoryRetryMs = Math.max(
+    1,
+    Math.floor(disconnectGraceMs / SESSION_INVENTORY_MAX_REQUESTS),
+  );
   let closed = false;
   let startPromise: Promise<void> | undefined;
-  if (leaseAware && (!Number.isSafeInteger(disconnectGraceMs) || disconnectGraceMs <= 0)) {
-    throw new Error("disconnectGraceMs must be a positive integer when lease-aware reconciliation is enabled");
+  if (
+    (input.isLeaseAwareNode || restoreLeaseGraceOnStartup)
+    && (!Number.isSafeInteger(disconnectGraceMs) || disconnectGraceMs <= 0)
+  ) {
+    throw new Error(
+      "disconnectGraceMs must be a positive integer when lease-aware reconciliation is enabled",
+    );
   }
 
   const enqueue = (nodeId: string, operation: ReconciliationOperation): void => {
@@ -82,42 +101,163 @@ export function createSessionReconciliationSink(input: {
   };
 
   const cancelPendingDisconnect = (nodeId: string): void => {
-    const pending = pendingDisconnects.get(nodeId);
+    const pending = pendingReconciliations.get(nodeId);
     if (!pending) return;
     clearTimeout(pending.timer);
-    pendingDisconnects.delete(nodeId);
+    pendingReconciliations.delete(nodeId);
   };
 
-  const deferDisconnect = (nodeId: string, connectionId: string): void => {
+  const publishUpdates = (
+    nodeId: string,
+    updates: ReconciledSessionUpdate[] | undefined,
+  ): void => {
+    for (const update of updates ?? []) {
+      input.publishSessionUpdate?.({
+        nodeId,
+        agentSessionId: update.sessionId,
+        status: update.status,
+        terminationReason: update.terminationReason,
+        terminationDetail: update.terminationDetail,
+        reviewState: update.reviewState,
+        updatedAt: update.updatedAt,
+      });
+    }
+  };
+
+  const requestInventory = (nodeId: string): void => {
+    if (!input.requestSessionInventory) return;
+    void input.requestSessionInventory(nodeId).catch((error) => {
+      input.logError(error, `runner inventory re-report failed for ${nodeId}`);
+    });
+  };
+
+  const reconcileTimedOutNode = async (
+    repository: ReconciliationRepository,
+    nodeId: string,
+  ): Promise<void> => {
+    const result = await repository.reconcileNodeDisconnected(
+      nodeId,
+      now(),
+      "node_disconnect_timeout",
+    );
+    publishUpdates(
+      nodeId,
+      typeof result === "number" ? undefined : result.updates,
+    );
+  };
+
+  const scheduleReconciliationDeadline = (
+    nodeId: string,
+    connectionId: string,
+    delayMs: number,
+    inventoryRequests: number,
+  ): void => {
     if (closed) return;
     cancelPendingDisconnect(nodeId);
     const token = Symbol(connectionId);
     const timer = setTimeout(() => {
       enqueue(nodeId, async (repository) => {
-        const pending = pendingDisconnects.get(nodeId);
+        const pending = pendingReconciliations.get(nodeId);
         if (!pending || pending.token !== token) return;
-        pendingDisconnects.delete(nodeId);
-        await repository.reconcileNodeDisconnected(
-          nodeId,
-          now(),
-          "node_disconnect_timeout",
-        );
+        const connected = input.getConnectedNode?.(nodeId);
+        if (connected) {
+          if (connected.connectionId !== pending.connectionId) {
+            input.logError(
+              new Error(
+                `connected node ${nodeId}/${connected.connectionId} missed its complete runner inventory`,
+              ),
+              `runner inventory re-report required for ${nodeId}`,
+            );
+            requestInventory(nodeId);
+            scheduleReconciliationDeadline(
+              nodeId,
+              connected.connectionId,
+              disconnectGraceMs,
+              1,
+            );
+            return;
+          }
+          if (pending.inventoryRequests >= SESSION_INVENTORY_MAX_REQUESTS) {
+            pendingReconciliations.delete(nodeId);
+            input.logError(
+              new Error(
+                `connected node ${nodeId}/${connected.connectionId} inventory watchdog `
+                + `exhausted after ${pending.inventoryRequests} requests`,
+              ),
+              `runner inventory watchdog exhausted for ${nodeId}`,
+            );
+            await reconcileTimedOutNode(repository, nodeId);
+            return;
+          }
+          input.logError(
+            new Error(
+              `connected node ${nodeId}/${connected.connectionId} missed its complete runner inventory`,
+            ),
+            `runner inventory re-report required for ${nodeId}`,
+          );
+          requestInventory(nodeId);
+          scheduleReconciliationDeadline(
+            nodeId,
+            connected.connectionId,
+            inventoryRetryMs,
+            pending.inventoryRequests + 1,
+          );
+          return;
+        }
+        pendingReconciliations.delete(nodeId);
+        await reconcileTimedOutNode(repository, nodeId);
       });
-    }, disconnectGraceMs);
+    }, delayMs);
     timer.unref?.();
-    pendingDisconnects.set(nodeId, {
+    pendingReconciliations.set(nodeId, {
       connectionId,
       token,
       timer,
+      inventoryRequests,
     });
+  };
+
+  const armConnectionInventoryWatchdog = (
+    nodeId: string,
+    connectionId: string,
+  ): void => {
+    const pending = pendingReconciliations.get(nodeId);
+    if (
+      pending?.connectionId === connectionId
+      && pending.inventoryRequests > 0
+    ) {
+      return;
+    }
+    requestInventory(nodeId);
+    scheduleReconciliationDeadline(
+      nodeId,
+      connectionId,
+      disconnectGraceMs,
+      1,
+    );
+  };
+
+  const deferDisconnect = (nodeId: string, connectionId: string): void => {
+    scheduleReconciliationDeadline(nodeId, connectionId, disconnectGraceMs, 0);
   };
 
   const sink = ((events: NodeRegistryEvent[]) => {
     if (closed) return;
     for (const event of events) {
+      if (event.type === "node_registered" || event.type === "node_updated") {
+        if (input.isLeaseAwareNode?.(event.nodeId) === true) {
+          if (event.type === "node_registered") reportedNodes.delete(event.nodeId);
+          if (!reportedNodes.has(event.nodeId)) {
+            armConnectionInventoryWatchdog(event.nodeId, event.connectionId);
+          }
+        } else {
+          cancelPendingDisconnect(event.nodeId);
+        }
+        continue;
+      }
       if (event.type === "node_unregistered") {
         reportedNodes.delete(event.nodeId);
-        if (leaseAware) {
+        if (input.isLeaseAwareNode?.(event.nodeId) === true) {
           deferDisconnect(event.nodeId, event.connectionId);
         } else {
           enqueue(event.nodeId, async (repository) =>
@@ -137,33 +277,21 @@ export function createSessionReconciliationSink(input: {
       ) {
         continue;
       }
-      if (leaseAware) {
-        reportedNodes.add(event.nodeId);
-        cancelPendingDisconnect(event.nodeId);
-      }
+      reportedNodes.add(event.nodeId);
+      cancelPendingDisconnect(event.nodeId);
       enqueue(event.nodeId, async (repository) => {
         const result = await repository.reconcileNodeStartup(
           event.nodeId,
           runningSessionIds,
           now(),
         );
-        for (const update of result.updates ?? []) {
-          input.publishSessionUpdate?.({
-            nodeId: event.nodeId,
-            agentSessionId: update.sessionId,
-            status: update.status,
-            terminationReason: update.terminationReason,
-            terminationDetail: update.terminationDetail,
-            reviewState: update.reviewState,
-            updatedAt: update.updatedAt,
-          });
-        }
+        publishUpdates(event.nodeId, result.updates);
       });
     }
   }) as SessionReconciliationSink;
 
   sink.start = async () => {
-    if (!leaseAware) return;
+    if (!restoreLeaseGraceOnStartup) return;
     if (closed) throw new Error("session reconciliation sink is closed");
     startPromise ??= (async () => {
       const repository = await input.repositoryProvider();
@@ -182,10 +310,10 @@ export function createSessionReconciliationSink(input: {
   sink.close = async () => {
     if (closed) return;
     closed = true;
-    for (const pending of pendingDisconnects.values()) {
+    for (const pending of pendingReconciliations.values()) {
       clearTimeout(pending.timer);
     }
-    pendingDisconnects.clear();
+    pendingReconciliations.clear();
     await startPromise?.catch(() => undefined);
     await Promise.all(tails.values());
   };

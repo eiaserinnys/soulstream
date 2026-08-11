@@ -88,7 +88,8 @@ describe("createSessionReconciliationSink", () => {
         reconcileNodeStartup: vi.fn(),
       }),
       logError: vi.fn(),
-      leaseAware: false,
+      isLeaseAwareNode: () => false,
+      disconnectGraceMs: 1,
     });
 
     await sink.start();
@@ -107,7 +108,7 @@ describe("createSessionReconciliationSink", () => {
       repositoryProvider: async () => repository,
       logError: vi.fn(),
       now: () => now,
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 120_000,
     });
 
@@ -132,7 +133,7 @@ describe("createSessionReconciliationSink", () => {
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 120_000,
     });
 
@@ -161,7 +162,7 @@ describe("createSessionReconciliationSink", () => {
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
     });
     const registry = new InMemoryNodeRegistry();
@@ -229,7 +230,7 @@ describe("createSessionReconciliationSink", () => {
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
       publishSessionUpdate: (update) => {
         const events = registry.receiveNodeMessage(
@@ -277,7 +278,7 @@ describe("createSessionReconciliationSink", () => {
     const beforeRestart = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
     });
     beforeRestart([disconnectEvent("connection-before-restart")]);
@@ -286,7 +287,8 @@ describe("createSessionReconciliationSink", () => {
     const afterRestart = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
+      restoreLeaseGraceOnStartup: true,
       disconnectGraceMs: 10,
     });
     await afterRestart.start();
@@ -309,7 +311,7 @@ describe("createSessionReconciliationSink", () => {
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
     });
 
@@ -338,7 +340,7 @@ describe("createSessionReconciliationSink", () => {
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
     });
 
@@ -365,7 +367,7 @@ describe("createSessionReconciliationSink", () => {
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
-      leaseAware: true,
+      isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
     });
 
@@ -388,6 +390,196 @@ describe("createSessionReconciliationSink", () => {
     expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
     expect(repository.reconcileNodeStartup).toHaveBeenCalledTimes(2);
   });
+
+  it("gates disconnect grace per node capability in a mixed cluster", async () => {
+    vi.useFakeTimers();
+    const registry = new InMemoryNodeRegistry();
+    const runner = registry.registerNode(nodeRegistration("node-runner", true));
+    const legacy = registry.registerNode(nodeRegistration("node-legacy", false));
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      isLeaseAwareNode: (nodeId) =>
+        registry.getNodeState(nodeId)?.capabilities.runner_process_v1 === true,
+      disconnectGraceMs: 10,
+    });
+
+    sink([registry.disconnectNode("node-runner", {
+      connectionId: runner.node.connectionId,
+      reason: "socket_closed",
+    })]);
+    sink([registry.disconnectNode("node-legacy", {
+      connectionId: legacy.node.connectionId,
+      reason: "socket_closed",
+    })]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(repository.reconcileNodeDisconnected).toHaveBeenCalledWith(
+      "node-legacy",
+      expect.any(Date),
+      "node_disconnect",
+    );
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalledWith(
+      "node-runner",
+      expect.any(Date),
+      expect.any(String),
+    );
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(repository.reconcileNodeDisconnected).toHaveBeenCalledWith(
+      "node-runner",
+      expect.any(Date),
+      "node_disconnect_timeout",
+    );
+  });
+
+  it("requests a fresh inventory instead of killing when the node is connected at expiry", async () => {
+    vi.useFakeTimers();
+    const requestSessionInventory = vi.fn(async () => undefined);
+    const logError = vi.fn();
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError,
+      isLeaseAwareNode: () => true,
+      disconnectGraceMs: 10,
+      getConnectedNode: () => ({ connectionId: "connection-live" }),
+      requestSessionInventory,
+    });
+
+    sink([disconnectEvent("connection-old")]);
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+    expect(requestSessionInventory).toHaveBeenCalledWith("node-a");
+    expect(logError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("missed") }),
+      "runner inventory re-report required for node-a",
+    );
+  });
+
+  it("starts a complete-inventory watchdog without extending it on registration refresh", async () => {
+    vi.useFakeTimers();
+    const requestSessionInventory = vi.fn(async () => undefined);
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      isLeaseAwareNode: () => true,
+      disconnectGraceMs: 12,
+      getConnectedNode: () => ({ connectionId: "connection-new" }),
+      requestSessionInventory,
+    });
+
+    sink([disconnectEvent("connection-old")]);
+    sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-new" }]);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(6);
+    sink([{
+      type: "node_updated",
+      nodeId: "node-a",
+      connectionId: "connection-new",
+      node: {} as never,
+    }]);
+    await vi.advanceTimersByTimeAsync(6);
+
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+    expect(requestSessionInventory).toHaveBeenCalledTimes(2);
+  });
+
+  it("terminally reconciles a connected node after the finite inventory retry budget", async () => {
+    vi.useFakeTimers();
+    const requestSessionInventory = vi.fn(async () => undefined);
+    const logError = vi.fn();
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError,
+      isLeaseAwareNode: () => true,
+      disconnectGraceMs: 12,
+      getConnectedNode: () => ({ connectionId: "connection-new" }),
+      requestSessionInventory,
+    });
+
+    sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-new" }]);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(12);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(2);
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(4);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(3);
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(4);
+    expect(repository.reconcileNodeDisconnected).toHaveBeenCalledWith(
+      "node-a",
+      expect.any(Date),
+      "node_disconnect_timeout",
+    );
+    expect(logError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("exhausted after 3 requests"),
+      }),
+      "runner inventory watchdog exhausted for node-a",
+    );
+  });
+
+  it("publishes every timeout interruption after the grace window expires", async () => {
+    vi.useFakeTimers();
+    const updatedAt = new Date("2026-08-12T00:00:00.000Z");
+    const publishSessionUpdate = vi.fn();
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => ({
+        interrupted: 1,
+        updates: [{
+          sessionId: "session-timeout",
+          status: "interrupted" as const,
+          terminationReason: "killed",
+          terminationDetail: "node_disconnect_timeout",
+          reviewState: "needs_review",
+          updatedAt,
+        }],
+      })),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      now: () => updatedAt,
+      isLeaseAwareNode: () => true,
+      disconnectGraceMs: 10,
+      publishSessionUpdate,
+    });
+
+    sink([disconnectEvent("connection-old")]);
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(publishSessionUpdate).toHaveBeenCalledWith({
+      nodeId: "node-a",
+      agentSessionId: "session-timeout",
+      status: "interrupted",
+      terminationReason: "killed",
+      terminationDetail: "node_disconnect_timeout",
+      reviewState: "needs_review",
+      updatedAt,
+    });
+  });
 });
 
 function disconnectEvent(connectionId: string) {
@@ -399,14 +591,19 @@ function disconnectEvent(connectionId: string) {
   };
 }
 
-function nodeRegistration(): NodeRegistrationPayload {
+function nodeRegistration(
+  nodeId = "node-a",
+  runnerProcessEnabled?: boolean,
+): NodeRegistrationPayload {
   return {
     type: "node_register",
-    node_id: "node-a",
+    node_id: nodeId,
     host: "127.0.0.1",
     port: 4205,
     agents: [],
-    capabilities: {},
+    capabilities: runnerProcessEnabled === undefined
+      ? {}
+      : { runner_process_v1: runnerProcessEnabled },
     supported_backends: ["claude"],
   };
 }

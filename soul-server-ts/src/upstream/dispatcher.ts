@@ -97,6 +97,7 @@ export class CommandDispatcher {
     _deliveryV2Enabled = false,
     modelCatalog?: Pick<ModelCatalog, "resolve" | "list">,
     agentProfileSource?: NewSessionAgentProfileSource,
+    listRunningSessionIds?: () => Promise<string[]>,
   ) {
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -139,6 +140,7 @@ export class CommandDispatcher {
         taskManager,
         taskRuntimeCommands,
         sessionListCommands,
+        listRunningSessionIds,
       }),
       ...createInterventionCommandFamily({
         send,

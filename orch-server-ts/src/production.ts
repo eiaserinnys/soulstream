@@ -27,6 +27,7 @@ import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
+import { collectDirectNodeSessionEvents } from "./node/session_message_events.js";
 import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
@@ -222,8 +223,21 @@ export async function createLiveProductionApplication(
   const sessionReconciliation = createSessionReconciliationSink({
     repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
     logError: (error, message) => context.warn(`${message}: ${String(error)}`),
-    leaseAware: config.soul_runner_process_enabled,
+    isLeaseAwareNode: (nodeId) =>
+      registry.getNodeState(nodeId)?.capabilities.runner_process_v1 === true,
+    restoreLeaseGraceOnStartup: config.soul_runner_process_enabled,
     disconnectGraceMs: config.soul_runner_lease_timeout_ms,
+    getConnectedNode: (nodeId) => registry.getConnectedNode(nodeId),
+    requestSessionInventory: async (nodeId) => {
+      const node = registry.getConnectedNode(nodeId);
+      if (!node) throw new Error(`node disconnected before inventory request: ${nodeId}`);
+      await runtimeServices.sessionBridge.sendFireAndForgetCommand({
+        node,
+        command: registry.createFireAndForgetCommand(nodeId, {
+          type: "list_sessions",
+        }),
+      });
+    },
     publishSessionUpdate: (update) => publishReconciledSessionUpdate(update),
   });
   let providers: LiveOrchestratorProviderBundle;
@@ -306,21 +320,25 @@ export async function createLiveProductionApplication(
     },
   });
   publishReconciledSessionUpdate = (update) => {
-    const node = registry.getConnectedNode(update.nodeId);
-    if (!node) return;
-    const events = registry.receiveNodeMessage(
-      { nodeId: update.nodeId, connectionId: node.connectionId },
-      {
-        type: "session_updated",
-        agentSessionId: update.agentSessionId,
-        status: update.status,
-        termination_reason: update.terminationReason,
-        termination_detail: update.terminationDetail,
-        review_state: update.reviewState,
-        updated_at: update.updatedAt.toISOString(),
-      },
-    );
-    runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
+    const message = {
+      type: "session_updated",
+      agentSessionId: update.agentSessionId,
+      status: update.status,
+      termination_reason: update.terminationReason,
+      termination_detail: update.terminationDetail,
+      review_state: update.reviewState,
+      updated_at: update.updatedAt.toISOString(),
+    };
+    const connectionId = registry.getNodeState(update.nodeId)?.connectionId
+      ?? `reconciliation:${update.nodeId}`;
+    const events = collectDirectNodeSessionEvents({
+      sessionCache: registry.sessionCache,
+      nodeId: update.nodeId,
+      connectionId,
+      message,
+      nowMs: update.updatedAt.getTime(),
+    });
+    if (events) runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
   };
   const memoryStats = createOrchestratorMemoryStatsCollector({
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
