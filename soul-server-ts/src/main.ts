@@ -39,7 +39,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  assertRunnerNodeRuntime({
+  await assertRunnerNodeRuntime({
     runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
     nodeVersion: process.versions.node,
   });
