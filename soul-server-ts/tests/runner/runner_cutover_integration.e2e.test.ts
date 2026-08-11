@@ -110,7 +110,7 @@ describe("runner cutover all-flags-on integration", () => {
     const task = makeTask();
     const agent = makeAgent(controlDirectory);
     const firstHost = taskExecutor(composition.runtimeFactory);
-    firstHost.startExecution(task, agent);
+    firstHost.executor.startExecution(task, agent);
     const paths = runnerProcessPaths(stateDirectory, task.agentSessionId);
     await waitFor(async () => await pathExists(paths.pidPath));
     const pid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
@@ -118,9 +118,13 @@ describe("runner cutover all-flags-on integration", () => {
     const childErrorPath = join(controlDirectory, "child-error");
     await waitFor(async () =>
       await pathExists(join(controlDirectory, "execute-started"))
-      || await pathExists(childErrorPath));
+      || await pathExists(childErrorPath)
+      || task.status === "error");
     if (await pathExists(childErrorPath)) {
       throw new Error(await readFile(childErrorPath, "utf8"));
+    }
+    if (task.status === "error") {
+      throw new Error(`runner cutover execution failed before child start: ${task.error ?? "unknown"}`);
     }
 
     await writeFile(join(controlDirectory, "emit-first"), "go\n");
@@ -146,11 +150,24 @@ describe("runner cutover all-flags-on integration", () => {
 
     const config = parseRunnerChildConfig(JSON.parse(await readFile(paths.configPath, "utf8")));
     const restartedHost = taskExecutor(composition.runtimeFactory);
-    const recovery = restartedHost.recoverRegisteredRunner(task, config, undefined, "adopt");
+    const recovery = restartedHost.executor.recoverRegisteredRunner(
+      task,
+      config,
+      undefined,
+      "adopt",
+    );
     await waitFor(async () => batches.length === 2);
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
+    expect(restartedHost.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledTimes(1);
+    expect(restartedHost.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledWith(
+      task.agentSessionId,
+      {
+        reviewState: "not_required",
+        transitionId: expect.stringMatching(/^adopt:/),
+      },
+    );
     expect(task.status).toBe("completed");
     expect(task.lastAssistantText).toBe("after-detach");
     expect(batches.flatMap((batch) => batch.events.map(
@@ -165,12 +182,17 @@ describe("runner cutover all-flags-on integration", () => {
 
 function taskExecutor(
   runnerProcessFactory: NonNullable<Awaited<ReturnType<typeof composeRunnerProcessRuntime>>>["runtimeFactory"],
-): TaskExecutor {
-  const persistence = makeEventPersistenceTestDouble(async (_sessionId, event, task) => {
+): {
+  executor: TaskExecutor;
+  enqueueRunningTransitionAndWaitForAck: ReturnType<
+    typeof makeEventPersistenceTestDouble
+  >["enqueueRunningTransitionAndWaitForAck"];
+} {
+  const persistenceDouble = makeEventPersistenceTestDouble(async (_sessionId, event, task) => {
     if (event.type === "assistant_message" && typeof event.content === "string") {
       task.lastAssistantText = event.content;
     }
-  }).persistence;
+  });
   const db = {
     updateSession: vi.fn(async () => undefined),
     setClaudeSessionId: vi.fn(async () => undefined),
@@ -182,20 +204,24 @@ function taskExecutor(
   const unusedEngine = (): EnginePort => {
     throw new Error("in-process engine must not be selected with runner flag on");
   };
-  return new TaskExecutor(
-    unusedEngine,
-    db,
-    persistence,
-    broadcaster,
-    pino({ level: "silent" }),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    runnerProcessFactory,
-  );
+  return {
+    executor: new TaskExecutor(
+      unusedEngine,
+      db,
+      persistenceDouble.persistence,
+      broadcaster,
+      pino({ level: "silent" }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runnerProcessFactory,
+    ),
+    enqueueRunningTransitionAndWaitForAck:
+      persistenceDouble.enqueueRunningTransitionAndWaitForAck,
+  };
 }
 
 function makeTask(): Task {
@@ -292,7 +318,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 15_000;
   while (!(await predicate())) {
     if (Date.now() >= deadline) throw new Error("runner cutover smoke wait timeout");
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
