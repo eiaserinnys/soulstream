@@ -150,6 +150,50 @@ describe("NodeEventIngressController", () => {
     expect(order.at(-1)).toBe("ack");
   });
 
+  it("replays a lost auto-resume running transition exactly once after reconnect", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "user_message";
+    value.events[0]!.payload = { type: "user_message", text: "resume" };
+    value.events[0]!.session_effect = {
+      kind: "running_transition",
+      review_state: "not_required",
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    let commitCount = 0;
+    const received: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: commitCount++ > 0,
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        received.push(message);
+        return [];
+      },
+    });
+
+    // The direct WebSocket status notification was lost. Only durable replay
+    // reaches this controller, followed by the same batch after reconnect.
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(received.filter((message) => message.type === "session_updated")).toEqual([{
+      type: "session_updated",
+      agentSessionId: "session-a",
+      status: "running",
+      termination_reason: null,
+      termination_detail: null,
+      review_state: "not_required",
+      updated_at: "2026-08-06T00:00:00.000Z",
+      last_event_id: 101,
+    }]);
+  });
+
   it("projects a terminal effect into session cache before publishing session_ended", async () => {
     const value = batch(1);
     value.events[0]!.event_type = "session_ended";

@@ -168,9 +168,6 @@ export class TaskManager {
       persistence,
     });
     const autoResumeTransition = new AutoResumeTransition({
-      db,
-      sessionMutations: this.sessionMutations,
-      broadcaster,
       logger,
       persistence,
       contextBuilder,

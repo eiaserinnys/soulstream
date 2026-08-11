@@ -112,6 +112,8 @@ function makeMocks() {
     waitForSessionAck: persistenceDouble.waitForSessionAck,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueRunningTransitionAndWaitForAck:
+      persistenceDouble.enqueueRunningTransitionAndWaitForAck,
     enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
@@ -1658,6 +1660,12 @@ describe("TaskExecutor runner process boundary", () => {
 
   it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
     const mocks = makeMocks();
+    let releaseRunningTransition!: () => void;
+    mocks.enqueueRunningTransitionAndWaitForAck.mockImplementationOnce(
+      () => new Promise<number>((resolve) => {
+        releaseRunningTransition = () => resolve(101);
+      }),
+    );
     const { runner, dispatcher } = makeRunnerProcessRuntime([
       { type: "assistant_message", content: "replayed" },
       { type: "complete", result: "done", timestamp: 1 },
@@ -1671,9 +1679,22 @@ describe("TaskExecutor runner process boundary", () => {
     );
     const task = makeTask();
 
-    await executor.recoverRunnerExecution(task, agent, runner, "execute-old");
+    const recovery = executor.recoverRunnerExecution(task, agent, runner, "execute-old");
 
+    await vi.waitFor(() => expect(mocks.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledWith(
+      task.agentSessionId,
+      {
+        reviewState: "not_required",
+        transitionId: "adopt:execute-old",
+      },
+    ));
     expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old");
+    expect(dispatcher.waitForSessionAck).not.toHaveBeenCalled();
+    expect(task.lastAssistantText).toBeUndefined();
+
+    releaseRunningTransition();
+    await recovery;
+
     expect(dispatcher.prepareSession).not.toHaveBeenCalled();
     expect(dispatcher.waitForSessionAck).toHaveBeenCalled();
     expect(task.lastEventId).toBeGreaterThan(0);

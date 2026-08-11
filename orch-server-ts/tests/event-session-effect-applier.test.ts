@@ -8,6 +8,7 @@ describe("applyEventSessionEffect", () => {
   it.each([
     ["last_message", "session_update_last_message"],
     ["set_backend_session_id", "session_set_claude_id"],
+    ["running_transition", "session_update"],
     ["terminal_transition", "session_update"],
     ["append_metadata", "session_apply_metadata_entry"],
   ] as const)("applies %s through its session stored procedure", async (kind, procedure) => {
@@ -37,6 +38,11 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "set_backend_session_id") return { kind, backend_session_id: "thread-1" };
+  if (kind === "running_transition") return {
+    kind,
+    review_state: "not_required",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
   if (kind === "terminal_transition") return {
     kind,
     status: "completed",

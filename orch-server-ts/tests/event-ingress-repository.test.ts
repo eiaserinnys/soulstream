@@ -140,12 +140,17 @@ describe("EventIngressRepository", () => {
       updated_at: "2026-08-06T00:00:00.000Z",
     };
 
-    await repository.commitBatch("node-a", batch({ session_effect: sessionEffect }, 2));
-    await repository.commitBatch("node-a", batch({
+    const first = await repository.commitBatch(
+      "node-a",
+      batch({ session_effect: sessionEffect }, 2),
+    );
+    const replay = await repository.commitBatch("node-a", batch({
       session_effect: sessionEffect,
       payload_hash: "b".repeat(64),
     }, 3));
 
+    expect(first[0]?.duplicateReceipt).toBe(false);
+    expect(replay[0]?.duplicateReceipt).toBe(true);
     expect(effect).toHaveBeenCalledOnce();
   });
 });

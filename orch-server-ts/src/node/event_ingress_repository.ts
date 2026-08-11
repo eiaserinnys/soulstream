@@ -101,7 +101,14 @@ export class EventIngressRepository {
             ${envelope.session_id}, ${envelope.payload_hash}, ${eventId}
           )
         `;
-        committed.push({ envelope, eventId, duplicateReceipt: false });
+        // A semantic receipt means the durable event/effect was already
+        // committed under a prior transport coordinate. Preserve the stable
+        // event identity and suppress a second projection-side effect.
+        committed.push({
+          envelope,
+          eventId,
+          duplicateReceipt: semanticReceipt !== undefined,
+        });
       }
       return committed;
     });

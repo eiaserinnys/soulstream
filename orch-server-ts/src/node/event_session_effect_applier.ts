@@ -23,6 +23,17 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     await sql`SELECT session_set_claude_id(${envelope.session_id}, ${effect.backend_session_id})`;
     return;
   }
+  if (effect.kind === "running_transition") {
+    await sql`
+      SELECT session_update(
+        ${envelope.session_id},
+        ${["status", "termination_reason", "termination_detail", "review_state"]},
+        ${["running", null, null, effect.review_state]},
+        ${new Date(effect.updated_at)}
+      )
+    `;
+    return;
+  }
   if (effect.kind === "terminal_transition") {
     await applyTerminalTransition(sql, envelope.session_id, effect);
     return;

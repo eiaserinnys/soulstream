@@ -146,6 +146,39 @@ export class EventPersistence {
     return null;
   }
 
+  /**
+   * Persists a state-only running transition for paths without a new user
+   * message (notably runner adoption). The semantic key makes repeated host
+   * adoption of the same runner execution projection-idempotent.
+   */
+  async enqueueRunningTransitionAndWaitForAck(
+    sessionId: string,
+    input: {
+      reviewState: string;
+      transitionId: string;
+      updatedAt?: Date;
+    },
+  ): Promise<number> {
+    const updatedAt = input.updatedAt ?? new Date();
+    const timestamp = updatedAt.toISOString();
+    const event = {
+      type: "metadata",
+      metadata_type: "session_status_transition",
+      value: {
+        status: "running",
+        transition_id: input.transitionId,
+      },
+      timestamp,
+      [INTERNAL_DEDUPE_KEY]:
+        `running_transition:${sessionId}:${input.transitionId}`,
+    } as unknown as SSEEventPayload;
+    return (await this.enqueueEventAndWaitForSessionAck(sessionId, event, {
+      kind: "running_transition",
+      review_state: input.reviewState,
+      updated_at: timestamp,
+    })).eventId;
+  }
+
   private clearPendingAckTarget(sessionId: string, sourceSeq: number): void {
     if (this.latestPendingAckBySession.get(sessionId)?.source_seq === sourceSeq) {
       this.latestPendingAckBySession.delete(sessionId);

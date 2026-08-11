@@ -2,10 +2,25 @@ import type { NodeRegistryEvent } from "./registry.js";
 import type { SessionMutationRepository } from
   "../control_plane/repositories/session_mutation_repository.js";
 
+type ReconciledSessionUpdate = {
+  sessionId: string;
+  status: "interrupted" | "running";
+  terminationReason: string | null;
+  terminationDetail: string | null;
+  reviewState: string;
+  updatedAt: Date;
+};
+
 type ReconciliationRepository = Pick<
   SessionMutationRepository,
-  "reconcileNodeDisconnected" | "reconcileNodeStartup"
-> & Partial<Pick<SessionMutationRepository, "listRunningNodeIds">>;
+  "reconcileNodeDisconnected"
+> & {
+  reconcileNodeStartup(
+    nodeId: string,
+    runningSessionIds: string[],
+    updatedAt: Date,
+  ): Promise<{ interrupted: number; restored: number; updates?: ReconciledSessionUpdate[] }>;
+} & Partial<Pick<SessionMutationRepository, "listRunningNodeIds">>;
 
 type ReconciliationOperation = (
   repository: ReconciliationRepository,
@@ -29,6 +44,15 @@ export function createSessionReconciliationSink(input: {
   now?: () => Date;
   leaseAware?: boolean;
   disconnectGraceMs?: number;
+  publishSessionUpdate?(input: {
+    nodeId: string;
+    agentSessionId: string;
+    status: "interrupted" | "running";
+    terminationReason: string | null;
+    terminationDetail: string | null;
+    reviewState: string;
+    updatedAt: Date;
+  }): void;
 }): SessionReconciliationSink {
   const tails = new Map<string, Promise<void>>();
   const pendingDisconnects = new Map<string, PendingDisconnect>();
@@ -117,11 +141,24 @@ export function createSessionReconciliationSink(input: {
         reportedNodes.add(event.nodeId);
         cancelPendingDisconnect(event.nodeId);
       }
-      enqueue(event.nodeId, async (repository) => await repository.reconcileNodeStartup(
-        event.nodeId,
-        runningSessionIds,
-        now(),
-      ));
+      enqueue(event.nodeId, async (repository) => {
+        const result = await repository.reconcileNodeStartup(
+          event.nodeId,
+          runningSessionIds,
+          now(),
+        );
+        for (const update of result.updates ?? []) {
+          input.publishSessionUpdate?.({
+            nodeId: event.nodeId,
+            agentSessionId: update.sessionId,
+            status: update.status,
+            terminationReason: update.terminationReason,
+            terminationDetail: update.terminationDetail,
+            reviewState: update.reviewState,
+            updatedAt: update.updatedAt,
+          });
+        }
+      });
     }
   }) as SessionReconciliationSink;
 

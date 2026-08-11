@@ -173,17 +173,10 @@ export class PerNodeSessionCache {
   }): CachedNodeSession | undefined {
     const agentSessionId = sessionIdFromPayload(params.response);
     if (agentSessionId === undefined) return undefined;
-
-    return this.storeSession({
-      nodeId: params.nodeId,
-      connectionId: params.connectionId,
-      agentSessionId,
-      status: sessionStatusFromPayload(params.response) ?? "created",
-      lastEventId: lastEventIdFromPayload(params.response),
-      fresh: true,
-      payload: projectSessionPayload(params.response),
-      updatedAtMs: params.nowMs,
-    });
+    // A command ACK owns correlation only. The direct session event or durable
+    // session effect owns projection; a status-less ACK must never synthesize
+    // `created` over an already-running session.
+    return this.findSession(agentSessionId);
   }
 
   upsertFromEventRelay(params: {

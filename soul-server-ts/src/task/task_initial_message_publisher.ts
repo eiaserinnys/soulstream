@@ -10,6 +10,7 @@ import {
   buildUserMessageEvent,
   finishUserMessageEvent,
   persistUserMessageEvent,
+  runningTransitionEffect,
 } from "./task_user_message_events.js";
 
 export interface TaskInitialMessagePublisherDeps {
@@ -41,7 +42,12 @@ export class TaskInitialMessagePublisher {
       attachmentPaths: task.attachmentPaths,
       contextItems: ctx ? ctx.combinedContextItems : task.contextItems,
     });
-    await persistUserMessageEvent(task, event, this.deps);
+    await persistUserMessageEvent(
+      task,
+      event,
+      this.deps,
+      runningTransitionEffect(task.reviewState ?? "not_required"),
+    );
     await finishUserMessageEvent(task, event, this.deps);
   }
 

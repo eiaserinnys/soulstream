@@ -92,6 +92,10 @@ describe("TaskInitialMessagePublisher", () => {
       attachments: ["/tmp/incoming/sess/a.png"],
       context: [{ key: "atom_context", label: "atom", content: "# tree" }],
     });
+    expect(enqueueEvent.mock.calls[1][2]).toMatchObject({
+      kind: "running_transition",
+      review_state: "not_required",
+    });
     expect(task.lastEventId).toBe(3);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
@@ -217,6 +221,7 @@ describe("TaskInitialMessagePublisher", () => {
         type: "user_message",
         text: assembledPrompt,
       }),
+      expect.objectContaining({ kind: "running_transition" }),
     );
   });
 
@@ -238,6 +243,7 @@ describe("TaskInitialMessagePublisher", () => {
         type: "user_message",
         context: [{ key: "handover", label: "Handover", content: "done" }],
       }),
+      expect.objectContaining({ kind: "running_transition" }),
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
@@ -289,6 +295,7 @@ describe("TaskInitialMessagePublisher", () => {
     expect(enqueueEvent).toHaveBeenCalledWith(
       "sess-initial",
       expect.not.objectContaining({ _event_id: expect.anything() }),
+      expect.objectContaining({ kind: "running_transition" }),
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(handleSideEffects).not.toHaveBeenCalled();
