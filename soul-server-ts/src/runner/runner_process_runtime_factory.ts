@@ -30,11 +30,12 @@ import {
 import { RunnerProcessEngineProxy } from "./runner_process_engine_proxy.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type { RunnerChildConfig, SpawnRunnerProcessInput } from "./runner_process_spawn.js";
+import type { RunnerReleasePool } from "./runner_release_pool.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
-  | "SOUL_RUNNER_CODE_SHA"
-  | "SOUL_RUNNER_SNAPSHOT_PATH"
+  | "SOUL_RUNNER_ARTIFACT_DIR"
+  | "SOUL_RUNNER_RELEASES_DIR"
   | "CODEX_ADAPTER_MODE"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
@@ -49,6 +50,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
   sessionStore: IdempotentClaudeSessionStore;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
+  releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
   buildChildProcessEnv(): NodeJS.ProcessEnv;
   observeClaudeRuntime?(
     sessionId: string,
@@ -67,11 +69,6 @@ export function createRunnerProcessRuntimeFactory(
   options: RunnerProcessRuntimeFactoryOptions,
 ): RunnerProcessRuntimeFactory {
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
-  const codeSha = required(options.env.SOUL_RUNNER_CODE_SHA, "SOUL_RUNNER_CODE_SHA");
-  const snapshotPath = required(
-    options.env.SOUL_RUNNER_SNAPSHOT_PATH,
-    "SOUL_RUNNER_SNAPSHOT_PATH",
-  );
   const spawner = options.spawner ?? new RunnerProcessSpawner();
 
   const createRuntime = (
@@ -79,7 +76,7 @@ export function createRunnerProcessRuntimeFactory(
     agent: import("../agent_registry.js").AgentProfile,
     backend: import("../engine/protocol.js").BackendId,
     snapshots: RunnerSnapshotPersistence,
-    spawn: SpawnRunnerProcessInput,
+    spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
     recoveryMode?: "adopt" | "offline",
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
@@ -106,31 +103,39 @@ export function createRunnerProcessRuntimeFactory(
     const codexHome = backend === "codex"
       ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
       : null;
-    return createRuntime(task, agent, backend, snapshots, {
-      stateDirectory,
-      sessionId: task.agentSessionId,
-      backend,
+    return createRuntime(
+      task,
       agent,
-      codeSha,
-      snapshotPath,
-      codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
-      codexCliPath: options.codexCliPath?.path,
-      claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-      claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
-      claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
-      claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
-      ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
-      codexHome,
-      rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
-      childProcessEnv,
-    });
+      backend,
+      snapshots,
+      options.releasePool.resolveCurrentRelease().then((release) => ({
+        stateDirectory,
+        sessionId: task.agentSessionId,
+        backend,
+        agent,
+        // `codeSha` is a legacy field name for the opaque release id.
+        codeSha: release.releaseId,
+        snapshotPath: release.runnerModuleRoot,
+        codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
+        codexCliPath: options.codexCliPath?.path,
+        claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+        claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+        claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+        claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+        ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
+        codexHome,
+        rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
+        childProcessEnv,
+        prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
+      })),
+    );
   }) as RunnerProcessRuntimeFactory;
   factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
     task,
     config.agent,
     config.backend,
     snapshots,
-    spawnInputFromConfig(stateDirectory, config),
+    spawnInputFromConfig(stateDirectory, config, options.releasePool),
     mode,
   );
   factory.restart = (task, config, snapshots) => createRuntime(
@@ -138,7 +143,7 @@ export function createRunnerProcessRuntimeFactory(
     config.agent,
     config.backend,
     snapshots,
-    spawnInputFromConfig(stateDirectory, config),
+    spawnInputFromConfig(stateDirectory, config, options.releasePool),
   );
   return factory;
 }
@@ -146,7 +151,12 @@ export function createRunnerProcessRuntimeFactory(
 function spawnInputFromConfig(
   stateDirectory: string,
   config: RunnerChildConfig,
+  releasePool: Pick<RunnerReleasePool, "ensureRelease" | "describe">,
 ): SpawnRunnerProcessInput {
+  const release = releasePool.describe(config.codeSha);
+  if (release.runnerModuleRoot !== config.snapshotPath) {
+    throw new Error(`runner snapshot path does not match release id: ${config.codeSha}`);
+  }
   return {
     stateDirectory,
     sessionId: config.sessionId,
@@ -165,6 +175,7 @@ function spawnInputFromConfig(
       : {}),
     codexHome: config.codexHome,
     rolloutRoot: config.rolloutRoot,
+    prepareSnapshot: async () => await releasePool.ensureRelease(release),
   };
 }
 

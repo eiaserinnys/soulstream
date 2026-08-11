@@ -53,7 +53,7 @@ export interface RunnerHostCall {
 }
 
 export interface RunnerProcessDispatcherOptions {
-  spawn: SpawnRunnerProcessInput;
+  spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>;
   spawner?: Pick<RunnerProcessSpawner, "spawn"> & Partial<Pick<RunnerProcessSpawner, "adopt">>;
   adoptExisting?: boolean;
   offlineExisting?: boolean;
@@ -64,6 +64,7 @@ export interface RunnerProcessDispatcherOptions {
 
 export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private readonly ready: Promise<void>;
+  private spawnInput!: SpawnRunnerProcessInput;
   private connection: RunnerIpcConnection | undefined;
   private socketPath: string | undefined;
   private outbox!: RunnerSqliteEventOutbox;
@@ -188,10 +189,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async initialize(): Promise<void> {
+    this.spawnInput = await this.options.spawn;
     if (this.options.offlineExisting) {
       const paths = runnerProcessPaths(
-        this.options.spawn.stateDirectory,
-        this.options.spawn.sessionId,
+        this.spawnInput.stateDirectory,
+        this.spawnInput.sessionId,
       );
       this.socketPath = paths.socketPath;
       this.outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
@@ -202,7 +204,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const spawner = this.options.spawner ?? new RunnerProcessSpawner();
     const spawned = this.options.adoptExisting
       ? await this.adoptExisting(spawner)
-      : await spawner.spawn(this.options.spawn);
+      : await spawner.spawn(this.spawnInput);
     this.socketPath = spawned.paths.socketPath;
     this.outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
     this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
@@ -215,11 +217,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ) {
     if (!spawner?.adopt) throw new Error("runner adopter unavailable");
     const adopted = await spawner.adopt({
-      stateDirectory: this.options.spawn.stateDirectory,
-      sessionId: this.options.spawn.sessionId,
+      stateDirectory: this.spawnInput.stateDirectory,
+      sessionId: this.spawnInput.sessionId,
     });
     if (!adopted) {
-      throw new Error(`registered runner is not alive: ${this.options.spawn.sessionId}`);
+      throw new Error(`registered runner is not alive: ${this.spawnInput.sessionId}`);
     }
     return adopted;
   }

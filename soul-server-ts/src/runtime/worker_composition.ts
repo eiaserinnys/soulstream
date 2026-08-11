@@ -282,7 +282,7 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
-  const runnerProcessFactory = composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
+  const runnerProcess = composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
     env, logger, mcpConfigService, codexCliPath,
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
@@ -304,11 +304,11 @@ export async function composeWorkerRuntime(
     scheduleService,
     orchProxyConfig,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
-    ...(runnerProcessFactory ? { runnerProcessFactory } : {}),
+    ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
   });
   const runnerRecoveryCoordinator = await startRunnerRecoveryCoordinator({
     env,
-    runnerProcessFactory,
+    runnerProcessFactory: runnerProcess?.runtimeFactory, releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
@@ -463,7 +463,7 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump: eventOutboxPumpMux,
-        ...composeRunnerReconciliationReporter(env, runnerProcessFactory, runnerRecoveryCoordinator),
+        ...composeRunnerReconciliationReporter(env, runnerProcess?.runtimeFactory, runnerRecoveryCoordinator),
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );

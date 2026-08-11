@@ -11,6 +11,7 @@ import {
 } from "./runner_process_registry.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
   stateDirectory: string;
@@ -33,6 +34,7 @@ export interface RunnerRecoveryCoordinatorOptions {
     progressedAt: string,
     error: { code: string; message: string },
   ) => Promise<void>;
+  releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
 }
 
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
@@ -106,6 +108,13 @@ export class RunnerRecoveryCoordinator {
           if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
         });
       this.active.set(sessionId, recovery);
+    }
+    if (this.options.releaseGarbageCollector) {
+      try {
+        await this.options.releaseGarbageCollector.collect();
+      } catch (error) {
+        this.options.logger.error({ error }, "runner release GC failed");
+      }
     }
   }
 

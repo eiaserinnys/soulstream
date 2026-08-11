@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,6 +25,7 @@ import {
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
+const requireFromTest = createRequire(import.meta.url);
 const packageDirectory = resolve(testDirectory, "../..");
 const launcherPath = join(testDirectory, "fixtures/runner_process_e2e_launcher.ts");
 const childFixturePath = join(testDirectory, "fixtures/runner_process_e2e_child.ts");
@@ -45,11 +47,11 @@ describe("runner process detach/reconnect E2E", () => {
     const stateDirectory = join(root, "state");
     const snapshotPath = join(root, "snapshot");
     const controlDirectory = join(root, "control");
-    await mkdir(join(snapshotPath, "dist/runner"), { recursive: true });
+    await mkdir(snapshotPath, { recursive: true });
     await mkdir(controlDirectory, { recursive: true });
     await writeFile(join(snapshotPath, "package.json"), JSON.stringify({ type: "module" }));
     await writeFile(
-      join(snapshotPath, "dist/runner/runner_entry.js"),
+      join(snapshotPath, "runner_entry.js"),
       `try {\n  await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n}`
         + ` catch (error) {\n  const { writeFile } = await import("node:fs/promises");\n`
         + `  await writeFile(process.env.RUNNER_E2E_CONTROL_DIR + "/child-error", String(error?.stack ?? error));\n`
@@ -205,7 +207,10 @@ function spawnInput(stateDirectory: string, snapshotPath: string, controlDirecto
     rolloutRoot: null,
     childProcessEnv: {
       ...process.env,
-      NODE_OPTIONS: "--import tsx",
+      // The fixture imports TypeScript test support intentionally. Resolve the
+      // loader now because the production spawn cwd is the isolated snapshot,
+      // where package-name lookup must not reach the live checkout.
+      NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
       RUNNER_E2E_CONTROL_DIR: controlDirectory,
     },
   };
