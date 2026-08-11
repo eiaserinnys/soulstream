@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { dirname } from "node:path";
 
 import {
@@ -51,13 +50,12 @@ import {
   readRunnerHostCallApplied,
   recordRunnerHostCallApplied,
 } from "./sqlite_ipc_journal.js";
+import { loadNodeSqlite } from "./node_sqlite.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
   from "./sqlite_event_outbox_schema.js";
 
-const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
-
-type SqliteDatabase = InstanceType<typeof DatabaseSync>;
+type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
 
 export class RunnerSqliteEventOutbox {
   private readonly appendListeners = new Set<() => void>();
@@ -75,6 +73,7 @@ export class RunnerSqliteEventOutbox {
       throw new Error("runner event outbox requires a file-backed SQLite path");
     }
     await mkdir(dirname(databasePath), { recursive: true });
+    const { DatabaseSync } = loadNodeSqlite();
     const database = new DatabaseSync(databasePath);
     try {
       await chmod(databasePath, 0o600);

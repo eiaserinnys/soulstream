@@ -31,7 +31,7 @@
 
 | 준비물 | 요구사항 |
 |---|---|
-| Node.js | soul-server 패키지 계약 `>=22.5`; `node:sqlite` 포함 버전 |
+| Node.js | 러너 ON이면 기동 시 `node:sqlite` 실제 import probe 통과 필수. 22.5.0–22.12.x와 23.0.0–23.3.x는 `--experimental-sqlite` 필요; 무플래그 운영은 22.13+ 또는 23.4+ 사용. 러너 OFF면 probe하지 않음 |
 | `SOUL_RUNNER_STATE_DIR` | 서비스 계정 전용 read/write/execute. 세션별 SQLite·pid·lock·config·Unix socket을 보관. Windows는 named pipe를 사용 |
 | `SOUL_RUNNER_ARTIFACT_DIR` | 현재 배포의 self-contained runner build 산출물 디렉토리. 서비스 계정 read 권한 |
 | `SOUL_RUNNER_RELEASES_DIR` | 서비스 계정 read/write/execute. live checkout 밖의 불변 content-hash release 풀 |

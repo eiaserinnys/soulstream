@@ -1,12 +1,10 @@
-import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 import {
   latestRunnerSequence,
   recoverRunnerOutbox,
 } from "./sqlite_event_outbox_database.js";
-
-const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+import { loadNodeSqlite } from "./node_sqlite.js";
 
 export type RunnerOutboxInspection = {
   status:
@@ -32,6 +30,7 @@ export type RunnerOutboxInspection = {
  * recovery procedure.
  */
 export function inspectRunnerOutboxCopy(databasePath: string): RunnerOutboxInspection {
+  const { DatabaseSync } = loadNodeSqlite();
   const database = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const raw = readRawSummary(database);

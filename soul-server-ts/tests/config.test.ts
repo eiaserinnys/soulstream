@@ -127,6 +127,29 @@ describe("parseEnv", () => {
     });
   });
 
+  it("Unix runner socket 경로는 sockaddr_un 107바이트 한도에서 기동 전에 거부한다", () => {
+    const runnerEnv = {
+      ...minimal,
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+      SOUL_RUNNER_ARTIFACT_DIR: "/tmp/artifacts",
+      SOUL_RUNNER_RELEASES_DIR: "/tmp/releases",
+    };
+    const longestAsciiStateDirectory = `/${"a".repeat(69)}`;
+    expect(parseEnv({
+      ...runnerEnv,
+      SOUL_RUNNER_STATE_DIR: longestAsciiStateDirectory,
+    }).SOUL_RUNNER_STATE_DIR).toBe(longestAsciiStateDirectory);
+
+    expect(() => parseEnv({
+      ...runnerEnv,
+      SOUL_RUNNER_STATE_DIR: `/${"a".repeat(70)}`,
+    })).toThrow(/108 byte runner socket path.*107/);
+    expect(() => parseEnv({
+      ...runnerEnv,
+      SOUL_RUNNER_STATE_DIR: `/${"가".repeat(24)}`,
+    })).toThrow(/110 byte runner socket path.*107/);
+  });
+
   it("AGENTS_CONFIG_PATH 미지정 시 default 'config/agents.yaml'", () => {
     const env = parseEnv(minimal);
     expect(env.AGENTS_CONFIG_PATH).toBe("config/agents.yaml");
