@@ -72,6 +72,17 @@ export class SoakProcessController {
     return pid;
   }
 
+  async assertRunnerAlive(sessionId: string, expectedPid: number): Promise<void> {
+    const pid = await this.readRunnerPid(sessionId);
+    if (pid !== expectedPid) {
+      throw new Error(`staging runner pid changed: ${expectedPid} -> ${pid}`);
+    }
+    if (!isPidAlive(pid)) throw new Error(`staging runner pid ${pid} is not alive`);
+    const { createHash } = await import("node:crypto");
+    const slug = createHash("sha256").update(sessionId).digest("hex").slice(0, 24);
+    await access(join(this.config.paths.runnerState, slug, "runner.sock"));
+  }
+
   private async assertBuildArtifacts(): Promise<void> {
     for (const path of [
       join(this.config.repositoryRoot, "orch-server-ts", "dist", "production_main.js"),

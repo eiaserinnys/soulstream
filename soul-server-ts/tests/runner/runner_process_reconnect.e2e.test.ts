@@ -41,6 +41,73 @@ afterEach(async () => {
 });
 
 describe("runner process detach/reconnect E2E", () => {
+  it("buffers ID-bearing events until bootstrap and accepts a resumed second turn", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-bootstrap-e2e-"));
+    directories.push(root);
+    const stateDirectory = join(root, "state");
+    const snapshotPath = join(root, "snapshot");
+    const controlDirectory = join(root, "control");
+    await mkdir(snapshotPath, { recursive: true });
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(snapshotPath, "package.json"), JSON.stringify({ type: "module" }));
+    await writeFile(
+      join(snapshotPath, "runner_entry.js"),
+      `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
+    );
+    const input = {
+      ...spawnInput(stateDirectory, snapshotPath, controlDirectory),
+      backend: "claude" as const,
+      agent: {
+        id: "agent-e2e",
+        name: "Agent E2E",
+        backend: "claude" as const,
+        workspace_dir: controlDirectory,
+      },
+      childProcessEnv: {
+        ...spawnInput(stateDirectory, snapshotPath, controlDirectory).childProcessEnv,
+        RUNNER_E2E_ID_BOOTSTRAP: "1",
+      },
+    };
+    const spawned = await new RunnerProcessSpawner().spawn(input);
+    childPids.add(spawned.pid);
+    const { mux, batches } = autoAcknowledgingMux();
+    const host = processDispatcher(input, mux);
+
+    const first = await collectFrames(host.executeFrames({
+      agentSessionId: "session-e2e",
+      prompt: "first",
+    }));
+    expect(first.map((frame) => frame.payload.type)).toEqual([
+      "claude_runtime_hook_event",
+      "session",
+      "assistant_message",
+    ]);
+    const outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    expect((await outbox.readBootstrap())?.payload.backend_session_id)
+      .toBe("backend-session-e2e");
+    outbox.close();
+
+    const second = await collectFrames(host.executeFrames({
+      agentSessionId: "session-e2e",
+      prompt: "second",
+      resumeSessionId: "backend-session-e2e",
+    }));
+    expect(second).toHaveLength(1);
+    expect(second[0]?.payload).toMatchObject({ content: "execution-2" });
+    expect(isPidAlive(spawned.pid)).toBe(true);
+    expect(batches.flatMap((batch) => batch.events.map((event) => event.event_type)))
+      .toEqual([
+        "claude_runtime_hook_event",
+        "session",
+        "assistant_message",
+        "assistant_message",
+      ]);
+
+    await host.close();
+    await waitFor(async () => !isPidAlive(spawned.pid));
+    childPids.delete(spawned.pid);
+  }, 30_000);
+
   it("survives its spawning parent and replays only events after the last host ACK", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-reconnect-e2e-"));
     directories.push(root);
@@ -94,7 +161,7 @@ describe("runner process detach/reconnect E2E", () => {
       scan.registrations[0]!,
       Date.now(),
       120_000,
-    )).toBe("adopt_prebootstrap");
+    )).toBe("adopt_running");
     await firstHost.detachHost();
 
     const secondHost = processDispatcher(input, mux);
@@ -228,6 +295,14 @@ async function collectExit(child: ReturnType<typeof spawn>): Promise<{
     child.once("exit", resolve);
   });
   return { code, stderr };
+}
+
+async function collectFrames(
+  stream: AsyncIterable<import("../../src/runner/frame_protocol.js").RunnerEventFrame>,
+) {
+  const frames = [];
+  for await (const frame of stream) frames.push(frame);
+  return frames;
 }
 
 async function pendingFrameCount(path: string): Promise<number> {

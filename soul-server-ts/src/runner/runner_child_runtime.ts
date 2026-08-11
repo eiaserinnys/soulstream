@@ -33,6 +33,7 @@ import { RunnerWriterLock } from "./runner_writer_lock.js";
 
 const REQUIRED_HOST_SEND_ATTEMPTS = 61;
 const REQUIRED_HOST_SEND_RETRY_MS = 500;
+const PRE_BOOTSTRAP_EVENT_LIMIT = 1_024;
 
 export class RunnerChildRuntime {
   private endpoint!: RunnerSocketEndpoint;
@@ -45,6 +46,7 @@ export class RunnerChildRuntime {
   private closing = false;
   private activeCommandId: string | undefined;
   private droppedFrameCount = 0;
+  private readonly preBootstrapFrames: RunnerEventFrame[] = [];
 
   constructor(
     private readonly config: RunnerChildConfig,
@@ -160,11 +162,16 @@ export class RunnerChildRuntime {
     let terminalError: { code: string; message: string } | undefined;
     let storageFailure = false;
     try {
-      if (command.params.resumeSessionId) {
-        await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
-      }
+      await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
         await this.forwardRunnerFrame(frame);
+      }
+      if (requiresBackendSessionId(this.config.backend) && !(await this.outbox.readBootstrap())) {
+        await this.ensureBootstrap(null, command.commandId);
+        await this.flushPreBootstrapFrames();
+        throw new Error(
+          `${this.config.backend} execution ended before publishing its backend session ID`,
+        );
       }
     } catch (error) {
       await this.dispatcher.interrupt().catch(() => false);
@@ -203,17 +210,38 @@ export class RunnerChildRuntime {
       return;
     }
     const event = frame.payload as SSEEventPayload;
-    if (!shouldPersistEvent(event)) {
-      await this.sendBestEffort(frame);
-      this.recordProgress();
-      return;
-    }
     const effect = sessionIdEffect(event);
     const backendSessionId = effect?.kind === "set_backend_session_id"
       ? effect.backend_session_id
       : null;
-    if (!(await this.outbox.readBootstrap())) {
+    const bootstrap = await this.outbox.readBootstrap();
+    if (!bootstrap && requiresBackendSessionId(this.config.backend)) {
+      if (backendSessionId === null) {
+        if (this.preBootstrapFrames.length >= PRE_BOOTSTRAP_EVENT_LIMIT) {
+          throw new Error(
+            `${this.config.backend} exceeded ${PRE_BOOTSTRAP_EVENT_LIMIT} events before its backend session ID`,
+          );
+        }
+        this.preBootstrapFrames.push(frame);
+        return;
+      }
       await this.ensureBootstrap(backendSessionId, this.requireActiveCommandId());
+      await this.flushPreBootstrapFrames();
+    } else if (!bootstrap) {
+      await this.ensureBootstrap(null, this.requireActiveCommandId());
+    }
+    await this.forwardBootstrappedEvent(frame, event, effect);
+  }
+
+  private async forwardBootstrappedEvent(
+    frame: RunnerEventFrame,
+    event: SSEEventPayload,
+    effect: EventOutboxSessionEffect | undefined,
+  ): Promise<void> {
+    if (!shouldPersistEvent(event)) {
+      await this.sendBestEffort(frame);
+      this.recordProgress();
+      return;
     }
     const durableEvent = buildDurableRunnerEvent(
       this.config.sessionId,
@@ -227,6 +255,38 @@ export class RunnerChildRuntime {
     );
     await this.sendBestEffort(outboxAvailableControlFrame(durable.source_seq));
     this.recordProgress();
+  }
+
+  private async flushPreBootstrapFrames(): Promise<void> {
+    const pending = this.preBootstrapFrames.splice(0);
+    for (const frame of pending) {
+      const event = frame.payload as SSEEventPayload;
+      await this.forwardBootstrappedEvent(frame, event, sessionIdEffect(event));
+    }
+  }
+
+  private async prepareExecution(
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
+  ): Promise<void> {
+    const bootstrap = await this.outbox.readBootstrap();
+    if (bootstrap) {
+      const resumeSessionId = command.params.resumeSessionId;
+      if (
+        resumeSessionId !== undefined
+        && bootstrap.payload.backend_session_id !== resumeSessionId
+      ) {
+        throw new Error("runner execute resume session ID conflicts with durable bootstrap");
+      }
+      this.beginLifecycle(command.commandId);
+      return;
+    }
+    if (command.params.resumeSessionId !== undefined) {
+      await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
+      return;
+    }
+    if (!requiresBackendSessionId(this.config.backend)) {
+      await this.ensureBootstrap(null, command.commandId);
+    }
   }
 
   private async ensureBootstrap(
@@ -246,6 +306,10 @@ export class RunnerChildRuntime {
         snapshot_path: this.config.snapshotPath,
       },
     });
+    this.beginLifecycle(commandId);
+  }
+
+  private beginLifecycle(commandId: string): void {
     const existing = this.lifecycle.read();
     if (!existing || existing.execution_command_id !== commandId) {
       this.lifecycle.begin({
@@ -340,6 +404,10 @@ function sessionIdEffect(event: SSEEventPayload): EventOutboxSessionEffect | und
   return typeof sessionId === "string" && sessionId.length > 0
     ? { kind: "set_backend_session_id", backend_session_id: sessionId }
     : undefined;
+}
+
+export function requiresBackendSessionId(backend: RunnerChildConfig["backend"]): boolean {
+  return backend === "claude" || backend === "codex";
 }
 
 export async function setRunnerOomScore(

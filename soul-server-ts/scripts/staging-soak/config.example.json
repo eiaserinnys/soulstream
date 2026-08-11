@@ -15,7 +15,7 @@
   "codexProfile": "runner-soak-codex",
   "codexModelPreset": "codex-5.6-sol",
   "durationMinutes": 35,
-  "restartAfterMinutes": 10,
+  "restartAfterMinutes": 2,
   "interventionEveryMinutes": 5,
   "maxSessions": 1,
   "leaseTimeoutMs": 120000,

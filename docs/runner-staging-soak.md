@@ -34,7 +34,7 @@ pnpm --dir soul-server-ts soak:runner run --config soul-server-ts/scripts/stagin
 pnpm --dir soul-server-ts soak:runner stop --config soul-server-ts/scripts/staging-soak/config.example.json
 ```
 
-prepare는 전용 DB가 없을 때 생성하고 공식 `packages/db-schema/scripts/migrate.mjs fresh-install`을 실행한다. 이미 있으면 공식 verify만 실행한다. start는 실제 production entrypoint를 별도 cwd·env·포트로 띄운다. run은 backend별 35분 기본 소크 중 intervention을 보내고 soul host만 한 번 재시작하며 runner PID 보존을 검증한다. Codex는 라이브와 같은 `app-server` adapter를 쓰되, 복제된 전용 `CODEX_HOME`에 rollout과 로그를 격리한다. stop은 staging pidfile과 `/proc` identity가 모두 맞는 프로세스만 종료한다.
+prepare는 전용 DB가 없을 때 생성하고 공식 `packages/db-schema/scripts/migrate.mjs fresh-install`을 실행한다. 이미 있으면 공식 verify만 실행한다. start는 실제 production entrypoint를 별도 cwd·env·포트로 띄운다. run은 backend별 35분 기본 소크 중 4분 장기 셸 호출을 걸고 2분 지점에 soul host만 재시작하며 runner PID 보존을 검증한다. 이후 5분마다 intervention을 보낸다. Codex는 라이브와 같은 `app-server` adapter를 쓰되, 복제된 전용 `CODEX_HOME`에 rollout과 로그를 격리한다. stop은 staging pidfile과 `/proc` identity가 모두 맞는 프로세스만 종료한다.
 
 ## 수확물
 

@@ -8,6 +8,7 @@ import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   buildDurableRunnerEvent,
   isSqliteFullError,
+  requiresBackendSessionId,
   setRunnerOomScore,
 } from "../../src/runner/runner_child_runtime.js";
 
@@ -20,6 +21,11 @@ afterEach(async () => {
 });
 
 describe("buildDurableRunnerEvent", () => {
+  it("waits for resume material only on ID-bearing backends", () => {
+    expect(requiresBackendSessionId("claude")).toBe(true);
+    expect(requiresBackendSessionId("codex")).toBe(true);
+    expect(requiresBackendSessionId("openai-agents")).toBe(false);
+  });
   it("removes internal dedupe metadata before the durable frame crosses IPC", () => {
     const event = {
       type: "assistant_message",

@@ -86,6 +86,7 @@ export async function runSoakWorkload(input: {
           `runner pid changed across staging soul restart: ${runnerPidBeforeRestart} -> ${runnerPidAfterRestart}`,
         );
       }
+      await controller.assertRunnerAlive(session.agentSessionId, runnerPidBeforeRestart);
       restarted = true;
       actions.push({
         at: new Date().toISOString(),

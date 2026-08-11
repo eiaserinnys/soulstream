@@ -23,6 +23,7 @@ const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
 class ControlledEngine implements EnginePort {
   readonly backendId = config.backend;
+  private executionCount = 0;
 
   constructor(
     private readonly controlDirectory: string,
@@ -32,6 +33,26 @@ class ControlledEngine implements EnginePort {
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
   async *executeFrames(_params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    if (process.env.RUNNER_E2E_ID_BOOTSTRAP === "1") {
+      this.executionCount += 1;
+      if (this.executionCount === 1) {
+        yield engineEventFrame({
+          type: "claude_runtime_hook_event",
+          hook_event_name: "UserPromptSubmit",
+          session_id: "backend-session-e2e",
+          tool_use_id: "hook-e2e",
+          hook_input: {},
+          timestamp: 1,
+        });
+        yield engineEventFrame({ type: "session", session_id: "backend-session-e2e" });
+      }
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: `execution-${this.executionCount}`,
+        timestamp: this.executionCount + 1,
+      });
+      return;
+    }
     if (process.env.RUNNER_E2E_REQUIRE_INTERNAL_MCP === "1") {
       await exerciseInternalMcp();
     }
