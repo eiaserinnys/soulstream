@@ -1,5 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { once } from "node:events";
+import { createServer } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../../src/agent_registry.js";
@@ -115,6 +117,39 @@ describe("MCP stateless restart recovery", () => {
       { "x-soulstream-agent-session-id": "internal-session" },
     );
     expect(initialized.status).toBe(200);
+  });
+
+  it("points to MCP_INTERNAL_PORT when the internal listener port is occupied", async () => {
+    const blocker = createServer();
+    blocker.listen(0, "127.0.0.1");
+    await once(blocker, "listening");
+    const address = blocker.address();
+    expect(address && typeof address === "object").toBe(true);
+    const occupiedPort = typeof address === "object" && address
+      ? address.port
+      : 0;
+
+    try {
+      internalServer = await buildInternalMcpServer({
+        logger: createSilentLogger(),
+        runtime: makeRuntime(),
+        path: "/mcp/internal",
+        statelessTransport: false,
+        auth: {
+          requireAuth: false,
+          bearerToken: "",
+          allowedHosts: ["127.0.0.1", "localhost"],
+        },
+      });
+      await expect(
+        startInternalMcpServer(internalServer, occupiedPort),
+      ).rejects.toThrow(
+        /MCP_INTERNAL_PORT.*free node-local port.*nginx/is,
+      );
+    } finally {
+      blocker.close();
+      await once(blocker, "close");
+    }
   });
 
   it("does not issue a session id and accepts a follow-up carrying a stale id", async () => {

@@ -8,7 +8,7 @@
 |---|---|---:|---|---|
 | soul-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | 새 세션을 session-per-process 러너에서 실행 | ON이면 state/artifact/releases 세 경로 필수. MCP가 켜져 있으면 stateless도 ON이어야 함 |
 | soul-server | `MCP_ENABLED` | `false` | Streamable HTTP MCP route 활성화 | stateless를 켜려면 먼저 ON. production에서는 `MCP_REQUIRE_AUTH=true`와 bearer token 필수 |
-| soul-server | `MCP_INTERNAL_PORT` | `PORT+1` | 내부 Claude SDK 전용 loopback 리스너 | `127.0.0.1`에만 bind. public `PORT`와 달라야 하며 nginx·외부 프록시에 절대 노출하지 않음 |
+| soul-server | `MCP_INTERNAL_PORT` | `PORT+1` | 내부 Claude SDK 전용 loopback 리스너 | 배포 전 노드별 포트 점유를 실측하고 충돌 시 free 포트를 env에 선반영. `127.0.0.1`에만 bind하며 nginx·외부 프록시에 절대 노출하지 않음 |
 | soul-server | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | LLM 전용 `/mcp`에서 process-local session map 제거 | `MCP_ENABLED=true` 필수. runner+MCP 컷오버에서는 ON 필수. 내부 Claude SDK는 이 값과 무관하게 stateful `/mcp/internal` 사용 |
 | orch-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | node disconnect 즉시 kill 대신 lease-aware reconciliation 사용 | soul-server보다 먼저 ON 가능. soul-server만 먼저 ON이면 등록 거부 |
 | 양쪽 | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | 러너 진행 lease와 orch disconnect 유예 창 | 양쪽 runner ON일 때 값이 정확히 같아야 등록됨 |
@@ -18,7 +18,7 @@
 
 ## 컷오버 순서
 
-1. 전체 노드에 동일 코드를 먼저 배포한다. 모든 flag는 OFF이므로 기존 거동이 유지된다.
+1. 각 노드에서 `PORT+1`의 점유 여부를 먼저 실측한다. 이미 쓰는 서비스가 있으면 해당 노드의 free 포트를 골라 `MCP_INTERNAL_PORT` env에 선반영하되 nginx upstream에는 추가하지 않는다. 그 뒤 전체 노드에 동일 코드를 배포한다. 모든 flag는 OFF이므로 기존 거동이 유지된다.
 2. soul-server 빌드 산출물에 `dist/runner/package.json`, `dist/runner/runner_entry.js`가 있고 release isolation 검증이 통과했는지 확인한다.
 3. 모든 프로세스에서 같은 `SOUL_RUNNER_LEASE_TIMEOUT_MS`를 설정한다.
 4. orch에서 `SOUL_RUNNER_PROCESS_ENABLED=true`를 설정하고 orch를 재시작한다. 아직 runner OFF인 노드는 경고만 남기며 연결된다.
@@ -38,6 +38,7 @@
 | `SOUL_RUNNER_RELEASES_DIR` | 서비스 계정 read/write/execute. live checkout 밖의 불변 content-hash release 풀 |
 | `EVENT_OUTBOX_DIR` | 기존 node-global JSONL outbox 경로. Phase 7에서도 유지 |
 | CLI 실행 파일 | Claude/Codex CLI는 snapshot 밖 host dependency. 기존 절대경로·OAuth 설정 유지 |
+| 내부 MCP 포트 | 노드마다 `PORT+1` 점유 여부를 실측. 충돌하면 free 포트를 `MCP_INTERNAL_PORT`에 배포 전 선반영. bind 실패 메시지의 포트·env 안내를 따라 보정 |
 | 인증·경계 | orch↔node bearer token, production MCP bearer/auth 설정. `MCP_INTERNAL_PORT`는 `127.0.0.1` 전용이며 nginx upstream 대상에서 제외 |
 | 디스크 | state와 release 풀의 WAL·snapshot 여유 공간. 생성 실패는 live checkout fallback 없이 loud fail |
 

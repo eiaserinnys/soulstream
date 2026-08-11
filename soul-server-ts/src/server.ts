@@ -165,5 +165,21 @@ export async function startInternalMcpServer(
   server: FastifyInstance,
   port: number,
 ): Promise<string> {
-  return await server.listen({ host: "127.0.0.1", port });
+  try {
+    return await server.listen({ host: "127.0.0.1", port });
+  } catch (cause) {
+    const code = errorCode(cause);
+    throw new Error(
+      `Internal MCP listener failed to bind on 127.0.0.1:${port}${code ? ` (${code})` : ""}. `
+        + "Set MCP_INTERNAL_PORT to a free node-local port before deployment and keep that port out of nginx/public proxy configuration.",
+      { cause },
+    );
+  }
+}
+
+function errorCode(cause: unknown): string | undefined {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) {
+    return undefined;
+  }
+  return typeof cause.code === "string" ? cause.code : undefined;
 }
