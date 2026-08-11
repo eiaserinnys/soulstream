@@ -15,6 +15,8 @@ import {
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { runnerLifecycleSummaryPath } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const temporaryDirectories: string[] = [];
@@ -303,8 +305,9 @@ describe("classifyRunnerRegistration", () => {
     })).resolves.toEqual(["session-live", "session-pre"]);
   });
 
-  it("rejects an incomplete registry scan instead of reporting a destructive partial list", async () => {
+  it("reports healthy registrations while isolating an unreadable neighbor", async () => {
     const failure = new Error("runner registration unreadable");
+    const onScanError = vi.fn();
 
     await expect(listLiveRunnerSessionIds({
       stateDirectory: "/runner",
@@ -312,9 +315,47 @@ describe("classifyRunnerRegistration", () => {
       now: () => now,
       scan: async () => ({
         registrations: [registration({ sessionId: "session-live" })],
-        errors: [{ directory: "/runner/session-unknown", error: failure }],
+        errors: [{
+          directory: "/runner/session-unknown",
+          error: failure,
+          sessionId: "session-unknown",
+        }],
       }),
-    })).rejects.toThrow(/incomplete/i);
+      onScanError,
+    })).resolves.toEqual(["session-live", "session-unknown"]);
+    expect(onScanError).toHaveBeenCalledWith({
+      directory: "/runner/session-unknown",
+      error: failure,
+      sessionId: "session-unknown",
+    });
+  });
+
+  it("keeps the periodic scan lightweight and never opens the event outbox", async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-registry-light-"));
+    temporaryDirectories.push(stateDirectory);
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify({
+      ...registration().config,
+      paths,
+    }));
+    await writeFile(paths.databasePath, "not-opened-by-periodic-scan");
+    await writeFile(
+      runnerLifecycleSummaryPath(paths.databasePath),
+      JSON.stringify(registration().lifecycle),
+    );
+    const open = vi.spyOn(RunnerSqliteEventOutbox, "open");
+
+    const result = await scanRunnerRegistrations(stateDirectory);
+
+    expect(result.errors).toEqual([]);
+    expect(result.registrations).toEqual([
+      expect.objectContaining({
+        bootstrap: null,
+        lifecycle: expect.objectContaining({ execution_state: "running" }),
+      }),
+    ]);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("reports a missing registered database without recreating empty recovery state", async () => {
@@ -373,6 +414,7 @@ function makeSubject(
     logger,
     spawner: { terminate },
     scan: async () => ({ registrations, errors }),
+    hydrate: async (registration) => registration,
     now: () => now,
     markReaped,
     ...overrides,
@@ -423,6 +465,7 @@ function registration(options: {
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,
       claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
       codexHome: "/home/test/.codex",
       rolloutRoot: "/home/test/.codex/sessions",
     },

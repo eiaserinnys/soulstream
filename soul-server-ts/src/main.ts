@@ -225,6 +225,7 @@ async function main(): Promise<void> {
       await runtime.server.internalMcpServer.close();
     }
     await runtime.server.close();
+    await runtime.runnerStateHostOwnership?.release();
     process.exit(0);
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));

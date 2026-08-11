@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
-import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import {
+  readRunnerLifecycleSummary,
+  RunnerSqliteLifecycle,
+} from "./sqlite_runner_lifecycle.js";
 import {
   readRunnerChildConfig,
   readRunnerPid,
@@ -22,7 +25,12 @@ export interface RunnerRegistration {
 
 export interface RunnerRegistrationScan {
   registrations: RunnerRegistration[];
-  errors: Array<{ directory: string; error: Error }>;
+  errors: Array<{ directory: string; error: Error; sessionId?: string; codeSha?: string }>;
+}
+
+export interface RunnerDurableInspection {
+  registration: RunnerRegistration;
+  incompleteDurableWork: boolean;
 }
 
 export type RunnerRecoveryDisposition =
@@ -40,6 +48,7 @@ export interface LiveRunnerSessionIdsOptions {
   leaseTimeoutMs: number;
   scan?: typeof scanRunnerRegistrations;
   now?: () => number;
+  onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
 }
 
 export async function scanRunnerRegistrations(
@@ -60,9 +69,17 @@ export async function scanRunnerRegistrations(
     if (!entry.isDirectory()) continue;
     const directory = resolve(stateDirectory, entry.name);
     try {
-      registrations.push(await readRegistration(directory));
+      registrations.push(await readRunnerRegistrationSummary(directory));
     } catch (error) {
-      errors.push({ directory, error: asError(error) });
+      const normalized = asError(error);
+      const sessionId = (normalized as Error & { runnerSessionId?: unknown }).runnerSessionId;
+      const codeSha = (normalized as Error & { runnerCodeSha?: unknown }).runnerCodeSha;
+      errors.push({
+        directory,
+        error: normalized,
+        ...(typeof sessionId === "string" && sessionId ? { sessionId } : {}),
+        ...(typeof codeSha === "string" && codeSha ? { codeSha } : {}),
+      });
     }
   }
   return { registrations, errors };
@@ -98,23 +115,20 @@ export function classifyRunnerRegistration(
 
 /**
  * Returns the durable runner inventory that is safe to advertise as running.
- * A partial scan is never returned: omitting an unreadable live registration
- * would let orch turn a storage failure into a false terminal transition.
+ * Unreadable registrations are isolated. A parsed session identity is retained
+ * conservatively in the positive inventory; healthy registrations are still
+ * reported so one damaged directory cannot erase the entire node inventory.
  */
 export async function listLiveRunnerSessionIds(
   options: LiveRunnerSessionIdsOptions,
 ): Promise<string[]> {
   const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory);
-  if (result.errors.length > 0) {
-    throw new AggregateError(
-      result.errors.map(({ error }) => error),
-      `runner registration scan incomplete: ${result.errors
-        .map(({ directory }) => directory)
-        .join(", ")}`,
-    );
-  }
+  for (const failure of result.errors) options.onScanError?.(failure);
   const nowMs = (options.now ?? Date.now)();
   const sessionIds = new Set<string>();
+  for (const failure of result.errors) {
+    if (failure.sessionId) sessionIds.add(failure.sessionId);
+  }
   for (const registration of result.registrations) {
     const disposition = classifyRunnerRegistration(
       registration,
@@ -128,23 +142,74 @@ export async function listLiveRunnerSessionIds(
   return [...sessionIds].sort();
 }
 
-async function readRegistration(directory: string): Promise<RunnerRegistration> {
+export async function readRunnerRegistrationSummary(
+  directory: string,
+): Promise<RunnerRegistration> {
   const configPath = resolve(directory, "runner-config.json");
   const config = await readRunnerChildConfig(configPath);
-  if (resolve(config.paths.sessionDirectory) !== directory) {
-    throw new Error(`runner config directory mismatch: ${directory}`);
+  try {
+    if (resolve(config.paths.sessionDirectory) !== directory) {
+      throw new Error(`runner config directory mismatch: ${directory}`);
+    }
+    const configStat = await stat(configPath);
+    await stat(config.paths.databasePath);
+    const pid = await readRunnerPid(config.paths.pidPath);
+    const lifecycle = await readRunnerLifecycleSummary(config.paths.databasePath);
+    if (lifecycle && lifecycle.session_id !== config.sessionId) {
+      throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
+    }
+    return {
+      config,
+      pid,
+      pidAlive: pid !== null && isPidAlive(pid),
+      registeredAtMs: configStat.mtimeMs,
+      bootstrap: null,
+      lifecycle,
+    };
+  } catch (error) {
+    const normalized = asError(error) as Error & {
+      runnerSessionId?: string;
+      runnerCodeSha?: string;
+    };
+    normalized.runnerSessionId = config.sessionId;
+    normalized.runnerCodeSha = config.codeSha;
+    throw normalized;
   }
-  const configStat = await stat(configPath);
-  await stat(config.paths.databasePath);
-  const pid = await readRunnerPid(config.paths.pidPath);
-  const outbox = await RunnerSqliteEventOutbox.open(config.paths.databasePath);
+}
+
+export async function hydrateRunnerRegistration(
+  registration: RunnerRegistration,
+): Promise<RunnerRegistration> {
+  const outbox = await RunnerSqliteEventOutbox.open(registration.config.paths.databasePath);
   let bootstrap: RunnerBootstrapRecord | null;
   try {
     bootstrap = await outbox.readBootstrap();
   } finally {
     outbox.close();
   }
-  const lifecycleStore = RunnerSqliteLifecycle.open(config.paths.databasePath);
+  const lifecycleStore = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
+  let lifecycle: RunnerLifecycleRecord | null;
+  try {
+    lifecycle = lifecycleStore.read();
+  } finally {
+    lifecycleStore.close();
+  }
+  return { ...registration, bootstrap, lifecycle };
+}
+
+export async function inspectRunnerDurableState(
+  registration: RunnerRegistration,
+): Promise<RunnerDurableInspection> {
+  const outbox = await RunnerSqliteEventOutbox.open(registration.config.paths.databasePath);
+  let bootstrap: RunnerBootstrapRecord | null;
+  let incompleteDurableWork: boolean;
+  try {
+    bootstrap = await outbox.readBootstrap();
+    incompleteDurableWork = await outbox.hasPendingDurableWork();
+  } finally {
+    outbox.close();
+  }
+  const lifecycleStore = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
   let lifecycle: RunnerLifecycleRecord | null;
   try {
     lifecycle = lifecycleStore.read();
@@ -152,12 +217,8 @@ async function readRegistration(directory: string): Promise<RunnerRegistration> 
     lifecycleStore.close();
   }
   return {
-    config,
-    pid,
-    pidAlive: pid !== null && isPidAlive(pid),
-    registeredAtMs: configStat.mtimeMs,
-    bootstrap,
-    lifecycle,
+    registration: { ...registration, bootstrap, lifecycle },
+    incompleteDurableWork,
   };
 }
 

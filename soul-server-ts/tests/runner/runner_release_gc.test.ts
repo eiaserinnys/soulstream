@@ -14,6 +14,7 @@ import type {
 } from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import type { RunnerRegistrationScan } from "../../src/runner/runner_process_registry.js";
 
 const directories: string[] = [];
 
@@ -99,24 +100,57 @@ describe("RunnerReleaseGarbageCollector", () => {
       { directory: "/broken", error: new Error("unreadable registration") },
     ]);
 
-    await expect(subject.collector.collect()).rejects.toThrow("incomplete registration inventory");
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "inventory_incomplete" }],
+    });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+
+  it("scans the registration inventory once regardless of release count", async () => {
+    const subject = await makeSubject([registration()], false);
+    await subject.pool.ensureRelease(subject.pool.describe("release-b"));
+
+    await subject.collector.collect();
+
+    expect(subject.scan).toHaveBeenCalledOnce();
+  });
+
+  it("isolates known corrupt evidence to its referenced release", async () => {
+    const subject = await makeSubject([
+      registration({ sessionId: "healthy", codeSha: "release-b" }),
+    ], false, [{
+      directory: "/state/broken",
+      sessionId: "broken",
+      codeSha: "release-a",
+      error: new Error("corrupt lifecycle summary"),
+    }]);
+    await subject.pool.ensureRelease(subject.pool.describe("release-b"));
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: ["release-b"],
+      retained: [{ releaseId: "release-a", reason: "inventory_incomplete" }],
+    });
   });
 });
 
 async function makeSubject(
   registrations: RunnerRegistration[],
   incomplete: boolean,
-  errors: Array<{ directory: string; error: Error }> = [],
+  errors: RunnerRegistrationScan["errors"] = [],
 ) {
   const root = await temporaryDirectory();
   const materializer = new FakeMaterializer();
   const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
   const release = pool.describe("release-a");
   await pool.ensureRelease(release);
+  const scan = vi.fn(async () => ({ registrations, errors }));
   const deps: RunnerReleaseGarbageCollectorDependencies = {
-    scan: async () => ({ registrations, errors }),
-    hasIncompleteDurableWork: async () => incomplete,
+    scan,
+    inspect: async (registration) => ({
+      registration,
+      incompleteDurableWork: incomplete,
+    }),
   };
   const logger = { info: vi.fn(), warn: vi.fn() };
   return {
@@ -128,6 +162,8 @@ async function makeSubject(
     ),
     materializer,
     logger,
+    pool,
+    scan,
   };
 }
 
@@ -157,20 +193,22 @@ class FakeMaterializer implements RunnerReleaseMaterializer {
 
 function registration(options: {
   sessionId?: string;
+  codeSha?: string;
   pid?: number | null;
   pidAlive?: boolean;
 } = {}): RunnerRegistration {
   const sessionId = options.sessionId ?? "session-a";
+  const codeSha = options.codeSha ?? "release-a";
   return {
     config: {
       sessionId,
-      codeSha: "release-a",
+      codeSha,
       paths: { databasePath: `/state/${sessionId}/runner.sqlite` },
     } as never,
     pid: options.pid === undefined ? 42 : options.pid,
     pidAlive: options.pidAlive ?? false,
     registeredAtMs: Date.now(),
-    bootstrap: { payload: { code_sha: "release-a" } } as never,
+    bootstrap: { payload: { code_sha: codeSha } } as never,
     lifecycle: {
       session_id: sessionId,
       runner_pid: 42,

@@ -230,6 +230,7 @@ describe("runner cutover all-flags-on integration", () => {
     await waitFor(async () => !isPidAlive(pid));
     childPids.delete(pid);
     void oldExecution;
+    await composition.hostOwnership.release();
 
     const secondControlDirectory = join(root, "control-second");
     await mkdir(secondControlDirectory, { recursive: true });
@@ -277,6 +278,7 @@ describe("runner cutover all-flags-on integration", () => {
       task.agentSessionId,
       secondTask.agentSessionId,
     ]);
+    await secondComposition.hostOwnership.release();
   }, 45_000);
 });
 

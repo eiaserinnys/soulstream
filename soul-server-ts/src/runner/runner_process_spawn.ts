@@ -12,6 +12,7 @@ import {
 import { assertRunnerJsonValue } from "./frame_protocol.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 
@@ -91,6 +92,16 @@ export class RunnerProcessSpawner {
 
   async spawn(input: SpawnRunnerProcessInput): Promise<SpawnedRunnerProcess> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
+    return await withRunnerSessionMutationLock(
+      paths.sessionDirectory,
+      async () => await this.spawnLocked(input, paths),
+    );
+  }
+
+  private async spawnLocked(
+    input: SpawnRunnerProcessInput,
+    paths: RunnerProcessPaths,
+  ): Promise<SpawnedRunnerProcess> {
     await mkdir(paths.sessionDirectory, { recursive: true, mode: 0o700 });
     await chmod(paths.sessionDirectory, 0o700);
 
@@ -209,7 +220,6 @@ export class RunnerProcessSpawner {
       }
     }
     await unlinkIfPresent(paths.pidPath);
-    await unlinkIfPresent(paths.lockPath);
     await unlinkIfPresent(paths.socketPath);
   }
 }

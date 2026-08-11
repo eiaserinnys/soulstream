@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -95,6 +95,28 @@ describe("RunnerProcessSpawner", () => {
     await replacement.spawn(params);
 
     expect(signals).toEqual(["SIGTERM"]);
+  });
+
+  it("never removes writer-lock ownership evidence while preparing a replacement", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.lockPath, "prior-runner-ownership\n");
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase: async () => {},
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5006, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await spawner.spawn(params);
+
+    await expect(readFile(paths.lockPath, "utf8"))
+      .resolves.toBe("prior-runner-ownership\n");
   });
 
   it("adopts a live registered runner without spawning or replacing it", async () => {

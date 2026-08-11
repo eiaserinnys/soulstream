@@ -21,7 +21,10 @@ import {
 } from "../src/runner/sqlite_event_outbox.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
-import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js";
+import {
+  readRunnerLifecycleSummary,
+  RunnerSqliteLifecycle,
+} from "../src/runner/sqlite_runner_lifecycle.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
@@ -208,6 +211,12 @@ describe("RunnerSqliteEventOutbox", () => {
       "completed",
       "2026-08-11T01:00:02.000Z",
     )).toMatchObject({ execution_state: "completed", progress_seq: 3 });
+    await expect(readRunnerLifecycleSummary(path)).resolves.toMatchObject({
+      session_id: "session-a",
+      execution_state: "completed",
+      progress_seq: 3,
+      progress_at: "2026-08-11T01:00:02.000Z",
+    });
 
     expect((await outbox.readBootstrap())?.payload_hash).toBe(bootstrap.payload_hash);
     expect(outbox.ackedSeq).toBe(1);
