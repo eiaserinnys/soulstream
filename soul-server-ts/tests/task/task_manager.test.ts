@@ -2,6 +2,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRegistry } from "../../src/agent_registry.js";
+import type { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
 import type { SessionMutationHost } from "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
@@ -17,6 +18,10 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const silentLogger = pino({ level: "silent" });
+
+type BoardYjsService = Pick<BoardYjsHostClient, "upsertSessionBoardItem">;
+
+const boardYjsServices = new WeakMap<SessionDB, BoardYjsService>();
 
 function legacyMutationHost(db: SessionDB): SessionMutationHost {
   const legacy = db as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -34,6 +39,7 @@ function legacyMutationHost(db: SessionDB): SessionMutationHost {
 
 class TaskManager extends ProductionTaskManager {
   constructor(...args: ConstructorParameters<typeof ProductionTaskManager>) {
+    args[7] ??= boardYjsServices.get(args[1]);
     args[12] ??= legacyMutationHost(args[1]);
     super(...args);
   }
@@ -46,8 +52,7 @@ function makeMocks() {
   const deleteSession = vi.fn().mockResolvedValue(undefined);
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const acknowledgeSessionReview = vi.fn().mockResolvedValue("acknowledged");
-  // B-5: 폴더 배정 정본 흐름 mocks.
-  const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+  // B-5: 폴더 배정 정본은 Board Y.Doc 원자 배치다.
   const getFolderById = vi
     .fn()
     .mockResolvedValue({
@@ -59,6 +64,8 @@ function makeMocks() {
     });
   const getAllFolders = vi.fn().mockResolvedValue([]);
   const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
+  const getBoardItems = vi.fn().mockResolvedValue([]);
+  const upsertSessionBoardItem = vi.fn().mockResolvedValue({});
   // PR #56: hydration mock (Python load_evicted_task 정합)
   const getSession = vi.fn().mockResolvedValue(null);
   const db = {
@@ -67,12 +74,13 @@ function makeMocks() {
     deleteSession,
     updateSession,
     acknowledgeSessionReview,
-    assignSessionToFolder,
     getFolderById,
     getAllFolders,
     getPrimarySessionBoardItem,
+    getBoardItems,
     getSession,
   } as unknown as SessionDB;
+  boardYjsServices.set(db, { upsertSessionBoardItem });
   (persistenceDouble.persistence as unknown as {
     enqueueMetadataEffect: typeof appendMetadata;
   }).enqueueMetadataEffect = appendMetadata;
@@ -103,10 +111,11 @@ function makeMocks() {
     deleteSession,
     updateSession,
     acknowledgeSessionReview,
-    assignSessionToFolder,
     getFolderById,
     getAllFolders,
     getPrimarySessionBoardItem,
+    getBoardItems,
+    upsertSessionBoardItem,
     getSession,
     emitSessionCreated,
     emitSessionDeleted,
@@ -335,6 +344,7 @@ describe("TaskManager.createTask", () => {
       persistence,
       registerSession,
       appendMetadata,
+      upsertSessionBoardItem,
       emitSessionCreated,
     } = makeMocks();
     const tm = new TaskManager(
@@ -375,6 +385,12 @@ describe("TaskManager.createTask", () => {
     expect(task.metadata).toEqual([
       { type: "caller_info", value: { source: "slack" } },
     ]);
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "claude",
+      container: { containerKind: "folder", containerId: "claude" },
+      sessionId: "sess-1",
+      sourceTaskItemId: null,
+    }));
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
     expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
@@ -477,8 +493,8 @@ describe("TaskManager.createTask", () => {
     expect(tm.getTask("s1")?.agentSessionId).toBe("s1");
   });
 
-  it("folderId 전달 시 emit_session_created에 그대로 박힘", async () => {
-    const { db, broadcaster, emitSessionCreated } = makeMocks();
+  it("folderId 전달 시 해당 폴더 Y.Doc 배치 뒤 session_created에 그대로 박힘", async () => {
+    const { db, broadcaster, upsertSessionBoardItem, emitSessionCreated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s1",
@@ -486,6 +502,11 @@ describe("TaskManager.createTask", () => {
       profileId: "a",
       folderId: "folder-42",
     });
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "folder-42",
+      container: { containerKind: "folder", containerId: "folder-42" },
+      sessionId: "s1",
+    }));
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-42");
   });
 });
@@ -1650,10 +1671,10 @@ describe("TaskManager.addIntervention (B-4)", () => {
   });
 });
 
-// B-5: 세션-폴더 배정 정본 (Python `_assign_default_folder_and_broadcast` 정합)
+// B-5: 세션-폴더 배정 정본 (Board Y.Doc 원자 배치)
 describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
-  it("folderId 명시 → assignSessionToFolder(folderId) + emitSessionCreated(task, folderId)", async () => {
-    const { db, broadcaster, assignSessionToFolder, getFolderById, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+  it("folderId 명시 → 해당 폴더 Y.Doc 배치 + emitSessionCreated(task, folderId)", async () => {
+    const { db, broadcaster, upsertSessionBoardItem, getFolderById, emitSessionCreated, emitCatalogUpdated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s1",
@@ -1661,14 +1682,19 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       profileId: "codex-default",
       folderId: "folder-explicit",
     });
-    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "folder-explicit");
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "folder-explicit",
+      container: { containerKind: "folder", containerId: "folder-explicit" },
+      sessionId: "s1",
+      sourceTaskItemId: null,
+    }));
     expect(getFolderById).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-explicit");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("folderId 미지정 → 기본 폴더 id 'claude' lookup + assign + emit", async () => {
-    const { db, broadcaster, assignSessionToFolder, getFolderById, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+  it("folderId 미지정 → 기본 폴더 id 'claude' lookup + Y.Doc 배치 + emit", async () => {
+    const { db, broadcaster, upsertSessionBoardItem, getFolderById, emitSessionCreated, emitCatalogUpdated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s2",
@@ -1676,13 +1702,18 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       profileId: "codex-default",
     });
     expect(getFolderById).toHaveBeenCalledWith("claude");
-    expect(assignSessionToFolder).toHaveBeenCalledWith("s2", "claude");
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "claude",
+      container: { containerKind: "folder", containerId: "claude" },
+      sessionId: "s2",
+      sourceTaskItemId: null,
+    }));
     expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
   it("folderId 미지정 + 기본 폴더 없음 → 폴더 배정·broadcast 안 함 (graceful, Python L306-307)", async () => {
-    const { db, broadcaster, assignSessionToFolder, emitSessionCreated, emitCatalogUpdated, getFolderById } = makeMocks();
+    const { db, broadcaster, upsertSessionBoardItem, emitSessionCreated, emitCatalogUpdated, getFolderById } = makeMocks();
     getFolderById.mockResolvedValueOnce(null);
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
@@ -1690,14 +1721,14 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       prompt: "x",
       profileId: "codex-default",
     });
-    expect(assignSessionToFolder).not.toHaveBeenCalled();
+    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
     expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
     expect(emitCatalogUpdated).not.toHaveBeenCalled();  // 폴더 배정 안 됐으면 broadcast 안 함 (Python L311 gate)
   });
 
-  it("assignSessionToFolder throw → 격리, task 생성은 성공 (부가 기능 실패 분리)", async () => {
-    const { db, broadcaster, assignSessionToFolder, emitSessionCreated, emitCatalogUpdated } = makeMocks();
-    assignSessionToFolder.mockRejectedValueOnce(new Error("db down"));
+  it("Y.Doc 원자 배치 throw → 격리, task 생성은 성공 (부가 기능 실패 분리)", async () => {
+    const { db, broadcaster, upsertSessionBoardItem, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    upsertSessionBoardItem.mockRejectedValueOnce(new Error("host proxy down"));
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({
       agentSessionId: "s4",
@@ -1722,12 +1753,12 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       folderId: "f-y",
     });
     expect(task.agentSessionId).toBe("s5");
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("f-y");  // 폴더 배정은 성공 (assign은 throw 안 함)
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("f-y");  // Y.Doc 원자 배치는 성공
     expect(emitCatalogUpdated).not.toHaveBeenCalled();  // catalog 실패는 broadcast 차단
   });
 
   it("emitCatalogUpdated가 emitSessionCreated *이전*에 호출됨 (Python L304 순서 보장)", async () => {
-    const { db, broadcaster, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    const { db, broadcaster, upsertSessionBoardItem, emitSessionCreated, emitCatalogUpdated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s6",
@@ -1738,6 +1769,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     // mock 호출 순서 검증
     const catalogOrder = emitCatalogUpdated.mock.invocationCallOrder[0];
     const createdOrder = emitSessionCreated.mock.invocationCallOrder[0];
+    expect(upsertSessionBoardItem.mock.invocationCallOrder[0]).toBeLessThan(catalogOrder);
     expect(catalogOrder).toBeLessThan(createdOrder);
   });
 });
