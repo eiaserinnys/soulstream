@@ -37,7 +37,9 @@ try {
   const paths = {
     sessionDirectory,
     databasePath: join(sessionDirectory, "runner.sqlite"),
-    socketPath: join(sessionDirectory, "runner.sock"),
+    socketPath: process.platform === "win32"
+      ? String.raw`\\.\pipe\soulstream-runner-release-isolation-${slug}`
+      : join(sessionDirectory, "runner.sock"),
     pidPath: join(sessionDirectory, "runner.pid"),
     lockPath: join(sessionDirectory, "runner.lock"),
     configPath: join(sessionDirectory, "runner-config.json"),
@@ -79,7 +81,7 @@ try {
   let stderr = "";
   runner.stderr.setEncoding("utf8");
   runner.stderr.on("data", (chunk) => { stderr += chunk; });
-  await waitForPathOrExit(paths.socketPath, runner, () => stderr);
+  await waitForSocketOrExit(paths.socketPath, runner, () => stderr);
   const response = await sendLine(paths.socketPath, {
     protocolVersion: 1,
     channel: "command",
@@ -129,14 +131,18 @@ async function runProcess(command, args, options) {
   return { code, stdout, stderr };
 }
 
-async function waitForPathOrExit(path, child, readStderr) {
+async function waitForSocketOrExit(path, child, readStderr) {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    try {
-      await access(path);
-      return;
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+    if (process.platform === "win32") {
+      if (await canConnect(path)) return;
+    } else {
+      try {
+        await access(path);
+        return;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
     }
     if (child.exitCode !== null) {
       throw new Error(
@@ -146,6 +152,21 @@ async function waitForPathOrExit(path, child, readStderr) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
   }
   throw new Error("isolated runner socket listen timed out");
+}
+
+async function canConnect(socketPath) {
+  return await new Promise((resolveConnected) => {
+    const socket = createConnection(socketPath);
+    let settled = false;
+    const finish = (connected) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolveConnected(connected);
+    };
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+  });
 }
 
 async function sendLine(socketPath, frame) {
