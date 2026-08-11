@@ -13,7 +13,7 @@
 | orch-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | node disconnect 즉시 kill 대신 lease-aware reconciliation 사용 | soul-server보다 먼저 ON 가능. soul-server만 먼저 ON이면 등록 거부 |
 | 양쪽 | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | 러너 진행 lease와 orch disconnect 유예 창 | 양쪽 runner ON일 때 값이 정확히 같아야 등록됨 |
 | soul-server | `SOUL_RUNNER_REAPER_INTERVAL_MS` | `15000` | node-local runner scan/reap 주기 | lease timeout보다 짧게 유지 |
-| soul-server | `SOUL_RUNNER_TERMINAL_RETENTION_MS` | `86400000` | 최종 ACK가 끝난 terminal 세션 상태 보존기한 | 경과 뒤에만 세션 디렉토리 GC. 증거 누락·손상은 해당 세션만 보존 |
+| soul-server | `SOUL_RUNNER_TERMINAL_RETENTION_MS` | `86400000` | 최종 ACK가 끝난 terminal 세션 상태 보존기한 | 경과 뒤에만 세션 디렉토리 GC. 삭제 직전 registration과 PID 시작 identity를 다시 증명하지 못하면 보존 |
 
 스냅샷 풀에는 별도 flag가 없다. `SOUL_RUNNER_PROCESS_ENABLED=true`가 release materialization·GC·spawn을 함께 여는 단일 게이트다.
 
@@ -34,7 +34,7 @@
 | 준비물 | 요구사항 |
 |---|---|
 | Node.js | 러너 ON이면 기동 시 `node:sqlite` 실제 import probe 통과 필수. 22.5.0–22.12.x와 23.0.0–23.3.x는 `--experimental-sqlite` 필요; 무플래그 운영은 22.13+ 또는 23.4+ 사용. 러너 OFF면 probe하지 않음 |
-| `SOUL_RUNNER_STATE_DIR` | 서비스 계정 전용 read/write/execute. 세션별 SQLite·pid·lock·config·lifecycle 요약·Unix socket을 보관. Windows는 named pipe를 사용. 15초 스캔은 config·파일 존재·pid·lifecycle 요약만 읽고 SQLite 전 행 검증은 복구·GC 후보에만 수행 |
+| `SOUL_RUNNER_STATE_DIR` | 서비스 계정 전용 read/write/execute. 세션별 SQLite·pid·lock·config·독립 `runner-identity.json`·lifecycle 요약·Unix socket을 보관. Windows는 named pipe를 사용. 15초 스캔은 경량 증거만 읽고 SQLite 전 행 검증은 복구·변경된 GC 후보에만 수행 |
 | `SOUL_RUNNER_ARTIFACT_DIR` | 현재 배포의 self-contained runner build 산출물 디렉토리. 서비스 계정 read 권한 |
 | `SOUL_RUNNER_RELEASES_DIR` | 서비스 계정 read/write/execute. live checkout 밖의 불변 content-hash release 풀 |
 | `EVENT_OUTBOX_DIR` | 기존 node-global JSONL outbox 경로. Phase 7에서도 유지 |
@@ -55,6 +55,8 @@
 - public LLM + node-local internal stateless 동시 계약: `soul-server-ts/tests/mcp/stateless_restart_recovery.test.ts`
 - release GC fail-closed: `soul-server-ts/tests/runner/runner_release_gc.test.ts`
 - terminal session retention GC: `soul-server-ts/tests/runner/runner_session_gc.test.ts`
+- runner config가 손상돼도 독립 identity sidecar, 이어 SQLite 순서로 session ID를 복구한다. 둘 다 실패하면 live inventory 전체를 명시적으로 거부하고 upstream 재시도에 맡긴다. 부분 inventory는 발행하지 않는다.
+- release GC는 경량 registration fingerprint가 바뀐 경우만 durable evidence를 열며, 모든 후보 release lock 안에서 registration과 PID 시작 identity를 다시 읽고 삭제한다.
 - state host ownership fence: `soul-server-ts/tests/runner/runner_state_host_lock.test.ts`
 - release 소유권 직렬화 + stale-lock 회수: `soul-server-ts/tests/runner/runner_release_pool.test.ts`
 - self-contained release: `soul-server-ts/scripts/verify_runner_release_isolation.mjs`

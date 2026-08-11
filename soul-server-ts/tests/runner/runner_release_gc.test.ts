@@ -33,6 +33,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [{ releaseId: "release-a", reason: "live_runner" }],
     });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+    expect(subject.inspect).not.toHaveBeenCalled();
   });
 
   it("retains a stopped terminal runner until outbox and IPC final ACK", async () => {
@@ -132,6 +133,24 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [{ releaseId: "release-a", reason: "inventory_incomplete" }],
     });
   });
+
+  it("re-scans registration ownership under the release lock before deletion", async () => {
+    const stale = registration({ pidAlive: false });
+    const revived = {
+      ...stale,
+      pidAlive: true,
+      pidStartIdentity: "replacement-process",
+    } as RunnerRegistration;
+    const subject = await makeSubject([revived], false);
+
+    await expect(subject.collector.collect({ registrations: [stale], errors: [] }))
+      .resolves.toEqual({
+        removed: [],
+        retained: [{ releaseId: "release-a", reason: "live_runner" }],
+      });
+    expect(subject.scan).toHaveBeenCalledOnce();
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
 });
 
 async function makeSubject(
@@ -145,12 +164,13 @@ async function makeSubject(
   const release = pool.describe("release-a");
   await pool.ensureRelease(release);
   const scan = vi.fn(async () => ({ registrations, errors }));
+  const inspect = vi.fn(async (registration: RunnerRegistration) => ({
+    registration,
+    incompleteDurableWork: incomplete,
+  }));
   const deps: RunnerReleaseGarbageCollectorDependencies = {
     scan,
-    inspect: async (registration) => ({
-      registration,
-      incompleteDurableWork: incomplete,
-    }),
+    inspect,
   };
   const logger = { info: vi.fn(), warn: vi.fn() };
   return {
@@ -164,6 +184,7 @@ async function makeSubject(
     logger,
     pool,
     scan,
+    inspect,
   };
 }
 
@@ -207,6 +228,8 @@ function registration(options: {
     } as never,
     pid: options.pid === undefined ? 42 : options.pid,
     pidAlive: options.pidAlive ?? false,
+    registrationId: "registration-a",
+    pidStartIdentity: "process-start-a",
     registeredAtMs: Date.now(),
     bootstrap: { payload: { code_sha: codeSha } } as never,
     lifecycle: {

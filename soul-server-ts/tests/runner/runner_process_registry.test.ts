@@ -1,0 +1,230 @@
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  classifyRunnerRegistration,
+  listLiveRunnerSessionIds,
+  scanRunnerRegistrations,
+  type RunnerRegistration,
+} from "../../src/runner/runner_process_registry.js";
+import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { runnerLifecycleSummaryPath } from "../../src/runner/sqlite_runner_lifecycle.js";
+import {
+  pendingRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "../../src/runner/runner_registration_identity.js";
+
+const temporaryDirectories: string[] = [];
+const NOW = Date.parse("2026-08-11T00:00:30.000Z");
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((directory) =>
+    rm(directory, { recursive: true, force: true })));
+});
+
+describe("runner process registry", () => {
+  it("classifies bootstrap grace, live prebootstrap, and durable terminal state", () => {
+    const pending = {
+      ...registration({ pidAlive: false }),
+      registeredAtMs: NOW - 1_000,
+      bootstrap: null,
+      lifecycle: null,
+    };
+    expect(classifyRunnerRegistration(pending, NOW, 120_000)).toBe("wait_for_bootstrap");
+    expect(classifyRunnerRegistration(
+      { ...pending, registeredAtMs: NOW - 120_000 },
+      NOW,
+      120_000,
+    )).toBe("reap_dead");
+    expect(classifyRunnerRegistration({ ...pending, pidAlive: true }, NOW, 120_000))
+      .toBe("adopt_prebootstrap");
+    expect(classifyRunnerRegistration(registration({
+      pidAlive: false,
+      lifecycleState: "failed",
+    }), NOW, 120_000)).toBe("replay_terminal");
+  });
+
+  it("reports only live lease dispositions and deduplicates the reconnect inventory", async () => {
+    const registrations = [
+      { ...registration({ sessionId: "session-pre" }), bootstrap: null, lifecycle: null },
+      registration({ sessionId: "session-live" }),
+      registration({ sessionId: "session-live" }),
+      registration({ sessionId: "session-dead", pidAlive: false }),
+      registration({ sessionId: "session-terminal", lifecycleState: "completed" }),
+    ];
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => NOW,
+      scan: async () => ({ registrations, errors: [] }),
+    })).resolves.toEqual(["session-live", "session-pre"]);
+  });
+
+  it("includes a recovered damaged neighbor identity in the conservative inventory", async () => {
+    const failure = new Error("runner registration unreadable");
+    const onScanError = vi.fn();
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => NOW,
+      scan: async () => ({
+        registrations: [registration({ sessionId: "session-live" })],
+        errors: [{
+          directory: "/runner/session-unknown",
+          error: failure,
+          sessionId: "session-unknown",
+        }],
+      }),
+      onScanError,
+    })).resolves.toEqual(["session-live", "session-unknown"]);
+    expect(onScanError).toHaveBeenCalledOnce();
+  });
+
+  it("refuses partial inventory when a damaged directory has no recoverable identity", async () => {
+    const failure = new Error("runner identity cannot be recovered");
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => NOW,
+      scan: async () => ({
+        registrations: [registration({ sessionId: "session-live" })],
+        errors: [{ directory: "/runner/unidentified", error: failure }],
+      }),
+    })).rejects.toThrow("runner inventory incomplete: identity unavailable for /runner/unidentified");
+  });
+
+  it("keeps the periodic scan lightweight and never opens the event outbox", async () => {
+    const stateDirectory = await temporaryDirectory("light");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify({ ...registration().config, paths }));
+    await writeFile(paths.databasePath, "not-opened-by-periodic-scan");
+    await writeFile(
+      runnerLifecycleSummaryPath(paths.databasePath),
+      JSON.stringify(registration().lifecycle),
+    );
+    const open = vi.spyOn(RunnerSqliteEventOutbox, "open");
+    const result = await scanRunnerRegistrations(stateDirectory);
+    expect(result.errors).toEqual([]);
+    expect(result.registrations[0]).toMatchObject({
+      bootstrap: null,
+      lifecycle: { execution_state: "running" },
+    });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing database without recreating recovery state", async () => {
+    const stateDirectory = await temporaryDirectory("missing-db");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify({ ...registration().config, paths }));
+    const result = await scanRunnerRegistrations(stateDirectory);
+    expect(result.registrations).toEqual([]);
+    expect(result.errors[0]).toMatchObject({ directory: paths.sessionDirectory });
+    await expect(access(paths.databasePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("recovers a damaged config identity from the independent sidecar", async () => {
+    const stateDirectory = await temporaryDirectory("sidecar");
+    const paths = runnerProcessPaths(stateDirectory, "session-sidecar");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, "{damaged");
+    await writeRunnerRegistrationIdentity(
+      paths.sessionDirectory,
+      pendingRunnerRegistrationIdentity("session-sidecar", "release-sidecar"),
+    );
+    const result = await scanRunnerRegistrations(stateDirectory);
+    expect(result.errors[0]).toMatchObject({
+      sessionId: "session-sidecar",
+      codeSha: "release-sidecar",
+    });
+    await expect(listLiveRunnerSessionIds({ stateDirectory, leaseTimeoutMs: 120_000 }))
+      .resolves.toEqual(["session-sidecar"]);
+  });
+
+  it("recovers a damaged config identity from SQLite when no sidecar exists", async () => {
+    const stateDirectory = await temporaryDirectory("sqlite");
+    const paths = runnerProcessPaths(stateDirectory, "session-sqlite");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-sqlite",
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-sqlite",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "release-sqlite",
+        snapshot_path: "/release/release-sqlite/soul-server-ts",
+      },
+    });
+    outbox.close();
+    await writeFile(paths.configPath, "{damaged");
+    const result = await scanRunnerRegistrations(stateDirectory);
+    expect(result.errors[0]).toMatchObject({
+      sessionId: "session-sqlite",
+      codeSha: "release-sqlite",
+    });
+    await expect(listLiveRunnerSessionIds({ stateDirectory, leaseTimeoutMs: 120_000 }))
+      .resolves.toEqual(["session-sqlite"]);
+  });
+});
+
+function registration(options: {
+  sessionId?: string;
+  pidAlive?: boolean;
+  lifecycleState?: "running" | "completed" | "failed";
+} = {}): RunnerRegistration {
+  const sessionId = options.sessionId ?? "session-a";
+  return {
+    config: {
+      schemaVersion: 1,
+      sessionId,
+      backend: "codex",
+      agent: { id: "agent-a", name: "Agent A", backend: "codex", workspace_dir: "/workspace" },
+      paths: {
+        sessionDirectory: `/runner/${sessionId}`,
+        databasePath: `/runner/${sessionId}/runner.sqlite`,
+        socketPath: `/runner/${sessionId}/runner.sock`,
+        pidPath: `/runner/${sessionId}/runner.pid`,
+        lockPath: `/runner/${sessionId}/runner.lock`,
+        configPath: `/runner/${sessionId}/runner-config.json`,
+      },
+      codeSha: "release-a",
+      snapshotPath: "/release/release-a",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      codexHome: "/home/test/.codex",
+      rolloutRoot: "/home/test/.codex/sessions",
+    },
+    pid: 4123,
+    pidAlive: options.pidAlive ?? true,
+    registeredAtMs: Date.parse("2026-08-11T00:00:00.000Z"),
+    bootstrap: { payload: { code_sha: "release-a" } } as never,
+    lifecycle: {
+      session_id: sessionId,
+      runner_pid: 4123,
+      execution_command_id: "execute-a",
+      execution_state: options.lifecycleState ?? "running",
+      progress_seq: 3,
+      progress_at: "2026-08-11T00:00:20.000Z",
+      terminal_error: null,
+    },
+  };
+}
+
+async function temporaryDirectory(label: string): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), `runner-registry-${label}-`));
+  temporaryDirectories.push(directory);
+  return directory;
+}

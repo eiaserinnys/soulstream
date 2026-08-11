@@ -68,21 +68,42 @@ describe("RunnerSessionGarbageCollector", () => {
       "runner session GC retained unreadable session evidence",
     );
   });
+
+  it("re-reads registration ownership immediately before deletion and retains a revived runner", async () => {
+    const stale = registration({ sessionId: "revived" });
+    const refreshed = vi.fn()
+      .mockResolvedValueOnce(stale)
+      .mockResolvedValueOnce({
+        ...stale,
+        pidAlive: true,
+        pidStartIdentity: "replacement-process",
+      });
+    const subject = makeSubject({ refresh: refreshed });
+
+    await expect(subject.collector.collect(scan([stale]))).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "revived", reason: "registration_changed" }],
+    });
+    expect(refreshed).toHaveBeenCalledTimes(2);
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
 });
 
 function makeSubject(options: {
   pendingSessions?: Set<string>;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
+  refresh?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
 } = {}) {
   const removeDirectory = vi.fn(async () => {});
-  const deps: RunnerSessionGarbageCollectorDependencies = {
+  const deps = {
     now: () => NOW,
+    refresh: options.refresh ?? (async (item: RunnerRegistration) => item),
     inspect: async (item) => ({
       registration: await (options.hydrate ?? (async (candidate) => candidate))(item),
       incompleteDurableWork: options.pendingSessions?.has(item.config.sessionId) ?? false,
     }),
     removeDirectory,
-  };
+  } as RunnerSessionGarbageCollectorDependencies;
   const logger = { info: vi.fn(), warn: vi.fn() };
   return {
     collector: new RunnerSessionGarbageCollector(
@@ -118,6 +139,8 @@ function registration(options: {
     } as never,
     pid: options.pid === undefined ? 42 : options.pid,
     pidAlive: options.pidAlive ?? false,
+    registrationId: "registration-a",
+    pidStartIdentity: "process-start-a",
     registeredAtMs: NOW - RETENTION_MS * 2,
     bootstrap: { payload: { code_sha: "release-a" } } as never,
     lifecycle: {

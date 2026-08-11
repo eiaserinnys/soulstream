@@ -1,30 +1,11 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   RunnerRecoveryCoordinator,
   type RunnerRecoveryCoordinatorOptions,
 } from "../../src/runner/runner_recovery_coordinator.js";
-import {
-  classifyRunnerRegistration,
-  listLiveRunnerSessionIds,
-  scanRunnerRegistrations,
-  type RunnerRegistration,
-} from "../../src/runner/runner_process_registry.js";
-import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
-import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-import { runnerLifecycleSummaryPath } from "../../src/runner/sqlite_runner_lifecycle.js";
+import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import type { Task } from "../../src/task/task_models.js";
-
-const temporaryDirectories: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((directory) =>
-    rm(directory, { recursive: true, force: true })));
-});
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("adopts a live registered runner before its first durable bootstrap event", async () => {
@@ -251,130 +232,35 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 });
 
-describe("classifyRunnerRegistration", () => {
-  const now = Date.parse("2026-08-11T00:00:30.000Z");
+describe("RunnerRecoveryCoordinator GC cadence", () => {
+  it("does not repeat durable release inspection when the lightweight candidate fingerprint is unchanged", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.databaseMtimeMs = 1;
+    const releaseGarbageCollector = { collect: vi.fn(async () => ({ removed: [], retained: [] })) };
+    const subject = makeSubject([current], Date.now(), [], { releaseGarbageCollector });
 
-  it("preserves the registration-before-spawn grace window without inventing a death", () => {
-    const pending = {
-      ...registration({ pidAlive: false }),
-      registeredAtMs: now - 1_000,
-      bootstrap: null,
-      lifecycle: null,
-    };
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
 
-    expect(classifyRunnerRegistration(pending, now, 120_000)).toBe("wait_for_bootstrap");
-    expect(classifyRunnerRegistration(
-      { ...pending, registeredAtMs: now - 120_000 },
-      now,
-      120_000,
-    )).toBe("reap_dead");
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
+
+    current.databaseMtimeMs = 2;
+    await subject.coordinator.scanOnce();
+
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledTimes(2);
   });
 
-  it("adopts a live pid during the pre-bootstrap registration lease", () => {
-    const pending = {
-      ...registration(),
-      registeredAtMs: now - 1_000,
-      bootstrap: null,
-      lifecycle: null,
-    };
+  it("does not run durable release inspection for database churn on an active runner", async () => {
+    const current = registration({ pidAlive: true, lifecycleState: "running" });
+    current.databaseMtimeMs = 1;
+    const releaseGarbageCollector = { collect: vi.fn(async () => ({ removed: [], retained: [] })) };
+    const subject = makeSubject([current], Date.now(), [], { releaseGarbageCollector });
 
-    expect(classifyRunnerRegistration(pending, now, 120_000)).toBe("adopt_prebootstrap");
-  });
+    await subject.coordinator.scanOnce();
+    current.databaseMtimeMs = 2;
+    await subject.coordinator.scanOnce();
 
-  it("gives a durable terminal state priority over process liveness", () => {
-    expect(classifyRunnerRegistration(registration({
-      pidAlive: false,
-      lifecycleState: "failed",
-    }), now, 120_000)).toBe("replay_terminal");
-  });
-
-  it("reports only live lease dispositions and deduplicates the reconnect inventory", async () => {
-    const registrations = [
-      { ...registration({ sessionId: "session-pre" }), bootstrap: null, lifecycle: null },
-      registration({ sessionId: "session-live" }),
-      registration({ sessionId: "session-live" }),
-      registration({ sessionId: "session-dead", pidAlive: false }),
-      registration({ sessionId: "session-terminal", lifecycleState: "completed" }),
-    ];
-
-    await expect(listLiveRunnerSessionIds({
-      stateDirectory: "/runner",
-      leaseTimeoutMs: 120_000,
-      now: () => now,
-      scan: async () => ({ registrations, errors: [] }),
-    })).resolves.toEqual(["session-live", "session-pre"]);
-  });
-
-  it("reports healthy registrations while isolating an unreadable neighbor", async () => {
-    const failure = new Error("runner registration unreadable");
-    const onScanError = vi.fn();
-
-    await expect(listLiveRunnerSessionIds({
-      stateDirectory: "/runner",
-      leaseTimeoutMs: 120_000,
-      now: () => now,
-      scan: async () => ({
-        registrations: [registration({ sessionId: "session-live" })],
-        errors: [{
-          directory: "/runner/session-unknown",
-          error: failure,
-          sessionId: "session-unknown",
-        }],
-      }),
-      onScanError,
-    })).resolves.toEqual(["session-live", "session-unknown"]);
-    expect(onScanError).toHaveBeenCalledWith({
-      directory: "/runner/session-unknown",
-      error: failure,
-      sessionId: "session-unknown",
-    });
-  });
-
-  it("keeps the periodic scan lightweight and never opens the event outbox", async () => {
-    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-registry-light-"));
-    temporaryDirectories.push(stateDirectory);
-    const paths = runnerProcessPaths(stateDirectory, "session-a");
-    await mkdir(paths.sessionDirectory, { recursive: true });
-    await writeFile(paths.configPath, JSON.stringify({
-      ...registration().config,
-      paths,
-    }));
-    await writeFile(paths.databasePath, "not-opened-by-periodic-scan");
-    await writeFile(
-      runnerLifecycleSummaryPath(paths.databasePath),
-      JSON.stringify(registration().lifecycle),
-    );
-    const open = vi.spyOn(RunnerSqliteEventOutbox, "open");
-
-    const result = await scanRunnerRegistrations(stateDirectory);
-
-    expect(result.errors).toEqual([]);
-    expect(result.registrations).toEqual([
-      expect.objectContaining({
-        bootstrap: null,
-        lifecycle: expect.objectContaining({ execution_state: "running" }),
-      }),
-    ]);
-    expect(open).not.toHaveBeenCalled();
-  });
-
-  it("reports a missing registered database without recreating empty recovery state", async () => {
-    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-registry-"));
-    temporaryDirectories.push(stateDirectory);
-    const paths = runnerProcessPaths(stateDirectory, "session-a");
-    await mkdir(paths.sessionDirectory, { recursive: true });
-    await writeFile(paths.configPath, JSON.stringify({
-      ...registration().config,
-      paths,
-    }));
-
-    const result = await scanRunnerRegistrations(stateDirectory);
-
-    expect(result.registrations).toEqual([]);
-    expect(result.errors).toEqual([
-      expect.objectContaining({ directory: paths.sessionDirectory }),
-    ]);
-    await expect(access(paths.databasePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
   });
 });
 

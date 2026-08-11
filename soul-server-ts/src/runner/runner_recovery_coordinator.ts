@@ -6,6 +6,7 @@ import type { Task } from "../task/task_models.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
+  runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
   type RunnerRegistration,
   type RunnerRecoveryDisposition,
@@ -45,6 +46,7 @@ export interface RunnerRecoveryCoordinatorOptions {
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
   private readonly scans = new Set<Promise<void>>();
+  private releaseGarbageCollectionFingerprint: string | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
 
@@ -113,9 +115,14 @@ export class RunnerRecoveryCoordinator {
         });
       this.active.set(sessionId, recovery);
     }
-    if (this.options.releaseGarbageCollector) {
+    const releaseFingerprint = runnerReleaseGcCandidateFingerprint(scan);
+    if (
+      this.options.releaseGarbageCollector
+      && releaseFingerprint !== this.releaseGarbageCollectionFingerprint
+    ) {
       try {
         await this.options.releaseGarbageCollector.collect(scan);
+        this.releaseGarbageCollectionFingerprint = releaseFingerprint;
       } catch (error) {
         this.options.logger.error({ error }, "runner release GC failed");
       }

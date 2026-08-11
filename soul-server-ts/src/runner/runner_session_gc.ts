@@ -4,6 +4,7 @@ import type { Logger } from "pino";
 
 import {
   inspectRunnerDurableState,
+  readRunnerRegistrationForDeletion,
   type RunnerRegistration,
   type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
@@ -11,6 +12,7 @@ import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js
 
 export interface RunnerSessionGarbageCollectorDependencies {
   now(): number;
+  refresh(registration: RunnerRegistration): Promise<RunnerRegistration>;
   inspect(registration: RunnerRegistration): ReturnType<typeof inspectRunnerDurableState>;
   removeDirectory(path: string): Promise<void>;
 }
@@ -53,8 +55,25 @@ export class RunnerSessionGarbageCollector {
               this.stateDirectory,
               registration.config.paths.sessionDirectory,
             );
-            const inspection = await this.deps.inspect(registration);
+            const fresh = await this.deps.refresh(registration);
+            const freshReason = terminalCandidateReason(
+              fresh,
+              this.deps.now(),
+              this.retentionMs,
+            );
+            if (freshReason) {
+              result.retained.push({ sessionId: registration.config.sessionId, reason: freshReason });
+              return;
+            }
+            const inspection = await this.deps.inspect(fresh);
             const hydrated = inspection.registration;
+            if (!sameRegistrationGeneration(fresh, hydrated)) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: "registration_changed",
+              });
+              return;
+            }
             const verifiedReason = terminalCandidateReason(
               hydrated,
               this.deps.now(),
@@ -81,10 +100,27 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            await this.deps.removeDirectory(hydrated.config.paths.sessionDirectory);
-            result.removed.push(hydrated.config.sessionId);
+            const latest = await this.deps.refresh(hydrated);
+            if (!sameRegistrationGeneration(hydrated, latest)) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: "registration_changed",
+              });
+              return;
+            }
+            const latestReason = terminalCandidateReason(
+              latest,
+              this.deps.now(),
+              this.retentionMs,
+            );
+            if (latestReason) {
+              result.retained.push({ sessionId: registration.config.sessionId, reason: latestReason });
+              return;
+            }
+            await this.deps.removeDirectory(latest.config.paths.sessionDirectory);
+            result.removed.push(latest.config.sessionId);
             this.logger.info(
-              { sessionId: hydrated.config.sessionId },
+              { sessionId: latest.config.sessionId },
               "removed expired terminal runner session state",
             );
           } catch (error) {
@@ -111,6 +147,9 @@ function terminalCandidateReason(
 ): string | null {
   if (registration.pid === null) return "pid_evidence_missing";
   if (registration.pidAlive) return "live_runner";
+  if (!registration.registrationId || !registration.pidStartIdentity) {
+    return "ownership_evidence_missing";
+  }
   const lifecycle = registration.lifecycle;
   if (!lifecycle) return "lifecycle_missing";
   if (lifecycle.execution_state === "running") return "running_lifecycle";
@@ -131,7 +170,22 @@ function assertOwnedSessionDirectory(stateDirectory: string, sessionDirectory: s
 function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
+    refresh: async (registration) => await readRunnerRegistrationForDeletion(
+      registration.config.paths.sessionDirectory,
+    ),
     inspect: inspectRunnerDurableState,
     removeDirectory: async (path) => await rm(path, { recursive: true }),
   };
+}
+
+function sameRegistrationGeneration(
+  left: RunnerRegistration,
+  right: RunnerRegistration,
+): boolean {
+  return left.config.sessionId === right.config.sessionId
+    && left.config.codeSha === right.config.codeSha
+    && left.config.paths.sessionDirectory === right.config.paths.sessionDirectory
+    && (left.registrationId ?? null) === (right.registrationId ?? null)
+    && left.pid === right.pid
+    && (left.pidStartIdentity ?? null) === (right.pidStartIdentity ?? null);
 }

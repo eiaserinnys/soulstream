@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 
 const LOCK_RETRY_MS = 50;
+const execFileAsync = promisify(execFile);
 
 export interface ProcessLockOwner {
   pid: number;
@@ -126,10 +129,18 @@ export function defaultProcessOwnershipLockDependencies(): ProcessOwnershipLockD
       startIdentity: await readProcessStartIdentity(process.pid)
         ?? `node-start-${Math.round(Date.now() - process.uptime() * 1_000)}`,
     }),
-    inspectProcess: async (pid) => ({
-      alive: isProcessAlive(pid),
-      startIdentity: await readProcessStartIdentity(pid),
-    }),
+    inspectProcess: inspectProcessIdentity,
+  };
+}
+
+export async function inspectProcessIdentity(pid: number): Promise<ProcessIdentity> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    throw new Error(`process identity pid must be positive: ${pid}`);
+  }
+  if (!isProcessAlive(pid)) return { alive: false, startIdentity: null };
+  return {
+    alive: true,
+    startIdentity: await readProcessStartIdentity(pid),
   };
 }
 
@@ -146,7 +157,25 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-async function readProcessStartIdentity(pid: number): Promise<string | null> {
+export async function readProcessStartIdentity(pid: number): Promise<string | null> {
+  if (process.platform === "win32") {
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`,
+        ],
+        { timeout: 5_000, windowsHide: true },
+      );
+      const ticks = stdout.trim();
+      return ticks ? `windows-process-${ticks}` : null;
+    } catch {
+      return null;
+    }
+  }
   if (process.platform !== "linux") return null;
   try {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");

@@ -97,6 +97,15 @@ export class RunnerReleasePool {
     }
   }
 
+  async withReleaseLocks<T>(releaseIds: string[], operation: () => Promise<T>): Promise<T> {
+    const ordered = [...new Set(releaseIds)].sort();
+    const acquire = async (index: number): Promise<T> => {
+      if (index >= ordered.length) return await operation();
+      return await this.withReleaseLock(ordered[index]!, async () => await acquire(index + 1));
+    };
+    return await acquire(0);
+  }
+
   private async isReady(release: RunnerReleaseDescriptor): Promise<boolean> {
     try {
       await this.materializer.verify(release);

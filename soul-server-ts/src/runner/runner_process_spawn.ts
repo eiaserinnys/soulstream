@@ -12,7 +12,16 @@ import {
 import { assertRunnerJsonValue } from "./frame_protocol.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import {
+  inspectProcessIdentity,
+  type ProcessIdentity,
+} from "./runner_process_lock.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
+import {
+  pendingRunnerRegistrationIdentity,
+  readRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "./runner_registration_identity.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 
@@ -81,6 +90,7 @@ interface SpawnDependencies {
     env: NodeJS.ProcessEnv;
   }): Pick<ChildProcess, "pid" | "unref">;
   registerPid(path: string, pid: number): Promise<void>;
+  inspectProcess(pid: number): Promise<ProcessIdentity>;
   isPidAlive(pid: number): boolean;
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
@@ -109,6 +119,8 @@ export class RunnerProcessSpawner {
     // point leaves a discoverable SQLite identity instead of an orphan child.
     await this.deps.prepareDatabase(paths.databasePath);
     await this.stopExistingRunner(paths);
+    const registrationIdentity = pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha);
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
 
     const config: RunnerChildConfig = {
       schemaVersion: 1,
@@ -148,6 +160,15 @@ export class RunnerProcessSpawner {
     });
     if (!child.pid) throw new Error("detached runner spawn returned no pid");
     try {
+      const observed = await this.deps.inspectProcess(child.pid);
+      if (!observed.alive || !observed.startIdentity) {
+        throw new Error(`detached runner process identity unavailable: ${child.pid}`);
+      }
+      await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+        ...registrationIdentity,
+        pid: child.pid,
+        startIdentity: observed.startIdentity,
+      });
       await this.deps.registerPid(paths.pidPath, child.pid);
     } catch (registrationError) {
       const cleanupErrors: unknown[] = [];
@@ -158,6 +179,11 @@ export class RunnerProcessSpawner {
       }
       try {
         await unlinkIfPresent(paths.pidPath);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      try {
+        await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
       } catch (cleanupError) {
         cleanupErrors.push(cleanupError);
       }
@@ -177,6 +203,17 @@ export class RunnerProcessSpawner {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
     const pid = await readRunnerPid(paths.pidPath);
     if (pid === null || !this.deps.isPidAlive(pid)) return null;
+    const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    if (identity) {
+      if (identity.pid === null || identity.startIdentity === null) return null;
+      const observed = await this.deps.inspectProcess(pid);
+      if (
+        identity.pid !== pid
+        || !observed.alive
+        || !observed.startIdentity
+        || observed.startIdentity !== identity.startIdentity
+      ) return null;
+    }
     const config = await readRunnerChildConfig(paths.configPath);
     if (config.sessionId !== input.sessionId || !samePaths(config.paths, paths)) {
       throw new Error(`runner registration mismatch for ${input.sessionId}`);
@@ -233,6 +270,7 @@ function defaultDependencies(): SpawnDependencies {
     validateEntry: async (path) => await access(path),
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
     registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+    inspectProcess: inspectProcessIdentity,
     isPidAlive: (pid) => {
       try {
         process.kill(pid, 0);
