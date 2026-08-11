@@ -121,13 +121,16 @@ export function mapThreadEvent(event: ThreadEvent | RawCodexEvent): SSEEventPayl
 
     case "turn.completed":
       // usage 운반. SSEEventComplete는 open shape이므로 usage를 그대로 spread.
+      {
+        const usage = (event as Extract<ThreadEvent, { type: "turn.completed" }>).usage;
       return [
         {
           type: "complete",
-          usage: (event as Extract<ThreadEvent, { type: "turn.completed" }>).usage,
+          ...(usage !== undefined ? { usage } : {}),
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
+      }
 
     case "turn.failed":
       // turn 단위 실패 — 다음 turn 가능. fatal=false.
@@ -174,15 +177,18 @@ export function mapThreadEvent(event: ThreadEvent | RawCodexEvent): SSEEventPayl
 function mapItemStarted(item: ThreadItem | RawCodexItem | unknown): SSEEventPayload[] {
   switch (typeOf(item)) {
     case "agent_message":
+      {
+        const itemId = fieldString(item, "id");
       return [
         {
           type: "text_start",
           _live_only: true,
           raw_event_type: "item.started",
-          item_id: fieldString(item, "id"),
+          ...(itemId !== undefined ? { item_id: itemId } : {}),
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
+      }
 
     case "reasoning":
       // 사고 시작 시점은 표시 안 함. 완료 시 thinking 발행.
@@ -213,15 +219,18 @@ function mapItemStarted(item: ThreadItem | RawCodexItem | unknown): SSEEventPayl
       ];
 
     case "mcp_tool_call":
+      {
+        const toolInput = field(item, "arguments");
       return [
         {
           type: "tool_start",
           tool_use_id: fieldString(item, "id") ?? "mcp_tool_call",
           tool_name: `mcp/${fieldString(item, "server") ?? "unknown"}/${fieldString(item, "tool") ?? "unknown"}`,
-          tool_input: field(item, "arguments"),
+          ...(toolInput !== undefined ? { tool_input: toolInput } : {}),
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
+      }
 
     case "web_search":
       return [
@@ -258,13 +267,14 @@ function mapItemStarted(item: ThreadItem | RawCodexItem | unknown): SSEEventPayl
  */
 function mapItemUpdated(item: ThreadItem | RawCodexItem | unknown): SSEEventPayload[] {
   if (typeOf(item) === "agent_message" && isRecord(item)) {
+    const itemId = fieldString(item, "id");
     return [
       {
         type: "text_delta",
         text: fieldString(item, "text") ?? "",
         _live_only: true,
         raw_event_type: "item.updated",
-        item_id: fieldString(item, "id"),
+        ...(itemId !== undefined ? { item_id: itemId } : {}),
         timestamp: nowEpochSec(),
       } as SSEEventPayload,
     ];

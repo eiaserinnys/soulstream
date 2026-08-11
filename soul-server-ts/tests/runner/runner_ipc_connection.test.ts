@@ -10,6 +10,7 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import {
   RunnerIpcConnection,
+  runnerDroppedFrameLogContext,
 } from "../../src/runner/runner_ipc_connection.js";
 import { RunnerHostRequestClient } from
   "../../src/runner/runner_host_request_client.js";
@@ -129,6 +130,9 @@ describe("RunnerIpcConnection", () => {
       kind: "request",
       service: "claude_runtime",
       operation: "observe",
+      eventType: "rate_limit",
+      correlationId: expect.any(String),
+      dropCount: 1,
       error: expect.any(Error),
     });
     expect(runnerConnection.pendingRequestCount).toBe(0);
@@ -167,10 +171,43 @@ describe("RunnerIpcConnection", () => {
 
     await vi.waitFor(() => expect(received).toHaveLength(1));
     expect(dropped).toHaveBeenCalledOnce();
+    expect(dropped.mock.calls[0]?.[0]).toMatchObject({
+      kind: "engine_event",
+      eventType: "debug",
+      dropCount: 1,
+      error: expect.any(Error),
+    });
     expect(received[0]).toMatchObject({
       kind: "engine_event",
       payload: { type: "debug", message: "still alive" },
     });
+  });
+
+  it("increments the dropped-observation count on one connection", async () => {
+    const [host, runner] = await socketPair();
+    const dropped = vi.fn();
+    const hostConnection = new RunnerIpcConnection(host);
+    const runnerConnection = new RunnerIpcConnection(runner, { onFrameDropped: dropped });
+
+    for (const type of ["rate_limit", "debug"]) {
+      await expect(runnerConnection.send({
+        protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+        channel: "event",
+        kind: "engine_event",
+        payload: { type, invalid: Symbol(type) },
+      } as never)).resolves.toBe(false);
+    }
+
+    expect(dropped.mock.calls.map(([drop]) => drop.dropCount)).toEqual([1, 2]);
+    const logContext = runnerDroppedFrameLogContext(dropped.mock.calls[1]![0], 9);
+    expect(logContext).toMatchObject({
+      eventType: "debug",
+      dropCount: 9,
+      err: expect.any(Error),
+    });
+    expect(logContext).not.toHaveProperty("error");
+    hostConnection.close();
+    runnerConnection.close();
   });
 
   it.each([

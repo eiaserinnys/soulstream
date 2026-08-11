@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 describe("RunnerSqliteEventOutbox", () => {
-  it("uses WAL with one event ledger and one payload-free IPC ordering journal", async () => {
+  it("uses WAL with one event ledger, one IPC journal, and a payload-free pre-bootstrap lease", async () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.open(path);
     outbox.close();
@@ -45,9 +45,13 @@ describe("RunnerSqliteEventOutbox", () => {
       ).all() as Array<{ name: string; sql: string }>;
       expect(tables.map((table) => table.name)).toEqual([
         "runner_event_outbox",
+        "runner_prebootstrap_lifecycle",
         "runner_ipc_journal",
       ]);
       const outboxTable = tables.find((table) => table.name === "runner_event_outbox")!;
+      const lifecycleTable = tables.find(
+        (table) => table.name === "runner_prebootstrap_lifecycle",
+      )!;
       const journalTable = tables.find((table) => table.name === "runner_ipc_journal")!;
       expect(outboxTable.sql).toContain("source_seq INTEGER PRIMARY KEY AUTOINCREMENT");
       expect(outboxTable.sql).toContain("runner_metadata_json");
@@ -58,7 +62,10 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(journalTable.sql).toContain("outbox_source_seq INTEGER UNIQUE");
       expect(journalTable.sql).toContain("correlation_id TEXT UNIQUE");
       expect(journalTable.sql).not.toMatch(/payload|metadata|session_effect/);
+      expect(lifecycleTable.sql).toContain("execution_command_id TEXT NOT NULL");
+      expect(lifecycleTable.sql).not.toMatch(/payload|metadata|session_effect/);
       expect(outboxTable.sql).toContain("STRICT");
+      expect(lifecycleTable.sql).toContain("STRICT");
       expect(journalTable.sql).toContain("STRICT");
     } finally {
       database.close();
@@ -194,6 +201,61 @@ describe("RunnerSqliteEventOutbox", () => {
 
     expect((await outbox.readBootstrap())?.payload_hash).toBe(bootstrap.payload_hash);
     expect(outbox.ackedSeq).toBe(1);
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("records pre-bootstrap failure and promotes only the succeeding execution lease", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
+
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-failed",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    });
+    lifecycle.finish(
+      "execute-failed",
+      "failed",
+      "2026-08-11T01:00:01.000Z",
+      { code: "execution_failed", message: "backend ID unavailable" },
+    );
+    expect(await outbox.readBootstrap()).toBeNull();
+    expect(lifecycle.read()).toMatchObject({
+      execution_command_id: "execute-failed",
+      execution_state: "failed",
+    });
+
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-next",
+      progressedAt: "2026-08-11T01:00:02.000Z",
+    });
+    await outbox.initializeBootstrap({
+      ...bootstrapInput(),
+      resume: {
+        ...bootstrapInput().resume,
+        backend_session_id: "backend-session-next",
+      },
+    });
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-next",
+      progressedAt: "2026-08-11T01:00:03.000Z",
+    });
+
+    expect(lifecycle.read()).toMatchObject({
+      execution_command_id: "execute-next",
+      execution_state: "running",
+      terminal_error: null,
+    });
+    const database = new DatabaseSync(path);
+    expect(database.prepare(
+      "SELECT COUNT(*) AS count FROM runner_prebootstrap_lifecycle",
+    ).get()).toEqual({ count: 0 });
+    database.close();
+
     lifecycle.close();
     outbox.close();
   });

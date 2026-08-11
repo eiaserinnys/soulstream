@@ -168,10 +168,13 @@ describe("runner cutover all-flags-on integration", () => {
     expect(await pathExists(releaseRoot)).toBe(true);
 
     await writeFile(join(controlDirectory, "emit-first"), "go\n");
-    await waitFor(async () => batches.length === 1 && await pendingFrameCount(paths.databasePath) === 0);
-    expect(batches[0]?.events[0]).toMatchObject({
+    await waitFor(async () => durableContents(batches).includes("before-detach")
+      && await pendingFrameCount(paths.databasePath) === 0);
+    expect(batches.flatMap((batch) => batch.events).find(
+      (event) => (event.payload as { content?: string }).content === "before-detach",
+    )).toMatchObject({
       stream_id: expect.any(String),
-      source_seq: 2,
+      source_seq: 3,
       payload: { content: "before-detach" },
     });
     expect((await readRunnerBootstrap(paths.databasePath)).payload).toMatchObject({
@@ -196,7 +199,7 @@ describe("runner cutover all-flags-on integration", () => {
       undefined,
       "adopt",
     );
-    await waitFor(async () => batches.length === 2);
+    await waitFor(async () => durableContents(batches).includes("after-detach"));
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
@@ -210,9 +213,7 @@ describe("runner cutover all-flags-on integration", () => {
     );
     expect(task.status).toBe("completed");
     expect(task.lastAssistantText).toBe("after-detach");
-    expect(batches.flatMap((batch) => batch.events.map(
-      (event) => (event.payload as { content?: string }).content,
-    ))).toEqual(["before-detach", "after-detach"]);
+    expect(durableContents(batches)).toEqual(["before-detach", "after-detach"]);
     expect(await pendingFrameCount(paths.databasePath)).toBe(0);
     await waitFor(async () => !isPidAlive(pid));
     childPids.delete(pid);
@@ -401,6 +402,13 @@ function mockOrchIngress(): { mux: EventOutboxPumpMux; batches: EventOutboxBatch
     });
   });
   return { mux, batches };
+}
+
+function durableContents(batches: EventOutboxBatch[]): string[] {
+  return batches.flatMap((batch) => batch.events.flatMap((event) => {
+    const content = (event.payload as { content?: unknown }).content;
+    return typeof content === "string" ? [content] : [];
+  }));
 }
 
 function emptyStore(): EventOutboxPumpStore {

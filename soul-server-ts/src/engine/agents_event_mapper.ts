@@ -77,13 +77,14 @@ export function mapAgentsRunStreamEvent(event: unknown): SSEEventPayload[] {
     }
     case "tool_approval_requested": {
       const approvalId = readToolUseId(rawItem);
+      const agentName = readAgentName(item.agent);
       return [asSSE({
         type: "tool_approval_requested",
         approval_id: approvalId,
         tool_use_id: approvalId,
         tool_name: readToolName(item, rawItem),
         tool_input: parseToolInput(rawItem.arguments),
-        agent_name: readAgentName(item.agent),
+        ...(agentName !== undefined ? { agent_name: agentName } : {}),
         timestamp: now,
       })];
     }
@@ -102,12 +103,13 @@ export function mapAgentsGuardrailError(err: unknown): SSEEventPayload[] {
   const result = asRecord(err.result);
   const guardrail = asRecord(result.guardrail);
   const output = asRecord(result.output);
+  const outputInfo = output.outputInfo;
   return [asSSE({
     type: "guardrail_tripwire",
     guardrail_type: readString(guardrail, "type") ?? inferGuardrailType(name),
     guardrail_name: readString(guardrail, "name") ?? name,
     message: readString(err, "message") ?? name,
-    output_info: output.outputInfo,
+    ...(outputInfo !== undefined ? { output_info: outputInfo } : {}),
     timestamp: Date.now() / 1000,
   })];
 }

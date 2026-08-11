@@ -25,7 +25,11 @@ import {
 } from "./frame_protocol.js";
 import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
-import type { RunnerIpcConnection } from "./runner_ipc_connection.js";
+import {
+  runnerDroppedFrameLogContext,
+  type RunnerDroppedFrame,
+  type RunnerIpcConnection,
+} from "./runner_ipc_connection.js";
 import {
   RunnerProcessSpawner,
   type SpawnRunnerProcessInput,
@@ -65,6 +69,7 @@ export interface RunnerProcessDispatcherOptions {
 }
 
 export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
+  private droppedFrameCount = 0;
   private readonly ready: Promise<void>;
   private spawnInput!: SpawnRunnerProcessInput;
   private connection: RunnerIpcConnection | undefined;
@@ -281,13 +286,18 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       timeoutMs: 500,
       deadlineMs: RUNNER_SOCKET_CONNECT_DEADLINE_MS,
       retryDelayMs: RUNNER_SOCKET_CONNECT_RETRY_MS,
-      onFrameDropped: (drop) => this.options.logger.error(
-        drop,
-        "Invalid observational runner frame dropped",
-      ),
+      onFrameDropped: (drop) => this.logDroppedFrame(drop),
     });
     this.attachConnection(connection, socketPath);
     return connection;
+  }
+
+  private logDroppedFrame(drop: RunnerDroppedFrame): void {
+    this.droppedFrameCount += 1;
+    this.options.logger.error(
+      runnerDroppedFrameLogContext(drop, this.droppedFrameCount),
+      "Invalid observational runner frame dropped",
+    );
   }
 
   private attachConnection(connection: RunnerIpcConnection, socketPath: string): void {

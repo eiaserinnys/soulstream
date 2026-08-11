@@ -1,6 +1,6 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 4;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 5;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 export const RUNNER_IPC_JOURNAL_DDL = `
@@ -94,6 +94,25 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
 CREATE UNIQUE INDEX IF NOT EXISTS runner_event_outbox_one_bootstrap
 ON runner_event_outbox(record_kind)
 WHERE record_kind = 'bootstrap';
+
+-- An ID-bearing backend can fail before its immutable bootstrap record exists.
+-- Keep only that execution lease here, then promote it into the bootstrap row
+-- as soon as the real backend session ID is known. This table never stores
+-- resume material or domain events.
+CREATE TABLE IF NOT EXISTS runner_prebootstrap_lifecycle (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  session_id TEXT NOT NULL,
+  runner_pid INTEGER NOT NULL,
+  execution_command_id TEXT NOT NULL,
+  execution_state TEXT NOT NULL CHECK (
+    execution_state IN ('running', 'completed', 'failed', 'reaped', 'closed')
+  ),
+  progress_seq INTEGER NOT NULL CHECK (progress_seq >= 0),
+  progress_at TEXT NOT NULL,
+  terminal_error_json TEXT CHECK (
+    terminal_error_json IS NULL OR json_valid(terminal_error_json)
+  )
+) STRICT;
 
 ${RUNNER_IPC_JOURNAL_DDL}
 `;

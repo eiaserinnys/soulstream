@@ -20,6 +20,10 @@ import {
 } from "./frame_protocol.js";
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import { RunnerHostRequestClient } from "./runner_host_request_client.js";
+import {
+  runnerDroppedFrameLogContext,
+  type RunnerDroppedFrame,
+} from "./runner_ipc_connection.js";
 import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
@@ -29,6 +33,13 @@ import { RunnerWriterLock } from "./runner_writer_lock.js";
 
 const REQUIRED_HOST_SEND_ATTEMPTS = 61;
 const REQUIRED_HOST_SEND_RETRY_MS = 500;
+const PRE_BOOTSTRAP_EVENT_LIMIT = 1_024;
+const PRE_BOOTSTRAP_BYTE_LIMIT = 8 * 1024 * 1024;
+
+interface PreBootstrapFrameBuffer {
+  frames: RunnerEventFrame[];
+  bytes: number;
+}
 
 export class RunnerChildRuntime {
   private endpoint!: RunnerSocketEndpoint;
@@ -40,6 +51,7 @@ export class RunnerChildRuntime {
   private resolveClosed!: () => void;
   private closing = false;
   private activeCommandId: string | undefined;
+  private droppedFrameCount = 0;
 
   constructor(
     private readonly config: RunnerChildConfig,
@@ -56,12 +68,15 @@ export class RunnerChildRuntime {
   async start(): Promise<void> {
     this.lock = await RunnerWriterLock.acquire(this.config.paths.lockPath);
     this.outbox = await RunnerSqliteEventOutbox.open(this.config.paths.databasePath);
-    this.lifecycle = RunnerSqliteLifecycle.open(this.config.paths.databasePath);
+    this.lifecycle = RunnerSqliteLifecycle.open(
+      this.config.paths.databasePath,
+      this.config.sessionId,
+    );
     this.endpoint = new RunnerSocketEndpoint(
       this.config.paths.socketPath,
       async (frame) => await this.handleFrame(frame),
       (error) => this.logger.warn({ error }, "Runner host socket disconnected"),
-      (drop) => this.logger.error(drop, "Invalid observational runner frame dropped"),
+      (drop) => this.logDroppedFrame(drop),
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     this.dispatcher = new InProcessRunnerCommandDispatcher(
@@ -69,6 +84,14 @@ export class RunnerChildRuntime {
     );
     await setRunnerOomScore();
     await this.endpoint.listen();
+  }
+
+  private logDroppedFrame(drop: RunnerDroppedFrame): void {
+    this.droppedFrameCount += 1;
+    this.logger.error(
+      runnerDroppedFrameLogContext(drop, this.droppedFrameCount),
+      "Invalid observational runner frame dropped",
+    );
   }
 
   async waitUntilClosed(): Promise<void> {
@@ -144,14 +167,31 @@ export class RunnerChildRuntime {
   private async drainExecution(
     command: Extract<RunnerCommandFrame, { kind: "execute" }>,
   ): Promise<void> {
+    const preBootstrap = createPreBootstrapFrameBuffer();
+    try {
+      await this.drainExecutionWithBuffer(command, preBootstrap);
+    } finally {
+      this.discardPreBootstrapFrames(preBootstrap, "execution_terminal");
+      if (this.activeCommandId === command.commandId) this.activeCommandId = undefined;
+    }
+  }
+
+  private async drainExecutionWithBuffer(
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
+    preBootstrap: PreBootstrapFrameBuffer,
+  ): Promise<void> {
     let terminalError: { code: string; message: string } | undefined;
     let storageFailure = false;
     try {
-      if (command.params.resumeSessionId) {
-        await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
-      }
+      await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
-        await this.forwardRunnerFrame(frame);
+        await this.forwardRunnerFrame(frame, preBootstrap);
+      }
+      if (requiresBackendSessionId(this.config.backend) && !(await this.outbox.readBootstrap())) {
+        this.discardPreBootstrapFrames(preBootstrap, "backend_session_id_missing");
+        throw new Error(
+          `${this.config.backend} execution ended before publishing its backend session ID`,
+        );
       }
     } catch (error) {
       await this.dispatcher.interrupt().catch(() => false);
@@ -173,7 +213,10 @@ export class RunnerChildRuntime {
     if (storageFailure) queueMicrotask(() => { void this.shutdown(); });
   }
 
-  private async forwardRunnerFrame(frame: RunnerEventFrame): Promise<void> {
+  private async forwardRunnerFrame(
+    frame: RunnerEventFrame,
+    preBootstrap: PreBootstrapFrameBuffer,
+  ): Promise<void> {
     if (frame.kind === "run_state_snapshot") {
       await this.callHostSnapshot("persistRunState", frame.snapshot);
       this.recordProgress();
@@ -190,17 +233,45 @@ export class RunnerChildRuntime {
       return;
     }
     const event = frame.payload as SSEEventPayload;
-    if (!shouldPersistEvent(event)) {
-      await this.sendBestEffort(frame);
-      this.recordProgress();
-      return;
-    }
     const effect = sessionIdEffect(event);
     const backendSessionId = effect?.kind === "set_backend_session_id"
       ? effect.backend_session_id
       : null;
-    if (!(await this.outbox.readBootstrap())) {
+    const bootstrap = await this.outbox.readBootstrap();
+    if (!bootstrap && requiresBackendSessionId(this.config.backend)) {
+      if (backendSessionId === null) {
+        const frameBytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+        if (preBootstrap.frames.length >= PRE_BOOTSTRAP_EVENT_LIMIT) {
+          throw new Error(
+            `${this.config.backend} exceeded ${PRE_BOOTSTRAP_EVENT_LIMIT} events before its backend session ID`,
+          );
+        }
+        if (preBootstrap.bytes + frameBytes > PRE_BOOTSTRAP_BYTE_LIMIT) {
+          throw new Error(
+            `${this.config.backend} exceeded ${PRE_BOOTSTRAP_BYTE_LIMIT} bytes before its backend session ID`,
+          );
+        }
+        preBootstrap.frames.push(frame);
+        preBootstrap.bytes += frameBytes;
+        return;
+      }
       await this.ensureBootstrap(backendSessionId, this.requireActiveCommandId());
+      await this.flushPreBootstrapFrames(preBootstrap);
+    } else if (!bootstrap) {
+      await this.ensureBootstrap(null, this.requireActiveCommandId());
+    }
+    await this.forwardBootstrappedEvent(frame, event, effect);
+  }
+
+  private async forwardBootstrappedEvent(
+    frame: RunnerEventFrame,
+    event: SSEEventPayload,
+    effect: EventOutboxSessionEffect | undefined,
+  ): Promise<void> {
+    if (!shouldPersistEvent(event)) {
+      await this.sendBestEffort(frame);
+      this.recordProgress();
+      return;
     }
     const durableEvent = buildDurableRunnerEvent(
       this.config.sessionId,
@@ -214,6 +285,41 @@ export class RunnerChildRuntime {
     );
     await this.sendBestEffort(outboxAvailableControlFrame(durable.source_seq));
     this.recordProgress();
+  }
+
+  private async flushPreBootstrapFrames(buffer: PreBootstrapFrameBuffer): Promise<void> {
+    const pending = buffer.frames.splice(0);
+    buffer.bytes = 0;
+    for (const frame of pending) {
+      const event = frame.payload as SSEEventPayload;
+      await this.forwardBootstrappedEvent(frame, event, sessionIdEffect(event));
+    }
+  }
+
+  private async prepareExecution(
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
+  ): Promise<void> {
+    const bootstrap = await this.outbox.readBootstrap();
+    if (bootstrap) {
+      const resumeSessionId = command.params.resumeSessionId;
+      if (
+        resumeSessionId !== undefined
+        && bootstrap.payload.backend_session_id !== resumeSessionId
+      ) {
+        throw new Error("runner execute resume session ID conflicts with durable bootstrap");
+      }
+      this.beginLifecycle(command.commandId);
+      return;
+    }
+    if (command.params.resumeSessionId !== undefined) {
+      await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
+      return;
+    }
+    if (!requiresBackendSessionId(this.config.backend)) {
+      await this.ensureBootstrap(null, command.commandId);
+      return;
+    }
+    this.beginLifecycle(command.commandId);
   }
 
   private async ensureBootstrap(
@@ -233,6 +339,17 @@ export class RunnerChildRuntime {
         snapshot_path: this.config.snapshotPath,
       },
     });
+    // Force the pre-bootstrap execution lease, when present, into the durable
+    // bootstrap row. A same-command fast path in beginLifecycle() would leave
+    // the temporary row behind and split lifecycle ownership.
+    this.lifecycle.begin({
+      pid: process.pid,
+      commandId,
+      progressedAt: new Date().toISOString(),
+    });
+  }
+
+  private beginLifecycle(commandId: string): void {
     const existing = this.lifecycle.read();
     if (!existing || existing.execution_command_id !== commandId) {
       this.lifecycle.begin({
@@ -241,6 +358,21 @@ export class RunnerChildRuntime {
         progressedAt: new Date().toISOString(),
       });
     }
+  }
+
+  private discardPreBootstrapFrames(
+    buffer: PreBootstrapFrameBuffer,
+    reason: string,
+  ): void {
+    if (buffer.frames.length > 0) {
+      this.logger.warn({
+        reason,
+        frameCount: buffer.frames.length,
+        byteCount: buffer.bytes,
+      }, "Discarding pre-bootstrap runner frames");
+    }
+    buffer.frames.length = 0;
+    buffer.bytes = 0;
   }
 
   private async callHostSnapshot(operation: string, snapshot: unknown): Promise<void> {
@@ -305,6 +437,10 @@ export class RunnerChildRuntime {
   }
 }
 
+function createPreBootstrapFrameBuffer(): PreBootstrapFrameBuffer {
+  return { frames: [], bytes: 0 };
+}
+
 export function buildDurableRunnerEvent(
   sessionId: string,
   event: SSEEventPayload,
@@ -327,6 +463,10 @@ function sessionIdEffect(event: SSEEventPayload): EventOutboxSessionEffect | und
   return typeof sessionId === "string" && sessionId.length > 0
     ? { kind: "set_backend_session_id", backend_session_id: sessionId }
     : undefined;
+}
+
+export function requiresBackendSessionId(backend: RunnerChildConfig["backend"]): boolean {
+  return backend === "claude" || backend === "codex";
 }
 
 export async function setRunnerOomScore(
