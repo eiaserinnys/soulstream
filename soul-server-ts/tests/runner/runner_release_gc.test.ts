@@ -44,6 +44,22 @@ describe("RunnerReleaseGarbageCollector", () => {
     expect(subject.materializer.remove).not.toHaveBeenCalled();
   });
 
+  it("fails closed when a live runner loses its PID-file evidence", async () => {
+    const subject = await makeSubject([
+      registration({ pid: null, pidAlive: false }),
+    ], false);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "pid_evidence_missing" }],
+    });
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+    expect(subject.logger.warn).toHaveBeenCalledWith(
+      { releaseId: "release-a", sessionId: "session-a" },
+      "runner release GC retained release because PID evidence is missing",
+    );
+  });
+
   it("retains a running lease record even when its pid probe is temporarily unavailable", async () => {
     const active = registration();
     active.lifecycle = { ...active.lifecycle!, execution_state: "running" };
@@ -102,14 +118,16 @@ async function makeSubject(
     scan: async () => ({ registrations, errors }),
     hasIncompleteDurableWork: async () => incomplete,
   };
+  const logger = { info: vi.fn(), warn: vi.fn() };
   return {
     collector: new RunnerReleaseGarbageCollector(
       pool,
       join(root, "runner-state"),
-      { info: vi.fn() } as never,
+      logger as never,
       deps,
     ),
     materializer,
+    logger,
   };
 }
 
@@ -139,6 +157,7 @@ class FakeMaterializer implements RunnerReleaseMaterializer {
 
 function registration(options: {
   sessionId?: string;
+  pid?: number | null;
   pidAlive?: boolean;
 } = {}): RunnerRegistration {
   const sessionId = options.sessionId ?? "session-a";
@@ -148,7 +167,7 @@ function registration(options: {
       codeSha: "release-a",
       paths: { databasePath: `/state/${sessionId}/runner.sqlite` },
     } as never,
-    pid: options.pidAlive ? 42 : null,
+    pid: options.pid === undefined ? 42 : options.pid,
     pidAlive: options.pidAlive ?? false,
     registeredAtMs: Date.now(),
     bootstrap: { payload: { code_sha: "release-a" } } as never,

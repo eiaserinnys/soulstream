@@ -8,7 +8,10 @@ import type {
   RunnerReleaseDescriptor,
   RunnerReleaseMaterializer,
 } from "../../src/runner/runner_release_materializer.js";
-import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
+import {
+  RunnerReleasePool,
+  type RunnerReleasePoolDependencies,
+} from "../../src/runner/runner_release_pool.js";
 
 const directories: string[] = [];
 
@@ -61,6 +64,69 @@ describe("RunnerReleasePool", () => {
     await expect(pool.ensureRelease(release)).rejects.toMatchObject({ code: "ENOSPC" });
     expect(await pool.listReadyReleases()).toEqual([]);
   });
+
+  it("uses a verified ready release even when a prior host left its lock behind", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-ready");
+    const pool = new RunnerReleasePool(root, materializer);
+    const release = await pool.resolveCurrentRelease();
+    await pool.ensureRelease(release);
+    const materializeCalls = materializer.materialize.mock.calls.length;
+    await writeLock(root, release.releaseId, { pid: 4401, startIdentity: "dead-host" });
+
+    await expect(pool.ensureRelease(release)).resolves.toBeUndefined();
+    expect(materializer.materialize).toHaveBeenCalledTimes(materializeCalls);
+  });
+
+  it("reclaims a stale lock after proving its owner process is dead", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-stale");
+    const releaseId = "release-stale";
+    await writeLock(root, releaseId, { pid: 4402, startIdentity: "old-process" });
+    const pool = new RunnerReleasePool(
+      root,
+      materializer,
+      100,
+      lockDependencies({ alive: false, startIdentity: null }),
+    );
+
+    await expect(pool.ensureRelease(pool.describe(releaseId))).resolves.toBeUndefined();
+    expect(materializer.materialize).toHaveBeenCalledOnce();
+  });
+
+  it("reclaims a reused PID only when its process start identity differs", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-reused-pid");
+    const releaseId = "release-reused-pid";
+    await writeLock(root, releaseId, { pid: 4403, startIdentity: "old-process" });
+    const pool = new RunnerReleasePool(
+      root,
+      materializer,
+      100,
+      lockDependencies({ alive: true, startIdentity: "new-process" }),
+    );
+
+    await expect(pool.ensureRelease(pool.describe(releaseId))).resolves.toBeUndefined();
+    expect(materializer.materialize).toHaveBeenCalledOnce();
+  });
+
+  it("never reclaims a lock while the exact owner process is alive", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-live-lock");
+    const releaseId = "release-live-lock";
+    await writeLock(root, releaseId, { pid: 4404, startIdentity: "same-process" });
+    const pool = new RunnerReleasePool(
+      root,
+      materializer,
+      100,
+      lockDependencies({ alive: true, startIdentity: "same-process" }),
+    );
+
+    await expect(pool.ensureRelease(pool.describe(releaseId))).rejects.toThrow(
+      "runner release lock timed out",
+    );
+    expect(materializer.materialize).not.toHaveBeenCalled();
+  });
 });
 
 class FakeMaterializer implements RunnerReleaseMaterializer {
@@ -96,4 +162,26 @@ async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "runner-release-pool-"));
   directories.push(directory);
   return directory;
+}
+
+async function writeLock(
+  root: string,
+  releaseId: string,
+  owner: { pid: number; startIdentity: string },
+): Promise<void> {
+  const lockPath = join(root, ".locks", releaseId);
+  await mkdir(lockPath, { recursive: true });
+  await writeFile(join(lockPath, "owner.json"), JSON.stringify(owner));
+}
+
+function lockDependencies(
+  inspected: { alive: boolean; startIdentity: string | null },
+): RunnerReleasePoolDependencies {
+  let now = 0;
+  return {
+    now: () => now,
+    delay: async (ms) => { now += ms; },
+    currentOwner: async () => ({ pid: 9999, startIdentity: "test-owner" }),
+    inspectProcess: async () => inspected,
+  };
 }

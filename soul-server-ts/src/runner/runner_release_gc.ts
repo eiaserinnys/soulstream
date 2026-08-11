@@ -25,7 +25,7 @@ export class RunnerReleaseGarbageCollector {
   constructor(
     private readonly pool: RunnerReleasePool,
     private readonly stateDirectory: string,
-    private readonly logger: Pick<Logger, "info">,
+    private readonly logger: Pick<Logger, "info" | "warn">,
     private readonly deps: RunnerReleaseGarbageCollectorDependencies = defaultDependencies(),
   ) {
     if (!stateDirectory) throw new Error("runner state directory required for release GC");
@@ -40,6 +40,10 @@ export class RunnerReleaseGarbageCollector {
         // visible before GC can remove the newly ensured release.
         const scan = await this.deps.scan(this.stateDirectory);
         if (scan.errors.length > 0) {
+          this.logger.warn(
+            { failures: scan.errors.map((failure) => failure.directory) },
+            "runner release GC retained all releases because registration evidence is incomplete",
+          );
           throw new AggregateError(
             scan.errors.map((failure) => failure.error),
             "runner release GC refused an incomplete registration inventory",
@@ -56,6 +60,12 @@ export class RunnerReleaseGarbageCollector {
           const reason = await referenceReason(registration, this.deps);
           if (reason) {
             result.retained.push({ releaseId: release.releaseId, reason });
+            if (reason === "pid_evidence_missing") {
+              this.logger.warn(
+                { releaseId: release.releaseId, sessionId: registration.config.sessionId },
+                "runner release GC retained release because PID evidence is missing",
+              );
+            }
             return;
           }
         }
@@ -74,6 +84,7 @@ async function referenceReason(
 ): Promise<string | null> {
   // PID liveness is deliberately stronger than a progress lease for deletion:
   // reaper must terminate a stale process before its executable tree can go.
+  if (registration.pid === null) return "pid_evidence_missing";
   if (registration.pidAlive) return "live_runner";
   if (!registration.bootstrap || !registration.lifecycle) return "incomplete_bootstrap";
   if (registration.lifecycle.execution_state === "running") return "running_lifecycle";

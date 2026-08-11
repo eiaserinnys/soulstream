@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 import { access, chmod, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const packageRoot = resolve(new URL("..", import.meta.url).pathname);
+const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-runner-release-isolation-"));
 let runner;
 let releaseRoot;
