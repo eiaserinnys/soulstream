@@ -222,8 +222,21 @@ export async function createLiveProductionApplication(
   const sessionReconciliation = createSessionReconciliationSink({
     repositoryProvider: async () => (await persistenceRepositoryProvider()).sessionMutations,
     logError: (error, message) => context.warn(`${message}: ${String(error)}`),
-    leaseAware: config.soul_runner_process_enabled,
+    isLeaseAwareNode: (nodeId) =>
+      registry.getNodeState(nodeId)?.capabilities.runner_process_v1 === true,
+    restoreLeaseGraceOnStartup: config.soul_runner_process_enabled,
     disconnectGraceMs: config.soul_runner_lease_timeout_ms,
+    getConnectedNode: (nodeId) => registry.getConnectedNode(nodeId),
+    requestSessionInventory: async (nodeId) => {
+      const node = registry.getConnectedNode(nodeId);
+      if (!node) throw new Error(`node disconnected before inventory request: ${nodeId}`);
+      await runtimeServices.sessionBridge.sendFireAndForgetCommand({
+        node,
+        command: registry.createFireAndForgetCommand(nodeId, {
+          type: "list_sessions",
+        }),
+      });
+    },
     publishSessionUpdate: (update) => publishReconciledSessionUpdate(update),
   });
   let providers: LiveOrchestratorProviderBundle;

@@ -136,22 +136,27 @@ export class SessionMutationRepository {
     nodeId: string,
     updatedAt: Date,
     terminationDetail: "node_disconnect" | "node_disconnect_timeout",
-  ): Promise<number> {
-    const rows = await this.sql<Array<{ count: number }>>`
-      WITH changed AS (
-        UPDATE sessions
-        SET status = 'interrupted', was_running_at_shutdown = TRUE,
-            termination_reason = 'killed', termination_detail = ${terminationDetail},
-            review_state = CASE
-              WHEN review_required THEN 'needs_review'
-              ELSE 'acknowledged'
-            END,
-            updated_at = ${updatedAt}
-        WHERE node_id = ${nodeId} AND status = 'running'
-        RETURNING 1
-      ) SELECT COUNT(*)::int AS count FROM changed
+  ): Promise<{
+    interrupted: number;
+    updates: Array<ReturnType<typeof mapReconciledSessionRow>>;
+  }> {
+    const rows = await this.sql<Array<ReconciledSessionRow>>`
+      UPDATE sessions
+      SET status = 'interrupted', was_running_at_shutdown = TRUE,
+          termination_reason = 'killed', termination_detail = ${terminationDetail},
+          review_state = CASE
+            WHEN review_required THEN 'needs_review'
+            ELSE 'acknowledged'
+          END,
+          updated_at = ${updatedAt}
+      WHERE node_id = ${nodeId} AND status = 'running'
+      RETURNING session_id, status, termination_reason, termination_detail,
+                review_state, updated_at
     `;
-    return Number(rows[0]?.count ?? 0);
+    return {
+      interrupted: rows.length,
+      updates: rows.map(mapReconciledSessionRow),
+    };
   }
 
   async listRunningNodeIds(): Promise<string[]> {

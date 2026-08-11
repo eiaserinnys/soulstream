@@ -11,10 +11,14 @@ type ReconciledSessionUpdate = {
   updatedAt: Date;
 };
 
-type ReconciliationRepository = Pick<
-  SessionMutationRepository,
-  "reconcileNodeDisconnected"
-> & {
+type ReconciliationRepository = {
+  reconcileNodeDisconnected(
+    nodeId: string,
+    updatedAt: Date,
+    terminationDetail: "node_disconnect" | "node_disconnect_timeout",
+  ): Promise<
+    number | { interrupted: number; updates?: ReconciledSessionUpdate[] }
+  >;
   reconcileNodeStartup(
     nodeId: string,
     runningSessionIds: string[],
@@ -42,8 +46,11 @@ export function createSessionReconciliationSink(input: {
   repositoryProvider(): Promise<ReconciliationRepository>;
   logError(error: unknown, message: string): void;
   now?: () => Date;
-  leaseAware?: boolean;
+  isLeaseAwareNode?(nodeId: string): boolean;
+  restoreLeaseGraceOnStartup?: boolean;
   disconnectGraceMs?: number;
+  getConnectedNode?(nodeId: string): { connectionId: string } | undefined;
+  requestSessionInventory?(nodeId: string): Promise<void>;
   publishSessionUpdate?(input: {
     nodeId: string;
     agentSessionId: string;
@@ -58,12 +65,17 @@ export function createSessionReconciliationSink(input: {
   const pendingDisconnects = new Map<string, PendingDisconnect>();
   const reportedNodes = new Set<string>();
   const now = input.now ?? (() => new Date());
-  const leaseAware = input.leaseAware ?? false;
+  const restoreLeaseGraceOnStartup = input.restoreLeaseGraceOnStartup ?? false;
   const disconnectGraceMs = input.disconnectGraceMs ?? 0;
   let closed = false;
   let startPromise: Promise<void> | undefined;
-  if (leaseAware && (!Number.isSafeInteger(disconnectGraceMs) || disconnectGraceMs <= 0)) {
-    throw new Error("disconnectGraceMs must be a positive integer when lease-aware reconciliation is enabled");
+  if (
+    (input.isLeaseAwareNode || restoreLeaseGraceOnStartup)
+    && (!Number.isSafeInteger(disconnectGraceMs) || disconnectGraceMs <= 0)
+  ) {
+    throw new Error(
+      "disconnectGraceMs must be a positive integer when lease-aware reconciliation is enabled",
+    );
   }
 
   const enqueue = (nodeId: string, operation: ReconciliationOperation): void => {
@@ -88,6 +100,30 @@ export function createSessionReconciliationSink(input: {
     pendingDisconnects.delete(nodeId);
   };
 
+  const publishUpdates = (
+    nodeId: string,
+    updates: ReconciledSessionUpdate[] | undefined,
+  ): void => {
+    for (const update of updates ?? []) {
+      input.publishSessionUpdate?.({
+        nodeId,
+        agentSessionId: update.sessionId,
+        status: update.status,
+        terminationReason: update.terminationReason,
+        terminationDetail: update.terminationDetail,
+        reviewState: update.reviewState,
+        updatedAt: update.updatedAt,
+      });
+    }
+  };
+
+  const requestInventory = (nodeId: string): void => {
+    if (!input.requestSessionInventory) return;
+    void input.requestSessionInventory(nodeId).catch((error) => {
+      input.logError(error, `runner inventory re-report failed for ${nodeId}`);
+    });
+  };
+
   const deferDisconnect = (nodeId: string, connectionId: string): void => {
     if (closed) return;
     cancelPendingDisconnect(nodeId);
@@ -96,11 +132,27 @@ export function createSessionReconciliationSink(input: {
       enqueue(nodeId, async (repository) => {
         const pending = pendingDisconnects.get(nodeId);
         if (!pending || pending.token !== token) return;
+        const connected = input.getConnectedNode?.(nodeId);
+        if (connected) {
+          input.logError(
+            new Error(
+              `connected node ${nodeId}/${connected.connectionId} missed its complete runner inventory`,
+            ),
+            `runner inventory re-report required for ${nodeId}`,
+          );
+          deferDisconnect(nodeId, connected.connectionId);
+          requestInventory(nodeId);
+          return;
+        }
         pendingDisconnects.delete(nodeId);
-        await repository.reconcileNodeDisconnected(
+        const result = await repository.reconcileNodeDisconnected(
           nodeId,
           now(),
           "node_disconnect_timeout",
+        );
+        publishUpdates(
+          nodeId,
+          typeof result === "number" ? undefined : result.updates,
         );
       });
     }, disconnectGraceMs);
@@ -115,9 +167,13 @@ export function createSessionReconciliationSink(input: {
   const sink = ((events: NodeRegistryEvent[]) => {
     if (closed) return;
     for (const event of events) {
+      if (event.type === "node_registered" || event.type === "node_updated") {
+        cancelPendingDisconnect(event.nodeId);
+        continue;
+      }
       if (event.type === "node_unregistered") {
         reportedNodes.delete(event.nodeId);
-        if (leaseAware) {
+        if (input.isLeaseAwareNode?.(event.nodeId) === true) {
           deferDisconnect(event.nodeId, event.connectionId);
         } else {
           enqueue(event.nodeId, async (repository) =>
@@ -137,33 +193,21 @@ export function createSessionReconciliationSink(input: {
       ) {
         continue;
       }
-      if (leaseAware) {
-        reportedNodes.add(event.nodeId);
-        cancelPendingDisconnect(event.nodeId);
-      }
+      reportedNodes.add(event.nodeId);
+      cancelPendingDisconnect(event.nodeId);
       enqueue(event.nodeId, async (repository) => {
         const result = await repository.reconcileNodeStartup(
           event.nodeId,
           runningSessionIds,
           now(),
         );
-        for (const update of result.updates ?? []) {
-          input.publishSessionUpdate?.({
-            nodeId: event.nodeId,
-            agentSessionId: update.sessionId,
-            status: update.status,
-            terminationReason: update.terminationReason,
-            terminationDetail: update.terminationDetail,
-            reviewState: update.reviewState,
-            updatedAt: update.updatedAt,
-          });
-        }
+        publishUpdates(event.nodeId, result.updates);
       });
     }
   }) as SessionReconciliationSink;
 
   sink.start = async () => {
-    if (!leaseAware) return;
+    if (!restoreLeaseGraceOnStartup) return;
     if (closed) throw new Error("session reconciliation sink is closed");
     startPromise ??= (async () => {
       const repository = await input.repositoryProvider();

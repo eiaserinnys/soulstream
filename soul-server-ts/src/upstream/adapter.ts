@@ -106,6 +106,7 @@ export class UpstreamAdapter {
       deps.deliveryV2Enabled,
       deps.modelCatalog,
       deps.agentProfileSource,
+      async () => await this.listRunningSessionIds(),
     );
   }
 
@@ -412,16 +413,7 @@ export class UpstreamAdapter {
       if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
       try {
         const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
-        await this.deps.waitForRunnerReconciliation?.();
-        const inMemorySessionIds = this.deps.taskManager.listTasks()
-          .filter((task) => task.status === "running")
-          .map((task) => task.agentSessionId);
-        const runningSessionIds = this.deps.listLiveRunnerSessionIds
-          ? [...new Set([
-              ...inMemorySessionIds,
-              ...await this.deps.listLiveRunnerSessionIds(),
-            ])]
-          : inMemorySessionIds;
+        const runningSessionIds = await this.listRunningSessionIds();
         const report = await commands.listSessions({ requestId: "", runningSessionIds });
         if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
         await this.sendOnSocket(ws, report);
@@ -443,6 +435,19 @@ export class UpstreamAdapter {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
+  }
+
+  private async listRunningSessionIds(): Promise<string[]> {
+    await this.deps.waitForRunnerReconciliation?.();
+    const inMemorySessionIds = this.deps.taskManager.listTasks()
+      .filter((task) => task.status === "running")
+      .map((task) => task.agentSessionId);
+    return this.deps.listLiveRunnerSessionIds
+      ? [...new Set([
+          ...inMemorySessionIds,
+          ...await this.deps.listLiveRunnerSessionIds(),
+        ])]
+      : inMemorySessionIds;
   }
 
   private async send(data: unknown): Promise<void> {

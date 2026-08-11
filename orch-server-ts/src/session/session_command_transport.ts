@@ -1,7 +1,7 @@
 import type {
+  FireAndForgetNodeCommandPayload,
   NodeCommandResponse,
   RequestResponseNodeCommandPayload,
-  SubscribeEventsNodeCommandPayload,
 } from "../node/pending_commands.js";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type {
@@ -74,7 +74,7 @@ export class SessionCommandTransportBridge {
   }
 
   async sendFireAndForgetCommand<
-    TPayload extends SubscribeEventsNodeCommandPayload,
+    TPayload extends FireAndForgetNodeCommandPayload,
   >(
     routed: RoutedFireAndForgetSessionCommand<TPayload>,
   ): Promise<void> {

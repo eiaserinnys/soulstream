@@ -84,6 +84,7 @@ interface SessionCommandFamilyDeps {
   taskManager: Pick<TaskManager, "cancelTask" | "acknowledgeReview">;
   taskRuntimeCommands: TaskRuntimeCommands;
   sessionListCommands: SessionListCommands;
+  listRunningSessionIds?(): Promise<string[]>;
 }
 
 export function createSessionCommandFamily(
@@ -285,6 +286,9 @@ async function handleListSessions(
     await deps.send(
       await deps.sessionListCommands.listSessions({
         requestId: commandRequestId(cmd),
+        ...(deps.listRunningSessionIds
+          ? { runningSessionIds: await deps.listRunningSessionIds() }
+          : {}),
       }),
     );
   } catch (err) {

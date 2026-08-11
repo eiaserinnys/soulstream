@@ -48,6 +48,7 @@ function createDispatcher(opts: {
   sessionDb?: Partial<SessionDB>;
   realtimeBroker?: Partial<RealtimeBroker>;
   deliveryV2Enabled?: boolean;
+  listRunningSessionIds?: () => Promise<string[]>;
   agentConfigService?: Pick<
     AgentConfigService,
     "listSnapshots" | "planProfileUpdate" | "replaceProfile" | "rollback"
@@ -133,6 +134,9 @@ function createDispatcher(opts: {
     undefined,
     undefined,
     opts.deliveryV2Enabled,
+    undefined,
+    undefined,
+    opts.listRunningSessionIds,
   );
   return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
@@ -1753,6 +1757,48 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
 
     expect(sent).toHaveLength(1);
     expect((sent[0] as { requestId: string }).requestId).toBe("");
+  });
+
+  it("list_sessions → 후속 요청도 완전한 running inventory를 운반", async () => {
+    const listRunningSessionIds = vi.fn(async () => [
+      "session-memory",
+      "session-runner",
+    ]);
+    const { dispatcher, sent } = createDispatcher({
+      sessionDb: {
+        listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
+      } as unknown as Partial<SessionDB>,
+      listRunningSessionIds,
+    });
+
+    await dispatcher.dispatch({ type: "list_sessions" });
+
+    expect(listRunningSessionIds).toHaveBeenCalledOnce();
+    expect(sent).toEqual([expect.objectContaining({
+      type: "sessions_update",
+      running_session_ids: ["session-memory", "session-runner"],
+    })]);
+  });
+
+  it("list_sessions → runner inventory 실패 시 부분 sessions_update를 발행하지 않음", async () => {
+    const { dispatcher, sent } = createDispatcher({
+      sessionDb: {
+        listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
+      } as unknown as Partial<SessionDB>,
+      listRunningSessionIds: vi.fn(async () => {
+        throw new Error("runner inventory incomplete");
+      }),
+    });
+
+    await dispatcher.dispatch({ type: "list_sessions" });
+
+    expect(sent.some((message) =>
+      (message as { type?: string }).type === "sessions_update"
+    )).toBe(false);
+    expect(sent).toEqual([expect.objectContaining({
+      type: "error",
+      message: expect.stringContaining("runner inventory incomplete"),
+    })]);
   });
 
   it("list_sessions → sessionDb 미주입이면 명시 error", async () => {
