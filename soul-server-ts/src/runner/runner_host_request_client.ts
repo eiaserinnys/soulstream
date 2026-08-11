@@ -6,6 +6,7 @@ import {
   type RunnerControlFrame,
 } from "./frame_protocol.js";
 import type { RunnerIpcConnection } from "./runner_ipc_connection.js";
+import { RunnerObservationDroppedError } from "./runner_ipc_connection.js";
 
 export type RunnerHostService =
   | "session_store"
@@ -68,6 +69,7 @@ export class RunnerHostRequestClient {
             await connection.send(hostCallAppliedControlFrame(correlationId));
             return data;
           } catch (error) {
+            if (error instanceof RunnerObservationDroppedError) return true;
             if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
             lastError = asError(error);
           }

@@ -72,6 +72,54 @@ export function assertRunnerJsonValue(value: unknown, context = "runner JSON val
   throw new Error(`${context} violates JSON contract at ${path}: ${failure.message}`);
 }
 
+/**
+ * Match JSON.stringify only for undefined: object fields are omitted and array
+ * slots become null. Every other non-JSON value is deliberately preserved so
+ * the strict contract can reject it instead of silently losing information.
+ */
+export function stripRunnerJsonUndefined(value: unknown): unknown {
+  const seen = new WeakMap<object, unknown>();
+  return stripUndefined(value, false, seen);
+}
+
+function stripUndefined(
+  value: unknown,
+  arraySlot: boolean,
+  seen: WeakMap<object, unknown>,
+): unknown {
+  if (value === undefined) return arraySlot ? null : undefined;
+  if (value === null || typeof value !== "object") return value;
+  const existing = seen.get(value);
+  if (existing !== undefined) return existing;
+
+  if (Array.isArray(value)) {
+    const output: unknown[] = [];
+    seen.set(value, output);
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.hasOwn(value, index)) return value;
+      output.push(stripUndefined(value[index], true, seen));
+    }
+    for (const key of Reflect.ownKeys(value)) {
+      if (key === "length" || (typeof key === "string" && /^\d+$/.test(key))) continue;
+      return value;
+    }
+    return output;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  const output = Object.create(prototype) as Record<string, unknown>;
+  seen.set(value, output);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") return value;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) return value;
+    if (descriptor.value === undefined) continue;
+    output[key] = stripUndefined(descriptor.value, false, seen);
+  }
+  return output;
+}
+
 export function withRunnerJsonContract<T extends z.ZodType>(schema: T) {
   return z.preprocess((value, ctx) => {
     const failure = findJsonContractFailure(value);

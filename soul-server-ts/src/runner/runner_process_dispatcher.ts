@@ -281,6 +281,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       timeoutMs: 500,
       deadlineMs: RUNNER_SOCKET_CONNECT_DEADLINE_MS,
       retryDelayMs: RUNNER_SOCKET_CONNECT_RETRY_MS,
+      onFrameDropped: (drop) => this.options.logger.error(
+        drop,
+        "Invalid observational runner frame dropped",
+      ),
     });
     this.attachConnection(connection, socketPath);
     return connection;

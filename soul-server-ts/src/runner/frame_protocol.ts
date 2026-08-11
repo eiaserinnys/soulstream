@@ -117,7 +117,7 @@ const RunnerSessionItemsSnapshotSchema = z.object({
   items: z.array(z.json()),
 }).passthrough();
 
-const RunnerEngineEventMetadataSchema = z.object({
+export const RunnerEngineEventMetadataSchema = z.object({
   claudeBackgroundProvenance: z.enum([
     "sdk_membership",
     "explicit_background_tool_result",
@@ -290,6 +290,18 @@ export type RunnerEventFrame = z.infer<typeof RunnerEventFrameSchema>;
 export type RunnerControlFrame = z.infer<typeof RunnerControlFrameSchema>;
 export type RunnerCommandResultFrame = Extract<RunnerControlFrame, { kind: "command_result" }>;
 export type RunnerFrame = z.infer<typeof RunnerFrameSchema>;
+export type RunnerEngineEventMetadata = z.infer<typeof RunnerEngineEventMetadataSchema>;
+
+export function isRunnerObservationalFrame(value: unknown): boolean {
+  if (!isRecord(value) || value.channel !== "event") return false;
+  if (value.kind === "engine_event") return true;
+  if (value.kind !== "request" || !isRecord(value.request)) return false;
+  return (
+    value.request.service === "claude_runtime" && value.request.operation === "observe"
+  ) || (
+    value.request.service === "detached_event" && value.request.operation === "publish"
+  );
+}
 
 export function parseRunnerCommandJsonRoundTrip(value: unknown): RunnerCommandFrame {
   const parsed = RunnerCommandFrameSchema.parse(value);
@@ -336,14 +348,19 @@ export function runnerRequestFrame(
   request: unknown,
   options: { timeoutMs?: number } = {},
 ): Extract<RunnerEventFrame, { kind: "request" }> {
-  return RunnerEventFrameSchema.parse({
+  const frame = {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "event",
     kind: "request",
     correlationId,
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     request,
-  }) as Extract<RunnerEventFrame, { kind: "request" }>;
+  };
+  // Observational host calls are normalized and validated once at the actual
+  // transport emission boundary. Correlated state/approval requests stay strict here.
+  return (isRunnerObservationalFrame(frame)
+    ? frame
+    : RunnerEventFrameSchema.parse(frame)) as Extract<RunnerEventFrame, { kind: "request" }>;
 }
 
 export function runnerControlResponseFrame(
@@ -477,6 +494,10 @@ export function hostCallAppliedControlFrame(
     kind: "host_call_applied",
     correlationId,
   }) as Extract<RunnerControlFrame, { kind: "host_call_applied" }>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function runnerCommandResultFrame(

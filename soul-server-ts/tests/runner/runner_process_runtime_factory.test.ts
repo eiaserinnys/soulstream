@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { readClaudeBackgroundProvenance } from
+  "../../src/engine/claude_background_provenance.js";
 import { applyRunnerHostCall } from
   "../../src/runner/runner_process_runtime_factory.js";
 
@@ -70,5 +72,36 @@ describe("applyRunnerHostCall", () => {
     );
     expect(observeClaudeRuntime).toHaveBeenCalledWith("session-a", event, "host:4");
     expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:5");
+  });
+
+  it("restores process-local Claude metadata before an observational host call", async () => {
+    const observeClaudeRuntime = vi.fn(async (_sessionId, event: object) => {
+      expect(readClaudeBackgroundProvenance(event)).toBe("sdk_membership");
+      return true;
+    });
+
+    await applyRunnerHostCall(
+      {
+        service: "claude_runtime",
+        operation: "observe",
+        args: [
+          "session-a",
+          { type: "claude_runtime_task_updated", taskId: "task-1", patch: {} },
+          { claudeBackgroundProvenance: "sdk_membership" },
+        ],
+        correlationId: "host:metadata",
+      },
+      "session-a",
+      {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      },
+      {
+        sessionStore: {},
+        observeClaudeRuntime,
+      } as never,
+    );
+
+    expect(observeClaudeRuntime).toHaveBeenCalledOnce();
   });
 });

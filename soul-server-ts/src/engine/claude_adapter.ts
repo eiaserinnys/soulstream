@@ -489,7 +489,7 @@ function nowSeconds(): number {
   return Date.now() / 1000;
 }
 
-function claudeEngineEventMetadata(payload: SSEEventPayload): Record<string, unknown> | undefined {
+export function claudeEngineEventMetadata(payload: object): Record<string, unknown> | undefined {
   const provenance = readClaudeBackgroundProvenance(payload);
   const delivery = readClaudeBackgroundDeliveryMetadata(payload);
   if (!provenance && !delivery) return undefined;
