@@ -21,13 +21,23 @@ pnpm --dir=soul-server-ts runner-outbox:inspect -- \
 
 ## 2. 판정별 처리
 
+### `legacy_unprotected_checkpoint`
+
+schema v5 이하에서 생성된 DB라 ACK cursor에 checkpoint hash가 아직 없다. 복사본 검사기는 cursor를 신뢰하거나 고치지 않는다. 정상 서비스의 writable open만 다음 순서로 v6 마이그레이션한다.
+
+1. 기존 bootstrap·보존 event·미ACK suffix의 구조와 payload hash를 검증한다.
+2. 현재 `stream_id`, `session_id`, `acked_through`를 최초 1회 신뢰해 `ack_checkpoint_hash`를 계산한다.
+3. 컬럼 추가·hash 기록을 같은 SQLite 트랜잭션에서 commit한 뒤 schema version을 6으로 올린다.
+
+구 schema에는 cursor의 과거 오염 여부를 증명할 별도 정본이 없으므로 이 최초 seed 이전의 무결성은 소급 보장하지 않는다. v6로 승격한 뒤에는 모든 cursor read가 hash를 검증하고, ACK 갱신은 cursor/hash를 한 UPDATE와 같은 트랜잭션의 재검증으로 결박한다. 마이그레이션 전 복사본은 보존한다.
+
 ### `compacted_acknowledged_prefix`
 
 ACK 이하 삭제 구간만 있는 정상 compaction이다. 상태 디렉터리를 격리하거나 DB를 고치지 않는다. 이 검증 오류를 수정한 빌드에서 같은 세션을 다시 실행하면 기존 stream과 cursor로 재개된다.
 
 ### `quarantine_required`
 
-미ACK 구간, bootstrap, stream/session, payload hash 가운데 하나가 손상됐다. 자동 완화하지 않는다.
+미ACK 구간, bootstrap, stream/session, payload hash, ACK checkpoint hash 가운데 하나가 손상됐다. 자동 완화하지 않는다.
 
 1. 복사본과 원본 상태 디렉터리를 보존한다.
 2. DB의 `backend_session_id`와 중앙 세션 저장소의 backend session ID가 일치하는지 확인한다. 둘 중 하나라도 없거나 다르면 재생하지 않고 세션을 명시적 error로 종결한다.

@@ -9,7 +9,11 @@ import {
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
 export type RunnerOutboxInspection = {
-  status: "healthy" | "compacted_acknowledged_prefix" | "quarantine_required";
+  status:
+    | "healthy"
+    | "compacted_acknowledged_prefix"
+    | "legacy_unprotected_checkpoint"
+    | "quarantine_required";
   sessionId: string | null;
   streamId: string | null;
   ackedThrough: number | null;
@@ -31,6 +35,13 @@ export function inspectRunnerOutboxCopy(databasePath: string): RunnerOutboxInspe
   const database = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const raw = readRawSummary(database);
+    if (raw.sessionId !== null && !hasProtectedAckCheckpoint(database)) {
+      return {
+        ...raw,
+        status: "legacy_unprotected_checkpoint",
+        error: "legacy runner outbox requires writable v5-to-v6 ACK checkpoint migration",
+      };
+    }
     try {
       const recovered = recoverRunnerOutbox(database);
       const compacted = recovered.ackedThrough > 1
@@ -63,6 +74,18 @@ export function inspectRunnerOutboxCopy(databasePath: string): RunnerOutboxInspe
   } finally {
     database.close();
   }
+}
+
+function hasProtectedAckCheckpoint(database: DatabaseSyncType): boolean {
+  const columns = database.prepare("PRAGMA table_info(runner_event_outbox)").all() as Array<{
+    name: string;
+  }>;
+  if (!columns.some((column) => column.name === "ack_checkpoint_hash")) return false;
+  const row = database.prepare(`
+    SELECT ack_checkpoint_hash FROM runner_event_outbox
+    WHERE record_kind = 'bootstrap'
+  `).get() as { ack_checkpoint_hash: string | null } | undefined;
+  return row?.ack_checkpoint_hash != null;
 }
 
 function readRawSummary(database: DatabaseSyncType): Omit<

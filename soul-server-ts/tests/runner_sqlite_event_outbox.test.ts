@@ -20,6 +20,7 @@ import {
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
+import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
 import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
@@ -592,6 +593,121 @@ describe("RunnerSqliteEventOutbox", () => {
     await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
       "event outbox source_seq gap detected: expected 2, found 3, acked_through 1",
     );
+  });
+
+  it("fails closed when acked_through is changed without its checkpoint hash", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    await outbox.append(eventInput("still pending one"));
+    await outbox.append(eventInput("still pending two"));
+    outbox.close();
+
+    const fixture = new DatabaseSync(path);
+    fixture.prepare(`
+      UPDATE runner_event_outbox SET acked_through = 3
+      WHERE record_kind = 'bootstrap'
+    `).run();
+    fixture.close();
+
+    expect(inspectRunnerOutboxCopy(path)).toMatchObject({
+      status: "quarantine_required",
+      ackedThrough: 3,
+      latestSequence: 3,
+      retainedEventCount: 2,
+      unacknowledgedEventCount: 0,
+      error: "runner event outbox ACK checkpoint hash mismatch",
+    });
+    await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
+      "runner event outbox ACK checkpoint hash mismatch",
+    );
+  });
+
+  it("migrates a legacy v5 ACK cursor once before accepting new writes", async () => {
+    const path = await temporaryDatabasePath();
+    const initial = await RunnerSqliteEventOutbox.open(path);
+    const bootstrap = await initial.initializeBootstrap(bootstrapInput());
+    const pending = await initial.append(eventInput("pending after migration"));
+    initial.close();
+
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      ALTER TABLE runner_event_outbox DROP COLUMN ack_checkpoint_hash;
+      PRAGMA user_version = 5;
+    `);
+    legacy.close();
+
+    expect(inspectRunnerOutboxCopy(path)).toMatchObject({
+      status: "legacy_unprotected_checkpoint",
+      ackedThrough: 1,
+      error: "legacy runner outbox requires writable v5-to-v6 ACK checkpoint migration",
+    });
+
+    const migrated = await RunnerSqliteEventOutbox.open(path);
+    await expect(migrated.readBatch()).resolves.toMatchObject({
+      events: [expect.objectContaining({ source_seq: pending.source_seq })],
+    });
+    migrated.close();
+
+    const verified = new DatabaseSync(path);
+    try {
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+      expect(verified.prepare(`
+        SELECT acked_through, ack_checkpoint_hash
+        FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+      `).get()).toEqual({
+        acked_through: 1,
+        ack_checkpoint_hash: computeRunnerAckCheckpointHash(
+          bootstrap.stream_id,
+          bootstrap.session_id,
+          1,
+        ),
+      });
+    } finally {
+      verified.close();
+    }
+  });
+
+  it("rolls back an ACK when same-transaction checkpoint verification fails", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.open(path);
+    const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
+    const pending = await outbox.append(eventInput("pending"));
+    outbox.close();
+
+    const fixture = new DatabaseSync(path);
+    fixture.exec(`
+      CREATE TRIGGER corrupt_ack_checkpoint_after_update
+      AFTER UPDATE OF acked_through ON runner_event_outbox
+      BEGIN
+        UPDATE runner_event_outbox SET ack_checkpoint_hash = '${"0".repeat(64)}'
+        WHERE record_kind = 'bootstrap';
+      END
+    `);
+    fixture.close();
+
+    const failing = await RunnerSqliteEventOutbox.open(path);
+    await expect(failing.acknowledge(bootstrap.stream_id, pending.source_seq)).rejects.toThrow(
+      "runner event outbox ACK checkpoint hash mismatch",
+    );
+    failing.close();
+
+    const unchanged = new DatabaseSync(path);
+    try {
+      expect(unchanged.prepare(`
+        SELECT acked_through, ack_checkpoint_hash
+        FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+      `).get()).toEqual({
+        acked_through: 1,
+        ack_checkpoint_hash: computeRunnerAckCheckpointHash(
+          bootstrap.stream_id,
+          bootstrap.session_id,
+          1,
+        ),
+      });
+    } finally {
+      unchanged.close();
+    }
   });
 
   it("compacts an acknowledged prefix after its records reach 8 MiB", async () => {

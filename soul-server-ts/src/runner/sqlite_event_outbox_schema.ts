@@ -1,6 +1,6 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 5;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 6;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 export const RUNNER_IPC_JOURNAL_DDL = `
@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
     runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
   ),
   acked_through INTEGER,
+  ack_checkpoint_hash TEXT CHECK (
+    ack_checkpoint_hash IS NULL OR (
+      length(ack_checkpoint_hash) = 64
+      AND ack_checkpoint_hash = lower(ack_checkpoint_hash)
+    )
+  ),
   runner_pid INTEGER,
   execution_command_id TEXT,
   execution_state TEXT CHECK (
@@ -166,6 +172,7 @@ export type RunnerEventOutboxRow = {
   payload_hash: string;
   runner_metadata_json: string | null;
   acked_through: number | null;
+  ack_checkpoint_hash: string | null;
   runner_pid: number | null;
   execution_command_id: string | null;
   execution_state: RunnerExecutionState | null;
