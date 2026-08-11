@@ -34,6 +34,7 @@ export interface McpRouteConfig {
   path: string;
   auth: McpAuthConfig;
   statelessTransport: boolean;
+  statelessCallerOrigin: McpCallerOrigin;
 }
 
 interface SessionEntry {
@@ -46,14 +47,6 @@ interface StatelessEntry {
   server: ReturnType<typeof buildMcpServer>;
   closePromise?: Promise<void>;
 }
-
-/**
- * Stateless mode has no server-side initialize session in which to pin caller
- * identity. Its endpoint is therefore an LLM-only principal by server policy;
- * request headers are attribution hints, never authority inputs. Stateful mode
- * retains initialize-time origin pinning for mixed internal/LLM clients.
- */
-const STATELESS_CALLER_ORIGIN: McpCallerOrigin = "llm";
 
 /**
  * Fastify 라우트 등록. 본 함수가 반환하는 cleanup 함수는 서버 종료 시 호출하여
@@ -99,7 +92,13 @@ export function registerMcpRoutes(
     reply.hijack();
     try {
       if (config.statelessTransport) {
-        await dispatchStatelessPost(req, reply, statelessEntries, runtime);
+        await dispatchStatelessPost(
+          req,
+          reply,
+          statelessEntries,
+          runtime,
+          config.statelessCallerOrigin,
+        );
       } else {
         await dispatchPost(req, reply, sessions, runtime);
       }
@@ -166,13 +165,14 @@ async function dispatchStatelessPost(
   reply: FastifyReply,
   active: Set<StatelessEntry>,
   runtime: McpRuntime,
+  callerOrigin: McpCallerOrigin,
 ): Promise<void> {
   await withMcpRequestContext(
     {
       callerSessionId: headerValue(
         req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
       ),
-      callerOrigin: STATELESS_CALLER_ORIGIN,
+      callerOrigin,
     },
     async () => {
       const blocked = guardMcpToolCallRequest(runtime, req.body);
