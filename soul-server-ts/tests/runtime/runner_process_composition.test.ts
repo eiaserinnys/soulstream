@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   composeRunnerProcessRuntime,
@@ -7,8 +11,61 @@ import {
 } from "../../src/runtime/runner_process_composition.js";
 
 describe("runner process composition feature gate", () => {
-  it("does not construct or validate runner process dependencies while disabled", () => {
-    expect(composeRunnerProcessRuntime(false, {} as never)).toBeUndefined();
+  const directories: string[] = [];
+  const releaseDirectories: string[] = [];
+
+  afterEach(async () => {
+    for (const directory of releaseDirectories.splice(0)) {
+      await chmod(directory, 0o755).catch(() => undefined);
+    }
+    for (const directory of directories.splice(0)) {
+      await chmod(directory, 0o755).catch(() => undefined);
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not construct or validate runner process dependencies while disabled", async () => {
+    await expect(composeRunnerProcessRuntime(false, {} as never)).resolves.toBeUndefined();
+  });
+
+  it("prewarms the current immutable release before enabled composition returns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-composition-"));
+    directories.push(root);
+    const artifacts = join(root, "artifacts");
+    const releases = join(root, "releases");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(artifacts));
+    await writeFile(join(artifacts, "package.json"), '{"type":"module"}\n');
+    await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+
+    const composed = await composeRunnerProcessRuntime(true, {
+      env: {
+        SOUL_RUNNER_STATE_DIR: join(root, "state"),
+        SOUL_RUNNER_ARTIFACT_DIR: artifacts,
+        SOUL_RUNNER_RELEASES_DIR: releases,
+      },
+      logger: {} as never,
+    } as never);
+
+    expect(composed).toBeDefined();
+    const ready = await import("node:fs/promises").then(({ readdir }) => readdir(releases));
+    const releaseId = ready.find((entry) => entry.startsWith("sha256-"));
+    expect(releaseId).toBeDefined();
+    releaseDirectories.push(join(releases, releaseId!));
+    expect(await readFile(join(releases, releaseId!, "runner_entry.js"), "utf8"))
+      .toBe("export const ready = true;\n");
+  });
+
+  it("fails enabled startup loudly when runner build artifacts are absent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-composition-missing-"));
+    directories.push(root);
+    await expect(composeRunnerProcessRuntime(true, {
+      env: {
+        SOUL_RUNNER_STATE_DIR: join(root, "state"),
+        SOUL_RUNNER_ARTIFACT_DIR: join(root, "missing-artifacts"),
+        SOUL_RUNNER_RELEASES_DIR: join(root, "releases"),
+      },
+      logger: {} as never,
+    } as never)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not require runner state configuration without a process factory", async () => {

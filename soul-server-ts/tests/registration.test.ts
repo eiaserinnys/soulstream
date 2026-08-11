@@ -68,6 +68,23 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.user).toBeUndefined();
   });
 
+  it("advertises runner mode and lease TTL as additive node capabilities", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "runner-node",
+      host: "127.0.0.1",
+      port: 4205,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+      runnerProcessEnabled: true,
+      runnerLeaseTimeoutMs: 90_000,
+    });
+
+    expect(msg.capabilities).toMatchObject({
+      runner_process_v1: true,
+      runner_lease_timeout_ms: 90_000,
+    });
+  });
+
   it("빈 registry → agents=[], max_concurrent=0, supported_backends=[]", () => {
     const msg = buildRegistrationMsg({
       nodeId: "x",

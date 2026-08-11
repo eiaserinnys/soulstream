@@ -24,10 +24,10 @@ export type RunnerReconciliationReporter = {
   waitForRunnerReconciliation(): Promise<void>;
 };
 
-export function composeRunnerProcessRuntime(
+export async function composeRunnerProcessRuntime(
   enabled: boolean,
   options: Omit<RunnerProcessRuntimeFactoryOptions, "releasePool">,
-): RunnerProcessComposition | undefined {
+): Promise<RunnerProcessComposition | undefined> {
   if (!enabled) return undefined;
   const artifactDirectory = required(
     options.env.SOUL_RUNNER_ARTIFACT_DIR,
@@ -40,6 +40,8 @@ export function composeRunnerProcessRuntime(
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
   const materializer = new BuildArtifactReleaseMaterializer(artifactDirectory);
   const releasePool = new RunnerReleasePool(releasesDirectory, materializer);
+  const release = await releasePool.resolveCurrentRelease();
+  await releasePool.ensureRelease(release);
   return {
     runtimeFactory: createRunnerProcessRuntimeFactory({ ...options, releasePool }),
     releaseGarbageCollector: new RunnerReleaseGarbageCollector(

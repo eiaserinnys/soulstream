@@ -38,6 +38,8 @@ import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 const RECENT_HOST_RESPONSE_LIMIT = 128;
+const RUNNER_SOCKET_CONNECT_DEADLINE_MS = 10_000;
+const RUNNER_SOCKET_CONNECT_RETRY_MS = 50;
 
 interface RequestLifetime {
   controller: AbortController;
@@ -277,8 +279,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private async connect(socketPath: string): Promise<RunnerIpcConnection> {
     const connection = await connectRunnerSocket(socketPath, {
       timeoutMs: 500,
-      attempts: 40,
-      retryDelayMs: 50,
+      deadlineMs: RUNNER_SOCKET_CONNECT_DEADLINE_MS,
+      retryDelayMs: RUNNER_SOCKET_CONNECT_RETRY_MS,
     });
     this.attachConnection(connection, socketPath);
     return connection;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemoryNodeRegistry,
@@ -52,6 +52,105 @@ describe("Node WS frame controller primitive", () => {
       messageType: "node_register",
     });
     expect(registry.listConnectedNodes()).toEqual([]);
+  });
+
+  it("rejects runner nodes until orch lease reconciliation is enabled", () => {
+    const registry = new InMemoryNodeRegistry();
+    const controller = new NodeWsFrameController({
+      registry,
+      runnerPolicy: { leaseAware: false, leaseTimeoutMs: 90_000 },
+    });
+
+    expect(controller.handleFrame({
+      type: "node_register",
+      node_id: "runner-node",
+      capabilities: {
+        runner_process_v1: true,
+        runner_lease_timeout_ms: 90_000,
+      },
+    })).toEqual({
+      type: "registration_rejected",
+      code: "RUNNER_REQUIRES_LEASE_RECONCILIATION",
+      messageType: "node_register",
+    });
+    expect(registry.listConnectedNodes()).toEqual([]);
+  });
+
+  it("rejects runner lease TTL mismatch before registration", () => {
+    const registry = new InMemoryNodeRegistry();
+    const controller = new NodeWsFrameController({
+      registry,
+      runnerPolicy: { leaseAware: true, leaseTimeoutMs: 90_000 },
+    });
+
+    expect(controller.handleFrame({
+      type: "node_register",
+      node_id: "runner-node",
+      capabilities: {
+        runner_process_v1: true,
+        runner_lease_timeout_ms: 120_000,
+      },
+    })).toEqual({
+      type: "registration_rejected",
+      code: "RUNNER_LEASE_TIMEOUT_MISMATCH",
+      messageType: "node_register",
+    });
+  });
+
+  it.each([undefined, 0, -1, 90_000.5, "90000"])(
+    "rejects invalid runner lease TTL %j before registration",
+    (runnerLeaseTimeoutMs) => {
+      const registry = new InMemoryNodeRegistry();
+      const controller = new NodeWsFrameController({
+        registry,
+        runnerPolicy: { leaseAware: true, leaseTimeoutMs: 90_000 },
+      });
+
+      expect(controller.handleFrame({
+        type: "node_register",
+        node_id: "runner-node",
+        capabilities: {
+          runner_process_v1: true,
+          runner_lease_timeout_ms: runnerLeaseTimeoutMs,
+        },
+      })).toEqual({
+        type: "registration_rejected",
+        code: "RUNNER_LEASE_TIMEOUT_INVALID",
+        messageType: "node_register",
+      });
+      expect(registry.listConnectedNodes()).toEqual([]);
+    },
+  );
+
+  it("accepts matching runner policy and warns for a safe orch-first rollout", () => {
+    const onWarning = vi.fn();
+    const matching = new NodeWsFrameController({
+      registry: new InMemoryNodeRegistry(),
+      runnerPolicy: { leaseAware: true, leaseTimeoutMs: 90_000, onWarning },
+    });
+    expect(matching.handleFrame({
+      type: "node_register",
+      node_id: "runner-node",
+      capabilities: {
+        runner_process_v1: true,
+        runner_lease_timeout_ms: 90_000,
+      },
+    })).toMatchObject({ type: "registered", nodeId: "runner-node" });
+    expect(onWarning).not.toHaveBeenCalled();
+
+    const legacy = new NodeWsFrameController({
+      registry: new InMemoryNodeRegistry(),
+      runnerPolicy: { leaseAware: true, leaseTimeoutMs: 90_000, onWarning },
+    });
+    expect(legacy.handleFrame({
+      type: "node_register",
+      node_id: "legacy-node",
+      capabilities: {},
+    })).toMatchObject({ type: "registered", nodeId: "legacy-node" });
+    expect(onWarning).toHaveBeenCalledWith(expect.objectContaining({
+      nodeId: "legacy-node",
+      reason: "runner_process_not_enabled",
+    }));
   });
 
   it("registers the first valid frame and routes later messages with connectionId", () => {

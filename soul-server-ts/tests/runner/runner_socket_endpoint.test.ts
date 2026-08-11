@@ -10,6 +10,7 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import {
   connectRunnerSocket,
+  RUNNER_SOCKET_RETRYABLE_ERROR_CODES,
   RunnerSocketEndpoint,
 } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
@@ -45,6 +46,26 @@ describe("runner socket ownership", () => {
     first.close();
     second.close();
     await endpoint.close();
+  });
+
+  it("stops retrying at one absolute deadline even when each attempt has a longer timeout", async () => {
+    const socketPath = await temporaryPath("missing.sock");
+    const startedAt = Date.now();
+
+    await expect(connectRunnerSocket(socketPath, {
+      timeoutMs: 500,
+      deadlineMs: 80,
+      retryDelayMs: 20,
+    })).rejects.toThrow("Runner socket unavailable after 80ms deadline");
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(RUNNER_SOCKET_RETRYABLE_ERROR_CODES).toEqual([
+      "EAGAIN",
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "ENOENT",
+      "ETIMEDOUT",
+    ]);
   });
 
   it("permits exactly one writer lock holder", async () => {

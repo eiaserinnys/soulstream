@@ -230,8 +230,40 @@ describe("parseEnv", () => {
       expect(parseEnv(minimal).MCP_STATELESS_TRANSPORT_ENABLED).toBe(false);
       expect(parseEnv({
         ...minimal,
+        MCP_ENABLED: "true",
         MCP_STATELESS_TRANSPORT_ENABLED: "true",
       }).MCP_STATELESS_TRANSPORT_ENABLED).toBe(true);
+    });
+
+    it("rejects stateless transport when the MCP route itself is disabled", () => {
+      expect(() => parseEnv({
+        ...minimal,
+        MCP_STATELESS_TRANSPORT_ENABLED: "true",
+      })).toThrow(/MCP_ENABLED/);
+    });
+
+    it("requires stateless MCP before runner process cutover when MCP is enabled", () => {
+      expect(() => parseEnv({
+        ...minimal,
+        MCP_ENABLED: "true",
+        SOUL_RUNNER_PROCESS_ENABLED: "true",
+        SOUL_RUNNER_STATE_DIR: "/tmp/runners",
+        SOUL_RUNNER_ARTIFACT_DIR: "/tmp/artifacts",
+        SOUL_RUNNER_RELEASES_DIR: "/tmp/releases",
+      })).toThrow(/MCP_STATELESS_TRANSPORT_ENABLED/);
+      expect(parseEnv({
+        ...minimal,
+        MCP_ENABLED: "true",
+        MCP_STATELESS_TRANSPORT_ENABLED: "true",
+        SOUL_RUNNER_PROCESS_ENABLED: "true",
+        SOUL_RUNNER_STATE_DIR: "/tmp/runners",
+        SOUL_RUNNER_ARTIFACT_DIR: "/tmp/artifacts",
+        SOUL_RUNNER_RELEASES_DIR: "/tmp/releases",
+      })).toMatchObject({
+        MCP_ENABLED: true,
+        MCP_STATELESS_TRANSPORT_ENABLED: true,
+        SOUL_RUNNER_PROCESS_ENABLED: true,
+      });
     });
 
     it("MCP_REQUIRE_AUTH default false", () => {

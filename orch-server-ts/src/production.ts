@@ -235,6 +235,10 @@ export async function createLiveProductionApplication(
     config: appConfig,
     registry,
     eventIngress: eventIngressRepository,
+    runnerRegistrationPolicy: {
+      leaseAware: config.soul_runner_process_enabled,
+      leaseTimeoutMs: config.soul_runner_lease_timeout_ms,
+    },
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
     enableSessionActionCommandRoutes: true,
