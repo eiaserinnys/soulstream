@@ -30,10 +30,13 @@ type ReconciliationOperation = (
   repository: ReconciliationRepository,
 ) => Promise<unknown>;
 
-type PendingDisconnect = {
+export const SESSION_INVENTORY_MAX_REQUESTS = 3;
+
+type PendingReconciliation = {
   connectionId: string;
   token: symbol;
   timer: ReturnType<typeof setTimeout>;
+  inventoryRequests: number;
 };
 
 export type SessionReconciliationSink = {
@@ -62,11 +65,15 @@ export function createSessionReconciliationSink(input: {
   }): void;
 }): SessionReconciliationSink {
   const tails = new Map<string, Promise<void>>();
-  const pendingDisconnects = new Map<string, PendingDisconnect>();
+  const pendingReconciliations = new Map<string, PendingReconciliation>();
   const reportedNodes = new Set<string>();
   const now = input.now ?? (() => new Date());
   const restoreLeaseGraceOnStartup = input.restoreLeaseGraceOnStartup ?? false;
   const disconnectGraceMs = input.disconnectGraceMs ?? 0;
+  const inventoryRetryMs = Math.max(
+    1,
+    Math.floor(disconnectGraceMs / SESSION_INVENTORY_MAX_REQUESTS),
+  );
   let closed = false;
   let startPromise: Promise<void> | undefined;
   if (
@@ -94,10 +101,10 @@ export function createSessionReconciliationSink(input: {
   };
 
   const cancelPendingDisconnect = (nodeId: string): void => {
-    const pending = pendingDisconnects.get(nodeId);
+    const pending = pendingReconciliations.get(nodeId);
     if (!pending) return;
     clearTimeout(pending.timer);
-    pendingDisconnects.delete(nodeId);
+    pendingReconciliations.delete(nodeId);
   };
 
   const publishUpdates = (
@@ -124,51 +131,128 @@ export function createSessionReconciliationSink(input: {
     });
   };
 
-  const deferDisconnect = (nodeId: string, connectionId: string): void => {
+  const reconcileTimedOutNode = async (
+    repository: ReconciliationRepository,
+    nodeId: string,
+  ): Promise<void> => {
+    const result = await repository.reconcileNodeDisconnected(
+      nodeId,
+      now(),
+      "node_disconnect_timeout",
+    );
+    publishUpdates(
+      nodeId,
+      typeof result === "number" ? undefined : result.updates,
+    );
+  };
+
+  const scheduleReconciliationDeadline = (
+    nodeId: string,
+    connectionId: string,
+    delayMs: number,
+    inventoryRequests: number,
+  ): void => {
     if (closed) return;
     cancelPendingDisconnect(nodeId);
     const token = Symbol(connectionId);
     const timer = setTimeout(() => {
       enqueue(nodeId, async (repository) => {
-        const pending = pendingDisconnects.get(nodeId);
+        const pending = pendingReconciliations.get(nodeId);
         if (!pending || pending.token !== token) return;
         const connected = input.getConnectedNode?.(nodeId);
         if (connected) {
+          if (connected.connectionId !== pending.connectionId) {
+            input.logError(
+              new Error(
+                `connected node ${nodeId}/${connected.connectionId} missed its complete runner inventory`,
+              ),
+              `runner inventory re-report required for ${nodeId}`,
+            );
+            requestInventory(nodeId);
+            scheduleReconciliationDeadline(
+              nodeId,
+              connected.connectionId,
+              disconnectGraceMs,
+              1,
+            );
+            return;
+          }
+          if (pending.inventoryRequests >= SESSION_INVENTORY_MAX_REQUESTS) {
+            pendingReconciliations.delete(nodeId);
+            input.logError(
+              new Error(
+                `connected node ${nodeId}/${connected.connectionId} inventory watchdog `
+                + `exhausted after ${pending.inventoryRequests} requests`,
+              ),
+              `runner inventory watchdog exhausted for ${nodeId}`,
+            );
+            await reconcileTimedOutNode(repository, nodeId);
+            return;
+          }
           input.logError(
             new Error(
               `connected node ${nodeId}/${connected.connectionId} missed its complete runner inventory`,
             ),
             `runner inventory re-report required for ${nodeId}`,
           );
-          deferDisconnect(nodeId, connected.connectionId);
           requestInventory(nodeId);
+          scheduleReconciliationDeadline(
+            nodeId,
+            connected.connectionId,
+            inventoryRetryMs,
+            pending.inventoryRequests + 1,
+          );
           return;
         }
-        pendingDisconnects.delete(nodeId);
-        const result = await repository.reconcileNodeDisconnected(
-          nodeId,
-          now(),
-          "node_disconnect_timeout",
-        );
-        publishUpdates(
-          nodeId,
-          typeof result === "number" ? undefined : result.updates,
-        );
+        pendingReconciliations.delete(nodeId);
+        await reconcileTimedOutNode(repository, nodeId);
       });
-    }, disconnectGraceMs);
+    }, delayMs);
     timer.unref?.();
-    pendingDisconnects.set(nodeId, {
+    pendingReconciliations.set(nodeId, {
       connectionId,
       token,
       timer,
+      inventoryRequests,
     });
+  };
+
+  const armConnectionInventoryWatchdog = (
+    nodeId: string,
+    connectionId: string,
+  ): void => {
+    const pending = pendingReconciliations.get(nodeId);
+    if (
+      pending?.connectionId === connectionId
+      && pending.inventoryRequests > 0
+    ) {
+      return;
+    }
+    requestInventory(nodeId);
+    scheduleReconciliationDeadline(
+      nodeId,
+      connectionId,
+      disconnectGraceMs,
+      1,
+    );
+  };
+
+  const deferDisconnect = (nodeId: string, connectionId: string): void => {
+    scheduleReconciliationDeadline(nodeId, connectionId, disconnectGraceMs, 0);
   };
 
   const sink = ((events: NodeRegistryEvent[]) => {
     if (closed) return;
     for (const event of events) {
       if (event.type === "node_registered" || event.type === "node_updated") {
-        cancelPendingDisconnect(event.nodeId);
+        if (input.isLeaseAwareNode?.(event.nodeId) === true) {
+          if (event.type === "node_registered") reportedNodes.delete(event.nodeId);
+          if (!reportedNodes.has(event.nodeId)) {
+            armConnectionInventoryWatchdog(event.nodeId, event.connectionId);
+          }
+        } else {
+          cancelPendingDisconnect(event.nodeId);
+        }
         continue;
       }
       if (event.type === "node_unregistered") {
@@ -226,10 +310,10 @@ export function createSessionReconciliationSink(input: {
   sink.close = async () => {
     if (closed) return;
     closed = true;
-    for (const pending of pendingDisconnects.values()) {
+    for (const pending of pendingReconciliations.values()) {
       clearTimeout(pending.timer);
     }
-    pendingDisconnects.clear();
+    pendingReconciliations.clear();
     await startPromise?.catch(() => undefined);
     await Promise.all(tails.values());
   };
