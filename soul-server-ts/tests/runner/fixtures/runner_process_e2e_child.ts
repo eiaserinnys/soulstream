@@ -56,6 +56,9 @@ class ControlledEngine implements EnginePort {
     if (process.env.RUNNER_E2E_REQUIRE_INTERNAL_MCP === "1") {
       await exerciseInternalMcp();
     }
+    // Match the real Claude/Codex ordering contract: an ID-bearing backend
+    // publishes its backend session ID before the first durable turn event.
+    yield engineEventFrame({ type: "session", session_id: "backend-session-e2e" });
     await writeFile(`${this.controlDirectory}/execute-started`, "ready\n");
     await waitForFile(`${this.controlDirectory}/emit-first`);
     yield engineEventFrame({

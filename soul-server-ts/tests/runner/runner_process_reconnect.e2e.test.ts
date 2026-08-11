@@ -152,8 +152,17 @@ describe("runner process detach/reconnect E2E", () => {
       agentSessionId: "session-e2e",
       prompt: "continue",
     })[Symbol.asyncIterator]();
-    void firstIterator.next().catch(() => {});
+    const firstHostSession = firstIterator.next();
     await waitFor(async () => await pathExists(join(controlDirectory, "execute-started")));
+    await expect(withTimeout(firstHostSession)).resolves.toMatchObject({
+      done: false,
+      value: {
+        kind: "engine_event",
+        payload: { type: "session", session_id: "backend-session-e2e" },
+      },
+    });
+    void firstIterator.next().catch(() => {});
+    await waitFor(async () => await pendingFrameCount(paths.databasePath) === 0);
     const scan = await scanRunnerRegistrations(stateDirectory);
     expect(scan.errors).toEqual([]);
     expect(scan.registrations).toHaveLength(1);
@@ -178,7 +187,7 @@ describe("runner process detach/reconnect E2E", () => {
     await waitFor(async () => await pendingFrameCount(paths.databasePath) === 0);
     await secondHost.detachHost();
     await writeFile(join(controlDirectory, "emit-after-detach"), "go\n");
-    await waitFor(async () => await hasDurableEvent(paths.databasePath, 3));
+    await waitFor(async () => await hasDurableEvent(paths.databasePath, 4));
     expect(isPidAlive(pid)).toBe(true);
 
     const thirdHost = processDispatcher(input, mux);
@@ -193,9 +202,10 @@ describe("runner process detach/reconnect E2E", () => {
     await expect(withTimeout(finished)).resolves.toEqual({ done: true, value: undefined });
     await waitFor(async () => await pendingFrameCount(paths.databasePath) === 0);
 
-    expect(batches.flatMap((batch) => batch.events.map(
-      (event) => (event.payload as { content?: string }).content,
-    ))).toEqual(["before-detach", "after-detach"]);
+    expect(batches.flatMap((batch) => batch.events.flatMap((event) => {
+      const content = (event.payload as { content?: unknown }).content;
+      return typeof content === "string" ? [content] : [];
+    }))).toEqual(["before-detach", "after-detach"]);
     await thirdHost.close();
     await waitFor(async () => !isPidAlive(pid));
     childPids.delete(pid);
