@@ -442,7 +442,7 @@ function emptyStore(): EventOutboxPumpStore {
 }
 
 async function readRunnerBootstrap(path: string) {
-  const outbox = await RunnerSqliteEventOutbox.open(path);
+  const outbox = await RunnerSqliteEventOutbox.create(path);
   try {
     const bootstrap = await outbox.readBootstrap();
     if (!bootstrap) throw new Error("runner bootstrap missing");
@@ -453,7 +453,7 @@ async function readRunnerBootstrap(path: string) {
 }
 
 async function pendingFrameCount(path: string): Promise<number> {
-  const outbox = await RunnerSqliteEventOutbox.open(path);
+  const outbox = await RunnerSqliteEventOutbox.create(path);
   try {
     return (await outbox.readPendingIpcFrames()).length;
   } finally {
@@ -462,7 +462,7 @@ async function pendingFrameCount(path: string): Promise<number> {
 }
 
 async function hasDurableEvent(path: string, sourceSeq: number): Promise<boolean> {
-  const outbox = await RunnerSqliteEventOutbox.open(path);
+  const outbox = await RunnerSqliteEventOutbox.create(path);
   try {
     return await outbox.readRecord(sourceSeq) !== null;
   } finally {

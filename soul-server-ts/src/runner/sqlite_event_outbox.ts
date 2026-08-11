@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import {
@@ -69,10 +69,27 @@ export class RunnerSqliteEventOutbox {
   ) {}
 
   static async open(databasePath: string): Promise<RunnerSqliteEventOutbox> {
+    await assertExistingRunnerDatabase(databasePath);
+    return await RunnerSqliteEventOutbox.openDatabase(databasePath);
+  }
+
+  static async create(databasePath: string): Promise<RunnerSqliteEventOutbox> {
     if (!databasePath || databasePath === ":memory:") {
       throw new Error("runner event outbox requires a file-backed SQLite path");
     }
     await mkdir(dirname(databasePath), { recursive: true });
+    try {
+      const existing = await stat(databasePath);
+      if (existing.size === 0) {
+        throw new Error(`runner event outbox is an empty SQLite file: ${databasePath}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return await RunnerSqliteEventOutbox.openDatabase(databasePath);
+  }
+
+  private static async openDatabase(databasePath: string): Promise<RunnerSqliteEventOutbox> {
     const { DatabaseSync } = loadNodeSqlite();
     const database = new DatabaseSync(databasePath);
     try {
@@ -85,6 +102,13 @@ export class RunnerSqliteEventOutbox {
         throw new Error("runner event outbox requires SQLite WAL journal mode");
       }
       database.exec("PRAGMA synchronous = FULL");
+      database.exec("PRAGMA foreign_keys = ON");
+      const foreignKeys = database.prepare("PRAGMA foreign_keys").get() as {
+        foreign_keys: number;
+      };
+      if (foreignKeys.foreign_keys !== 1) {
+        throw new Error("runner event outbox requires SQLite foreign key enforcement");
+      }
       database.exec(RUNNER_EVENT_OUTBOX_DDL);
       const version = readUserVersion(database);
       if (version > RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
@@ -478,6 +502,18 @@ export class RunnerSqliteEventOutbox {
     return pendingIpc !== undefined;
   }
 
+  async compactAppliedHostCallsForTerminalRecovery(): Promise<void> {
+    this.requireOpen();
+    this.transaction(() => {
+      this.database.prepare(`
+        DELETE FROM runner_ipc_journal
+        WHERE frame_kind = 'host_call'
+          AND host_acked = 1
+          AND outbox_source_seq IS NULL
+      `).run();
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -552,5 +588,25 @@ export class RunnerSqliteEventOutbox {
 
   private requireOpen(): void {
     if (this.closed) throw new Error("runner event outbox is closed");
+  }
+}
+
+async function assertExistingRunnerDatabase(databasePath: string): Promise<void> {
+  if (!databasePath || databasePath === ":memory:") {
+    throw new Error("runner event outbox requires a file-backed SQLite path");
+  }
+  let info;
+  try {
+    info = await stat(databasePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`runner event outbox SQLite file is missing: ${databasePath}`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  if (!info.isFile() || info.size === 0) {
+    throw new Error(`runner event outbox SQLite file is empty or invalid: ${databasePath}`);
   }
 }

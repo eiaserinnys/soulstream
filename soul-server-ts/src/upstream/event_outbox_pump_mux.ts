@@ -48,7 +48,10 @@ export class EventOutboxPumpMux implements EventOutboxPumpTransport {
 
   async handleAck(ack: EventAppendAck): Promise<void> {
     const pump = this.pumps.get(ack.stream_id);
-    if (!pump) throw new Error(`Unknown durable event stream ACK: ${ack.stream_id}`);
+    // A runner may unregister after send but before its ACK returns. The
+    // durable cursor remains in SQLite and advances after the next registered
+    // pump retransmits, so a late ACK must not poison the shared ACK mux.
+    if (!pump) return;
     await pump.handleAck(ack);
   }
 }

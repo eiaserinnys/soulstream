@@ -23,8 +23,8 @@ describe("RunnerHostCallIdempotency", () => {
     const directory = await mkdtemp(join(tmpdir(), "runner-host-call-"));
     directories.push(directory);
     const path = join(directory, "runner.sqlite");
-    const firstStore = await RunnerSqliteEventOutbox.open(path);
-    const secondStore = await RunnerSqliteEventOutbox.open(path);
+    const firstStore = await RunnerSqliteEventOutbox.create(path);
+    const secondStore = await RunnerSqliteEventOutbox.create(path);
     const firstHost = new RunnerHostCallIdempotency(firstStore);
     const secondHost = new RunnerHostCallIdempotency(secondStore);
     const ownerReceipts = new Set<string>();
