@@ -14,6 +14,7 @@
  *   - DELETE + Mcp-Session-Id → 세션 종료. 없음 → 400. 모름 → 404.
  */
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -34,6 +35,7 @@ export interface McpRouteConfig {
   path: string;
   auth: McpAuthConfig;
   statelessTransport: boolean;
+  networkScope: "any" | "loopback";
 }
 
 interface SessionEntry {
@@ -72,6 +74,20 @@ export function registerMcpRoutes(
     req: FastifyRequest,
     reply: FastifyReply,
   ): { ok: true } | { ok: false } => {
+    if (
+      config.networkScope === "loopback"
+      && !isLoopbackAddress(req.socket.remoteAddress)
+    ) {
+      reply.code(403).send({
+        jsonrpc: "2.0",
+        error: {
+          code: -32001,
+          message: "internal MCP route requires a loopback peer",
+        },
+        id: null,
+      });
+      return { ok: false };
+    }
     const headers = {
       host: typeof req.headers.host === "string" ? req.headers.host : undefined,
       authorization:
@@ -159,6 +175,15 @@ export function registerMcpRoutes(
       )),
     );
   };
+}
+
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  if (address === "::1" || address === "0:0:0:0:0:0:0:1") return true;
+  const ipv4 = address.toLowerCase().startsWith("::ffff:")
+    ? address.slice("::ffff:".length)
+    : address;
+  return isIP(ipv4) === 4 && ipv4.startsWith("127.");
 }
 
 async function dispatchStatelessPost(

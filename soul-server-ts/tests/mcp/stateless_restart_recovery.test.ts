@@ -9,6 +9,7 @@ import {
   getCurrentMcpCallerSessionId,
 } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
+import { isLoopbackAddress } from "../../src/mcp/transport.js";
 import { buildServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
@@ -31,6 +32,72 @@ afterEach(async () => {
 });
 
 describe("MCP stateless restart recovery", () => {
+  it("classifies IPv4, IPv6, and IPv4-mapped loopback peers without trusting malformed addresses", () => {
+    for (const address of [
+      "127.0.0.1",
+      "127.255.255.255",
+      "::1",
+      "0:0:0:0:0:0:0:1",
+      "::ffff:127.0.0.1",
+    ]) {
+      expect(isLoopbackAddress(address)).toBe(true);
+    }
+    for (const address of [
+      undefined,
+      "0.0.0.0",
+      "128.0.0.1",
+      "::ffff:198.51.100.7",
+      "127.999.0.1",
+    ]) {
+      expect(isLoopbackAddress(address)).toBe(false);
+    }
+  });
+
+  it("denies the internal route to a non-loopback peer even with valid bearer and forwarded spoofing", async () => {
+    server = await buildServer({
+      host: "127.0.0.1",
+      port: 0,
+      nodeId: "test-node",
+      logger: createSilentLogger(),
+      mcp: {
+        runtime: makeRuntime(),
+        path: "/mcp",
+        statelessTransport: true,
+        auth: {
+          requireAuth: true,
+          bearerToken: "shared-secret",
+          allowedHosts: [],
+        },
+      },
+    });
+
+    for (const remoteAddress of ["198.51.100.7", "::ffff:198.51.100.7"]) {
+      const response = await server.inject({
+        method: "POST",
+        url: "/mcp/internal",
+        remoteAddress,
+        headers: {
+          authorization: "Bearer shared-secret",
+          "content-type": "application/json",
+          "x-forwarded-for": "127.0.0.1",
+        },
+        payload: {
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "remote-attacker", version: "0.0.0" },
+          },
+          id: 0,
+        },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.message).toContain("loopback");
+    }
+  });
+
   it("does not issue a session id and accepts a follow-up carrying a stale id", async () => {
     server = await buildStatelessServer(makeRuntime());
     const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });

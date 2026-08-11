@@ -96,11 +96,13 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       path: params.mcp.path,
       auth: params.mcp.auth,
       statelessTransport: params.mcp.statelessTransport ?? false,
+      networkScope: "any",
     });
     const closeInternalMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
       path: internalMcpPath(params.mcp.path),
       auth: params.mcp.auth,
       statelessTransport: false,
+      networkScope: "loopback",
     });
     fastify.closeMcp = async () => {
       await Promise.all([closePublicMcp(), closeInternalMcp()]);
