@@ -1,8 +1,8 @@
 /**
- * MCP Streamable HTTP transport — Fastify 라우트 + 세션 transport map.
+ * MCP Streamable HTTP transport — Fastify 라우트 + stateful/stateless mode.
  *
  * SDK는 Node `IncomingMessage`/`ServerResponse`에 직접 쓰므로 Fastify v5의 `reply.hijack()`로
- * 자동 응답을 끄고 raw 객체를 위임한다. POST/GET/DELETE 모두 같은 경로(env.MCP_PATH).
+ * 자동 응답을 끄고 raw 객체를 위임한다. POST/GET/DELETE 모두 config.path에 등록된다.
  *
  * Lifecycle (stateful):
  *   - POST + body가 initialize 요청 + Mcp-Session-Id 없음 → 새 transport 생성, sessionIdGenerator
@@ -33,12 +33,27 @@ import { guardMcpToolCallRequest } from "./tool_access.js";
 export interface McpRouteConfig {
   path: string;
   auth: McpAuthConfig;
+  statelessTransport: boolean;
 }
 
 interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   callerOrigin?: McpCallerOrigin;
 }
+
+interface StatelessEntry {
+  transport: StreamableHTTPServerTransport;
+  server: ReturnType<typeof buildMcpServer>;
+  closePromise?: Promise<void>;
+}
+
+/**
+ * Stateless mode has no server-side initialize session in which to pin caller
+ * identity. Its endpoint is therefore an LLM-only principal by server policy;
+ * request headers are attribution hints, never authority inputs. Stateful mode
+ * retains initialize-time origin pinning for mixed internal/LLM clients.
+ */
+const STATELESS_CALLER_ORIGIN: McpCallerOrigin = "llm";
 
 /**
  * Fastify 라우트 등록. 본 함수가 반환하는 cleanup 함수는 서버 종료 시 호출하여
@@ -50,6 +65,7 @@ export function registerMcpRoutes(
   config: McpRouteConfig,
 ): () => Promise<void> {
   const sessions = new Map<string, SessionEntry>();
+  const statelessEntries = new Set<StatelessEntry>();
 
   const path = config.path;
   const guard = (
@@ -82,7 +98,11 @@ export function registerMcpRoutes(
     if (!guard(req, reply).ok) return;
     reply.hijack();
     try {
-      await dispatchPost(req, reply, sessions, runtime);
+      if (config.statelessTransport) {
+        await dispatchStatelessPost(req, reply, statelessEntries, runtime);
+      } else {
+        await dispatchPost(req, reply, sessions, runtime);
+      }
     } catch (err) {
       runtime.logger.error(
         { err },
@@ -96,7 +116,11 @@ export function registerMcpRoutes(
     if (!guard(req, reply).ok) return;
     reply.hijack();
     try {
-      await dispatchGet(req, reply, sessions);
+      if (config.statelessTransport) {
+        writeJsonRpcError(reply, 405, "method not allowed in stateless mode");
+      } else {
+        await dispatchGet(req, reply, sessions);
+      }
     } catch (err) {
       runtime.logger.error({ err }, "MCP GET dispatch threw");
       writeJsonRpcError(reply, 500, "internal error");
@@ -107,7 +131,11 @@ export function registerMcpRoutes(
     if (!guard(req, reply).ok) return;
     reply.hijack();
     try {
-      await dispatchDelete(req, reply, sessions);
+      if (config.statelessTransport) {
+        writeJsonRpcError(reply, 405, "method not allowed in stateless mode");
+      } else {
+        await dispatchDelete(req, reply, sessions);
+      }
     } catch (err) {
       runtime.logger.error({ err }, "MCP DELETE dispatch threw");
       writeJsonRpcError(reply, 500, "internal error");
@@ -124,7 +152,77 @@ export function registerMcpRoutes(
       }
       sessions.delete(id);
     }
+    await Promise.all(
+      [...statelessEntries].map((entry) => closeStatelessEntry(
+        statelessEntries,
+        entry,
+      )),
+    );
   };
+}
+
+async function dispatchStatelessPost(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  active: Set<StatelessEntry>,
+  runtime: McpRuntime,
+): Promise<void> {
+  await withMcpRequestContext(
+    {
+      callerSessionId: headerValue(
+        req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
+      ),
+      callerOrigin: STATELESS_CALLER_ORIGIN,
+    },
+    async () => {
+      const blocked = guardMcpToolCallRequest(runtime, req.body);
+      if (blocked) {
+        writeJsonRpcResult(reply, requestId(req.body), blocked);
+        return;
+      }
+
+      // SDK official stateless mode: a fresh transport and McpServer per POST.
+      // No MCP session ID is generated or validated, so server replacement cannot
+      // strand a client on a process-local transport map.
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      const server = buildMcpServer(runtime);
+      const entry: StatelessEntry = { transport, server };
+      active.add(entry);
+      let closed = false;
+      const close = async () => {
+        if (closed) return;
+        closed = true;
+        await closeStatelessEntry(active, entry);
+      };
+      reply.raw.once("close", () => {
+        void close();
+      });
+      try {
+        await server.connect(transport);
+        await transport.handleRequest(req.raw, reply.raw, req.body);
+      } catch (err) {
+        await close();
+        throw err;
+      }
+    },
+  );
+}
+
+async function closeStatelessEntry(
+  active: Set<StatelessEntry>,
+  entry: StatelessEntry,
+): Promise<void> {
+  if (entry.closePromise) return entry.closePromise;
+  entry.closePromise = (async () => {
+    await Promise.allSettled([
+      entry.transport.close(),
+      entry.server.close(),
+    ]);
+    active.delete(entry);
+  })();
+  return entry.closePromise;
 }
 
 async function dispatchPost(

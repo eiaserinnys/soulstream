@@ -106,6 +106,7 @@ AGENTS_CONFIG_PATH=soul-server-ts/config/agents.yaml
 MODEL_CATALOG_PATH=soul-server-ts/config/model-catalog.yaml
 MCP_ENABLED=true
 MCP_PATH=/mcp
+MCP_STATELESS_TRANSPORT_ENABLED=false
 ENVIRONMENT=development
 ```
 

@@ -1297,7 +1297,7 @@ describe("ClaudeSdkClient", () => {
       expect(captured[0]?.options?.mcpServers).toEqual({
         soulstream: {
           type: "http",
-          url: "http://127.0.0.1:3105/mcp",
+          url: "http://127.0.0.1:3105/mcp/internal",
           headers: {
             authorization: "Bearer secret",
             "x-soulstream-agent-session-id": "parent-sess-profile",
@@ -1362,8 +1362,12 @@ describe("ClaudeSdkClient", () => {
 
       const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
         type: string;
+        url?: string;
         headers?: Record<string, string>;
       }>;
+      expect(mcpServers.soulstream?.url).toBe(
+        "http://127.0.0.1:3105/mcp/internal",
+      );
       expect(mcpServers.soulstream?.headers).toEqual({
         "x-soulstream-agent-session-id": "parent-sess-1",
       });
@@ -1430,8 +1434,12 @@ describe("ClaudeSdkClient", () => {
 
       const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
         type: string;
+        url?: string;
         headers?: Record<string, string>;
       }>;
+      expect(mcpServers.soulstream?.url).toBe(
+        "http://localhost:3105/cogito-mcp/sse",
+      );
       expect(mcpServers.soulstream?.headers).toEqual({
         authorization: "Bearer secret",
         "x-soulstream-agent-session-id": "parent-sess-1",
@@ -1440,6 +1448,9 @@ describe("ClaudeSdkClient", () => {
         "x-other": "kept",
         "x-soulstream-agent-session-id": "parent-sess-1",
       });
+      expect(mcpServers["soulstream-cogito"]?.url).toBe(
+        "http://localhost:3105/mcp/internal",
+      );
       expect(mcpServers.localStdio?.headers).toBeUndefined();
       expect(mcpServers.externalHttp?.headers).toBeUndefined();
     } finally {

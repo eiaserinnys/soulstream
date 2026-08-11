@@ -398,7 +398,7 @@ export async function composeWorkerRuntime(
     mcp: env.MCP_ENABLED
       ? {
           runtime: mcpRuntime,
-          path: env.MCP_PATH,
+          path: env.MCP_PATH, statelessTransport: env.MCP_STATELESS_TRANSPORT_ENABLED,
           auth: {
             requireAuth: env.MCP_REQUIRE_AUTH,
             bearerToken: env.AUTH_BEARER_TOKEN,
