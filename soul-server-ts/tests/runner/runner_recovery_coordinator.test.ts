@@ -128,12 +128,71 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.scanOnce();
     await vi.waitFor(() => expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce());
 
-    expect(subject.terminate).toHaveBeenCalledOnce();
+    expect(subject.terminate).toHaveBeenCalledWith(
+      expect.anything(),
+      { pid: 4123, startIdentity: "start-4123" },
+    );
     expect(subject.markRunnerFailureAndResume).toHaveBeenCalledWith(
       subject.task,
       "runner progress lease expired",
       expect.any(Function),
     );
+  });
+
+  it("retries a previously reaped registration through offline drain and auto-resume", async () => {
+    const subject = makeSubject([registration({
+      pidAlive: false,
+      lifecycleState: "reaped",
+      terminalError: { code: "lease_expired", message: "lease expired before restart" },
+    })]);
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "offline",
+    );
+    expect(subject.markRunnerFailureAndResume).toHaveBeenCalledWith(
+      subject.task,
+      "lease expired before restart",
+      expect.any(Function),
+    );
+    expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
+  });
+
+  it("reopens a closed registration offline so its durable tail can be pumped", async () => {
+    const subject = makeSubject([registration({
+      pidAlive: false,
+      lifecycleState: "closed",
+    })]);
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "offline",
+    );
+    expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
+  });
+
+  it("coalesces overlapping scan requests into one filesystem scan", async () => {
+    let releaseScan!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseScan = resolve; });
+    const scan = vi.fn(async () => {
+      await gate;
+      return { registrations: [], errors: [] };
+    });
+    const subject = makeSubject([], Date.now(), [], { scan });
+
+    const first = subject.coordinator.scanOnce();
+    const second = subject.coordinator.scanOnce();
+    expect(scan).toHaveBeenCalledOnce();
+    releaseScan();
+    await Promise.all([first, second]);
   });
 
   it("a reboot scan independently drains and resumes every dead registration", async () => {
@@ -356,6 +415,7 @@ function registration(options: {
       rolloutRoot: "/home/test/.codex/sessions",
     },
     pid: 4123,
+    pidStartIdentity: "start-4123",
     pidAlive: options.pidAlive ?? true,
     registeredAtMs: Date.parse("2026-08-11T00:00:00.000Z"),
     bootstrap: {
@@ -385,6 +445,8 @@ function registration(options: {
       execution_state: options.lifecycleState ?? "running",
       progress_seq: 3,
       progress_at: options.progressedAt ?? "2026-08-11T00:00:20.000Z",
+      liveness_at: options.progressedAt ?? "2026-08-11T00:00:20.000Z",
+      in_flight_tools: [],
       terminal_error: options.terminalError ?? null,
     },
   };

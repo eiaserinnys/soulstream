@@ -11,6 +11,7 @@ import {
 import {
   readRunnerChildConfig,
   readRunnerPid,
+  resolveRegisteredRunnerPid,
   type RunnerChildConfig,
 } from "./runner_process_spawn.js";
 import { inspectProcessIdentity, type ProcessIdentity } from "./runner_process_lock.js";
@@ -60,6 +61,8 @@ export interface LiveRunnerSessionIdsOptions {
   onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
 }
 
+const RUNNER_TOOL_LEASE_MULTIPLIER = 2;
+
 export async function scanRunnerRegistrations(
   stateDirectory: string,
   options: {
@@ -103,7 +106,8 @@ export function classifyRunnerRegistration(
   nowMs: number,
   leaseTimeoutMs: number,
 ): RunnerRecoveryDisposition {
-  if (!Number.isFinite(nowMs) || leaseTimeoutMs <= 0) {
+  if (!Number.isFinite(nowMs) || !Number.isSafeInteger(leaseTimeoutMs)
+    || leaseTimeoutMs <= 0) {
     throw new Error("runner recovery clock and lease timeout must be positive");
   }
   const lifecycle = registration.lifecycle;
@@ -121,9 +125,47 @@ export function classifyRunnerRegistration(
   if (!Number.isFinite(progressedAt)) {
     throw new Error(`runner lifecycle progress timestamp invalid: ${lifecycle.progress_at}`);
   }
-  return nowMs - progressedAt >= leaseTimeoutMs
-    ? "reap_stalled"
-    : "adopt_running";
+  if (nowMs - progressedAt < leaseTimeoutMs) return "adopt_running";
+  if (lifecycle.in_flight_tools.length === 0) return "reap_stalled";
+  const toolLeaseTimeoutMs = runnerToolLeaseTimeoutMs(
+    leaseTimeoutMs,
+    registration.config.claudeRuntimeTurnTimeoutMs,
+  );
+  for (const tool of lifecycle.in_flight_tools) {
+    const startedAt = Date.parse(tool.started_at);
+    if (!Number.isFinite(startedAt)) {
+      throw new Error(`runner tool lease timestamp invalid: ${tool.started_at}`);
+    }
+    if (nowMs - startedAt >= toolLeaseTimeoutMs) return "reap_stalled";
+  }
+  const livenessAt = Date.parse(lifecycle.liveness_at);
+  if (!Number.isFinite(livenessAt)) {
+    throw new Error(`runner lifecycle liveness timestamp invalid: ${lifecycle.liveness_at}`);
+  }
+  return nowMs - livenessAt < leaseTimeoutMs ? "adopt_running" : "reap_stalled";
+}
+
+/**
+ * Twice the configured turn ceiling preserves the longest supported tool call
+ * with one full turn of safety margin. A larger runner lease receives the same
+ * margin. Missing tool_result events still expire at the resulting finite cap.
+ */
+export function runnerToolLeaseTimeoutMs(
+  leaseTimeoutMs: number,
+  turnTimeoutMs: number,
+): number {
+  if (!Number.isSafeInteger(leaseTimeoutMs) || leaseTimeoutMs <= 0) {
+    throw new Error("runner lease timeout must be a positive integer");
+  }
+  if (!Number.isSafeInteger(turnTimeoutMs) || turnTimeoutMs <= 0) {
+    throw new Error("runner turn timeout must be a positive integer");
+  }
+  const scaled = Math.max(leaseTimeoutMs, turnTimeoutMs)
+    * RUNNER_TOOL_LEASE_MULTIPLIER;
+  if (!Number.isSafeInteger(scaled)) {
+    throw new Error("runner tool lease timeout exceeds safe integer range");
+  }
+  return scaled;
 }
 
 /**
@@ -193,8 +235,17 @@ export async function readRunnerRegistrationSummary(
     ) {
       throw new Error(`runner identity does not match config: ${directory}`);
     }
-    const pid = await readRunnerPid(config.paths.pidPath);
-    if (identity && (identity.pid !== pid || (pid === null && identity.startIdentity !== null))) {
+    const lifecycle = await readRunnerLifecycleSummary(config.paths.databasePath);
+    if (lifecycle && lifecycle.session_id !== config.sessionId) {
+      throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
+    }
+    const pid = resolveRegisteredRunnerPid(
+      await readRunnerPid(config.paths.pidPath),
+      lifecycle?.runner_pid ?? null,
+      identity?.pid ?? null,
+      directory,
+    );
+    if (identity && identity.pid !== null && identity.pid !== pid) {
       throw new Error(`runner pid identity does not match registration: ${directory}`);
     }
     let pidAlive = pid !== null && isPidAlive(pid);
@@ -205,10 +256,6 @@ export async function readRunnerRegistrationSummary(
         || observed.startIdentity === null
         || observed.startIdentity === identity.startIdentity
       );
-    }
-    const lifecycle = await readRunnerLifecycleSummary(config.paths.databasePath);
-    if (lifecycle && lifecycle.session_id !== config.sessionId) {
-      throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
     }
     return {
       config,
@@ -251,6 +298,8 @@ export function runnerReleaseGcCandidateFingerprint(scan: RunnerRegistrationScan
       lifecycleState: registration.lifecycle?.execution_state ?? null,
       lifecycleProgressSeq: registration.lifecycle?.progress_seq ?? null,
       lifecycleProgressAt: registration.lifecycle?.progress_at ?? null,
+      lifecycleLivenessAt: registration.lifecycle?.liveness_at ?? null,
+      lifecycleInFlightTools: registration.lifecycle?.in_flight_tools ?? [],
     })).sort((left, right) => left.directory.localeCompare(right.directory)),
     errors: scan.errors.map((failure) => ({
       directory: failure.directory,

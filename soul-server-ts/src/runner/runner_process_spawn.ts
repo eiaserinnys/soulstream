@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, chmod, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { z } from "zod";
@@ -12,6 +12,7 @@ import {
 import { assertRunnerJsonValue } from "./frame_protocol.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { readRunnerLifecycleSummary } from "./sqlite_runner_lifecycle.js";
 import {
   inspectProcessIdentity,
   type ProcessIdentity,
@@ -32,7 +33,11 @@ const RunnerProcessPathsSchema = z.object({
   pidPath: z.string().min(1),
   lockPath: z.string().min(1),
   configPath: z.string().min(1),
-});
+  logPath: z.string().min(1).optional(),
+}).transform((paths) => ({
+  ...paths,
+  logPath: paths.logPath ?? join(paths.sessionDirectory, "runner.log"),
+}));
 
 export const RunnerChildConfigSchema = z.object({
   schemaVersion: z.literal(1),
@@ -48,6 +53,7 @@ export const RunnerChildConfigSchema = z.object({
   claudeRuntimeIdleTtlMs: z.number().int().positive(),
   claudeRuntimeMaxEntries: z.number().int().positive(),
   claudeRuntimeTurnTimeoutMs: z.number().int().positive(),
+  runnerLeaseTimeoutMs: z.number().int().positive().optional(),
   internalMcpUrl: z.string().url(),
   resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
   codexHome: z.string().min(1).nullable(),
@@ -85,10 +91,11 @@ interface SpawnDependencies {
   validateEntry(path: string): Promise<void>;
   spawnProcess(entry: string, args: string[], options: {
     detached: true;
-    stdio: "ignore";
+    stdio: ["ignore", number, number];
     cwd: string;
     env: NodeJS.ProcessEnv;
   }): Pick<ChildProcess, "pid" | "unref">;
+  openRunnerLog?(path: string): Promise<{ fd: number; close(): Promise<void> }>;
   registerPid(path: string, pid: number): Promise<void>;
   inspectProcess(pid: number): Promise<ProcessIdentity>;
   isPidAlive(pid: number): boolean;
@@ -136,6 +143,9 @@ export class RunnerProcessSpawner {
       claudeRuntimeIdleTtlMs: input.claudeRuntimeIdleTtlMs,
       claudeRuntimeMaxEntries: input.claudeRuntimeMaxEntries,
       claudeRuntimeTurnTimeoutMs: input.claudeRuntimeTurnTimeoutMs,
+      ...(input.runnerLeaseTimeoutMs === undefined
+        ? {}
+        : { runnerLeaseTimeoutMs: input.runnerLeaseTimeoutMs }),
       internalMcpUrl: input.internalMcpUrl,
       ...(input.resolvedMcpServers
         ? { resolvedMcpServers: input.resolvedMcpServers }
@@ -152,14 +162,37 @@ export class RunnerProcessSpawner {
     await input.prepareSnapshot?.();
     const entry = join(input.snapshotPath, "runner_entry.js");
     await this.deps.validateEntry(entry);
-    const child = this.deps.spawnProcess(entry, ["--config", paths.configPath], {
-      detached: true,
-      stdio: "ignore",
-      cwd: input.snapshotPath,
-      env: input.childProcessEnv ?? process.env,
-    });
-    if (!child.pid) throw new Error("detached runner spawn returned no pid");
+    const log = await (this.deps.openRunnerLog?.(paths.logPath)
+      ?? open(paths.logPath, "a", 0o600));
+    let child: Pick<ChildProcess, "pid" | "unref">;
     try {
+      child = this.deps.spawnProcess(entry, ["--config", paths.configPath], {
+        detached: true,
+        stdio: ["ignore", log.fd, log.fd],
+        cwd: input.snapshotPath,
+        env: input.childProcessEnv ?? process.env,
+      });
+    } catch (spawnError) {
+      try {
+        await log.close();
+      } catch (closeError) {
+        throw new AggregateError(
+          [spawnError, closeError],
+          `runner spawn and log descriptor close failed: ${String(spawnError)}`,
+        );
+      }
+      throw spawnError;
+    }
+    if (!child.pid) {
+      try {
+        await log.close();
+      } finally {
+        child.unref();
+      }
+      throw new Error("detached runner spawn returned no pid");
+    }
+    try {
+      await log.close();
       const observed = await this.deps.inspectProcess(child.pid);
       if (!observed.alive || !observed.startIdentity) {
         throw new Error(`detached runner process identity unavailable: ${child.pid}`);
@@ -201,9 +234,15 @@ export class RunnerProcessSpawner {
 
   async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
-    const pid = await readRunnerPid(paths.pidPath);
-    if (pid === null || !this.deps.isPidAlive(pid)) return null;
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    const lifecycle = await readRunnerLifecycleSummary(paths.databasePath);
+    const pid = resolveRegisteredRunnerPid(
+      await readRunnerPid(paths.pidPath),
+      lifecycle?.runner_pid ?? null,
+      identity?.pid ?? null,
+      paths.sessionDirectory,
+    );
+    if (pid === null || !this.deps.isPidAlive(pid)) return null;
     if (identity) {
       if (identity.pid === null || identity.startIdentity === null) return null;
       const observed = await this.deps.inspectProcess(pid);
@@ -221,8 +260,11 @@ export class RunnerProcessSpawner {
     return { pid, paths, config, adopted: true };
   }
 
-  async terminate(paths: RunnerProcessPaths): Promise<void> {
-    await this.stopExistingRunner(paths);
+  async terminate(
+    paths: RunnerProcessPaths,
+    expected?: { pid: number; startIdentity: string },
+  ): Promise<void> {
+    await this.stopExistingRunner(paths, expected);
   }
 
   private async terminateSpawnedChild(
@@ -243,21 +285,61 @@ export class RunnerProcessSpawner {
     }
   }
 
-  private async stopExistingRunner(paths: RunnerProcessPaths): Promise<void> {
-    const pid = await readRunnerPid(paths.pidPath);
+  private async stopExistingRunner(
+    paths: RunnerProcessPaths,
+    expected?: { pid: number; startIdentity: string },
+  ): Promise<void> {
+    const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    const lifecycle = await readRunnerLifecycleSummary(paths.databasePath);
+    const pid = resolveRegisteredRunnerPid(
+      await readRunnerPid(paths.pidPath),
+      lifecycle?.runner_pid ?? null,
+      identity?.pid ?? null,
+      paths.sessionDirectory,
+    );
     if (pid !== null && this.deps.isPidAlive(pid)) {
+      const owner = expected ?? (identity?.pid === pid && identity.startIdentity
+        ? { pid, startIdentity: identity.startIdentity }
+        : undefined);
+      if (!owner || owner.pid !== pid) {
+        throw new Error(`runner process identity unavailable before termination: ${pid}`);
+      }
+      await this.assertSameProcess(owner, "SIGTERM");
       this.deps.signalPid(pid, "SIGTERM");
       const deadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
       while (this.deps.isPidAlive(pid) && this.deps.now() < deadline) {
         await this.deps.delay(25);
       }
-      if (this.deps.isPidAlive(pid)) this.deps.signalPid(pid, "SIGKILL");
+      if (this.deps.isPidAlive(pid)) {
+        await this.assertSameProcess(owner, "SIGKILL");
+        this.deps.signalPid(pid, "SIGKILL");
+        const killDeadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
+        while (this.deps.isPidAlive(pid) && this.deps.now() < killDeadline) {
+          await this.deps.delay(25);
+        }
+      }
       if (this.deps.isPidAlive(pid)) {
         throw new Error(`existing runner pid ${pid} did not terminate`);
       }
     }
     await unlinkIfPresent(paths.pidPath);
     await unlinkIfPresent(paths.socketPath);
+  }
+
+  private async assertSameProcess(
+    expected: { pid: number; startIdentity: string },
+    signal: NodeJS.Signals,
+  ): Promise<void> {
+    const observed = await this.deps.inspectProcess(expected.pid);
+    if (
+      !observed.alive
+      || observed.startIdentity === null
+      || observed.startIdentity !== expected.startIdentity
+    ) {
+      throw new Error(
+        `runner process identity changed before ${signal}: ${expected.pid}`,
+      );
+    }
   }
 }
 
@@ -315,7 +397,22 @@ function samePaths(left: RunnerProcessPaths, right: RunnerProcessPaths): boolean
     && left.socketPath === right.socketPath
     && left.pidPath === right.pidPath
     && left.lockPath === right.lockPath
-    && left.configPath === right.configPath;
+    && left.configPath === right.configPath
+    && left.logPath === right.logPath;
+}
+
+export function resolveRegisteredRunnerPid(
+  pidFilePid: number | null,
+  lifecyclePid: number | null,
+  identityPid: number | null,
+  label: string,
+): number | null {
+  const candidates = [pidFilePid, lifecyclePid, identityPid]
+    .filter((pid): pid is number => pid !== null);
+  if (new Set(candidates).size > 1) {
+    throw new Error(`runner pid evidence disagrees: ${label}`);
+  }
+  return candidates[0] ?? null;
 }
 
 async function unlinkIfPresent(path: string): Promise<void> {

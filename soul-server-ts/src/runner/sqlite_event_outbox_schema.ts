@@ -1,6 +1,6 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 6;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 7;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 export const RUNNER_IPC_JOURNAL_DDL = `
@@ -77,6 +77,10 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
   ),
   progress_seq INTEGER NOT NULL DEFAULT 0 CHECK (progress_seq >= 0),
   progress_at TEXT,
+  liveness_at TEXT,
+  in_flight_tools_json TEXT CHECK (
+    in_flight_tools_json IS NULL OR json_valid(in_flight_tools_json)
+  ),
   terminal_error_json TEXT CHECK (
     terminal_error_json IS NULL OR json_valid(terminal_error_json)
   ),
@@ -115,6 +119,10 @@ CREATE TABLE IF NOT EXISTS runner_prebootstrap_lifecycle (
   ),
   progress_seq INTEGER NOT NULL CHECK (progress_seq >= 0),
   progress_at TEXT NOT NULL,
+  liveness_at TEXT,
+  in_flight_tools_json TEXT CHECK (
+    in_flight_tools_json IS NULL OR json_valid(in_flight_tools_json)
+  ),
   terminal_error_json TEXT CHECK (
     terminal_error_json IS NULL OR json_valid(terminal_error_json)
   )
@@ -178,6 +186,8 @@ export type RunnerEventOutboxRow = {
   execution_state: RunnerExecutionState | null;
   progress_seq: number;
   progress_at: string | null;
+  liveness_at: string | null;
+  in_flight_tools_json: string | null;
   terminal_error_json: string | null;
 };
 

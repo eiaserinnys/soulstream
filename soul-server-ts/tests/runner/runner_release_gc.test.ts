@@ -239,6 +239,8 @@ function registration(options: {
       execution_state: "completed",
       progress_seq: 2,
       progress_at: new Date().toISOString(),
+      liveness_at: new Date().toISOString(),
+      in_flight_tools: [],
       terminal_error: null,
     },
   };

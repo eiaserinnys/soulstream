@@ -8,6 +8,7 @@ export interface RunnerProcessPaths {
   pidPath: string;
   lockPath: string;
   configPath: string;
+  logPath: string;
 }
 
 export const LINUX_UNIX_SOCKET_PATH_MAX_BYTES = 107;
@@ -59,5 +60,6 @@ export function runnerProcessPaths(
     pidPath: join(sessionDirectory, "runner.pid"),
     lockPath: join(sessionDirectory, "runner.lock"),
     configPath: join(sessionDirectory, "runner-config.json"),
+    logPath: join(sessionDirectory, "runner.log"),
   };
 }

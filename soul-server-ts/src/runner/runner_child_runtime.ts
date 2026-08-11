@@ -1,16 +1,10 @@
-import { writeFile } from "node:fs/promises";
-
 import type { Logger } from "pino";
 
-import {
-  buildEventOutboxAppendInput,
-  shouldPersistEvent,
-} from "../db/event_persistence.js";
+import { shouldPersistEvent } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import {
   executionEndedControlFrame,
-  engineEventFrame,
   hostFrameAppliedControlFrame,
   outboxAvailableControlFrame,
   runnerCommandResultFrame,
@@ -18,6 +12,15 @@ import {
   type RunnerEventFrame,
   type RunnerFrame,
 } from "./frame_protocol.js";
+import {
+  buildDurableRunnerEvent,
+  isSqliteFullError,
+  requiresBackendSessionId,
+  runnerLivenessIntervalMs,
+  runnerToolLeaseTransition,
+  sessionIdEffect,
+  setRunnerOomScore,
+} from "./runner_child_runtime_helpers.js";
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
@@ -51,6 +54,7 @@ export class RunnerChildRuntime {
   private resolveClosed!: () => void;
   private closing = false;
   private activeCommandId: string | undefined;
+  private livenessTimer: ReturnType<typeof setInterval> | undefined;
   private droppedFrameCount = 0;
 
   constructor(
@@ -107,6 +111,7 @@ export class RunnerChildRuntime {
         this.logger.warn({ error }, "Runner engine close failed during shutdown");
       });
       await this.endpoint?.close();
+      this.stopLiveness();
       this.lifecycle?.close();
       this.outbox?.close();
       await this.lock?.release();
@@ -134,6 +139,7 @@ export class RunnerChildRuntime {
       || frame.kind === "tool_approval_response"
     ) {
       await this.dispatcher.sendControlFrame(frame);
+      this.recordProgress();
       return;
     }
     throw new Error(`Runner child received unsupported control frame: ${frame.kind}`);
@@ -147,6 +153,7 @@ export class RunnerChildRuntime {
     if (result.result.status !== "ok") return;
     if (command.kind === "execute") {
       this.activeCommandId = command.commandId;
+      this.startLiveness();
       void this.drainExecution(command).catch((error) => {
         this.logger.error({ error }, "Runner execution drain failed");
       });
@@ -174,6 +181,7 @@ export class RunnerChildRuntime {
     } finally {
       this.discardPreBootstrapFrames(preBootstrap, "execution_terminal");
       if (this.activeCommandId === command.commandId) this.activeCommandId = undefined;
+      this.stopLiveness();
     }
   }
 
@@ -234,6 +242,7 @@ export class RunnerChildRuntime {
       return;
     }
     const event = frame.payload as SSEEventPayload;
+    this.recordEngineProgress(event);
     const effect = sessionIdEffect(event);
     const backendSessionId = effect?.kind === "set_backend_session_id"
       ? effect.backend_session_id
@@ -271,7 +280,6 @@ export class RunnerChildRuntime {
   ): Promise<void> {
     if (!shouldPersistEvent(event)) {
       await this.sendBestEffort(frame);
-      this.recordProgress();
       return;
     }
     const durableEvent = buildDurableRunnerEvent(
@@ -285,7 +293,6 @@ export class RunnerChildRuntime {
       durableEvent.frame,
     );
     await this.sendBestEffort(outboxAvailableControlFrame(durable.source_seq));
-    this.recordProgress();
   }
 
   private async flushPreBootstrapFrames(buffer: PreBootstrapFrameBuffer): Promise<void> {
@@ -419,6 +426,46 @@ export class RunnerChildRuntime {
     this.lifecycle.progress(this.activeCommandId, new Date().toISOString());
   }
 
+  private recordEngineProgress(event: SSEEventPayload): void {
+    if (!this.activeCommandId || !this.lifecycle.read()) return;
+    const progressedAt = new Date().toISOString();
+    const transition = runnerToolLeaseTransition(event);
+    if (transition?.kind === "start") {
+      this.lifecycle.toolStarted(this.activeCommandId, transition.toolUseId, progressedAt);
+      return;
+    }
+    if (transition?.kind === "finish") {
+      this.lifecycle.toolFinished(this.activeCommandId, transition.toolUseId, progressedAt);
+      return;
+    }
+    this.lifecycle.progress(this.activeCommandId, progressedAt);
+  }
+
+  private recordLiveness(): void {
+    if (!this.activeCommandId || !this.lifecycle.read()) return;
+    this.lifecycle.liveness(this.activeCommandId, new Date().toISOString());
+  }
+
+  private startLiveness(): void {
+    this.stopLiveness();
+    const leaseTimeoutMs = this.config.runnerLeaseTimeoutMs;
+    if (leaseTimeoutMs === undefined) return;
+    const intervalMs = runnerLivenessIntervalMs(leaseTimeoutMs);
+    this.livenessTimer = setInterval(() => {
+      try {
+        this.recordLiveness();
+      } catch (error) {
+        this.logger.error({ error }, "Runner lifecycle liveness update failed");
+      }
+    }, intervalMs);
+    this.livenessTimer.unref?.();
+  }
+
+  private stopLiveness(): void {
+    if (this.livenessTimer) clearInterval(this.livenessTimer);
+    this.livenessTimer = undefined;
+  }
+
   private async finishLifecycle(
     commandId: string,
     terminalError: { code: string; message: string } | undefined,
@@ -440,46 +487,4 @@ export class RunnerChildRuntime {
 
 function createPreBootstrapFrameBuffer(): PreBootstrapFrameBuffer {
   return { frames: [], bytes: 0 };
-}
-
-export function buildDurableRunnerEvent(
-  sessionId: string,
-  event: SSEEventPayload,
-  effect?: EventOutboxSessionEffect,
-  metadata?: unknown,
-): {
-  appendInput: ReturnType<typeof buildEventOutboxAppendInput>;
-  frame: ReturnType<typeof engineEventFrame>;
-} {
-  const appendInput = buildEventOutboxAppendInput(sessionId, event, effect);
-  return {
-    appendInput,
-    frame: engineEventFrame(appendInput.payload, metadata),
-  };
-}
-
-function sessionIdEffect(event: SSEEventPayload): EventOutboxSessionEffect | undefined {
-  if ((event as { type?: unknown }).type !== "session") return undefined;
-  const sessionId = (event as { session_id?: unknown }).session_id;
-  return typeof sessionId === "string" && sessionId.length > 0
-    ? { kind: "set_backend_session_id", backend_session_id: sessionId }
-    : undefined;
-}
-
-export function requiresBackendSessionId(backend: RunnerChildConfig["backend"]): boolean {
-  return backend === "claude" || backend === "codex";
-}
-
-export async function setRunnerOomScore(
-  platform: NodeJS.Platform = process.platform,
-  path = "/proc/self/oom_score_adj",
-): Promise<void> {
-  if (platform !== "linux") return;
-  await writeFile(path, "500\n");
-}
-
-export function isSqliteFullError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const code = (error as Error & { code?: unknown }).code;
-  return code === "SQLITE_FULL" || /database or disk is full/i.test(error.message);
 }

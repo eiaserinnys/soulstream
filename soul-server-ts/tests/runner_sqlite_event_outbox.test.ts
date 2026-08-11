@@ -23,6 +23,7 @@ import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.j
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
 import {
   readRunnerLifecycleSummary,
+  runnerLifecycleSummaryPath,
   RunnerSqliteLifecycle,
 } from "../src/runner/sqlite_runner_lifecycle.js";
 
@@ -84,12 +85,16 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(outboxTable.sql).toContain("runner_metadata_json");
       expect(outboxTable.sql).toContain("execution_command_id");
       expect(outboxTable.sql).toContain("progress_seq");
+      expect(outboxTable.sql).toContain("liveness_at");
+      expect(outboxTable.sql).toContain("in_flight_tools_json");
       expect(outboxTable.sql).toContain("terminal_error_json");
       expect(journalTable.sql).toContain("frame_seq INTEGER PRIMARY KEY AUTOINCREMENT");
       expect(journalTable.sql).toContain("outbox_source_seq INTEGER UNIQUE");
       expect(journalTable.sql).toContain("correlation_id TEXT UNIQUE");
       expect(journalTable.sql).not.toMatch(/payload|metadata|session_effect/);
       expect(lifecycleTable.sql).toContain("execution_command_id TEXT NOT NULL");
+      expect(lifecycleTable.sql).toContain("liveness_at");
+      expect(lifecycleTable.sql).toContain("in_flight_tools_json");
       expect(lifecycleTable.sql).not.toMatch(/payload|metadata|session_effect/);
       expect(outboxTable.sql).toContain("STRICT");
       expect(lifecycleTable.sql).toContain("STRICT");
@@ -199,7 +204,7 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
-  it("stores a monotonic progress lease on bootstrap without changing event lineage", async () => {
+  it("separates process liveness from actual progress and explicit tool leases", async () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
@@ -216,26 +221,136 @@ describe("RunnerSqliteEventOutbox", () => {
       execution_command_id: "execute-a",
       execution_state: "running",
       progress_seq: 1,
+      progress_at: "2026-08-11T01:00:00.000Z",
+      liveness_at: "2026-08-11T01:00:00.000Z",
+      in_flight_tools: [],
       terminal_error: null,
     });
+    expect(lifecycle.liveness("execute-a", "2026-08-11T01:00:00.500Z"))
+      .toMatchObject({
+        progress_seq: 1,
+        progress_at: "2026-08-11T01:00:00.000Z",
+        liveness_at: "2026-08-11T01:00:00.500Z",
+        in_flight_tools: [],
+      });
+    expect(lifecycle.toolStarted(
+      "execute-a",
+      "tool-long",
+      "2026-08-11T01:00:00.750Z",
+    )).toMatchObject({
+      progress_seq: 2,
+      progress_at: "2026-08-11T01:00:00.750Z",
+      liveness_at: "2026-08-11T01:00:00.750Z",
+      in_flight_tools: [{
+        tool_use_id: "tool-long",
+        started_at: "2026-08-11T01:00:00.750Z",
+      }],
+    });
+    expect(lifecycle.toolStarted(
+      "execute-a",
+      "tool-long",
+      "2026-08-11T01:00:00.800Z",
+    )).toMatchObject({
+      progress_seq: 3,
+      progress_at: "2026-08-11T01:00:00.800Z",
+      in_flight_tools: [{
+        tool_use_id: "tool-long",
+        started_at: "2026-08-11T01:00:00.750Z",
+      }],
+    });
+    expect(lifecycle.liveness("execute-a", "2026-08-11T01:00:00.900Z"))
+      .toMatchObject({
+        progress_seq: 3,
+        progress_at: "2026-08-11T01:00:00.800Z",
+        liveness_at: "2026-08-11T01:00:00.900Z",
+        in_flight_tools: [{
+          tool_use_id: "tool-long",
+          started_at: "2026-08-11T01:00:00.750Z",
+        }],
+      });
+    expect(lifecycle.toolFinished(
+      "execute-a",
+      "tool-long",
+      "2026-08-11T01:00:00.950Z",
+    )).toMatchObject({
+      progress_seq: 4,
+      progress_at: "2026-08-11T01:00:00.950Z",
+      liveness_at: "2026-08-11T01:00:00.950Z",
+      in_flight_tools: [],
+    });
     expect(lifecycle.progress("execute-a", "2026-08-11T01:00:01.000Z"))
-      .toMatchObject({ progress_seq: 2, progress_at: "2026-08-11T01:00:01.000Z" });
+      .toMatchObject({ progress_seq: 5, progress_at: "2026-08-11T01:00:01.000Z" });
     expect(lifecycle.finish(
       "execute-a",
       "completed",
       "2026-08-11T01:00:02.000Z",
-    )).toMatchObject({ execution_state: "completed", progress_seq: 3 });
+    )).toMatchObject({ execution_state: "completed", progress_seq: 6 });
     await expect(readRunnerLifecycleSummary(path)).resolves.toMatchObject({
       session_id: "session-a",
       execution_state: "completed",
-      progress_seq: 3,
+      progress_seq: 6,
       progress_at: "2026-08-11T01:00:02.000Z",
+      liveness_at: "2026-08-11T01:00:02.000Z",
+      in_flight_tools: [],
     });
 
     expect((await outbox.readBootstrap())?.payload_hash).toBe(bootstrap.payload_hash);
     expect(outbox.ackedSeq).toBe(1);
     lifecycle.close();
     outbox.close();
+  });
+
+  it("migrates v6 lifecycle storage and normalizes legacy summaries", async () => {
+    const path = await temporaryDatabasePath();
+    const initial = await RunnerSqliteEventOutbox.create(path);
+    await initial.initializeBootstrap(bootstrapInput());
+    initial.close();
+
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      ALTER TABLE runner_event_outbox DROP COLUMN in_flight_tools_json;
+      ALTER TABLE runner_event_outbox DROP COLUMN liveness_at;
+      ALTER TABLE runner_prebootstrap_lifecycle DROP COLUMN in_flight_tools_json;
+      ALTER TABLE runner_prebootstrap_lifecycle DROP COLUMN liveness_at;
+      PRAGMA user_version = 6;
+    `);
+    legacy.close();
+
+    const migrated = await RunnerSqliteEventOutbox.create(path);
+    migrated.close();
+    const verified = new DatabaseSync(path);
+    try {
+      for (const table of ["runner_event_outbox", "runner_prebootstrap_lifecycle"]) {
+        const rows = verified.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+          name: string;
+        }>;
+        const columns = rows.map((column) => column.name);
+        expect(columns).toContain("liveness_at");
+        expect(columns).toContain("in_flight_tools_json");
+      }
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 7 });
+    } finally {
+      verified.close();
+    }
+
+    await writeFile(runnerLifecycleSummaryPath(path), JSON.stringify({
+      session_id: "session-a",
+      runner_pid: 4123,
+      execution_command_id: "execute-a",
+      execution_state: "running",
+      progress_seq: 1,
+      progress_at: "2026-08-11T01:00:00.000Z",
+      in_flight_tool_ids: ["legacy-tool"],
+      terminal_error: null,
+    }));
+    await expect(readRunnerLifecycleSummary(path)).resolves.toMatchObject({
+      progress_at: "2026-08-11T01:00:00.000Z",
+      liveness_at: "2026-08-11T01:00:00.000Z",
+      in_flight_tools: [{
+        tool_use_id: "legacy-tool",
+        started_at: "2026-08-11T01:00:00.000Z",
+      }],
+    });
   });
 
   it("records pre-bootstrap failure and promotes only the succeeding execution lease", async () => {
@@ -674,7 +789,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const verified = new DatabaseSync(path);
     try {
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 7 });
       expect(verified.prepare(`
         SELECT acked_through, ack_checkpoint_hash
         FROM runner_event_outbox WHERE record_kind = 'bootstrap'

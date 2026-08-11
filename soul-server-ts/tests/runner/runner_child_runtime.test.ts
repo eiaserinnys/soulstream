@@ -2,25 +2,54 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   buildDurableRunnerEvent,
   isSqliteFullError,
   requiresBackendSessionId,
+  runnerLivenessIntervalMs,
+  runnerToolLeaseTransition,
   setRunnerOomScore,
-} from "../../src/runner/runner_child_runtime.js";
+} from "../../src/runner/runner_child_runtime_helpers.js";
 
 const directories: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(directories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
 });
 
 describe("buildDurableRunnerEvent", () => {
+  it("derives liveness cadence from the lease instead of the turn timeout", () => {
+    expect(runnerLivenessIntervalMs(120_000)).toBe(30_000);
+    expect(runnerLivenessIntervalMs(9_000)).toBe(3_000);
+  });
+  it("derives explicit tool lease transitions only from paired tool events", () => {
+    expect(runnerToolLeaseTransition({
+      type: "tool_start",
+      tool_name: "Bash",
+      tool_input: {},
+      tool_use_id: "tool-long",
+      timestamp: 1,
+    } as SSEEventPayload)).toEqual({ kind: "start", toolUseId: "tool-long" });
+    expect(runnerToolLeaseTransition({
+      type: "tool_result",
+      tool_name: "Bash",
+      result: "done",
+      is_error: false,
+      tool_use_id: "tool-long",
+      timestamp: 2,
+    } as SSEEventPayload)).toEqual({ kind: "finish", toolUseId: "tool-long" });
+    expect(runnerToolLeaseTransition({
+      type: "assistant_message",
+      content: "still working",
+      timestamp: 3,
+    } as SSEEventPayload)).toBeNull();
+  });
   it("waits for resume material only on ID-bearing backends", () => {
     expect(requiresBackendSessionId("claude")).toBe(true);
     expect(requiresBackendSessionId("codex")).toBe(true);

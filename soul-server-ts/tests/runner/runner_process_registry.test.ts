@@ -11,6 +11,7 @@ import {
   scanRunnerRegistrations,
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
+import { resolveRegisteredRunnerPid } from "../../src/runner/runner_process_spawn.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import {
@@ -31,6 +32,11 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
+  it("uses lifecycle pid evidence when the pid sidecar is missing", () => {
+    expect(resolveRegisteredRunnerPid(null, 4123, 4123, "session-a")).toBe(4123);
+    expect(() => resolveRegisteredRunnerPid(null, 4123, 4999, "session-a"))
+      .toThrow("runner pid evidence disagrees: session-a");
+  });
   it("classifies bootstrap grace, live prebootstrap, and durable terminal state", () => {
     const pending = {
       ...registration({ pidAlive: false }),
@@ -50,6 +56,55 @@ describe("runner process registry", () => {
       pidAlive: false,
       lifecycleState: "failed",
     }), NOW, 120_000)).toBe("replay_terminal");
+  });
+
+  it("reaps a hung execution with fresh liveness but no actual progress", () => {
+    expect(classifyRunnerRegistration(registration({
+      progressedAt: "2026-08-11T00:00:00.000Z",
+      livenessAt: "2026-08-11T00:00:29.000Z",
+      inFlightTools: [],
+    }), NOW, 10_000)).toBe("reap_stalled");
+  });
+
+  it("reaps a hung tool after its finite tool lease expires", () => {
+    expect(classifyRunnerRegistration(registration({
+      progressedAt: "2026-08-10T22:59:59.999Z",
+      livenessAt: "2026-08-11T00:00:29.000Z",
+      inFlightTools: [{
+        tool_use_id: "tool-hung",
+        started_at: "2026-08-10T22:59:59.999Z",
+      }],
+    }), NOW, 10_000)).toBe("reap_stalled");
+  });
+
+  it("reaps a tool whose completion event is lost after the finite tool lease", () => {
+    expect(classifyRunnerRegistration(registration({
+      progressedAt: "2026-08-10T23:59:00.000Z",
+      livenessAt: "2026-08-11T00:00:29.000Z",
+      inFlightTools: [{
+        tool_use_id: "tool-result-lost",
+        started_at: "2026-08-10T22:59:59.999Z",
+      }],
+    }), NOW, 10_000)).toBe("reap_stalled");
+  });
+
+  it("preserves a normal thirty-minute tool call below the finite tool lease cap", () => {
+    expect(classifyRunnerRegistration(registration({
+      progressedAt: "2026-08-10T23:30:00.000Z",
+      livenessAt: "2026-08-11T00:00:29.000Z",
+      inFlightTools: [{
+        tool_use_id: "tool-long",
+        started_at: "2026-08-10T23:30:00.000Z",
+      }],
+    }), NOW, 1_800_000)).toBe("adopt_running");
+  });
+
+  it("leaves a normally progressing execution untouched", () => {
+    expect(classifyRunnerRegistration(registration({
+      progressedAt: "2026-08-11T00:00:25.000Z",
+      livenessAt: "2026-08-11T00:00:29.000Z",
+      inFlightTools: [],
+    }), NOW, 10_000)).toBe("adopt_running");
   });
 
   it("reports only live lease dispositions and deduplicates the reconnect inventory", async () => {
@@ -229,6 +284,9 @@ function registration(options: {
   sessionId?: string;
   pidAlive?: boolean;
   lifecycleState?: "running" | "completed" | "failed";
+  progressedAt?: string;
+  livenessAt?: string;
+  inFlightTools?: Array<{ tool_use_id: string; started_at: string }>;
 } = {}): RunnerRegistration {
   const sessionId = options.sessionId ?? "session-a";
   return {
@@ -266,7 +324,9 @@ function registration(options: {
       execution_command_id: "execute-a",
       execution_state: options.lifecycleState ?? "running",
       progress_seq: 3,
-      progress_at: "2026-08-11T00:00:20.000Z",
+      progress_at: options.progressedAt ?? "2026-08-11T00:00:20.000Z",
+      liveness_at: options.livenessAt ?? "2026-08-11T00:00:20.000Z",
+      in_flight_tools: options.inFlightTools ?? [],
       terminal_error: null,
     },
   };

@@ -39,6 +39,7 @@ type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_ARTIFACT_DIR"
   | "SOUL_RUNNER_RELEASES_DIR"
   | "SOUL_RUNNER_TERMINAL_RETENTION_MS"
+  | "SOUL_RUNNER_LEASE_TIMEOUT_MS"
   | "CODEX_ADAPTER_MODE"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
@@ -127,6 +128,7 @@ export function createRunnerProcessRuntimeFactory(
         claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
         claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+        runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
         internalMcpUrl: localInternalMcpUrl(
           options.env.MCP_INTERNAL_PORT,
           options.env.MCP_PATH,
@@ -144,7 +146,12 @@ export function createRunnerProcessRuntimeFactory(
     config.agent,
     config.backend,
     snapshots,
-    spawnInputFromConfig(stateDirectory, config, options.releasePool),
+    spawnInputFromConfig(
+      stateDirectory,
+      config,
+      options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      options.releasePool,
+    ),
     mode,
   );
   factory.restart = (task, config, snapshots) => createRuntime(
@@ -152,7 +159,12 @@ export function createRunnerProcessRuntimeFactory(
     config.agent,
     config.backend,
     snapshots,
-    spawnInputFromConfig(stateDirectory, config, options.releasePool),
+    spawnInputFromConfig(
+      stateDirectory,
+      config,
+      options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      options.releasePool,
+    ),
   );
   return factory;
 }
@@ -160,6 +172,7 @@ export function createRunnerProcessRuntimeFactory(
 function spawnInputFromConfig(
   stateDirectory: string,
   config: RunnerChildConfig,
+  runnerLeaseTimeoutMs: number,
   releasePool: Pick<RunnerReleasePool, "ensureRelease" | "describe">,
 ): SpawnRunnerProcessInput {
   const release = releasePool.describe(config.codeSha);
@@ -179,6 +192,7 @@ function spawnInputFromConfig(
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
     claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
+    runnerLeaseTimeoutMs,
     internalMcpUrl: config.internalMcpUrl,
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
