@@ -31,6 +31,12 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${["running", null, null, effect.review_state]},
         ${new Date(effect.updated_at)}
       )
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM sessions
+        WHERE session_id = ${envelope.session_id}
+          AND status IN ('completed', 'error')
+      )
     `;
     return;
   }

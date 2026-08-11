@@ -279,11 +279,12 @@ export function createSessionReconciliationSink(input: {
       }
       reportedNodes.add(event.nodeId);
       cancelPendingDisconnect(event.nodeId);
+      const snapshotAt = now();
       enqueue(event.nodeId, async (repository) => {
         const result = await repository.reconcileNodeStartup(
           event.nodeId,
           runningSessionIds,
-          now(),
+          snapshotAt,
         );
         publishUpdates(event.nodeId, result.updates);
       });

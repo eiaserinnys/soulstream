@@ -149,7 +149,7 @@ export class SessionMutationRepository {
             ELSE 'acknowledged'
           END,
           updated_at = ${updatedAt}
-      WHERE node_id = ${nodeId} AND status = 'running'
+        WHERE node_id = ${nodeId} AND status = 'running'
       RETURNING session_id, status, termination_reason, termination_detail,
                 review_state, updated_at
     `;
@@ -197,7 +197,8 @@ export class SessionMutationRepository {
               ELSE 'acknowledged'
             END,
             updated_at = ${updatedAt}
-        WHERE node_id = ${nodeId} AND status = 'running'
+      WHERE node_id = ${nodeId} AND status = 'running'
+          AND updated_at <= ${updatedAt}
           AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
@@ -210,7 +211,8 @@ export class SessionMutationRepository {
             updated_at = ${updatedAt}
         WHERE node_id = ${nodeId}
           AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-          AND status <> 'running'
+          AND status = 'interrupted'
+          AND updated_at <= ${updatedAt}
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
       `;
