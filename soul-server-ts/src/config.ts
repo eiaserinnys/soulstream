@@ -140,6 +140,11 @@ export const EnvSchema = z
      */
     MCP_PATH: z.string().default("/mcp"),
     /**
+     * Node-local privileged MCP listener. When omitted, the config layer derives
+     * PORT+1 so existing deployments retain an explicit, deterministic endpoint.
+     */
+    MCP_INTERNAL_PORT: z.coerce.number().int().positive().max(65_535).optional(),
+    /**
      * Stateless Streamable HTTP mode. Separate cutover flag because MCP is shared
      * by in-process and runner-backed sessions. Default false preserves the
      * process-local Mcp-Session-Id map until rollout is explicitly enabled.
@@ -170,6 +175,21 @@ export const EnvSchema = z
       ),
   })
   .superRefine((env, ctx) => {
+    const internalMcpPort = env.MCP_INTERNAL_PORT ?? env.PORT + 1;
+    if (internalMcpPort > 65_535) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MCP_INTERNAL_PORT"],
+        message: "MCP_INTERNAL_PORT or derived PORT+1 must be at most 65535",
+      });
+    }
+    if (internalMcpPort === env.PORT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MCP_INTERNAL_PORT"],
+        message: "MCP_INTERNAL_PORT must differ from PORT",
+      });
+    }
     // 1) production에서는 AUTH_BEARER_TOKEN 강제 (기존, 유지). design-principles §4.
     if (env.ENVIRONMENT === "production" && !env.AUTH_BEARER_TOKEN) {
       ctx.addIssue({
@@ -259,7 +279,11 @@ export const EnvSchema = z
           "MCP_STATELESS_TRANSPORT_ENABLED must be true when runner process mode and MCP are enabled",
       });
     }
-  });
+  })
+  .transform((env) => ({
+    ...env,
+    MCP_INTERNAL_PORT: env.MCP_INTERNAL_PORT ?? env.PORT + 1,
+  }));
 
 export type Env = z.infer<typeof EnvSchema>;
 

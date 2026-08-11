@@ -65,6 +65,7 @@ try {
     claudeRuntimeIdleTtlMs: 300000,
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1800000,
+    internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: null,
     rolloutRoot: null,
   }));

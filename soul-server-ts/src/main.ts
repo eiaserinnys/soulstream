@@ -10,7 +10,7 @@ import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
-import { startServer } from "./server.js";
+import { startInternalMcpServer, startServer } from "./server.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
@@ -150,6 +150,17 @@ async function main(): Promise<void> {
     modelCatalog,
     agentProfileSource,
   });
+  if (runtime.server.internalMcpServer) {
+    await startInternalMcpServer(runtime.server.internalMcpServer, env.MCP_INTERNAL_PORT);
+    logger.info(
+      {
+        host: "127.0.0.1",
+        port: env.MCP_INTERNAL_PORT,
+        path: `${env.MCP_PATH.replace(/\/+$/, "")}/internal`,
+      },
+      "Node-local internal MCP listening",
+    );
+  }
   await startServer(runtime.server, env.HOST, env.PORT);
   logger.info(
     {
@@ -209,6 +220,9 @@ async function main(): Promise<void> {
       } catch (err) {
         logger.warn({ err }, "MCP transports close failed");
       }
+    }
+    if (runtime.server.internalMcpServer) {
+      await runtime.server.internalMcpServer.close();
     }
     await runtime.server.close();
     process.exit(0);

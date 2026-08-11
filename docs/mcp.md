@@ -14,7 +14,9 @@ http://localhost:4205/mcp   (Streamable HTTP transport)
 
 `MCP_STATELESS_TRANSPORT_ENABLED=false` preserves the public route's existing stateful transport by default. Set it to `true` during the restart-safe cutover to use the SDK's stateless mode: each POST receives a fresh transport, no `Mcp-Session-Id` is issued, and GET/DELETE return 405 because this server does not use server-initiated notifications or elicitation. The public endpoint is an LLM-only principal by server policy; caller-origin and agent-session headers cannot upgrade its authority or establish a parent session.
 
-Soulstream's own Claude SDK clients use the separate `${MCP_PATH}/internal` route (default `/mcp/internal`). That route always remains stateful and preserves initialize-time origin pinning plus agent-session ownership. The server mounts both routes together, and known internal server names (`soulstream`, `soulstream-cogito`, `soul-server-ts`) are rewritten to the internal path when Claude SDK options are built. External MCP servers and legacy SSE URLs are unchanged.
+Soulstream's own Claude SDK clients use the separate `${MCP_PATH}/internal` route (default `/mcp/internal`). It is mounted only on a second listener hard-bound to `127.0.0.1:MCP_INTERNAL_PORT`; the public listener has no internal route. `MCP_INTERNAL_PORT` defaults deterministically to `PORT+1` and must differ from `PORT`. The internal route remains stateful and preserves initialize-time origin pinning plus agent-session ownership.
+
+The Claude SDK HTTP MCP configuration accepts a URL but no Unix-domain-socket transport option, so the internal boundary uses a dedicated loopback TCP listener. nginx and every other public reverse proxy must forward only `PORT` and must never forward `MCP_INTERNAL_PORT`. Known internal server names (`soulstream`, `soulstream-cogito`, `soul-server-ts`) are rewritten to the node-local internal URL when Claude SDK options are built. External MCP servers and legacy SSE URLs are unchanged.
 
 Add it to `.mcp.json` in the workspace:
 

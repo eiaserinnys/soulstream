@@ -1,5 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { once } from "node:events";
+import { createServer } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../../src/agent_registry.js";
@@ -9,11 +11,16 @@ import {
   getCurrentMcpCallerSessionId,
 } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { buildServer } from "../../src/server.js";
+import {
+  buildInternalMcpServer,
+  buildServer,
+  startInternalMcpServer,
+} from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
+let internalServer: Awaited<ReturnType<typeof buildInternalMcpServer>> | undefined;
 let client: Client | undefined;
 
 afterEach(async () => {
@@ -28,9 +35,123 @@ afterEach(async () => {
     await server.close();
     server = undefined;
   }
+  if (internalServer) {
+    if (internalServer.closeMcp) await internalServer.closeMcp();
+    await internalServer.close();
+    internalServer = undefined;
+  }
 });
 
 describe("MCP stateless restart recovery", () => {
+  it("never mounts the internal route on the public listener, including nginx-shaped requests", async () => {
+    server = await buildServer({
+      host: "127.0.0.1",
+      port: 0,
+      nodeId: "test-node",
+      logger: createSilentLogger(),
+      mcp: {
+        runtime: makeRuntime(),
+        path: "/mcp",
+        statelessTransport: true,
+        auth: {
+          requireAuth: true,
+          bearerToken: "shared-secret",
+          allowedHosts: [],
+        },
+      },
+    });
+
+    const publicUrl = await server.listen({ host: "127.0.0.1", port: 0 });
+    const response = await fetch(`${publicUrl}/mcp/internal`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer shared-secret",
+        "content-type": "application/json",
+        "x-forwarded-for": "127.0.0.1",
+        "x-soulstream-agent-session-id": "forged-agent-session",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "remote-attacker", version: "0.0.0" },
+        },
+        id: 0,
+      }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("starts the internal-only listener on IPv4 loopback and serves its privileged route", async () => {
+    internalServer = await buildInternalMcpServer({
+      logger: createSilentLogger(),
+      runtime: makeRuntime(),
+      path: "/mcp/internal",
+      statelessTransport: false,
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
+      },
+    });
+    const internalUrl = await startInternalMcpServer(internalServer, 0);
+    expect(new URL(internalUrl).hostname).toBe("127.0.0.1");
+
+    const initialized = await postAtPath(
+      internalUrl,
+      "/mcp/internal",
+      undefined,
+      {
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "internal-sdk", version: "0.0.0" },
+        },
+        id: 1,
+      },
+      { "x-soulstream-agent-session-id": "internal-session" },
+    );
+    expect(initialized.status).toBe(200);
+  });
+
+  it("points to MCP_INTERNAL_PORT when the internal listener port is occupied", async () => {
+    const blocker = createServer();
+    blocker.listen(0, "127.0.0.1");
+    await once(blocker, "listening");
+    const address = blocker.address();
+    expect(address && typeof address === "object").toBe(true);
+    const occupiedPort = typeof address === "object" && address
+      ? address.port
+      : 0;
+
+    try {
+      internalServer = await buildInternalMcpServer({
+        logger: createSilentLogger(),
+        runtime: makeRuntime(),
+        path: "/mcp/internal",
+        statelessTransport: false,
+        auth: {
+          requireAuth: false,
+          bearerToken: "",
+          allowedHosts: ["127.0.0.1", "localhost"],
+        },
+      });
+      await expect(
+        startInternalMcpServer(internalServer, occupiedPort),
+      ).rejects.toThrow(
+        /MCP_INTERNAL_PORT.*free node-local port.*nginx/is,
+      );
+    } finally {
+      blocker.close();
+      await once(blocker, "close");
+    }
+  });
+
   it("does not issue a session id and accepts a follow-up carrying a stale id", async () => {
     server = await buildStatelessServer(makeRuntime());
     const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
@@ -191,6 +312,18 @@ describe("MCP stateless restart recovery", () => {
     } as never;
     server = await buildStatelessServer(runtime);
     const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
+    internalServer = await buildInternalMcpServer({
+      logger: createSilentLogger(),
+      runtime,
+      path: "/mcp/internal",
+      statelessTransport: false,
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
+      },
+    });
+    const internalUrl = await startInternalMcpServer(internalServer, 0);
 
     const publicList = await post(
       baseUrl,
@@ -207,7 +340,7 @@ describe("MCP stateless restart recovery", () => {
     expect(publicNames).not.toContain("delete_session");
 
     const initialized = await postAtPath(
-      baseUrl,
+      internalUrl,
       "/mcp/internal",
       undefined,
       {
@@ -227,7 +360,7 @@ describe("MCP stateless restart recovery", () => {
     await initialized.text();
 
     const internalList = await postAtPath(
-      baseUrl,
+      internalUrl,
       "/mcp/internal",
       internalSessionId!,
       { jsonrpc: "2.0", method: "tools/list", params: {}, id: 22 },
@@ -239,7 +372,7 @@ describe("MCP stateless restart recovery", () => {
     expect(internalNames).toContain("delete_session");
 
     const called = await postAtPath(
-      baseUrl,
+      internalUrl,
       "/mcp/internal",
       internalSessionId!,
       {

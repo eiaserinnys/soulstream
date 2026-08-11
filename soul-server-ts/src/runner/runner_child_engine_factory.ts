@@ -98,6 +98,7 @@ export function createRunnerChildEngine(
     sessionStore,
     sessionStoreFlush: config.claudeRuntimeV2Enabled ? "eager" : "batched",
     loadTimeoutMs: 60_000,
+    internalMcpUrl: config.internalMcpUrl,
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),

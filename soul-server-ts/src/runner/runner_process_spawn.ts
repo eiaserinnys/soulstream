@@ -38,6 +38,7 @@ export const RunnerChildConfigSchema = z.object({
   claudeRuntimeIdleTtlMs: z.number().int().positive(),
   claudeRuntimeMaxEntries: z.number().int().positive(),
   claudeRuntimeTurnTimeoutMs: z.number().int().positive(),
+  internalMcpUrl: z.string().url(),
   resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
   codexHome: z.string().min(1).nullable(),
   rolloutRoot: z.string().min(1).nullable(),
@@ -112,6 +113,7 @@ export class RunnerProcessSpawner {
       claudeRuntimeIdleTtlMs: input.claudeRuntimeIdleTtlMs,
       claudeRuntimeMaxEntries: input.claudeRuntimeMaxEntries,
       claudeRuntimeTurnTimeoutMs: input.claudeRuntimeTurnTimeoutMs,
+      internalMcpUrl: input.internalMcpUrl,
       ...(input.resolvedMcpServers
         ? { resolvedMcpServers: input.resolvedMcpServers }
         : {}),

@@ -1271,6 +1271,7 @@ describe("ClaudeSdkClient", () => {
         workspaceDir,
         env: {},
         agentSessionId: "parent-sess-profile",
+        internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
         resolvedMcpServers: [
           {
             type: "streamable_http",
@@ -1297,7 +1298,7 @@ describe("ClaudeSdkClient", () => {
       expect(captured[0]?.options?.mcpServers).toEqual({
         soulstream: {
           type: "http",
-          url: "http://127.0.0.1:3105/mcp/internal",
+          url: "http://127.0.0.1:3106/mcp/internal",
           headers: {
             authorization: "Bearer secret",
             "x-soulstream-agent-session-id": "parent-sess-profile",
@@ -1358,6 +1359,7 @@ describe("ClaudeSdkClient", () => {
         workspaceDir,
         env: {},
         agentSessionId: "parent-sess-1",
+        internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
       }, new AbortController().signal));
 
       const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
@@ -1366,7 +1368,7 @@ describe("ClaudeSdkClient", () => {
         headers?: Record<string, string>;
       }>;
       expect(mcpServers.soulstream?.url).toBe(
-        "http://127.0.0.1:3105/mcp/internal",
+        "http://127.0.0.1:3106/mcp/internal",
       );
       expect(mcpServers.soulstream?.headers).toEqual({
         "x-soulstream-agent-session-id": "parent-sess-1",
@@ -1430,6 +1432,7 @@ describe("ClaudeSdkClient", () => {
         workspaceDir,
         env: {},
         agentSessionId: "parent-sess-1",
+        internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
       }, new AbortController().signal));
 
       const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
@@ -1449,7 +1452,7 @@ describe("ClaudeSdkClient", () => {
         "x-soulstream-agent-session-id": "parent-sess-1",
       });
       expect(mcpServers["soulstream-cogito"]?.url).toBe(
-        "http://localhost:3105/mcp/internal",
+        "http://127.0.0.1:3106/mcp/internal",
       );
       expect(mcpServers.localStdio?.headers).toBeUndefined();
       expect(mcpServers.externalHttp?.headers).toBeUndefined();

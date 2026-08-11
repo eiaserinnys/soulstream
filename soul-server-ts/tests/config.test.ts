@@ -16,6 +16,7 @@ describe("parseEnv", () => {
     expect(env.AUTH_BEARER_TOKEN).toBe("");
     expect(env.HOST).toBe("127.0.0.1");
     expect(env.PORT).toBe(4205);
+    expect(env.MCP_INTERNAL_PORT).toBe(4206);
     expect(env.ENVIRONMENT).toBe("development");
     expect(env.LOG_LEVEL).toBe("info");
     expect(env.DASH_USER_NAME).toBe("");
@@ -55,6 +56,23 @@ describe("parseEnv", () => {
   it("PORT 문자열 → 숫자 coerce", () => {
     const env = parseEnv({ ...minimal, PORT: "4205" });
     expect(env.PORT).toBe(4205);
+  });
+
+  it("MCP internal listener port는 public PORT+1을 기본값으로 쓴다", () => {
+    expect(parseEnv({ ...minimal, PORT: "3105" }).MCP_INTERNAL_PORT).toBe(3106);
+  });
+
+  it("MCP_INTERNAL_PORT 명시 값은 숫자로 변환하고 public port와 분리한다", () => {
+    expect(parseEnv({
+      ...minimal,
+      PORT: "3105",
+      MCP_INTERNAL_PORT: "48151",
+    }).MCP_INTERNAL_PORT).toBe(48151);
+    expect(() => parseEnv({
+      ...minimal,
+      PORT: "3105",
+      MCP_INTERNAL_PORT: "3105",
+    })).toThrow(/MCP_INTERNAL_PORT must differ from PORT/);
   });
 
   it("production이면서 AUTH_BEARER_TOKEN 부재 → ZodError", () => {

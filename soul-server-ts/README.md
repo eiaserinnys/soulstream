@@ -63,6 +63,7 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `INCOMING_FILE_DIR` | `.local/incoming` | Files delivered by the orchestrator for agent turns. |
 | `MCP_ENABLED` | `false` | Enables the worker MCP endpoint. |
 | `MCP_PATH` | `/mcp` | Public Streamable HTTP MCP route. The internal agent SDK route is derived as `${MCP_PATH}/internal`. |
+| `MCP_INTERNAL_PORT` | `PORT+1` | Node-local `127.0.0.1` listener for the privileged internal route. Never publish or proxy this port through nginx. |
 | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | Makes only the public LLM route sessionless; the internal agent SDK route remains stateful. |
 | `MCP_REQUIRE_AUTH` | `false` | Requires bearer authentication for MCP requests. |
 | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated Host header allowlist. |

@@ -58,6 +58,7 @@ describe("RunnerProcessSpawner", () => {
       sessionId: "session-a",
       codeSha: "sha-a",
       snapshotPath: "/releases/sha-a",
+      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     });
   });
 
@@ -217,6 +218,7 @@ async function input() {
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1_800_000,
+    internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: "/home/eias/.codex",
     rolloutRoot: "/home/eias/.codex/sessions",
   };

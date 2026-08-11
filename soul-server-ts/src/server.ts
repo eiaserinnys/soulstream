@@ -61,9 +61,19 @@ export interface ServerParams {
   contextPreview?: ContextPreviewRouteConfig;
 }
 
+export interface InternalMcpServerParams {
+  logger: FastifyBaseLogger;
+  runtime: McpRuntime;
+  path: string;
+  auth: McpAuthConfig;
+  statelessTransport: boolean;
+}
+
 export type ServerInstance = FastifyInstance & {
   /** MCP 라우트 등록 시 채워지는 transport map cleanup. graceful shutdown에서 호출. */
   closeMcp?: () => Promise<void>;
+  /** Privileged MCP companion. It is never mounted on the public listener. */
+  internalMcpServer?: ServerInstance;
 };
 
 /**
@@ -97,13 +107,16 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       auth: params.mcp.auth,
       statelessTransport: params.mcp.statelessTransport ?? false,
     });
-    const closeInternalMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
+    const internalMcpServer = await buildInternalMcpServer({
+      logger: params.logger,
+      runtime: params.mcp.runtime,
       path: internalMcpPath(params.mcp.path),
       auth: params.mcp.auth,
       statelessTransport: false,
     });
+    fastify.internalMcpServer = internalMcpServer;
     fastify.closeMcp = async () => {
-      await Promise.all([closePublicMcp(), closeInternalMcp()]);
+      await Promise.all([closePublicMcp(), internalMcpServer.closeMcp?.()]);
     };
   }
   if (params.cogito) {
@@ -128,6 +141,45 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   return fastify;
 }
 
+export async function buildInternalMcpServer(
+  params: InternalMcpServerParams,
+): Promise<ServerInstance> {
+  const fastify: ServerInstance = Fastify({
+    loggerInstance: params.logger,
+    disableRequestLogging: false,
+  });
+  const closeInternalMcp = registerMcpRoutes(fastify, params.runtime, {
+    path: params.path,
+    auth: params.auth,
+    statelessTransport: params.statelessTransport,
+  });
+  fastify.closeMcp = closeInternalMcp;
+  return fastify;
+}
+
 export async function startServer(server: FastifyInstance, host: string, port: number): Promise<void> {
   await server.listen({ host, port });
+}
+
+export async function startInternalMcpServer(
+  server: FastifyInstance,
+  port: number,
+): Promise<string> {
+  try {
+    return await server.listen({ host: "127.0.0.1", port });
+  } catch (cause) {
+    const code = errorCode(cause);
+    throw new Error(
+      `Internal MCP listener failed to bind on 127.0.0.1:${port}${code ? ` (${code})` : ""}. `
+        + "Set MCP_INTERNAL_PORT to a free node-local port before deployment and keep that port out of nginx/public proxy configuration.",
+      { cause },
+    );
+  }
+}
+
+function errorCode(cause: unknown): string | undefined {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) {
+    return undefined;
+  }
+  return typeof cause.code === "string" ? cause.code : undefined;
 }
