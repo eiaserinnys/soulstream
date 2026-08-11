@@ -269,9 +269,11 @@ export class RunnerSqliteLifecycle {
     }
     const tools = new Map(current.in_flight_tools.map((tool) => [tool.tool_use_id, tool]));
     if (started) {
-      if (!tools.has(toolUseId)) {
-        tools.set(toolUseId, { tool_use_id: toolUseId, started_at: progressedAt });
-      }
+      // Re-observing the same tool identity is an idempotent delivery, not
+      // execution progress. Keeping every timestamp unchanged also prevents
+      // retries from extending the tool's absolute recovery lease.
+      if (tools.has(toolUseId)) return this.persistSummary(current);
+      tools.set(toolUseId, { tool_use_id: toolUseId, started_at: progressedAt });
     } else {
       tools.delete(toolUseId);
     }

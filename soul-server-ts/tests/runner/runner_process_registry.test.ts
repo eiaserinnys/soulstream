@@ -77,6 +77,17 @@ describe("runner process registry", () => {
     }), NOW, 10_000)).toBe("reap_stalled");
   });
 
+  it("enforces an expired tool lease before fresh progress", () => {
+    expect(classifyRunnerRegistration(registration({
+      progressedAt: "2026-08-11T00:00:29.000Z",
+      livenessAt: "2026-08-11T00:00:29.000Z",
+      inFlightTools: [{
+        tool_use_id: "tool-expired",
+        started_at: "2026-08-10T22:59:59.999Z",
+      }],
+    }), NOW, 10_000)).toBe("reap_stalled");
+  });
+
   it("reaps a tool whose completion event is lost after the finite tool lease", () => {
     expect(classifyRunnerRegistration(registration({
       progressedAt: "2026-08-10T23:59:00.000Z",
@@ -86,6 +97,56 @@ describe("runner process registry", () => {
         started_at: "2026-08-10T22:59:59.999Z",
       }],
     }), NOW, 10_000)).toBe("reap_stalled");
+  });
+
+  it("reaps after repeated duplicate tool starts exceed the finite lease", async () => {
+    const directory = await temporaryDirectory("duplicate-tool-starts");
+    const databasePath = join(directory, "runner.sqlite");
+    const outbox = await RunnerSqliteEventOutbox.create(databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-07-12T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "release-a",
+        snapshot_path: "/release/release-a/soul-server-ts",
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(databasePath);
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-07-12T00:00:00.000Z",
+    });
+    lifecycle.toolStarted("execute-a", "tool-duplicate", "2026-07-12T00:00:01.000Z");
+    for (const repeatedAt of [
+      "2026-07-12T01:00:01.000Z",
+      "2026-07-13T00:00:01.000Z",
+      "2026-08-10T00:00:01.000Z",
+      "2026-08-11T00:00:29.000Z",
+    ]) {
+      lifecycle.toolStarted("execute-a", "tool-duplicate", repeatedAt);
+    }
+    const durable = lifecycle.read();
+    lifecycle.close();
+
+    expect(durable).toMatchObject({
+      progress_seq: 2,
+      progress_at: "2026-07-12T00:00:01.000Z",
+      in_flight_tools: [{
+        tool_use_id: "tool-duplicate",
+        started_at: "2026-07-12T00:00:01.000Z",
+      }],
+    });
+    expect(classifyRunnerRegistration({
+      ...registration(),
+      lifecycle: durable,
+    }, NOW, 10_000)).toBe("reap_stalled");
   });
 
   it("preserves a normal thirty-minute tool call below the finite tool lease cap", () => {

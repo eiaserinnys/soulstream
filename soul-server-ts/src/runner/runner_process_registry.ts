@@ -125,19 +125,23 @@ export function classifyRunnerRegistration(
   if (!Number.isFinite(progressedAt)) {
     throw new Error(`runner lifecycle progress timestamp invalid: ${lifecycle.progress_at}`);
   }
+  if (lifecycle.in_flight_tools.length > 0) {
+    const toolLeaseTimeoutMs = runnerToolLeaseTimeoutMs(
+      leaseTimeoutMs,
+      registration.config.claudeRuntimeTurnTimeoutMs,
+    );
+    for (const tool of lifecycle.in_flight_tools) {
+      const startedAt = Date.parse(tool.started_at);
+      if (!Number.isFinite(startedAt)) {
+        throw new Error(`runner tool lease timestamp invalid: ${tool.started_at}`);
+      }
+      // The finite cap is absolute: later progress cannot renew an existing
+      // tool identity once its first observed start has expired.
+      if (nowMs - startedAt >= toolLeaseTimeoutMs) return "reap_stalled";
+    }
+  }
   if (nowMs - progressedAt < leaseTimeoutMs) return "adopt_running";
   if (lifecycle.in_flight_tools.length === 0) return "reap_stalled";
-  const toolLeaseTimeoutMs = runnerToolLeaseTimeoutMs(
-    leaseTimeoutMs,
-    registration.config.claudeRuntimeTurnTimeoutMs,
-  );
-  for (const tool of lifecycle.in_flight_tools) {
-    const startedAt = Date.parse(tool.started_at);
-    if (!Number.isFinite(startedAt)) {
-      throw new Error(`runner tool lease timestamp invalid: ${tool.started_at}`);
-    }
-    if (nowMs - startedAt >= toolLeaseTimeoutMs) return "reap_stalled";
-  }
   const livenessAt = Date.parse(lifecycle.liveness_at);
   if (!Number.isFinite(livenessAt)) {
     throw new Error(`runner lifecycle liveness timestamp invalid: ${lifecycle.liveness_at}`);

@@ -251,8 +251,9 @@ describe("RunnerSqliteEventOutbox", () => {
       "tool-long",
       "2026-08-11T01:00:00.800Z",
     )).toMatchObject({
-      progress_seq: 3,
-      progress_at: "2026-08-11T01:00:00.800Z",
+      progress_seq: 2,
+      progress_at: "2026-08-11T01:00:00.750Z",
+      liveness_at: "2026-08-11T01:00:00.750Z",
       in_flight_tools: [{
         tool_use_id: "tool-long",
         started_at: "2026-08-11T01:00:00.750Z",
@@ -260,8 +261,8 @@ describe("RunnerSqliteEventOutbox", () => {
     });
     expect(lifecycle.liveness("execute-a", "2026-08-11T01:00:00.900Z"))
       .toMatchObject({
-        progress_seq: 3,
-        progress_at: "2026-08-11T01:00:00.800Z",
+        progress_seq: 2,
+        progress_at: "2026-08-11T01:00:00.750Z",
         liveness_at: "2026-08-11T01:00:00.900Z",
         in_flight_tools: [{
           tool_use_id: "tool-long",
@@ -273,22 +274,22 @@ describe("RunnerSqliteEventOutbox", () => {
       "tool-long",
       "2026-08-11T01:00:00.950Z",
     )).toMatchObject({
-      progress_seq: 4,
+      progress_seq: 3,
       progress_at: "2026-08-11T01:00:00.950Z",
       liveness_at: "2026-08-11T01:00:00.950Z",
       in_flight_tools: [],
     });
     expect(lifecycle.progress("execute-a", "2026-08-11T01:00:01.000Z"))
-      .toMatchObject({ progress_seq: 5, progress_at: "2026-08-11T01:00:01.000Z" });
+      .toMatchObject({ progress_seq: 4, progress_at: "2026-08-11T01:00:01.000Z" });
     expect(lifecycle.finish(
       "execute-a",
       "completed",
       "2026-08-11T01:00:02.000Z",
-    )).toMatchObject({ execution_state: "completed", progress_seq: 6 });
+    )).toMatchObject({ execution_state: "completed", progress_seq: 5 });
     await expect(readRunnerLifecycleSummary(path)).resolves.toMatchObject({
       session_id: "session-a",
       execution_state: "completed",
-      progress_seq: 6,
+      progress_seq: 5,
       progress_at: "2026-08-11T01:00:02.000Z",
       liveness_at: "2026-08-11T01:00:02.000Z",
       in_flight_tools: [],
