@@ -10,11 +10,16 @@ import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { McpConfigService } from "../mcp_config_service.js";
+import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type { EngineFactory } from "../task/task_executor.js";
 
 type EngineFactoryEnv = Pick<
   Env,
-  "CODEX_ADAPTER_MODE" | "CODEX_API_KEY" | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
+  | "CODEX_ADAPTER_MODE"
+  | "CODEX_API_KEY"
+  | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
+  | "MCP_INTERNAL_PORT"
+  | "MCP_PATH"
 >;
 
 export interface CreateEngineFactoryParams {
@@ -88,6 +93,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           // V2 uses the shared transcript as its cross-node receiver receipt.
           sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED ? "eager" : "batched",
           loadTimeoutMs: 60_000,
+          internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
           ...(resolvedMcpServers !== undefined
             ? { resolvedMcpServers }
             : {}),

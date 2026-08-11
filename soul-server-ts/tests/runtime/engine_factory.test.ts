@@ -17,15 +17,18 @@ const sessionStore: SessionStore = {
     return null;
   },
 };
+const factoryEnv = {
+  CODEX_ADAPTER_MODE: "sdk" as const,
+  CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
+  MCP_INTERNAL_PORT: 4206,
+  MCP_PATH: "/mcp",
+};
 
 describe("createEngineFactory", () => {
   it("creates different agent engines in one shared workspace without an ownership marker", () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "shared-agent-workspace-"));
     const factory = createEngineFactory({
-      env: {
-        CODEX_ADAPTER_MODE: "sdk",
-        CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
-      },
+      env: factoryEnv,
       logger,
       codexProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
@@ -65,10 +68,7 @@ describe("createEngineFactory", () => {
   it("uses a preset backend override without mutating the agent profile", () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "preset-backend-workspace-"));
     const factory = createEngineFactory({
-      env: {
-        CODEX_ADAPTER_MODE: "sdk",
-        CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
-      },
+      env: factoryEnv,
       logger,
       codexProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
@@ -102,10 +102,7 @@ describe("createEngineFactory", () => {
       "utf-8",
     );
     const factory = createEngineFactory({
-      env: {
-        CODEX_ADAPTER_MODE: "sdk",
-        CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
-      },
+      env: factoryEnv,
       logger,
       codexProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),

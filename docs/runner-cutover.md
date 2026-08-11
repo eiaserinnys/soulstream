@@ -8,6 +8,7 @@
 |---|---|---:|---|---|
 | soul-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | 새 세션을 session-per-process 러너에서 실행 | ON이면 state/artifact/releases 세 경로 필수. MCP가 켜져 있으면 stateless도 ON이어야 함 |
 | soul-server | `MCP_ENABLED` | `false` | Streamable HTTP MCP route 활성화 | stateless를 켜려면 먼저 ON. production에서는 `MCP_REQUIRE_AUTH=true`와 bearer token 필수 |
+| soul-server | `MCP_INTERNAL_PORT` | `PORT+1` | 내부 Claude SDK 전용 loopback 리스너 | `127.0.0.1`에만 bind. public `PORT`와 달라야 하며 nginx·외부 프록시에 절대 노출하지 않음 |
 | soul-server | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | LLM 전용 `/mcp`에서 process-local session map 제거 | `MCP_ENABLED=true` 필수. runner+MCP 컷오버에서는 ON 필수. 내부 Claude SDK는 이 값과 무관하게 stateful `/mcp/internal` 사용 |
 | orch-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | node disconnect 즉시 kill 대신 lease-aware reconciliation 사용 | soul-server보다 먼저 ON 가능. soul-server만 먼저 ON이면 등록 거부 |
 | 양쪽 | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | 러너 진행 lease와 orch disconnect 유예 창 | 양쪽 runner ON일 때 값이 정확히 같아야 등록됨 |
@@ -21,7 +22,7 @@
 2. soul-server 빌드 산출물에 `dist/runner/package.json`, `dist/runner/runner_entry.js`가 있고 release isolation 검증이 통과했는지 확인한다.
 3. 모든 프로세스에서 같은 `SOUL_RUNNER_LEASE_TIMEOUT_MS`를 설정한다.
 4. orch에서 `SOUL_RUNNER_PROCESS_ENABLED=true`를 설정하고 orch를 재시작한다. 아직 runner OFF인 노드는 경고만 남기며 연결된다.
-5. MCP를 쓰는 soul-server는 `MCP_ENABLED=true`, `MCP_STATELESS_TRANSPORT_ENABLED=true`, production auth 설정을 먼저 적용한다. LLM 클라이언트는 stateless `/mcp`, 러너의 Claude SDK를 포함한 내부 소비자는 stateful `/mcp/internal`로 분리된다. 내부 SDK는 host 재시작 뒤 러너 재연결·새 turn에서 MCP initialize를 다시 수행한다.
+5. MCP를 쓰는 soul-server는 `MCP_ENABLED=true`, `MCP_STATELESS_TRANSPORT_ENABLED=true`, production auth 설정을 먼저 적용한다. `MCP_INTERNAL_PORT`는 명시하거나 `PORT+1` 파생값을 사용하되, nginx 설정에 이 포트를 추가하지 않았는지 확인한다. LLM 클라이언트는 public listener의 stateless `/mcp`, 러너의 Claude SDK를 포함한 내부 소비자는 별도 loopback listener의 stateful `/mcp/internal`로 분리된다. 내부 SDK는 host 재시작 뒤 러너 재연결·새 turn에서 MCP initialize를 다시 수행한다.
 6. soul-server별 state/artifact/releases 경로와 권한을 준비한 뒤 `SOUL_RUNNER_PROCESS_ENABLED=true`로 재시작한다. 기동 중 현재 release materialization이 실패하면 서버가 명시적으로 실패한다.
 7. node registration에서 `runner_process_v1=true`와 orch와 동일한 `runner_lease_timeout_ms`가 승인되는지 확인한다.
 
@@ -37,7 +38,7 @@
 | `SOUL_RUNNER_RELEASES_DIR` | 서비스 계정 read/write/execute. live checkout 밖의 불변 content-hash release 풀 |
 | `EVENT_OUTBOX_DIR` | 기존 node-global JSONL outbox 경로. Phase 7에서도 유지 |
 | CLI 실행 파일 | Claude/Codex CLI는 snapshot 밖 host dependency. 기존 절대경로·OAuth 설정 유지 |
-| 인증 | orch↔node bearer token, production MCP bearer/auth 설정 |
+| 인증·경계 | orch↔node bearer token, production MCP bearer/auth 설정. `MCP_INTERNAL_PORT`는 `127.0.0.1` 전용이며 nginx upstream 대상에서 제외 |
 | 디스크 | state와 release 풀의 WAL·snapshot 여유 공간. 생성 실패는 live checkout fallback 없이 loud fail |
 
 운영 `.env`와 Haniel 배선은 리포 밖 노드 설정 정본이다. 이 문서는 필요한 키와 순서만 정의하며 값을 쓰거나 서비스를 재시작하지 않는다.

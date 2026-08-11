@@ -41,6 +41,7 @@ export function buildMcpOptions(
     mcpServers: prepareSoulstreamInternalMcpServers(
       mcpServers,
       options.agentSessionId,
+      options.internalMcpUrl,
     ),
     ...(strictMcpConfig ? { strictMcpConfig: true } : {}),
   };
@@ -131,13 +132,14 @@ function loadMcpServers(
 function prepareSoulstreamInternalMcpServers(
   servers: Record<string, McpServerConfig>,
   agentSessionId: string | undefined,
+  internalMcpUrl: string | undefined,
 ): Record<string, McpServerConfig> {
   const callerSessionId = agentSessionId?.trim();
 
   const patched: Record<string, McpServerConfig> = {};
   for (const [name, config] of Object.entries(servers)) {
     patched[name] = shouldPrepareSoulstreamInternalServer(name)
-      ? prepareSoulstreamInternalMcpServer(config, callerSessionId)
+      ? prepareSoulstreamInternalMcpServer(config, callerSessionId, internalMcpUrl)
       : config;
   }
   return patched;
@@ -150,28 +152,30 @@ function shouldPrepareSoulstreamInternalServer(serverName: string): boolean {
 function prepareSoulstreamInternalMcpServer(
   config: McpServerConfig,
   agentSessionId: string | undefined,
+  internalMcpUrl: string | undefined,
 ): McpServerConfig {
   const record = asRecord(config);
   const type = asString(record?.type);
   if (type !== "sse" && type !== "streamable_http" && type !== "http") {
     return config;
   }
+  if (type !== "sse" && !internalMcpUrl) {
+    throw new Error(
+      "Soulstream internal HTTP MCP server requires a node-local internalMcpUrl",
+    );
+  }
 
   return {
     ...record,
-    ...(type === "sse" ? {} : { url: internalMcpUrl(record?.url) }),
+    ...(type === "sse" ? {} : { url: normalizeInternalMcpUrl(internalMcpUrl!) }),
     ...(agentSessionId
       ? { headers: mergeAgentSessionHeader(record?.headers, agentSessionId) }
       : {}),
   } as McpServerConfig;
 }
 
-function internalMcpUrl(value: unknown): string {
-  const raw = asString(value);
-  if (!raw) {
-    throw new Error("Soulstream internal HTTP MCP server requires a URL");
-  }
-  const url = new URL(raw);
+function normalizeInternalMcpUrl(value: string): string {
+  const url = new URL(value);
   url.pathname = internalMcpPath(url.pathname);
   return url.toString();
 }

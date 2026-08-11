@@ -434,7 +434,6 @@ export async function composeWorkerRuntime(
       logger,
     },
   });
-
   const createUpstreamAdapter = (): UpstreamAdapter => {
     if (upstreamAdapter) throw new Error("UpstreamAdapter already composed");
     upstreamAdapter = new UpstreamAdapter(

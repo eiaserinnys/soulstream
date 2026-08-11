@@ -76,6 +76,8 @@ export interface ClaudeRunOptions {
   useMcp?: boolean;
   /** `mcp_profile`에서 resolve한 서버. undefined면 workspace MCP config 폴백. */
   resolvedMcpServers?: ResolvedMcpServer[];
+  /** Node-local privileged MCP listener URL. Required for Soulstream HTTP MCP entries. */
+  internalMcpUrl?: string;
   /** Claude Agent SDK permissionMode. undefined면 legacy bypassPermissions. */
   claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
@@ -121,6 +123,7 @@ export interface ClaudeAdapterConfig {
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
   resolvedMcpServers?: ResolvedMcpServer[];
+  internalMcpUrl?: string;
   persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
@@ -147,6 +150,7 @@ export class ClaudeEngineAdapter
   private readonly sessionStoreFlush?: SessionStoreFlush;
   private readonly loadTimeoutMs?: number;
   private readonly resolvedMcpServers?: ResolvedMcpServer[];
+  private readonly internalMcpUrl?: string;
   private readonly persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
@@ -168,6 +172,7 @@ export class ClaudeEngineAdapter
     this.sessionStoreFlush = config.sessionStoreFlush;
     this.loadTimeoutMs = config.loadTimeoutMs;
     this.resolvedMcpServers = config.resolvedMcpServers;
+    this.internalMcpUrl = config.internalMcpUrl;
     this.persistentSessionRegistry = config.persistentSessionRegistry;
     this.logger = logger;
   }
@@ -428,6 +433,7 @@ export class ClaudeEngineAdapter
       ...(this.resolvedMcpServers !== undefined
         ? { resolvedMcpServers: this.resolvedMcpServers }
         : {}),
+      ...(this.internalMcpUrl ? { internalMcpUrl: this.internalMcpUrl } : {}),
       ...(params.claudePermissionMode !== undefined
         ? { claudePermissionMode: params.claudePermissionMode }
         : {}),

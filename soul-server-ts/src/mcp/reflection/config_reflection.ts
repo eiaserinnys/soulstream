@@ -44,6 +44,11 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
     }),
     envEntry("MCP_ENABLED", { required: false, sensitive: false, defaultValue: "false" }),
     envEntry("MCP_PATH", { required: false, sensitive: false, defaultValue: "/mcp" }),
+    envEntry("MCP_INTERNAL_PORT", {
+      required: false,
+      sensitive: false,
+      defaultValue: "PORT+1 (derived)",
+    }),
     envEntry("MCP_STATELESS_TRANSPORT_ENABLED", {
       required: false,
       sensitive: false,

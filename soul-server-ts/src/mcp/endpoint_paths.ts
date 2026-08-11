@@ -12,3 +12,9 @@ export function internalMcpPath(publicPath: string): string {
   if (normalized.endsWith(INTERNAL_MCP_PATH_SUFFIX)) return normalized;
   return `${normalized}${INTERNAL_MCP_PATH_SUFFIX}`;
 }
+
+export function localInternalMcpUrl(port: number, publicPath: string): string {
+  const url = new URL(`http://127.0.0.1:${port}`);
+  url.pathname = internalMcpPath(publicPath);
+  return url.toString();
+}

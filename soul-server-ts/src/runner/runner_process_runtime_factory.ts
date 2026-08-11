@@ -17,6 +17,7 @@ import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
+import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type {
   RunnerProcessRuntimeFactory,
   RunnerSnapshotPersistence,
@@ -42,6 +43,8 @@ type RunnerEnv = Pick<Env,
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
   | "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES"
   | "CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS"
+  | "MCP_INTERNAL_PORT"
+  | "MCP_PATH"
 >;
 
 export interface RunnerProcessRuntimeFactoryOptions {
@@ -123,6 +126,10 @@ export function createRunnerProcessRuntimeFactory(
         claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
         claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+        internalMcpUrl: localInternalMcpUrl(
+          options.env.MCP_INTERNAL_PORT,
+          options.env.MCP_PATH,
+        ),
         ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
         codexHome,
         rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
@@ -171,6 +178,7 @@ function spawnInputFromConfig(
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
     claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
+    internalMcpUrl: config.internalMcpUrl,
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),
