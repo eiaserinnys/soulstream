@@ -1,7 +1,11 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 
 import pino from "pino";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
+import type { ClaudeRunOptions } from "../../../src/engine/claude_adapter.js";
+import { buildMcpOptions } from "../../../src/engine/claude_sdk_mcp_options.js";
 import type {
   EngineExecuteParams,
   EnginePort,
@@ -18,7 +22,7 @@ const configPath = argument("--config");
 const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR");
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
 class ControlledEngine implements EnginePort {
-  readonly backendId = "openai-agents" as const;
+  readonly backendId = config.backend;
 
   constructor(
     private readonly controlDirectory: string,
@@ -28,6 +32,9 @@ class ControlledEngine implements EnginePort {
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
   async *executeFrames(_params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    if (process.env.RUNNER_E2E_REQUIRE_INTERNAL_MCP === "1") {
+      await exerciseInternalMcp();
+    }
     await writeFile(`${this.controlDirectory}/execute-started`, "ready\n");
     await waitForFile(`${this.controlDirectory}/emit-first`);
     yield engineEventFrame({
@@ -49,6 +56,38 @@ class ControlledEngine implements EnginePort {
   }
 
   async close(): Promise<void> {}
+}
+
+async function exerciseInternalMcp(): Promise<void> {
+  const options = buildMcpOptions({
+    prompt: "runner cutover internal MCP smoke",
+    workspaceDir: config.agent.workspace_dir,
+    agentSessionId: config.sessionId,
+    resolvedMcpServers: config.resolvedMcpServers,
+  } satisfies ClaudeRunOptions, pino({ level: "silent" }));
+  const servers = options.mcpServers as Record<string, {
+    type?: string;
+    url?: string;
+    headers?: Record<string, string>;
+  }> | undefined;
+  const server = servers?.soulstream;
+  if (server?.type !== "http" || !server.url) {
+    throw new Error("runner E2E expected resolved soulstream HTTP MCP server");
+  }
+  const client = new Client({ name: "runner-cutover-child", version: "0.0.0" });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: server.headers },
+    }));
+    const result = await client.callTool({ name: "list_local_agents", arguments: {} });
+    const url = new URL(server.url);
+    await writeFile(
+      `${controlDirectory}/internal-mcp-called`,
+      JSON.stringify({ path: url.pathname, isError: result.isError === true }),
+    );
+  } finally {
+    await client.close();
+  }
 }
 
 const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {

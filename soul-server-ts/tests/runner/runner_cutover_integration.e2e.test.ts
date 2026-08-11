@@ -7,16 +7,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import { parseEnv } from "../../src/config.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { McpConfigService } from "../../src/mcp_config_service.js";
+import { getCurrentMcpCallerSessionId } from "../../src/mcp/request_context.js";
+import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatcher.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { composeRunnerProcessRuntime } from "../../src/runtime/runner_process_composition.js";
+import { buildServer } from "../../src/server.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
+import type { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import {
@@ -34,10 +40,15 @@ const requireFromTest = createRequire(import.meta.url);
 const temporaryRoots: string[] = [];
 const readOnlyReleases: string[] = [];
 const childPids = new Set<number>();
+const mcpServers: Array<Awaited<ReturnType<typeof buildServer>>> = [];
 
 afterEach(async () => {
   for (const pid of childPids) killIfAlive(pid);
   childPids.clear();
+  for (const server of mcpServers.splice(0)) {
+    if (server.closeMcp) await server.closeMcp();
+    await server.close();
+  }
   for (const release of readOnlyReleases.splice(0)) {
     await chmod(release, 0o755).catch(() => undefined);
   }
@@ -64,6 +75,25 @@ describe("runner cutover all-flags-on integration", () => {
         + `  await writeFile(process.env.RUNNER_E2E_CONTROL_DIR + "/child-error", String(error?.stack ?? error));\n`
         + `  throw error;\n}\n`,
     );
+
+    const { baseUrl: mcpBaseUrl, callerSessionIds } = await startInternalMcpServer();
+    const agentsConfigPath = join(root, "agents.yaml");
+    const registryPath = join(root, "mcp-registry.yaml");
+    const profilesPath = join(root, "mcp-profiles.yaml");
+    await writeFile(agentsConfigPath, "agents: []\n");
+    await writeFile(
+      registryPath,
+      `servers:\n  - id: soulstream\n    type: streamable_http\n    url: ${mcpBaseUrl}/mcp\n`,
+    );
+    await writeFile(
+      profilesPath,
+      "profiles:\n  - id: cutover-internal\n    mcp_servers:\n      - soulstream\n",
+    );
+    const mcpConfigService = new McpConfigService({
+      agentsConfigPath,
+      registryPath,
+      profilesPath,
+    });
 
     const env = parseEnv({
       SOULSTREAM_NODE_ID: "cutover-test-node",
@@ -92,11 +122,12 @@ describe("runner cutover all-flags-on integration", () => {
         appendIdempotent: vi.fn(async () => undefined),
         deleteIdempotent: vi.fn(async () => undefined),
       } as never,
-      mcpConfigService: { resolveMcpProfile: () => undefined } as never,
+      mcpConfigService,
       buildChildProcessEnv: () => ({
         ...process.env,
         NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
         RUNNER_E2E_CONTROL_DIR: controlDirectory,
+        RUNNER_E2E_REQUIRE_INTERNAL_MCP: "1",
       }),
     });
     if (!composition) throw new Error("runner composition unexpectedly disabled");
@@ -126,6 +157,15 @@ describe("runner cutover all-flags-on integration", () => {
     if (task.status === "error") {
       throw new Error(`runner cutover execution failed before child start: ${task.error ?? "unknown"}`);
     }
+    expect(JSON.parse(await readFile(join(controlDirectory, "internal-mcp-called"), "utf8")))
+      .toMatchObject({ path: "/mcp/internal", isError: false });
+    expect(callerSessionIds).toEqual([task.agentSessionId]);
+
+    await expect(composition.releaseGarbageCollector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId, reason: "live_runner" }],
+    });
+    expect(await pathExists(releaseRoot)).toBe(true);
 
     await writeFile(join(controlDirectory, "emit-first"), "go\n");
     await waitFor(async () => batches.length === 1 && await pendingFrameCount(paths.databasePath) === 0);
@@ -177,7 +217,54 @@ describe("runner cutover all-flags-on integration", () => {
     await waitFor(async () => !isPidAlive(pid));
     childPids.delete(pid);
     void oldExecution;
-  }, 30_000);
+
+    const secondControlDirectory = join(root, "control-second");
+    await mkdir(secondControlDirectory, { recursive: true });
+    const staleLockPath = join(releasesDirectory, ".locks", releaseId);
+    await mkdir(staleLockPath, { recursive: true });
+    await writeFile(
+      join(staleLockPath, "owner.json"),
+      `${JSON.stringify({ pid: 2_147_483_647, startIdentity: "dead-owner" })}\n`,
+    );
+    const secondComposition = await composeRunnerProcessRuntime(true, {
+      env,
+      logger: pino({ level: "silent" }),
+      pumpMux: mux,
+      sessionStore: {
+        appendIdempotent: vi.fn(async () => undefined),
+        deleteIdempotent: vi.fn(async () => undefined),
+      } as never,
+      mcpConfigService,
+      buildChildProcessEnv: () => ({
+        ...process.env,
+        NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
+        RUNNER_E2E_CONTROL_DIR: secondControlDirectory,
+        RUNNER_E2E_REQUIRE_INTERNAL_MCP: "1",
+      }),
+    });
+    if (!secondComposition) throw new Error("second runner composition unexpectedly disabled");
+    const secondTask = makeTask("session-cutover-stale-lock");
+    const secondHost = taskExecutor(secondComposition.runtimeFactory);
+    secondHost.executor.startExecution(secondTask, makeAgent(secondControlDirectory));
+    const secondPaths = runnerProcessPaths(stateDirectory, secondTask.agentSessionId);
+    await waitFor(async () => await pathExists(secondPaths.pidPath));
+    const secondPid = Number.parseInt((await readFile(secondPaths.pidPath, "utf8")).trim(), 10);
+    childPids.add(secondPid);
+    await waitFor(async () => await pathExists(join(secondControlDirectory, "execute-started")));
+    expect(JSON.parse(await readFile(
+      join(secondControlDirectory, "internal-mcp-called"),
+      "utf8",
+    ))).toMatchObject({ path: "/mcp/internal", isError: false });
+    await writeExecutionControls(secondControlDirectory);
+    await secondTask.executionPromise;
+    expect(secondTask.status).toBe("completed");
+    await waitFor(async () => !isPidAlive(secondPid));
+    childPids.delete(secondPid);
+    expect(callerSessionIds).toEqual([
+      task.agentSessionId,
+      secondTask.agentSessionId,
+    ]);
+  }, 45_000);
 });
 
 function taskExecutor(
@@ -224,9 +311,9 @@ function taskExecutor(
   };
 }
 
-function makeTask(): Task {
+function makeTask(agentSessionId = "session-cutover-smoke"): Task {
   return {
-    agentSessionId: "session-cutover-smoke",
+    agentSessionId,
     prompt: "exercise runner cutover",
     status: "running",
     profileId: "cutover-agent",
@@ -241,13 +328,61 @@ function makeAgent(workspaceDirectory: string): AgentProfile {
   return {
     id: "cutover-agent",
     name: "Cutover Agent",
-    backend: "openai-agents",
+    backend: "claude",
     workspace_dir: workspaceDirectory,
-    agents_sdk: {
-      entry_agent: "root",
-      agents: [{ id: "root", name: "Root", instructions: "cutover smoke" }],
-    },
+    mcp_profile: "cutover-internal",
   };
+}
+
+async function startInternalMcpServer(): Promise<{
+  baseUrl: string;
+  callerSessionIds: Array<string | undefined>;
+}> {
+  const callerSessionIds: Array<string | undefined> = [];
+  const logger = pino({ level: "silent" });
+  const runtime: McpRuntime = {
+    nodeId: "cutover-test-node",
+    agentsConfigPath: "/tmp/cutover-agents.yaml",
+    db: {} as SessionDB,
+    taskManager: {
+      listTasks: () => [],
+      getTask: () => undefined,
+    } as unknown as TaskManager,
+    taskExecutor: {} as TaskExecutor,
+    agentRegistry: new AgentRegistry([]),
+    catalogService: {} as CatalogService,
+    agentProfileSource: {
+      async list() {
+        callerSessionIds.push(getCurrentMcpCallerSessionId());
+        return [];
+      },
+    } as never,
+    logger,
+  };
+  const server = await buildServer({
+    host: "127.0.0.1",
+    port: 0,
+    nodeId: "cutover-test-node",
+    logger,
+    mcp: {
+      runtime,
+      path: "/mcp",
+      statelessTransport: true,
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
+      },
+    },
+  });
+  mcpServers.push(server);
+  return { baseUrl: await server.listen({ host: "127.0.0.1", port: 0 }), callerSessionIds };
+}
+
+async function writeExecutionControls(controlDirectory: string): Promise<void> {
+  await writeFile(join(controlDirectory, "emit-first"), "go\n");
+  await writeFile(join(controlDirectory, "emit-after-detach"), "go\n");
+  await writeFile(join(controlDirectory, "finish"), "go\n");
 }
 
 function mockOrchIngress(): { mux: EventOutboxPumpMux; batches: EventOutboxBatch[] } {
