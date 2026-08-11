@@ -446,9 +446,7 @@ export async function composeWorkerRuntime(
         authBearerToken: env.AUTH_BEARER_TOKEN,
         userName: env.DASH_USER_NAME,
         userPortraitPath: env.DASH_USER_PORTRAIT,
-        isProduction: env.ENVIRONMENT === "production",
-        runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
-        runnerLeaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+        isProduction: env.ENVIRONMENT === "production", runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED, runnerLeaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       },
       logger,
       {
