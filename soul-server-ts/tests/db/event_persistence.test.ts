@@ -7,6 +7,7 @@ import {
   extractSearchableText,
   isLiveOnlyEvent,
   sanitizeJsonText,
+  sanitizeJsonValue,
   shouldPersistEvent,
 } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -174,6 +175,19 @@ const silentLogger = pino({ level: "silent" });
 describe("sanitizeJsonText", () => {
   it("removes NUL, replaces lone surrogates, and preserves valid pairs", () => {
     expect(sanitizeJsonText("a\u0000b\ud800c\udfff😀")).toBe("ab�c�😀");
+  });
+
+  it("removes undefined object fields and normalizes undefined array slots", () => {
+    expect(sanitizeJsonValue({
+      kept: "value",
+      missing: undefined,
+      nested: { missing: undefined },
+      values: [undefined, { missing: undefined }],
+    })).toEqual({
+      kept: "value",
+      nested: {},
+      values: [null, {}],
+    });
   });
 });
 

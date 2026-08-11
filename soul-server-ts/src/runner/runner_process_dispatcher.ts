@@ -26,10 +26,12 @@ import {
 import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
 import {
-  runnerDroppedFrameLogContext,
-  type RunnerDroppedFrame,
   type RunnerIpcConnection,
 } from "./runner_ipc_connection.js";
+import {
+  runnerDroppedFrameLogContext,
+  type RunnerDroppedFrame,
+} from "./runner_frame_drop.js";
 import {
   RunnerProcessSpawner,
   type SpawnRunnerProcessInput,

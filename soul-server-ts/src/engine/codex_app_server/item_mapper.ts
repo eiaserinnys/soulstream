@@ -38,7 +38,7 @@ export function mapItemStarted(
       return [
         {
           type: "tool_start",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: "command",
           tool_input: { command: item.command, cwd: item.cwd ?? null },
           timestamp: context.timestamp,
@@ -50,7 +50,7 @@ export function mapItemStarted(
       return [
         {
           type: "tool_start",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: "file_change",
           tool_input: { changes_count: Array.isArray(item.changes) ? item.changes.length : 0 },
           timestamp: context.timestamp,
@@ -62,7 +62,7 @@ export function mapItemStarted(
       return [
         {
           type: "tool_start",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: `mcp/${item.server}/${item.tool}`,
           tool_input: item.arguments ?? {},
           timestamp: context.timestamp,
@@ -74,7 +74,7 @@ export function mapItemStarted(
       return [
         {
           type: "tool_start",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: item.toolName ?? "dynamic_tool",
           tool_input: item.arguments ?? {},
           timestamp: context.timestamp,
@@ -86,7 +86,7 @@ export function mapItemStarted(
       return [
         {
           type: "tool_start",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: "web_search",
           tool_input: { query: item.query ?? "" },
           timestamp: context.timestamp,
@@ -145,7 +145,7 @@ export function mapItemCompleted(
       return [
         {
           type: "tool_result",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: "command",
           result: item.aggregatedOutput ?? "",
           is_error: item.status === "failed" || (item.exitCode ?? 0) !== 0,
@@ -158,7 +158,7 @@ export function mapItemCompleted(
       return [
         {
           type: "tool_result",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: "file_change",
           result: jsonStringify(item.changes ?? []),
           is_error: item.status === "failed",
@@ -172,7 +172,7 @@ export function mapItemCompleted(
       return [
         {
           type: "tool_result",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: `mcp/${item.server}/${item.tool}`,
           result: error ? errorMessage(error) : jsonStringify(item.result),
           is_error: Boolean(error) || item.status === "failed",
@@ -187,7 +187,7 @@ export function mapItemCompleted(
       return [
         {
           type: "tool_result",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: item.toolName ?? "dynamic_tool",
           result: error ? errorMessage(error) : jsonStringify(item.result),
           is_error: Boolean(error) || item.status === "failed",
@@ -201,7 +201,7 @@ export function mapItemCompleted(
       return [
         {
           type: "tool_result",
-          tool_use_id: item.id,
+          ...toolUseId(item),
           tool_name: "web_search",
           result: jsonStringify(item.result),
           is_error: item.status === "failed",
@@ -223,4 +223,10 @@ export function mapItemCompleted(
     default:
       return [];
   }
+}
+
+function toolUseId(item: AppServerThreadItem): { tool_use_id?: string } {
+  return typeof item.id === "string" && item.id.length > 0
+    ? { tool_use_id: item.id }
+    : {};
 }

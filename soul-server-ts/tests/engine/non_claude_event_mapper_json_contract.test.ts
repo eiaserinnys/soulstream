@@ -109,6 +109,32 @@ const codexAppServerFixtures = [
       },
     },
   },
+  ...["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch"].flatMap(
+    (type) => [
+      {
+        name: `${type} start without item id`,
+        notification: {
+          method: "item/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: appServerItemWithoutId(type),
+          },
+        },
+      },
+      {
+        name: `${type} completion without item id`,
+        notification: {
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: appServerItemWithoutId(type),
+          },
+        },
+      },
+    ],
+  ),
   {
     name: "error without optional IDs",
     notification: { method: "error", params: { error: { message: "failed" } } },
@@ -118,6 +144,38 @@ const codexAppServerFixtures = [
     notification: { method: "future/event", params: {} },
   },
 ];
+
+function appServerItemWithoutId(type: string): Record<string, unknown> {
+  switch (type) {
+    case "commandExecution":
+      return { type, command: "pwd", cwd: null, status: "completed", exitCode: 0 };
+    case "fileChange":
+      return { type, changes: [], status: "completed" };
+    case "mcpToolCall":
+      return {
+        type,
+        server: "soulstream",
+        tool: "get_session_name",
+        arguments: {},
+        status: "completed",
+        result: {},
+        error: null,
+      };
+    case "dynamicToolCall":
+      return {
+        type,
+        toolName: "custom",
+        arguments: {},
+        status: "completed",
+        result: {},
+        error: null,
+      };
+    case "webSearch":
+      return { type, query: "runner", status: "completed", result: {} };
+    default:
+      throw new Error(`Unhandled app-server item fixture: ${type}`);
+  }
+}
 
 const agentsFixtures: Array<{
   name: string;

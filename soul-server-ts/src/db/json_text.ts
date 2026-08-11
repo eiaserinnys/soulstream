@@ -4,12 +4,15 @@ export function truncateJsonText(value: string, maxCodePoints: number): string {
 
 export function sanitizeJsonValue(value: unknown): unknown {
   if (typeof value === "string") return sanitizeJsonText(value);
-  if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item));
+  if (Array.isArray(value)) {
+    return value.map((item) => item === undefined ? null : sanitizeJsonValue(item));
+  }
   if (!value || typeof value !== "object") return value;
   if (value instanceof Date) return value.toISOString();
 
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
+    if (item === undefined) continue;
     result[key] = sanitizeJsonValue(item);
   }
   return result;

@@ -20,6 +20,7 @@ import {
 import { readClaudeBackgroundDeliveryMetadata } from
   "./claude_background_delivery_metadata.js";
 import { readClaudeBackgroundProvenance } from "./claude_background_provenance.js";
+import { isPostResultDrainEvent } from "./claude_event_phase.js";
 import type {
   BackendId,
   EngineUserInput,
@@ -496,10 +497,12 @@ function nowSeconds(): number {
 }
 
 export function claudeEngineEventMetadata(payload: object): Record<string, unknown> | undefined {
+  const postResultDrain = isPostResultDrainEvent(payload);
   const provenance = readClaudeBackgroundProvenance(payload);
   const delivery = readClaudeBackgroundDeliveryMetadata(payload);
-  if (!provenance && !delivery) return undefined;
+  if (!postResultDrain && !provenance && !delivery) return undefined;
   return {
+    ...(postResultDrain ? { claudePostResultDrain: true } : {}),
     ...(provenance ? { claudeBackgroundProvenance: provenance } : {}),
     ...(delivery ? { claudeBackgroundDelivery: delivery } : {}),
   };

@@ -7,6 +7,11 @@ import {
   readClaudeBackgroundProvenance,
 } from "../../src/engine/claude_background_provenance.js";
 import {
+  isPostResultDrainEvent,
+  markPostResultDrainEvent,
+} from "../../src/engine/claude_event_phase.js";
+import { claudeEngineEventMetadata } from "../../src/engine/claude_adapter.js";
+import {
   sseEventFromRunnerFrame,
   sseEventsFromRunnerFrames,
 } from "../../src/runner/engine_event_stream.js";
@@ -21,6 +26,23 @@ async function* frames(values: RunnerEventFrame[]): AsyncIterable<RunnerEventFra
 }
 
 describe("sseEventsFromRunnerFrames", () => {
+  it("restores the post-result-drain marker after an actual JSON frame round-trip", () => {
+    const payload = markPostResultDrainEvent({
+      type: "task_notification",
+      task_id: "background-1",
+    });
+    const frame = engineEventFrame(
+      { ...payload },
+      claudeEngineEventMetadata(payload),
+    );
+
+    const decoded = JSON.parse(JSON.stringify(frame)) as typeof frame;
+    const event = sseEventFromRunnerFrame(decoded);
+
+    expect(decoded.metadata).toMatchObject({ claudePostResultDrain: true });
+    expect(isPostResultDrainEvent(event)).toBe(true);
+  });
+
   it("restores process-local Claude metadata from the JSON frame envelope", () => {
     const delivery = {
       deliveryId: "delivery-1",

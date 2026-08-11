@@ -1,9 +1,15 @@
 import {
   RunnerControlFrameSchema,
   RunnerEventFrameSchema,
+  isRunnerObservationalFrame,
   type RunnerControlFrame,
   type RunnerEventFrame,
 } from "./frame_protocol.js";
+import {
+  runnerDroppedFrameSummary,
+  type RunnerDroppedFrame,
+} from "./runner_frame_drop.js";
+import { stripRunnerJsonUndefined } from "./runner_json_contract.js";
 
 interface PendingFrame {
   frame: RunnerEventFrame;
@@ -33,6 +39,10 @@ export interface RunnerFrameRequestOptions {
   timeoutMs?: number;
 }
 
+export interface InProcessRunnerFrameChannelOptions {
+  onFrameDropped?(drop: RunnerDroppedFrame): void;
+}
+
 /**
  * Acknowledged in-process transport for the future runner IPC contract.
  *
@@ -42,6 +52,7 @@ export interface RunnerFrameRequestOptions {
  * control response.
  */
 export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFrame> {
+  private droppedFrameCount = 0;
   private readonly queued: PendingFrame[] = [];
   private readonly pendingControls = new Map<string, PendingControl>();
   private delivered: PendingFrame | undefined;
@@ -50,6 +61,8 @@ export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFra
   private finished = false;
   private started = false;
   private consumerClosed = false;
+
+  constructor(private readonly options: InProcessRunnerFrameChannelOptions = {}) {}
 
   start(producer: () => Promise<void>): void {
     if (this.started) {
@@ -66,7 +79,22 @@ export class InProcessRunnerFrameChannel implements AsyncIterable<RunnerEventFra
     if (this.consumerClosed || this.finished || this.failure) {
       return Promise.reject(this.failure ?? new Error(CHANNEL_CLOSED_MESSAGE));
     }
-    const parsed = RunnerEventFrameSchema.parse(frame);
+    const observational = isRunnerObservationalFrame(frame);
+    const candidate = observational ? stripRunnerJsonUndefined(frame) : frame;
+    const result = RunnerEventFrameSchema.safeParse(candidate);
+    if (!result.success) {
+      if (!observational) return Promise.reject(result.error);
+      this.droppedFrameCount += 1;
+      this.options.onFrameDropped?.({
+        ...runnerDroppedFrameSummary(frame),
+        dropCount: this.droppedFrameCount,
+        error: new Error("Invalid observational in-process runner frame dropped", {
+          cause: result.error,
+        }),
+      });
+      return Promise.resolve();
+    }
+    const parsed = result.data;
     return new Promise<void>((resolve, reject) => {
       const pending = { frame: parsed, resolve, reject };
       if (this.waiter) {

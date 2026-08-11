@@ -16,7 +16,10 @@ import {
   type RunnerControlFrame,
   type RunnerEventFrame,
 } from "./frame_protocol.js";
-import { InProcessRunnerFrameChannel } from "./in_process_frame_channel.js";
+import {
+  InProcessRunnerFrameChannel,
+  type InProcessRunnerFrameChannelOptions,
+} from "./in_process_frame_channel.js";
 
 /**
  * The host-side command boundary for one runner instance.
@@ -46,7 +49,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
   private activeExecuteCommandId: string | undefined;
 
-  constructor(private readonly target: EnginePort) {}
+  constructor(
+    private readonly target: EnginePort,
+    private readonly channelOptions: InProcessRunnerFrameChannelOptions = {},
+  ) {}
 
   async dispatch(frame: unknown): Promise<RunnerCommandResultFrame> {
     const commandId = readCommandId(frame);
@@ -172,17 +178,20 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     }
     let channel: InProcessRunnerFrameChannel;
     if (this.target.executeToFrameChannel) {
-      channel = new InProcessRunnerFrameChannel();
+      channel = new InProcessRunnerFrameChannel(this.channelOptions);
       channel.start(() => this.target.executeToFrameChannel!(command.params, channel));
     } else if (this.target.executeFrames) {
       const frames = this.target.executeFrames(command.params);
       if (frames instanceof InProcessRunnerFrameChannel) {
         channel = frames;
       } else {
-        channel = pipeFrames(frames);
+        channel = pipeFrames(frames, this.channelOptions);
       }
     } else {
-      channel = pipeFrames(legacyEngineEventFrames(this.target.execute(command.params)));
+      channel = pipeFrames(
+        legacyEngineEventFrames(this.target.execute(command.params)),
+        this.channelOptions,
+      );
     }
     this.eventStreams.set(command.commandId, channel);
     this.activeExecuteCommandId = command.commandId;
@@ -224,8 +233,11 @@ export async function invokeEngineCapability(
   return await Reflect.apply(method, target, args);
 }
 
-function pipeFrames(frames: AsyncIterable<RunnerEventFrame>): InProcessRunnerFrameChannel {
-  const channel = new InProcessRunnerFrameChannel();
+function pipeFrames(
+  frames: AsyncIterable<RunnerEventFrame>,
+  options: InProcessRunnerFrameChannelOptions,
+): InProcessRunnerFrameChannel {
+  const channel = new InProcessRunnerFrameChannel(options);
   channel.start(async () => {
     for await (const frame of frames) await channel.emit(frame);
   });

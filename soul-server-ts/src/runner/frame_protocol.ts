@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  stripRunnerJsonUndefined,
   withRunnerJsonContract as withJsonContract,
 } from "./runner_json_contract.js";
 
@@ -118,6 +119,7 @@ const RunnerSessionItemsSnapshotSchema = z.object({
 }).passthrough();
 
 export const RunnerEngineEventMetadataSchema = z.object({
+  claudePostResultDrain: z.literal(true).optional(),
   claudeBackgroundProvenance: z.enum([
     "sdk_membership",
     "explicit_background_tool_result",
@@ -312,7 +314,10 @@ export function engineEventFrame(
   payload: unknown,
   metadata?: unknown,
 ): Extract<RunnerEventFrame, { kind: "engine_event" }> {
-  return RunnerEventFrameSchema.parse({
+  // Engine events are observational. They are normalized and validated at the
+  // actual channel/IPC emission boundary so one malformed high-volume event
+  // can be dropped without terminating the execution that produced it.
+  return stripRunnerJsonUndefined({
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "event",
     kind: "engine_event",

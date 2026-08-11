@@ -23,7 +23,7 @@ import { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
   runnerDroppedFrameLogContext,
   type RunnerDroppedFrame,
-} from "./runner_ipc_connection.js";
+} from "./runner_frame_drop.js";
 import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
@@ -81,6 +81,7 @@ export class RunnerChildRuntime {
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
     this.dispatcher = new InProcessRunnerCommandDispatcher(
       this.deps.createEngine(this.config, host, this.logger),
+      { onFrameDropped: (drop) => this.logDroppedFrame(drop) },
     );
     await setRunnerOomScore();
     await this.endpoint.listen();
