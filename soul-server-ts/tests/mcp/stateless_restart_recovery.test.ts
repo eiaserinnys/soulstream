@@ -90,7 +90,7 @@ describe("MCP stateless restart recovery", () => {
       logger: createSilentLogger(),
       runtime: makeRuntime(),
       path: "/mcp/internal",
-      statelessTransport: false,
+      statelessTransport: true,
       auth: {
         requireAuth: false,
         bearerToken: "",
@@ -235,6 +235,95 @@ describe("MCP stateless restart recovery", () => {
     ]);
   });
 
+  it("keeps internal tools and caller ownership across host replacement with a stale session id", async () => {
+    const callerSessionIds: Array<string | undefined> = [];
+    const runtime = makeRuntime();
+    runtime.agentProfileSource = {
+      async list() {
+        callerSessionIds.push(getCurrentMcpCallerSessionId());
+        return [];
+      },
+    } as never;
+
+    internalServer = await buildInternalMcpServer({
+      logger: createSilentLogger(),
+      runtime,
+      path: "/mcp/internal",
+      statelessTransport: true,
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
+      },
+    });
+    const internalUrl = await startInternalMcpServer(internalServer, 0);
+    const initialized = await postAtPath(
+      internalUrl,
+      "/mcp/internal",
+      undefined,
+      {
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "internal-restart-test", version: "0.0.0" },
+        },
+        id: 30,
+      },
+      { "x-soulstream-agent-session-id": "internal-owner-session" },
+    );
+    expect(initialized.status).toBe(200);
+    const staleSessionId = initialized.headers.get("mcp-session-id")
+      ?? "stale-before-host-restart";
+    await initialized.text();
+
+    const port = Number(new URL(internalUrl).port);
+    if (internalServer.closeMcp) await internalServer.closeMcp();
+    await internalServer.close();
+    internalServer = undefined;
+
+    internalServer = await buildInternalMcpServer({
+      logger: createSilentLogger(),
+      runtime,
+      path: "/mcp/internal",
+      statelessTransport: true,
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
+      },
+    });
+    await startInternalMcpServer(internalServer, port);
+
+    const listed = await postAtPath(
+      internalUrl,
+      "/mcp/internal",
+      staleSessionId,
+      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 31 },
+      { "x-soulstream-agent-session-id": "internal-owner-session" },
+    );
+    const toolNames = (await rpcPayload(listed)).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+    expect(toolNames).toContain("delete_session");
+
+    const called = await postAtPath(
+      internalUrl,
+      "/mcp/internal",
+      staleSessionId,
+      {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: "list_local_agents", arguments: {} },
+        id: 32,
+      },
+      { "x-soulstream-agent-session-id": "internal-owner-session" },
+    );
+    expect((await rpcPayload(called)).result.isError).not.toBe(true);
+    expect(callerSessionIds).toEqual(["internal-owner-session"]);
+  });
+
   it("pins the stateless principal to llm when origin and session headers are omitted or forged", async () => {
     const runtime = makeRuntime();
     const createTask = vi.fn(async (params: { agentSessionId: string }) => ({
@@ -301,7 +390,7 @@ describe("MCP stateless restart recovery", () => {
     }));
   });
 
-  it("serves LLM stateless and internal stateful principals on separate production paths", async () => {
+  it("serves LLM and internal stateless principals on separate production paths", async () => {
     const callerSessionIds: Array<string | undefined> = [];
     const runtime = makeRuntime();
     runtime.agentProfileSource = {
@@ -316,7 +405,7 @@ describe("MCP stateless restart recovery", () => {
       logger: createSilentLogger(),
       runtime,
       path: "/mcp/internal",
-      statelessTransport: false,
+      statelessTransport: true,
       auth: {
         requireAuth: false,
         bearerToken: "",
@@ -356,7 +445,7 @@ describe("MCP stateless restart recovery", () => {
       { "x-soulstream-agent-session-id": "internal-agent-session" },
     );
     const internalSessionId = initialized.headers.get("mcp-session-id");
-    expect(internalSessionId).toBeTruthy();
+    expect(internalSessionId).toBeNull();
     await initialized.text();
 
     const internalList = await postAtPath(

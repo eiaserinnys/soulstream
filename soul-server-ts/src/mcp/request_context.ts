@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export const SOULSTREAM_AGENT_SESSION_HEADER = "x-soulstream-agent-session-id";
 export const SOULSTREAM_CALLER_ORIGIN_HEADER = "x-soulstream-caller-origin";
 
-export type McpCallerOrigin = "llm";
+export type McpCallerOrigin = "llm" | "internal";
 
 export interface McpRequestContext {
   callerSessionId?: string;
