@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import pino from "pino";
+import pino, { type Logger } from "pino";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,6 +49,7 @@ function createDispatcher(opts: {
   realtimeBroker?: Partial<RealtimeBroker>;
   deliveryV2Enabled?: boolean;
   listRunningSessionIds?: () => Promise<string[]>;
+  logger?: Logger;
   agentConfigService?: Pick<
     AgentConfigService,
     "listSnapshots" | "planProfileUpdate" | "replaceProfile" | "rollback"
@@ -120,7 +121,7 @@ function createDispatcher(opts: {
 
   const dispatcher = new CommandDispatcher(
     send,
-    silentLogger,
+    opts.logger ?? silentLogger,
     opts.nodeId ?? "eias-shopping-ts",
     registry,
     tm,
@@ -214,6 +215,91 @@ describe("CommandDispatcher.health_check", () => {
     const { dispatcher, sent } = createDispatcher();
     await dispatcher.dispatch({ type: "health_check", request_id: "snake-1" });
     expect((sent[0] as { requestId: string }).requestId).toBe("snake-1");
+  });
+});
+
+describe("CommandDispatcher Claude runtime correlation", () => {
+  it("emits a traced error response and skips side effects when requestId is absent", async () => {
+    const logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    } as unknown as Logger;
+    const listClaudeRuntimeTasks = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      logger,
+      taskManager: { listClaudeRuntimeTasks },
+    });
+
+    await dispatcher.dispatch({
+      type: "claude_runtime_list_tasks",
+      agentSessionId: "sess-runtime",
+    });
+
+    expect(listClaudeRuntimeTasks).not.toHaveBeenCalled();
+    expect(sent).toEqual([{
+      type: "error",
+      message: "claude_runtime_list_tasks requires requestId",
+      requestId: "",
+      command_type: "claude_runtime_list_tasks",
+    }]);
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        type: "claude_runtime_list_tasks",
+        requestId: null,
+        sessionId: "sess-runtime",
+        error: "claude_runtime_list_tasks requires requestId",
+      },
+      "Claude runtime command rejected",
+    );
+  });
+
+  it("logs receive and response traces with the same correlation fields", async () => {
+    const logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    } as unknown as Logger;
+    const { dispatcher, sent } = createDispatcher({
+      logger,
+      taskManager: {
+        listClaudeRuntimeTasks: vi.fn(async () => ({
+          sessionId: "sess-runtime",
+          sessionState: "running",
+          runtimeSessionId: "runtime-1",
+          updatedAt: 1,
+          tasks: [],
+        })),
+      },
+    });
+
+    await dispatcher.dispatch({
+      type: "claude_runtime_list_tasks",
+      requestId: "req-runtime",
+      agentSessionId: "sess-runtime",
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "claude_runtime_list_tasks_ack",
+        requestId: "req-runtime",
+      }),
+    ]);
+    const correlation = {
+      type: "claude_runtime_list_tasks",
+      requestId: "req-runtime",
+      sessionId: "sess-runtime",
+    };
+    expect(logger.debug).toHaveBeenNthCalledWith(
+      1,
+      correlation,
+      "Claude runtime command received",
+    );
+    expect(logger.debug).toHaveBeenNthCalledWith(
+      2,
+      { ...correlation, responseType: "claude_runtime_list_tasks_ack" },
+      "Claude runtime command response sent",
+    );
   });
 });
 

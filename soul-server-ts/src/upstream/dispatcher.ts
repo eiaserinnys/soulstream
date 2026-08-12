@@ -66,7 +66,8 @@ export type { SendFn } from "./command_family.js";
  *
  * Cross-runtime parity to preserve here:
  * - command ACK correlation uses `requestId`, not `request_id`
- * - commands without requestId may perform side effects but emit no ACK
+ * - Claude runtime commands require requestId before side effects; legacy
+ *   fire-and-forget families retain their command-specific correlation policy
  * - `subscribe_events` is accepted without ACK; TS already broadcasts task
  *   events through `broadcaster.emitEventEnvelope`, while Python starts a
  *   relay loop for its different event-channel shape
@@ -147,7 +148,7 @@ export class CommandDispatcher {
         deliveryCommands,
         taskRuntimeCommands,
       }),
-      ...createClaudeRuntimeCommandFamily({ send, claudeRuntimeCommands }),
+      ...createClaudeRuntimeCommandFamily({ send, logger, claudeRuntimeCommands }),
       ...createRealtimeCommandFamily({ send, realtimeCommands }),
       ...createAttachmentCommandFamily({ send, attachmentCommands }),
       ...createAuthCommandFamily({

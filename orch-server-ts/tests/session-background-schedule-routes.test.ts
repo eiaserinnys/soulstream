@@ -342,12 +342,18 @@ describe("session background task/schedule route harness", () => {
         },
       },
     });
-    expect(
-      await timeout.app.inject({
-        method: "GET",
-        url: "/api/sessions/sess-contract/background-tasks",
-      }),
-    ).toMatchObject({ statusCode: 503 });
+    const timeoutResponse = await timeout.app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-contract/background-tasks",
+    });
+    expect(timeoutResponse.statusCode).toBe(503);
+    expect(timeoutResponse.json()).toEqual({
+      error: {
+        code: "NODE_COMMAND_TIMEOUT",
+        message: "Command claude_runtime_list_tasks timed out after 5ms (requestId=timeout-1)",
+        requestId: "timeout-1",
+      },
+    });
     await timeout.app.close();
   });
 

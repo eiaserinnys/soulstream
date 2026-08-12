@@ -1,3 +1,5 @@
+import type { Logger } from "pino";
+
 import {
   CommandDispatchError,
   type CommandHandlerMap,
@@ -17,6 +19,7 @@ import {
 
 interface ClaudeRuntimeCommandFamilyDeps {
   send: SendFn;
+  logger: Pick<Logger, "debug" | "error">;
   claudeRuntimeCommands: ClaudeRuntimeCommands;
 }
 
@@ -54,6 +57,7 @@ async function handleClaudeRuntimeListTasks(
 ): Promise<void> {
   await sendClaudeRuntimeCommand(
     deps,
+    cmd,
     () => deps.claudeRuntimeCommands.listTasks(cmd),
   );
 }
@@ -64,6 +68,7 @@ async function handleClaudeRuntimeTaskOutput(
 ): Promise<void> {
   await sendClaudeRuntimeCommand(
     deps,
+    cmd,
     () => deps.claudeRuntimeCommands.taskOutput(cmd),
   );
 }
@@ -74,6 +79,7 @@ async function handleClaudeRuntimeStopTask(
 ): Promise<void> {
   await sendClaudeRuntimeCommand(
     deps,
+    cmd,
     () => deps.claudeRuntimeCommands.stopTask(cmd),
   );
 }
@@ -84,6 +90,7 @@ async function handleClaudeRuntimeBackgroundTasks(
 ): Promise<void> {
   await sendClaudeRuntimeCommand(
     deps,
+    cmd,
     () => deps.claudeRuntimeCommands.backgroundTasks(cmd),
   );
 }
@@ -94,6 +101,7 @@ async function handleClaudeRuntimeListSchedules(
 ): Promise<void> {
   await sendClaudeRuntimeCommand(
     deps,
+    cmd,
     () => deps.claudeRuntimeCommands.listSchedules(cmd),
   );
 }
@@ -104,21 +112,58 @@ async function handleClaudeRuntimeDeleteSchedule(
 ): Promise<void> {
   await sendClaudeRuntimeCommand(
     deps,
+    cmd,
     () => deps.claudeRuntimeCommands.deleteSchedule(cmd),
   );
 }
 
 async function sendClaudeRuntimeCommand(
   deps: ClaudeRuntimeCommandFamilyDeps,
-  buildAck: () => Promise<Record<string, unknown> | null>,
+  cmd: CommandLike,
+  buildAck: () => Promise<Record<string, unknown>>,
 ): Promise<void> {
+  const correlation = commandCorrelation(cmd);
+  deps.logger.debug(correlation, "Claude runtime command received");
   try {
     const ack = await buildAck();
-    if (ack) await deps.send(ack);
+    await deps.send(ack);
+    deps.logger.debug(
+      {
+        ...correlation,
+        responseType: typeof ack.type === "string" ? ack.type : null,
+      },
+      "Claude runtime command response sent",
+    );
   } catch (err) {
     if (err instanceof ClaudeRuntimeCommandError) {
+      deps.logger.error(
+        { ...correlation, error: err.message },
+        "Claude runtime command rejected",
+      );
       throw new CommandDispatchError(err.message);
     }
     throw err;
   }
+}
+
+function commandCorrelation(cmd: CommandLike): {
+  type: string | null;
+  requestId: string | null;
+  sessionId: string | null;
+} {
+  const runtimeCommand = cmd as CommandLike & {
+    agentSessionId?: unknown;
+    session_id?: unknown;
+  };
+  return {
+    type: typeof cmd.type === "string" ? cmd.type : null,
+    requestId: nonEmptyString(cmd.requestId ?? cmd.request_id),
+    sessionId: nonEmptyString(
+      runtimeCommand.agentSessionId ?? runtimeCommand.session_id,
+    ),
+  };
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
