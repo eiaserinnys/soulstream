@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { renameSync } from "node:fs";
 import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { renameWithTransientRetry } from "../src/atomic_file_rename.js";
+import { RunnerSqliteEventOutbox } from "../src/runner/sqlite_event_outbox.js";
+import {
+  runnerLifecycleSummaryPath,
+  RunnerSqliteLifecycle,
+} from "../src/runner/sqlite_runner_lifecycle.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -44,6 +50,62 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
 
     expect(attempts).toBeGreaterThan(1);
     await expect(readFile(destinationPath, "utf8")).resolves.toBe("new\n");
+  }, 10_000);
+
+  it("retries the synchronous lifecycle summary rename under a real handle lock", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "lifecycle-rename-win32-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "runner.sqlite");
+    const outbox = await RunnerSqliteEventOutbox.create(databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-win32",
+      created_at: "2026-08-12T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-win32",
+        cwd: directory,
+        codex_home: null,
+        rollout_root: null,
+        code_sha: "release-win32",
+        snapshot_path: directory,
+      },
+    });
+    outbox.close();
+    const initial = RunnerSqliteLifecycle.open(databasePath);
+    initial.begin({
+      pid: process.pid,
+      commandId: "execute-win32",
+      progressedAt: "2026-08-12T00:00:00.000Z",
+    });
+    initial.close();
+    const summaryPath = runnerLifecycleSummaryPath(databasePath);
+    const lock = holdExclusiveWindowsHandle(summaryPath);
+    await lock.ready;
+    let attempts = 0;
+    const lifecycle = RunnerSqliteLifecycle.open(databasePath, undefined, {
+      renameFile: (source, destination) => {
+        attempts += 1;
+        try {
+          renameSync(source, destination);
+        } catch (error) {
+          if (attempts === 1) lock.release();
+          throw error;
+        }
+      },
+      retryDelaysMs: [50, 100, 200, 400, 800],
+    });
+
+    expect(() => lifecycle.progress(
+      "execute-win32",
+      "2026-08-12T00:00:01.000Z",
+    )).not.toThrow();
+    lifecycle.close();
+    await lock.closed;
+
+    expect(attempts).toBeGreaterThan(1);
+    await expect(readFile(summaryPath, "utf8")).resolves.toContain(
+      '\"progress_at\":\"2026-08-12T00:00:01.000Z\"',
+    );
   }, 10_000);
 });
 

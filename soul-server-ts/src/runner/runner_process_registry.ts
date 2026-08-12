@@ -1,12 +1,14 @@
-import { readdir, stat, unlink } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import {
+  readAuthoritativeRunnerLifecycle,
+  type AuthoritativeRunnerLifecycleOptions,
+} from "./runner_lifecycle_reader.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
-  readRunnerLifecycleSummary,
-  runnerLifecycleSummaryPath,
   RunnerSqliteLifecycle,
 } from "./sqlite_runner_lifecycle.js";
 import {
@@ -69,7 +71,7 @@ export async function scanRunnerRegistrations(
   options: {
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
-  } = {},
+  } & AuthoritativeRunnerLifecycleOptions = {},
 ): Promise<RunnerRegistrationScan> {
   const registrations: RunnerRegistration[] = [];
   const errors: RunnerRegistrationScan["errors"] = [];
@@ -218,7 +220,7 @@ export async function readRunnerRegistrationSummary(
   options: {
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
-  } = {},
+  } & AuthoritativeRunnerLifecycleOptions = {},
 ): Promise<RunnerRegistration> {
   const configPath = resolve(directory, "runner-config.json");
   let config: RunnerChildConfig;
@@ -240,7 +242,7 @@ export async function readRunnerRegistrationSummary(
     ) {
       throw new Error(`runner identity does not match config: ${directory}`);
     }
-    const lifecycle = await readAuthoritativeRunnerLifecycle(config.paths.databasePath);
+    const lifecycle = await readAuthoritativeRunnerLifecycle(config.paths.databasePath, options);
     if (lifecycle && lifecycle.session_id !== config.sessionId) {
       throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
     }
@@ -280,55 +282,6 @@ export async function readRunnerRegistrationSummary(
       codeSha: config.codeSha,
     });
   }
-}
-
-async function readAuthoritativeRunnerLifecycle(
-  databasePath: string,
-): Promise<RunnerLifecycleRecord | null> {
-  let cachedLifecycle: RunnerLifecycleRecord | null = null;
-  let cacheNeedsRefresh = false;
-  try {
-    cachedLifecycle = await readRunnerLifecycleSummary(databasePath);
-  } catch {
-    cacheNeedsRefresh = true;
-  }
-  const lifecycleStore = RunnerSqliteLifecycle.open(databasePath);
-  let durableLifecycle: RunnerLifecycleRecord | null;
-  try {
-    durableLifecycle = lifecycleStore.read();
-    if (
-      cacheNeedsRefresh
-      || JSON.stringify(cachedLifecycle) !== JSON.stringify(durableLifecycle)
-    ) {
-      if (durableLifecycle) {
-        try {
-          durableLifecycle = lifecycleStore.syncSummary();
-        } catch (error) {
-          emitLifecycleCacheRefreshWarning(databasePath, error);
-        }
-      } else {
-        try {
-          await unlink(runnerLifecycleSummaryPath(databasePath));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            emitLifecycleCacheRefreshWarning(databasePath, error);
-          }
-        }
-      }
-    }
-  } finally {
-    lifecycleStore.close();
-  }
-  return durableLifecycle;
-}
-
-function emitLifecycleCacheRefreshWarning(databasePath: string, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  process.emitWarning(
-    `Runner lifecycle cache refresh failed; durable SQLite state retained (${message}): `
-    + runnerLifecycleSummaryPath(databasePath),
-    { code: "RUNNER_LIFECYCLE_SUMMARY_REFRESH_FAILED" },
-  );
 }
 
 export async function readRunnerRegistrationForDeletion(

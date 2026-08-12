@@ -10,9 +10,10 @@ import {
   AgentsSdkMcpServerSchema,
 } from "../agent_registry.js";
 import { assertRunnerJsonValue } from "./frame_protocol.js";
+import { readAuthoritativeRunnerLifecycle } from "./runner_lifecycle_reader.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
-import { readRunnerLifecycleSummary } from "./sqlite_runner_lifecycle.js";
+import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
   inspectProcessIdentity,
   type ProcessIdentity,
@@ -102,6 +103,7 @@ interface SpawnDependencies {
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
   delay(ms: number): Promise<void>;
+  readLifecycle?(path: string): Promise<RunnerLifecycleRecord | null>;
 }
 
 export class RunnerProcessSpawner {
@@ -235,7 +237,7 @@ export class RunnerProcessSpawner {
   async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    const lifecycle = await readRunnerLifecycleSummary(paths.databasePath);
+    const lifecycle = await this.readLifecycle(paths.databasePath);
     const pid = resolveRegisteredRunnerPid(
       await readRunnerPid(paths.pidPath),
       lifecycle?.runner_pid ?? null,
@@ -290,7 +292,7 @@ export class RunnerProcessSpawner {
     expected?: { pid: number; startIdentity: string },
   ): Promise<void> {
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    const lifecycle = await readRunnerLifecycleSummary(paths.databasePath);
+    const lifecycle = await this.readLifecycle(paths.databasePath);
     const pid = resolveRegisteredRunnerPid(
       await readRunnerPid(paths.pidPath),
       lifecycle?.runner_pid ?? null,
@@ -340,6 +342,12 @@ export class RunnerProcessSpawner {
         `runner process identity changed before ${signal}: ${expected.pid}`,
       );
     }
+  }
+
+  private async readLifecycle(
+    databasePath: string,
+  ): Promise<RunnerLifecycleRecord | null> {
+    return await (this.deps.readLifecycle ?? readAuthoritativeRunnerLifecycle)(databasePath);
   }
 }
 

@@ -1,4 +1,10 @@
-import { unlinkSync, writeFileSync } from "node:fs";
+import {
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import {
   isTransientRenameError,
@@ -14,19 +20,29 @@ export interface RunnerSqliteLifecycleOptions extends SyncRenameRetryOptions {
     details: { consecutiveFailures: number; severity: "warn" | "error" },
   ) => void;
   onSummaryRenameRecovery?: (path: string, recoveredAfterFailures: number) => void;
+  now?: () => number;
+  isPidAlive?: (pid: number) => boolean;
+  staleTmpMinAgeMs?: number;
+  scavengeStaleTemps?: boolean;
 }
 
 export type RunnerLifecycleSummaryWriteResult =
   | { written: true }
   | { written: false; error: unknown };
 
-export class RunnerLifecycleSummaryWriter {
-  private consecutiveRenameFailures = 0;
+export const RUNNER_LIFECYCLE_STALE_TMP_MIN_AGE_MS = 5 * 60_000;
 
+const renameFailuresByPath = new Map<string, number>();
+
+export class RunnerLifecycleSummaryWriter {
   constructor(
     private readonly path: string,
     private readonly options: RunnerSqliteLifecycleOptions,
-  ) {}
+  ) {
+    if (options.scavengeStaleTemps !== false) {
+      scavengeStaleLifecycleTemps(path, options);
+    }
+  }
 
   write(lifecycle: RunnerLifecycleRecord): void {
     const result = writeRunnerLifecycleSummary(this.path, lifecycle, this.options);
@@ -34,10 +50,11 @@ export class RunnerLifecycleSummaryWriter {
       this.logRecoveryIfNeeded();
       return;
     }
-    this.consecutiveRenameFailures += 1;
-    const severity = this.consecutiveRenameFailures >= 3 ? "error" : "warn";
+    const consecutiveFailures = (renameFailuresByPath.get(this.path) ?? 0) + 1;
+    renameFailuresByPath.set(this.path, consecutiveFailures);
+    const severity = consecutiveFailures >= 3 ? "error" : "warn";
     const details = {
-      consecutiveFailures: this.consecutiveRenameFailures,
+      consecutiveFailures,
       severity,
     } as const;
     if (this.options.onSummaryRenameFailure) {
@@ -57,9 +74,9 @@ export class RunnerLifecycleSummaryWriter {
   }
 
   private logRecoveryIfNeeded(): void {
-    if (this.consecutiveRenameFailures === 0) return;
-    const recoveredAfterFailures = this.consecutiveRenameFailures;
-    this.consecutiveRenameFailures = 0;
+    const recoveredAfterFailures = renameFailuresByPath.get(this.path) ?? 0;
+    if (recoveredAfterFailures === 0) return;
+    renameFailuresByPath.delete(this.path);
     if (this.options.onSummaryRenameRecovery) {
       this.options.onSummaryRenameRecovery(this.path, recoveredAfterFailures);
       return;
@@ -69,6 +86,46 @@ export class RunnerLifecycleSummaryWriter {
       + this.path,
       { code: "RUNNER_LIFECYCLE_SUMMARY_RENAME_RECOVERED" },
     );
+  }
+}
+
+function scavengeStaleLifecycleTemps(
+  path: string,
+  options: RunnerSqliteLifecycleOptions,
+): void {
+  const directory = dirname(path);
+  const prefix = `${basename(path)}.tmp-`;
+  const now = (options.now ?? Date.now)();
+  const minAgeMs = options.staleTmpMinAgeMs ?? RUNNER_LIFECYCLE_STALE_TMP_MIN_AGE_MS;
+  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+  let entries: string[];
+  try {
+    entries = readdirSync(directory);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith(prefix)) continue;
+    const pidText = entry.slice(prefix.length);
+    if (!/^\d+$/.test(pidText)) continue;
+    const pid = Number.parseInt(pidText, 10);
+    if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) continue;
+    const temporaryPath = join(directory, entry);
+    try {
+      if (now - statSync(temporaryPath).mtimeMs < minAgeMs || isPidAlive(pid)) continue;
+      unlinkSync(temporaryPath);
+    } catch {
+      // Stale cache cleanup is best effort and never supersedes SQLite state.
+    }
+  }
+}
+
+function defaultIsPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 

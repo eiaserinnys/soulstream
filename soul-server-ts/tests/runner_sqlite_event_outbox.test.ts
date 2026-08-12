@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -649,6 +649,46 @@ describe("RunnerSqliteEventOutbox", () => {
     );
 
     lifecycle.close();
+    outbox.close();
+  });
+
+  it("scavenges only old lifecycle tmp files owned by dead pid generations", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const lifecycle = RunnerSqliteLifecycle.open(path);
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-12T00:00:00.000Z",
+    });
+    lifecycle.close();
+    const summaryPath = runnerLifecycleSummaryPath(path);
+    const oldDeadTmp = `${summaryPath}.tmp-910001`;
+    const oldAliveTmp = `${summaryPath}.tmp-910002`;
+    const youngDeadTmp = `${summaryPath}.tmp-910003`;
+    await Promise.all([
+      writeFile(oldDeadTmp, "old-dead\n"),
+      writeFile(oldAliveTmp, "old-alive\n"),
+      writeFile(youngDeadTmp, "young-dead\n"),
+    ]);
+    const now = Date.parse("2026-08-12T01:00:00.000Z");
+    const old = new Date(now - 10 * 60_000);
+    await Promise.all([
+      utimes(oldDeadTmp, old, old),
+      utimes(oldAliveTmp, old, old),
+    ]);
+
+    const recovery = RunnerSqliteLifecycle.open(path, undefined, {
+      now: () => now,
+      isPidAlive: (pid) => pid === 910002,
+    });
+    recovery.syncSummary();
+    recovery.close();
+
+    await expect(access(oldDeadTmp)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(oldAliveTmp)).resolves.toBeUndefined();
+    await expect(access(youngDeadTmp)).resolves.toBeUndefined();
     outbox.close();
   });
 

@@ -1,3 +1,4 @@
+import { renameSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -331,6 +332,84 @@ describe("runner process registry", () => {
       });
     },
   );
+
+  it("keeps cache refresh failure escalation per path without blocking scan retries", async () => {
+    const stateDirectory = await temporaryDirectory("refresh-escalation");
+    const paths = runnerProcessPaths(stateDirectory, "session-refresh");
+    const current = registration({ sessionId: "session-refresh" });
+    current.config = { ...current.config, paths };
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(current.config));
+    await writeFile(paths.pidPath, String(process.pid));
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      pid: process.pid,
+      startIdentity: "current-process",
+    });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: current.config.sessionId,
+      created_at: "2026-08-12T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-refresh",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: current.config.codeSha,
+        snapshot_path: current.config.snapshotPath,
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-refresh",
+      progressedAt: "2026-08-12T00:00:01.000Z",
+    });
+    lifecycle.close();
+    await writeFile(runnerLifecycleSummaryPath(paths.databasePath), "{invalid");
+    const sleep = vi.fn();
+    const onSummaryRenameFailure = vi.fn();
+    const onSummaryRenameRecovery = vi.fn();
+    const scanOptions = {
+      lifecycleSummaryOptions: {
+        renameFile: () => {
+          throw Object.assign(new Error("persistent lock"), { code: "EPERM" });
+        },
+        sleep,
+        onSummaryRenameFailure,
+      },
+    };
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await scanRunnerRegistrations(stateDirectory, scanOptions);
+      expect(result.errors).toEqual([]);
+      expect(result.registrations[0]?.lifecycle?.runner_pid).toBe(process.pid);
+    }
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(onSummaryRenameFailure).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ code: "EPERM" }),
+      runnerLifecycleSummaryPath(paths.databasePath),
+      { consecutiveFailures: 1, severity: "warn" },
+    );
+    expect(onSummaryRenameFailure).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ code: "EPERM" }),
+      runnerLifecycleSummaryPath(paths.databasePath),
+      { consecutiveFailures: 3, severity: "error" },
+    );
+    const recovered = await scanRunnerRegistrations(stateDirectory, {
+      lifecycleSummaryOptions: { renameFile: renameSync, onSummaryRenameRecovery },
+    });
+    expect(recovered.errors).toEqual([]);
+    expect(onSummaryRenameRecovery).toHaveBeenCalledWith(
+      runnerLifecycleSummaryPath(paths.databasePath),
+      3,
+    );
+  });
 
   it("reports a missing database without recreating recovery state", async () => {
     const stateDirectory = await temporaryDirectory("missing-db");
