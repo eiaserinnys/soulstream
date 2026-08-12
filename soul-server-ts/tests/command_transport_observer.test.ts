@@ -161,8 +161,8 @@ describe("CommandTransportObserver", () => {
 
   it("does not let an uncorrelated send hide a missing command response", async () => {
     const logger = { debug: vi.fn(), warn: vi.fn() } as unknown as Logger;
-    const timestamps = [0, 1, 2];
-    const nowMs = vi.fn(() => timestamps.shift() ?? 2);
+    const timestamps = [0, 1, 1_000, 1_001];
+    const nowMs = vi.fn(() => timestamps.shift() ?? 1_001);
     const socket = {
       bufferedAmount: 0,
       send: vi.fn((_data: unknown, callback: (err?: Error) => void) => callback()),
@@ -184,6 +184,10 @@ describe("CommandTransportObserver", () => {
         requestId: "req-command",
       }),
       "Upstream command completed without response",
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "Slow upstream command response sent",
     );
   });
 

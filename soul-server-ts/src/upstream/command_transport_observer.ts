@@ -91,12 +91,25 @@ export class CommandTransportObserver {
     if (!trace) return;
     // Unrelated event/outbox traffic can inherit the command's async context.
     // Only the matching requestId proves that this command sent its response.
-    if (
-      trace.requestId !== null
-      && commandRequestId((data ?? {}) as CommandLike) === trace.requestId
-    ) {
-      trace.responseSent = true;
+    const outboundRequestId = commandRequestId((data ?? {}) as CommandLike);
+    if (trace.requestId === null || outboundRequestId !== trace.requestId) {
+      this.logger.debug(
+        {
+          type: trace.type,
+          requestId: trace.requestId,
+          sessionId: trace.sessionId,
+          outboundRequestId: outboundRequestId || null,
+          outboundType: responseType(data),
+          payloadBytes,
+          webSocketSendElapsedMs: sentAtMs - sendStartedAtMs,
+          webSocketBufferedAmountBefore: bufferedAmountBefore,
+          webSocketBufferedAmountAfter: ws.bufferedAmount,
+        },
+        "Uncorrelated upstream send during command",
+      );
+      return;
     }
+    trace.responseSent = true;
     const durationMs = sentAtMs - trace.receivedAtMs;
     const fields = {
       type: trace.type,
