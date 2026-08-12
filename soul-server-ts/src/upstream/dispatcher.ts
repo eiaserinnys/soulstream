@@ -32,7 +32,6 @@ import {
 } from "./claude_runtime_commands.js";
 import { createClaudeRuntimeCommandFamily } from "./claude_runtime_command_family.js";
 import {
-  commandTraceFields,
   CommandDispatchError,
   type CommandHandlerMap,
   type CommandLike,
@@ -204,10 +203,6 @@ export class CommandDispatcher {
       requestId: cmd.requestId ?? cmd.request_id ?? "",
       command_type: cmd.type ?? "",
     });
-    this.logger.debug(
-      { ...commandTraceFields(cmd), responseType: "error" },
-      "Upstream command error response sent",
-    );
     this.logger.warn({ cmd, message }, "Sent error to upstream");
   }
 

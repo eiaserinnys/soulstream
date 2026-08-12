@@ -20,7 +20,7 @@ import {
 
 interface ClaudeRuntimeCommandFamilyDeps {
   send: SendFn;
-  logger: Pick<Logger, "debug" | "error">;
+  logger: Pick<Logger, "error">;
   claudeRuntimeCommands: ClaudeRuntimeCommands;
 }
 
@@ -124,17 +124,9 @@ async function sendClaudeRuntimeCommand(
   buildAck: () => Promise<Record<string, unknown>>,
 ): Promise<void> {
   const correlation = commandTraceFields(cmd);
-  deps.logger.debug(correlation, "Claude runtime command received");
   try {
     const ack = await buildAck();
     await deps.send(ack);
-    deps.logger.debug(
-      {
-        ...correlation,
-        responseType: typeof ack.type === "string" ? ack.type : null,
-      },
-      "Claude runtime command response sent",
-    );
   } catch (err) {
     if (err instanceof ClaudeRuntimeCommandError) {
       deps.logger.error(
