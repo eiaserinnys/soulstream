@@ -224,7 +224,7 @@ export function registerAttachmentRoutes(
       const projected = projectDownloadResult(result);
       if (!projected.ok) return attachmentError(reply, projected.error);
       return reply
-        .header("Content-Disposition", `inline; filename="${safeHeaderFilename(projected.value.filename)}"`)
+        .header("Content-Disposition", contentDispositionHeader(projected.value.filename))
         .header("Cache-Control", "private, max-age=3600")
         .type(projected.value.contentType)
         .send(projected.value.content);
@@ -422,11 +422,24 @@ function downloadError(reply: FastifyReply, error: unknown): FastifyReply {
   });
 }
 
+/**
+ * 다운로드 라우트는 성공 경로에서 파일의 Content-Type과 Content-Disposition을 먼저 stage한다.
+ * 그 뒤에 실패하면 오류 JSON이 파일 Content-Type 위로 실려 FST_ERR_REP_INVALID_PAYLOAD_TYPE가 되고,
+ * stage된 Content-Disposition이 그대로 헤더에 쓰인다. 오류 응답은 항상 깨끗한 reply에서 시작한다.
+ */
+function resetErrorReply(reply: FastifyReply): FastifyReply {
+  reply.removeHeader("Content-Disposition");
+  reply.removeHeader("Cache-Control");
+  reply.type("application/json; charset=utf-8");
+  return reply;
+}
+
 function mappedTransportError(
   reply: FastifyReply,
   error: unknown,
   messages: { timeout: string; failure: string; notFoundPrefix?: string },
 ): FastifyReply {
+  resetErrorReply(reply);
   if (error instanceof AttachmentRouteError) return attachmentError(reply, error);
   if (error instanceof AttachmentTransportConnectionError) {
     return reply.code(503).send({ detail: `Node temporarily unavailable: ${error.message}` });
@@ -445,7 +458,7 @@ function mappedTransportError(
 }
 
 function attachmentError(reply: FastifyReply, error: AttachmentRouteError): FastifyReply {
-  return reply.code(error.statusCode).send({ detail: error.message });
+  return resetErrorReply(reply).code(error.statusCode).send({ detail: error.message });
 }
 
 function validationError<T>(reply: FastifyReply, result: Extract<Validation<T>, { ok: false }>): FastifyReply {
@@ -483,6 +496,24 @@ function parentName(path: string): string {
   return parts.length >= 2 ? parts[parts.length - 2] ?? "" : "";
 }
 
-function safeHeaderFilename(filename: string): string {
-  return filename.replace(/["\\\r\n]/g, "_");
+/**
+ * Content-Disposition은 latin-1 밖의 문자를 담을 수 없다. 비-ASCII 파일명을 그대로 넣으면
+ * Node의 storeHeader가 ERR_INVALID_CHAR로 던지고, 그 시점에는 이미 응답 헤더를 쓰는 중이라
+ * 라우트가 복구할 수 없는 500이 된다. RFC 5987 filename*로 원본을 싣고, filename에는
+ * ASCII 폴백만 남긴다.
+ */
+function contentDispositionHeader(filename: string): string {
+  return `inline; filename="${asciiFallbackFilename(filename)}"; filename*=UTF-8''${encodeRfc5987(filename)}`;
+}
+
+function asciiFallbackFilename(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return ascii.trim().length === 0 ? "download" : ascii;
+}
+
+function encodeRfc5987(value: string): string {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }

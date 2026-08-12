@@ -382,7 +382,9 @@ describe("attachment route harness", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toBe("image/png");
-    expect(response.headers["content-disposition"]).toBe('inline; filename="photo.png"');
+    expect(response.headers["content-disposition"]).toBe(
+      `inline; filename="photo.png"; filename*=UTF-8''photo.png`,
+    );
     expect(response.headers["cache-control"]).toBe("private, max-age=3600");
     expect(Buffer.from(response.rawPayload).toString("utf8")).toBe("PNG bytes");
     expect(calls).toEqual([
@@ -391,6 +393,52 @@ describe("attachment route harness", () => {
       ["check", { sessionId: "session-abc", accessEmail: null }],
       ["download", { node, path: "/incoming/session-abc/photo.png" }],
     ]);
+
+    await app.close();
+  });
+
+  it("encodes non-ascii download filenames instead of crashing the header write", async () => {
+    const { app } = createHarness({
+      downloadAttachment: vi.fn(async (): Promise<AttachmentDownloadResult> => ({
+        content_b64: Buffer.from("PNG bytes").toString("base64"),
+        filename: "보고서 초안.png",
+        content_type: "image/png",
+      })),
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/attachments/files?nodeId=node-1&path=/incoming/session-abc/photo.png",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const disposition = response.headers["content-disposition"] as string;
+    expect(disposition).toBe(
+      `inline; filename="___ __.png"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%B4%88%EC%95%88.png`,
+    );
+    // latin-1 밖 문자가 남으면 Node storeHeader가 ERR_INVALID_CHAR로 던진다.
+    expect(/^[\x20-\x7e]*$/.test(disposition)).toBe(true);
+    expect(Buffer.from(response.rawPayload).toString("utf8")).toBe("PNG bytes");
+
+    await app.close();
+  });
+
+  it("returns a clean json error when the download fails after headers are staged", async () => {
+    const { app } = createHarness({
+      downloadAttachment: vi.fn(async (): Promise<AttachmentDownloadResult> => {
+        throw new AttachmentTransportConnectionError("closed");
+      }),
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/attachments/files?nodeId=node-1&path=/incoming/session-abc/photo.png",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.headers["content-disposition"]).toBeUndefined();
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.json()).toEqual({ detail: "Node temporarily unavailable: closed" });
 
     await app.close();
   });
