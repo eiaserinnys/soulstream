@@ -239,4 +239,52 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.agentsRunState).toBeUndefined();
     expect(task?.agentsSessionItems).toBeUndefined();
   });
+
+  it("restores a pending Claude backend rollover cycle after an ACK-before-rotate restart", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        claude_session_id: "thread-1",
+        metadata: [
+          {
+            type: "claude_backend_rollover",
+            value: {
+              attempts: 1,
+              reason: "prompt_too_long",
+              phase: "pending",
+              previous_session_id: "thread-1",
+            },
+          },
+        ],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.claudeBackendRolloverAttempts).toBe(1);
+    expect(task?.claudeBackendRolloverCycleFrom).toBe("thread-1");
+    expect(task?.pendingClaudeBackendRolloverFrom).toBe("thread-1");
+  });
+
+  it("keeps an already-rotated recovery cycle armed without replaying the predecessor", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        claude_session_id: "thread-fresh",
+        metadata: [
+          {
+            type: "claude_backend_rollover",
+            value: {
+              attempts: 1,
+              reason: "prompt_too_long",
+              phase: "pending",
+              previous_session_id: "thread-1",
+            },
+          },
+        ],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.claudeBackendRolloverAttempts).toBe(1);
+    expect(task?.claudeBackendRolloverCycleFrom).toBe("thread-1");
+    expect(task?.pendingClaudeBackendRolloverFrom).toBeUndefined();
+  });
 });

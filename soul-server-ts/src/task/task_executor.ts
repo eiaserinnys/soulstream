@@ -25,6 +25,7 @@ import type {
   EnginePort,
   ScheduleToolUseHandler,
   SSEEventPayload,
+  SupportsCompact,
 } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -70,6 +71,15 @@ import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
 } from "./task_model_preset.js";
+import {
+  CLAUDE_BACKEND_ROLLOVER_LIMIT,
+  claudeBackendRolloverMetadataEntry,
+  createClaudeContextRecoveryObservation,
+  estimateClaudeTurnInputTokens,
+  fatalPromptTooLongEvent,
+  observeClaudeContextRecoveryEvent,
+  shouldPreemptivelyCompact,
+} from "./claude_context_recovery.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
@@ -408,12 +418,40 @@ export class TaskExecutor {
   ): Promise<void> {
     let turnInput = initialTurnInput;
     while (true) {
-      const currentTurnIntervention = turnInput.intervention;
+      if (
+        task.pendingClaudeBackendRolloverFrom !== undefined
+        && turnInput.backendSessionRolloverFrom === undefined
+      ) {
+        turnInput = await this.turnInputBuilder.prepareBackendRolloverTurnInput(
+          task,
+          agent,
+          turnInput,
+          task.pendingClaudeBackendRolloverFrom,
+        );
+      }
+      const rolloverCycleFromForTurn = task.claudeBackendRolloverCycleFrom
+        ?? turnInput.backendSessionRolloverFrom;
+      const contextRecovery = createClaudeContextRecoveryObservation();
+      let currentTurnIntervention = turnInput.intervention;
       if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
         this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
           task,
           currentTurnIntervention,
         );
+      }
+      const compactedBeforeTurn = await this.compactClaudeContextIfNeeded(
+        task,
+        agent,
+        runner,
+        turnInput,
+      );
+      if (compactedBeforeTurn && currentTurnIntervention) {
+        turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          currentTurnIntervention,
+        );
+        currentTurnIntervention = turnInput.intervention;
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const turnReceipt = this.deliveryConsumption
@@ -439,8 +477,12 @@ export class TaskExecutor {
             ...(turnInput.systemPrompt !== undefined
               ? { systemPrompt: turnInput.systemPrompt }
               : {}),
+            ...(turnInput.backendSessionRolloverFrom !== undefined
+              ? { backendSessionRolloverFrom: turnInput.backendSessionRolloverFrom }
+              : {}),
           },
         })) {
+          observeClaudeContextRecoveryEvent(contextRecovery, event);
           if (turnReceipt) await turnReceipt.observe(task, event);
           await this.engineEventPublisher.publishEngineEvent(task, event, {
             alreadyPersisted: runner.eventPersistence === "runner",
@@ -456,6 +498,81 @@ export class TaskExecutor {
         : await this.persistence.waitForSessionAck(task.agentSessionId);
       if (lastAcknowledgedEventId !== null) {
         task.lastEventId = lastAcknowledgedEventId;
+      }
+      task.claudeContextUsage = contextRecovery.compactCompleted
+        ? undefined
+        : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
+      if (contextRecovery.promptTooLongMessage !== undefined) {
+        const previousSessionId = task.pendingClaudeBackendRolloverFrom
+          ?? task.codexThreadId;
+        const attempts = task.claudeBackendRolloverAttempts ?? 0;
+        const canRollover =
+          effectiveTaskBackend(task, agent) === "claude"
+          && previousSessionId !== undefined
+          && attempts < CLAUDE_BACKEND_ROLLOVER_LIMIT
+          && !contextRecovery.replayUnsafeEventObserved;
+        if (canRollover) {
+          const nextAttempts = attempts + 1;
+          const metadataEntry = claudeBackendRolloverMetadataEntry({
+            attempts: nextAttempts,
+            phase: "pending",
+            previousSessionId,
+          });
+          const metadataEventId = await this.persistence.enqueueMetadataEffect(
+            task.agentSessionId,
+            metadataEntry,
+            {
+              replaceExistingType: "claude_backend_rollover",
+              waitForAck: true,
+              semanticDedupeKey:
+                `claude-backend-rollover:${task.agentSessionId}:${previousSessionId}:${nextAttempts}`,
+            },
+          );
+          if (metadataEventId !== null) task.lastEventId = metadataEventId;
+          task.metadata = [
+            ...(task.metadata ?? []).filter((entry) =>
+              entry.type !== "claude_backend_rollover",
+            ),
+            metadataEntry,
+          ];
+          task.claudeBackendRolloverAttempts = nextAttempts;
+          task.claudeBackendRolloverCycleFrom = previousSessionId;
+          task.pendingClaudeBackendRolloverFrom = previousSessionId;
+          task.claudeContextUsage = undefined;
+          turnInput = await this.turnInputBuilder.prepareBackendRolloverTurnInput(
+            task,
+            agent,
+            turnInput,
+            previousSessionId,
+          );
+          continue;
+        }
+        await this.engineEventPublisher.publishEngineEvent(
+          task,
+          fatalPromptTooLongEvent(contextRecovery.promptTooLongMessage),
+        );
+        const fatalEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
+        if (fatalEventId !== null) task.lastEventId = fatalEventId;
+        break;
+      }
+      if (
+        rolloverCycleFromForTurn !== undefined
+        && task.status === "running"
+        && task.pendingClaudeBackendRolloverFrom === undefined
+        && task.codexThreadId !== undefined
+        && task.codexThreadId !== rolloverCycleFromForTurn
+      ) {
+        await this.completeClaudeBackendRolloverCycle(
+          task,
+          rolloverCycleFromForTurn,
+          task.codexThreadId,
+        );
+      }
+      if (
+        contextRecovery.preemptiveCompactNeeded
+        && !contextRecovery.compactCompleted
+      ) {
+        await this.compactClaudeContextIfNeeded(task, agent, runner);
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
       const followupStalled = await this.handleClaudeRuntimeFollowupStall(
@@ -478,14 +595,85 @@ export class TaskExecutor {
     }
   }
 
+  private async completeClaudeBackendRolloverCycle(
+    task: Task,
+    previousSessionId: string,
+    backendSessionId: string,
+  ): Promise<void> {
+    const metadataEntry = claudeBackendRolloverMetadataEntry({
+      attempts: 0,
+      phase: "completed",
+      previousSessionId,
+      backendSessionId,
+    });
+    const metadataEventId = await this.persistence.enqueueMetadataEffect(
+      task.agentSessionId,
+      metadataEntry,
+      {
+        replaceExistingType: "claude_backend_rollover",
+        waitForAck: true,
+        semanticDedupeKey:
+          `claude-backend-rollover:${task.agentSessionId}:${previousSessionId}:${backendSessionId}:completed`,
+      },
+    );
+    if (metadataEventId !== null) task.lastEventId = metadataEventId;
+    task.metadata = [
+      ...(task.metadata ?? []).filter((entry) =>
+        entry.type !== "claude_backend_rollover",
+      ),
+      metadataEntry,
+    ];
+    task.claudeBackendRolloverAttempts = 0;
+    task.claudeBackendRolloverCycleFrom = undefined;
+    task.pendingClaudeBackendRolloverFrom = undefined;
+  }
+
+  private async compactClaudeContextIfNeeded(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    incoming?: TaskTurnInput,
+  ): Promise<boolean> {
+    const incomingTokens = incoming ? estimateClaudeTurnInputTokens(incoming) : 0;
+    if (!shouldPreemptivelyCompact(task.claudeContextUsage, incomingTokens)) return false;
+    if (
+      effectiveTaskBackend(task, agent) !== "claude"
+      || !task.codexThreadId
+      || typeof (runner.engine as EnginePort & Partial<SupportsCompact>).compact !== "function"
+    ) {
+      return false;
+    }
+    try {
+      await (runner.engine as EnginePort & SupportsCompact).compact(task.codexThreadId);
+      await this.engineEventPublisher.publishEngineEvent(task, {
+        type: "compact",
+        trigger: "auto_preemptive",
+        message: "Claude session compacted (auto_preemptive)",
+      } as SSEEventPayload);
+      const compactEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
+      if (compactEventId !== null) task.lastEventId = compactEventId;
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        { error, sessionId: task.agentSessionId },
+        "Claude preemptive compact failed; prompt-too-long rollover remains available",
+      );
+      return false;
+    } finally {
+      task.claudeContextUsage = undefined;
+    }
+  }
+
   private async consumeRecoveredRunnerFrames(
     task: Task,
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     frames: AsyncIterable<import("../runner/frame_protocol.js").RunnerEventFrame>,
   ): Promise<void> {
+    const contextRecovery = createClaudeContextRecoveryObservation();
     try {
       for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
+        observeClaudeContextRecoveryEvent(contextRecovery, event);
         await this.engineEventPublisher.publishEngineEvent(task, event, {
           alreadyPersisted: true,
         });
@@ -493,6 +681,34 @@ export class TaskExecutor {
       }
       const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
       if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
+      task.claudeContextUsage = contextRecovery.compactCompleted
+        ? undefined
+        : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
+      if (
+        contextRecovery.promptTooLongMessage !== undefined
+        && task.claudeBackendRolloverCycleFrom !== undefined
+      ) {
+        await this.engineEventPublisher.publishEngineEvent(
+          task,
+          fatalPromptTooLongEvent(contextRecovery.promptTooLongMessage),
+        );
+        const fatalEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
+        if (fatalEventId !== null) task.lastEventId = fatalEventId;
+        return;
+      }
+      if (
+        task.claudeBackendRolloverCycleFrom !== undefined
+        && task.status === "running"
+        && task.pendingClaudeBackendRolloverFrom === undefined
+        && task.codexThreadId !== undefined
+        && task.codexThreadId !== task.claudeBackendRolloverCycleFrom
+      ) {
+        await this.completeClaudeBackendRolloverCycle(
+          task,
+          task.claudeBackendRolloverCycleFrom,
+          task.codexThreadId,
+        );
+      }
       await this.flushClaudeRuntimeTaskFollowups(task);
       await this.restoreDurableRunnerInterventions(task, runner);
       const transition = resolveTurnLoopTransition(task, agent);

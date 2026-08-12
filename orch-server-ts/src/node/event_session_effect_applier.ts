@@ -27,6 +27,16 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     await sql`SELECT session_set_claude_id(${envelope.session_id}, ${effect.backend_session_id})`;
     return appliedWithoutCanonicalProjection();
   }
+  if (effect.kind === "rotate_backend_session_id") {
+    await sql`
+      SELECT session_rotate_claude_id(
+        ${envelope.session_id},
+        ${effect.expected_backend_session_id},
+        ${effect.backend_session_id}
+      )
+    `;
+    return appliedWithoutCanonicalProjection();
+  }
   if (effect.kind === "running_transition") {
     const rows = await sql<CanonicalTransitionRow[]>`SELECT * FROM session_apply_running_transition(
       ${envelope.session_id},

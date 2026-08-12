@@ -128,6 +128,55 @@ export function extractClaudePermissionModeFromMetadata(
   return undefined;
 }
 
+export function extractClaudeBackendRolloverAttempts(metadata: unknown): number {
+  return extractClaudeBackendRolloverState(metadata).attempts;
+}
+
+export interface ClaudeBackendRolloverMetadataState {
+  attempts: number;
+  phase: "pending" | "completed";
+  previousSessionId?: string;
+  backendSessionId?: string;
+}
+
+export function extractClaudeBackendRolloverState(
+  metadata: unknown,
+): ClaudeBackendRolloverMetadataState {
+  if (!Array.isArray(metadata)) return defaultClaudeBackendRolloverState();
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object") continue;
+    const recordEntry = entry as Record<string, unknown>;
+    if (recordEntry.type !== "claude_backend_rollover") continue;
+    const value = recordEntry.value;
+    if (!value || typeof value !== "object") return defaultClaudeBackendRolloverState();
+    const record = value as Record<string, unknown>;
+    const attempts = typeof record.attempts === "number"
+      && Number.isSafeInteger(record.attempts)
+      && record.attempts >= 0
+      ? record.attempts
+      : 0;
+    const phase = record.phase === "pending" || record.phase === "completed"
+      ? record.phase
+      : attempts > 0 ? "pending" : "completed";
+    return {
+      attempts,
+      phase,
+      ...(typeof record.previous_session_id === "string"
+        ? { previousSessionId: record.previous_session_id }
+        : {}),
+      ...(typeof record.backend_session_id === "string"
+        ? { backendSessionId: record.backend_session_id }
+        : {}),
+    };
+  }
+  return defaultClaudeBackendRolloverState();
+}
+
+function defaultClaudeBackendRolloverState(): ClaudeBackendRolloverMetadataState {
+  return { attempts: 0, phase: "completed" };
+}
+
 export function buildCallerInfoMetadataEntry(
   callerInfo: CallerInfo | undefined,
 ): Record<string, unknown> | undefined {

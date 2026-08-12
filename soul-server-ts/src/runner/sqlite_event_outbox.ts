@@ -343,11 +343,31 @@ export class RunnerSqliteEventOutbox {
   async appendEngineFrame(
     input: EventOutboxAppendInput,
     frame: Extract<RunnerEventFrame, { kind: "engine_event" }>,
+    backendSessionRotation?: {
+      expectedBackendSessionId: string;
+      backendSessionId: string;
+    },
   ): Promise<EventOutboxRecord & { ipc_frame_seq: number }> {
     const bootstrap = this.requireBootstrap();
     validateRunnerAppendInput(input);
     if (input.session_id !== bootstrap.session_id) {
       throw new Error("runner event session_id differs from bootstrap record");
+    }
+    const rotationEffect = input.session_effect?.kind === "rotate_backend_session_id"
+      ? input.session_effect
+      : undefined;
+    if (
+      backendSessionRotation
+      && (
+        rotationEffect?.expected_backend_session_id
+          !== backendSessionRotation.expectedBackendSessionId
+        || rotationEffect.backend_session_id !== backendSessionRotation.backendSessionId
+      )
+    ) {
+      throw new Error("runner backend session rotation differs from event session effect");
+    }
+    if (!backendSessionRotation && rotationEffect) {
+      throw new Error("runner backend session rotation effect requires atomic bootstrap rotation");
     }
     const parsedFrame = engineEventFrame(frame.payload, frame.metadata);
     if (JSON.stringify(parsedFrame.payload) !== JSON.stringify(input.payload)) {
@@ -356,7 +376,56 @@ export class RunnerSqliteEventOutbox {
 
     let record!: EventOutboxRecord;
     let frameSeq!: number;
+    let rotatedBootstrap: RunnerBootstrapRecord | undefined;
     this.transaction(() => {
+      if (backendSessionRotation) {
+        if (
+          !backendSessionRotation.expectedBackendSessionId
+          || !backendSessionRotation.backendSessionId
+          || backendSessionRotation.expectedBackendSessionId
+            === backendSessionRotation.backendSessionId
+        ) {
+          throw new Error("runner backend session rotation requires distinct non-empty IDs");
+        }
+        const row = this.database.prepare(`
+          SELECT * FROM runner_event_outbox
+          WHERE record_kind = 'bootstrap'
+        `).get() as unknown as RunnerEventOutboxRow | undefined;
+        if (!row) throw new Error("runner bootstrap record required before backend session rotation");
+        const current = runnerRowToBootstrap(row);
+        if (
+          current.payload.backend_session_id
+          !== backendSessionRotation.expectedBackendSessionId
+        ) {
+          throw new Error("runner backend session rotation expected backend session ID mismatch");
+        }
+        const rotatedUnsigned = {
+          stream_id: current.stream_id,
+          source_seq: current.source_seq,
+          session_id: current.session_id,
+          event_type: current.event_type,
+          payload: {
+            ...current.payload,
+            backend_session_id: backendSessionRotation.backendSessionId,
+          },
+          searchable_text: current.searchable_text,
+          created_at: current.created_at,
+          semantic_dedupe_key: current.semantic_dedupe_key,
+          session_effect: current.session_effect,
+        };
+        rotatedBootstrap = {
+          ...rotatedUnsigned,
+          payload_hash: computeEventOutboxPayloadHash(rotatedUnsigned),
+        };
+        this.database.prepare(`
+          UPDATE runner_event_outbox
+          SET payload_json = ?, payload_hash = ?
+          WHERE record_kind = 'bootstrap' AND source_seq = 1
+        `).run(
+          JSON.stringify(rotatedBootstrap.payload),
+          rotatedBootstrap.payload_hash,
+        );
+      }
       const sourceSeq = latestSequence(this.database) + 1;
       const unsigned = {
         stream_id: bootstrap.stream_id,
@@ -382,6 +451,7 @@ export class RunnerSqliteEventOutbox {
       `).run(record.source_seq, record.created_at);
       frameSeq = Number(result.lastInsertRowid);
     });
+    if (rotatedBootstrap) this.bootstrap = rotatedBootstrap;
     for (const listener of this.appendListeners) listener();
     return { ...record, ipc_frame_seq: frameSeq };
   }

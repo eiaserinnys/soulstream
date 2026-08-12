@@ -1422,6 +1422,37 @@ BEGIN
 END;
 $$;
 
+-- session_rotate_claude_id (복구 가능한 backend session 1회 교체)
+-- expected → new 원자 교체, 이미 new면 event ingress replay를 위한 no-op.
+CREATE OR REPLACE FUNCTION session_rotate_claude_id(
+    p_session_id                TEXT,
+    p_expected_claude_session_id TEXT,
+    p_new_claude_session_id     TEXT
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    v_existing TEXT;
+BEGIN
+    SELECT claude_session_id INTO v_existing
+    FROM sessions
+    WHERE session_id = p_session_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Session not found: %', p_session_id;
+    ELSIF v_existing = p_new_claude_session_id THEN
+        NULL;
+    ELSIF v_existing IS DISTINCT FROM p_expected_claude_session_id THEN
+        RAISE EXCEPTION 'claude_session_id rotation predecessor mismatch: session_id=%, expected=%, existing=%, new=%',
+            p_session_id, p_expected_claude_session_id, v_existing, p_new_claude_session_id;
+    ELSE
+        UPDATE sessions
+        SET claude_session_id = p_new_claude_session_id,
+            updated_at = NOW()
+        WHERE session_id = p_session_id;
+    END IF;
+END;
+$$;
+
 -- session_update (불변 필드 제외 동적 UPDATE)
 CREATE OR REPLACE FUNCTION session_update(
     p_session_id TEXT,

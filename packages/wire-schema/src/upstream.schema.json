@@ -393,6 +393,16 @@
                   },
                   {
                     "type": "object",
+                    "required": ["kind", "expected_backend_session_id", "backend_session_id"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "rotate_backend_session_id" },
+                      "expected_backend_session_id": { "type": "string", "minLength": 1 },
+                      "backend_session_id": { "type": "string", "minLength": 1 }
+                    }
+                  },
+                  {
+                    "type": "object",
                     "required": ["kind", "review_state", "updated_at"],
                     "additionalProperties": false,
                     "properties": {

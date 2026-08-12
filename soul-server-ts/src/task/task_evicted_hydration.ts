@@ -10,6 +10,7 @@ import {
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
+  extractClaudeBackendRolloverState,
   extractClaudePermissionModeFromMetadata,
 } from "./task_metadata.js";
 
@@ -91,6 +92,10 @@ export function hydrateEvictedTaskFromSessionRow(
     return null;
   }
 
+  const claudeBackendRollover = extractClaudeBackendRolloverState(metadata);
+  const rolloverCycleFrom = claudeBackendRollover.phase === "pending"
+    ? claudeBackendRollover.previousSessionId
+    : undefined;
   return {
     agentSessionId: row.session_id,
     prompt: row.prompt ?? "",
@@ -113,6 +118,13 @@ export function hydrateEvictedTaskFromSessionRow(
     agentsConversationId: agentsRunState?.conversationId,
     agentsSessionItems,
     claudePermissionMode,
+    claudeBackendRolloverAttempts: claudeBackendRollover.attempts,
+    ...(rolloverCycleFrom === undefined
+      ? {}
+      : { claudeBackendRolloverCycleFrom: rolloverCycleFrom }),
+    ...(rolloverCycleFrom !== undefined && row.claude_session_id === rolloverCycleFrom
+      ? { pendingClaudeBackendRolloverFrom: rolloverCycleFrom }
+      : {}),
     modelPreset: row.model_preset,
     model: row.model,
     createdAt: row.created_at,

@@ -14,6 +14,7 @@ import {
 } from "./frame_protocol.js";
 import {
   buildDurableRunnerEvent,
+  backendSessionRotationEffect,
   isSqliteFullError,
   requiresBackendSessionId,
   runnerLivenessIntervalMs,
@@ -60,6 +61,7 @@ export class RunnerChildRuntime {
   private activeCommandId: string | undefined;
   private livenessTimer: ReturnType<typeof setInterval> | undefined;
   private droppedFrameCount = 0;
+  private pendingBackendSessionRolloverFrom: string | undefined;
 
   constructor(
     private readonly config: RunnerChildConfig,
@@ -233,6 +235,7 @@ export class RunnerChildRuntime {
       await this.drainExecutionWithBuffer(command, preBootstrap);
     } finally {
       this.discardPreBootstrapFrames(preBootstrap, "execution_terminal");
+      this.pendingBackendSessionRolloverFrom = undefined;
       if (this.activeCommandId === command.commandId) this.activeCommandId = undefined;
       this.stopLiveness();
     }
@@ -301,7 +304,24 @@ export class RunnerChildRuntime {
     }
     const event = frame.payload as SSEEventPayload;
     this.recordEngineProgress(event);
-    const effect = sessionIdEffect(event);
+    let effect = sessionIdEffect(event);
+    let backendSessionRotation: {
+      expectedBackendSessionId: string;
+      backendSessionId: string;
+    } | undefined;
+    if (
+      this.pendingBackendSessionRolloverFrom
+      && effect?.kind === "set_backend_session_id"
+    ) {
+      backendSessionRotation = {
+        expectedBackendSessionId: this.pendingBackendSessionRolloverFrom,
+        backendSessionId: effect.backend_session_id,
+      };
+      effect = backendSessionRotationEffect(
+        backendSessionRotation.expectedBackendSessionId,
+        backendSessionRotation.backendSessionId,
+      );
+    }
     const backendSessionId = effect?.kind === "set_backend_session_id"
       ? effect.backend_session_id
       : null;
@@ -328,13 +348,23 @@ export class RunnerChildRuntime {
     } else if (!bootstrap) {
       await this.ensureBootstrap(null, this.requireActiveCommandId());
     }
-    await this.forwardBootstrappedEvent(frame, event, effect);
+    await this.forwardBootstrappedEvent(
+      frame,
+      event,
+      effect,
+      backendSessionRotation,
+    );
+    if (backendSessionRotation) this.pendingBackendSessionRolloverFrom = undefined;
   }
 
   private async forwardBootstrappedEvent(
     frame: RunnerEventFrame,
     event: SSEEventPayload,
     effect: EventOutboxSessionEffect | undefined,
+    backendSessionRotation?: {
+      expectedBackendSessionId: string;
+      backendSessionId: string;
+    },
   ): Promise<void> {
     if (!shouldPersistEvent(event)) {
       await this.sendBestEffort(frame);
@@ -349,6 +379,7 @@ export class RunnerChildRuntime {
     const durable = await this.outbox.appendEngineFrame(
       durableEvent.appendInput,
       durableEvent.frame,
+      backendSessionRotation,
     );
     await this.sendBestEffort(outboxAvailableControlFrame(durable.source_seq));
   }
@@ -367,6 +398,21 @@ export class RunnerChildRuntime {
   ): Promise<void> {
     const bootstrap = await this.outbox.readBootstrap();
     if (bootstrap) {
+      const rolloverFrom = command.params.backendSessionRolloverFrom;
+      if (rolloverFrom !== undefined) {
+        if (this.config.backend !== "claude") {
+          throw new Error("runner backend session rollover is Claude-only");
+        }
+        if (command.params.resumeSessionId !== undefined) {
+          throw new Error("runner backend session rollover cannot also resume");
+        }
+        if (bootstrap.payload.backend_session_id !== rolloverFrom) {
+          throw new Error("runner backend session rollover conflicts with durable bootstrap");
+        }
+        this.pendingBackendSessionRolloverFrom = rolloverFrom;
+        this.beginLifecycle(command.commandId);
+        return;
+      }
       const resumeSessionId = command.params.resumeSessionId;
       if (
         resumeSessionId !== undefined
@@ -376,6 +422,9 @@ export class RunnerChildRuntime {
       }
       this.beginLifecycle(command.commandId);
       return;
+    }
+    if (command.params.backendSessionRolloverFrom !== undefined) {
+      throw new Error("runner backend session rollover requires durable bootstrap");
     }
     if (command.params.resumeSessionId !== undefined) {
       await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);

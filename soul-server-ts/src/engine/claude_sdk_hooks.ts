@@ -12,7 +12,6 @@ import {
   asString,
 } from "./claude_sdk_helpers.js";
 import {
-  compactMessage,
   makeCompactSystemReminder,
 } from "./claude_sdk_prompt.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
@@ -49,11 +48,6 @@ export function buildClaudeSdkHooks(params: {
           async (input) => {
             const trigger = asString(asRecord(input)?.trigger) ?? "auto";
             eventMapper.recordCompactHookTrigger(trigger);
-            output.push({
-              type: "compact",
-              trigger,
-              message: compactMessage(trigger),
-            });
             return {};
           },
         ],

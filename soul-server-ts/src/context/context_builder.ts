@@ -65,6 +65,15 @@ import { buildPredecessorSummaryContextItem } from "./predecessor_summary_contex
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
+import {
+  buildBestEffortBackendRolloverContext,
+  type BackendRolloverContext,
+} from "./backend_rollover_context.js";
+
+export {
+  CLAUDE_ROLLOVER_HISTORY_MAX_CHARS,
+} from "./backend_rollover_context.js";
+export type { BackendRolloverContext } from "./backend_rollover_context.js";
 
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
@@ -159,6 +168,19 @@ export class ExecutionContextBuilder {
       contextItems.push(runningSessionsItem);
     }
     return { contextItems };
+  }
+
+  async buildBackendRolloverContext(
+    task: Task,
+    agent: AgentProfile,
+  ): Promise<BackendRolloverContext> {
+    return await buildBestEffortBackendRolloverContext({
+      db: this.db,
+      logger: this.logger,
+      sessionId: task.agentSessionId,
+      buildFullContext: async () =>
+        await this.buildFollowupContext(task, agent, { includeFullContext: true }),
+    });
   }
 
   /** Legacy wrapper for the shared follow-up context path. */

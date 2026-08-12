@@ -15,6 +15,11 @@ export type EventSessionEffect =
     }
   | { kind: "set_backend_session_id"; backend_session_id: string }
   | {
+      kind: "rotate_backend_session_id";
+      expected_backend_session_id: string;
+      backend_session_id: string;
+    }
+  | {
       kind: "running_transition";
       review_state: string;
       expected_terminal_event_id?: number | null;
@@ -213,6 +218,24 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     return {
       kind: value.kind,
       backend_session_id: nonEmptyString(value.backend_session_id, `${field}.backend_session_id`),
+    };
+  }
+  if (value.kind === "rotate_backend_session_id") {
+    assertExactKeys(
+      value,
+      ["kind", "expected_backend_session_id", "backend_session_id"],
+      field,
+    );
+    return {
+      kind: value.kind,
+      expected_backend_session_id: nonEmptyString(
+        value.expected_backend_session_id,
+        `${field}.expected_backend_session_id`,
+      ),
+      backend_session_id: nonEmptyString(
+        value.backend_session_id,
+        `${field}.backend_session_id`,
+      ),
     };
   }
   if (value.kind === "running_transition") {

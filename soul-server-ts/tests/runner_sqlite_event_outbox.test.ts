@@ -40,6 +40,64 @@ afterEach(async () => {
 });
 
 describe("RunnerSqliteEventOutbox", () => {
+  it("atomically rotates the durable backend session id with its orch-bound event", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const rotation = {
+      expectedBackendSessionId: "backend-session-a",
+      backendSessionId: "backend-session-fresh",
+    };
+    const input = {
+      ...eventInput("backend rollover"),
+      session_effect: {
+        kind: "rotate_backend_session_id" as const,
+        expected_backend_session_id: rotation.expectedBackendSessionId,
+        backend_session_id: rotation.backendSessionId,
+      },
+    };
+
+    await outbox.appendEngineFrame(input, {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: input.payload as Record<string, unknown>,
+    }, rotation);
+
+    await expect(outbox.readBootstrap()).resolves.toMatchObject({
+      payload: { backend_session_id: "backend-session-fresh" },
+    });
+    await expect(
+      outbox.appendEngineFrame(
+        {
+          ...eventInput("stale rollover"),
+          session_effect: {
+            kind: "rotate_backend_session_id",
+            expected_backend_session_id: "backend-session-a",
+            backend_session_id: "backend-session-other",
+          },
+        },
+        {
+          protocolVersion: 1,
+          channel: "event",
+          kind: "engine_event",
+          payload: { type: "assistant_message", content: "stale rollover" },
+        },
+        {
+          expectedBackendSessionId: "backend-session-a",
+          backendSessionId: "backend-session-other",
+        },
+      ),
+    ).rejects.toThrow("expected backend session ID");
+    outbox.close();
+
+    const reopened = await RunnerSqliteEventOutbox.open(path);
+    await expect(reopened.readBootstrap()).resolves.toMatchObject({
+      payload: { backend_session_id: "backend-session-fresh" },
+    });
+    reopened.close();
+  });
+
   it("opens only existing non-empty databases and never recreates missing lineage", async () => {
     const missingPath = await temporaryDatabasePath();
     await expect(RunnerSqliteEventOutbox.open(missingPath)).rejects.toThrow(

@@ -1721,6 +1721,60 @@ describe("TaskExecutor runner process boundary", () => {
   });
 
   it.each([
+    {
+      label: "success",
+      events: [{ type: "complete", result: "recovered" }] as SSEEventPayload[],
+      expectedStatus: "completed" as const,
+      expectedAttempts: 0,
+    },
+    {
+      label: "prompt-too-long refail",
+      events: [{
+        type: "error",
+        message: "Prompt is too long after runner restart",
+        fatal: false,
+        error_code: "claude_prompt_too_long",
+      }] as SSEEventPayload[],
+      expectedStatus: "error" as const,
+      expectedAttempts: 1,
+    },
+  ])(
+    "recovered runner rollover cycle resolves $label without opening a second replay",
+    async ({ events, expectedStatus, expectedAttempts }) => {
+      const mocks = makeMocks();
+      const { runner } = makeRunnerProcessRuntime(events);
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+      );
+      const task = makeTask();
+      task.profileId = claudeAgent.id;
+      task.codexThreadId = "claude-fresh";
+      task.claudeBackendRolloverAttempts = 1;
+      task.claudeBackendRolloverCycleFrom = "claude-over-limit";
+
+      await executor.recoverRunnerExecution(
+        task,
+        claudeAgent,
+        runner,
+        "execute-rollover",
+      );
+
+      expect(task.status).toBe(expectedStatus);
+      expect(task.claudeBackendRolloverAttempts).toBe(expectedAttempts);
+      expect(task.claudeBackendRolloverCycleFrom).toBe(
+        expectedAttempts === 0 ? undefined : "claude-over-limit",
+      );
+      expect(mocks.enqueueMetadataEffect).toHaveBeenCalledTimes(
+        expectedAttempts === 0 ? 1 : 0,
+      );
+    },
+  );
+
+  it.each([
     { backend: "claude" as const, profile: claudeAgent },
     { backend: "codex" as const, profile: agent },
   ])(
@@ -2414,6 +2468,558 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(capturedSystemPrompts).toEqual([undefined]);
     expect(capturedPrompts[0]).toContain("resume");
     expect(capturedPrompts[0]).toContain("<running_sessions>");
+  });
+
+  it("prompt_too_long은 backend session을 한 번 rollover하고 같은 입력을 full context로 한 번 replay한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-over-limit";
+    task.interventionQueue.push({ text: "resume this work", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        if (captured.length === 1) {
+          yield {
+            type: "result",
+            success: false,
+            output: "Prompt is too long",
+            terminal_reason: "prompt_too_long",
+          } as SSEEventPayload;
+          yield {
+            type: "error",
+            message: "Prompt is too long",
+            fatal: false,
+            error_code: "claude_prompt_too_long",
+          } as SSEEventPayload;
+          return;
+        }
+        yield { type: "session", session_id: "claude-fresh" } as SSEEventPayload;
+        yield { type: "complete", result: "recovered" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(),
+      buildFollowupContext: vi.fn(async (_task, _agent, options) => ({
+        effectiveSystemPrompt: options.includeFullContext
+          ? "full system after rollover"
+          : undefined,
+        contextItems: options.includeFullContext
+          ? [{ key: "soulstream_session", label: "Soulstream", content: { restored: true } }]
+          : [],
+      })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(2);
+    expect(captured[0]).toMatchObject({
+      prompt: "resume this work",
+      resumeSessionId: "claude-over-limit",
+    });
+    expect(captured[1]).toMatchObject({
+      prompt: expect.stringContaining("resume this work"),
+      systemPrompt: "full system after rollover",
+      backendSessionRolloverFrom: "claude-over-limit",
+    });
+    expect(captured[1]).not.toHaveProperty("resumeSessionId");
+    expect(captured[1]?.prompt).toContain("<soulstream_session>");
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        type: "claude_backend_rollover",
+        value: expect.objectContaining({ attempts: 1, reason: "prompt_too_long" }),
+      }),
+      expect.objectContaining({
+        replaceExistingType: "claude_backend_rollover",
+        waitForAck: true,
+      }),
+    );
+    expect(mocks.persistEvent).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "session", session_id: "claude-fresh" }),
+      {
+        kind: "rotate_backend_session_id",
+        expected_backend_session_id: "claude-over-limit",
+        backend_session_id: "claude-fresh",
+      },
+    );
+    expect(task.codexThreadId).toBe("claude-fresh");
+    expect(task.status).toBe("completed");
+  });
+
+  it("직전 84% usage에 다음 대형 turn input 추정치를 더해 실행 전에 compact한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-large-jump";
+    const compact = vi.fn().mockResolvedValue(undefined);
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        if (captured.length === 1) {
+          task.interventionQueue.push({ text: "x".repeat(60_000), user: "u" });
+          yield {
+            type: "context_usage",
+            used_tokens: 840_000,
+            max_tokens: 1_000_000,
+            percent: 84,
+          } as SSEEventPayload;
+        }
+        yield { type: "complete", result: "done" } as SSEEventPayload;
+      },
+      compact,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(async () => ({ combinedContextItems: [], assembledPrompt: task.prompt })),
+      buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+      buildBackendRolloverContext: vi.fn(async () => ({
+        contextItems: [],
+        currentSessionExcerpt: { totalEvents: 0, turns: [] },
+      })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(2);
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(compact).toHaveBeenCalledWith("claude-large-jump");
+    expect(task.status).toBe("completed");
+  });
+
+  it.each(["in-process", "runner"] as const)(
+    "%s: over-limit → boundary 없는 compact 실패 → prompt_too_long → rollover → replay 1회 → 생존",
+    async (mode) => {
+      const mocks = makeMocks();
+      const task = makeTask();
+      task.profileId = claudeAgent.id;
+      task.codexThreadId = "claude-over-limit";
+      const compact = vi.fn().mockRejectedValue(new Error("compact boundary not observed"));
+      const captured: EngineExecuteParams[] = [];
+      const eventsForTurn = (params: EngineExecuteParams): SSEEventPayload[] => {
+        captured.push(params);
+        if (captured.length === 1) {
+          task.interventionQueue.push({ text: "x".repeat(24_000), user: "u" });
+          return [
+            {
+              type: "context_usage",
+              used_tokens: 164_000,
+              max_tokens: 200_000,
+              percent: 82,
+            } as SSEEventPayload,
+            { type: "complete", result: "before jump" } as SSEEventPayload,
+          ];
+        }
+        if (captured.length === 2) {
+          return [
+            {
+              type: "result",
+              success: false,
+              output: "Prompt is too long",
+              terminal_reason: "prompt_too_long",
+            } as SSEEventPayload,
+            {
+              type: "error",
+              message: "Prompt is too long",
+              fatal: false,
+              error_code: "claude_prompt_too_long",
+            } as SSEEventPayload,
+          ];
+        }
+        return [
+          { type: "session", session_id: "claude-fresh" } as SSEEventPayload,
+          { type: "complete", result: "recovered" } as SSEEventPayload,
+        ];
+      };
+      const engine: EnginePort = {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude-roselin",
+        async *execute(params): AsyncIterable<SSEEventPayload> {
+          for (const event of eventsForTurn(params)) yield event;
+        },
+        compact,
+        async interrupt() { return true; },
+        async close() {},
+      };
+      const fakeBuilder = {
+        build: vi.fn(async () => ({ combinedContextItems: [], assembledPrompt: task.prompt })),
+        buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+        buildBackendRolloverContext: vi.fn(async () => ({
+          effectiveSystemPrompt: "fresh system",
+          contextItems: [],
+          currentSessionExcerpt: {
+            totalEvents: 100,
+            turns: [{
+              event_id: 99,
+              event_type: "assistant_message",
+              text: "last valid result",
+              created_at: "2026-08-12T00:00:00.000Z",
+            }],
+          },
+        })),
+      };
+      let processFactory: RunnerProcessRuntimeFactory | undefined;
+      if (mode === "runner") {
+        const { runner: baseRunner, dispatcher } = makeRunnerProcessRuntime([]);
+        dispatcher.executeFrames.mockImplementation((params: EngineExecuteParams) =>
+          frameStream(eventsForTurn(params))
+        );
+        const runner = { ...baseRunner, engine };
+        processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+      }
+      const executor = new TaskExecutor(
+        () => engine,
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        processFactory,
+      );
+
+      executor.startExecution(task, claudeAgent);
+      await task.executionPromise;
+
+      expect(compact).toHaveBeenCalledTimes(1);
+      expect(captured).toHaveLength(3);
+      expect(captured[1]).toMatchObject({ resumeSessionId: "claude-over-limit" });
+      expect(captured[2]).toMatchObject({
+        backendSessionRolloverFrom: "claude-over-limit",
+        systemPrompt: "fresh system",
+      });
+      expect(captured[2]).not.toHaveProperty("resumeSessionId");
+      expect(captured[2]?.prompt).toContain("last valid result");
+      expect(task.codexThreadId).toBe("claude-fresh");
+      expect(task.status).toBe("completed");
+    },
+  );
+
+  it("prompt_too_long 재실패는 rollover/replay를 반복하지 않고 fatal error로 끝낸다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-over-limit";
+    task.interventionQueue.push({ text: "resume once", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        if (captured.length === 2) {
+          yield { type: "session", session_id: "claude-fresh" } as SSEEventPayload;
+        }
+        yield {
+          type: "error",
+          message: "Prompt is too long",
+          fatal: false,
+          error_code: "claude_prompt_too_long",
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(),
+      buildFollowupContext: vi.fn(async () => ({
+        effectiveSystemPrompt: "full system",
+        contextItems: [],
+      })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(2);
+    expect(task.status).toBe("error");
+    expect(task.error).toContain("Prompt is too long");
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledTimes(1);
+    expect(task.claudeBackendRolloverAttempts).toBe(1);
+    expect(task.claudeBackendRolloverCycleFrom).toBe("claude-over-limit");
+  });
+
+  it("ACK 뒤 rotate 전 재시작한 rollover cycle을 predecessor resume 없이 이어간다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-over-limit";
+    task.claudeBackendRolloverAttempts = 1;
+    task.claudeBackendRolloverCycleFrom = "claude-over-limit";
+    task.pendingClaudeBackendRolloverFrom = "claude-over-limit";
+    task.interventionQueue.push({ text: "durable failed input", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        yield { type: "session", session_id: "claude-fresh" } as SSEEventPayload;
+        yield { type: "complete", result: "recovered" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+      buildBackendRolloverContext: vi.fn(async () => ({ contextItems: [] })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
+      backendSessionRolloverFrom: "claude-over-limit",
+    });
+    expect(captured[0]).not.toHaveProperty("resumeSessionId");
+    expect(task.codexThreadId).toBe("claude-fresh");
+    expect(task.claudeBackendRolloverAttempts).toBe(0);
+    expect(task.claudeBackendRolloverCycleFrom).toBeUndefined();
+    expect(task.pendingClaudeBackendRolloverFrom).toBeUndefined();
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        type: "claude_backend_rollover",
+        value: expect.objectContaining({
+          attempts: 0,
+          phase: "completed",
+          previous_session_id: "claude-over-limit",
+          backend_session_id: "claude-fresh",
+        }),
+      }),
+      expect.objectContaining({ waitForAck: true }),
+    );
+  });
+
+  it("backend rotate 뒤 completed metadata 전 재시작한 cycle을 정상 turn 성공으로 재무장한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-fresh";
+    task.claudeBackendRolloverAttempts = 1;
+    task.claudeBackendRolloverCycleFrom = "claude-over-limit";
+    task.interventionQueue.push({ text: "resume rotated backend", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        yield { type: "complete", result: "cycle completed" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({ resumeSessionId: "claude-fresh" });
+    expect(captured[0]).not.toHaveProperty("backendSessionRolloverFrom");
+    expect(task.claudeBackendRolloverAttempts).toBe(0);
+    expect(task.claudeBackendRolloverCycleFrom).toBeUndefined();
+    expect(task.status).toBe("completed");
+  });
+
+  it("성공한 rollover 뒤 다음 독립 context exhaustion에 1회 recovery를 다시 허용한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-old";
+    task.interventionQueue.push({ text: "first exhaustion", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        if (captured.length === 1 || captured.length === 3) {
+          yield {
+            type: "error",
+            message: "Prompt is too long",
+            fatal: false,
+            error_code: "claude_prompt_too_long",
+          } as SSEEventPayload;
+          return;
+        }
+        const freshSessionId = captured.length === 2 ? "claude-fresh-1" : "claude-fresh-2";
+        yield { type: "session", session_id: freshSessionId } as SSEEventPayload;
+        if (captured.length === 2) {
+          task.interventionQueue.push({ text: "second independent exhaustion", user: "u" });
+        }
+        yield { type: "complete", result: "recovered" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+      buildBackendRolloverContext: vi.fn(async () => ({ contextItems: [] })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(4);
+    expect(captured[1]).toMatchObject({ backendSessionRolloverFrom: "claude-old" });
+    expect(captured[2]).toMatchObject({ resumeSessionId: "claude-fresh-1" });
+    expect(captured[3]).toMatchObject({ backendSessionRolloverFrom: "claude-fresh-1" });
+    expect(task.codexThreadId).toBe("claude-fresh-2");
+    expect(task.claudeBackendRolloverAttempts).toBe(0);
+    expect(task.claudeBackendRolloverCycleFrom).toBeUndefined();
+    expect(task.status).toBe("completed");
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledTimes(4);
+  });
+
+  it("tool 실행이 관찰된 턴은 prompt_too_long이어도 입력을 replay하지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-over-limit";
+    task.interventionQueue.push({ text: "unsafe replay", user: "u" });
+    const execute = vi.fn();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        execute();
+        yield {
+          type: "tool_start",
+          tool_name: "Bash",
+          tool_input: { command: "side effect" },
+          tool_use_id: "tool-1",
+        } as SSEEventPayload;
+        yield {
+          type: "error",
+          message: "Prompt is too long",
+          fatal: false,
+          error_code: "claude_prompt_too_long",
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueMetadataEffect).not.toHaveBeenCalled();
+    expect(task.status).toBe("error");
+  });
+
+  it("모델 window의 85%를 넘긴 context telemetry는 다음 입력 전에 compact를 한 번 실행한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-session-1";
+    const compact = vi.fn().mockResolvedValue(undefined);
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "context_usage",
+          used_tokens: 850_000,
+          max_tokens: 1_000_000,
+          percent: 85,
+        } as SSEEventPayload;
+        yield { type: "complete", result: "done" } as SSEEventPayload;
+      },
+      compact,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(compact).toHaveBeenCalledWith("claude-session-1");
+    expect(mocks.persistEvent).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "compact", trigger: "auto_preemptive" }),
+      undefined,
+    );
   });
 
   it("Claude compact 이벤트는 P3 wire 그대로 persist/broadcast된다", async () => {

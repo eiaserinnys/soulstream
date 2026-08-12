@@ -8,6 +8,7 @@ describe("applyEventSessionEffect", () => {
   it.each([
     ["last_message", "session_update_last_message"],
     ["set_backend_session_id", "session_set_claude_id"],
+    ["rotate_backend_session_id", "session_rotate_claude_id"],
     ["running_transition", "session_apply_running_transition"],
     ["terminal_transition", "session_apply_terminal_transition"],
     ["append_metadata", "session_apply_metadata_entry"],
@@ -131,6 +132,11 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "set_backend_session_id") return { kind, backend_session_id: "thread-1" };
+  if (kind === "rotate_backend_session_id") return {
+    kind,
+    expected_backend_session_id: "thread-1",
+    backend_session_id: "thread-2",
+  };
   if (kind === "running_transition") return {
     kind,
     review_state: "not_required",

@@ -61,10 +61,10 @@ export function mapClaudeSystemMessage(
   if (subtype === "compact_boundary") {
     const metadata = asRecord(message.compact_metadata);
     const trigger = asString(metadata?.trigger) ?? "unknown";
-    if (context.consumePendingCompactHookTrigger(trigger)) return [];
+    context.consumePendingCompactHookTrigger(trigger);
     return [
       {
-        type: "compact",
+        type: "compact_completed",
         trigger,
         message: compactMessage(trigger),
       },

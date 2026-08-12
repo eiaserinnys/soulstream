@@ -17,12 +17,14 @@ export function isEdeDiagnosticErrorText(
 }
 
 export function isRecoverableExecutionDiagnostic(message: Record<string, unknown>): boolean {
+  if (isPromptTooLongResult(message)) return true;
   if (message.subtype !== "error_during_execution") return false;
   const firstError = firstString(asArray(message.errors));
   return isEdeDiagnosticErrorText(firstError, { requirePrefix: true });
 }
 
 export function resultErrorCode(message: Record<string, unknown>): string {
+  if (isPromptTooLongResult(message)) return "claude_prompt_too_long";
   const explicitCode = asString(message.error_code) ?? asString(message.errorCode);
   if (explicitCode) return explicitCode;
 
@@ -31,4 +33,8 @@ export function resultErrorCode(message: Record<string, unknown>): string {
     return "claude_sdk_result_error";
   }
   return subtype ?? "claude_sdk_result_error";
+}
+
+export function isPromptTooLongResult(message: Record<string, unknown>): boolean {
+  return asString(message.terminal_reason) === "prompt_too_long";
 }

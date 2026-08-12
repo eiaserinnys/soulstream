@@ -30,6 +30,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   runnerInterventionId: z.string().min(1).optional(),
   imageAttachmentPaths: z.array(z.string()).optional(),
   resumeSessionId: z.string().optional(),
+  backendSessionRolloverFrom: z.string().min(1).optional(),
   model: z.string().nullable().optional(),
   reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh"]).optional(),
   systemPrompt: z.string().optional(),

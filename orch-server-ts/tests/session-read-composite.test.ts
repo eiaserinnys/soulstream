@@ -6,15 +6,23 @@ import { SessionReadCompositeRepository } from
 describe("SessionReadCompositeRepository", () => {
   it("combines event count and page into one turn-excerpt operation", async () => {
     const countEvents = vi.fn().mockResolvedValue(3);
-    const readEvents = vi.fn().mockResolvedValue([{
-      id: 2,
-      event_type: "assistant_message",
-      payload: { text: "response" },
-      created_at: new Date("2026-08-06T00:00:00.000Z"),
-    }]);
+    const readRecentEvents = vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        event_type: "user_message",
+        payload: { text: "older request" },
+        created_at: new Date("2026-08-05T00:00:00.000Z"),
+      },
+      {
+        id: 2,
+        event_type: "assistant_message",
+        payload: { text: "response" },
+        created_at: new Date("2026-08-06T00:00:00.000Z"),
+      },
+    ]);
     const repository = new SessionReadCompositeRepository(
       {} as never,
-      { countEvents, readEvents } as never,
+      { countEvents, readRecentEvents } as never,
       {} as never,
     );
 
@@ -23,11 +31,11 @@ describe("SessionReadCompositeRepository", () => {
       turns: [{
         event_id: 2,
         event_type: "assistant_message",
-        text: "resp…",
+        text: "res…",
         created_at: "2026-08-06T00:00:00.000Z",
       }],
     });
-    expect(readEvents).toHaveBeenCalledWith("s1", 0, 3, [
+    expect(readRecentEvents).toHaveBeenCalledWith("s1", 3, [
       "user_message",
       "assistant_message",
       "user_text",
@@ -50,10 +58,10 @@ describe("SessionReadCompositeRepository", () => {
       updatedAt: null,
     });
     const countEvents = vi.fn().mockResolvedValue(0);
-    const readEvents = vi.fn().mockResolvedValue([]);
+    const readRecentEvents = vi.fn().mockResolvedValue([]);
     const repository = new SessionReadCompositeRepository(
       { getSession, listSessionsSummary, listRunningSessionsSummary } as never,
-      { countEvents, readEvents } as never,
+      { countEvents, readRecentEvents } as never,
       { getSessionStory } as never,
     );
 

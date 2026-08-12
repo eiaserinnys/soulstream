@@ -121,7 +121,7 @@ export type ClaudeClientEvent =
       parentEventId?: ParentEventId;
     }
   | {
-      type: "compact";
+      type: "compact_completed";
       trigger: string;
       message: string;
       timestamp?: number;
@@ -503,7 +503,7 @@ export function mapClaudeClientEvent(
         }),
       ];
 
-    case "compact":
+    case "compact_completed":
       return [
         asSSE({
           type: "compact",

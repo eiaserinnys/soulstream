@@ -23,6 +23,7 @@ const frames: RunnerFrame[] = [
     params: {
       agentSessionId: "session-1",
       prompt: "hello",
+      backendSessionRolloverFrom: "backend-session-old",
       sessionItems: [{ role: "user", content: "hello" }],
     },
   },
