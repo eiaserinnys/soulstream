@@ -274,7 +274,7 @@ describe("Claude event mapper semantic history contract", () => {
   it("compact is an explicit SSE event, not a silent no-op", () => {
     expect(
       mapClaudeClientEvent({
-        type: "compact",
+        type: "compact_completed",
         trigger: "auto",
         message: "context compacted",
         timestamp: 133,
@@ -590,7 +590,7 @@ describe("Claude event mapper semantic history contract", () => {
       { type: "input_request_responded", requestId: "ask-1", timestamp: 5.7 },
       { type: "prompt_suggestion", text: "next", timestamp: 6 },
       { type: "rate_limit", status: "allowed_warning", utilization: 0.9, timestamp: 7 },
-      { type: "compact", trigger: "manual", message: "compacted", timestamp: 8 },
+      { type: "compact_completed", trigger: "manual", message: "compacted", timestamp: 8 },
       { type: "subagent_start", agentId: "sub", agentType: "worker", timestamp: 9 },
       { type: "subagent_stop", agentId: "sub", timestamp: 10 },
       { type: "complete", result: "A", timestamp: 11 },

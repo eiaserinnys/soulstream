@@ -10,6 +10,7 @@ import {
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
+  extractClaudeBackendRolloverAttempts,
   extractClaudePermissionModeFromMetadata,
 } from "./task_metadata.js";
 
@@ -113,6 +114,7 @@ export function hydrateEvictedTaskFromSessionRow(
     agentsConversationId: agentsRunState?.conversationId,
     agentsSessionItems,
     claudePermissionMode,
+    claudeBackendRolloverAttempts: extractClaudeBackendRolloverAttempts(metadata),
     modelPreset: row.model_preset,
     model: row.model,
     createdAt: row.created_at,

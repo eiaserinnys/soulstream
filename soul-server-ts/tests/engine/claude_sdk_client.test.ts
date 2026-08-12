@@ -599,15 +599,43 @@ describe("ClaudeSdkClient", () => {
     }
   });
 
-  it("context_usage includes cached input tokens because they still occupy the request context", async () => {
+  it("context_usage uses the latest iteration and the selected model context window", async () => {
     const queryFn: ClaudeSdkQueryFn = () => makeQuery(
       sdkMessages([
+        {
+          type: "assistant",
+          message: {
+            model: "claude-opus-4-6",
+            usage: {
+              input_tokens: 6,
+              output_tokens: 2,
+              cache_creation_input_tokens: 10,
+              cache_read_input_tokens: 20,
+            },
+            content: [{ type: "text", text: "done" }],
+          },
+          parent_tool_use_id: null,
+          uuid: "assistant-context-usage",
+          session_id: "claude-sess-1",
+        } as unknown as SDKMessage,
         sdkSuccessResult("claude-sess-1", "done", {
           usage: {
-            input_tokens: 6,
-            output_tokens: 2,
-            cache_creation_input_tokens: 10,
-            cache_read_input_tokens: 20,
+            input_tokens: 900_000,
+            output_tokens: 50_000,
+            cache_creation_input_tokens: 10_000,
+            cache_read_input_tokens: 20_000,
+          },
+          modelUsage: {
+            "claude-opus-4-6": {
+              inputTokens: 900_000,
+              outputTokens: 50_000,
+              cacheCreationInputTokens: 10_000,
+              cacheReadInputTokens: 20_000,
+              webSearchRequests: 0,
+              costUSD: 1,
+              contextWindow: 1_000_000,
+              maxOutputTokens: 32_000,
+            },
           },
         }),
       ]),
@@ -628,6 +656,8 @@ describe("ClaudeSdkClient", () => {
     expect(events.find((event) => event.type === "context_usage")).toMatchObject({
       type: "context_usage",
       usedTokens: 38,
+      maxTokens: 1_000_000,
+      percent: 0,
     });
   });
 
@@ -2171,7 +2201,7 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
-  it("PreCompact hook and SDK compact_boundary are deduped into one compact event", async () => {
+  it("PreCompact records started but only compact_boundary emits compact_completed", async () => {
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -2208,9 +2238,9 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(events.filter((event) => event.type === "compact")).toEqual([
+    expect(events.filter((event) => event.type === "compact_completed")).toEqual([
       {
-        type: "compact",
+        type: "compact_completed",
         trigger: "auto",
         message: "Claude session compacted (auto)",
       },
@@ -2290,7 +2320,7 @@ describe("ClaudeSdkClient", () => {
       SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     );
     expect(events.map((event) => event.type)).toEqual([
-      "compact",
+      "compact_completed",
       "text",
       "result",
       "context_usage",
@@ -2558,6 +2588,33 @@ describe("ClaudeSdkClient", () => {
     }
   });
 
+  it("maps prompt_too_long to the dedicated recoverable error", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+
+    const events = mapper.mapSdkMessage({
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      errors: ["Prompt is too long"],
+      terminal_reason: "prompt_too_long",
+      usage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "claude-over-limit",
+    } as unknown as SDKMessage);
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      fatal: false,
+      errorCode: "claude_prompt_too_long",
+    });
+  });
+
   it("keeps tool_result continuation output-only with no live input stream", async () => {
     const promptKinds: string[] = [];
     const client = new ClaudeSdkClient(
@@ -2691,7 +2748,18 @@ describe("ClaudeSdkClient", () => {
       {
         query: (params) => {
           captured.push(params);
-          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-5", "done")]));
+          return makeQuery(sdkMessages(captured.length === 1
+            ? [sdkSuccessResult("claude-sess-5", "done")]
+            : [
+                {
+                  type: "system",
+                  subtype: "compact_boundary",
+                  compact_metadata: { trigger: "manual", pre_tokens: 180_000 },
+                  uuid: "manual-compact-boundary",
+                  session_id: "claude-sess-5",
+                } as unknown as SDKMessage,
+                sdkSuccessResult("claude-sess-5", "compacted"),
+              ]));
         },
       },
       silentLogger,
@@ -2703,6 +2771,7 @@ describe("ClaudeSdkClient", () => {
           prompt: "hi",
           workspaceDir: "/tmp/claude-work",
           env: { CLAUDE_CODE_OAUTH_TOKEN: "task-token" },
+          systemPrompt: "system instructions",
         },
         new AbortController().signal,
       ),
@@ -2714,8 +2783,27 @@ describe("ClaudeSdkClient", () => {
       cwd: "/tmp/claude-work",
       env: { CLAUDE_CODE_OAUTH_TOKEN: "task-token" },
       resume: "claude-sess-5",
+      systemPrompt: ["system instructions", SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
     });
     expect(captured[1]?.prompt).toBe("/compact");
+  });
+
+  it("compact rejects a result that has no compact boundary", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () => makeQuery(sdkMessages([sdkSuccessResult("claude-sess-5", "done")])),
+      },
+      silentLogger,
+    );
+
+    await collect(client.run(
+      { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+      new AbortController().signal,
+    ));
+
+    await expect(client.compact("claude-sess-5")).rejects.toThrow(
+      "without compact_boundary",
+    );
   });
 
   it("drains a prompt_suggestion that arrives after the result message (Python receive_loop._drain_after_result parity)", async () => {
@@ -3261,14 +3349,14 @@ describe("ClaudeSdkClient", () => {
     );
 
     expect(events.map((event) => event.type)).toEqual([
-      "compact",
+      "compact_completed",
       "text",
       "result",
       "context_usage",
       "complete",
     ]);
     expect(events[0]).toMatchObject({
-      type: "compact",
+      type: "compact_completed",
       trigger: "auto",
       message: "Claude session compacted (auto)",
     });
@@ -3323,15 +3411,13 @@ describe("ClaudeSdkClient", () => {
 
     expect(receiveLoopEntries).toBe(2);
     expect(events.map((event) => event.type)).toEqual([
-      "compact",
       "text",
       "result",
       "context_usage",
       "complete",
     ]);
-    expect(events[0]).toMatchObject({ type: "compact", trigger: "auto" });
-    expect(events[1]).toMatchObject({ type: "text", text: "after compact retry" });
-    expect(events[2]).toMatchObject({ type: "result", output: "final" });
+    expect(events[0]).toMatchObject({ type: "text", text: "after compact retry" });
+    expect(events[1]).toMatchObject({ type: "result", output: "final" });
   });
 
   it("continues after an empty tool_use result when the SDK emits another message", async () => {
@@ -3485,13 +3571,13 @@ describe("ClaudeSdkClient", () => {
       "text",
       "session",
       "text",
-      "compact",
+      "compact_completed",
       "text",
       "result",
       "context_usage",
       "complete",
     ]);
-    expect(events[6]).toMatchObject({ type: "compact", trigger: "auto" });
+    expect(events[6]).toMatchObject({ type: "compact_completed", trigger: "auto" });
     expect(events[8]).toMatchObject({ type: "result", output: "final" });
   });
 
@@ -4032,7 +4118,18 @@ function sdkSuccessResult(
     usage: { input_tokens: 1, output_tokens: 1 },
     total_cost_usd: 0.01,
     stop_reason: "end_turn",
-    modelUsage: {},
+    modelUsage: {
+      "claude-test-model": {
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        webSearchRequests: 0,
+        costUSD: 0.01,
+        contextWindow: 200_000,
+        maxOutputTokens: 8_192,
+      },
+    },
     permission_denials: [],
     ...overrides,
   } as unknown as SDKMessage;

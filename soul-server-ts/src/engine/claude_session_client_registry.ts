@@ -51,7 +51,8 @@ export type ClaudeRuntimeRegistryCloseReason =
   | "registry_ttl"
   | "registry_capacity"
   | "shutdown"
-  | "worker_restart";
+  | "worker_restart"
+  | "backend_rollover";
 
 /**
  * Worker-owned session runtime boundary.

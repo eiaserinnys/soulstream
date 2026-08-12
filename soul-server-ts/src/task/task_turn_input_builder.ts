@@ -23,6 +23,7 @@ export interface TaskTurnInput {
   inputUuid?: string;
   runnerInterventionId?: string;
   intervention?: InterventionMessage;
+  backendSessionRolloverFrom?: string;
 }
 
 export interface TaskTurnInputBuilderDeps {
@@ -92,6 +93,42 @@ export class TaskTurnInputBuilder {
         ? { runnerInterventionId: intervention.runnerInterventionId }
         : {}),
       intervention,
+    };
+  }
+
+  async prepareBackendRolloverTurnInput(
+    task: Task,
+    agent: AgentProfile,
+    failedInput: TaskTurnInput,
+    backendSessionRolloverFrom: string,
+  ): Promise<TaskTurnInput> {
+    const currentCallerInfo = failedInput.intervention?.callerInfo ?? task.callerInfo;
+    const ctx = await this.buildFollowupContext(task, agent, {
+      includeFullContext: true,
+      includeClaudeSessionIdUpdate: false,
+      previousCallerInfo: task.lastInjectedCallerInfo,
+      currentCallerInfo,
+    });
+    task.needsFullContextReinjection = false;
+    if (ctx) this.recordFollowupContextInjection(task, currentCallerInfo);
+
+    const replayBase = failedInput.intervention
+      ? composeInterventionTurnPrompt(failedInput.intervention)
+      : {
+          prompt: failedInput.prompt,
+          imageAttachmentPaths: failedInput.imageAttachmentPaths,
+        };
+    return {
+      prompt: appendContextBlock(replayBase.prompt, ctx?.contextItems ?? []),
+      imageAttachmentPaths: replayBase.imageAttachmentPaths,
+      ...(ctx?.effectiveSystemPrompt !== undefined
+        ? { systemPrompt: ctx.effectiveSystemPrompt }
+        : {}),
+      ...(failedInput.inputUuid !== undefined ? { inputUuid: failedInput.inputUuid } : {}),
+      ...(failedInput.intervention !== undefined
+        ? { intervention: failedInput.intervention }
+        : {}),
+      backendSessionRolloverFrom,
     };
   }
 

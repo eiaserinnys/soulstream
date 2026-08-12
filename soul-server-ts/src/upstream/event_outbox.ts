@@ -34,6 +34,11 @@ export type EventOutboxSessionEffect =
       backend_session_id: string;
     }
   | {
+      kind: "rotate_backend_session_id";
+      expected_backend_session_id: string;
+      backend_session_id: string;
+    }
+  | {
       kind: "running_transition";
       review_state: string;
       expected_terminal_event_id?: number | null;

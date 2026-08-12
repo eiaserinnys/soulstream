@@ -51,6 +51,17 @@ export function sessionIdEffect(
     : undefined;
 }
 
+export function backendSessionRotationEffect(
+  expectedBackendSessionId: string,
+  backendSessionId: string,
+): EventOutboxSessionEffect {
+  return {
+    kind: "rotate_backend_session_id",
+    expected_backend_session_id: expectedBackendSessionId,
+    backend_session_id: backendSessionId,
+  };
+}
+
 export function requiresBackendSessionId(backend: RunnerChildConfig["backend"]): boolean {
   return backend === "claude" || backend === "codex";
 }

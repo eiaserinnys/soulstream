@@ -128,6 +128,23 @@ export function extractClaudePermissionModeFromMetadata(
   return undefined;
 }
 
+export function extractClaudeBackendRolloverAttempts(metadata: unknown): number {
+  if (!Array.isArray(metadata)) return 0;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object") continue;
+    const recordEntry = entry as Record<string, unknown>;
+    if (recordEntry.type !== "claude_backend_rollover") continue;
+    const value = recordEntry.value;
+    if (!value || typeof value !== "object") return 0;
+    const attempts = (value as Record<string, unknown>).attempts;
+    return typeof attempts === "number" && Number.isSafeInteger(attempts) && attempts > 0
+      ? attempts
+      : 0;
+  }
+  return 0;
+}
+
 export function buildCallerInfoMetadataEntry(
   callerInfo: CallerInfo | undefined,
 ): Record<string, unknown> | undefined {

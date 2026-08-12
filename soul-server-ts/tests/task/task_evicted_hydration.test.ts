@@ -239,4 +239,20 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.agentsRunState).toBeUndefined();
     expect(task?.agentsSessionItems).toBeUndefined();
   });
+
+  it("restores the durable Claude backend rollover attempt guard", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        metadata: [
+          {
+            type: "claude_backend_rollover",
+            value: { attempts: 1, reason: "prompt_too_long" },
+          },
+        ],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.claudeBackendRolloverAttempts).toBe(1);
+  });
 });

@@ -29,6 +29,7 @@ export interface TaskEngineTurnInput {
   runnerInterventionId?: string;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
+  backendSessionRolloverFrom?: string;
 }
 
 export interface TaskEngineTurnRunnerDeps {
@@ -111,7 +112,11 @@ export class TaskEngineTurnRunner {
         : {}),
       ...(effectiveModel !== undefined ? { model: effectiveModel } : {}),
       ...(task.reasoningEffort !== undefined ? { reasoningEffort: task.reasoningEffort } : {}),
-      ...(task.codexThreadId !== undefined ? { resumeSessionId: task.codexThreadId } : {}),
+      ...(input.backendSessionRolloverFrom !== undefined
+        ? { backendSessionRolloverFrom: input.backendSessionRolloverFrom }
+        : task.codexThreadId !== undefined
+          ? { resumeSessionId: task.codexThreadId }
+          : {}),
       ...(task.agentsRunState !== undefined ? { resumeRunState: task.agentsRunState } : {}),
       ...(task.agentsPreviousResponseId !== undefined
         ? { previousResponseId: task.agentsPreviousResponseId }

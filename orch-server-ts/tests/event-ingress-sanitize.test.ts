@@ -38,6 +38,21 @@ describe("sanitizePgJsonValue", () => {
 });
 
 describe("parseEventAppendBatch sanitization", () => {
+  it("accepts exactly the closed backend session rotation field set", () => {
+    const effect = {
+      kind: "rotate_backend_session_id",
+      expected_backend_session_id: "thread-old",
+      backend_session_id: "thread-new",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    expect(() =>
+      parseEventAppendBatch(batchWithEffect({ ...effect, unexpected: true })),
+    ).toThrow("session_effect has unexpected fields: unexpected");
+  });
+
   it("accepts exactly the closed running_transition field set", () => {
     const effect = {
       kind: "running_transition",

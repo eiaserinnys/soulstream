@@ -43,6 +43,8 @@ export class ClaudeSdkEventMapper {
   private readonly emittedSubagentStopIds = new Set<string>();
   private readonly pendingCompactHookTriggers: string[] = [];
   private compactHookEventCount = 0;
+  private latestIterationUsage: unknown;
+  private latestIterationModel: string | undefined;
 
   constructor(runtimeState: ClaudeRuntimeState) {
     this.runtimeState = runtimeState;
@@ -58,6 +60,8 @@ export class ClaudeSdkEventMapper {
     this.backgroundAgentTaskIds.clear();
     this.pendingCompactHookTriggers.length = 0;
     this.compactHookEventCount = 0;
+    this.latestIterationUsage = undefined;
+    this.latestIterationModel = undefined;
   }
 
   getCompactHookEventCount(): number {
@@ -133,6 +137,11 @@ export class ClaudeSdkEventMapper {
 
   mapAssistantMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
     const events: ClaudeClientEvent[] = [];
+    const nestedMessage = asRecord(message.message);
+    if (nestedMessage?.usage !== undefined) {
+      this.latestIterationUsage = nestedMessage.usage;
+      this.latestIterationModel = asString(nestedMessage.model) ?? asString(message.model);
+    }
     const error = asString(message.error);
     if (error) {
       // Python `message_processor._handle_assistant_message` L172-187 정합:
@@ -249,7 +258,13 @@ export class ClaudeSdkEventMapper {
       ...(modelUsage !== undefined ? { modelUsage } : {}),
       permissionDenials: permissionDenialsToStrings(message.permission_denials),
     };
-    const contextUsageEvent = makeContextUsageEvent(message.usage);
+    const contextUsageEvent = makeContextUsageEvent(
+      this.latestIterationUsage ?? message.usage,
+      message.modelUsage,
+      this.latestIterationModel,
+    );
+    this.latestIterationUsage = undefined;
+    this.latestIterationModel = undefined;
 
     if (!success) {
       const errorEvent: ClaudeClientEvent = {

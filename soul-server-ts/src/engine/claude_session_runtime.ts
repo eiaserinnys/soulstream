@@ -14,6 +14,7 @@ export type ClaudeRuntimeCloseReason =
   | "registry_capacity"
   | "shutdown"
   | "worker_restart"
+  | "backend_rollover"
   | "fatal";
 
 export type ClaudeInputState =

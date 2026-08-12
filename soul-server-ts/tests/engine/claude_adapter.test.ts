@@ -453,7 +453,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
             { type: "result", success: true, output: "content", timestamp: 4 },
             { type: "prompt_suggestion", text: "next?", timestamp: 5 },
             { type: "rate_limit", status: "allowed_warning", utilization: 0.91, timestamp: 6 },
-            { type: "compact", trigger: "auto", message: "compacted", timestamp: 7 },
+            { type: "compact_completed", trigger: "auto", message: "compacted", timestamp: 7 },
             { type: "subagent_start", agentId: "sub-1", agentType: "explorer", timestamp: 8 },
             { type: "subagent_stop", agentId: "sub-1", timestamp: 9 },
             {
@@ -747,6 +747,57 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     expect(close).not.toHaveBeenCalled();
     await registry.shutdown();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("runtime-v2 backend rollover closes the exhausted Query owner and acquires a fresh client", async () => {
+    const closes: Array<ReturnType<typeof vi.fn>> = [];
+    const captured: ClaudeRunOptions[] = [];
+    let clientNumber = 0;
+    const registry = new ClaudeSessionClientRegistry(
+      () => {
+        clientNumber += 1;
+        const close = vi.fn().mockResolvedValue(undefined);
+        closes.push(close);
+        return {
+          async *run(): AsyncIterable<ClaudeClientEvent> {
+            throw new Error("legacy run must remain unreachable behind runtime-v2");
+          },
+          async *runPersistent(options): AsyncIterable<ClaudeClientEvent> {
+            captured.push(options);
+            yield { type: "session", sessionId: `backend-${clientNumber}` };
+            yield { type: "complete", result: "done" };
+          },
+          close,
+        };
+      },
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient([], []),
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    for await (const _ of engine.execute({
+      agentSessionId: "agent-session-1",
+      prompt: "first",
+      resumeSessionId: "backend-old",
+    })) {}
+    for await (const _ of engine.execute({
+      agentSessionId: "agent-session-1",
+      prompt: "replay",
+      backendSessionRolloverFrom: "backend-old",
+    })) {}
+
+    expect(clientNumber).toBe(2);
+    expect(closes[0]).toHaveBeenCalledWith("backend_rollover");
+    expect(captured[1]).not.toHaveProperty("resumeSessionId");
+    await engine.close();
+    await registry.shutdown();
   });
 
   it("ClaudeEngineAdapter.compact는 fake client compact boundary를 호출한다", async () => {

@@ -971,6 +971,11 @@ export interface EventAppendBatch {
             backend_session_id: string;
           }
         | {
+            kind: "rotate_backend_session_id";
+            expected_backend_session_id: string;
+            backend_session_id: string;
+          }
+        | {
             kind: "running_transition";
             review_state: string;
             updated_at: string;
@@ -1016,6 +1021,11 @@ export interface EventAppendBatch {
           }
         | {
             kind: "set_backend_session_id";
+            backend_session_id: string;
+          }
+        | {
+            kind: "rotate_backend_session_id";
+            expected_backend_session_id: string;
             backend_session_id: string;
           }
         | {

@@ -5,7 +5,6 @@ import {
   asString,
 } from "./claude_sdk_helpers.js";
 
-const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
 const STRIPPED_HOOK_OUTPUT = "[stripped: persisted in tool_result]";
 const GENERIC_HOOK_OUTPUT_FIELDS = new Set([
   "tool_response",
@@ -70,7 +69,11 @@ export function permissionDenialsToStrings(value: unknown): string[] | null {
   });
 }
 
-export function makeContextUsageEvent(usage: unknown): ClaudeClientEvent | undefined {
+export function makeContextUsageEvent(
+  usage: unknown,
+  modelUsage: unknown,
+  model: string | undefined,
+): ClaudeClientEvent | undefined {
   const record = asRecord(usage);
   if (!record) return undefined;
 
@@ -88,13 +91,43 @@ export function makeContextUsageEvent(usage: unknown): ClaudeClientEvent | undef
     ?? 0;
   const usedTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
   if (usedTokens <= 0) return undefined;
+  const maxTokens = resolveContextWindow(modelUsage, model);
+  if (maxTokens === undefined) return undefined;
 
   return {
     type: "context_usage",
     usedTokens,
-    maxTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-    percent: Math.round((usedTokens / DEFAULT_MAX_CONTEXT_TOKENS) * 1000) / 10,
+    maxTokens,
+    percent: Math.round((usedTokens / maxTokens) * 1000) / 10,
   };
+}
+
+function resolveContextWindow(
+  modelUsage: unknown,
+  model: string | undefined,
+): number | undefined {
+  const records = asRecord(modelUsage);
+  if (!records) return undefined;
+  const candidates = Object.entries(records)
+    .map(([key, value]) => {
+      const record = asRecord(value);
+      const contextWindow = asNumber(record?.contextWindow)
+        ?? asNumber(record?.context_window);
+      const canonicalModel = asString(record?.canonicalModel)
+        ?? asString(record?.canonical_model);
+      return { key, canonicalModel, contextWindow };
+    })
+    .filter((candidate) =>
+      candidate.contextWindow !== undefined && candidate.contextWindow > 0,
+    );
+  if (model) {
+    const exact = candidates.find((candidate) => candidate.key === model);
+    if (exact?.contextWindow !== undefined) return exact.contextWindow;
+    const canonical = candidates.find((candidate) => candidate.canonicalModel === model);
+    if (canonical?.contextWindow !== undefined) return canonical.contextWindow;
+  }
+  const windows = new Set(candidates.map((candidate) => candidate.contextWindow));
+  return windows.size === 1 ? candidates[0]?.contextWindow : undefined;
 }
 
 /**

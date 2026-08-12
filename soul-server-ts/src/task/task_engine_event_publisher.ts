@@ -103,7 +103,26 @@ export class TaskEngineEventPublisher {
     if (eventType !== "session") return undefined;
 
     const sid = (event as { session_id?: unknown }).session_id;
-    if (typeof sid !== "string" || task.codexThreadId) return undefined;
+    if (typeof sid !== "string") return undefined;
+
+    const rolloverFrom = task.pendingClaudeBackendRolloverFrom;
+    if (rolloverFrom !== undefined) {
+      if (task.codexThreadId !== rolloverFrom) {
+        throw new Error("Claude backend rollover predecessor changed before session capture");
+      }
+      if (sid === rolloverFrom) {
+        throw new Error("Claude backend rollover returned the exhausted session ID");
+      }
+      task.codexThreadId = sid;
+      task.pendingClaudeBackendRolloverFrom = undefined;
+      return {
+        kind: "rotate_backend_session_id",
+        expected_backend_session_id: rolloverFrom,
+        backend_session_id: sid,
+      };
+    }
+
+    if (task.codexThreadId) return undefined;
 
     task.codexThreadId = sid;
     return { kind: "set_backend_session_id", backend_session_id: sid };

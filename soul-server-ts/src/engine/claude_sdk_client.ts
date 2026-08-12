@@ -1,6 +1,4 @@
-import {
-  query as defaultQuery,
-} from "@anthropic-ai/claude-agent-sdk";
+import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options as ClaudeSdkOptions,
   Query as ClaudeSdkQuery,
@@ -10,11 +8,13 @@ import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
+import {
+  buildClaudeCompactRunOptions,
+  consumeClaudeCompact,
+} from "./claude_sdk_compact.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import {
-  ClaudePostResultDrain,
-} from "./claude_sdk_drain.js";
+import { ClaudePostResultDrain } from "./claude_sdk_drain.js";
 import {
   createEventQueue,
   type EventQueue,
@@ -28,9 +28,7 @@ import {
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
 } from "./claude_sdk_persistent_session.js";
-import {
-  makeCacheableSystemPrompt,
-} from "./claude_sdk_prompt.js";
+import { makeCacheableSystemPrompt } from "./claude_sdk_prompt.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
@@ -113,6 +111,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private activeInput: EventQueue<SDKUserMessage> | null = null;
   private lastWorkspaceDir: string | null = null;
   private lastEnv: Record<string, string> | undefined;
+  private lastRunOptions: ClaudeRunOptions | null = null;
   private persistentSession: ClaudeSdkPersistentSession | null = null;
 
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
@@ -150,6 +149,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
+    this.lastRunOptions = options;
     this.clearPerRunState();
 
     const output = createEventQueue<ClaudeClientEvent>();
@@ -210,6 +210,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   ): AsyncIterable<ClaudeClientEvent> {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
+    this.lastRunOptions = options;
     if (!this.persistentSession) {
       this.clearPerRunState();
       const hookOutput = createEventQueue<ClaudeClientEvent>();
@@ -258,19 +259,19 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async compact(sessionId: string): Promise<void> {
-    if (!this.lastWorkspaceDir) {
+    if (!this.lastWorkspaceDir || !this.lastRunOptions) {
       throw new Error("ClaudeSdkClient.compact requires a previous run context");
     }
 
     const controller = new AbortController();
     const output = createEventQueue<ClaudeClientEvent>();
     const queryOptions = this.buildSdkOptions(
-      {
-        prompt: "/compact",
-        workspaceDir: this.lastWorkspaceDir,
-        resumeSessionId: sessionId,
-        ...(this.lastEnv !== undefined ? { env: this.lastEnv } : {}),
-      },
+      buildClaudeCompactRunOptions(
+        this.lastRunOptions,
+        this.lastWorkspaceDir,
+        sessionId,
+        this.lastEnv,
+      ),
       controller,
       output,
     );
@@ -283,9 +284,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.activeQuery = query;
 
     try {
-      for await (const _ of query) {
-        // Compact is a control action; callers only need completion/failure.
-      }
+      await consumeClaudeCompact(query);
     } catch (err) {
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     } finally {

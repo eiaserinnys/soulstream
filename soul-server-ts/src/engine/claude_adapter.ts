@@ -205,6 +205,10 @@ export class ClaudeEngineAdapter
       );
     }
 
+    if (params.backendSessionRolloverFrom !== undefined) {
+      await this.resetPersistentClientForBackendRollover(params.agentSessionId);
+    }
+
     const controller = new AbortController();
     this.currentTurn = controller;
     this.activeFrameChannel = channel;
@@ -469,6 +473,24 @@ export class ClaudeEngineAdapter
     }
     this.persistentSessionId = agentSessionId;
     return this.persistentSessionRegistry.acquire(agentSessionId);
+  }
+
+  private async resetPersistentClientForBackendRollover(
+    agentSessionId: string | undefined,
+  ): Promise<void> {
+    if (!this.persistentSessionRegistry) return;
+    if (!agentSessionId) {
+      throw new Error("Persistent Claude backend rollover requires agentSessionId");
+    }
+    if (this.persistentSessionId && this.persistentSessionId !== agentSessionId) {
+      throw new Error(
+        `Claude backend rollover session mismatch: ${this.persistentSessionId} -> ${agentSessionId}`,
+      );
+    }
+    await this.persistentSessionRegistry.close(agentSessionId, "backend_rollover");
+    this.persistentSessionId = null;
+    this.activeClient = null;
+    this.inputRequests.clear();
   }
 
   private trackInputRequest(event: ClaudeClientEvent): void {

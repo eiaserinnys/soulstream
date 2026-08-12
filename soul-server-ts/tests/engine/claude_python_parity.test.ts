@@ -347,7 +347,7 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
 
   it("compact — Python CompactEvent (schemas.py:66-71)", () => {
     const out = mapClaudeClientEvent({
-      type: "compact",
+      type: "compact_completed",
       trigger: "auto",
       message: "context compacted",
       timestamp: 1,
@@ -375,7 +375,7 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
       { type: "input_request", requestId: "r", questions: [], startedAt: 1, timeoutSec: 1, timestamp: 1 },
       { type: "input_request_expired", requestId: "r", timestamp: 1 },
       { type: "input_request_responded", requestId: "r", timestamp: 1 },
-      { type: "compact", trigger: "auto", message: "m", timestamp: 1 },
+      { type: "compact_completed", trigger: "auto", message: "m", timestamp: 1 },
       { type: "subagent_start", agentId: "a", agentType: "x", timestamp: 1 },
       { type: "subagent_stop", agentId: "a", timestamp: 1 },
       { type: "assistant_error", errorType: "e", timestamp: 1 },
