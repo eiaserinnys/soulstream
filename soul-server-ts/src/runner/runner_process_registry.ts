@@ -227,7 +227,7 @@ export async function readRunnerRegistrationSummary(
   try {
     config = await readRunnerChildConfig(configPath);
   } catch (error) {
-    throw await annotateRegistrationError(directory, error);
+    throw await annotateRegistrationError(directory, error, undefined, "config");
   }
   try {
     if (resolve(config.paths.sessionDirectory) !== directory) {
@@ -277,10 +277,12 @@ export async function readRunnerRegistrationSummary(
       databaseSize: databaseStat.size,
     };
   } catch (error) {
-    throw await annotateRegistrationError(directory, error, {
-      sessionId: config.sessionId,
-      codeSha: config.codeSha,
-    });
+    throw await annotateRegistrationError(
+      directory,
+      error,
+      { sessionId: config.sessionId, codeSha: config.codeSha },
+      "summary",
+    );
   }
 }
 
@@ -398,13 +400,16 @@ async function annotateRegistrationError(
   directory: string,
   error: unknown,
   known?: { sessionId: string; codeSha?: string },
+  stage?: "config" | "summary",
 ): Promise<Error> {
   const recovered = known ?? await recoverRunnerDirectoryIdentity(directory) ?? undefined;
   const normalized = asError(error) as Error & {
     runnerSessionId?: string;
     runnerCodeSha?: string;
+    runnerRegistrationStage?: "config" | "summary";
   };
   if (recovered?.sessionId) normalized.runnerSessionId = recovered.sessionId;
   if (recovered?.codeSha) normalized.runnerCodeSha = recovered.codeSha;
+  if (stage) normalized.runnerRegistrationStage = stage;
   return normalized;
 }

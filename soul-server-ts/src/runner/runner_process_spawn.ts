@@ -40,8 +40,7 @@ const RunnerProcessPathsSchema = z.object({
   logPath: paths.logPath ?? join(paths.sessionDirectory, "runner.log"),
 }));
 
-export const RunnerChildConfigSchema = z.object({
-  schemaVersion: z.literal(1),
+const RunnerChildConfigFields = {
   sessionId: z.string().min(1),
   backend: AgentBackendSchema,
   agent: AgentProfileSchema,
@@ -59,7 +58,14 @@ export const RunnerChildConfigSchema = z.object({
   resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
   codexHome: z.string().min(1).nullable(),
   rolloutRoot: z.string().min(1).nullable(),
-});
+};
+
+export const RunnerChildConfigSchema = z.discriminatedUnion("schemaVersion", [
+  // Version 1 remains readable only when it already contains the complete
+  // launch contract. Missing node-local values are never inferred.
+  z.object({ schemaVersion: z.literal(1), ...RunnerChildConfigFields }),
+  z.object({ schemaVersion: z.literal(2), ...RunnerChildConfigFields }),
+]);
 
 export type RunnerChildConfig = z.infer<typeof RunnerChildConfigSchema>;
 
@@ -132,7 +138,7 @@ export class RunnerProcessSpawner {
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
 
     const config: RunnerChildConfig = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       sessionId: input.sessionId,
       backend: input.backend,
       agent: input.agent,

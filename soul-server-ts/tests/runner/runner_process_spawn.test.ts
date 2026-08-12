@@ -79,6 +79,7 @@ describe("RunnerProcessSpawner", () => {
       startIdentity: "test-4123",
     });
     expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
+      schemaVersion: 2,
       sessionId: "session-a",
       codeSha: "sha-a",
       snapshotPath: SNAPSHOT_PATH,
