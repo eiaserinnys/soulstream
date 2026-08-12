@@ -35,6 +35,7 @@ const deliveryOperations = {
   claim_due_notifications: ["deliveries", "notifications", "claimDue"],
   mark_notification_published: ["deliveries", "notifications", "markPublished"],
   retry_notification: ["deliveries", "notifications", "retry"],
+  dead_letter_notification: ["deliveries", "notifications", "deadLetter"],
   release_expired_notification_leases: ["deliveries", "notifications", "releaseExpiredLeases"],
   claim_queued_after_node_restart: ["deliveries", "recovery", "claimQueuedAfterNodeRestart"],
   claim_recoverable_queued: ["deliveries", "recovery", "claimRecoverableQueued"],

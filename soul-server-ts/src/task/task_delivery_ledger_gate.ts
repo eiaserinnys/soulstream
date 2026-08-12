@@ -15,6 +15,11 @@ import type { Task } from "./task_models.js";
 import type { InterventionMessage } from "./task_models.js";
 import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
+import {
+  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
+  notificationOldestAllowedCreatedAt,
+  notificationRetryAt,
+} from "./session_delivery_notification_policy.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -223,7 +228,9 @@ export class TaskDeliveryLedgerGate {
       admission.deliveryId,
       leaseOwner,
       error,
-      nextAttemptAt(admission.row.attempt_count),
+      notificationRetryAt(admission.row.attempt_count),
+      DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
+      notificationOldestAllowedCreatedAt(),
     );
   }
 
@@ -427,9 +434,4 @@ function buildNotificationOutboxPayload(
     relation_key: row.relation_key,
     disposition,
   };
-}
-
-function nextAttemptAt(attemptCount: number): Date {
-  const delayMs = Math.min(60_000, 100 * 2 ** Math.min(attemptCount, 9));
-  return new Date(Date.now() + delayMs);
 }

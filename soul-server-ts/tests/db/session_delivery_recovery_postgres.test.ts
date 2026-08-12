@@ -492,7 +492,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       leaseOwner: "worker-outbox",
       targetSessionId: "caller-session",
       disposition: "queued",
-      payload: { text: "done" },
+      payload: notificationPayload("delivery-outbox", "relation-outbox"),
     })).rejects.toThrow("injected outbox failure");
     expect(await repository.get("delivery-outbox")).toMatchObject({
       state: "dispatching",
@@ -511,7 +511,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       leaseOwner: "worker-outbox",
       targetSessionId: "caller-session",
       disposition: "queued",
-      payload: { text: "done" },
+      payload: notificationPayload("delivery-outbox", "relation-outbox"),
     })).resolves.toMatchObject({ state: "queued" });
     expect(await harness.sql`
       SELECT state, lease_owner
@@ -520,6 +520,178 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     `).toMatchObject([
       { state: "claimed", lease_owner: "worker-outbox" },
     ]);
+  });
+
+  it("validates notification payload before advancing the delivery ledger", async () => {
+    await register("delivery-invalid-stage", "relation-invalid-stage", {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimForTarget(
+      "delivery-invalid-stage",
+      "caller-session",
+      "worker-invalid-stage",
+    );
+    await repository.beginDispatch("delivery-invalid-stage", "worker-invalid-stage");
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId: "delivery-invalid-stage",
+      leaseOwner: "worker-invalid-stage",
+      targetSessionId: "caller-session",
+      disposition: "queued",
+      payload: { text: "done" },
+    })).rejects.toThrow("Notification outbox payload is missing user");
+
+    await expect(repository.get("delivery-invalid-stage")).resolves.toMatchObject({
+      state: "dispatching",
+    });
+    expect(await harness.sql`
+      SELECT delivery_id FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'delivery-invalid-stage'
+    `).toHaveLength(0);
+  });
+
+  it("claims notification rows only on the target session owner node", async () => {
+    await harness.sql`
+      INSERT INTO sessions (session_id, node_id, session_type, status, agent_id)
+      VALUES
+        ('other-caller-session', 'node-other', 'claude', 'completed', 'caller'),
+        ('ownerless-caller-session', NULL, 'claude', 'completed', 'caller')
+    `;
+    for (const [deliveryId, relationKey, targetSessionId, worker] of [
+      ["delivery-node-local", "relation-node-local", "caller-session", "worker-local"],
+      ["delivery-node-other", "relation-node-other", "other-caller-session", "worker-other"],
+      [
+        "delivery-node-ownerless",
+        "relation-node-ownerless",
+        "ownerless-caller-session",
+        "worker-ownerless",
+      ],
+    ] as const) {
+      await register(deliveryId, relationKey, { targetSessionId });
+      await repository.claimForTarget(deliveryId, targetSessionId, worker);
+      await repository.beginDispatch(deliveryId, worker);
+      await repository.notifications.stageWithQueuedDelivery({
+        deliveryId,
+        leaseOwner: worker,
+        targetSessionId,
+        disposition: "queued",
+        payload: notificationPayload(deliveryId, relationKey),
+      });
+    }
+    await harness.sql`
+      UPDATE session_delivery_notification_outbox
+      SET state = 'pending', lease_owner = NULL, lease_expires_at = NULL
+    `;
+
+    await expect(repository.notifications.claimDue(
+      "node-test",
+      "notification-node-test",
+      100,
+    )).resolves.toMatchObject([{ delivery_id: "delivery-node-local" }]);
+    await expect(repository.notifications.claimDue(
+      "node-other",
+      "notification-node-other",
+      100,
+    )).resolves.toMatchObject([{ delivery_id: "delivery-node-other" }]);
+    await expect(harness.sql`
+      SELECT state, last_error
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'delivery-node-ownerless'
+    `).resolves.toMatchObject([{
+      state: "dead_letter",
+      last_error: "notification target session has no owner node",
+    }]);
+  });
+
+  it("dead-letters retryable rows at either the attempt or age ceiling", async () => {
+    for (const [deliveryId, relationKey, worker] of [
+      ["delivery-attempt-cap", "relation-attempt-cap", "worker-attempt-cap"],
+      ["delivery-age-cap", "relation-age-cap", "worker-age-cap"],
+    ] as const) {
+      await register(deliveryId, relationKey, { targetSessionId: "caller-session" });
+      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.beginDispatch(deliveryId, worker);
+      await repository.notifications.stageWithQueuedDelivery({
+        deliveryId,
+        leaseOwner: worker,
+        targetSessionId: "caller-session",
+        disposition: "queued",
+        payload: notificationPayload(deliveryId, relationKey),
+      });
+    }
+    await harness.sql`
+      UPDATE session_delivery_notification_outbox
+      SET attempt_count = 15
+      WHERE delivery_id = 'delivery-attempt-cap'
+    `;
+    await harness.sql`
+      UPDATE session_delivery_notification_outbox
+      SET created_at = NOW() - INTERVAL '25 hours'
+      WHERE delivery_id = 'delivery-age-cap'
+    `;
+    const oldestAllowed = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    await expect(repository.notifications.retry(
+      "delivery-attempt-cap",
+      "worker-attempt-cap",
+      "transient failure",
+      new Date(),
+      16,
+      oldestAllowed,
+    )).resolves.toMatchObject({ state: "dead_letter", attempt_count: 16 });
+    await expect(repository.notifications.retry(
+      "delivery-age-cap",
+      "worker-age-cap",
+      "transient failure",
+      new Date(),
+      16,
+      oldestAllowed,
+    )).resolves.toMatchObject({ state: "dead_letter", attempt_count: 1 });
+  });
+
+  it("quarantines residual camelCase deliveryIntent rows in migration 062", async () => {
+    await register("delivery-legacy-camel", "relation-legacy-camel", {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimForTarget(
+      "delivery-legacy-camel",
+      "caller-session",
+      "worker-legacy-camel",
+    );
+    await repository.beginDispatch("delivery-legacy-camel", "worker-legacy-camel");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId: "delivery-legacy-camel",
+      leaseOwner: "worker-legacy-camel",
+      targetSessionId: "caller-session",
+      disposition: "queued",
+      payload: notificationPayload("delivery-legacy-camel", "relation-legacy-camel"),
+    });
+    await harness.sql`
+      UPDATE session_delivery_notification_outbox
+      SET payload = (payload - 'delivery_intent')
+        || jsonb_build_object('deliveryIntent', 'completion_notification'),
+        state = 'pending', lease_owner = NULL, lease_expires_at = NULL
+      WHERE delivery_id = 'delivery-legacy-camel'
+    `;
+    const migration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/062_notification_outbox_hardening.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    await harness.sql.unsafe(migration);
+
+    expect(await harness.sql`
+      SELECT state, dead_lettered_at, last_error
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'delivery-legacy-camel'
+    `).toMatchObject([{
+      state: "dead_letter",
+      dead_lettered_at: expect.any(Date),
+      last_error: "legacy camelCase deliveryIntent quarantined by migration 062",
+    }]);
   });
 
   async function register(
@@ -559,6 +731,23 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }, workerId);
   }
 });
+
+function notificationPayload(
+  deliveryId: string,
+  relationKey: string,
+): Record<string, unknown> {
+  return {
+    text: "done",
+    user: "agent",
+    source: "completion_notifier",
+    delivery_id: deliveryId,
+    delivery_intent: "completion_notification",
+    completion_id: `completion-${relationKey}`,
+    relation_key: relationKey,
+    disposition: "queued",
+    caller_info: null,
+  };
+}
 
 function deferred<T>(): {
   promise: Promise<T>;

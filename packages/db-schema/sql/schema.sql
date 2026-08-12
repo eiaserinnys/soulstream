@@ -444,11 +444,20 @@ CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     published_at       TIMESTAMPTZ,
+    dead_lettered_at   TIMESTAMPTZ,
     CONSTRAINT session_delivery_notification_disposition_check
         CHECK (disposition IN ('queued', 'auto_resume')),
     CONSTRAINT session_delivery_notification_state_check
-        CHECK (state IN ('pending', 'claimed', 'published'))
+        CHECK (state IN ('pending', 'claimed', 'published', 'dead_letter'))
 );
+
+ALTER TABLE session_delivery_notification_outbox
+    ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
+ALTER TABLE session_delivery_notification_outbox
+    DROP CONSTRAINT IF EXISTS session_delivery_notification_state_check;
+ALTER TABLE session_delivery_notification_outbox
+    ADD CONSTRAINT session_delivery_notification_state_check
+    CHECK (state IN ('pending', 'claimed', 'published', 'dead_letter'));
 
 CREATE INDEX IF NOT EXISTS idx_session_delivery_notification_recovery
     ON session_delivery_notification_outbox(

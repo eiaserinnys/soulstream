@@ -217,20 +217,59 @@ export class SessionDeliveryNotificationHostClient {
     return this.transport.request("session-deliveries", "stage_notification_with_queued_delivery", [params]);
   }
 
-  claimDue(leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryNotificationOutboxRow[]> {
-    return this.transport.request("session-deliveries", "claim_due_notifications", [leaseOwner, limit, leaseMs]);
+  claimDue(
+    targetNodeId: string,
+    leaseOwner: string,
+    limit = 100,
+    leaseMs = 15_000,
+  ): Promise<SessionDeliveryNotificationOutboxRow[]> {
+    return this.transport.request(
+      "session-deliveries",
+      "claim_due_notifications",
+      [targetNodeId, leaseOwner, limit, leaseMs],
+    );
   }
 
   markPublished(deliveryId: string, leaseOwner: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner]);
   }
 
-  retry(deliveryId: string, leaseOwner: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request("session-deliveries", "retry_notification", [deliveryId, leaseOwner, error, nextAttemptAt]);
+  retry(
+    deliveryId: string,
+    leaseOwner: string,
+    error: string,
+    nextAttemptAt: Date,
+    maxAttempts: number,
+    oldestAllowedCreatedAt: Date,
+  ): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "retry_notification",
+      [
+        deliveryId,
+        leaseOwner,
+        error,
+        nextAttemptAt,
+        maxAttempts,
+        oldestAllowedCreatedAt,
+      ],
+    );
   }
 
-  releaseExpiredLeases(): Promise<number> {
-    return this.transport.request("session-deliveries", "release_expired_notification_leases", []);
+  deadLetter(deliveryId: string, leaseOwner: string, error: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "dead_letter_notification",
+      [deliveryId, leaseOwner, error],
+    );
+  }
+
+  releaseExpiredLeases(maxAttempts: number, oldestAllowedCreatedAt: Date): Promise<number> {
+    return this.transport.request(
+      "session-deliveries",
+      "release_expired_notification_leases",
+      [maxAttempts, oldestAllowedCreatedAt],
+    );
   }
 }
 

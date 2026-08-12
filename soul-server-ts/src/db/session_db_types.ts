@@ -419,7 +419,7 @@ export interface SessionDeliveryNotificationOutboxRow {
   target_session_id: string;
   payload: Record<string, unknown>;
   disposition: "queued" | "auto_resume";
-  state: "pending" | "claimed" | "published";
+  state: "pending" | "claimed" | "published" | "dead_letter";
   lease_owner: string | null;
   lease_expires_at: Date | null;
   attempt_count: number;
@@ -428,6 +428,7 @@ export interface SessionDeliveryNotificationOutboxRow {
   created_at: Date;
   updated_at: Date;
   published_at: Date | null;
+  dead_lettered_at: Date | null;
 }
 
 export type TaskAssigneeKind = "agent" | "human" | "session";
