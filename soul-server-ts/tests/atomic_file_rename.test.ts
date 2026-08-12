@@ -24,6 +24,23 @@ describe("bounded atomic rename retry", () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 20);
   });
 
+  it("uses the caller-provided retry schedule without changing its budget", async () => {
+    const renameFile = vi.fn()
+      .mockRejectedValueOnce(renameError("EPERM"))
+      .mockRejectedValueOnce(renameError("EPERM"))
+      .mockResolvedValue(undefined);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await renameWithTransientRetry("source", "destination", {
+      renameFile,
+      sleep,
+      retryDelaysMs: [25, 50, 100, 200, 400],
+    });
+
+    expect(renameFile).toHaveBeenCalledTimes(3);
+    expect(sleep.mock.calls).toEqual([[25], [50]]);
+  });
+
   it("retries the synchronous rename used by lifecycle summaries", () => {
     const renameFile = vi.fn()
       .mockImplementationOnce(() => { throw renameError("EPERM"); })

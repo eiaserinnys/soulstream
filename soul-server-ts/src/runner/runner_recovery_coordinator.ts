@@ -337,15 +337,33 @@ async function markRegistrationReaped(
   registration: RunnerRegistration,
   progressedAt: string,
   error: { code: string; message: string },
-  logger: Pick<Logger, "warn">,
+  logger: Pick<Logger, "error" | "info" | "warn">,
 ): Promise<void> {
   const lifecycle = RunnerSqliteLifecycle.open(
     registration.config.paths.databasePath,
     undefined,
     {
-      onSummaryRenameFailure: (renameError, path) => logger.warn(
-        { error: renameError, path },
-        "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+      onSummaryRenameFailure: (renameError, path, details) => {
+        const context = {
+          error: renameError,
+          path,
+          consecutiveFailures: details.consecutiveFailures,
+        };
+        if (details.severity === "error") {
+          logger.error(
+            context,
+            "Runner lifecycle summary rename failure persisted; durable SQLite state retained",
+          );
+        } else {
+          logger.warn(
+            context,
+            "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+          );
+        }
+      },
+      onSummaryRenameRecovery: (path, recoveredAfterFailures) => logger.info(
+        { path, recoveredAfterFailures },
+        "Runner lifecycle summary rename recovered",
       ),
     },
   );

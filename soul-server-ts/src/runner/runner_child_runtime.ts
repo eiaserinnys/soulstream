@@ -80,9 +80,23 @@ export class RunnerChildRuntime {
       this.config.paths.databasePath,
       this.config.sessionId,
       {
-        onSummaryRenameFailure: (error, path) => this.logger.warn(
-          { error, path },
-          "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+        onSummaryRenameFailure: (error, path, details) => {
+          const context = { error, path, consecutiveFailures: details.consecutiveFailures };
+          if (details.severity === "error") {
+            this.logger.error(
+              context,
+              "Runner lifecycle summary rename failure persisted; durable SQLite state retained",
+            );
+          } else {
+            this.logger.warn(
+              context,
+              "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+            );
+          }
+        },
+        onSummaryRenameRecovery: (path, recoveredAfterFailures) => this.logger.info(
+          { path, recoveredAfterFailures },
+          "Runner lifecycle summary rename recovered",
         ),
       },
     );

@@ -14,6 +14,7 @@ export const EVENT_OUTBOX_MAX_BATCH_BYTES = 256 * 1024;
 export const EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES = 2 * 1024 * 1024;
 export const EVENT_OUTBOX_COMPACT_ROWS = 1_000;
 export const EVENT_OUTBOX_COMPACT_BYTES = 8 * 1024 * 1024;
+export const EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS = [25, 50, 100, 200, 400] as const;
 
 export type SessionLastMessage = {
   type: string;
@@ -242,7 +243,9 @@ export class EventOutbox {
     } finally {
       await handle.close();
     }
-    await renameWithTransientRetry(temporaryPath, this.metadataPath);
+    await renameWithTransientRetry(temporaryPath, this.metadataPath, {
+      retryDelaysMs: EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS,
+    });
   }
 
   private async truncateIncompleteTail(): Promise<void> {
@@ -305,7 +308,9 @@ export class EventOutbox {
     } finally {
       await handle.close();
     }
-    await renameWithTransientRetry(temporaryPath, this.eventsPath);
+    await renameWithTransientRetry(temporaryPath, this.eventsPath, {
+      retryDelaysMs: EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS,
+    });
   }
 
   private async exclusive<T>(operation: () => Promise<T>): Promise<T> {

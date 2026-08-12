@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
+  RunnerLifecycleSummaryWriter,
   type RunnerSqliteLifecycleOptions,
-  writeRunnerLifecycleSummary,
 } from "./runner_lifecycle_summary_writer.js";
 import { loadNodeSqlite } from "./node_sqlite.js";
 import type { RunnerExecutionState } from "./sqlite_event_outbox_schema.js";
@@ -62,13 +62,19 @@ export async function readRunnerLifecycleSummary(
  */
 export class RunnerSqliteLifecycle {
   private closed = false;
+  private readonly summaryWriter: RunnerLifecycleSummaryWriter;
 
   private constructor(
     private readonly database: DatabaseSync,
-    private readonly databaseFilePath: string,
+    databaseFilePath: string,
     private readonly sessionId?: string,
-    private readonly options: RunnerSqliteLifecycleOptions = {},
-  ) {}
+    options: RunnerSqliteLifecycleOptions = {},
+  ) {
+    this.summaryWriter = new RunnerLifecycleSummaryWriter(
+      runnerLifecycleSummaryPath(databaseFilePath),
+      options,
+    );
+  }
 
   static open(
     databasePath: string,
@@ -324,8 +330,7 @@ export class RunnerSqliteLifecycle {
   }
 
   private persistSummary(lifecycle: RunnerLifecycleRecord): RunnerLifecycleRecord {
-    const path = runnerLifecycleSummaryPath(this.databaseFilePath);
-    writeRunnerLifecycleSummary(path, lifecycle, this.options);
+    this.summaryWriter.write(lifecycle);
     return lifecycle;
   }
 

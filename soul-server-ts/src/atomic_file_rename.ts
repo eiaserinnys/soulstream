@@ -7,11 +7,13 @@ export const TRANSIENT_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const;
 export interface AsyncRenameRetryOptions {
   renameFile?: (sourcePath: string, destinationPath: string) => Promise<void>;
   sleep?: (delayMs: number) => Promise<void>;
+  retryDelaysMs?: readonly number[];
 }
 
 export interface SyncRenameRetryOptions {
   renameFile?: (sourcePath: string, destinationPath: string) => void;
   sleep?: (delayMs: number) => void;
+  retryDelaysMs?: readonly number[];
 }
 
 export async function renameWithTransientRetry(
@@ -21,6 +23,7 @@ export async function renameWithTransientRetry(
 ): Promise<void> {
   const renameFile = options.renameFile ?? rename;
   const sleep = options.sleep ?? delay;
+  const retryDelaysMs = options.retryDelaysMs ?? TRANSIENT_RENAME_RETRY_DELAYS_MS;
   let retryIndex = 0;
   while (true) {
     try {
@@ -29,11 +32,11 @@ export async function renameWithTransientRetry(
     } catch (error) {
       if (
         !isTransientRenameError(error)
-        || retryIndex >= TRANSIENT_RENAME_RETRY_DELAYS_MS.length
+        || retryIndex >= retryDelaysMs.length
       ) {
         throw error;
       }
-      await sleep(TRANSIENT_RENAME_RETRY_DELAYS_MS[retryIndex]!);
+      await sleep(retryDelaysMs[retryIndex]!);
       retryIndex += 1;
     }
   }
@@ -46,6 +49,7 @@ export function renameWithTransientRetrySync(
 ): void {
   const renameFile = options.renameFile ?? renameSync;
   const sleep = options.sleep ?? sleepSync;
+  const retryDelaysMs = options.retryDelaysMs ?? TRANSIENT_RENAME_RETRY_DELAYS_MS;
   let retryIndex = 0;
   while (true) {
     try {
@@ -54,11 +58,11 @@ export function renameWithTransientRetrySync(
     } catch (error) {
       if (
         !isTransientRenameError(error)
-        || retryIndex >= TRANSIENT_RENAME_RETRY_DELAYS_MS.length
+        || retryIndex >= retryDelaysMs.length
       ) {
         throw error;
       }
-      sleep(TRANSIENT_RENAME_RETRY_DELAYS_MS[retryIndex]!);
+      sleep(retryDelaysMs[retryIndex]!);
       retryIndex += 1;
     }
   }

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -596,15 +596,20 @@ describe("RunnerSqliteEventOutbox", () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
+    let failuresRemaining = 18;
     const renameFile = vi.fn(() => {
+      if (failuresRemaining <= 0) return;
+      failuresRemaining -= 1;
       throw Object.assign(new Error("locked by scanner"), { code: "EPERM" });
     });
     const sleep = vi.fn();
     const onSummaryRenameFailure = vi.fn();
+    const onSummaryRenameRecovery = vi.fn();
     const lifecycle = RunnerSqliteLifecycle.open(path, undefined, {
       renameFile,
       sleep,
       onSummaryRenameFailure,
+      onSummaryRenameRecovery,
     });
 
     expect(() => lifecycle.begin({
@@ -612,6 +617,8 @@ describe("RunnerSqliteEventOutbox", () => {
       commandId: "execute-a",
       progressedAt: "2026-08-11T01:00:00.000Z",
     })).not.toThrow();
+    await expect(access(`${runnerLifecycleSummaryPath(path)}.tmp-${process.pid}`))
+      .rejects.toMatchObject({ code: "ENOENT" });
     expect(() => lifecycle.progress(
       "execute-a",
       "2026-08-11T01:00:01.000Z",
@@ -621,18 +628,24 @@ describe("RunnerSqliteEventOutbox", () => {
       "completed",
       "2026-08-11T01:00:02.000Z",
     )).not.toThrow();
+    expect(() => lifecycle.syncSummary()).not.toThrow();
 
     expect(lifecycle.read()).toMatchObject({
       execution_state: "completed",
       progress_seq: 3,
       progress_at: "2026-08-11T01:00:02.000Z",
     });
-    expect(renameFile).toHaveBeenCalledTimes(18);
+    expect(renameFile).toHaveBeenCalledTimes(19);
     expect(sleep).toHaveBeenCalledTimes(15);
     expect(onSummaryRenameFailure).toHaveBeenCalledTimes(3);
     expect(onSummaryRenameFailure).toHaveBeenLastCalledWith(
       expect.objectContaining({ code: "EPERM" }),
       runnerLifecycleSummaryPath(path),
+      { consecutiveFailures: 3, severity: "error" },
+    );
+    expect(onSummaryRenameRecovery).toHaveBeenCalledWith(
+      runnerLifecycleSummaryPath(path),
+      3,
     );
 
     lifecycle.close();
