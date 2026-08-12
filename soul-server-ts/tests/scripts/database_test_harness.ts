@@ -1,8 +1,10 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import postgres from "postgres";
 
+import { startPostgresTestContainer } from
+  "../../../packages/db-schema/scripts/postgres-test-container.mjs";
 export interface TestDatabaseLease {
   url: string;
   cleanup: () => Promise<void>;
@@ -83,20 +85,13 @@ async function provisionDockerDatabase({
   dockerPassword: string;
   dockerDatabase: string;
 }) {
-  const container = execFileSync("docker", [
-    "run", "--rm", "-d",
-    "-e", `POSTGRES_USER=${dockerUser}`,
-    "-e", `POSTGRES_PASSWORD=${dockerPassword}`,
-    "-e", `POSTGRES_DB=${dockerDatabase}`,
-    "-p", "127.0.0.1::5432",
-    "postgres:16-alpine",
-  ], { encoding: "utf8" }).trim();
-  const mapping = execFileSync("docker", ["port", container, "5432/tcp"], {
-    encoding: "utf8",
-  }).trim();
-  const port = mapping.slice(mapping.lastIndexOf(":") + 1);
+  const container = startPostgresTestContainer({
+    user: dockerUser,
+    password: dockerPassword,
+    database: dockerDatabase,
+  });
   const url = assertSafeTestUrl(
-    `postgresql://${dockerUser}:${dockerPassword}@127.0.0.1:${port}/${dockerDatabase}`,
+    `postgresql://${dockerUser}:${dockerPassword}@127.0.0.1:${container.port}/${dockerDatabase}`,
   ).toString();
   const sql = postgres(url, { max: 1, idle_timeout: 1, connect_timeout: 1 });
   let lastError: unknown = null;
@@ -106,9 +101,7 @@ async function provisionDockerDatabase({
       await sql.end({ timeout: 5 });
       return {
         url,
-        cleanup: async () => {
-          execFileSync("docker", ["stop", container], { stdio: "ignore" });
-        },
+        cleanup: async () => container.stop(),
       };
     } catch (error) {
       lastError = error;
@@ -116,6 +109,6 @@ async function provisionDockerDatabase({
     }
   }
   await sql.end({ timeout: 5 });
-  execFileSync("docker", ["stop", container], { stdio: "ignore" });
+  container.stop();
   throw lastError;
 }

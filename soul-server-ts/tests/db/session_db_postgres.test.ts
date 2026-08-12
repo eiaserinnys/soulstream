@@ -1,10 +1,12 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { startPostgresTestContainer } from
+  "../../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { SessionPageBindingRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
@@ -315,34 +317,24 @@ async function createHarness(): Promise<PostgresHarness> {
     return await connect(externalUrl, undefined);
   }
 
-  const containerId = execFileSync("docker", [
-    "run",
-    "--rm",
-    "-d",
-    "-e",
-    `POSTGRES_USER=${TEST_USER}`,
-    "-e",
-    `POSTGRES_PASSWORD=${TEST_PASSWORD}`,
-    "-e",
-    `POSTGRES_DB=${TEST_DB_NAME}`,
-    "-p",
-    "127.0.0.1::5432",
-    "postgres:16-alpine",
-  ], { encoding: "utf8" }).trim();
+  const container = startPostgresTestContainer({
+    user: TEST_USER,
+    password: TEST_PASSWORD,
+    database: TEST_DB_NAME,
+  });
 
   try {
-    const port = dockerMappedPort(containerId);
     return await connect(
-      `postgres://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${port}/${TEST_DB_NAME}`,
-      containerId,
+      `postgres://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${container.port}/${TEST_DB_NAME}`,
+      container.stop,
     );
   } catch (err) {
-    stopDocker(containerId);
+    container.stop();
     throw err;
   }
 }
 
-async function connect(url: string, containerId: string | undefined): Promise<PostgresHarness> {
+async function connect(url: string, stopContainer: (() => void) | undefined): Promise<PostgresHarness> {
   const schema = `session_db_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
   await waitForPostgres(sql);
@@ -356,7 +348,7 @@ async function connect(url: string, containerId: string | undefined): Promise<Po
         await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       } finally {
         await sql.end({ timeout: 5 });
-        if (containerId) stopDocker(containerId);
+        stopContainer?.();
       }
     },
   };
@@ -410,19 +402,4 @@ async function waitForPostgres(sql: SqlClient): Promise<void> {
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
-}
-
-function dockerMappedPort(containerId: string): string {
-  for (let i = 0; i < 30; i += 1) {
-    const output = execFileSync("docker", ["port", containerId, "5432/tcp"], {
-      encoding: "utf8",
-    }).trim();
-    const match = output.match(/:(\d+)$/);
-    if (match) return match[1];
-  }
-  throw new Error("docker did not publish a PostgreSQL port");
-}
-
-function stopDocker(containerId: string): void {
-  execFileSync("docker", ["stop", containerId], { stdio: "ignore" });
 }

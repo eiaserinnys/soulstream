@@ -1,8 +1,10 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { startPostgresTestContainer } from
+  "../../../packages/db-schema/scripts/postgres-test-container.mjs";
 import {
   classifyLedgerReconciliation,
   inspectUserObjectInventory,
@@ -14,11 +16,11 @@ const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status
 const externalDatabaseUrl = process.env.TEST_DATABASE_URL?.trim() ?? "";
 const hasTestDatabase = Boolean(externalDatabaseUrl) || hasDocker;
 const describeWithTestDatabase = hasTestDatabase ? describe : describe.skip;
-const CONTAINER = "soul-release-inventory-review";
 const USER = "release_inventory_test";
 const PASSWORD = "release_inventory_secret";
 const DATABASE = "release_inventory_test_db";
 let databaseUrl = "";
+let stopContainer: (() => void) | undefined;
 
 describeWithTestDatabase.sequential("database release canonical PostgreSQL inventory", () => {
   beforeAll(async () => {
@@ -27,31 +29,28 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       await waitForPostgres(databaseUrl);
       return;
     }
-    const existing = execFileSync("docker", [
-      "ps", "-a", "--filter", `name=^/${CONTAINER}$`, "--format", "{{.Names}}",
-    ], { encoding: "utf8" }).trim();
-    if (existing) execFileSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
-    execFileSync("docker", [
-      "run", "--rm", "-d", "--name", CONTAINER,
-      "-e", `POSTGRES_USER=${USER}`,
-      "-e", `POSTGRES_PASSWORD=${PASSWORD}`,
-      "-e", `POSTGRES_DB=${DATABASE}`,
-      "-p", "127.0.0.1::5432",
-      "postgres:16-alpine",
-    ], { stdio: "ignore" });
-    const mapping = execFileSync("docker", ["port", CONTAINER, "5432/tcp"], {
-      encoding: "utf8",
-    }).trim();
-    const port = mapping.slice(mapping.lastIndexOf(":") + 1);
+    const container = startPostgresTestContainer({
+      user: USER,
+      password: PASSWORD,
+      database: DATABASE,
+    });
+    stopContainer = container.stop;
     databaseUrl = safeTestDatabaseUrl(
-      `postgres://${USER}:${PASSWORD}@127.0.0.1:${port}/${DATABASE}`,
+      `postgres://${USER}:${PASSWORD}@127.0.0.1:${container.port}/${DATABASE}`,
     );
-    await waitForPostgres(databaseUrl);
+    try {
+      await waitForPostgres(databaseUrl);
+    } catch (error) {
+      container.stop();
+      stopContainer = undefined;
+      throw error;
+    }
   }, 30_000);
 
   afterAll(() => {
     if (!externalDatabaseUrl && hasDocker) {
-      execFileSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
+      stopContainer?.();
+      stopContainer = undefined;
     }
   });
 
