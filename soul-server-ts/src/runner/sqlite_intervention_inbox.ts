@@ -21,21 +21,38 @@ export interface PendingRunnerIntervention {
   message: Record<string, unknown>;
 }
 
-export function ensureRunnerInterventionInboxV9(database: SqliteDatabase): void {
-  const columns = database.prepare(
-    "PRAGMA table_info(runner_intervention_inbox)",
-  ).all() as Array<{ name: string }>;
-  if (!columns.some((column) => column.name === "application_state")) {
-    database.exec(`
-      ALTER TABLE runner_intervention_inbox
-      ADD COLUMN application_state TEXT NOT NULL DEFAULT 'pending' CHECK (
-        application_state IN ('pending', 'claimed', 'ambiguous')
-      )
-    `);
+export type RunnerInterventionResolution = "applied" | "not_applied";
+
+export function migrateRunnerInterventionInboxV9(
+  database: SqliteDatabase,
+  previousVersion: number,
+): void {
+  if (previousVersion >= 9) return;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const columns = database.prepare(
+      "PRAGMA table_info(runner_intervention_inbox)",
+    ).all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "application_state")) {
+      database.exec(`
+        ALTER TABLE runner_intervention_inbox
+        ADD COLUMN application_state TEXT NOT NULL DEFAULT 'pending' CHECK (
+          application_state IN ('pending', 'claimed', 'ambiguous')
+        )
+      `);
+    }
+    // Always repair the intermediate state left by the former split migration:
+    // ALTER may already exist while backfill and user_version are still v8.
     database.prepare(`
       UPDATE runner_intervention_inbox SET application_state = 'claimed'
-      WHERE claimed_execution_command_id IS NOT NULL
+      WHERE application_state = 'pending'
+        AND claimed_execution_command_id IS NOT NULL
     `).run();
+    database.exec("PRAGMA user_version = 9");
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
   }
 }
 
@@ -236,6 +253,32 @@ export function markRunnerInterventionAmbiguous(
     `).run(interventionId, commandId);
     if (Number(result.changes) !== 1) {
       throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+    }
+  });
+}
+
+export function resolveRunnerInterventionAmbiguity(
+  database: SqliteDatabase,
+  transaction: Transaction,
+  interventionId: string,
+  resolution: RunnerInterventionResolution,
+): void {
+  if (!interventionId) throw new Error("runner intervention id is required");
+  transaction(() => {
+    const result = resolution === "applied"
+      ? database.prepare(`
+          DELETE FROM runner_intervention_inbox
+          WHERE intervention_id = ? AND application_state = 'ambiguous'
+        `).run(interventionId)
+      : database.prepare(`
+          UPDATE runner_intervention_inbox
+          SET application_state = 'pending',
+              claimed_execution_command_id = NULL,
+              claimed_at = NULL
+          WHERE intervention_id = ? AND application_state = 'ambiguous'
+        `).run(interventionId);
+    if (Number(result.changes) !== 1) {
+      throw new Error(`runner intervention is not ambiguous: ${interventionId}`);
     }
   });
 }

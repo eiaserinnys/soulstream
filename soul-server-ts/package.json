@@ -19,6 +19,7 @@
     "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs scripts/verify_main_bundle_runner_startup.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node scripts/verify_runner_release_isolation.mjs",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts",
     "runner-outbox:inspect": "tsx scripts/inspect_runner_outbox.ts",
+    "runner-intervention:resolve": "tsx scripts/resolve_runner_intervention.ts",
     "soak:runner": "tsx scripts/staging-soak/cli.ts",
     "agent-profiles:import": "tsx scripts/import-agent-profiles.ts"
   },

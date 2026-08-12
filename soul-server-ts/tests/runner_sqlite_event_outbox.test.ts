@@ -19,6 +19,8 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
+import { resolveAmbiguousRunnerIntervention } from
+  "../src/runner/runner_intervention_resolution.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
 import {
@@ -208,6 +210,78 @@ describe("RunnerSqliteEventOutbox", () => {
     });
     lifecycle.close();
     outbox.close();
+  });
+
+  it("resolves an ambiguous intervention as already applied without replay", async () => {
+    const outbox = await createAmbiguousIntervention("resolve-applied");
+    const path = outbox.databasePath;
+    outbox.close();
+
+    await resolveAmbiguousRunnerIntervention(
+      path,
+      "resolve-applied",
+      "applied",
+      stoppedRunnerResolutionDependencies(),
+    );
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
+    const database = new DatabaseSync(path);
+    expect(database.prepare(`
+      SELECT COUNT(*) AS count FROM runner_intervention_inbox
+      WHERE intervention_id = 'resolve-applied'
+    `).get()).toEqual({ count: 0 });
+    database.close();
+    recovered.close();
+  });
+
+  it("resolves an ambiguous intervention as not applied and requeues it once", async () => {
+    const outbox = await createAmbiguousIntervention("resolve-not-applied");
+    const path = outbox.databasePath;
+    outbox.close();
+
+    await resolveAmbiguousRunnerIntervention(
+      path,
+      "resolve-not-applied",
+      "not_applied",
+      stoppedRunnerResolutionDependencies(),
+    );
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([{
+      interventionId: "resolve-not-applied",
+      message: { text: "ambiguous input", user: "operator" },
+    }]);
+    await expect(recovered.readPendingInterventions()).resolves.toHaveLength(1);
+    recovered.close();
+  });
+
+  it("refuses ambiguity resolution while a recorded runner pid is alive", async () => {
+    const outbox = await createAmbiguousIntervention("resolve-live-runner");
+    const path = outbox.databasePath;
+    outbox.close();
+    const release = vi.fn(async () => undefined);
+
+    await expect(resolveAmbiguousRunnerIntervention(
+      path,
+      "resolve-live-runner",
+      "applied",
+      {
+        acquireWriterLock: vi.fn(async () => ({ release })),
+        inspectProcess: vi.fn(async () => ({ alive: true, startIdentity: "still-running" })),
+        readPidFile: vi.fn(async () => null),
+      },
+    )).rejects.toThrow("requires a stopped runner");
+    expect(release).toHaveBeenCalledOnce();
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    const database = new DatabaseSync(path);
+    expect(database.prepare(`
+      SELECT application_state FROM runner_intervention_inbox
+      WHERE intervention_id = 'resolve-live-runner'
+    `).get()).toEqual({ application_state: "ambiguous" });
+    database.close();
+    recovered.close();
   });
 
   it("never replays a completed execution whose legacy inbox cleanup was interrupted", async () => {
@@ -611,6 +685,95 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
     verified.close();
     migrated.close();
+  });
+
+  it("repairs a v9 migration interrupted after ALTER before claim backfill", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    await outbox.stageIntervention({
+      interventionId: "interrupted-v9-claim",
+      message: { text: "interrupted migration", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-interrupted-v9",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await outbox.claimIntervention("interrupted-v9-claim", "execute-interrupted-v9");
+    lifecycle.close();
+    outbox.close();
+
+    // Exact intermediate state left by the old non-atomic migration: ALTER
+    // committed, but claim backfill and user_version did not.
+    const interrupted = new DatabaseSync(path);
+    interrupted.exec(`
+      UPDATE runner_intervention_inbox SET application_state = 'pending'
+      WHERE intervention_id = 'interrupted-v9-claim';
+      PRAGMA user_version = 8;
+    `);
+    interrupted.close();
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
+    const verified = new DatabaseSync(path);
+    expect(verified.prepare(`
+      SELECT application_state, claimed_execution_command_id
+      FROM runner_intervention_inbox WHERE intervention_id = 'interrupted-v9-claim'
+    `).get()).toEqual({
+      application_state: "claimed",
+      claimed_execution_command_id: "execute-interrupted-v9",
+    });
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+    verified.close();
+    recovered.close();
+  });
+
+  it("rolls back the v9 ALTER when claim backfill cannot commit", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    await outbox.stageIntervention({
+      interventionId: "atomic-v9-claim",
+      message: { text: "atomic migration", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-atomic-v9",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await outbox.claimIntervention("atomic-v9-claim", "execute-atomic-v9");
+    lifecycle.close();
+    outbox.close();
+
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      ALTER TABLE runner_intervention_inbox DROP COLUMN application_state;
+      CREATE TRIGGER fail_v9_claim_backfill
+      BEFORE UPDATE ON runner_intervention_inbox
+      BEGIN
+        SELECT RAISE(ABORT, 'forced v9 backfill failure');
+      END;
+      PRAGMA user_version = 8;
+    `);
+    legacy.close();
+
+    await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
+      "forced v9 backfill failure",
+    );
+    const verified = new DatabaseSync(path);
+    const columns = verified.prepare(
+      "PRAGMA table_info(runner_intervention_inbox)",
+    ).all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).not.toContain("application_state");
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
+    verified.close();
   });
 
   it("records pre-bootstrap failure and promotes only the succeeding execution lease", async () => {
@@ -1359,6 +1522,43 @@ async function createOutbox(): Promise<RunnerSqliteEventOutbox> {
   const outbox = await RunnerSqliteEventOutbox.create(path);
   await outbox.initializeBootstrap(bootstrapInput());
   return outbox;
+}
+
+async function createAmbiguousIntervention(
+  interventionId: string,
+): Promise<RunnerSqliteEventOutbox> {
+  const outbox = await createOutbox();
+  await outbox.stageIntervention({
+    interventionId,
+    message: { text: "ambiguous input", user: "operator" },
+    queued: true,
+    queuedAt: "2026-08-11T00:00:02.000Z",
+  });
+  const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+  const commandId = `execute-${interventionId}`;
+  lifecycle.begin({
+    pid: process.pid,
+    commandId,
+    progressedAt: "2026-08-11T00:00:03.000Z",
+  });
+  await outbox.claimIntervention(interventionId, commandId);
+  await outbox.finishExecution({
+    commandId,
+    interventionId,
+    state: "failed",
+    progressedAt: "2026-08-11T00:00:04.000Z",
+    terminalError: { code: "execution_failed", message: "outcome unknown" },
+  });
+  lifecycle.close();
+  return outbox;
+}
+
+function stoppedRunnerResolutionDependencies() {
+  return {
+    acquireWriterLock: vi.fn(async () => ({ release: vi.fn(async () => undefined) })),
+    inspectProcess: vi.fn(async () => ({ alive: false, startIdentity: null })),
+    readPidFile: vi.fn(async () => null),
+  };
 }
 
 async function temporaryDatabasePath(): Promise<string> {

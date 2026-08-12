@@ -52,11 +52,13 @@ import {
 } from "./sqlite_ipc_journal.js";
 import {
   claimRunnerIntervention,
-  ensureRunnerInterventionInboxV9,
   finishRunnerExecutionAndIntervention,
   markRunnerInterventionAmbiguous,
+  migrateRunnerInterventionInboxV9,
   readPendingRunnerInterventions,
+  resolveRunnerInterventionAmbiguity,
   stageRunnerIntervention,
+  type RunnerInterventionResolution,
 } from "./sqlite_intervention_inbox.js";
 import { loadNodeSqlite } from "./node_sqlite.js";
 
@@ -132,13 +134,10 @@ export class RunnerSqliteEventOutbox {
       }
       ensureRunnerLifecycleColumns(database);
       ensureRunnerIpcJournalV4(database);
-      ensureRunnerInterventionInboxV9(database);
       const recovered = recover(database, {
         migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
       });
-      if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
-        database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);
-      }
+      migrateRunnerInterventionInboxV9(database, version);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,
@@ -305,6 +304,19 @@ export class RunnerSqliteEventOutbox {
       (operation) => this.transaction(operation),
       interventionId,
       commandId,
+    );
+  }
+
+  async resolveAmbiguousIntervention(
+    interventionId: string,
+    resolution: RunnerInterventionResolution,
+  ): Promise<void> {
+    this.requireOpen();
+    resolveRunnerInterventionAmbiguity(
+      this.database,
+      (operation) => this.transaction(operation),
+      interventionId,
+      resolution,
     );
   }
 
