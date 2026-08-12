@@ -10,6 +10,7 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime, OrchProxyConfig } from "../../src/mcp/runtime.js";
 import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import { buildServer } from "../../src/server.js";
+import { assertRunnerJsonValue } from "../../src/runner/frame_protocol.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type {
   AddInterventionParams,
@@ -73,17 +74,24 @@ function makeRuntime(
   const taskManager = {
     createTask,
     addIntervention,
-    getTask: vi.fn((sessionId: string) =>
-      sessionId === "caller-sess-1"
-        ? {
-            profileId: "codex-default",
-            callerInfo: {
-              source: "browser",
-              email: "owner@example.com",
-            },
-          }
-        : undefined,
-    ),
+    getTask: vi.fn((sessionId: string) => {
+      if (sessionId === "caller-sess-1") {
+        return {
+          profileId: "codex-default",
+          callerInfo: {
+            source: "browser",
+            email: "owner@example.com",
+          },
+        };
+      }
+      if (sessionId === "caller-sess-no-email") {
+        return {
+          profileId: "codex-default",
+          callerInfo: { source: "browser" },
+        };
+      }
+      return undefined;
+    }),
     listTasks: vi.fn(() => []),
   } as unknown as TaskManager;
   const agentRegistry = new AgentRegistry(agents ?? [
@@ -1580,7 +1588,7 @@ describe("send_message_to_session", () => {
     expect(params.callerInfo?.agent_id).toBe("codex-default");
   });
 
-  it("local live-steer delivery result passes through without orch fallback", async () => {
+  it("local live-steer omits absent caller email and passes strict runner JSON without fallback", async () => {
     const runtime = makeRuntime({ delivered: true });
     const client = await createClient(runtime);
 
@@ -1589,6 +1597,7 @@ describe("send_message_to_session", () => {
       arguments: {
         target_session_id: "target-sess-1",
         message: "steer now",
+        caller_session_id: "caller-sess-no-email",
       },
     });
 
@@ -1598,6 +1607,12 @@ describe("send_message_to_session", () => {
       detail: { delivered: true },
     });
     expect(runtime.addIntervention).toHaveBeenCalledTimes(1);
+    const params = runtime.addIntervention.mock.calls[0]![0] as AddInterventionParams;
+    expect(params.callerInfo).not.toHaveProperty("email");
+    expect(() => assertRunnerJsonValue(
+      params.callerInfo,
+      "send_message_to_session caller_info",
+    )).not.toThrow();
   });
 
   it("llm origin은 명시 session 가장 없이 llm caller_info로 메시지를 보낸다", async () => {
