@@ -21,6 +21,7 @@ import type {
 } from "../db/session_db_types.js";
 
 export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
+const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
 
 export class PersistenceHostRequestError extends Error {
   readonly retryable: boolean;
@@ -217,20 +218,75 @@ export class SessionDeliveryNotificationHostClient {
     return this.transport.request("session-deliveries", "stage_notification_with_queued_delivery", [params]);
   }
 
-  claimDue(leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryNotificationOutboxRow[]> {
-    return this.transport.request("session-deliveries", "claim_due_notifications", [leaseOwner, limit, leaseMs]);
+  claimDue(
+    targetNodeId: string,
+    leaseOwner: string,
+    limit = 100,
+    leaseMs = 15_000,
+  ): Promise<SessionDeliveryNotificationOutboxRow[]> {
+    return this.transport.request(
+      "session-deliveries",
+      "claim_due_notifications",
+      [targetNodeId, leaseOwner, limit, leaseMs],
+    );
   }
 
   markPublished(deliveryId: string, leaseOwner: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner]);
   }
 
-  retry(deliveryId: string, leaseOwner: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request("session-deliveries", "retry_notification", [deliveryId, leaseOwner, error, nextAttemptAt]);
+  retry(
+    deliveryId: string,
+    leaseOwner: string,
+    error: string,
+    nextAttemptAt: Date,
+    maxAttempts: number,
+    oldestAllowedCreatedAt: Date,
+  ): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "retry_notification",
+      [
+        deliveryId,
+        leaseOwner,
+        error,
+        nextAttemptAt,
+        maxAttempts,
+        oldestAllowedCreatedAt,
+      ],
+    );
   }
 
-  releaseExpiredLeases(): Promise<number> {
-    return this.transport.request("session-deliveries", "release_expired_notification_leases", []);
+  deadLetter(deliveryId: string, leaseOwner: string, error: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "dead_letter_notification",
+      [deliveryId, leaseOwner, error],
+    );
+  }
+
+  listDeadLetters(limit = 100): Promise<SessionDeliveryNotificationOutboxRow[]> {
+    return this.transport.request(
+      "session-deliveries",
+      "list_dead_letter_notifications",
+      [limit],
+    );
+  }
+
+  requeueDeadLetter(deliveryId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "requeue_dead_letter_notification",
+      [deliveryId],
+    );
+  }
+
+  releaseExpiredLeases(maxAttempts: number, oldestAllowedCreatedAt: Date): Promise<number> {
+    return this.transport.request(
+      "session-deliveries",
+      "release_expired_notification_leases",
+      [maxAttempts, oldestAllowedCreatedAt],
+    );
   }
 }
 
@@ -448,7 +504,13 @@ function snakeCase(value: unknown): unknown {
   if (!value || typeof value !== "object" || value instanceof Date) return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
     .filter(([, child]) => child !== undefined)
-    .map(([key, child]) => [key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`), snakeCase(child)]));
+    .map(([key, child]) => {
+      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      return [
+        snakeKey,
+        OPAQUE_ARGUMENT_KEYS.has(snakeKey) ? child : snakeCase(child),
+      ];
+    }));
 }
 
 function reviveDates(value: unknown, key?: string): unknown {

@@ -50,8 +50,8 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     await harness.sql`DELETE FROM claude_background_tasks`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
-      INSERT INTO sessions (session_id, session_type, status, agent_id)
-      VALUES ('caller-session', 'claude', 'completed', 'worker')
+      INSERT INTO sessions (session_id, node_id, session_type, status, agent_id)
+      VALUES ('caller-session', 'node-test', 'claude', 'completed', 'worker')
     `;
   });
 

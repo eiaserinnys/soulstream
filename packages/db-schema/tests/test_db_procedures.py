@@ -178,6 +178,22 @@ async def test_terminal_receipt_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_notification_outbox_hardening_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("062_notification_outbox_hardening.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ",
+        "CHECK (state IN ('pending', 'claimed', 'published', 'dead_letter'))",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+    assert "payload ? 'deliveryIntent'" in migration_sql
+    assert "legacy camelCase deliveryIntent quarantined by migration 062" in migration_sql
+    assert "target.node_id IS NOT NULL" in migration_sql
+
+
 async def test_session_review_filter_migration_is_mirrored_in_schema_sql():
     migration_sql = _migration_sql("052_session_review_state_filter.sql")
     schema_sql = _schema_sql()

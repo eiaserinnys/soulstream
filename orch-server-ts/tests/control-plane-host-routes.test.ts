@@ -9,6 +9,9 @@ import { registerTaskControlPlaneHostRoute } from "../src/tasks/task_control_pla
 import type { TaskControlPlaneService } from "../src/tasks/task_control_plane_service.js";
 import { registerPersistenceHostRoutes } from "../src/control_plane/persistence_host_routes.js";
 import type { PersistenceHostRepositories } from "../src/control_plane/persistence_host_runtime.js";
+import type { SqlClient } from "../src/control_plane/control_plane_types.js";
+import { SessionDeliveryNotificationRepository } from
+  "../src/control_plane/repositories/session_delivery_notification_repository.js";
 
 const token = "service-token";
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -289,6 +292,96 @@ describe("control-plane host routes", () => {
     const input = terminalize.mock.calls[0]?.[0] as { observedAt: unknown; delivery: { createdAt: unknown } };
     expect(input.observedAt).toBeInstanceOf(Date);
     expect(input.delivery.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("round-trips an opaque payload from the soul client through the route into the repository", async () => {
+    const {
+      PersistenceHostTransport,
+      SessionDeliveryNotificationHostClient,
+    } = await vi.importActual<{
+      PersistenceHostTransport: new (config: {
+        orch: {
+          baseUrl: string;
+          headers: Record<string, string>;
+        };
+        logger: unknown;
+      }) => unknown;
+      SessionDeliveryNotificationHostClient: new (transport: unknown) => {
+        stageWithQueuedDelivery(input: {
+          deliveryId: string;
+          leaseOwner: string;
+          targetSessionId: string;
+          disposition: "queued" | "auto_resume";
+          payload: Record<string, unknown>;
+        }): Promise<unknown>;
+      };
+    }>("../../soul-server-ts/src/control_plane/persistence_host_clients.ts");
+    let storedPayload: unknown;
+    const leaseExpiresAt = new Date("2026-08-12T00:01:00.000Z");
+    const query = Object.assign(
+      async (strings: TemplateStringsArray) => {
+        const statement = strings.join("?");
+        if (statement.includes("UPDATE session_deliveries")) {
+          return [{ lease_expires_at: leaseExpiresAt }];
+        }
+        if (statement.includes("INSERT INTO session_delivery_notification_outbox")) {
+          return [];
+        }
+        throw new Error(`unexpected SQL: ${statement}`);
+      },
+      {
+        begin: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          await callback(query),
+        json: (value: unknown) => {
+          storedPayload = value;
+          return value;
+        },
+      },
+    ) as unknown as SqlClient;
+    const notifications = new SessionDeliveryNotificationRepository(query);
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        deliveries: { notifications },
+      }) as unknown as PersistenceHostRepositories,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const client = new SessionDeliveryNotificationHostClient(
+      new PersistenceHostTransport({
+        orch: {
+          baseUrl: address,
+          headers: { authorization: `Bearer ${token}` },
+        },
+        logger: { warn: vi.fn() } as never,
+      }),
+    );
+    const payload = {
+      text: "completed",
+      user: "agent",
+      caller_info: {
+        source: "agent",
+        display_name: "로젤린",
+        mixedCaseProof: "preserved",
+      },
+      source: "session-a",
+      delivery_id: "delivery-1",
+      delivery_intent: "completion_notification",
+      completion_id: "completion-1",
+      relation_key: "relation-1",
+      disposition: "queued",
+    };
+
+    await expect(client.stageWithQueuedDelivery({
+      deliveryId: "delivery-1",
+      leaseOwner: "worker-1",
+      targetSessionId: "target-1",
+      disposition: "queued",
+      payload,
+    })).resolves.not.toBeNull();
+
+    expect(storedPayload).toEqual(payload);
   });
 
   it("routes runner transcript correlation to the idempotent repository method", async () => {

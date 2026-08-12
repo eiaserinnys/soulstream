@@ -199,6 +199,7 @@ export class TaskManager {
             publish: (task, message, disposition) =>
               this.sessionNotificationPublisher.publish(task, message, disposition),
             resolveTask: (sessionId) => this.resolveNotificationTask(sessionId),
+            targetNodeId: nodeId,
             logger,
           })
         : undefined;
@@ -483,13 +484,11 @@ export class TaskManager {
     return await this.interventionRoute.addIntervention(params, onResume);
   }
 
-  private async resolveNotificationTask(sessionId: string): Promise<Task> {
+  private async resolveNotificationTask(sessionId: string): Promise<Task | null> {
     const active = this.tasks.get(sessionId);
     if (active) return active;
     const loaded = await this.loadEvictedTask(sessionId);
-    if (!loaded) {
-      throw new Error(`Notification target session not found: ${sessionId}`);
-    }
+    if (!loaded) return null;
     this.tasks.set(sessionId, loaded);
     return loaded;
   }
