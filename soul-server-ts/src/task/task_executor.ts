@@ -75,8 +75,10 @@ import {
   CLAUDE_BACKEND_ROLLOVER_LIMIT,
   claudeBackendRolloverMetadataEntry,
   createClaudeContextRecoveryObservation,
+  estimateClaudeTurnInputTokens,
   fatalPromptTooLongEvent,
   observeClaudeContextRecoveryEvent,
+  shouldPreemptivelyCompact,
 } from "./claude_context_recovery.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
@@ -417,12 +419,26 @@ export class TaskExecutor {
     let turnInput = initialTurnInput;
     while (true) {
       const contextRecovery = createClaudeContextRecoveryObservation();
-      const currentTurnIntervention = turnInput.intervention;
+      let currentTurnIntervention = turnInput.intervention;
       if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
         this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
           task,
           currentTurnIntervention,
         );
+      }
+      const compactedBeforeTurn = await this.compactClaudeContextIfNeeded(
+        task,
+        agent,
+        runner,
+        turnInput,
+      );
+      if (compactedBeforeTurn && currentTurnIntervention) {
+        turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          currentTurnIntervention,
+        );
+        currentTurnIntervention = turnInput.intervention;
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const turnReceipt = this.deliveryConsumption
@@ -470,6 +486,9 @@ export class TaskExecutor {
       if (lastAcknowledgedEventId !== null) {
         task.lastEventId = lastAcknowledgedEventId;
       }
+      task.claudeContextUsage = contextRecovery.compactCompleted
+        ? undefined
+        : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
       if (contextRecovery.promptTooLongMessage !== undefined) {
         const previousSessionId = task.pendingClaudeBackendRolloverFrom
           ?? task.codexThreadId;
@@ -503,6 +522,7 @@ export class TaskExecutor {
           ];
           task.claudeBackendRolloverAttempts = nextAttempts;
           task.pendingClaudeBackendRolloverFrom = previousSessionId;
+          task.claudeContextUsage = undefined;
           turnInput = await this.turnInputBuilder.prepareBackendRolloverTurnInput(
             task,
             agent,
@@ -522,25 +542,8 @@ export class TaskExecutor {
       if (
         contextRecovery.preemptiveCompactNeeded
         && !contextRecovery.compactCompleted
-        && effectiveTaskBackend(task, agent) === "claude"
-        && task.codexThreadId
-        && typeof (runner.engine as EnginePort & Partial<SupportsCompact>).compact === "function"
       ) {
-        try {
-          await (runner.engine as EnginePort & SupportsCompact).compact(task.codexThreadId);
-          await this.engineEventPublisher.publishEngineEvent(task, {
-            type: "compact",
-            trigger: "auto_preemptive",
-            message: "Claude session compacted (auto_preemptive)",
-          } as SSEEventPayload);
-          const compactEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
-          if (compactEventId !== null) task.lastEventId = compactEventId;
-        } catch (error) {
-          this.logger.warn(
-            { error, sessionId: task.agentSessionId },
-            "Claude preemptive compact failed; prompt-too-long rollover remains available",
-          );
-        }
+        await this.compactClaudeContextIfNeeded(task, agent, runner);
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
       const followupStalled = await this.handleClaudeRuntimeFollowupStall(
@@ -560,6 +563,42 @@ export class TaskExecutor {
         agent,
         transition.intervention,
       );
+    }
+  }
+
+  private async compactClaudeContextIfNeeded(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    incoming?: TaskTurnInput,
+  ): Promise<boolean> {
+    const incomingTokens = incoming ? estimateClaudeTurnInputTokens(incoming) : 0;
+    if (!shouldPreemptivelyCompact(task.claudeContextUsage, incomingTokens)) return false;
+    if (
+      effectiveTaskBackend(task, agent) !== "claude"
+      || !task.codexThreadId
+      || typeof (runner.engine as EnginePort & Partial<SupportsCompact>).compact !== "function"
+    ) {
+      return false;
+    }
+    try {
+      await (runner.engine as EnginePort & SupportsCompact).compact(task.codexThreadId);
+      await this.engineEventPublisher.publishEngineEvent(task, {
+        type: "compact",
+        trigger: "auto_preemptive",
+        message: "Claude session compacted (auto_preemptive)",
+      } as SSEEventPayload);
+      const compactEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
+      if (compactEventId !== null) task.lastEventId = compactEventId;
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        { error, sessionId: task.agentSessionId },
+        "Claude preemptive compact failed; prompt-too-long rollover remains available",
+      );
+      return false;
+    } finally {
+      task.claudeContextUsage = undefined;
     }
   }
 

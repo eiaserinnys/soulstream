@@ -54,7 +54,7 @@ describe("session-data read repositories", () => {
     ]));
   });
 
-  it("owns all six event read operations and preserves payload contracts", async () => {
+  it("owns all seven event read operations and preserves payload contracts", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const event = {
       id: 7,
@@ -63,6 +63,12 @@ describe("session-data read repositories", () => {
       payload: { text: "hello" },
       searchable_text: "hello",
       created_at: now,
+    };
+    const olderEvent = {
+      ...event,
+      id: 6,
+      payload: { text: "older" },
+      searchable_text: "older",
     };
     const { sql, calls } = createSql((text) => {
       if (text.includes("event_count(")) return [{ event_count: "8" }];
@@ -75,6 +81,7 @@ describe("session-data read repositories", () => {
       if (text.includes("event_search(") || text.includes("session_id_search(")) {
         return [{ ...event, score: "0.5" }];
       }
+      if (text.includes("ORDER BY id DESC")) return [event, olderEvent];
       if (text.includes("event_read(")) return [event];
       return [];
     });
@@ -83,6 +90,8 @@ describe("session-data read repositories", () => {
     await expect(repository.countEvents("s1")).resolves.toBe(8);
     await expect(repository.readEvents("s1", 0, 50, ["user_message"]))
       .resolves.toEqual([event]);
+    await expect(repository.readRecentEvents("s1", 50, ["user_message"]))
+      .resolves.toEqual([olderEvent, event]);
     await expect(repository.readOneEvent("s1", 7))
       .resolves.toMatchObject({ id: 7, parent_event_id: 6, payload: { text: "hello" } });
     await expect(repository.streamEventsRaw("s1"))
@@ -95,6 +104,7 @@ describe("session-data read repositories", () => {
     expect(calls.map((call) => call.text)).toEqual(expect.arrayContaining([
       expect.stringContaining("event_count("),
       expect.stringContaining("event_read("),
+      expect.stringContaining("ORDER BY id DESC"),
       expect.stringContaining("event_read_one("),
       expect.stringContaining("event_stream_raw("),
       expect.stringContaining("event_search("),

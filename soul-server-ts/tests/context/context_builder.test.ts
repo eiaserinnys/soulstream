@@ -12,6 +12,7 @@ import {
   type SessionResumeContext,
 } from "../../src/control_plane/session_data_host_client.js";
 import {
+  CLAUDE_ROLLOVER_HISTORY_MAX_CHARS,
   ExecutionContextBuilder,
   composeFirstTurnPrompt,
 } from "../../src/context/context_builder.js";
@@ -1770,6 +1771,50 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       "board_workspace",
       "running_sessions",
     ]);
+  });
+});
+
+describe("ExecutionContextBuilder.buildBackendRolloverContext", () => {
+  it("현재 세션 excerpt를 총 문자 상한으로 조회해 full context와 함께 반환한다", async () => {
+    const getTurnExcerpt = vi.fn().mockResolvedValue({
+      totalEvents: 50,
+      turns: [{
+        event_id: 49,
+        event_type: "assistant_message",
+        text: "recent tail",
+        created_at: "2026-08-12T00:00:00.000Z",
+      }],
+    });
+    const cb = makeBuilder({ getTurnExcerpt } as Partial<SessionDB>);
+    const task = makeTask();
+
+    const context = await cb.buildBackendRolloverContext(task, codexAgent);
+
+    expect(getTurnExcerpt).toHaveBeenCalledWith(
+      task.agentSessionId,
+      CLAUDE_ROLLOVER_HISTORY_MAX_CHARS,
+    );
+    expect(context.currentSessionExcerpt?.turns[0]?.text).toBe("recent tail");
+    expect(context.contextItems.map((item) => item.key)).toContain("soulstream_session");
+  });
+
+  it("full context 조립 실패도 bounded excerpt 승계를 막지 않는다", async () => {
+    const getResumeContext = vi.fn().mockRejectedValue(new Error("context unavailable"));
+    const getTurnExcerpt = vi.fn().mockResolvedValue({
+      totalEvents: 1,
+      turns: [{
+        event_id: 1,
+        event_type: "user_message",
+        text: "survives",
+        created_at: "2026-08-12T00:00:00.000Z",
+      }],
+    });
+    const cb = makeBuilder({ getResumeContext, getTurnExcerpt } as Partial<SessionDB>);
+
+    const context = await cb.buildBackendRolloverContext(makeTask(), codexAgent);
+
+    expect(context.contextItems).toEqual([]);
+    expect(context.currentSessionExcerpt?.turns[0]?.text).toBe("survives");
   });
 });
 

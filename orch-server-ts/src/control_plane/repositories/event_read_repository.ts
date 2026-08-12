@@ -41,6 +41,26 @@ export class EventReadRepository {
     return rows.map(normalizeEvent);
   }
 
+  async readRecentEvents(
+    sessionId: string,
+    limit: number,
+    eventTypes?: string[],
+  ): Promise<HostEventRow[]> {
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      SELECT id, session_id, event_type, payload, searchable_text, created_at
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND (
+          ${types as unknown as string[] | null}::text[] IS NULL
+          OR event_type = ANY(${types as unknown as string[] | null}::text[])
+        )
+      ORDER BY id DESC
+      LIMIT ${limit}
+    `;
+    return rows.map(normalizeEvent).reverse();
+  }
+
   async readOneEvent(
     sessionId: string,
     eventId: number,

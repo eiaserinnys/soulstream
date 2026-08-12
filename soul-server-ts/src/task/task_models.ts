@@ -357,6 +357,9 @@ export interface Task {
   /** Expected predecessor while a fresh Claude backend session is being established. */
   pendingClaudeBackendRolloverFrom?: string;
 
+  /** Latest Claude context window telemetry retained between turns for incoming-size gating. */
+  claudeContextUsage?: { usedTokens: number; maxTokens: number };
+
   /** 지연된 Claude runtime follow-up retry 전 중간 종료임을 finalizer에 알리는 런타임 플래그. */
   pendingClaudeRuntimeFollowupRetry?: boolean;
 

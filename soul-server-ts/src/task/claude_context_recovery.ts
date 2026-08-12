@@ -1,6 +1,7 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 
 export const CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO = 0.85;
+export const CLAUDE_CONTEXT_ESTIMATED_CHARS_PER_TOKEN = 2;
 export const CLAUDE_BACKEND_ROLLOVER_LIMIT = 1;
 export const CLAUDE_PROMPT_TOO_LONG_ERROR_CODE = "claude_prompt_too_long";
 
@@ -21,6 +22,17 @@ export interface ClaudeContextRecoveryObservation {
   replayUnsafeEventObserved: boolean;
   preemptiveCompactNeeded: boolean;
   compactCompleted: boolean;
+  latestContextUsage?: ClaudeContextUsage;
+}
+
+export interface ClaudeContextUsage {
+  usedTokens: number;
+  maxTokens: number;
+}
+
+export interface ClaudeEstimatedTurnInput {
+  prompt: string;
+  systemPrompt?: string;
 }
 
 export function createClaudeContextRecoveryObservation(): ClaudeContextRecoveryObservation {
@@ -59,10 +71,27 @@ export function observeClaudeContextRecoveryEvent(
     usedTokens !== undefined
     && maxTokens !== undefined
     && maxTokens > 0
-    && usedTokens / maxTokens >= CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO
   ) {
-    observation.preemptiveCompactNeeded = true;
+    observation.latestContextUsage = { usedTokens, maxTokens };
+    observation.preemptiveCompactNeeded = shouldPreemptivelyCompact(
+      observation.latestContextUsage,
+      0,
+    );
   }
+}
+
+export function estimateClaudeTurnInputTokens(input: ClaudeEstimatedTurnInput): number {
+  const estimatedCharacters = input.prompt.length + (input.systemPrompt?.length ?? 0);
+  return Math.ceil(estimatedCharacters / CLAUDE_CONTEXT_ESTIMATED_CHARS_PER_TOKEN);
+}
+
+export function shouldPreemptivelyCompact(
+  usage: ClaudeContextUsage | undefined,
+  incomingEstimatedTokens: number,
+): boolean {
+  if (!usage || usage.maxTokens <= 0) return false;
+  return (usage.usedTokens + Math.max(0, incomingEstimatedTokens)) / usage.maxTokens
+    >= CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO;
 }
 
 export function fatalPromptTooLongEvent(message: string): SSEEventPayload {

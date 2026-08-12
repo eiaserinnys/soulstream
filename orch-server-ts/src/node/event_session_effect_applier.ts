@@ -35,7 +35,7 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${effect.backend_session_id}
       )
     `;
-    return;
+    return appliedWithoutCanonicalProjection();
   }
   if (effect.kind === "running_transition") {
     const rows = await sql<CanonicalTransitionRow[]>`SELECT * FROM session_apply_running_transition(

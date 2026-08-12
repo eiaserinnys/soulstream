@@ -5,6 +5,8 @@ import type { AgentProfile } from "../../src/agent_registry.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { ExecutionContextBuilder, PreparedContext } from "../../src/context/context_builder.js";
 import {
+  CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
+  CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
   type TaskInitialMessagePublisherPort,
   TaskTurnInputBuilder,
 } from "../../src/task/task_turn_input_builder.js";
@@ -53,6 +55,7 @@ function makeSubject(options: {
     build: ReturnType<typeof vi.fn>;
     buildSystemPrompt: ReturnType<typeof vi.fn>;
     buildFollowupContext: ReturnType<typeof vi.fn>;
+    buildBackendRolloverContext: ReturnType<typeof vi.fn>;
   }>;
   initialMessagePublisher?: { publishInitialMessages: ReturnType<typeof vi.fn> };
 } = {}) {
@@ -67,6 +70,11 @@ function makeSubject(options: {
           content: { status: "ok", sessions: [] },
         },
       ],
+    }),
+    buildBackendRolloverContext: vi.fn().mockResolvedValue({
+      effectiveSystemPrompt: "rollover system instructions",
+      contextItems: [],
+      currentSessionExcerpt: { totalEvents: 0, turns: [] },
     }),
     ...options.contextBuilder,
   };
@@ -375,6 +383,72 @@ describe("TaskTurnInputBuilder", () => {
       }),
     );
     expect(task.lastInjectedCallerInfo).toEqual(nextCaller);
+  });
+
+  it("rollover replay는 현재 세션 tail과 유실 범위를 싣고 모든 입력 표면을 bounded로 유지한다", async () => {
+    const task = makeTask({ codexThreadId: "claude-exhausted" });
+    const { builder, contextBuilder } = makeSubject({
+      contextBuilder: {
+        buildBackendRolloverContext: vi.fn().mockResolvedValue({
+          effectiveSystemPrompt: "s".repeat(CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS * 2),
+          contextItems: [{
+            key: "large_context",
+            label: "Large context",
+            content: "c".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
+          }],
+          currentSessionExcerpt: {
+            totalEvents: 4_339,
+            turns: [{
+              event_id: 4_306,
+              event_type: "assistant_message",
+              text: "최근 유효 응답",
+              created_at: "2026-08-12T12:00:00.000Z",
+            }],
+          },
+        }),
+      },
+    });
+
+    const input = await builder.prepareBackendRolloverTurnInput(
+      task,
+      claudeAgent,
+      {
+        prompt: "p".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
+        imageAttachmentPaths: [],
+      },
+      "claude-exhausted",
+    );
+
+    expect(contextBuilder.buildBackendRolloverContext).toHaveBeenCalledWith(task, claudeAgent);
+    expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
+    expect(input.systemPrompt?.length).toBeLessThanOrEqual(
+      CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
+    );
+    expect(input.prompt).toContain("<claude_backend_rollover>");
+    expect(input.prompt).toContain("4,339");
+    expect(input.prompt).toContain("최근 유효 응답");
+    expect(input.prompt).toContain("older or omitted");
+    expect(input.backendSessionRolloverFrom).toBe("claude-exhausted");
+  });
+
+  it("rollover context 조회 실패는 replay 생존을 막지 않고 metadata-only notice로 강등한다", async () => {
+    const { builder, logger } = makeSubject({
+      contextBuilder: {
+        buildBackendRolloverContext: vi.fn().mockRejectedValue(new Error("host unavailable")),
+      },
+    });
+
+    const input = await builder.prepareBackendRolloverTurnInput(
+      makeTask(),
+      claudeAgent,
+      { prompt: "recover this", imageAttachmentPaths: [] },
+      "claude-exhausted",
+    );
+
+    expect(input.prompt).toContain("recover this");
+    expect(input.prompt).toContain("No prior conversation excerpt was available");
+    expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
+    expect(logger.warn).toHaveBeenCalled();
   });
 
   it("compact 후 첫 후속 턴은 full context를 한 번만 재주입한다", async () => {

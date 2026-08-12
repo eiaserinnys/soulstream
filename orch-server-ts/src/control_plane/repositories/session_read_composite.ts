@@ -11,6 +11,7 @@ const TURN_EXCERPT_EVENT_TYPES = [
   "user_text",
   "assistant_text",
 ];
+const TURN_EXCERPT_EVENT_LIMIT = 200;
 
 export class SessionReadCompositeRepository {
   constructor(
@@ -29,23 +30,15 @@ export class SessionReadCompositeRepository {
     }>;
   }> {
     const totalEvents = await this.events.countEvents(sessionId);
-    const events = await this.events.readEvents(
+    const events = await this.events.readRecentEvents(
       sessionId,
-      0,
-      Math.min(totalEvents, 200),
+      Math.min(totalEvents, TURN_EXCERPT_EVENT_LIMIT),
       TURN_EXCERPT_EVENT_TYPES,
     );
+    const turns = boundedRecentTurns(events, maxResponseChars);
     return {
       totalEvents,
-      turns: events.map((event) => ({
-        event_id: event.id,
-        event_type: event.event_type,
-        text: truncate(
-          extractText(event.payload),
-          maxResponseChars > 0 ? maxResponseChars : undefined,
-        ),
-        created_at: event.created_at.toISOString(),
-      })),
+      turns,
     };
   }
 
@@ -103,7 +96,40 @@ function extractText(payload: Record<string, unknown>): string {
   return JSON.stringify(payload);
 }
 
+function boundedRecentTurns(
+  events: Array<{
+    id: number;
+    event_type: string;
+    payload: Record<string, unknown>;
+    created_at: Date;
+  }>,
+  maxResponseChars: number,
+): Array<{ event_id: number; event_type: string; text: string; created_at: string }> {
+  let remaining = maxResponseChars > 0 ? maxResponseChars : Number.POSITIVE_INFINITY;
+  const turns: Array<{
+    event_id: number;
+    event_type: string;
+    text: string;
+    created_at: string;
+  }> = [];
+  for (let index = events.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const event = events[index];
+    if (!event) continue;
+    const text = truncate(extractText(event.payload), remaining);
+    turns.unshift({
+      event_id: event.id,
+      event_type: event.event_type,
+      text,
+      created_at: event.created_at.toISOString(),
+    });
+    remaining -= text.length;
+  }
+  return turns;
+}
+
 function truncate(value: string, limit?: number): string {
   if (limit === undefined || limit === 0) return value;
-  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+  if (value.length <= limit) return value;
+  if (limit <= 1) return "…".slice(0, limit);
+  return `${value.slice(0, limit - 1)}…`;
 }
