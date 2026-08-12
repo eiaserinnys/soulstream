@@ -45,7 +45,7 @@ export interface RunnerRecoveryCoordinatorOptions {
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
-  private readonly scans = new Set<Promise<void>>();
+  private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
@@ -67,13 +67,10 @@ export class RunnerRecoveryCoordinator {
 
   async scanOnce(): Promise<void> {
     if (this.stopped) return;
-    const scan = this.performScan();
-    this.scans.add(scan);
-    try {
-      await scan;
-    } finally {
-      this.scans.delete(scan);
-    }
+    this.scanInFlight ??= this.performScan().finally(() => {
+      this.scanInFlight = undefined;
+    });
+    await this.scanInFlight;
   }
 
   private async performScan(): Promise<void> {
@@ -93,8 +90,6 @@ export class RunnerRecoveryCoordinator {
       );
       if (
         disposition === "wait_for_bootstrap"
-        || disposition === "already_reaped"
-        || disposition === "closed"
       ) continue;
       if (
         disposition === "adopt_prebootstrap"
@@ -146,9 +141,9 @@ export class RunnerRecoveryCoordinator {
 
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
   async waitForSettled(): Promise<void> {
-    while (this.scans.size > 0 || this.active.size > 0) {
+    while (this.scanInFlight || this.active.size > 0) {
       await Promise.allSettled([
-        ...this.scans,
+        ...(this.scanInFlight ? [this.scanInFlight] : []),
         ...this.active.values(),
       ]);
     }
@@ -171,6 +166,15 @@ export class RunnerRecoveryCoordinator {
     }
     if (disposition === "reap_dead" || disposition === "reap_stalled") {
       await this.reapAndResume(registration, disposition);
+      return;
+    }
+    if (disposition === "closed") {
+      if (registration.pidAlive) await this.terminateRegistration(registration);
+      await this.recoverRegistered({ ...registration, pidAlive: false }, "offline");
+      return;
+    }
+    if (disposition === "already_reaped") {
+      await this.resumeReaped(registration);
       return;
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
@@ -261,9 +265,7 @@ export class RunnerRecoveryCoordinator {
       }
     }
     if (registration.pidAlive) {
-      await (this.options.spawner ?? new RunnerProcessSpawner()).terminate(
-        registration.config.paths,
-      );
+      await this.terminateRegistration(registration);
     }
     let task = registration.lifecycle
       ? await this.recoverRegistered({
@@ -291,6 +293,40 @@ export class RunnerRecoveryCoordinator {
     this.options.logger.info(
       { sessionId: registration.config.sessionId, disposition },
       "runner failure drained and auto-resumed",
+    );
+  }
+
+  private async resumeReaped(registration: RunnerRegistration): Promise<void> {
+    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+    if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
+    const task = await this.recoverRegistered({ ...hydrated, pidAlive: false }, "offline");
+    if (!task) return;
+    prepareRecoveredTask(task, hydrated);
+    const message = hydrated.lifecycle?.terminal_error?.message
+      ?? "runner was reaped before recovery completed";
+    await this.options.taskManager.markRunnerFailureAndResume(
+      task,
+      message,
+      (resumedTask) => this.options.taskExecutor.restartRegisteredRunner(
+        resumedTask,
+        hydrated.config,
+      ),
+    );
+    this.options.logger.info(
+      { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
+      "reaped runner recovery resumed",
+    );
+  }
+
+  private async terminateRegistration(registration: RunnerRegistration): Promise<void> {
+    if (registration.pid === null || !registration.pidStartIdentity) {
+      throw new Error(
+        `runner process identity unavailable before termination: ${registration.config.sessionId}`,
+      );
+    }
+    await (this.options.spawner ?? new RunnerProcessSpawner()).terminate(
+      registration.config.paths,
+      { pid: registration.pid, startIdentity: registration.pidStartIdentity },
     );
   }
 }

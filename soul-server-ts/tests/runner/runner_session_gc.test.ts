@@ -150,6 +150,8 @@ function registration(options: {
       execution_state: "completed",
       progress_seq: 2,
       progress_at: options.progressedAt ?? "2026-08-10T00:00:00.000Z",
+      liveness_at: options.progressedAt ?? "2026-08-10T00:00:00.000Z",
+      in_flight_tools: [],
       terminal_error: null,
     },
   };

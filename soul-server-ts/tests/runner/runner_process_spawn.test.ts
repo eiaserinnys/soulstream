@@ -25,9 +25,13 @@ describe("RunnerProcessSpawner", () => {
       expect(args[0]).toBe("--config");
       expect(options).toMatchObject({
         detached: true,
-        stdio: "ignore",
         cwd: "/releases/sha-a",
       });
+      expect((options as { stdio: unknown[] }).stdio).toEqual([
+        "ignore",
+        expect.any(Number),
+        expect.any(Number),
+      ]);
       return { pid: 4123, unref: vi.fn() };
     });
     const spawner = new RunnerProcessSpawner({
@@ -68,7 +72,9 @@ describe("RunnerProcessSpawner", () => {
       sessionId: "session-a",
       codeSha: "sha-a",
       snapshotPath: "/releases/sha-a",
+      runnerLeaseTimeoutMs: 120_000,
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      paths: { logPath: expect.stringMatching(/runner\.log$/) },
     });
   });
 
@@ -88,14 +94,13 @@ describe("RunnerProcessSpawner", () => {
       delay: async () => {},
     });
     const registered = await first.spawn(params);
-    await writeFile(registered.paths.pidPath, "4001\n");
     const replacement = new RunnerProcessSpawner({
       prepareDatabase: async () => {},
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5002, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
-      isPidAlive: (pid) => pid === 4001 && alive,
+      isPidAlive: (pid) => pid === 5001 && alive,
       signalPid: (_pid, signal) => {
         signals.push(signal);
         alive = false;
@@ -107,6 +112,77 @@ describe("RunnerProcessSpawner", () => {
     await replacement.spawn(params);
 
     expect(signals).toEqual(["SIGTERM"]);
+  });
+
+  it("waits a fresh grace window after SIGKILL before declaring termination failure", async () => {
+    let now = 0;
+    let alive = true;
+    const signals: NodeJS.Signals[] = [];
+    const params = await input();
+    const initial = new RunnerProcessSpawner({
+      prepareDatabase: async () => {}, validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 6101, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "start-6101" }),
+      isPidAlive: () => false, signalPid: vi.fn(), now: () => now, delay: async () => {},
+    });
+    const registered = await initial.spawn(params);
+    const replacement = new RunnerProcessSpawner({
+      prepareDatabase: async () => {}, validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 6102, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({
+        alive: pid === 6102 ? true : alive,
+        startIdentity: `start-${pid}`,
+      }),
+      isPidAlive: (pid) => pid === 6101 && alive,
+      signalPid: (_pid, signal) => { signals.push(signal); },
+      now: () => now,
+      delay: async () => {
+        now += 25;
+        if (signals.includes("SIGKILL") && now >= 2_025) alive = false;
+      },
+    });
+
+    await replacement.spawn(params);
+
+    expect(registered.pid).toBe(6101);
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(now).toBeGreaterThan(2_000);
+  });
+
+  it("refuses SIGKILL when the pid start identity changes during grace", async () => {
+    let now = 0;
+    let inspections = 0;
+    const params = await input();
+    const initial = new RunnerProcessSpawner({
+      prepareDatabase: async () => {}, validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 6201, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "start-6201" }),
+      isPidAlive: () => false, signalPid: vi.fn(), now: () => now, delay: async () => {},
+    });
+    await initial.spawn(params);
+    const signalPid = vi.fn();
+    const replacement = new RunnerProcessSpawner({
+      prepareDatabase: async () => {}, validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 6202, unref: vi.fn() }),
+      registerPid: async () => {},
+      inspectProcess: async () => ({
+        alive: true,
+        startIdentity: ++inspections === 1 ? "start-6201" : "reused-process",
+      }),
+      isPidAlive: (pid) => pid === 6201,
+      signalPid,
+      now: () => now,
+      delay: async () => { now += 25; },
+    });
+
+    await expect(replacement.spawn(params)).rejects.toThrow(
+      "runner process identity changed before SIGKILL",
+    );
+    expect(signalPid).toHaveBeenCalledOnce();
+    expect(signalPid).toHaveBeenCalledWith(6201, "SIGTERM");
   });
 
   it("never removes writer-lock ownership evidence while preparing a replacement", async () => {
@@ -258,6 +334,7 @@ async function input() {
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1_800_000,
+    runnerLeaseTimeoutMs: 120_000,
     internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: "/home/eias/.codex",
     rolloutRoot: "/home/eias/.codex/sessions",
