@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +27,7 @@ afterEach(async () => {
 
 describe("runner socket ownership", () => {
   it("keeps the listener alive while the host connection is replaced", async () => {
-    const socketPath = await temporaryPath("runner.sock");
+    const socketPath = await temporarySocketPath();
     let endpoint!: RunnerSocketEndpoint;
     endpoint = new RunnerSocketEndpoint(socketPath, async (frame) => {
       if (frame.channel === "command") {
@@ -50,7 +51,7 @@ describe("runner socket ownership", () => {
   });
 
   it("stops retrying at one absolute deadline even when each attempt has a longer timeout", async () => {
-    const socketPath = await temporaryPath("missing.sock");
+    const socketPath = await temporarySocketPath();
     const startedAt = Date.now();
 
     await expect(connectRunnerSocket(socketPath, {
@@ -109,4 +110,10 @@ async function temporaryPath(name: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "soulstream-runner-socket-"));
   directories.push(directory);
   return join(directory, name);
+}
+
+async function temporarySocketPath(): Promise<string> {
+  return process.platform === "win32"
+    ? `\\\\.\\pipe\\soulstream-runner-socket-${randomUUID()}`
+    : await temporaryPath("runner.sock");
 }

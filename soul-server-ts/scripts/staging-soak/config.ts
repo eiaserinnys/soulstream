@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 const LIVE_PORTS = new Set([3_105, 5_200, 4_205]);
@@ -187,7 +188,7 @@ function derivePaths(root: string): SoakPaths {
   const pids = join(root, "pids");
   const runnerStateStorage = join(runtime, "runner-state");
   const runnerStateAlias = join(
-    "/tmp",
+    tmpdir(),
     `soul-runner-soak-${createHash("sha256").update(root).digest("hex").slice(0, 12)}`,
   );
   return {

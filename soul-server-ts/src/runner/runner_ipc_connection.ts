@@ -55,7 +55,7 @@ export class RunnerIpcConnection {
   ) {
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => this.receive(chunk));
-    socket.once("error", (error) => this.fail(asError(error)));
+    socket.once("error", (error) => this.fail(normalizeSocketFailure(error)));
     socket.once("close", () => this.fail(new Error(CONNECTION_CLOSED)));
   }
 
@@ -236,4 +236,12 @@ function abortReason(signal: AbortSignal): Error {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function normalizeSocketFailure(error: unknown): Error {
+  const normalized = asError(error);
+  return process.platform === "win32" &&
+    (error as NodeJS.ErrnoException | undefined)?.code === "ECONNRESET"
+    ? new Error(CONNECTION_CLOSED, { cause: normalized })
+    : normalized;
 }

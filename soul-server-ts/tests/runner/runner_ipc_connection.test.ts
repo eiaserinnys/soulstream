@@ -19,6 +19,7 @@ import { RunnerHostRequestClient } from
 const sockets: Socket[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const socket of sockets.splice(0)) socket.destroy();
 });
 
@@ -62,6 +63,40 @@ describe("RunnerIpcConnection", () => {
       expect(hostConnection.pendingRequestCount).toBe(0);
     },
   );
+
+  it("normalizes ECONNRESET transport teardown as a closed connection on Windows", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    const [host] = await socketPair();
+    const connection = new RunnerIpcConnection(host);
+    const failure = vi.fn();
+    connection.onFailure(failure);
+    const reset = Object.assign(new Error("read ECONNRESET"), {
+      code: "ECONNRESET",
+    });
+
+    host.emit("error", reset);
+
+    expect(failure).toHaveBeenCalledOnce();
+    expect(failure.mock.calls[0]?.[0]).toMatchObject({
+      message: "Runner IPC connection closed",
+      cause: reset,
+    });
+  });
+
+  it("preserves ECONNRESET transport failures outside Windows", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    const [host] = await socketPair();
+    const connection = new RunnerIpcConnection(host);
+    const failure = vi.fn();
+    connection.onFailure(failure);
+    const reset = Object.assign(new Error("read ECONNRESET"), {
+      code: "ECONNRESET",
+    });
+
+    host.emit("error", reset);
+
+    expect(failure).toHaveBeenCalledWith(reset);
+  });
 
   it("rejects non-frame JSON before it reaches the handler", async () => {
     const [host, runner] = await socketPair();
