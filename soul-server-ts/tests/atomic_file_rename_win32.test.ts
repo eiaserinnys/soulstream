@@ -47,10 +47,10 @@ function holdExclusiveWindowsHandle(path: string, holdMs: number): {
   closed: Promise<void>;
 } {
   const script = [
-    "$stream = [System.IO.File]::Open($args[0], [System.IO.FileMode]::Open,",
+    "$stream = [System.IO.File]::Open($env:SOULSTREAM_LOCK_PATH, [System.IO.FileMode]::Open,",
     "  [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)",
     "[Console]::Out.WriteLine('LOCKED')",
-    "Start-Sleep -Milliseconds ([int]$args[1])",
+    "Start-Sleep -Milliseconds ([int]$env:SOULSTREAM_HOLD_MS)",
     "$stream.Dispose()",
   ].join("\n");
   const child = spawn("powershell.exe", [
@@ -59,9 +59,14 @@ function holdExclusiveWindowsHandle(path: string, holdMs: number): {
     "-NonInteractive",
     "-Command",
     script,
-    path,
-    String(holdMs),
-  ], { stdio: ["ignore", "pipe", "pipe"] });
+  ], {
+    env: {
+      ...process.env,
+      SOULSTREAM_HOLD_MS: String(holdMs),
+      SOULSTREAM_LOCK_PATH: path,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => { stderr += chunk; });
