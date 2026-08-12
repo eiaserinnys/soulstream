@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
+import { createElement, type ComponentType } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,8 @@ import { ChatView } from "./ChatView";
 const virtuosoMock = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
   requestOlder: vi.fn(),
+  notifyViewportGeometry: vi.fn(),
+  blockedReason: null as "cap" | "error" | null,
   props: null as Record<string, unknown> | null,
 }));
 
@@ -43,6 +45,10 @@ vi.mock("react-virtuoso", async () => {
     }, [props]);
 
     const data = (props.data as any[] | undefined) ?? [];
+    const components = props.components as
+      | { Header?: ComponentType }
+      | undefined;
+    const Header = components?.Header;
     const firstItemIndex = props.firstItemIndex as number;
     const computeItemKey = props.computeItemKey as (
       index: number,
@@ -52,6 +58,7 @@ vi.mock("react-virtuoso", async () => {
     return React.createElement(
       "div",
       { ref: scrollerRef, "data-testid": "virtuoso" },
+      Header ? React.createElement(Header) : null,
       data.map((item, index) => React.createElement(
         "div",
         { key: computeItemKey(firstItemIndex + index, item) },
@@ -67,7 +74,9 @@ vi.mock("./useMessageHistoryBuffer", () => ({
   useMessageHistoryBuffer: () => ({
     loading: false,
     reachedTop: false,
+    blockedReason: virtuosoMock.blockedReason,
     requestOlder: virtuosoMock.requestOlder,
+    notifyViewportGeometry: virtuosoMock.notifyViewportGeometry,
   }),
 }));
 
@@ -225,6 +234,8 @@ describe("ChatView long-session initial bottom focus", () => {
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
     virtuosoMock.scrollToIndex.mockClear();
     virtuosoMock.requestOlder.mockClear();
+    virtuosoMock.notifyViewportGeometry.mockClear();
+    virtuosoMock.blockedReason = null;
     virtuosoMock.props = null;
   });
 
@@ -650,5 +661,38 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoData().map((_, index) => itemKeyAt(index))).toEqual([
       "user-msg-2000",
     ]);
+  });
+
+  it.each([
+    ["0행", false],
+    ["1행", true],
+  ])("%s error/cap 상태에도 이전 대화 수동 재시도 어포던스를 노출한다", async (_label, withRow) => {
+    virtuosoMock.blockedReason = "error";
+    if (withRow) {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    }
+
+    ({ container, root } = await renderChatView());
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("이전 대화 더 불러오기"),
+    );
+    expect(button).toBeDefined();
+
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
+  });
+
+  it("scroller bind·commit·height 변화와 startReached를 단일 history controller에 연결한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
+
+    virtuosoMock.notifyViewportGeometry.mockClear();
+    (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
+    (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
+    expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalledTimes(2);
+
+    (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("automatic");
   });
 });

@@ -7,6 +7,18 @@ export interface ChatViewportAnchor {
   scrollTop: number;
 }
 
+/**
+ * 과거 히스토리가 현재 화면과 작은 reverse-scroll 여유까지 채웠는지 판정한다.
+ * null은 scroller가 아직 layout되지 않아 측정할 수 없다는 뜻이다.
+ */
+export function hasFilledHistoryViewport(
+  scroller: HTMLElement,
+  marginPx: number,
+): boolean | null {
+  if (scroller.clientHeight <= 0) return null;
+  return scroller.scrollHeight > scroller.clientHeight + marginPx;
+}
+
 function markerBounds(marker: HTMLElement): { top: number; bottom: number } | null {
   const rows = Array.from(marker.children).filter(
     (row): row is HTMLElement => row instanceof HTMLElement,

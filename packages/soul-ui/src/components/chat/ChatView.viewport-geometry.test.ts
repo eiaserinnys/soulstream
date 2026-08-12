@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findFirstVisuallyIntersectingItemKey,
+  hasFilledHistoryViewport,
   measureChatItemOffset,
   measureFirstVisuallyIntersectingItem,
 } from "./ChatView.viewport-geometry";
@@ -80,5 +81,33 @@ describe("findFirstVisuallyIntersectingItemKey", () => {
 
     expect(measureChatItemOffset(scroller, "overscan-anchor")).toBe(-80);
     expect(measureChatItemOffset(scroller, "missing")).toBeNull();
+  });
+});
+
+describe("hasFilledHistoryViewport", () => {
+  it("이벤트 수가 아니라 공개 scroller geometry와 여유값으로만 판정한다", () => {
+    const scroller = document.createElement("div");
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 800 },
+    });
+
+    expect(hasFilledHistoryViewport(scroller, 200)).toBe(false);
+
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      value: 801,
+    });
+    expect(hasFilledHistoryViewport(scroller, 200)).toBe(true);
+  });
+
+  it("clientHeight가 아직 0인 scroller는 측정 준비 전으로 취급한다", () => {
+    const scroller = document.createElement("div");
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 0 },
+      scrollHeight: { configurable: true, value: 1_000 },
+    });
+
+    expect(hasFilledHistoryViewport(scroller, 200)).toBeNull();
   });
 });
