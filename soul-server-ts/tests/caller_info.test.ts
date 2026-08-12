@@ -5,6 +5,7 @@ import {
   buildCallerInfoFromCallerSession,
   buildLlmCallerInfo,
 } from "../src/caller_info.js";
+import { assertRunnerJsonValue } from "../src/runner/frame_protocol.js";
 import type { CallerInfo } from "../src/task/task_models.js";
 
 describe("buildAgentCallerInfo", () => {
@@ -105,7 +106,9 @@ describe("buildAgentCallerInfo", () => {
       agentName: "에이전트",
     });
     expect(info.email).toBeUndefined();
+    expect(info).not.toHaveProperty("email");
     expect(JSON.stringify(info)).not.toContain("\"email\"");
+    expect(() => assertRunnerJsonValue(info, "caller_info")).not.toThrow();
   });
 });
 

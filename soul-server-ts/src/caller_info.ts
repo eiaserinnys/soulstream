@@ -26,8 +26,8 @@ export interface AgentCallerInfo extends CallerInfo {
   agent_node: string;
   /**
    * v1 정본 필드 — Python `build_agent_caller_info` 호환. Python은 None을 박지만 TS는
-   * `undefined`로 두어 `CallerInfo`(L40-49 `string?` optional)와 type 호환 (design-principles
-   * §3 정본 하나 — CallerInfo 인터페이스는 *건드리지 않는다*).
+   * 값이 없으면 키를 생략하여 `CallerInfo`(L40-49 `string?` optional)와 type 호환
+   * (design-principles §3 정본 하나 — CallerInfo 인터페이스는 *건드리지 않는다*).
    *
    * JSON.stringify에서 undefined 키는 omit — atom card ed3a216d "기존 데이터(신규 필드 없음)는
    * graceful" 정합. 클라이언트(buildCallerInfoLines, CallerAvatar)는 키 누락을 if-가드로 처리.
@@ -92,12 +92,16 @@ export function buildAgentCallerInfo(
   return {
     source: "agent",
     agent_node: agentNode,
-    agent_id: aid,
-    agent_name: aname,
-    display_name: aname,
-    user_id: aid,
-    avatar_url: avatarUrl,
-    email: sourceEmail,
+    ...(aid === undefined ? {} : {
+      agent_id: aid,
+      user_id: aid,
+    }),
+    ...(aname === undefined ? {} : {
+      agent_name: aname,
+      display_name: aname,
+    }),
+    ...(avatarUrl === undefined ? {} : { avatar_url: avatarUrl }),
+    ...(sourceEmail === undefined ? {} : { email: sourceEmail }),
   };
 }
 
