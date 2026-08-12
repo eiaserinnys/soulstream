@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import * as Y from "yjs";
 
+import { startPostgresTestContainer } from
+  "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { createBoardYjsPersistence } from "../src/board-yjs/board_yjs_persistence.js";
 import {
   createBoardYDocSnapshot,
@@ -307,28 +309,25 @@ async function createFullSchemaPostgresHarness(): Promise<FullSchemaPostgresHarn
     return await connect(externalUrl);
   }
 
-  const containerId = execFileSync("docker", [
-    "run", "--rm", "-d",
-    "-e", "POSTGRES_USER=board_yjs_seed_test",
-    "-e", "POSTGRES_PASSWORD=board_yjs_seed_test",
-    "-e", "POSTGRES_DB=board_yjs_seed_test_db",
-    "-p", "127.0.0.1::5432",
-    "postgres:16-alpine",
-  ], { encoding: "utf8" }).trim();
+  const container = startPostgresTestContainer({
+    user: "board_yjs_seed_test",
+    password: "board_yjs_seed_test",
+    database: "board_yjs_seed_test_db",
+  });
   try {
     return await connect(
-      `postgres://board_yjs_seed_test:board_yjs_seed_test@127.0.0.1:${dockerPort(containerId)}/board_yjs_seed_test_db`,
-      containerId,
+      `postgres://board_yjs_seed_test:board_yjs_seed_test@127.0.0.1:${container.port}/board_yjs_seed_test_db`,
+      container.stop,
     );
   } catch (error) {
-    stopDocker(containerId);
+    container.stop();
     throw error;
   }
 }
 
 async function connect(
   url: string,
-  containerId?: string,
+  stopContainer?: () => void,
 ): Promise<FullSchemaPostgresHarness> {
   const schema = `board_yjs_seed_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const bootstrap = postgres(url, { max: 1, idle_timeout: 1, onnotice: () => {} });
@@ -367,7 +366,7 @@ async function connect(
         await sql.end({ timeout: 2 });
       } finally {
         await dropSchema(url, schema);
-        if (containerId) stopDocker(containerId);
+        stopContainer?.();
       }
     },
   };
@@ -423,19 +422,4 @@ async function dropSchema(url: string, schema: string): Promise<void> {
   } finally {
     await sql.end({ timeout: 2 });
   }
-}
-
-function dockerPort(containerId: string): string {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const output = execFileSync("docker", ["port", containerId, "5432/tcp"], {
-      encoding: "utf8",
-    }).trim();
-    const match = output.match(/:(\d+)$/);
-    if (match) return match[1]!;
-  }
-  throw new Error("docker did not publish a PostgreSQL port");
-}
-
-function stopDocker(containerId: string): void {
-  execFileSync("docker", ["stop", containerId], { stdio: "ignore" });
 }
