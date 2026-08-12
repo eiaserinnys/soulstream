@@ -2,11 +2,12 @@ import { unlink } from "node:fs/promises";
 
 import {
   readRunnerLifecycleSummary,
+  readRunnerSqliteLifecycle,
   runnerLifecycleSummaryPath,
-  RunnerSqliteLifecycle,
   type RunnerLifecycleRecord,
   type RunnerSqliteLifecycleOptions,
 } from "./sqlite_runner_lifecycle.js";
+import { RunnerLifecycleSummaryWriter } from "./runner_lifecycle_summary_writer.js";
 
 export interface AuthoritativeRunnerLifecycleOptions {
   lifecycleSummaryOptions?: RunnerSqliteLifecycleOptions;
@@ -28,33 +29,32 @@ export async function readAuthoritativeRunnerLifecycle(
   } catch {
     cacheNeedsRefresh = true;
   }
-  const lifecycleStore = RunnerSqliteLifecycle.open(databasePath, undefined, {
-    ...options.lifecycleSummaryOptions,
-    retryDelaysMs: [],
-    scavengeStaleTemps: false,
-  });
-  try {
-    const durableLifecycle = lifecycleStore.read();
-    if (
-      cacheNeedsRefresh
-      || JSON.stringify(cachedLifecycle) !== JSON.stringify(durableLifecycle)
-    ) {
-      if (durableLifecycle) {
-        lifecycleStore.syncSummary();
-      } else {
-        try {
-          await unlink(runnerLifecycleSummaryPath(databasePath));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            emitLifecycleCacheRefreshWarning(databasePath, error);
-          }
+  const summaryWriter = new RunnerLifecycleSummaryWriter(
+    runnerLifecycleSummaryPath(databasePath),
+    {
+      ...options.lifecycleSummaryOptions,
+      retryDelaysMs: [],
+      scavengeStaleTemps: false,
+    },
+  );
+  const durableLifecycle = readRunnerSqliteLifecycle(databasePath);
+  if (
+    cacheNeedsRefresh
+    || JSON.stringify(cachedLifecycle) !== JSON.stringify(durableLifecycle)
+  ) {
+    if (durableLifecycle) {
+      summaryWriter.write(durableLifecycle);
+    } else {
+      try {
+        await unlink(runnerLifecycleSummaryPath(databasePath));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          emitLifecycleCacheRefreshWarning(databasePath, error);
         }
       }
     }
-    return durableLifecycle;
-  } finally {
-    lifecycleStore.close();
   }
+  return durableLifecycle;
 }
 
 function emitLifecycleCacheRefreshWarning(databasePath: string, error: unknown): void {

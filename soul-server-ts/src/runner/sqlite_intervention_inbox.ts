@@ -12,6 +12,7 @@ import {
   stringifyRunnerJson,
   validateRunnerAppendInput,
 } from "./sqlite_event_outbox_records.js";
+import { withRunnerSqliteTransaction } from "./runner_sqlite_connection.js";
 
 type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
 type Transaction = <T>(operation: () => T) => T;
@@ -28,8 +29,7 @@ export function migrateRunnerInterventionInboxV9(
   previousVersion: number,
 ): void {
   if (previousVersion >= 9) return;
-  database.exec("BEGIN IMMEDIATE");
-  try {
+  withRunnerSqliteTransaction(database, () => {
     const columns = database.prepare(
       "PRAGMA table_info(runner_intervention_inbox)",
     ).all() as Array<{ name: string }>;
@@ -49,11 +49,7 @@ export function migrateRunnerInterventionInboxV9(
         AND claimed_execution_command_id IS NOT NULL
     `).run();
     database.exec("PRAGMA user_version = 9");
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export function stageRunnerIntervention(

@@ -1,6 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 
-import { loadNodeSqlite } from "./node_sqlite.js";
+import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { inspectProcessIdentity } from "./runner_process_lock.js";
 import { readRunnerPid } from "./runner_process_spawn.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
@@ -59,8 +59,7 @@ export async function resolveAmbiguousRunnerIntervention(
 }
 
 function readRecordedRunnerPids(databasePath: string): number[] {
-  const { DatabaseSync } = loadNodeSqlite();
-  const database = new DatabaseSync(databasePath, { readOnly: true });
+  const database = openRunnerSqliteReadOnlyDatabase(databasePath);
   try {
     const rows = database.prepare(`
       SELECT runner_pid FROM runner_event_outbox
