@@ -15,6 +15,7 @@ import {
   applySessionDeleted,
   buildSessionUpdates,
   countLoadedSessionsForQuery,
+  dedupeSessionSnapshots,
   filterFeedSessions,
   mergeCatalogBoardItemsDelta,
   mergeCatalogSessionsDelta,
@@ -440,6 +441,30 @@ describe("applySessionUpdated", () => {
     expect(merged.backend).toBe("claude"); // 보존
     expect(merged.status).toBe("completed"); // 갱신
   });
+
+  it("sessions stream의 live lifecycle 전이를 하나의 부분 캐시 갱신으로 적용한다", () => {
+    const completed = makeSession("sess-1", {
+      status: "completed",
+      reviewState: "needs_review",
+      prompt: "preserved",
+    });
+    const data = makeData([[completed]]);
+    const patch = buildSessionUpdates({
+      type: "session_updated",
+      agent_session_id: "sess-1",
+      status: "running",
+      review_state: "not_required",
+      updated_at: "2026-06-10T00:00:00Z",
+    });
+
+    const result = applySessionUpdated(data, "sess-1", patch);
+
+    expect(result.pages[0].sessions[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+  });
 });
 
 // ============================================================
@@ -551,6 +576,7 @@ describe("buildSessionUpdates — F-10C user profile extraction", () => {
       reviewState: "acknowledged",
     });
   });
+
 });
 
 describe("normalizeSessionStatus", () => {
@@ -668,6 +694,61 @@ describe("filterFeedSessions", () => {
     );
 
     expect(result.map((s) => s.agentSessionId)).toEqual(["new", "old"]);
+  });
+});
+
+describe("dedupeSessionSnapshots", () => {
+  it("같은 세션의 불법 중복 입력에서 최신 상태 하나만 남긴다", () => {
+    const result = dedupeSessionSnapshots([
+      makeSession("duplicate", {
+        status: "running",
+        updatedAt: "2026-06-09T00:00:00Z",
+      }),
+      makeSession("duplicate", {
+        status: "completed",
+        updatedAt: "2026-06-10T00:00:00Z",
+      }),
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      agentSessionId: "duplicate",
+      status: "completed",
+    });
+  });
+
+  it("uses lastEventId as the monotonic tie-break regardless of arrival order", () => {
+    const older = makeSession("duplicate", {
+      status: "completed",
+      updatedAt: "2026-06-10T00:00:00Z",
+      lastEventId: 40,
+    });
+    const newer = makeSession("duplicate", {
+      status: "running",
+      updatedAt: "2026-06-10T00:00:00Z",
+      lastEventId: 41,
+    });
+
+    expect(dedupeSessionSnapshots([older, newer])[0]).toBe(newer);
+    expect(dedupeSessionSnapshots([newer, older])[0]).toBe(newer);
+  });
+
+  it("lets the later arrival win when timestamps and monotonic revisions cannot order snapshots", () => {
+    const first = makeSession("duplicate", {
+      status: "completed",
+      createdAt: undefined,
+      updatedAt: "invalid",
+      lastEventId: undefined,
+    });
+    const second = makeSession("duplicate", {
+      status: "running",
+      createdAt: undefined,
+      updatedAt: undefined,
+      lastEventId: undefined,
+    });
+
+    expect(dedupeSessionSnapshots([first, second])[0]).toBe(second);
+    expect(dedupeSessionSnapshots([second, first])[0]).toBe(first);
   });
 });
 

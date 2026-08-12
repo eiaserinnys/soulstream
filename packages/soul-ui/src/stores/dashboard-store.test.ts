@@ -1009,117 +1009,6 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === 멀티턴 세션 상태 전환 ===
-
-  describe("processEvent - session status derivation (multi-turn)", () => {
-    beforeEach(() => {
-      // 활성 세션 설정
-      useDashboardStore.getState().setActiveSession("sess-mt");
-
-      // history_sync를 보내 히스토리 리플레이 완료 상태로 전환
-      // (리플레이 중에는 status 갱신이 억제되므로, 라이브 이벤트 테스트 전에 필수)
-      useDashboardStore.getState().processEvent(
-        { type: "history_sync", last_event_id: 0, is_live: true, status: "running" } as any,
-        -1,
-      );
-    });
-
-    it("should not mark the session completed on a turn complete event", () => {
-      const { processEvent } = useDashboardStore.getState();
-      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "text_end" } as TextEndEvent, 2);
-      const result = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(result).toBeNull();
-    });
-
-    it("should not mark the session errored on a turn error event", () => {
-      const { processEvent } = useDashboardStore.getState();
-      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      const result = processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
-      expect(result).toBeNull();
-    });
-
-    it("should keep user_message as the resume/running signal after complete", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      // Turn 1: user_message → text → complete
-      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "text_end" } as TextEndEvent, 2);
-      const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(r1).toBeNull();
-
-      // Turn 2: new user_message (resume) → status는 반환값으로 확인
-      const r2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-      expect(r2?.status).toBe("running");
-    });
-
-    it("should keep intervention_sent as the resume/running signal after complete", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
-      expect(r1).toBeNull();
-
-      // Intervention resumes the session → status는 반환값으로 확인
-      const r2 = processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
-      expect(r2?.status).toBe("running");
-    });
-
-    it("should handle full multi-turn cycle without deriving terminal status from turn complete", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      // Turn 1: user_message → running
-      const rUser1 = processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      expect(rUser1?.status).toBe("running");
-
-      processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "text_end" } as TextEndEvent, 2);
-      const rComplete1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(rComplete1).toBeNull();
-
-      // Turn 2: user_message → running
-      const rUser2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-      expect(rUser2?.status).toBe("running");
-
-      processEvent({ type: "text_start" } as TextStartEvent, 5);
-      processEvent({ type: "text_end" } as TextEndEvent, 6);
-      const rComplete2 = processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
-      expect(rComplete2).toBeNull();
-    });
-
-    it("should not update status for unrelated event types (text_start, text_delta, etc.)", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-
-      // These should NOT change status — processEvent returns null for non-status events
-      const r1 = processEvent({ type: "text_start" } as TextStartEvent, 1);
-      const r2 = processEvent({ type: "text_delta", text: "hello" } as TextDeltaEvent, 2);
-      const r3 = processEvent({ type: "text_end" } as TextEndEvent, 3);
-      const r4 = processEvent({ type: "tool_start", timestamp: 0, tool_name: "Bash", tool_input: {} } as ToolStartEvent, 4);
-      const r5 = processEvent({ type: "tool_result", tool_name: "Bash", result: "ok", is_error: false } as ToolResultEvent, 5);
-
-      expect(r1).toBeNull();
-      expect(r2).toBeNull();
-      expect(r3).toBeNull();
-      expect(r4).toBeNull();
-      expect(r5).toBeNull();
-    });
-
-    it("should not update status when activeSessionKey is null", () => {
-      useDashboardStore.getState().setActiveSession(null);
-      const result = useDashboardStore.getState().processEvent(
-        { type: "complete", result: "done", attachments: [] } as CompleteEvent,
-        0,
-      );
-
-      // activeSessionKey가 null이면 statusUpdate 반환값도 null
-      expect(result).toBeNull();
-    });
-  });
-
   // === R4: 서브에이전트 이벤트 무시 ===
 
   describe("processEvent - R4: subagent events ignored", () => {
@@ -2019,97 +1908,12 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().processingCtx.historySynced).toBe(true);
     });
 
-    it("processEvents returns statusUpdates from history_sync", () => {
-      const store = useDashboardStore.getState();
-
-      store.setActiveSession("sess-status");
-
-      const result = store.processEvents([
-        {
-          event: {
-            type: "history_sync",
-            last_event_id: 5,
-            is_live: true,
-            status: "completed",
-          } as unknown as import("../shared/types").SoulSSEEvent,
-          eventId: 0,
-        },
-      ]);
-
-      expect(result.statusUpdates).toHaveLength(1);
-      expect(result.statusUpdates[0]).toEqual({ agentSessionId: "sess-status", status: "completed" });
-    });
-
-    it("processEvents does not derive terminal status from turn complete after historySynced", () => {
-      const store = useDashboardStore.getState();
-
-      store.setActiveSession("sess-derive");
-
-      // historySynced를 먼저 true로 만듦
-      store.processEvents([
-        {
-          event: {
-            type: "history_sync",
-            last_event_id: 0,
-            is_live: true,
-          } as unknown as import("../shared/types").SoulSSEEvent,
-          eventId: 0,
-        },
-      ]);
-
-      const result = store.processEvents([
-        {
-          event: {
-            type: "complete",
-            result: "done",
-            attachments: [],
-            timestamp: 0,
-          } as unknown as import("../shared/types").SoulSSEEvent,
-          eventId: 10,
-        },
-      ]);
-
-      expect(result.statusUpdates).toHaveLength(0);
-    });
-
-    it("processEvents returns empty statusUpdates for events that don't affect status", () => {
-      const store = useDashboardStore.getState();
-
-      store.setActiveSession("sess-notrigger");
-
-      // historySynced = true
-      store.processEvents([
-        {
-          event: {
-            type: "history_sync",
-            last_event_id: 0,
-            is_live: true,
-          } as unknown as import("../shared/types").SoulSSEEvent,
-          eventId: 0,
-        },
-      ]);
-
-      // text_delta는 status 변경 없음
-      const result = store.processEvents([
-        {
-          event: { type: "text_start", timestamp: 0 } as TextStartEvent,
-          eventId: 20,
-        },
-        {
-          event: { type: "text_delta", text: "hello", timestamp: 0 } as TextDeltaEvent,
-          eventId: 21,
-        },
-      ]);
-
-      expect(result.statusUpdates).toHaveLength(0);
-    });
-
     it("processEvents should not crash when system_message is the first event (tree=null)", () => {
       const store = useDashboardStore.getState();
       store.clearTree(); // tree=null, nodeMap=empty
 
       // system_message가 root 없는 상태에서 첫 번째로 도착
-      const result = store.processEvents([
+      store.processEvents([
         {
           event: { type: "system_message", text: "init", timestamp: 0 } as import("../shared/types").SystemMessageEvent,
           eventId: 1,
@@ -2120,14 +1924,13 @@ describe("dashboard-store", () => {
       expect(tree).not.toBeNull();
       expect(tree!.children).toHaveLength(1);
       expect(tree!.children[0].type).toBe("system_message");
-      expect(result.statusUpdates).toHaveLength(0);
     });
 
     it("processEvents should not crash when compact is the first event (tree=null)", () => {
       const store = useDashboardStore.getState();
       store.clearTree();
 
-      const result = store.processEvents([
+      store.processEvents([
         {
           event: { type: "compact", trigger: "manual", message: "Context compacted" } as import("../shared/types").CompactEvent,
           eventId: 1,
@@ -2138,7 +1941,6 @@ describe("dashboard-store", () => {
       expect(tree).not.toBeNull();
       expect(tree!.children).toHaveLength(1);
       expect(tree!.children[0].type).toBe("compact");
-      expect(result.statusUpdates).toHaveLength(0);
     });
 
     it("processEvents should not crash when parent_event_id references missing node", () => {
@@ -2146,7 +1948,7 @@ describe("dashboard-store", () => {
       store.clearTree();
 
       // parent_event_id="2"를 참조하지만, eventId=2 노드가 없음
-      const result = store.processEvents([
+      store.processEvents([
         {
           event: { type: "user_message", text: "hello", timestamp: 0 } as UserMessageEvent,
           eventId: 1,
@@ -2166,7 +1968,6 @@ describe("dashboard-store", () => {
       expect(tree).not.toBeNull();
       // parent "999"를 찾지 못해 root로 폴백 — crash 없이 처리
       expect(tree!.children).toHaveLength(2);
-      expect(result.statusUpdates).toHaveLength(0);
     });
   });
 

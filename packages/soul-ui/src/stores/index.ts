@@ -30,7 +30,7 @@ export { createNodeFromEvent, applyUpdate } from "./node-factory";
 export { placeInTree, handleTextStart } from "./tree-placer";
 
 // === Session Updater ===
-export { shouldNotify, deriveSessionStatus } from "./session-updater";
+export { shouldNotify } from "./session-updater";
 
 // === Task Reads ===
 export { fetchTaskSnapshot } from "./task-api";

@@ -10,7 +10,7 @@
  *   1) 호출 지점의 의미(개입 vs 재개)를 명시적으로 분리한다.
  *   2) 향후 resume 전용 엔드포인트로 백엔드가 분기될 때 이 파일만 교체한다.
  *
- * 동작 — 네트워크, React Query 갱신 모두 submitIntervention과 동일하다.
+ * 동작 — 네트워크 호출은 submitIntervention과 동일하다.
  */
 
 import {

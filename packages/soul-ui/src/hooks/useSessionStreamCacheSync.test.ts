@@ -27,7 +27,7 @@ function Harness() {
   return null;
 }
 
-describe("useSessionStreamCacheSync catalog_updated", () => {
+describe("useSessionStreamCacheSync", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
@@ -45,6 +45,185 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+  });
+
+  it("applies live lifecycle transitions from the sessions stream without broad invalidation", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const queryKey = ["sessions", "all", "feed", null] as const;
+    queryClient.setQueryData(queryKey, {
+      pages: [{
+        sessions: [{
+          agentSessionId: "session-a",
+          sessionType: "claude",
+          status: "completed",
+          reviewState: "needs_review",
+          prompt: "preserved",
+          createdAt: "2026-08-12T00:00:00Z",
+        }],
+        total: 1,
+      }],
+      pageParams: [0],
+    });
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onSessionUpdated?.({
+      type: "session_updated",
+      agent_session_id: "session-a",
+      status: "running",
+      review_state: "not_required",
+      updated_at: "2026-08-12T00:01:00Z",
+    });
+
+    const cached = queryClient.getQueryData<{
+      pages: Array<{ sessions: Array<Record<string, unknown>> }>;
+    }>(queryKey);
+    expect(cached?.pages[0].sessions[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("applies a pre-subscription resume from the initial session_list snapshot", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const queryKey = ["sessions", "all", "feed", null] as const;
+    const staleSession = {
+      agentSessionId: "session-a",
+      sessionType: "claude" as const,
+      status: "completed" as const,
+      reviewState: "needs_review" as const,
+      prompt: "preserved",
+      eventCount: 4,
+      createdAt: "2026-08-12T00:00:00Z",
+    };
+    const unchangedSession = {
+      agentSessionId: "session-b",
+      sessionType: "claude" as const,
+      status: "completed" as const,
+      reviewState: "not_required" as const,
+      eventCount: 2,
+      createdAt: "2026-08-11T00:00:00Z",
+    };
+    queryClient.setQueryData(queryKey, {
+      pages: [{ sessions: [staleSession, unchangedSession], total: 2 }],
+      pageParams: [0],
+    });
+    useDashboardStore.getState().setCatalog({
+      folders: [],
+      sessions: {},
+      sessionList: [staleSession, unchangedSession],
+    });
+    useDashboardStore.getState().setActiveSession("session-a");
+    useDashboardStore.getState().setActiveSessionSummary(staleSession);
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onSessionList?.({
+      type: "session_list",
+      sessions: [{
+        agentSessionId: "session-a",
+        sessionType: "claude",
+        status: "running",
+        reviewState: "not_required",
+        eventCount: 5,
+        createdAt: "2026-08-12T00:00:00Z",
+      }],
+      total: 1,
+    });
+
+    const cached = queryClient.getQueryData<{
+      pages: Array<{ sessions: Array<typeof staleSession | typeof unchangedSession> }>;
+    }>(queryKey);
+    expect(cached?.pages[0].sessions[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(cached?.pages[0].sessions[1]).toBe(unchangedSession);
+    expect(useDashboardStore.getState().catalog?.sessionList?.[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(useDashboardStore.getState().catalog?.sessionList?.[1]).toBe(unchangedSession);
+    expect(useDashboardStore.getState().activeSessionSummary).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale initial session_list snapshot across cache, catalog, and active summary", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryKey = ["sessions", "all", "feed", null] as const;
+    const currentSession = {
+      agentSessionId: "session-a",
+      sessionType: "claude" as const,
+      status: "running" as const,
+      reviewState: "not_required" as const,
+      prompt: "preserved",
+      eventCount: 5,
+      createdAt: "2026-08-12T00:00:00Z",
+      updatedAt: "2026-08-12T00:02:00Z",
+      lastEventId: 41,
+    };
+    const cachedData = {
+      pages: [{ sessions: [currentSession], total: 1 }],
+      pageParams: [0],
+    };
+    const catalogSessionList = [currentSession];
+    queryClient.setQueryData(queryKey, cachedData);
+    useDashboardStore.getState().setCatalog({
+      folders: [],
+      sessions: {},
+      sessionList: catalogSessionList,
+    });
+    useDashboardStore.getState().setActiveSession("session-a");
+    useDashboardStore.getState().setActiveSessionSummary(currentSession);
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onSessionList?.({
+      type: "session_list",
+      sessions: [{
+        agentSessionId: "session-a",
+        sessionType: "claude",
+        status: "completed",
+        reviewState: "needs_review",
+        eventCount: 4,
+        createdAt: "2026-08-12T00:00:00Z",
+        updatedAt: "2026-08-12T00:01:00Z",
+        lastEventId: 40,
+      }],
+      total: 1,
+    });
+
+    expect(queryClient.getQueryData(queryKey)).toBe(cachedData);
+    expect(useDashboardStore.getState().catalog?.sessionList).toBe(catalogSessionList);
+    expect(useDashboardStore.getState().activeSessionSummary).toBe(currentSession);
   });
 
   it("applies folder rename, move, and delete snapshots to the store immediately", () => {

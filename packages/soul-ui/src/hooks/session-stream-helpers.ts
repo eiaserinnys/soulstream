@@ -19,6 +19,12 @@ import {
   applyCatalogDisplayName,
   mergeSessionCreatedSummary,
 } from "./session-catalog-helpers";
+import { dedupeSessionSnapshots } from "./session-snapshot-helpers";
+export {
+  applySessionLifecycleSnapshot,
+  applySessionLifecycleSnapshotToList,
+  dedupeSessionSnapshots,
+} from "./session-snapshot-helpers";
 export { normalizeSessionStatus } from "../shared/session-status";
 export {
   applyCatalogDisplayNames,
@@ -50,7 +56,7 @@ export function filterFeedSessions(
   sessions: SessionSummary[],
   catalog: CatalogState | null,
 ): SessionSummary[] {
-  return sessions
+  const visibleSessions = sessions
     .filter((s) => {
       if (s.sessionType === "llm") return false;
       if (catalog) {
@@ -68,7 +74,9 @@ export function filterFeedSessions(
       const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
       const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
       return tb - ta;
-    })
+    });
+
+  return dedupeSessionSnapshots(visibleSessions)
     .map((s) => {
       const assignment = catalog?.sessions[s.agentSessionId];
       if (assignment?.displayName) {
@@ -92,8 +100,8 @@ export function filterSessionsInFolder(
   catalog: CatalogState | null,
   folderId: string | null,
 ): SessionSummary[] {
-  if (!catalog?.sessions) return sessions;
-  return sessions
+  if (!catalog?.sessions) return dedupeSessionSnapshots(sessions);
+  const folderSessions = sessions
     .filter((s) => {
       if (s.sessionType === "llm") return false;
       const assignment = catalog.sessions[s.agentSessionId];
@@ -102,7 +110,9 @@ export function filterSessionsInFolder(
         return !assignment || assignment.folderId === null;
       }
       return assignment?.folderId === folderId;
-    })
+    });
+
+  return dedupeSessionSnapshots(folderSessions)
     .map((s) => {
       const assignment = catalog.sessions[s.agentSessionId];
       if (assignment?.displayName) {

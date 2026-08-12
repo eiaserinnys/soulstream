@@ -10,7 +10,6 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import type { EventTreeNode } from "@shared/types";
 import { useAuth } from "../../providers/AuthProvider";
 import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
@@ -53,7 +52,6 @@ export interface UseChatInputSendResult {
 }
 
 export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendResult {
-  const queryClient = useQueryClient();
   const { isAuthenticated, user } = useAuth();
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +104,6 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
             sessionKey: activeSessionKey,
             text: messageText,
             attachmentPaths,
-            queryClient,
             signal: controller.signal,
           };
           await (args.isFinished ? submitResume(ctx) : submitIntervention(ctx));
@@ -125,7 +122,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         setSending(false);
       }
     },
-    [sending, args, queryClient, isAuthenticated, user],
+    [sending, args, isAuthenticated, user],
   );
 
   const reset = useCallback(() => {

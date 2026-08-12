@@ -8,13 +8,11 @@
  * 동 리포 `useMessageHistoryBuffer.ts`(L129, L187)와 §9 대칭.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
 import { submitIntervention } from "./submitIntervention";
 
 describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
   let originalFetch: typeof globalThis.fetch;
   let fetchMock: ReturnType<typeof vi.fn>;
-  let queryClient: QueryClient;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
@@ -23,19 +21,16 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
       json: async () => ({}),
     } as unknown as Response);
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-    queryClient = new QueryClient();
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    queryClient.clear();
   });
 
   it("fetch 옵션에 credentials: 'include'를 명시한다", async () => {
     await submitIntervention({
       sessionKey: "sess-1",
       text: "hello",
-      queryClient,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -48,7 +43,6 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
       sessionKey: "sess-2",
       text: "with attachment",
       attachmentPaths: ["/tmp/a.png"],
-      queryClient,
     });
 
     const [, options] = fetchMock.mock.calls[0];
@@ -64,7 +58,6 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
     await submitIntervention({
       sessionKey: "sess-3",
       text: "회귀 보존",
-      queryClient,
     });
 
     const [, options] = fetchMock.mock.calls[0];
@@ -73,5 +66,14 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
     const body = JSON.parse(options.body as string);
     expect(body.text).toBe("회귀 보존");
     expect(body.user).toBe("dashboard");
+  });
+
+  it("성공한 채팅 전송은 세션 상태 캐시를 요구하지 않는다", async () => {
+    await expect(
+      submitIntervention({
+        sessionKey: "sess-status-authority",
+        text: "sessions stream이 lifecycle 정본",
+      }),
+    ).resolves.toEqual({ ok: true });
   });
 });

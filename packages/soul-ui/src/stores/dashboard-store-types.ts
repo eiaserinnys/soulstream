@@ -10,7 +10,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import type {
   SessionSummary,
   SessionDetail,
-  SessionStatus,
   SoulSSEEvent,
   EventTreeNode,
   CatalogState,
@@ -97,13 +96,6 @@ export interface BoardItemFocusRequest {
 export type LeftNavigationMode = "folders" | "feed";
 
 export type { ChatFontSize, LiquidGlassSettings, WallpaperMode, WallpaperSettings };
-
-// === ProcessEventsResult ===
-
-/** processEvents 반환 타입: SSE 이벤트 배치 처리 결과 */
-export interface ProcessEventsResult {
-  statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
-}
 
 // === State Interface ===
 
@@ -318,12 +310,12 @@ export interface DashboardActions {
   processEvent: (
     event: SoulSSEEvent,
     eventId: number,
-  ) => { agentSessionId: string; status: SessionStatus } | null;
+  ) => void;
 
   // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
   processEvents: (
     events: Array<{ event: SoulSSEEvent; eventId: number }>,
-  ) => ProcessEventsResult;
+  ) => void;
 
   /**
    * 히스토리 prepend 처리 — messages API에서 받은 raw 이벤트들을 store.tree에 통합한다.

@@ -36,6 +36,7 @@ import {
 } from "./session-list-query";
 import {
   countLoadedSessionsForQuery,
+  dedupeSessionSnapshots,
   mergeSessionAssignmentsFromSummaries,
 } from "./session-stream-helpers";
 
@@ -211,7 +212,7 @@ export function useSessionListProvider(
       stableSessionsRef.current = retainEqualValue(stableSessionsRef.current, stillRequested);
       return stableSessionsRef.current;
     }
-    const next = data.pages.flatMap((page) => page.sessions);
+    const next = dedupeSessionSnapshots(data.pages.flatMap((page) => page.sessions));
     stableSessionsRef.current = retainEqualValue(stableSessionsRef.current, next);
     return stableSessionsRef.current;
   }, [data, normalizedSessionIds]);
