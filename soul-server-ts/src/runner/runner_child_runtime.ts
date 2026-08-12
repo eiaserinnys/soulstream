@@ -79,6 +79,12 @@ export class RunnerChildRuntime {
     this.lifecycle = RunnerSqliteLifecycle.open(
       this.config.paths.databasePath,
       this.config.sessionId,
+      {
+        onSummaryRenameFailure: (error, path) => this.logger.warn(
+          { error, path },
+          "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+        ),
+      },
     );
     this.endpoint = new RunnerSocketEndpoint(
       this.config.paths.socketPath,

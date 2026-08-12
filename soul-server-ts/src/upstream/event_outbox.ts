@@ -3,19 +3,17 @@ import {
   mkdir,
   open,
   readFile,
-  rename,
   truncate,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+
+import { renameWithTransientRetry } from "../atomic_file_rename.js";
 
 export const EVENT_OUTBOX_MAX_BATCH_EVENTS = 64;
 export const EVENT_OUTBOX_MAX_BATCH_BYTES = 256 * 1024;
 export const EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES = 2 * 1024 * 1024;
 export const EVENT_OUTBOX_COMPACT_ROWS = 1_000;
 export const EVENT_OUTBOX_COMPACT_BYTES = 8 * 1024 * 1024;
-
-const EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS = [25, 50, 100, 200, 400] as const;
 
 export type SessionLastMessage = {
   type: string;
@@ -315,33 +313,6 @@ export class EventOutbox {
     this.operationTail = result.then(() => undefined, () => undefined);
     return await result;
   }
-}
-
-async function renameWithTransientRetry(
-  sourcePath: string,
-  destinationPath: string,
-): Promise<void> {
-  let retryIndex = 0;
-  while (true) {
-    try {
-      await rename(sourcePath, destinationPath);
-      return;
-    } catch (error) {
-      if (
-        !isRetryableRenameError(error)
-        || retryIndex >= EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS.length
-      ) {
-        throw error;
-      }
-      await delay(EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS[retryIndex]);
-      retryIndex += 1;
-    }
-  }
-}
-
-function isRetryableRenameError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
 }
 
 function buildBatch(

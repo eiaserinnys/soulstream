@@ -263,7 +263,7 @@ export class RunnerRecoveryCoordinator {
       if (this.options.markReaped) {
         await this.options.markReaped(registration, progressedAt, error);
       } else {
-        await markRegistrationReaped(registration, progressedAt, error);
+        await markRegistrationReaped(registration, progressedAt, error, this.options.logger);
       }
     }
     if (registration.pidAlive) {
@@ -337,8 +337,18 @@ async function markRegistrationReaped(
   registration: RunnerRegistration,
   progressedAt: string,
   error: { code: string; message: string },
+  logger: Pick<Logger, "warn">,
 ): Promise<void> {
-  const lifecycle = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
+  const lifecycle = RunnerSqliteLifecycle.open(
+    registration.config.paths.databasePath,
+    undefined,
+    {
+      onSummaryRenameFailure: (renameError, path) => logger.warn(
+        { error: renameError, path },
+        "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+      ),
+    },
+  );
   try {
     lifecycle.reap(
       registration.lifecycle!.execution_command_id,

@@ -592,6 +592,53 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
+  it("keeps the durable lifecycle alive when summary rename retries are exhausted", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const renameFile = vi.fn(() => {
+      throw Object.assign(new Error("locked by scanner"), { code: "EPERM" });
+    });
+    const sleep = vi.fn();
+    const onSummaryRenameFailure = vi.fn();
+    const lifecycle = RunnerSqliteLifecycle.open(path, undefined, {
+      renameFile,
+      sleep,
+      onSummaryRenameFailure,
+    });
+
+    expect(() => lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    })).not.toThrow();
+    expect(() => lifecycle.progress(
+      "execute-a",
+      "2026-08-11T01:00:01.000Z",
+    )).not.toThrow();
+    expect(() => lifecycle.finish(
+      "execute-a",
+      "completed",
+      "2026-08-11T01:00:02.000Z",
+    )).not.toThrow();
+
+    expect(lifecycle.read()).toMatchObject({
+      execution_state: "completed",
+      progress_seq: 3,
+      progress_at: "2026-08-11T01:00:02.000Z",
+    });
+    expect(renameFile).toHaveBeenCalledTimes(18);
+    expect(sleep).toHaveBeenCalledTimes(15);
+    expect(onSummaryRenameFailure).toHaveBeenCalledTimes(3);
+    expect(onSummaryRenameFailure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ code: "EPERM" }),
+      runnerLifecycleSummaryPath(path),
+    );
+
+    lifecycle.close();
+    outbox.close();
+  });
+
   it("migrates v6 lifecycle storage and normalizes legacy summaries", async () => {
     const path = await temporaryDatabasePath();
     const initial = await RunnerSqliteEventOutbox.create(path);
