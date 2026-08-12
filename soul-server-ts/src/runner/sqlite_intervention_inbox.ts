@@ -9,6 +9,7 @@ import { insertRunnerRecord, latestRunnerSequence } from
   "./sqlite_event_outbox_database.js";
 import {
   assertRunnerEventFits,
+  stringifyRunnerJson,
   validateRunnerAppendInput,
 } from "./sqlite_event_outbox_records.js";
 
@@ -18,6 +19,24 @@ type Transaction = <T>(operation: () => T) => T;
 export interface PendingRunnerIntervention {
   interventionId: string;
   message: Record<string, unknown>;
+}
+
+export function ensureRunnerInterventionInboxV9(database: SqliteDatabase): void {
+  const columns = database.prepare(
+    "PRAGMA table_info(runner_intervention_inbox)",
+  ).all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "application_state")) {
+    database.exec(`
+      ALTER TABLE runner_intervention_inbox
+      ADD COLUMN application_state TEXT NOT NULL DEFAULT 'pending' CHECK (
+        application_state IN ('pending', 'claimed', 'ambiguous')
+      )
+    `);
+    database.prepare(`
+      UPDATE runner_intervention_inbox SET application_state = 'claimed'
+      WHERE claimed_execution_command_id IS NOT NULL
+    `).run();
+  }
 }
 
 export function stageRunnerIntervention(
@@ -43,12 +62,14 @@ export function stageRunnerIntervention(
     }
   }
   const existing = database.prepare(`
-    SELECT payload_json, event_source_seq, claimed_execution_command_id
+    SELECT payload_json, event_source_seq, claimed_execution_command_id,
+           application_state
     FROM runner_intervention_inbox WHERE intervention_id = ?
   `).get(input.interventionId) as {
     payload_json: string;
     event_source_seq: number | null;
     claimed_execution_command_id: string | null;
+    application_state: "pending" | "claimed" | "ambiguous";
   } | undefined;
   if (existing) {
     if (existing.payload_json !== JSON.stringify(input.message)) {
@@ -59,7 +80,7 @@ export function stageRunnerIntervention(
     }
     return {
       eventSourceSeq: existing.event_source_seq,
-      queuePosition: existing.claimed_execution_command_id === null ? 1 : 0,
+      queuePosition: existing.application_state === "pending" ? 1 : 0,
     };
   }
 
@@ -117,25 +138,50 @@ export function readPendingRunnerInterventions(
     execution_state: string;
   } | undefined;
   transaction(() => {
+    if (lifecycle?.execution_state === "completed") {
+      // v8 could commit completed and crash before deleting the claim. The
+      // terminal lifecycle is the durable apply receipt; replay would duplicate
+      // the user turn and any tool side effects.
+      database.prepare(`
+        DELETE FROM runner_intervention_inbox
+        WHERE application_state = 'claimed'
+          AND claimed_execution_command_id = ?
+      `).run(lifecycle.execution_command_id);
+    }
+
+    // A claim that is not the currently executing command has no proof that
+    // backend side effects were absent. Preserve it as a loud ambiguity rather
+    // than silently changing an at-least-once delivery into duplicate execution.
     if (lifecycle?.execution_state === "running") {
       database.prepare(`
-        UPDATE runner_intervention_inbox
-        SET claimed_execution_command_id = NULL, claimed_at = NULL
-        WHERE claimed_execution_command_id IS NOT NULL
+        UPDATE runner_intervention_inbox SET application_state = 'ambiguous'
+        WHERE application_state = 'claimed'
           AND claimed_execution_command_id <> ?
       `).run(lifecycle.execution_command_id);
     } else {
       database.prepare(`
-        UPDATE runner_intervention_inbox
-        SET claimed_execution_command_id = NULL, claimed_at = NULL
-        WHERE claimed_execution_command_id IS NOT NULL
+        UPDATE runner_intervention_inbox SET application_state = 'ambiguous'
+        WHERE application_state = 'claimed'
       `).run();
     }
   });
+  const ambiguous = database.prepare(`
+    SELECT intervention_id FROM runner_intervention_inbox
+    WHERE application_state = 'ambiguous'
+    ORDER BY queued_at, rowid
+  `).all() as Array<{ intervention_id: string }>;
+  if (ambiguous.length > 0) {
+    throw new Error(
+      `runner intervention application outcome is ambiguous: ${ambiguous
+        .map((row) => row.intervention_id)
+        .join(", ")}`,
+    );
+  }
   const rows = database.prepare(`
     SELECT intervention_id, payload_json
     FROM runner_intervention_inbox
-    WHERE claimed_execution_command_id IS NULL
+    WHERE application_state = 'pending'
+      AND claimed_execution_command_id IS NULL
     ORDER BY queued_at, rowid
   `).all() as Array<{ intervention_id: string; payload_json: string }>;
   return rows.map((row) => ({
@@ -152,45 +198,123 @@ export function claimRunnerIntervention(
 ): boolean {
   return transaction(() => {
     const current = database.prepare(`
-      SELECT claimed_execution_command_id FROM runner_intervention_inbox
+      SELECT claimed_execution_command_id, application_state
+      FROM runner_intervention_inbox
       WHERE intervention_id = ?
-    `).get(interventionId) as { claimed_execution_command_id: string | null } | undefined;
+    `).get(interventionId) as {
+      claimed_execution_command_id: string | null;
+      application_state: "pending" | "claimed" | "ambiguous";
+    } | undefined;
     if (!current) return false;
-    if (current.claimed_execution_command_id === commandId) return true;
-    if (current.claimed_execution_command_id !== null) return false;
+    if (
+      current.application_state === "claimed"
+      && current.claimed_execution_command_id === commandId
+    ) return true;
+    if (current.application_state !== "pending") return false;
     const result = database.prepare(`
       UPDATE runner_intervention_inbox
-      SET claimed_execution_command_id = ?, claimed_at = ?
+      SET claimed_execution_command_id = ?, claimed_at = ?, application_state = 'claimed'
       WHERE intervention_id = ? AND claimed_execution_command_id IS NULL
+        AND application_state = 'pending'
     `).run(commandId, new Date().toISOString(), interventionId);
     return Number(result.changes) === 1;
   });
 }
 
-export function releaseRunnerInterventionClaim(
+export function markRunnerInterventionAmbiguous(
   database: SqliteDatabase,
   transaction: Transaction,
   interventionId: string,
   commandId: string,
 ): void {
   transaction(() => {
-    database.prepare(`
+    const result = database.prepare(`
       UPDATE runner_intervention_inbox
-      SET claimed_execution_command_id = NULL, claimed_at = NULL
+      SET application_state = 'ambiguous'
       WHERE intervention_id = ? AND claimed_execution_command_id = ?
+        AND application_state = 'claimed'
     `).run(interventionId, commandId);
+    if (Number(result.changes) !== 1) {
+      throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+    }
   });
 }
 
-export function completeRunnerInterventionClaim(
+export function finishRunnerExecutionAndIntervention(
   database: SqliteDatabase,
   transaction: Transaction,
-  commandId: string,
+  input: {
+    commandId: string;
+    interventionId?: string;
+    state: "completed" | "failed";
+    progressedAt: string;
+    terminalError: { code: string; message: string } | null;
+  },
 ): void {
+  if (!input.commandId) throw new Error("runner execution command id required");
+  if (!Number.isFinite(Date.parse(input.progressedAt))) {
+    throw new Error("runner progress timestamp invalid");
+  }
+  if (input.state === "failed" && input.terminalError === null) {
+    throw new Error("failed runner execution requires terminal error");
+  }
+  if (input.state === "completed" && input.terminalError !== null) {
+    throw new Error("completed runner execution cannot contain terminal error");
+  }
+  const terminalError = input.terminalError === null
+    ? null
+    : stringifyRunnerJson(input.terminalError, "terminal runner error");
   transaction(() => {
-    database.prepare(`
-      DELETE FROM runner_intervention_inbox
-      WHERE claimed_execution_command_id = ?
-    `).run(commandId);
+    const assignments = `
+      execution_state = ?, progress_seq = progress_seq + 1,
+      progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
+      terminal_error_json = ?
+    `;
+    let result = database.prepare(`
+      UPDATE runner_event_outbox SET ${assignments}
+      WHERE record_kind = 'bootstrap' AND execution_command_id = ?
+    `).run(
+      input.state,
+      input.progressedAt,
+      input.progressedAt,
+      terminalError,
+      input.commandId,
+    );
+    if (Number(result.changes) === 0) {
+      result = database.prepare(`
+        UPDATE runner_prebootstrap_lifecycle SET ${assignments}
+        WHERE singleton = 1 AND execution_command_id = ?
+      `).run(
+        input.state,
+        input.progressedAt,
+        input.progressedAt,
+        terminalError,
+        input.commandId,
+      );
+    }
+    if (Number(result.changes) !== 1) {
+      throw new Error(`runner lifecycle command mismatch: ${input.commandId}`);
+    }
+    if (input.state === "completed" && input.interventionId) {
+      const completed = database.prepare(`
+        DELETE FROM runner_intervention_inbox
+        WHERE application_state = 'claimed'
+          AND intervention_id = ?
+          AND claimed_execution_command_id = ?
+      `).run(input.interventionId, input.commandId);
+      if (Number(completed.changes) !== 1) {
+        throw new Error(`runner intervention claim mismatch: ${input.interventionId}`);
+      }
+    } else if (input.state === "failed" && input.interventionId) {
+      const ambiguous = database.prepare(`
+        UPDATE runner_intervention_inbox SET application_state = 'ambiguous'
+        WHERE application_state = 'claimed'
+          AND intervention_id = ?
+          AND claimed_execution_command_id = ?
+      `).run(input.interventionId, input.commandId);
+      if (Number(ambiguous.changes) !== 1) {
+        throw new Error(`runner intervention claim mismatch: ${input.interventionId}`);
+      }
+    }
   });
 }

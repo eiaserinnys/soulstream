@@ -52,9 +52,10 @@ import {
 } from "./sqlite_ipc_journal.js";
 import {
   claimRunnerIntervention,
-  completeRunnerInterventionClaim,
+  ensureRunnerInterventionInboxV9,
+  finishRunnerExecutionAndIntervention,
+  markRunnerInterventionAmbiguous,
   readPendingRunnerInterventions,
-  releaseRunnerInterventionClaim,
   stageRunnerIntervention,
 } from "./sqlite_intervention_inbox.js";
 import { loadNodeSqlite } from "./node_sqlite.js";
@@ -131,6 +132,7 @@ export class RunnerSqliteEventOutbox {
       }
       ensureRunnerLifecycleColumns(database);
       ensureRunnerIpcJournalV4(database);
+      ensureRunnerInterventionInboxV9(database);
       const recovered = recover(database, {
         migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
       });
@@ -296,9 +298,9 @@ export class RunnerSqliteEventOutbox {
     );
   }
 
-  async releaseInterventionClaim(interventionId: string, commandId: string): Promise<void> {
+  async markInterventionAmbiguous(interventionId: string, commandId: string): Promise<void> {
     this.requireOpen();
-    releaseRunnerInterventionClaim(
+    markRunnerInterventionAmbiguous(
       this.database,
       (operation) => this.transaction(operation),
       interventionId,
@@ -306,12 +308,18 @@ export class RunnerSqliteEventOutbox {
     );
   }
 
-  async completeInterventionClaim(commandId: string): Promise<void> {
+  async finishExecution(input: {
+    commandId: string;
+    interventionId?: string;
+    state: "completed" | "failed";
+    progressedAt: string;
+    terminalError: { code: string; message: string } | null;
+  }): Promise<void> {
     this.requireOpen();
-    completeRunnerInterventionClaim(
+    finishRunnerExecutionAndIntervention(
       this.database,
       (operation) => this.transaction(operation),
-      commandId,
+      input,
     );
   }
 

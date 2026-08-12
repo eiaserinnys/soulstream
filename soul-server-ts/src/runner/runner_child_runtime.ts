@@ -25,7 +25,6 @@ import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
   claimRunnerInterventionExecution,
-  finishRunnerInterventionExecution,
   handleRunnerInterventionCommand,
 } from "./runner_intervention_command.js";
 import {
@@ -178,7 +177,7 @@ export class RunnerChildRuntime {
       && command.kind === "execute"
       && command.params.runnerInterventionId
     ) {
-      await this.outbox.releaseInterventionClaim(
+      await this.outbox.markInterventionAmbiguous(
         command.params.runnerInterventionId,
         command.commandId,
       );
@@ -245,17 +244,15 @@ export class RunnerChildRuntime {
       };
     }
     try {
-      await this.finishLifecycle(command.commandId, terminalError);
+      await this.finishLifecycle(command, terminalError);
     } catch (error) {
-      this.logger.error({ error }, "Runner terminal lifecycle record failed");
+      this.logger.error({ error }, "Runner terminal lifecycle commit failed");
+      storageFailure = true;
+      terminalError = {
+        code: "runner_terminal_commit_failed",
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
-    await finishRunnerInterventionExecution(
-      command,
-      this.outbox,
-      terminalError !== undefined,
-    ).catch((error) => {
-      this.logger.error({ error }, "Runner intervention claim cleanup failed");
-    });
     const ended = executionEndedControlFrame(command.commandId, terminalError);
     await this.sendRequired(ended).catch((error) => {
       this.logger.warn({ error }, "Runner execution end could not reach host");
@@ -508,16 +505,19 @@ export class RunnerChildRuntime {
   }
 
   private async finishLifecycle(
-    commandId: string,
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
     terminalError: { code: string; message: string } | undefined,
   ): Promise<void> {
-    if (!this.lifecycle.read()) return;
-    this.lifecycle.finish(
-      commandId,
-      terminalError ? "failed" : "completed",
-      new Date().toISOString(),
-      terminalError ?? null,
-    );
+    await this.outbox.finishExecution({
+      commandId: command.commandId,
+      ...(command.params.runnerInterventionId
+        ? { interventionId: command.params.runnerInterventionId }
+        : {}),
+      state: terminalError ? "failed" : "completed",
+      progressedAt: new Date().toISOString(),
+      terminalError: terminalError ?? null,
+    });
+    this.lifecycle.syncSummary();
   }
 
   private requireActiveCommandId(): string {

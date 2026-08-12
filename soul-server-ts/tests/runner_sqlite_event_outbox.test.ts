@@ -103,6 +103,7 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(interventionTable.sql).toContain("intervention_id TEXT PRIMARY KEY");
       expect(interventionTable.sql).toContain("event_source_seq INTEGER UNIQUE");
       expect(interventionTable.sql).toContain("claimed_execution_command_id TEXT");
+      expect(interventionTable.sql).toContain("application_state TEXT NOT NULL");
       expect(outboxTable.sql).toContain("STRICT");
       expect(lifecycleTable.sql).toContain("STRICT");
       expect(journalTable.sql).toContain("STRICT");
@@ -160,13 +161,19 @@ describe("RunnerSqliteEventOutbox", () => {
       recovered.claimIntervention("intervention-1", "execute-followup"),
     ).resolves.toBe(true);
     await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
-    await recovered.completeInterventionClaim("execute-followup");
+    await recovered.finishExecution({
+      commandId: "execute-followup",
+      interventionId: "intervention-1",
+      state: "completed",
+      progressedAt: "2026-08-11T00:00:04.000Z",
+      terminalError: null,
+    });
     await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
     lifecycle.close();
     recovered.close();
   });
 
-  it("releases a claimed intervention for retry when its execution terminates unsuccessfully", async () => {
+  it("stops an ambiguous intervention after engine failure instead of automatic retry", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "retry-after-failure",
@@ -185,16 +192,131 @@ describe("RunnerSqliteEventOutbox", () => {
     ).resolves.toBe(true);
     await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
 
-    lifecycle.finish(
-      "execute-failed",
-      "failed",
-      "2026-08-11T00:00:04.000Z",
-      { code: "execution_failed", message: "boom" },
-    );
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([{
+    await outbox.finishExecution({
+      commandId: "execute-failed",
       interventionId: "retry-after-failure",
-      message: { text: "do not lose me", user: "soak" },
-    }]);
+      state: "failed",
+      progressedAt: "2026-08-11T00:00:04.000Z",
+      terminalError: { code: "execution_failed", message: "boom" },
+    });
+    await expect(outbox.readPendingInterventions()).rejects.toThrow(
+      "runner intervention application outcome is ambiguous: retry-after-failure",
+    );
+    expect(lifecycle.read()).toMatchObject({
+      execution_command_id: "execute-failed",
+      execution_state: "failed",
+    });
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("never replays a completed execution whose legacy inbox cleanup was interrupted", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "completed-but-retained",
+      message: { text: "apply once", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-completed",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await outbox.claimIntervention("completed-but-retained", "execute-completed");
+
+    // Models the old split commit: lifecycle reached completed but inbox delete
+    // did not. Recovery must treat completed as the durable apply receipt.
+    lifecycle.finish(
+      "execute-completed",
+      "completed",
+      "2026-08-11T00:00:04.000Z",
+    );
+
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(
+      "SELECT COUNT(*) AS count FROM runner_intervention_inbox",
+    ).get()).toEqual({ count: 0 });
+    database.close();
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("stops a claimed intervention that has no matching running lifecycle", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "claimed-before-lifecycle",
+      message: { text: "uncertain dispatch", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "previous-execution",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    lifecycle.finish(
+      "previous-execution",
+      "completed",
+      "2026-08-11T00:00:04.000Z",
+    );
+    await outbox.claimIntervention("claimed-before-lifecycle", "uncertain-execution");
+
+    await expect(outbox.readPendingInterventions()).rejects.toThrow(
+      "runner intervention application outcome is ambiguous: claimed-before-lifecycle",
+    );
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("rolls back terminal lifecycle when intervention commit fails", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "atomic-terminal",
+      message: { text: "one commit", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-atomic",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await outbox.claimIntervention("atomic-terminal", "execute-atomic");
+    const fault = new DatabaseSync(outbox.databasePath);
+    fault.exec(`
+      CREATE TRIGGER fail_intervention_completion
+      BEFORE DELETE ON runner_intervention_inbox
+      BEGIN
+        SELECT RAISE(ABORT, 'forced intervention completion failure');
+      END;
+    `);
+    fault.close();
+
+    await expect(outbox.finishExecution({
+      commandId: "execute-atomic",
+      interventionId: "atomic-terminal",
+      state: "completed",
+      progressedAt: "2026-08-11T00:00:04.000Z",
+      terminalError: null,
+    })).rejects.toThrow("forced intervention completion failure");
+    expect(lifecycle.read()).toMatchObject({
+      execution_command_id: "execute-atomic",
+      execution_state: "running",
+    });
+    const verified = new DatabaseSync(outbox.databasePath);
+    expect(verified.prepare(`
+      SELECT application_state, claimed_execution_command_id
+      FROM runner_intervention_inbox WHERE intervention_id = 'atomic-terminal'
+    `).get()).toEqual({
+      application_state: "claimed",
+      claimed_execution_command_id: "execute-atomic",
+    });
+    verified.close();
     lifecycle.close();
     outbox.close();
   });
@@ -424,7 +546,7 @@ describe("RunnerSqliteEventOutbox", () => {
         expect(columns).toContain("liveness_at");
         expect(columns).toContain("in_flight_tools_json");
       }
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
     } finally {
       verified.close();
     }
@@ -447,6 +569,48 @@ describe("RunnerSqliteEventOutbox", () => {
         started_at: "2026-08-11T01:00:00.000Z",
       }],
     });
+  });
+
+  it("migrates v8 claimed interventions to an explicit claimed application state", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    await outbox.stageIntervention({
+      interventionId: "legacy-v8-claim",
+      message: { text: "legacy claim", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-v8",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await outbox.claimIntervention("legacy-v8-claim", "execute-v8");
+    lifecycle.close();
+    outbox.close();
+
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      ALTER TABLE runner_intervention_inbox DROP COLUMN application_state;
+      PRAGMA user_version = 8;
+    `);
+    legacy.close();
+
+    const migrated = await RunnerSqliteEventOutbox.open(path);
+    await expect(migrated.readPendingInterventions()).resolves.toEqual([]);
+    const verified = new DatabaseSync(path);
+    expect(verified.prepare(`
+      SELECT application_state, claimed_execution_command_id
+      FROM runner_intervention_inbox WHERE intervention_id = 'legacy-v8-claim'
+    `).get()).toEqual({
+      application_state: "claimed",
+      claimed_execution_command_id: "execute-v8",
+    });
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+    verified.close();
+    migrated.close();
   });
 
   it("records pre-bootstrap failure and promotes only the succeeding execution lease", async () => {
@@ -885,7 +1049,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const verified = new DatabaseSync(path);
     try {
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
       expect(verified.prepare(`
         SELECT acked_through, ack_checkpoint_hash
         FROM runner_event_outbox WHERE record_kind = 'bootstrap'

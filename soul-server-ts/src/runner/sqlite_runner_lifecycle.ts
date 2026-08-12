@@ -215,6 +215,11 @@ export class RunnerSqliteLifecycle {
     return this.persistSummary(this.requireLifecycle());
   }
 
+  syncSummary(): RunnerLifecycleRecord | null {
+    const lifecycle = this.read();
+    return lifecycle === null ? null : this.persistSummary(lifecycle);
+  }
+
   reap(commandId: string, progressedAt: string, error: {
     code: string;
     message: string;

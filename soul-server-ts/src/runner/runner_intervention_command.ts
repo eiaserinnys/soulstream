@@ -67,16 +67,3 @@ export async function claimRunnerInterventionExecution(
     },
   });
 }
-
-export async function finishRunnerInterventionExecution(
-  command: Extract<RunnerCommandFrame, { kind: "execute" }>,
-  outbox: RunnerSqliteEventOutbox,
-  failed: boolean,
-): Promise<void> {
-  const interventionId = command.params.runnerInterventionId;
-  if (failed && interventionId) {
-    await outbox.releaseInterventionClaim(interventionId, command.commandId);
-    return;
-  }
-  await outbox.completeInterventionClaim(command.commandId);
-}
