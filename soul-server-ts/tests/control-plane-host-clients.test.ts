@@ -7,6 +7,8 @@ import { TaskVersionConflict } from "../src/work-task/task_models.js";
 import { TaskService } from "../src/work-task/task_service.js";
 import {
   ClaudeRuntimeHostClient,
+  PersistenceHostTransport,
+  SessionDeliveryNotificationHostClient,
 } from "../src/control_plane/persistence_host_clients.js";
 
 const logger = { warn: vi.fn() } as unknown as Logger;
@@ -164,6 +166,64 @@ describe("worker control-plane host clients", () => {
       "https://orch.example/api/claude-runtime/host/terminalize_background_task",
     );
     expect(result.row.created_at).toBeInstanceOf(Date);
+  });
+
+  it("preserves notification payload casing as an opaque host argument subtree", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body));
+      expect(request.args[0]).toEqual({
+        delivery_id: "delivery-1",
+        lease_owner: "worker-1",
+        target_session_id: "target-1",
+        disposition: "queued",
+        payload: {
+          delivery_id: "delivery-1",
+          caller_info: {
+            display_name: "로젤린",
+            mixedCaseProof: "preserved",
+          },
+        },
+      });
+      return new Response("null", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDeliveryNotificationHostClient(
+      new PersistenceHostTransport({ orch, logger }),
+    );
+
+    await client.stageWithQueuedDelivery({
+      deliveryId: "delivery-1",
+      leaseOwner: "worker-1",
+      targetSessionId: "target-1",
+      disposition: "queued",
+      payload: {
+        delivery_id: "delivery-1",
+        caller_info: {
+          display_name: "로젤린",
+          mixedCaseProof: "preserved",
+        },
+      },
+    });
+  });
+
+  it("uses explicit notification dead-letter list and requeue host operations", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const operation = new URL(url).pathname.split("/").at(-1);
+      if (operation === "list_dead_letter_notifications") {
+        expect(JSON.parse(String(init?.body))).toEqual({ args: [25] });
+        return new Response("[]", { status: 200 });
+      }
+      expect(operation).toBe("requeue_dead_letter_notification");
+      expect(JSON.parse(String(init?.body))).toEqual({ args: ["delivery-1"] });
+      return new Response("null", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDeliveryNotificationHostClient(
+      new PersistenceHostTransport({ orch, logger }),
+    );
+
+    await expect(client.listDeadLetters(25)).resolves.toEqual([]);
+    await expect(client.requeueDeadLetter("delivery-1")).resolves.toBeNull();
   });
 
   it("sends runner transcript correlation to the idempotent mutation owner", async () => {

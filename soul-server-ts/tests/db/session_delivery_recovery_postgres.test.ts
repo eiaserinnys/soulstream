@@ -603,7 +603,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }]);
   });
 
-  it("dead-letters retryable rows at either the attempt or age ceiling", async () => {
+  it("dead-letters retryable rows and only requeues them through the explicit operator path", async () => {
     for (const [deliveryId, relationKey, worker] of [
       ["delivery-attempt-cap", "relation-attempt-cap", "worker-attempt-cap"],
       ["delivery-age-cap", "relation-age-cap", "worker-age-cap"],
@@ -647,6 +647,24 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       16,
       oldestAllowed,
     )).resolves.toMatchObject({ state: "dead_letter", attempt_count: 1 });
+
+    await expect(repository.notifications.listDeadLetters(10)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ delivery_id: "delivery-attempt-cap" }),
+        expect.objectContaining({ delivery_id: "delivery-age-cap" }),
+      ]),
+    );
+    await expect(
+      repository.notifications.requeueDeadLetter("delivery-attempt-cap"),
+    ).resolves.toMatchObject({
+      state: "pending",
+      attempt_count: 0,
+      last_error: null,
+      dead_lettered_at: null,
+    });
+    await expect(
+      repository.notifications.requeueDeadLetter("delivery-attempt-cap"),
+    ).resolves.toBeNull();
   });
 
   it("quarantines residual camelCase deliveryIntent rows in migration 062", async () => {

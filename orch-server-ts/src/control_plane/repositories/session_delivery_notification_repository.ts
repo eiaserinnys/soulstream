@@ -193,6 +193,37 @@ export class SessionDeliveryNotificationRepository {
     return rows[0] ?? null;
   }
 
+  async listDeadLetters(limit = 100): Promise<SessionDeliveryNotificationOutboxRow[]> {
+    return await this.sql<SessionDeliveryNotificationOutboxRow[]>`
+      SELECT *
+      FROM session_delivery_notification_outbox
+      WHERE state = 'dead_letter'
+      ORDER BY dead_lettered_at DESC NULLS LAST, delivery_id
+      LIMIT ${limit}
+    `;
+  }
+
+  async requeueDeadLetter(
+    deliveryId: string,
+  ): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    const rows = await this.sql<SessionDeliveryNotificationOutboxRow[]>`
+      UPDATE session_delivery_notification_outbox
+      SET
+        state = 'pending',
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        attempt_count = 0,
+        next_attempt_at = NOW(),
+        last_error = NULL,
+        dead_lettered_at = NULL,
+        updated_at = NOW()
+      WHERE delivery_id = ${deliveryId}
+        AND state = 'dead_letter'
+      RETURNING *
+    `;
+    return rows[0] ?? null;
+  }
+
   async releaseExpiredLeases(
     maxAttempts: number,
     oldestAllowedCreatedAt: Date,

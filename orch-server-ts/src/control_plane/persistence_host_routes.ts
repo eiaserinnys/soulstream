@@ -10,6 +10,7 @@ export interface PersistenceHostRouteOptions {
 
 type RepositoryKey = keyof PersistenceHostRepositories;
 type OperationTarget = readonly [RepositoryKey, string | null, string];
+const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
 
 const deliveryOperations = {
   register: ["deliveries", null, "register"],
@@ -36,6 +37,8 @@ const deliveryOperations = {
   mark_notification_published: ["deliveries", "notifications", "markPublished"],
   retry_notification: ["deliveries", "notifications", "retry"],
   dead_letter_notification: ["deliveries", "notifications", "deadLetter"],
+  list_dead_letter_notifications: ["deliveries", "notifications", "listDeadLetters"],
+  requeue_dead_letter_notification: ["deliveries", "notifications", "requeueDeadLetter"],
   release_expired_notification_leases: ["deliveries", "notifications", "releaseExpiredLeases"],
   claim_queued_after_node_restart: ["deliveries", "recovery", "claimQueuedAfterNodeRestart"],
   claim_recoverable_queued: ["deliveries", "recovery", "claimRecoverableQueued"],
@@ -166,7 +169,10 @@ function camelCase(value: unknown, key?: string): unknown {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, child]) => {
     const camelKey = childKey.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
-    return [camelKey, camelCase(child, camelKey)];
+    return [
+      camelKey,
+      OPAQUE_ARGUMENT_KEYS.has(camelKey) ? child : camelCase(child, camelKey),
+    ];
   }));
 }
 

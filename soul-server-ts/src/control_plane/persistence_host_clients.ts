@@ -21,6 +21,7 @@ import type {
 } from "../db/session_db_types.js";
 
 export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
+const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
 
 export class PersistenceHostRequestError extends Error {
   readonly retryable: boolean;
@@ -264,6 +265,22 @@ export class SessionDeliveryNotificationHostClient {
     );
   }
 
+  listDeadLetters(limit = 100): Promise<SessionDeliveryNotificationOutboxRow[]> {
+    return this.transport.request(
+      "session-deliveries",
+      "list_dead_letter_notifications",
+      [limit],
+    );
+  }
+
+  requeueDeadLetter(deliveryId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "requeue_dead_letter_notification",
+      [deliveryId],
+    );
+  }
+
   releaseExpiredLeases(maxAttempts: number, oldestAllowedCreatedAt: Date): Promise<number> {
     return this.transport.request(
       "session-deliveries",
@@ -487,7 +504,13 @@ function snakeCase(value: unknown): unknown {
   if (!value || typeof value !== "object" || value instanceof Date) return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
     .filter(([, child]) => child !== undefined)
-    .map(([key, child]) => [key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`), snakeCase(child)]));
+    .map(([key, child]) => {
+      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      return [
+        snakeKey,
+        OPAQUE_ARGUMENT_KEYS.has(snakeKey) ? child : snakeCase(child),
+      ];
+    }));
 }
 
 function reviveDates(value: unknown, key?: string): unknown {
