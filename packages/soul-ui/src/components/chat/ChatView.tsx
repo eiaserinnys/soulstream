@@ -292,13 +292,29 @@ export function ChatView({
         reachedTop={history.reachedTop}
         blockedReason={history.blockedReason}
         onRetry={() => history.requestOlder("manual")}
+        showReachedTop={timelineItems.length > 0}
       />
     ),
-    [history.blockedReason, history.loading, history.reachedTop, history.requestOlder],
+    [history.blockedReason, history.loading, history.reachedTop, history.requestOlder, timelineItems.length],
+  );
+  const VirtuosoEmptyPlaceholder = useCallback(
+    () => (
+      !history.loading && history.blockedReason === null
+        ? (
+            <div className="p-5 text-center text-muted-foreground text-sm">
+              Waiting for events...
+            </div>
+          )
+        : null
+    ),
+    [history.blockedReason, history.loading],
   );
   const virtuosoComponents = useMemo(
-    () => ({ Header: VirtuosoHeader }),
-    [VirtuosoHeader],
+    () => ({
+      Header: VirtuosoHeader,
+      EmptyPlaceholder: VirtuosoEmptyPlaceholder,
+    }),
+    [VirtuosoEmptyPlaceholder, VirtuosoHeader],
   );
 
   if (!activeSessionKey) {
@@ -355,111 +371,94 @@ export function ChatView({
           <SessionStoryDisclosure sessionId={activeSessionKey} />
         </div>
       )}
-      {timelineItems.length === 0 && (
-        <ChatHistoryStatus
-          loading={history.loading}
-          reachedTop={history.reachedTop}
-          blockedReason={history.blockedReason}
-          onRetry={() => history.requestOlder("manual")}
-          showReachedTop={false}
-        />
-      )}
-      {timelineItems.length === 0 && !history.loading && history.blockedReason === null && (
-        <div className="p-5 text-center text-muted-foreground text-sm">
-          Waiting for events...
-        </div>
-      )}
-
-      {timelineItems.length > 0 && (
-        <Virtuoso
-          key={activeSessionKey}
-          ref={virtuosoRef}
-          scrollerRef={bindChatScroller}
-          data={timelineItems}
-          firstItemIndex={firstItemIndex}
-          initialTopMostItemIndex={initialTopMostItemIndex}
-          alignToBottom
-          atBottomThreshold={48}
-          increaseViewportBy={{ top: 800, bottom: 400 }}
-          components={virtuosoComponents}
-          // Follow 버튼 상태가 사용자 의도 정본이다. scalar "auto"는 Virtuoso 내부
-          // at-bottom 판정이 false로 흔들리면 버튼이 켜져 있어도 따라가지 않으므로,
-          // callback 형태로 명시적 follow 의도를 반환한다.
-          followOutput={resolveVirtuosoFollowOutput}
-          atBottomStateChange={(atBottom) => {
-            const isInitialBottomFocusPending =
-              activeSessionKey !== null &&
-              initialBottomFocusPendingSessionRef.current === activeSessionKey &&
-              bottomFocusedSessionRef.current !== activeSessionKey;
-            if (isInitialBottomFocusPending) {
-              if (!atBottom) return;
-              initialBottomFocusPendingSessionRef.current = null;
-              bottomFocusedSessionRef.current = activeSessionKey;
-              setIsFollowing(true);
-              setShowNewMessage(false);
-              return;
-            }
-            // 두 가지 measure 깜빡임을 모두 가드한다:
-            //   - 세션 전환 직후 atBottom=false 깜빡임 (sessionMs 기반)
-            //   - prepend 직후 atBottom=true 깜빡임 (prependAgeMs 기반)
-            // 헬퍼가 null을 반환하면 isFollowing 변경하지 않음.
-            const sessionMs = performance.now() - sessionStartedAtRef.current;
-            const prependAgeMs =
-              chatLastPrependAtMs === null
-                ? null
-                : performance.now() - chatLastPrependAtMs;
-            const next = decideFollowOnAtBottomChange(atBottom, sessionMs, prependAgeMs);
-            if (next !== null) {
-              setIsFollowing(next);
-            }
-            // showNewMessage는 atBottom=true 보고가 신뢰 가능한지와 무관하게
-            // 사용자가 끝에 닿았다는 raw 신호로만 끄면 충분.
-            if (atBottom) setShowNewMessage(false);
-          }}
-          startReached={() => {
-            history.requestOlder("automatic");
-          }}
-          totalListHeightChanged={notifyHistoryViewportGeometry}
-          /**
-           * tool-group은 마지막 tool, summary-group은 anchor의 키를 유지한다.
-           * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
-           */
-          computeItemKey={(_index, item) => messageOrGroupKey(item)}
-          itemContent={(_, item) => (
-            <div
-              data-chat-item-key={messageOrGroupKey(item)}
-              className="contents"
-            >
-              <VirtualizedItem
-                item={item}
-                llmContext={llmContext}
-                sessionId={activeSessionKey ?? undefined}
-              />
-            </div>
-          )}
-          itemsRendered={() => {
-            // Virtuoso가 data와 spacer DOM을 같은 프레임에 정합한 뒤 geometry를 읽는다.
-            // 즉시 읽으면 재배치 중인 overscan 행 또는 빈 중간 프레임을 관찰할 수 있다.
-            scheduleVisuallyFirstItem();
-            notifyHistoryViewportGeometry();
-            if (focusEventId == null) return;
-            // 이미 이 focusEventId를 처리했다면 중복 예약 방지
-            if (handledFocusRef.current === focusEventId) return;
-            // scrollerRef로 virtuoso 내부 스크롤러 DOM 범위 한정 (document 전역 쿼리 금지)
-            const el = scrollerRef.current?.querySelector(
-              `[data-tree-node-id$="-${focusEventId}"]`,
-            ) as HTMLElement | null;
-            if (!el) return;
-            handledFocusRef.current = focusEventId;
-            el.classList.add("chat-focus-ring");
-            window.setTimeout(() => {
-              el.classList.remove("chat-focus-ring");
-              setFocusEventId(null);
-            }, 2000);
-          }}
-          className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"
-        />
-      )}
+      <Virtuoso
+        key={activeSessionKey}
+        ref={virtuosoRef}
+        scrollerRef={bindChatScroller}
+        data={timelineItems}
+        firstItemIndex={firstItemIndex}
+        initialTopMostItemIndex={initialTopMostItemIndex}
+        alignToBottom
+        atBottomThreshold={48}
+        increaseViewportBy={{ top: 800, bottom: 400 }}
+        components={virtuosoComponents}
+        // Follow 버튼 상태가 사용자 의도 정본이다. scalar "auto"는 Virtuoso 내부
+        // at-bottom 판정이 false로 흔들리면 버튼이 켜져 있어도 따라가지 않으므로,
+        // callback 형태로 명시적 follow 의도를 반환한다.
+        followOutput={resolveVirtuosoFollowOutput}
+        atBottomStateChange={(atBottom) => {
+          const isInitialBottomFocusPending =
+            activeSessionKey !== null &&
+            initialBottomFocusPendingSessionRef.current === activeSessionKey &&
+            bottomFocusedSessionRef.current !== activeSessionKey;
+          if (isInitialBottomFocusPending) {
+            if (!atBottom) return;
+            initialBottomFocusPendingSessionRef.current = null;
+            bottomFocusedSessionRef.current = activeSessionKey;
+            setIsFollowing(true);
+            setShowNewMessage(false);
+            return;
+          }
+          // 두 가지 measure 깜빡임을 모두 가드한다:
+          //   - 세션 전환 직후 atBottom=false 깜빡임 (sessionMs 기반)
+          //   - prepend 직후 atBottom=true 깜빡임 (prependAgeMs 기반)
+          // 헬퍼가 null을 반환하면 isFollowing 변경하지 않음.
+          const sessionMs = performance.now() - sessionStartedAtRef.current;
+          const prependAgeMs =
+            chatLastPrependAtMs === null
+              ? null
+              : performance.now() - chatLastPrependAtMs;
+          const next = decideFollowOnAtBottomChange(atBottom, sessionMs, prependAgeMs);
+          if (next !== null) {
+            setIsFollowing(next);
+          }
+          // showNewMessage는 atBottom=true 보고가 신뢰 가능한지와 무관하게
+          // 사용자가 끝에 닿았다는 raw 신호로만 끄면 충분.
+          if (atBottom) setShowNewMessage(false);
+        }}
+        startReached={() => {
+          history.requestOlder("automatic");
+        }}
+        totalListHeightChanged={notifyHistoryViewportGeometry}
+        /**
+         * tool-group은 마지막 tool, summary-group은 anchor의 키를 유지한다.
+         * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
+         */
+        computeItemKey={(_index, item) => messageOrGroupKey(item)}
+        itemContent={(_, item) => (
+          <div
+            data-chat-item-key={messageOrGroupKey(item)}
+            className="contents"
+          >
+            <VirtualizedItem
+              item={item}
+              llmContext={llmContext}
+              sessionId={activeSessionKey ?? undefined}
+            />
+          </div>
+        )}
+        itemsRendered={() => {
+          // Virtuoso가 data와 spacer DOM을 같은 프레임에 정합한 뒤 geometry를 읽는다.
+          // 즉시 읽으면 재배치 중인 overscan 행 또는 빈 중간 프레임을 관찰할 수 있다.
+          scheduleVisuallyFirstItem();
+          notifyHistoryViewportGeometry();
+          if (focusEventId == null) return;
+          // 이미 이 focusEventId를 처리했다면 중복 예약 방지
+          if (handledFocusRef.current === focusEventId) return;
+          // scrollerRef로 virtuoso 내부 스크롤러 DOM 범위 한정 (document 전역 쿼리 금지)
+          const el = scrollerRef.current?.querySelector(
+            `[data-tree-node-id$="-${focusEventId}"]`,
+          ) as HTMLElement | null;
+          if (!el) return;
+          handledFocusRef.current = focusEventId;
+          el.classList.add("chat-focus-ring");
+          window.setTimeout(() => {
+            el.classList.remove("chat-focus-ring");
+            setFocusEventId(null);
+          }, 2000);
+        }}
+        className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"
+      />
 
       {showNewMessage && !isFollowing && (
         <div className="relative">

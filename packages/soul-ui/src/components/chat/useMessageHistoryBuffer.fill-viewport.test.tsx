@@ -30,7 +30,7 @@ function deferred<T>(): Deferred<T> {
 
 function timelineMessage(
   id: number,
-  eventType: "tool_start" | "user_message" = "user_message",
+  eventType: "tool_start" | "user_message" | "result" = "user_message",
 ) {
   return {
     id,
@@ -44,7 +44,9 @@ function timelineMessage(
           tool_input: { file_path: `/tmp/${id}` },
           timestamp: id,
         }
-      : { type: eventType, text: `message-${id}`, timestamp: id },
+      : eventType === "result"
+        ? { type: eventType, output: `state-${id}`, timestamp: id }
+        : { type: eventType, text: `message-${id}`, timestamp: id },
     created_at: new Date(id * 1_000).toISOString(),
   };
 }
@@ -52,7 +54,7 @@ function timelineMessage(
 function page(
   ids: number[],
   nextCursor: string | null,
-  eventType: "tool_start" | "user_message" = "user_message",
+  eventType: "tool_start" | "user_message" | "result" = "user_message",
 ): Response {
   return new Response(JSON.stringify({
     messages: ids.map((id) => timelineMessage(id, eventType)),
@@ -171,6 +173,27 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("state-only page가 0행을 만든 뒤 늦게 scroller가 bind되면 다음 page로 진행한다", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([2], "cursor-1", "result"))
+      .mockResolvedValueOnce(page([1], null));
+    vi.stubGlobal("fetch", fetchMock);
+    scrollerRef = { current: null };
+
+    await renderSession("sess-state-only");
+    expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
+
+    await notifyGeometry();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    scrollerRef.current = scroller;
+    await notifyGeometry();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(1);
+    expect(latest?.reachedTop).toBe(true);
+  });
+
   it("scrollHeight가 clientHeight + margin을 넘으면 추가 요청을 멈춘다", async () => {
     const fetchMock = vi.fn().mockResolvedValue(page([2], "cursor-1"));
     vi.stubGlobal("fetch", fetchMock);
@@ -181,6 +204,23 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(latest?.blockedReason).toBeNull();
+  });
+
+  it("viewport 확대나 tool group 재접힘으로 다시 underfill되면 같은 geometry 경로가 새 run을 시작한다", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([2], "cursor-1"))
+      .mockResolvedValueOnce(page([1], "cursor-2"));
+    vi.stubGlobal("fetch", fetchMock);
+    setGeometry(scroller, { clientHeight: 600, scrollHeight: 801 });
+
+    await renderSession("sess-resized");
+    await notifyGeometry();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    setGeometry(scroller, { clientHeight: 800, scrollHeight: 900 });
+    await notifyGeometry();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("한 run의 5 page cap에서 멈추고 수동 성공은 새 budget으로 latch를 해제한다", async () => {
@@ -312,5 +352,23 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(latest?.reachedTop).toBe(true);
     expect(latest?.blockedReason).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("unmount cleanup 뒤 늦게 끝난 promise는 store를 변경하지 않는다", async () => {
+    const pending = deferred<Response>();
+    const fetchMock = vi.fn().mockReturnValue(pending.promise);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-unmount");
+    await act(async () => root.unmount());
+
+    await act(async () => {
+      pending.resolve(page([1], "cursor-old"));
+      await pending.promise;
+    });
+    await flush();
+
+    expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
+    root = createRoot(container);
   });
 });

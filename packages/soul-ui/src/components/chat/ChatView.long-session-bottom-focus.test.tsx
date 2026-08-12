@@ -46,9 +46,10 @@ vi.mock("react-virtuoso", async () => {
 
     const data = (props.data as any[] | undefined) ?? [];
     const components = props.components as
-      | { Header?: ComponentType }
+      | { Header?: ComponentType; EmptyPlaceholder?: ComponentType }
       | undefined;
     const Header = components?.Header;
+    const EmptyPlaceholder = components?.EmptyPlaceholder;
     const firstItemIndex = props.firstItemIndex as number;
     const computeItemKey = props.computeItemKey as (
       index: number,
@@ -59,6 +60,9 @@ vi.mock("react-virtuoso", async () => {
       "div",
       { ref: scrollerRef, "data-testid": "virtuoso" },
       Header ? React.createElement(Header) : null,
+      data.length === 0 && EmptyPlaceholder
+        ? React.createElement(EmptyPlaceholder)
+        : null,
       data.map((item, index) => React.createElement(
         "div",
         { key: computeItemKey(firstItemIndex + index, item) },
@@ -664,15 +668,18 @@ describe("ChatView long-session initial bottom focus", () => {
   });
 
   it.each([
-    ["0행", false],
-    ["1행", true],
-  ])("%s error/cap 상태에도 이전 대화 수동 재시도 어포던스를 노출한다", async (_label, withRow) => {
-    virtuosoMock.blockedReason = "error";
+    ["error", "0행", false],
+    ["error", "1행", true],
+    ["cap", "0행", false],
+    ["cap", "1행", true],
+  ] as const)("%s %s 상태에 이전 대화 수동 재시도 어포던스를 노출한다", async (reason, _label, withRow) => {
+    virtuosoMock.blockedReason = reason;
     if (withRow) {
       useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
     }
 
     ({ container, root } = await renderChatView());
+    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
     const button = Array.from(container.querySelectorAll("button")).find(
       (candidate) => candidate.textContent?.includes("이전 대화 더 불러오기"),
     );
@@ -680,6 +687,14 @@ describe("ChatView long-session initial bottom focus", () => {
 
     button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
+  });
+
+  it("0행에도 scroller와 Waiting placeholder를 유지해 geometry controller를 깨운다", async () => {
+    ({ container, root } = await renderChatView());
+
+    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+    expect(container.textContent).toContain("Waiting for events...");
+    expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
   });
 
   it("scroller bind·commit·height 변화와 startReached를 단일 history controller에 연결한다", async () => {

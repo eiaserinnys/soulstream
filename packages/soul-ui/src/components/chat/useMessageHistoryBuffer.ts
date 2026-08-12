@@ -215,8 +215,12 @@ export function useMessageHistoryBuffer(
     if (outcome === "stale" && fillRunRef.current === run) {
       fillRunRef.current = null;
     }
+    if (outcome === "busy" && fillRunRef.current === run) {
+      fillRunRef.current = null;
+      updateBlockedReason("error");
+    }
     return outcome;
-  }, [isCurrentSession, requestHistoryPage]);
+  }, [requestHistoryPage, updateBlockedReason]);
 
   const beginFillRun = useCallback((source: HistoryRequestSource): void => {
     if (!sessionId || configuredSessionRef.current !== sessionId) return;
