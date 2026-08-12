@@ -23,17 +23,22 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
     const destinationPath = join(directory, "destination.json");
     await writeFile(sourcePath, "new\n", "utf8");
     await writeFile(destinationPath, "old\n", "utf8");
-    const lock = holdExclusiveWindowsHandle(destinationPath, 350);
+    const lock = holdExclusiveWindowsHandle(destinationPath);
     await lock.ready;
     let attempts = 0;
     const renameFile = vi.fn(async (source: string, destination: string) => {
       attempts += 1;
-      await rename(source, destination);
+      try {
+        await rename(source, destination);
+      } catch (error) {
+        if (attempts === 1) lock.release();
+        throw error;
+      }
     });
 
     await renameWithTransientRetry(sourcePath, destinationPath, {
       renameFile,
-      retryDelaysMs: [50, 100, 200, 400],
+      retryDelaysMs: [50, 100, 200, 400, 800],
     });
     await lock.closed;
 
@@ -42,15 +47,16 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
   }, 10_000);
 });
 
-function holdExclusiveWindowsHandle(path: string, holdMs: number): {
+function holdExclusiveWindowsHandle(path: string): {
   ready: Promise<void>;
   closed: Promise<void>;
+  release: () => void;
 } {
   const script = [
     "$stream = [System.IO.File]::Open($env:SOULSTREAM_LOCK_PATH, [System.IO.FileMode]::Open,",
     "  [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)",
     "[Console]::Out.WriteLine('LOCKED')",
-    "Start-Sleep -Milliseconds ([int]$env:SOULSTREAM_HOLD_MS)",
+    "[Console]::In.ReadLine() | Out-Null",
     "$stream.Dispose()",
   ].join("\n");
   const child = spawn("powershell.exe", [
@@ -62,10 +68,9 @@ function holdExclusiveWindowsHandle(path: string, holdMs: number): {
   ], {
     env: {
       ...process.env,
-      SOULSTREAM_HOLD_MS: String(holdMs),
       SOULSTREAM_LOCK_PATH: path,
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
   let stderr = "";
   child.stderr.setEncoding("utf8");
@@ -85,5 +90,9 @@ function holdExclusiveWindowsHandle(path: string, holdMs: number): {
     });
     closed.catch(reject);
   });
-  return { ready, closed };
+  return {
+    ready,
+    closed,
+    release: () => { child.stdin.end("\n"); },
+  };
 }
