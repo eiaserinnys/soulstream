@@ -252,6 +252,21 @@ describe("CommandDispatcher Claude runtime correlation", () => {
       },
       "Claude runtime command rejected",
     );
+    const correlation = {
+      type: "claude_runtime_list_tasks",
+      requestId: null,
+      sessionId: "sess-runtime",
+    };
+    expect(logger.debug).toHaveBeenNthCalledWith(
+      1,
+      correlation,
+      "Claude runtime command received",
+    );
+    expect(logger.debug).toHaveBeenNthCalledWith(
+      2,
+      { ...correlation, responseType: "error" },
+      "Upstream command error response sent",
+    );
   });
 
   it("logs receive and response traces with the same correlation fields", async () => {

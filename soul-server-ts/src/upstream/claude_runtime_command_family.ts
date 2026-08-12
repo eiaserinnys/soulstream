@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import {
+  commandTraceFields,
   CommandDispatchError,
   type CommandHandlerMap,
   type CommandLike,
@@ -122,7 +123,7 @@ async function sendClaudeRuntimeCommand(
   cmd: CommandLike,
   buildAck: () => Promise<Record<string, unknown>>,
 ): Promise<void> {
-  const correlation = commandCorrelation(cmd);
+  const correlation = commandTraceFields(cmd);
   deps.logger.debug(correlation, "Claude runtime command received");
   try {
     const ack = await buildAck();
@@ -144,26 +145,4 @@ async function sendClaudeRuntimeCommand(
     }
     throw err;
   }
-}
-
-function commandCorrelation(cmd: CommandLike): {
-  type: string | null;
-  requestId: string | null;
-  sessionId: string | null;
-} {
-  const runtimeCommand = cmd as CommandLike & {
-    agentSessionId?: unknown;
-    session_id?: unknown;
-  };
-  return {
-    type: typeof cmd.type === "string" ? cmd.type : null,
-    requestId: nonEmptyString(cmd.requestId ?? cmd.request_id),
-    sessionId: nonEmptyString(
-      runtimeCommand.agentSessionId ?? runtimeCommand.session_id,
-    ),
-  };
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
