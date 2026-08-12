@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +17,7 @@ import {
   parseSseChunk,
 } from "../../scripts/staging-soak/event_evidence.js";
 import { stagingDatabaseUrl } from "../../scripts/staging-soak/database.js";
+import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 
 const REPOSITORY_ROOT = "/srv/soulstream";
 const { DatabaseSync } = createRequire(import.meta.url)(
@@ -96,13 +97,19 @@ describe("runner staging soak isolation contract", () => {
       CODEX_HOME: "/secure/staging-codex-home",
       CODEX_ADAPTER_MODE: "app-server",
     });
-    expect(environments.soul.SOUL_RUNNER_STATE_DIR).toMatch(
-      /^\/tmp\/soul-runner-soak-[a-f0-9]{12}$/,
+    expect(dirname(environments.soul.SOUL_RUNNER_STATE_DIR!)).toBe(tmpdir());
+    expect(basename(environments.soul.SOUL_RUNNER_STATE_DIR!)).toMatch(
+      /^soul-runner-soak-[a-f0-9]{12}$/,
     );
     expect(config.paths.runnerStateStorage).toBe(
-      "/srv/soulstream/.local/runner-staging-soak/runtime/runner-state",
+      join(config.repositoryRoot, ".local", "runner-staging-soak", "runtime", "runner-state"),
     );
-    expect(`${config.paths.runnerState}/${"a".repeat(24)}/runner.sock`.length).toBeLessThan(108);
+    const socketPath = runnerProcessPaths(config.paths.runnerState, "session-a").socketPath;
+    if (process.platform === "win32") {
+      expect(socketPath.startsWith("\\\\.\\pipe\\soulstream-runner-")).toBe(true);
+    } else {
+      expect(Buffer.byteLength(socketPath, "utf8")).toBeLessThan(108);
+    }
     expect(environments.orch.PORT).not.toBe("5200");
     expect(environments.soul.PORT).not.toBe("3105");
     expect(environments.soul.PORT).not.toBe("4205");

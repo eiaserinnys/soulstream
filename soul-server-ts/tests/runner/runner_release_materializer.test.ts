@@ -49,8 +49,15 @@ describe("BuildArtifactReleaseMaterializer", () => {
     await expect(readFile(join(release.releaseRoot, "debug.map"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    expect((await stat(release.releaseRoot)).mode & 0o777).toBe(0o555);
-    expect((await stat(join(release.releaseRoot, "runner_entry.js"))).mode & 0o777).toBe(0o444);
+    const releaseMode = (await stat(release.releaseRoot)).mode & 0o777;
+    const entryMode = (await stat(join(release.releaseRoot, "runner_entry.js"))).mode & 0o777;
+    if (process.platform === "win32") {
+      expect(releaseMode & 0o222).toBe(0);
+      expect(entryMode & 0o222).toBe(0);
+    } else {
+      expect(releaseMode).toBe(0o555);
+      expect(entryMode).toBe(0o444);
+    }
     await materializer.remove(release);
   });
 

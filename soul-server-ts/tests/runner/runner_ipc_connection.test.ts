@@ -63,6 +63,24 @@ describe("RunnerIpcConnection", () => {
     },
   );
 
+  it("normalizes ECONNRESET transport teardown as a closed connection", async () => {
+    const [host] = await socketPair();
+    const connection = new RunnerIpcConnection(host);
+    const pending = connection.request(
+      prepareSessionCommandFrame("prepare-reset", "session-1"),
+      { timeoutMs: 1_000 },
+    );
+    void pending.catch(() => {});
+    await vi.waitFor(() => expect(connection.pendingRequestCount).toBe(1));
+
+    host.emit("error", Object.assign(new Error("read ECONNRESET"), {
+      code: "ECONNRESET",
+    }));
+
+    await expect(pending).rejects.toThrow("closed");
+    expect(connection.pendingRequestCount).toBe(0);
+  });
+
   it("rejects non-frame JSON before it reaches the handler", async () => {
     const [host, runner] = await socketPair();
     const failure = vi.fn();

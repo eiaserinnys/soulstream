@@ -9,6 +9,7 @@ import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { readRunnerRegistrationIdentity } from "../../src/runner/runner_registration_identity.js";
 
 const directories: string[] = [];
+const SNAPSHOT_PATH = join(tmpdir(), "runner-releases", "sha-a");
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(
@@ -21,11 +22,11 @@ describe("RunnerProcessSpawner", () => {
     const calls: string[] = [];
     const spawnProcess = vi.fn((entry: string, args: string[], options: unknown) => {
       calls.push("spawn");
-      expect(entry).toBe("/releases/sha-a/runner_entry.js");
+      expect(entry).toBe(join(SNAPSHOT_PATH, "runner_entry.js"));
       expect(args[0]).toBe("--config");
       expect(options).toMatchObject({
         detached: true,
-        cwd: "/releases/sha-a",
+        cwd: SNAPSHOT_PATH,
       });
       expect((options as { stdio: unknown[] }).stdio).toEqual([
         "ignore",
@@ -71,7 +72,7 @@ describe("RunnerProcessSpawner", () => {
     expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
       sessionId: "session-a",
       codeSha: "sha-a",
-      snapshotPath: "/releases/sha-a",
+      snapshotPath: SNAPSHOT_PATH,
       runnerLeaseTimeoutMs: 120_000,
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
       paths: { logPath: expect.stringMatching(/runner\.log$/) },
@@ -328,7 +329,7 @@ async function input() {
       workspace_dir: "/workspace/agent-a",
     },
     codeSha: "sha-a",
-    snapshotPath: "/releases/sha-a",
+    snapshotPath: SNAPSHOT_PATH,
     codexAdapterMode: "sdk" as const,
     claudeRuntimeV2Enabled: true,
     claudeRuntimeIdleTtlMs: 300_000,

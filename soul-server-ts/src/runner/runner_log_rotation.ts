@@ -6,6 +6,7 @@ import {
   readSync,
   renameSync,
   rmSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 
@@ -44,7 +45,8 @@ export function rotateRunnerLogIfNeeded(
     closeSync(readFd);
   }
   writeFileSync(`${path}.1`, retained, { mode: 0o600 });
-  ftruncateSync(fd, 0);
+  if (process.platform === "win32") truncateSync(path, 0);
+  else ftruncateSync(fd, 0);
   return true;
 }
 
