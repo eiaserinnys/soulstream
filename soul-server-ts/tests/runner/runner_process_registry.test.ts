@@ -205,6 +205,40 @@ describe("runner process registry", () => {
     expect(onScanError).toHaveBeenCalledOnce();
   });
 
+  it("skips a busy SQLite scan cycle and retries the live runner on the next cycle", async () => {
+    const busy = Object.assign(new Error("database is locked"), {
+      code: "ERR_SQLITE_ERROR",
+      errcode: 5,
+    });
+    const scan = vi.fn()
+      .mockResolvedValueOnce({
+        registrations: [],
+        errors: [{
+          directory: "/runner/session-busy",
+          error: busy,
+          sessionId: "session-busy",
+        }],
+      })
+      .mockResolvedValueOnce({
+        registrations: [registration({ sessionId: "session-busy" })],
+        errors: [],
+      });
+
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => NOW,
+      scan,
+    })).resolves.toEqual(["session-busy"]);
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      now: () => NOW,
+      scan,
+    })).resolves.toEqual(["session-busy"]);
+    expect(scan).toHaveBeenCalledTimes(2);
+  });
+
   it("refuses partial inventory when a damaged directory has no recoverable identity", async () => {
     const failure = new Error("runner identity cannot be recovered");
     await expect(listLiveRunnerSessionIds({

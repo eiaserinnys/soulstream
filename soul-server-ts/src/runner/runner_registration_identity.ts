@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { renameWithTransientRetry } from "../atomic_file_rename.js";
-import { loadNodeSqlite } from "./node_sqlite.js";
+import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
 
@@ -86,8 +86,7 @@ export async function recoverRunnerDirectoryIdentity(
 }
 
 function readRunnerSqliteIdentity(databasePath: string): RecoveredRunnerIdentity | null {
-  const { DatabaseSync } = loadNodeSqlite();
-  const database = new DatabaseSync(databasePath, { readOnly: true });
+  const database = openRunnerSqliteReadOnlyDatabase(databasePath);
   try {
     const bootstrapRow = database.prepare(`
       SELECT *

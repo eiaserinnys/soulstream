@@ -4,7 +4,7 @@ import {
   latestRunnerSequence,
   recoverRunnerOutbox,
 } from "./sqlite_event_outbox_database.js";
-import { loadNodeSqlite } from "./node_sqlite.js";
+import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 
 export type RunnerOutboxInspection = {
   status:
@@ -30,8 +30,7 @@ export type RunnerOutboxInspection = {
  * recovery procedure.
  */
 export function inspectRunnerOutboxCopy(databasePath: string): RunnerOutboxInspection {
-  const { DatabaseSync } = loadNodeSqlite();
-  const database = new DatabaseSync(databasePath, { readOnly: true });
+  const database = openRunnerSqliteReadOnlyDatabase(databasePath);
   try {
     const raw = readRawSummary(database);
     if (raw.sessionId !== null && !hasProtectedAckCheckpoint(database)) {

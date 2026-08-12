@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { RUNNER_IPC_JOURNAL_DDL } from "./sqlite_event_outbox_schema.js";
+import { withRunnerSqliteTransaction } from "./runner_sqlite_connection.js";
 
 export interface RunnerHostCallAppliedInput {
   correlationId: string;
@@ -105,14 +106,7 @@ function readRow(
 }
 
 function transaction(database: DatabaseSync, operation: () => void): void {
-  database.exec("BEGIN IMMEDIATE");
-  try {
-    operation();
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
+  withRunnerSqliteTransaction(database, operation);
 }
 
 function tableHasColumn(database: DatabaseSync, table: string, column: string): boolean {

@@ -60,7 +60,12 @@ import {
   stageRunnerIntervention,
   type RunnerInterventionResolution,
 } from "./sqlite_intervention_inbox.js";
-import { loadNodeSqlite } from "./node_sqlite.js";
+import {
+  ensureRunnerSqliteWal,
+  openRunnerSqliteDatabase,
+  withRunnerSqliteBusyRetry,
+  withRunnerSqliteTransaction,
+} from "./runner_sqlite_connection.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
   from "./sqlite_event_outbox_schema.js";
@@ -100,44 +105,40 @@ export class RunnerSqliteEventOutbox {
   }
 
   private static async openDatabase(databasePath: string): Promise<RunnerSqliteEventOutbox> {
-    const { DatabaseSync } = loadNodeSqlite();
-    const database = new DatabaseSync(databasePath);
+    const database = openRunnerSqliteDatabase(databasePath);
     try {
       await chmod(databasePath, 0o600);
-      database.exec("PRAGMA busy_timeout = 5000");
-      const journalMode = database.prepare("PRAGMA journal_mode = WAL").get() as {
-        journal_mode: string;
-      };
-      if (journalMode.journal_mode.toLowerCase() !== "wal") {
-        throw new Error("runner event outbox requires SQLite WAL journal mode");
-      }
-      database.exec("PRAGMA synchronous = FULL");
-      database.exec("PRAGMA foreign_keys = ON");
-      const foreignKeys = database.prepare("PRAGMA foreign_keys").get() as {
-        foreign_keys: number;
-      };
-      if (foreignKeys.foreign_keys !== 1) {
-        throw new Error("runner event outbox requires SQLite foreign key enforcement");
-      }
-      database.exec(RUNNER_EVENT_OUTBOX_DDL);
-      const version = readUserVersion(database);
-      if (version > RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
-        throw new Error(`runner event outbox schema version ${version} is not supported`);
-      }
-      if (!hasColumn(database, "runner_event_outbox", "runner_metadata_json")) {
-        database.exec(`
-          ALTER TABLE runner_event_outbox
-          ADD COLUMN runner_metadata_json TEXT CHECK (
-            runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
-          )
-        `);
-      }
-      ensureRunnerLifecycleColumns(database);
-      ensureRunnerIpcJournalV4(database);
-      const recovered = recover(database, {
-        migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
+      const recovered = withRunnerSqliteBusyRetry(() => {
+        ensureRunnerSqliteWal(database);
+        database.exec("PRAGMA synchronous = FULL");
+        database.exec("PRAGMA foreign_keys = ON");
+        const foreignKeys = database.prepare("PRAGMA foreign_keys").get() as {
+          foreign_keys: number;
+        };
+        if (foreignKeys.foreign_keys !== 1) {
+          throw new Error("runner event outbox requires SQLite foreign key enforcement");
+        }
+        database.exec(RUNNER_EVENT_OUTBOX_DDL);
+        const version = readUserVersion(database);
+        if (version > RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
+          throw new Error(`runner event outbox schema version ${version} is not supported`);
+        }
+        if (!hasColumn(database, "runner_event_outbox", "runner_metadata_json")) {
+          database.exec(`
+            ALTER TABLE runner_event_outbox
+            ADD COLUMN runner_metadata_json TEXT CHECK (
+              runner_metadata_json IS NULL OR json_valid(runner_metadata_json)
+            )
+          `);
+        }
+        ensureRunnerLifecycleColumns(database);
+        ensureRunnerIpcJournalV4(database);
+        const next = recover(database, {
+          migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
+        });
+        migrateRunnerInterventionInboxV9(database, version);
+        return next;
       });
-      migrateRunnerInterventionInboxV9(database, version);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,
@@ -664,15 +665,7 @@ export class RunnerSqliteEventOutbox {
 
   private transaction<T>(operation: () => T): T {
     this.requireOpen();
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = operation();
-      this.database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    return withRunnerSqliteTransaction(this.database, operation);
   }
 
   private requireBootstrap(): RunnerBootstrapRecord {
