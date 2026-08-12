@@ -15,6 +15,7 @@ import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
+import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import {
   TaskExecutor,
@@ -1701,6 +1702,86 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.lastAssistantText).toBe("replayed");
     expect(task.status).toBe("completed");
   });
+
+  it.each([
+    { backend: "claude" as const, profile: claudeAgent },
+    { backend: "codex" as const, profile: agent },
+  ])(
+    "$backend restart → adopt → queued intervention → follow-up turn completes",
+    async ({ backend, profile }) => {
+      const mocks = makeMocks();
+      const recovered = deferred<void>();
+      const finishRecoveredTurn = deferred<void>();
+      const followupInputs: EngineExecuteParams[] = [];
+      const dispatcher = {
+        dispatch: vi.fn(),
+        executeFrames: vi.fn((params: EngineExecuteParams) => {
+          followupInputs.push(params);
+          return frameStream([
+            { type: "assistant_message", content: `${backend} follow-up complete` },
+            { type: "complete", result: "done", timestamp: 3 },
+          ]);
+        }),
+        recoverFrames: vi.fn(() => (async function* () {
+          recovered.resolve();
+          await finishRecoveredTurn.promise;
+          yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 2 });
+        })()),
+        prepareSession: vi.fn(async () => {}),
+        interrupt: vi.fn(async () => true),
+        close: vi.fn(async () => {}),
+        detachHost: vi.fn(async () => {}),
+        sendControlFrame: vi.fn(async () => true),
+        requestContext: vi.fn(),
+        waitForSessionAck: vi.fn(async () => 12),
+        recoverPendingInterventions: vi.fn(async () => [{
+          interventionId: `intervention-${backend}`,
+          message: {
+            text: `post-recovery ${backend} intervention`,
+            user: "soak",
+          },
+        }]),
+        invoke: vi.fn(),
+      };
+      const runner: TaskRunnerRuntime = {
+        engine: new RunnerProcessEngineProxy(
+          backend,
+          profile.workspace_dir,
+          dispatcher as never,
+        ),
+        dispatcher: dispatcher as never,
+        eventPersistence: "runner",
+      };
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+      );
+      const task = makeTask();
+      task.profileId = profile.id;
+
+      const recovery = executor.recoverRunnerExecution(
+        task,
+        profile,
+        runner,
+        `execute-${backend}`,
+      );
+      await recovered.promise;
+      finishRecoveredTurn.resolve();
+      await recovery;
+
+      expect(followupInputs).toHaveLength(1);
+      expect(followupInputs[0]).toMatchObject({
+        prompt: `post-recovery ${backend} intervention`,
+        runnerInterventionId: `intervention-${backend}`,
+      });
+      expect(dispatcher.recoverPendingInterventions).toHaveBeenCalledTimes(1);
+      expect(task.status).toBe("completed");
+      expect(task.lastAssistantText).toBe(`${backend} follow-up complete`);
+    },
+  );
 });
 
 function makeRunnerProcessRuntime(events: SSEEventPayload[]): {

@@ -1,6 +1,6 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 7;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 9;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 export const RUNNER_IPC_JOURNAL_DDL = `
@@ -126,6 +126,24 @@ CREATE TABLE IF NOT EXISTS runner_prebootstrap_lifecycle (
   terminal_error_json TEXT CHECK (
     terminal_error_json IS NULL OR json_valid(terminal_error_json)
   )
+) STRICT;
+
+-- Host-to-runner next-turn input inbox. A queued intervention and its optional
+-- timeline receipt are committed in one SQLite transaction before the current
+-- turn can be interrupted. claimed_execution_command_id fences exactly one
+-- follow-up execute command across host restarts; application_state preserves
+-- an unknowable backend outcome as a loud stop instead of replaying user input.
+CREATE TABLE IF NOT EXISTS runner_intervention_inbox (
+  intervention_id TEXT PRIMARY KEY,
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  event_source_seq INTEGER UNIQUE,
+  queued_at TEXT NOT NULL,
+  claimed_execution_command_id TEXT,
+  claimed_at TEXT,
+  application_state TEXT NOT NULL DEFAULT 'pending' CHECK (
+    application_state IN ('pending', 'claimed', 'ambiguous')
+  ),
+  FOREIGN KEY (event_source_seq) REFERENCES runner_event_outbox(source_seq)
 ) STRICT;
 
 ${RUNNER_IPC_JOURNAL_DDL}

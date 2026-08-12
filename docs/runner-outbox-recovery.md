@@ -46,3 +46,34 @@ ACK 이하 삭제 구간만 있는 정상 compaction이다. 상태 디렉터리�
 5. 새 stream이 terminal ACK에 도달할 때까지 격리본을 삭제하지 않는다. orch receipt와 클라이언트 이벤트를 대조해 중복·누락을 별도 기록한다.
 
 DB 행을 수기로 삽입하거나 `sqlite_sequence`를 낮추는 복구는 금지한다. 누락 payload를 복원할 정본이 없고, 기존 orch receipt 계보와 충돌하기 때문이다.
+
+## 3. `ambiguous_intervention` 해소
+
+개입을 backend에 전달한 뒤 성공 여부를 확정하기 전에 실행이 실패하면 러너는 개입을 `ambiguous`로 정지시킨다. 자동 재실행은 사용자 입력과 tool side effect를 중복 적용할 수 있으므로 금지한다. 로그의 `ambiguous_intervention` 오류와 보존한 상태 디렉터리를 근거로 운영자가 다음 둘 중 하나를 명시적으로 선택한다.
+
+- `applied`: backend transcript나 이벤트에서 개입 적용을 확인했다. inbox 행을 삭제하고 재생하지 않는다.
+- `not_applied`: backend에 개입이 적용되지 않았음을 확인했다. claim을 지우고 pending으로 한 번 재큐잉한다.
+
+먼저 정상 cancel/reaper 경로로 해당 러너를 멈추고, `runner.pid`와 DB lifecycle에 기록된 모든 PID가 죽었는지 확인한다. 상태 디렉터리 전체를 WAL 파일과 함께 복사해 증거를 고정한 뒤 원본 DB에 아래 관리 명령을 실행한다. 명령은 배타적 `runner.lock`을 선점해 해소 도중 새 러너가 시작되지 못하게 하고, 기록된 PID가 하나라도 살아 있으면 변경을 거부한다.
+
+적용 확인 후 삭제:
+
+```bash
+pnpm --dir=soul-server-ts runner-intervention:resolve -- \
+  --database /path/to/session/runner.sqlite \
+  --intervention-id <intervention-id> \
+  --resolution applied \
+  --confirm-runner-stopped
+```
+
+미적용 확인 후 재큐잉:
+
+```bash
+pnpm --dir=soul-server-ts runner-intervention:resolve -- \
+  --database /path/to/session/runner.sqlite \
+  --intervention-id <intervention-id> \
+  --resolution not_applied \
+  --confirm-runner-stopped
+```
+
+출력에는 payload가 없고 DB 경로, intervention ID, 선택한 판정만 남는다. `not_applied`를 선택한 경우에만 같은 세션을 resume/intervene하여 pending 개입을 소비시킨다. 새 실행이 terminal ACK에 도달하기 전에는 증거 복사본을 삭제하지 않는다. 판정 근거를 확보하지 못했으면 `ambiguous` 상태를 유지하고 자동 재실행하지 않는다.

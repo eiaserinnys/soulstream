@@ -21,6 +21,7 @@ export interface TaskTurnInput {
   imageAttachmentPaths: string[];
   systemPrompt?: string;
   inputUuid?: string;
+  runnerInterventionId?: string;
   intervention?: InterventionMessage;
 }
 
@@ -86,6 +87,9 @@ export class TaskTurnInputBuilder {
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(intervention.deliveryId
         ? { inputUuid: buildDeliveryInputUuid(intervention.deliveryId) }
+        : {}),
+      ...(intervention.runnerInterventionId
+        ? { runnerInterventionId: intervention.runnerInterventionId }
         : {}),
       intervention,
     };

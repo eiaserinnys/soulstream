@@ -45,11 +45,15 @@ import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { InterventionMessage, Task, TaskStatus } from "./task_models.js";
+import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
 } from "./task_turn_loop_transition.js";
-import { TaskTurnInputBuilder } from "./task_turn_input_builder.js";
+import {
+  TaskTurnInputBuilder,
+  type TaskTurnInput,
+} from "./task_turn_input_builder.js";
 import { failBlockingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
@@ -245,6 +249,7 @@ export class TaskExecutor {
 
     const promise = (async () => {
       await runner.dispatcher.prepareSession(task.agentSessionId);
+      await this.restoreDurableRunnerInterventions(task, runner);
       await this._consumeEventStream(task, runner, agent);
     })().catch(
       async (err: unknown) => {
@@ -375,88 +380,92 @@ export class TaskExecutor {
     runner: TaskRunnerRuntime,
     agent: AgentProfile,
   ): Promise<void> {
-    const { engine } = runner;
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
-    let turnPrompt = initialTurnInput.prompt;
-    let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
-    let turnSystemPrompt = initialTurnInput.systemPrompt;
-    let turnInputUuid = initialTurnInput.inputUuid;
-    let currentTurnIntervention = initialTurnInput.intervention;
     try {
-      while (true) {
-        if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
-          this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
-            task,
-            currentTurnIntervention,
-          );
-        }
-        const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
-        const turnReceipt = this.deliveryConsumption
-          ? new TaskDeliveryTurnReceipt(
-              this.deliveryConsumption,
-              currentTurnIntervention,
-            )
-          : undefined;
-        try {
-          for await (const event of this.engineTurnRunner.executeTurn({
-            task,
-            agent,
-            runner,
-            input: {
-              prompt: turnPrompt,
-              ...(turnInputUuid !== undefined ? { inputUuid: turnInputUuid } : {}),
-              imageAttachmentPaths: turnImageAttachmentPaths,
-              ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
-            },
-          })) {
-            if (turnReceipt) await turnReceipt.observe(task, event);
-            await this.engineEventPublisher.publishEngineEvent(task, event, {
-              alreadyPersisted: runner.eventPersistence === "runner",
-            });
-            this.collectClaudeRuntimeTaskFollowup(task, event);
-          }
-        } catch (err) {
-          await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
-          break;
-        }
-        const lastAcknowledgedEventId = runner.eventPersistence === "runner"
-          ? await runner.dispatcher.waitForSessionAck()
-          : await this.persistence.waitForSessionAck(task.agentSessionId);
-        if (lastAcknowledgedEventId !== null) {
-          task.lastEventId = lastAcknowledgedEventId;
-        }
-        await this.flushClaudeRuntimeTaskFollowups(task);
-        const followupStalled = await this.handleClaudeRuntimeFollowupStall(
-          task,
-          currentTurnIntervention,
-          previousAssistantText,
-        );
-        if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
-        // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
-        const transition = resolveTurnLoopTransition(task, agent);
-        if (transition.kind === "awaiting_runtime") {
-          await this.publishPendingClaudeRuntimeAfterTurnError(task);
-          break;
-        }
-        if (transition.kind !== "continue") {
-          break;
-        }
-        const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-          task,
-          agent,
-          transition.intervention,
-        );
-        turnPrompt = followupTurnInput.prompt;
-        turnImageAttachmentPaths = followupTurnInput.imageAttachmentPaths;
-        turnSystemPrompt = followupTurnInput.systemPrompt;
-        turnInputUuid = followupTurnInput.inputUuid;
-        currentTurnIntervention = transition.intervention;
-      }
+      await this.consumeTurnLoop(task, agent, runner, initialTurnInput);
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }
       await this._finalize(task);
+    }
+  }
+
+  private async consumeTurnLoop(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    initialTurnInput: TaskTurnInput,
+  ): Promise<void> {
+    let turnInput = initialTurnInput;
+    while (true) {
+      const currentTurnIntervention = turnInput.intervention;
+      if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
+        this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
+          task,
+          currentTurnIntervention,
+        );
+      }
+      const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
+      const turnReceipt = this.deliveryConsumption
+        ? new TaskDeliveryTurnReceipt(
+            this.deliveryConsumption,
+            currentTurnIntervention,
+          )
+        : undefined;
+      try {
+        for await (const event of this.engineTurnRunner.executeTurn({
+          task,
+          agent,
+          runner,
+          input: {
+            prompt: turnInput.prompt,
+            ...(turnInput.inputUuid !== undefined
+              ? { inputUuid: turnInput.inputUuid }
+              : {}),
+            ...(turnInput.runnerInterventionId !== undefined
+              ? { runnerInterventionId: turnInput.runnerInterventionId }
+              : {}),
+            imageAttachmentPaths: turnInput.imageAttachmentPaths,
+            ...(turnInput.systemPrompt !== undefined
+              ? { systemPrompt: turnInput.systemPrompt }
+              : {}),
+          },
+        })) {
+          if (turnReceipt) await turnReceipt.observe(task, event);
+          await this.engineEventPublisher.publishEngineEvent(task, event, {
+            alreadyPersisted: runner.eventPersistence === "runner",
+          });
+          this.collectClaudeRuntimeTaskFollowup(task, event);
+        }
+      } catch (err) {
+        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
+        break;
+      }
+      const lastAcknowledgedEventId = runner.eventPersistence === "runner"
+        ? await runner.dispatcher.waitForSessionAck()
+        : await this.persistence.waitForSessionAck(task.agentSessionId);
+      if (lastAcknowledgedEventId !== null) {
+        task.lastEventId = lastAcknowledgedEventId;
+      }
+      await this.flushClaudeRuntimeTaskFollowups(task);
+      const followupStalled = await this.handleClaudeRuntimeFollowupStall(
+        task,
+        currentTurnIntervention,
+        previousAssistantText,
+      );
+      if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
+      const transition = resolveTurnLoopTransition(task, agent);
+      if (transition.kind === "awaiting_runtime") {
+        await this.publishPendingClaudeRuntimeAfterTurnError(task);
+        break;
+      }
+      if (transition.kind !== "continue") break;
+      turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+        task,
+        agent,
+        transition.intervention,
+      );
     }
   }
 
@@ -476,11 +485,17 @@ export class TaskExecutor {
       const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
       if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
       await this.flushClaudeRuntimeTaskFollowups(task);
+      await this.restoreDurableRunnerInterventions(task, runner);
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
       } else if (transition.kind === "continue") {
-        throw new Error("recovered runner cannot contain an unpersisted intervention queue");
+        const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          transition.intervention,
+        );
+        await this.consumeTurnLoop(task, agent, runner, followupTurnInput);
       }
     } catch (error) {
       await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
@@ -496,6 +511,27 @@ export class TaskExecutor {
       }
       task.completedAt = new Date();
       await this._finalize(task);
+    }
+  }
+
+  private async restoreDurableRunnerInterventions(
+    task: Task,
+    runner: TaskRunnerRuntime,
+  ): Promise<void> {
+    const recover = runner.dispatcher.recoverPendingInterventions;
+    if (!recover) return;
+    for (const pending of await recover.call(runner.dispatcher)) {
+      const text = pending.message.text;
+      const user = pending.message.user;
+      if (typeof text !== "string" || typeof user !== "string") {
+        throw new Error(`runner intervention payload is invalid: ${pending.interventionId}`);
+      }
+      enqueueInterventionOnce(task, {
+        ...(pending.message as unknown as InterventionMessage),
+        text,
+        user,
+        runnerInterventionId: pending.interventionId,
+      });
     }
   }
 

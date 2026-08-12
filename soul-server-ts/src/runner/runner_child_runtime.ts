@@ -24,6 +24,10 @@ import {
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
+  claimRunnerInterventionExecution,
+  handleRunnerInterventionCommand,
+} from "./runner_intervention_command.js";
+import {
   runnerDroppedFrameLogContext,
   type RunnerDroppedFrame,
 } from "./runner_frame_drop.js";
@@ -148,7 +152,36 @@ export class RunnerChildRuntime {
   private async handleCommand(command: RunnerCommandFrame): Promise<void> {
     const connection = this.endpoint.currentConnection;
     if (!connection) throw new Error("Runner command arrived without a host connection");
+    const intervention = await handleRunnerInterventionCommand(
+      command,
+      this.outbox,
+      this.config.sessionId,
+    );
+    if (intervention) {
+      await connection.send(intervention.result);
+      if (intervention.eventSourceSeq !== null) {
+        await this.sendBestEffort(outboxAvailableControlFrame(intervention.eventSourceSeq));
+      }
+      return;
+    }
+    const interventionClaimFailure = command.kind === "execute"
+      ? await claimRunnerInterventionExecution(command, this.outbox)
+      : null;
+    if (interventionClaimFailure) {
+      await connection.send(interventionClaimFailure);
+      return;
+    }
     const result = await this.dispatcher.dispatch(command);
+    if (
+      result.result.status !== "ok"
+      && command.kind === "execute"
+      && command.params.runnerInterventionId
+    ) {
+      await this.outbox.markInterventionAmbiguous(
+        command.params.runnerInterventionId,
+        command.commandId,
+      );
+    }
     await connection.send(result);
     if (result.result.status !== "ok") return;
     if (command.kind === "execute") {
@@ -211,9 +244,14 @@ export class RunnerChildRuntime {
       };
     }
     try {
-      await this.finishLifecycle(command.commandId, terminalError);
+      await this.finishLifecycle(command, terminalError);
     } catch (error) {
-      this.logger.error({ error }, "Runner terminal lifecycle record failed");
+      this.logger.error({ error }, "Runner terminal lifecycle commit failed");
+      storageFailure = true;
+      terminalError = {
+        code: "runner_terminal_commit_failed",
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
     const ended = executionEndedControlFrame(command.commandId, terminalError);
     await this.sendRequired(ended).catch((error) => {
@@ -467,16 +505,19 @@ export class RunnerChildRuntime {
   }
 
   private async finishLifecycle(
-    commandId: string,
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
     terminalError: { code: string; message: string } | undefined,
   ): Promise<void> {
-    if (!this.lifecycle.read()) return;
-    this.lifecycle.finish(
-      commandId,
-      terminalError ? "failed" : "completed",
-      new Date().toISOString(),
-      terminalError ?? null,
-    );
+    await this.outbox.finishExecution({
+      commandId: command.commandId,
+      ...(command.params.runnerInterventionId
+        ? { interventionId: command.params.runnerInterventionId }
+        : {}),
+      state: terminalError ? "failed" : "completed",
+      progressedAt: new Date().toISOString(),
+      terminalError: terminalError ?? null,
+    });
+    this.lifecycle.syncSummary();
   }
 
   private requireActiveCommandId(): string {

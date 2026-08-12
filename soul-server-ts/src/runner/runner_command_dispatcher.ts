@@ -43,6 +43,25 @@ export interface RunnerCommandDispatcher {
     timeoutMs: number;
   } | undefined;
   waitForSessionAck(): Promise<number | null>;
+  stageIntervention?(input: RunnerInterventionStageInput): Promise<RunnerInterventionStageResult>;
+  recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
+}
+
+export interface RunnerInterventionStageInput {
+  interventionId: string;
+  message: Record<string, unknown>;
+  event?: Record<string, unknown>;
+  queued: boolean;
+}
+
+export interface RunnerInterventionStageResult {
+  eventSourceSeq: number | null;
+  queuePosition: number;
+}
+
+export interface RunnerPendingIntervention {
+  interventionId: string;
+  message: Record<string, unknown>;
 }
 
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
@@ -79,6 +98,8 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
             status: "ok",
             data: { executionCommandId: this.activeExecuteCommandId ?? null },
           });
+        case "stage_intervention":
+          throw new Error("durable intervention inbox requires a process runner");
         case "interrupt": {
           const interrupted = await this.target.interrupt();
           return runnerCommandResultFrame(command.commandId, {

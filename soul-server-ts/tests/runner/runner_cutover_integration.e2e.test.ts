@@ -22,6 +22,8 @@ import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js
 import { composeRunnerProcessRuntime } from "../../src/runtime/runner_process_composition.js";
 import { buildServer } from "../../src/server.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
+import { RunningInterventionTransition } from
+  "../../src/task/task_running_intervention_transition.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
@@ -212,6 +214,17 @@ describe("runner cutover all-flags-on integration", () => {
     await waitFor(async () =>
       recoveryFailure !== undefined || durableContents(batches).includes("after-detach"));
     if (recoveryFailure) throw recoveryFailure;
+    const transition = new RunningInterventionTransition({
+      broadcaster: {
+        emitEventEnvelope: vi.fn(async () => undefined),
+      } as unknown as SessionBroadcaster,
+      logger: pino({ level: "silent" }),
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+    await expect(transition.deliver(task, {
+      text: "post-recovery intervention",
+      user: "soak",
+    })).resolves.toMatchObject({ queued: true });
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
@@ -225,7 +238,16 @@ describe("runner cutover all-flags-on integration", () => {
     );
     expect(task.status).toBe("completed");
     expect(task.lastAssistantText).toBe("after-detach");
-    expect(durableContents(batches)).toEqual(["before-detach", "after-detach"]);
+    expect(await pathExists(join(controlDirectory, "followup-executed"))).toBe(true);
+    expect(batches.flatMap((batch) => batch.events).filter(
+      (event) => event.event_type === "intervention_sent",
+    )).toHaveLength(1);
+    expect(durableContents(batches)).toEqual([
+      "before-detach",
+      "after-detach",
+      "before-detach",
+      "after-detach",
+    ]);
     expect(await pendingFrameCount(paths.databasePath)).toBe(0);
     await waitFor(async () => !isPidAlive(pid));
     childPids.delete(pid);
@@ -275,6 +297,7 @@ describe("runner cutover all-flags-on integration", () => {
     await waitFor(async () => !isPidAlive(secondPid));
     childPids.delete(secondPid);
     expect(callerSessionIds).toEqual([
+      task.agentSessionId,
       task.agentSessionId,
       secondTask.agentSessionId,
     ]);
@@ -481,7 +504,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 30_000;
   while (!(await predicate())) {
     if (Date.now() >= deadline) throw new Error("runner cutover smoke wait timeout");
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
