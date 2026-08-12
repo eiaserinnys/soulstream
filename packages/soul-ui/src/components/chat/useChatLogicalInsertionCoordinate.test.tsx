@@ -24,6 +24,19 @@ function row(key: string): MessageOrGroup {
   };
 }
 
+function toolGroup(keys: string[]): MessageOrGroup {
+  return {
+    type: "tool-group",
+    messages: keys.map((key) => ({
+      treeNodeId: key,
+      eventId: Number(key.replace(/\D/g, "")) || 1,
+      role: "tool",
+      content: key,
+      treeNodeType: "tool",
+    } as ChatMessage)),
+  };
+}
+
 interface HarnessProps {
   grouped: ChatTimelineItem[];
   sessionKey: string;
@@ -107,5 +120,25 @@ describe("useChatLogicalInsertionCoordinate reset boundaries", () => {
       sessionKey: "s1",
       prependedCount: 0,
     }).firstItemIndex).toBe(10_000);
+  });
+
+  it("tool-only 두 page가 같은 group을 확장하는 동안 좌표는 불변이고 일반 행 prepend만 감소시킨다", () => {
+    const firstToolPage = [toolGroup(["tool-200", "tool-201"])];
+    const initial = render({ grouped: firstToolPage, sessionKey: "s1", prependedCount: 1 });
+    initial.recordFirstVisibleKey("tg-tool-201");
+    const afterFirstPage = initial.firstItemIndex;
+
+    const secondToolPage = [toolGroup(["tool-100", "tool-101", "tool-200", "tool-201"])];
+    expect(render({
+      grouped: secondToolPage,
+      sessionKey: "s1",
+      prependedCount: 1,
+    }).firstItemIndex).toBe(afterFirstPage);
+
+    expect(render({
+      grouped: [row("row-50"), ...secondToolPage],
+      sessionKey: "s1",
+      prependedCount: 2,
+    }).firstItemIndex).toBe(afterFirstPage - 1);
   });
 });

@@ -1,36 +1,39 @@
 /**
- * useMessageHistoryBuffer — ChatView용 과거 메시지 페치 + 트리 통합 (옵션 D)
+ * ChatView 과거 메시지 buffer와 bounded viewport fill controller.
  *
- * 목적:
- * - `GET /api/sessions/{id}/timeline` 응답을 라이브 SSE와 동일한 event-processor
- *   파이프라인을 통해 store.tree에 통합한다 (단일 정본).
- * - 위로 스크롤 시 `before` 커서로 과거 메시지를 prepend한다.
- *   누적 prepend 개수(좌표)는 store.chatPrependedCount가 관리한다 — processHistoryEvents가
- *   tree와 같은 set() 안에서 atomic 갱신하므로 본 훅은 별도 카운터를 들지 않는다.
- * - `next_cursor === null` 도달 시 "맨 위" 인디케이터를 표시한다.
- *
- * 설계 (옵션 D + Phase 2-A 평탄화):
- * - **단일 트리 정본**: 라이브 SSE와 히스토리가 같은 store.tree를 공유한다.
- *   `historicalMessages`/`liveMessages` 병합 dedup이 폐기된다.
- * - **eventId dedup 자동**: processEventsBatch가 `eventId <= lastEventId`로 자체 dedup한다.
- *   외부 dedup 불필요.
- * - **평면 push**: Phase 2-A 평탄화 후 tree-placer는 parent_event_id를 무시하고
- *   root.children에 시간순 push만 한다. orphan queue / sorted insert / historyMode 분기는 폐기.
- *   페이지 경계에서 자식이 부모보다 먼저 도착해도 모두 root.children에 평면 배치되며,
- *   이후 도착한 부모도 root.children에 추가될 뿐 부모-자식 트리는 형성되지 않는다 (옵션 C).
- * - **세션 전환 시 초기화**: activeSessionKey가 바뀌면 커서/상태 리셋.
- *   chatPrependedCount는 store가 setActiveSession에서 자동 리셋(getSessionResetState).
- * - **중복 요청 방지**: loading 중에는 추가 prepend 요청을 무시한다.
- * - **fetch 실패 격리**: 예외를 삼키고 라이브 SSE 파이프라인을 단독 소스로 유지한다.
+ * timeline page는 라이브 SSE와 같은 event processor를 거쳐 store.tree에 합쳐진다.
+ * 초기 진입, Virtuoso startReached, viewport geometry 재평가, 수동 재시도는 모두
+ * requestOlder 하나로 시작되는 controller run을 사용한다. 페이지 수는 안전 상한일 뿐,
+ * 자동 진행 여부는 공개 scroller DOM의 화면 분량으로만 결정한다.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { SoulSSEEvent } from "@shared/types";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { diag } from "../../lib/diag";
+import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 
 /** 초기 로드 / prepend 페이지 크기 (soul-app ChatBody.tsx:43과 동기화 — atom 88d8c640) */
 export const HISTORY_PAGE_SIZE = 100;
+/** 한 번의 자동/수동 fill run에서 성공적으로 받을 수 있는 최대 page 수. */
+export const MAX_VIEWPORT_FILL_PAGES = 5;
+/** 화면을 채운 뒤 reverse scroll을 바로 재개할 수 있게 남기는 여유. */
+export const VIEWPORT_FILL_MARGIN_PX = 200;
+
+export type HistoryLoadBlockReason = "cap" | "error";
+export type HistoryRequestSource = "automatic" | "manual";
+export type HistoryPageOutcome =
+  | "fetched"
+  | "busy"
+  | "reachedTop"
+  | "failed"
+  | "stale";
 
 /** 서버 응답의 단일 메시지 (soul_common.db.session_db.read_timeline) */
 export interface HistoricalMessage {
@@ -42,38 +45,32 @@ export interface HistoricalMessage {
   created_at: string;
 }
 
-/** 서버 응답 페이로드 */
 interface TimelineResponse {
   messages: HistoricalMessage[];
   /** 다음 페이지 커서 (ISO timestamp). null이면 더 이상 과거 메시지 없음 */
   next_cursor: string | null;
 }
 
-export interface UseMessageHistoryBufferResult {
-  /** 추가 페이지 로드 중 여부 */
-  loading: boolean;
-  /** true일 때 "맨 위 도달" 인디케이터를 렌더링 */
-  reachedTop: boolean;
-  /** 위로 스크롤 시 호출하여 과거 페이지 prepend. 중복 호출은 자동 무시된다. */
-  requestOlder: () => void;
+interface FillRun {
+  token: symbol;
+  pagesFetched: number;
+  awaitingCommit: boolean;
+  source: HistoryRequestSource;
 }
 
-/**
- * messages payload를 SoulSSEEvent로 정규화한다.
- *
- * `/timeline`은 DB의 `event_type`이 renderer-compatible 정본이다. payload.type에는
- * 과거 SDK 원본 타입(`tool_use`)이 남아 있을 수 있으므로 사용하지 않는다.
- *
- * ⚠️ spread 순서 주의: `...m.payload`를 먼저 펼치고 `type`을 마지막에 두어야
- * `payload.type`이 있어도 우리가 정한 type 값이 보존된다.
- */
+export interface UseMessageHistoryBufferResult {
+  loading: boolean;
+  reachedTop: boolean;
+  blockedReason: HistoryLoadBlockReason | null;
+  /** startReached/자동 채움/수동 재시도의 단일 controller 진입점. */
+  requestOlder: (source?: HistoryRequestSource) => void;
+  /** scroller bind/items commit/list height 변경이 공유하는 geometry 재평가 경로. */
+  notifyViewportGeometry: () => void;
+}
+
+/** timeline DB row를 renderer-compatible SSE event로 정규화한다. */
 export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId: number } {
   const payload = m.payload as Record<string, unknown>;
-
-  // DB JSONB는 ID 필드를 number로 저장하지만, 라이브 SSE는 string으로 직렬화된다.
-  // nodeMap 키가 String(eventId)이므로 lookup 실패(Map.get(2410) ≠ Map.get("2410"))를 방지하려면
-  // ID 필드를 string으로 명시 정규화해야 한다.
-  // 진단 결과: parent_event_id number → orphan 큐 영구 보관 → 채팅 미렌더링.
   const event = {
     ...payload,
     type: m.event_type,
@@ -93,130 +90,226 @@ export function buildHistoryPageUrl(sessionId: string, before: string | null): s
 async function fetchHistoryPage(
   sessionId: string,
   before: string | null,
-): Promise<TimelineResponse | null> {
-  const res = await fetch(
-    buildHistoryPageUrl(sessionId, before),
-    { credentials: "include" },
-  );
-  if (!res.ok) return null;
-  return (await res.json()) as TimelineResponse;
+): Promise<TimelineResponse> {
+  const response = await fetch(buildHistoryPageUrl(sessionId, before), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`timeline request failed: ${response.status}`);
+  }
+  return (await response.json()) as TimelineResponse;
 }
 
 export function useMessageHistoryBuffer(
   sessionId: string | null,
+  scrollerRef: RefObject<HTMLElement | null>,
 ): UseMessageHistoryBufferResult {
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
+  const [blockedReason, setBlockedReason] =
+    useState<HistoryLoadBlockReason | null>(null);
 
-  // 동시성 가드 — 세션 전환/언마운트 시 stale fetch 결과를 버리기 위함
-  const sessionTokenRef = useRef<symbol>(Symbol("initial"));
+  // loadingRef가 in-flight의 유일한 동기 정본이다. state는 표시용 projection이다.
   const loadingRef = useRef(false);
-  const nextCursorRef = useRef<string | null>(null);
   const reachedTopRef = useRef(false);
+  const blockedReasonRef = useRef<HistoryLoadBlockReason | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
+  const initialPageLoadedRef = useRef(false);
+  const sessionTokenRef = useRef<symbol>(Symbol("initial"));
+  const configuredSessionRef = useRef<string | null>(null);
+  const fillRunRef = useRef<FillRun | null>(null);
 
-  useEffect(() => {
-    nextCursorRef.current = nextCursor;
-  }, [nextCursor]);
-  useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
-  useEffect(() => {
-    reachedTopRef.current = reachedTop;
-  }, [reachedTop]);
+  const isCurrentSession = useCallback((token: symbol): boolean => (
+    sessionId !== null
+    && sessionTokenRef.current === token
+    && useDashboardStore.getState().activeSessionKey === sessionId
+  ), [sessionId]);
 
-  // 세션 전환: 상태 리셋 + 초기 페이지 로드
+  const updateReachedTop = useCallback((value: boolean) => {
+    reachedTopRef.current = value;
+    setReachedTop(value);
+  }, []);
+
+  const updateBlockedReason = useCallback((value: HistoryLoadBlockReason | null) => {
+    blockedReasonRef.current = value;
+    setBlockedReason(value);
+  }, []);
+
+  const requestHistoryPage = useCallback(async (
+    run: FillRun,
+  ): Promise<HistoryPageOutcome> => {
+    if (!sessionId || !isCurrentSession(run.token)) return "stale";
+    if (loadingRef.current) return "busy";
+    if (reachedTopRef.current) return "reachedTop";
+
+    const before = initialPageLoadedRef.current ? nextCursorRef.current : null;
+    if (initialPageLoadedRef.current && before === null) return "reachedTop";
+
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      const data = await fetchHistoryPage(sessionId, before);
+      if (!isCurrentSession(run.token)) return "stale";
+
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      const nextCursor = data.next_cursor ?? null;
+      const cursorDidNotAdvance = before !== null && nextCursor === before;
+      const emptyPageClaimsMore = messages.length === 0 && nextCursor !== null;
+      if (cursorDidNotAdvance || emptyPageClaimsMore) {
+        fillRunRef.current = null;
+        updateBlockedReason("error");
+        return "failed";
+      }
+
+      // fetch와 store 반영 사이에도 session이 바뀔 수 있으므로 경계 직전 재검증한다.
+      if (!isCurrentSession(run.token)) return "stale";
+      const events = [...messages].reverse().map(toSSEEvent);
+      // store update가 만든 React commit부터 geometry 신호를 받을 준비를 끝낸다.
+      run.awaitingCommit = true;
+      const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
+      if (!isCurrentSession(run.token)) return "stale";
+
+      initialPageLoadedRef.current = true;
+      nextCursorRef.current = nextCursor;
+      run.pagesFetched += 1;
+      if (run.source === "manual") updateBlockedReason(null);
+
+      diag("history", "viewport fill page", {
+        sessionId,
+        before,
+        received: messages.length,
+        addedCount,
+        pagesFetched: run.pagesFetched,
+        nextCursor,
+      });
+
+      if (nextCursor === null) {
+        fillRunRef.current = null;
+        updateBlockedReason(null);
+        updateReachedTop(true);
+        return "reachedTop";
+      }
+
+      updateReachedTop(false);
+      return "fetched";
+    } catch (error) {
+      if (!isCurrentSession(run.token)) return "stale";
+      fillRunRef.current = null;
+      updateBlockedReason("error");
+      diag("history", "viewport fill failed", {
+        sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return "failed";
+    } finally {
+      // stale completion이 새 session의 in-flight projection을 덮지 않게 한다.
+      if (isCurrentSession(run.token)) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }, [isCurrentSession, sessionId, updateBlockedReason, updateReachedTop]);
+
+  const loadNextPage = useCallback(async (run: FillRun): Promise<HistoryPageOutcome> => {
+    const outcome = await requestHistoryPage(run);
+    if (outcome === "stale" && fillRunRef.current === run) {
+      fillRunRef.current = null;
+    }
+    if (outcome === "busy" && fillRunRef.current === run) {
+      fillRunRef.current = null;
+      updateBlockedReason("error");
+    }
+    return outcome;
+  }, [requestHistoryPage, updateBlockedReason]);
+
+  const beginFillRun = useCallback((source: HistoryRequestSource): void => {
+    if (!sessionId || configuredSessionRef.current !== sessionId) return;
+    if (loadingRef.current || fillRunRef.current !== null) return;
+    if (reachedTopRef.current) return;
+    if (source === "automatic" && blockedReasonRef.current !== null) return;
+
+    const run: FillRun = {
+      token: sessionTokenRef.current,
+      pagesFetched: 0,
+      awaitingCommit: false,
+      source,
+    };
+    fillRunRef.current = run;
+    void loadNextPage(run);
+  }, [loadNextPage, sessionId]);
+
+  const requestOlder = useCallback((source: HistoryRequestSource = "automatic") => {
+    beginFillRun(source);
+  }, [beginFillRun]);
+
+  const notifyViewportGeometry = useCallback(() => {
+    if (
+      !sessionId
+      || configuredSessionRef.current !== sessionId
+      || loadingRef.current
+    ) return;
+    const token = sessionTokenRef.current;
+    if (!isCurrentSession(token)) return;
+
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const filled = hasFilledHistoryViewport(scroller, VIEWPORT_FILL_MARGIN_PX);
+    if (filled === null) return;
+
+    const run = fillRunRef.current;
+    if (filled) {
+      if (run?.awaitingCommit) fillRunRef.current = null;
+      return;
+    }
+    if (reachedTopRef.current || blockedReasonRef.current !== null) return;
+
+    if (run === null) {
+      beginFillRun("automatic");
+      return;
+    }
+    if (!run.awaitingCommit) return;
+    if (run.pagesFetched >= MAX_VIEWPORT_FILL_PAGES) {
+      fillRunRef.current = null;
+      updateBlockedReason("cap");
+      return;
+    }
+
+    run.awaitingCommit = false;
+    void loadNextPage(run);
+  }, [beginFillRun, isCurrentSession, loadNextPage, scrollerRef, sessionId, updateBlockedReason]);
+
   useEffect(() => {
     const token = Symbol("session");
     sessionTokenRef.current = token;
-
-    setNextCursor(null);
-    setReachedTop(false);
+    configuredSessionRef.current = sessionId;
+    loadingRef.current = false;
+    reachedTopRef.current = false;
+    blockedReasonRef.current = null;
+    nextCursorRef.current = null;
+    initialPageLoadedRef.current = false;
+    fillRunRef.current = null;
     setLoading(false);
-    // chatPrependedCount는 store가 setActiveSession에서 자동 리셋한다.
+    setReachedTop(false);
+    setBlockedReason(null);
 
-    if (!sessionId) return;
+    if (sessionId !== null) {
+      beginFillRun("automatic");
+    }
 
-    setLoading(true);
-    loadingRef.current = true;
-    (async () => {
-      try {
-        const data = await fetchHistoryPage(sessionId, null);
-        if (sessionTokenRef.current !== token) return;
-        if (!data) return;
-
-        // 시간 ASC로 뒤집어서 store에 흘림 (부모가 자식 이전에 처리되도록)
-        const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
-        diag("history", "initial load", {
-          sessionId,
-          before: null,
-          received: data.messages?.length ?? 0,
-          eventTypes: events.reduce<Record<string, number>>((acc, { event }) => {
-            acc[event.type] = (acc[event.type] ?? 0) + 1;
-            return acc;
-          }, {}),
-          firstEventId: events[0]?.eventId,
-          lastEventId: events[events.length - 1]?.eventId,
-          nextCursor: data.next_cursor,
-        });
-        const result = useDashboardStore.getState().processHistoryEvents(events);
-        diag("history", "initial page done", { addedCount: result.addedCount });
-
-        const finalCursor = data.next_cursor ?? null;
-        setNextCursor(finalCursor);
-        if (finalCursor === null) setReachedTop(true);
-      } catch {
-        // 네트워크 오류는 무시 — 라이브 SSE가 단독 소스
-      } finally {
-        if (sessionTokenRef.current === token) {
-          setLoading(false);
-          loadingRef.current = false;
-        }
+    return () => {
+      if (sessionTokenRef.current === token) {
+        sessionTokenRef.current = Symbol("disposed");
+        configuredSessionRef.current = null;
+        fillRunRef.current = null;
       }
-    })();
-  }, [sessionId]);
+    };
+  }, [beginFillRun, sessionId]);
 
-  // 위로 스크롤 트리거 → 다음 페이지 prepend
-  const requestOlder = useCallback(() => {
-    if (!sessionId) return;
-    if (loadingRef.current) return;
-    if (reachedTopRef.current) return;
-    const cursor = nextCursorRef.current;
-    if (!cursor) return;
-
-    const token = sessionTokenRef.current;
-    setLoading(true);
-    loadingRef.current = true;
-    (async () => {
-      try {
-        const data = await fetchHistoryPage(sessionId, cursor);
-        if (sessionTokenRef.current !== token) return;
-        if (!data) return;
-
-        const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
-        diag("history", "prepend page", {
-          sessionId,
-          before: cursor,
-          received: data.messages?.length ?? 0,
-          nextCursor: data.next_cursor,
-        });
-        const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
-        diag("history", "prepend done", { addedCount });
-
-        // chatPrependedCount 누적은 processHistoryEvents가 store에 atomic 갱신한다.
-        const finalCursor = data.next_cursor ?? null;
-        setNextCursor(finalCursor);
-        if (finalCursor === null) setReachedTop(true);
-      } catch {
-        // 네트워크 오류는 무시
-      } finally {
-        if (sessionTokenRef.current === token) {
-          setLoading(false);
-          loadingRef.current = false;
-        }
-      }
-    })();
-  }, [sessionId]);
-
-  return { loading, reachedTop, requestOlder };
+  return {
+    loading,
+    reachedTop,
+    blockedReason,
+    requestOlder,
+    notifyViewportGeometry,
+  };
 }
