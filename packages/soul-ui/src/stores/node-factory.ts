@@ -10,14 +10,9 @@
 
 import type {
   EventTreeNode,
-  InputRequestNodeDef,
   SoulSSEEvent,
-  SessionEvent,
-  SessionNode,
   ThinkingEvent,
   ToolStartEvent,
-  ToolResultEvent,
-  ToolNode,
   ResultEvent,
   CompleteEvent,
   ErrorEvent,
@@ -27,10 +22,7 @@ import type {
   InterventionSentEvent,
   CompactEvent,
   InputRequestEvent,
-  InputRequestExpiredEvent,
-  InputRequestRespondedEvent,
   ToolApprovalRequestedEvent,
-  ToolApprovalResolvedEvent,
   AgentUpdatedEvent,
   HandoffRequestedEvent,
   HandoffOccurredEvent,
@@ -39,13 +31,14 @@ import type {
   AssistantErrorEvent,
   AwaySummaryEvent,
   TurnSummaryEvent,
-  ToolApprovalNodeDef,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
+import { TRUNCATE_THRESHOLD } from "./event-update";
+
+export { applyPendingResolution, applyUpdate } from "./event-update";
 
 /** 이 길이를 초과하는 콘텐츠는 truncate하여 메모리를 절약한다 */
-const TRUNCATE_THRESHOLD = 2000;
 const PLACEHOLDER_TEXT = new Set(["{}", "[]", "null", "undefined"]);
 
 function meaningfulDisplayText(value: string): string {
@@ -424,145 +417,4 @@ export function applyFinalAssistantMessageToLiveText(
   target.textCompleted = true;
   if (ctx.activeTextTarget === target) ctx.activeTextTarget = null;
   return true;
-}
-
-/**
- * 기존 노드를 수정하는 업데이트 이벤트를 처리합니다.
- *
- * session: 루트 노드의 sessionId/content 갱신
- * text_delta: activeTextTarget 텍스트 누적
- * text_end: activeTextTarget 완료 마킹
- * tool_result: tool 노드에 결과 반영
- *
- * 주의: text_start는 tree-placer.ts의 handleTextStart()가 담당합니다.
- *
- * @returns 트리가 변경되었으면 true, 아무 변경도 없으면 false
- */
-export function applyUpdate(
-  event: SoulSSEEvent,
-  eventId: number,
-  ctx: ProcessingContext,
-  root: EventTreeNode | null,
-): boolean {
-  switch (event.type) {
-    case "session": {
-      if (!root || root.type !== "session") return false;
-      const e = event as SessionEvent;
-      const sessionRoot = root as SessionNode;
-      sessionRoot.sessionId = e.session_id;
-      sessionRoot.pid = e.pid;
-      root.content = e.session_id;
-      return true;
-    }
-
-    case "text_delta": {
-      if (ctx.activeTextTarget) {
-        ctx.activeTextTarget.content += event.text;
-        return true;
-      }
-      return false;
-    }
-
-    case "text_end": {
-      if (ctx.activeTextTarget) {
-        ctx.activeTextTarget.textCompleted = true;
-        ctx.activeTextTarget.completed = true;
-        ctx.activeTextTarget = null;
-        return true;
-      }
-      return false;
-    }
-
-    case "tool_result": {
-      const e = event as ToolResultEvent;
-      // tool_use_id로 nodeMap에서 정확 매칭 (Phase 6: toolUseMap 통합)
-      const found = e.tool_use_id
-        ? ctx.nodeMap.get(e.tool_use_id)
-        : undefined;
-
-      if (found && (found.type === "tool" || found.type === "tool_use")) {
-        const toolNode = found as ToolNode;
-        const result = e.result;
-        if (result && result.length > TRUNCATE_THRESHOLD) {
-          toolNode.toolResult = result.slice(0, TRUNCATE_THRESHOLD);
-          toolNode.isTruncated = true;
-          toolNode.fullContentEventId = eventId;
-        } else {
-          toolNode.toolResult = result;
-        }
-        toolNode.isError = e.is_error;
-        if (e.timeline_id) toolNode.toolTraceId = e.timeline_id;
-        toolNode.completed = true;
-        // timestamp 차이로 duration 계산
-        if (toolNode.timestamp && e.timestamp) {
-          toolNode.durationMs = Math.round(
-            (e.timestamp - toolNode.timestamp) * 1000,
-          );
-        }
-        return true;
-      }
-      return false;
-    }
-
-    case "input_request_expired": {
-      const e = event as InputRequestExpiredEvent;
-      const node = ctx.nodeMap.get(e.request_id);
-      if (node && node.type === "input_request") {
-        // expired = true 즉시 설정하면 findPendingInputRequest가 배너를 즉시 필터링함
-        // 대신 serverExpiredAt으로 "만료 신호"만 전달 — AskQuestionBanner가 2초 후 expireInputRequest 호출
-        (node as InputRequestNodeDef).serverExpiredAt = Date.now();
-        return true;  // treeVersion++ → 리렌더 트리거 (배너에서 serverExpiredAt 감지)
-      }
-      return false;
-    }
-
-    case "input_request_responded": {
-      const e = event as InputRequestRespondedEvent;
-      const node = ctx.nodeMap.get(e.request_id);
-      if (node && node.type === "input_request") {
-        (node as InputRequestNodeDef).responded = true;
-        (node as InputRequestNodeDef).completed = true;
-        return true;  // treeVersion++ → 배너 리렌더 → findPendingInputRequest가 필터링
-      }
-      return false;
-    }
-
-    case "tool_approval_resolved": {
-      const e = event as ToolApprovalResolvedEvent;
-      const node = ctx.nodeMap.get(e.approval_id);
-      if (node && node.type === "tool_approval") {
-        const approvalNode = node as ToolApprovalNodeDef;
-        approvalNode.resolved = true;
-        approvalNode.completed = true;
-        approvalNode.approved = e.approved;
-        approvalNode.rejected = e.rejected;
-        approvalNode.message = e.message;
-        return true;
-      }
-      return false;
-    }
-
-    // R4/P0-A: subagent/runtime status events are state-only; no timeline node.
-    case "subagent_stop":
-    case "claude_runtime_session_state":
-    case "claude_runtime_task_started":
-    case "claude_runtime_task_created":
-    case "claude_runtime_task_updated":
-    case "claude_runtime_task_progress":
-    case "claude_runtime_task_completed":
-    case "claude_runtime_task_notification":
-    case "claude_runtime_notification":
-    case "claude_runtime_remote_trigger":
-    case "claude_runtime_transcript_mirror_error":
-    case "claude_runtime_hook_event":
-    case "claude_runtime_mode_state":
-    case "claude_runtime_schedule_updated":
-    case "claude_runtime_schedule_deleted":
-    case "task_updated":
-    case "custom_view_updated":
-      return false;
-
-    default:
-      return false;
-  }
 }

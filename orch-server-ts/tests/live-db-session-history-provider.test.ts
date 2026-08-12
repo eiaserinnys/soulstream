@@ -268,6 +268,57 @@ describe("live DB session history provider", () => {
     await app.close();
   });
 
+  it("uses a requested timeline subset at SQL while preserving cursor and pairing behavior", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: true }];
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({
+      sql: harness.sql,
+    }).sessionHistoryProvider;
+
+    await provider.readTimeline(
+      "sess-filtered",
+      "2026-08-12T00:00:00.000Z,42",
+      100,
+      ["user_message", "assistant_message", "tool_start", "tool_result"],
+    );
+
+    const timelineQuery = harness.calls.find((call) =>
+      call.text.includes("event_type = ANY"),
+    );
+    expect(timelineQuery?.values).toEqual([
+      "sess-filtered",
+      ["user_message", "assistant_message", "tool_start", "tool_result"],
+      "2026-08-12T00:00:00.000Z",
+      "2026-08-12T00:00:00.000Z",
+      42,
+      101,
+    ]);
+  });
+
+  it("keeps legacy complete fallback only when the requested subset needs assistant output", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: false }];
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({
+      sql: harness.sql,
+    }).sessionHistoryProvider;
+
+    await provider.readTimeline("sess-legacy", null, 100, ["assistant_message"]);
+    await provider.readTimeline("sess-legacy", null, 100, ["user_message"]);
+
+    const timelineQueries = harness.calls.filter((call) =>
+      call.text.includes("event_type = ANY"),
+    );
+    expect(timelineQueries[0]?.values).toContainEqual([
+      "assistant_message",
+      "complete",
+    ]);
+    expect(timelineQueries[1]?.values).toContainEqual(["user_message"]);
+  });
+
   it("replays DB raw events through the route filter for finalized app-server fragments", async () => {
     const harness = createSqlHarness((text) =>
       text.includes("event_stream_raw")

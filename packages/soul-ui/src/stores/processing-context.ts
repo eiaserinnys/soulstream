@@ -9,12 +9,22 @@
  *   TreeChangeType / TreeChangeInfo도 NodeGraph 제거(Phase 1) 후 dead state라 폐기.
  */
 
-import type { EventTreeNode, EventTreeNodeType, TextNode } from "@shared/types";
+import type {
+  EventTreeNode,
+  EventTreeNodeType,
+  SoulSSEEvent,
+  TextNode,
+} from "@shared/types";
 
 // === ProcessingContext ===
 
 /** text_delta/text_end 대상 노드 타입 */
 export type TextTargetNode = TextNode;
+
+export interface PendingResolution {
+  event: SoulSSEEvent;
+  eventId: number;
+}
 
 export interface ProcessingContext {
   /** ID → 노드 (O(1) 탐색). node.id, _event_id(String), tool_use_id, request_id로 등록. */
@@ -23,6 +33,8 @@ export interface ProcessingContext {
   activeTextTarget: TextTargetNode | null;
   /** final assistant_message가 먼저 도착한 app-server 텍스트 스트림 키. */
   finalizedTextStreams: Set<string>;
+  /** 원본 request보다 먼저 복원된 response/expiry/approval resolution. */
+  pendingResolutions: Map<string, PendingResolution>;
   /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 알림을 억제. */
   historySynced: boolean;
 }
@@ -32,6 +44,7 @@ export function createProcessingContext(): ProcessingContext {
     nodeMap: new Map(),
     activeTextTarget: null,
     finalizedTextStreams: new Set(),
+    pendingResolutions: new Map(),
     historySynced: false,
   };
 }

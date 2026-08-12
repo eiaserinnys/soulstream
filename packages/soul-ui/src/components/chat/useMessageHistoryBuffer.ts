@@ -26,6 +26,36 @@ export const MAX_VIEWPORT_FILL_PAGES = 5;
 /** 화면을 채운 뒤 reverse scroll을 바로 재개할 수 있게 남기는 여유. */
 export const VIEWPORT_FILL_MARGIN_PX = 200;
 
+/**
+ * Chat transcript가 생성하거나 상태를 해소하는 timeline 타입만 요청한다.
+ * thinking은 라이브 표시에는 쓰이지만 과거 transcript 복원에서는 제외한다.
+ * 원문 payload가 큰 고빈도 thinking/context/realtime 행이 페이지·응답 byte 예산을
+ * 잠식하지 않게 하는 것이 이 서버-side projection의 목적이다.
+ */
+export const CHAT_HISTORY_EVENT_TYPES = [
+  "user_message",
+  "intervention_sent",
+  "session_notification",
+  "assistant_message",
+  "turn_summary",
+  "tool_start",
+  "tool_result",
+  "error",
+  "assistant_error",
+  "system_message",
+  "compact",
+  "input_request",
+  "input_request_expired",
+  "input_request_responded",
+  "tool_approval_requested",
+  "tool_approval_resolved",
+  "agent_updated",
+  "handoff_requested",
+  "handoff_occurred",
+  "guardrail_tripwire",
+  "away_summary",
+] as const;
+
 export type HistoryLoadBlockReason = "cap" | "error";
 export type HistoryRequestSource = "automatic" | "manual";
 export type HistoryPageOutcome =
@@ -82,7 +112,10 @@ export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId
 }
 
 export function buildHistoryPageUrl(sessionId: string, before: string | null): string {
-  const qs = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE) });
+  const qs = new URLSearchParams({
+    limit: String(HISTORY_PAGE_SIZE),
+    event_types: CHAT_HISTORY_EVENT_TYPES.join(","),
+  });
   if (before !== null) qs.set("before", before);
   return `/api/sessions/${encodeURIComponent(sessionId)}/timeline?${qs}`;
 }

@@ -10,6 +10,44 @@ export type SessionHistoryRawEvent = {
   payloadText: string;
 };
 
+export const SESSION_TIMELINE_EVENT_TYPES = [
+  "user_message",
+  "intervention_sent",
+  "session_notification",
+  "assistant_message",
+  "turn_summary",
+  "thinking",
+  "tool_start",
+  "tool_result",
+  "error",
+  "assistant_error",
+  "system",
+  "system_message",
+  "context_usage",
+  "compact",
+  "input_request",
+  "input_request_expired",
+  "input_request_responded",
+  "tool_approval_requested",
+  "tool_approval_resolved",
+  "agent_updated",
+  "handoff_requested",
+  "handoff_occurred",
+  "guardrail_tripwire",
+  "away_summary",
+  "credential_alert",
+  "realtime_status",
+  "realtime_transcript",
+] as const;
+
+export type SessionTimelineEventType = typeof SESSION_TIMELINE_EVENT_TYPES[number];
+
+const SESSION_TIMELINE_EVENT_TYPE_SET = new Set<string>(SESSION_TIMELINE_EVENT_TYPES);
+
+export function isSessionTimelineEventType(value: string): value is SessionTimelineEventType {
+  return SESSION_TIMELINE_EVENT_TYPE_SET.has(value);
+}
+
 export type SessionHistoryProvider = {
   readViewport: (sessionId: string, yMin: number, yMax: number) => Promise<unknown>;
   readMessages: (
@@ -21,6 +59,7 @@ export type SessionHistoryProvider = {
     sessionId: string,
     before: string | null,
     limit: number,
+    eventTypes?: readonly SessionTimelineEventType[],
   ) => Promise<[unknown[], string | null]>;
   readTimelineTrace: (sessionId: string, timelineId: string) => Promise<unknown | null | undefined>;
   readStory: (sessionId: string) => Promise<SessionStoryResponse>;
@@ -70,8 +109,11 @@ export class SessionHistoryReadService {
     sessionId: string,
     before: string | null,
     limit: number,
+    eventTypes?: readonly SessionTimelineEventType[],
   ): Promise<SessionHistoryPageResponse> {
-    const [messages, nextCursor] = await this.provider.readTimeline(sessionId, before, limit);
+    const [messages, nextCursor] = eventTypes === undefined
+      ? await this.provider.readTimeline(sessionId, before, limit)
+      : await this.provider.readTimeline(sessionId, before, limit, eventTypes);
     return { messages, next_cursor: nextCursor };
   }
 

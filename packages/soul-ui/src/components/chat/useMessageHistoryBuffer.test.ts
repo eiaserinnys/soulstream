@@ -9,15 +9,39 @@ import { buildToolTraceUrl as buildToolTraceUrlFromHooks } from "./hooks";
 
 describe("buildHistoryPageUrl", () => {
   it("uses the semantic timeline endpoint for the first history page", () => {
-    expect(buildHistoryPageUrl("sess/1", null)).toBe(
-      `/api/sessions/sess%2F1/timeline?limit=${HISTORY_PAGE_SIZE}`,
-    );
+    const url = new URL(buildHistoryPageUrl("sess/1", null), "https://example.test");
+    expect(url.pathname).toBe("/api/sessions/sess%2F1/timeline");
+    expect(url.searchParams.get("limit")).toBe(String(HISTORY_PAGE_SIZE));
+    expect(url.searchParams.get("event_types")?.split(",")).toEqual([
+      "user_message",
+      "intervention_sent",
+      "session_notification",
+      "assistant_message",
+      "turn_summary",
+      "tool_start",
+      "tool_result",
+      "error",
+      "assistant_error",
+      "system_message",
+      "compact",
+      "input_request",
+      "input_request_expired",
+      "input_request_responded",
+      "tool_approval_requested",
+      "tool_approval_resolved",
+      "agent_updated",
+      "handoff_requested",
+      "handoff_occurred",
+      "guardrail_tripwire",
+      "away_summary",
+    ]);
   });
 
   it("passes the before cursor to the timeline endpoint", () => {
-    expect(buildHistoryPageUrl("sess-1", "cursor-1")).toBe(
-      `/api/sessions/sess-1/timeline?limit=${HISTORY_PAGE_SIZE}&before=cursor-1`,
-    );
+    const url = new URL(buildHistoryPageUrl("sess-1", "cursor-1"), "https://example.test");
+    expect(url.searchParams.get("before")).toBe("cursor-1");
+    expect(url.searchParams.get("event_types")).not.toContain("thinking");
+    expect(url.searchParams.get("event_types")).not.toContain("context_usage");
   });
 });
 

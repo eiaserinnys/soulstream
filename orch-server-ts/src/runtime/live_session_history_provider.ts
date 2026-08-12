@@ -1,7 +1,9 @@
 import type {
   SessionHistoryProvider,
   SessionHistoryRawEvent,
+  SessionTimelineEventType,
 } from "../session/session_history_service.js";
+import { SESSION_TIMELINE_EVENT_TYPES } from "../session/session_history_service.js";
 import { SessionStoryReadService } from "../session/session_story_read_service.js";
 import { SessionTurnSummaryReadService } from
   "../session/session_turn_summary_read_service.js";
@@ -25,37 +27,8 @@ type Cursor = {
   readonly id: number | null;
 };
 
-const TIMELINE_EVENT_TYPES = [
-  "user_message",
-  "intervention_sent",
-  "session_notification",
-  "assistant_message",
-  "turn_summary",
-  "thinking",
-  "tool_start",
-  "tool_result",
-  "error",
-  "assistant_error",
-  "system",
-  "system_message",
-  "context_usage",
-  "compact",
-  "input_request",
-  "input_request_expired",
-  "input_request_responded",
-  "tool_approval_requested",
-  "tool_approval_resolved",
-  "agent_updated",
-  "handoff_requested",
-  "handoff_occurred",
-  "guardrail_tripwire",
-  "away_summary",
-  "credential_alert",
-  "realtime_status",
-  "realtime_transcript",
-];
 const LEGACY_TIMELINE_EVENT_TYPES = [
-  ...TIMELINE_EVENT_TYPES,
+  ...SESSION_TIMELINE_EVENT_TYPES,
   "complete",
 ];
 const TRACE_EVENT_TYPES = [
@@ -121,6 +94,7 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     sessionId: string,
     before: string | null,
     limit: number,
+    requestedEventTypes?: readonly SessionTimelineEventType[],
   ): Promise<[unknown[], string | null]> {
     const sql = await this.sqlResolver.resolveSql();
     const assistantRows = await sql`
@@ -131,9 +105,13 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
       ) AS exists
     `;
     const hasAssistantMessage = assistantRows[0]?.exists === true;
-    const eventTypes = hasAssistantMessage
-      ? TIMELINE_EVENT_TYPES
-      : LEGACY_TIMELINE_EVENT_TYPES;
+    const eventTypes = requestedEventTypes === undefined
+      ? (hasAssistantMessage
+          ? SESSION_TIMELINE_EVENT_TYPES
+          : LEGACY_TIMELINE_EVENT_TYPES)
+      : (!hasAssistantMessage && requestedEventTypes.includes("assistant_message")
+          ? [...requestedEventTypes, "complete"]
+          : requestedEventTypes);
     const cursor = before === null ? null : decodeCursor(before);
     const rows = await readTimelinePage(sql, sessionId, eventTypes, cursor, limit);
     const { pageRows, nextCursor } = pageRowsAndCursor(rows, limit);
