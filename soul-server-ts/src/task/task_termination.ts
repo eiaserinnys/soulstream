@@ -31,10 +31,14 @@ export function recordTerminationHint(
 }
 
 export function finalizeTaskTermination(task: Task): TerminationResolution {
-  if (task.terminationReason) {
+  if (task.terminationReason || task.terminationEventRecorded) {
+    const reason = task.terminationReason ?? resolveTerminationReason(task);
+    const detail = task.terminationDetail ?? resolveTerminationDetail(task, reason);
+    task.terminationReason = reason;
+    task.terminationDetail = detail;
     return {
-      reason: task.terminationReason,
-      detail: task.terminationDetail ?? null,
+      reason,
+      detail,
       newlyFinalized: false,
     };
   }

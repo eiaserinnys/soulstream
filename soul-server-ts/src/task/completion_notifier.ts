@@ -105,17 +105,17 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     const text = this._buildNotifyText(task);
     const childId = task.agentSessionId;
     if (this.deliveryV2Enabled) {
-      if (!this.durableCoordinator || task.lastEventId === undefined) {
+      if (!this.durableCoordinator || task.terminalEventId === undefined) {
         this.logger.error(
-          { childId, callerSessionId, lastEventId: task.lastEventId },
-          "Completion notification withheld: durable ledger dependency is unavailable",
+          { childId, callerSessionId, terminalEventId: task.terminalEventId },
+          "Completion notification withheld: canonical terminal receipt is unavailable",
         );
         return;
       }
       await this.durableCoordinator.enqueue({
         targetSessionId: callerSessionId,
         sourceSessionId: childId,
-        terminalRevision: String(task.lastEventId),
+        terminalRevision: String(task.terminalEventId),
         text,
         callerInfo,
         createdAt: task.completedAt ?? new Date(),

@@ -275,6 +275,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     notify_completion       BOOLEAN NOT NULL DEFAULT TRUE,
     termination_reason      TEXT,
     termination_detail      TEXT,
+    termination_event_id    INTEGER,
+    last_assistant_text     TEXT,
     review_required         BOOLEAN NOT NULL DEFAULT FALSE,
     review_state            TEXT NOT NULL DEFAULT 'not_required',
     predecessor_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL
@@ -296,6 +298,8 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
 -- Session termination and review state columns (idempotent).
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_reason TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_detail TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_event_id INTEGER;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_assistant_text TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_required BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_state TEXT NOT NULL DEFAULT 'not_required';
 ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_review_state_check;
@@ -777,6 +781,7 @@ CREATE TABLE IF NOT EXISTS event_ingress_receipts (
     session_id   TEXT NOT NULL,
     payload_hash TEXT NOT NULL CHECK (payload_hash ~ '^[0-9a-f]{64}$'),
     event_id     INTEGER NOT NULL,
+    effect_application JSONB,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (node_id, stream_id, source_seq),
     FOREIGN KEY (session_id, event_id)
@@ -1466,6 +1471,119 @@ CREATE OR REPLACE FUNCTION session_get(
     p_session_id TEXT
 ) RETURNS SETOF sessions LANGUAGE sql STABLE AS $$
     SELECT * FROM sessions WHERE session_id = p_session_id;
+$$;
+
+CREATE OR REPLACE FUNCTION session_apply_terminal_transition(
+    p_session_id           TEXT,
+    p_status               TEXT,
+    p_termination_reason   TEXT,
+    p_termination_detail   TEXT,
+    p_review_state         TEXT,
+    p_last_assistant_text  TEXT,
+    p_terminal_event_id    INTEGER,
+    p_updated_at           TIMESTAMPTZ
+) RETURNS TABLE (
+    applied                BOOLEAN,
+    status                 TEXT,
+    termination_reason     TEXT,
+    termination_detail     TEXT,
+    review_state           TEXT,
+    last_assistant_text    TEXT,
+    termination_event_id   INTEGER,
+    updated_at              TIMESTAMPTZ,
+    last_event_id           INTEGER
+) LANGUAGE plpgsql AS $$
+DECLARE
+    v_row_count INTEGER;
+BEGIN
+    IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
+        RAISE EXCEPTION 'terminal event id must be a positive integer';
+    END IF;
+
+    UPDATE sessions AS session
+       SET status = p_status,
+           termination_reason = p_termination_reason,
+           termination_detail = p_termination_detail,
+           review_state = p_review_state,
+           last_assistant_text = p_last_assistant_text,
+           termination_event_id = p_terminal_event_id,
+           updated_at = p_updated_at
+     WHERE session.session_id = p_session_id
+       AND session.termination_event_id IS NULL;
+    GET DIAGNOSTICS v_row_count = ROW_COUNT;
+
+    RETURN QUERY
+    SELECT v_row_count = 1,
+           session.status,
+           session.termination_reason,
+           session.termination_detail,
+           session.review_state,
+           session.last_assistant_text,
+           session.termination_event_id,
+           session.updated_at,
+           session.last_event_id
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION session_apply_running_transition(
+    p_session_id                 TEXT,
+    p_review_state               TEXT,
+    p_expected_terminal_event_id INTEGER,
+    p_terminal_resume            BOOLEAN,
+    p_updated_at                 TIMESTAMPTZ
+) RETURNS TABLE (
+    applied                BOOLEAN,
+    status                 TEXT,
+    termination_reason     TEXT,
+    termination_detail     TEXT,
+    review_state           TEXT,
+    last_assistant_text    TEXT,
+    termination_event_id   INTEGER,
+    updated_at              TIMESTAMPTZ,
+    last_event_id           INTEGER
+) LANGUAGE plpgsql AS $$
+DECLARE
+    v_row_count INTEGER;
+BEGIN
+    IF p_terminal_resume THEN
+        UPDATE sessions AS session
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               termination_event_id = NULL,
+               last_assistant_text = NULL,
+               review_state = p_review_state,
+               updated_at = p_updated_at
+         WHERE session.session_id = p_session_id
+           AND session.status IN ('completed', 'error', 'interrupted')
+           AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+    ELSE
+        UPDATE sessions AS session
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               review_state = p_review_state,
+               updated_at = p_updated_at
+         WHERE session.session_id = p_session_id
+           AND session.status NOT IN ('completed', 'error');
+    END IF;
+    GET DIAGNOSTICS v_row_count = ROW_COUNT;
+
+    RETURN QUERY
+    SELECT v_row_count = 1,
+           session.status,
+           session.termination_reason,
+           session.termination_detail,
+           session.review_state,
+           session.last_assistant_text,
+           session.termination_event_id,
+           session.updated_at,
+           session.last_event_id
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id;
+END;
 $$;
 
 -- 3. session_get_all

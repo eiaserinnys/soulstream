@@ -230,6 +230,8 @@ export interface SessionRow {
   away_summary: string | null;
   termination_reason: string | null;
   termination_detail: string | null;
+  termination_event_id?: number | null;
+  last_assistant_text?: string | null;
   review_required?: boolean;
   review_state?: ReviewState;
 }

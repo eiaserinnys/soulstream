@@ -56,10 +56,7 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
-import {
-  composeTaskRuntime,
-  type TaskRuntimeComposition,
-} from "./task_runtime_composition.js";
+import { composeTaskRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
@@ -310,6 +307,7 @@ export async function composeWorkerRuntime(
     runnerProcessFactory: runnerProcess?.runtimeFactory,
     releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
     sessionGarbageCollector: runnerProcess?.sessionGarbageCollector,
+    closedTailDrainer: runnerProcess?.closedTailDrainer,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,

@@ -103,6 +103,8 @@ function makeMocks() {
     enqueueEvent: persistenceDouble.enqueueEvent,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueTerminalTransitionAndWaitForApplication:
+      persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
     enqueueRunningTransition: persistenceDouble.enqueueRunningTransition,
     db,
     broadcaster,
@@ -1058,7 +1060,7 @@ describe("TaskManager.finalizeTask", () => {
     expect(task.error).toBeUndefined();
     expect(task.llmUsage).toEqual({ input_tokens: 2, output_tokens: 3 });
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({
@@ -1081,7 +1083,7 @@ describe("TaskManager.finalizeTask", () => {
     expect(task.status).toBe("error");
     expect(task.error).toBe("boom");
     expect(task.result).toBeUndefined();
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1094,7 +1096,7 @@ describe("TaskManager.finalizeTask", () => {
 
   it("terminal event+effect 원자 적용 실패는 finalize를 실패시킴", async () => {
     const mocks = makeMocks();
-    mocks.enqueueEventAndWaitForSessionAck.mockRejectedValueOnce(
+    mocks.enqueueTerminalTransitionAndWaitForApplication.mockRejectedValueOnce(
       new Error("ingress down"),
     );
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
@@ -1219,8 +1221,8 @@ describe("TaskManager.shutdown", () => {
     await tm.shutdown();
     expect(t1.status).toBe("interrupted");
     expect(t2.status).toBe("interrupted");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledTimes(2);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({
@@ -1875,11 +1877,31 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     const enqueueEvent = vi.fn().mockResolvedValue(2);
     const enqueueMetadataEffect = vi.fn().mockResolvedValue(null);
     const enqueueRunningTransition = vi.fn().mockResolvedValue({ source_seq: 2 });
+    const enqueueRunningTransitionAndWaitForApplication = vi.fn(
+      async (sessionId, input) => {
+        await enqueueRunningTransition(sessionId, input);
+        return {
+          eventId: 2,
+          applied: true,
+          canonicalSession: {
+            status: "running",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: input.reviewState,
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-12T00:00:00.000Z",
+            last_event_id: null,
+          },
+        };
+      },
+    );
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
     const persistence = {
       enqueueEvent,
       enqueueMetadataEffect,
       enqueueRunningTransition,
+      enqueueRunningTransitionAndWaitForApplication,
       handleSideEffects,
     } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);

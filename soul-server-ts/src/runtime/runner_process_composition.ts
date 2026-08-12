@@ -15,12 +15,15 @@ import { BuildArtifactReleaseMaterializer } from "../runner/runner_release_mater
 import { RunnerReleasePool } from "../runner/runner_release_pool.js";
 import { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
 import { RunnerSessionGarbageCollector } from "../runner/runner_session_gc.js";
+import { ClosedRunnerTailDrainer } from "../runner/closed_runner_tail_drainer.js";
+import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 
 export interface RunnerProcessComposition {
   runtimeFactory: RunnerProcessRuntimeFactory;
   releaseGarbageCollector: RunnerReleaseGarbageCollector;
   hostOwnership: RunnerStateHostLock;
   sessionGarbageCollector: RunnerSessionGarbageCollector;
+  closedTailDrainer: ClosedRunnerTailDrainer;
 }
 
 export type RunnerReconciliationReporter = {
@@ -61,6 +64,10 @@ export async function composeRunnerProcessRuntime(
         options.env.SOUL_RUNNER_TERMINAL_RETENTION_MS,
         options.logger,
       ),
+      closedTailDrainer: new ClosedRunnerTailDrainer({
+        pumpMux: options.pumpMux,
+        logger: options.logger,
+      }),
     };
   } catch (error) {
     await hostOwnership.release();
@@ -73,11 +80,15 @@ export async function startRunnerRecoveryCoordinator(options: {
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
   sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
+  closedTailDrainer?: Pick<ClosedRunnerTailDrainer, "drain">;
   taskManager: Pick<TaskManager, "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume">;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;
+  if (!options.closedTailDrainer) {
+    throw new Error("closed runner tail drainer required for runner recovery");
+  }
   const stateDirectory = options.env.SOUL_RUNNER_STATE_DIR;
   if (!stateDirectory) {
     throw new Error("SOUL_RUNNER_STATE_DIR required for runner recovery");
@@ -88,6 +99,7 @@ export async function startRunnerRecoveryCoordinator(options: {
     scanIntervalMs: options.env.SOUL_RUNNER_REAPER_INTERVAL_MS,
     taskManager: options.taskManager,
     taskExecutor: options.taskExecutor,
+    closedTailDrainer: options.closedTailDrainer,
     logger: options.logger,
     ...(options.releaseGarbageCollector
       ? { releaseGarbageCollector: options.releaseGarbageCollector }

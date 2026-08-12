@@ -5,7 +5,7 @@ import {
   TaskHydrationFailedError,
   TaskOwnedByAnotherNodeError,
 } from "./task_hydration_errors.js";
-import type { Task, TaskStatus } from "./task_models.js";
+import type { Task, TaskStatus, TerminationReason } from "./task_models.js";
 import {
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
@@ -20,6 +20,14 @@ const VALID_TASK_STATUSES: readonly TaskStatus[] = [
   "interrupted",
 ];
 
+const VALID_TERMINATION_REASONS: readonly TerminationReason[] = [
+  "completed_ok",
+  "killed",
+  "limit_hit",
+  "error_aborted",
+  "unknown",
+];
+
 function isTaskStatus(status: string | null): status is TaskStatus {
   return Boolean(status && VALID_TASK_STATUSES.includes(status as TaskStatus));
 }
@@ -29,6 +37,16 @@ function completedAtFromRow(row: SessionRow, status: TaskStatus): Date | undefin
     return row.updated_at ?? undefined;
   }
   return undefined;
+}
+
+function terminationReasonFromRow(value: string | null | undefined): TerminationReason | undefined {
+  return value && VALID_TERMINATION_REASONS.includes(value as TerminationReason)
+    ? value as TerminationReason
+    : undefined;
+}
+
+function positiveEventId(value: number | null | undefined): number | undefined {
+  return Number.isSafeInteger(value) && value! > 0 ? value! : undefined;
 }
 
 /**
@@ -56,6 +74,22 @@ export function hydrateEvictedTaskFromSessionRow(
   const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
   const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
   const claudePermissionMode = extractClaudePermissionModeFromMetadata(metadata);
+  const terminationReason = terminationReasonFromRow(row.termination_reason);
+  const terminalEventId = positiveEventId(row.termination_event_id);
+  if (row.termination_reason != null && terminationReason === undefined) {
+    logger.warn(
+      { sessionId: row.session_id, terminationReason: row.termination_reason },
+      "loadEvictedTask: invalid durable termination reason",
+    );
+    return null;
+  }
+  if (row.termination_event_id != null && terminalEventId === undefined) {
+    logger.warn(
+      { sessionId: row.session_id, terminalEventId: row.termination_event_id },
+      "loadEvictedTask: invalid durable terminal event id",
+    );
+    return null;
+  }
 
   return {
     agentSessionId: row.session_id,
@@ -83,6 +117,11 @@ export function hydrateEvictedTaskFromSessionRow(
     model: row.model,
     createdAt: row.created_at,
     completedAt: completedAtFromRow(row, status),
+    lastAssistantText: row.last_assistant_text ?? undefined,
+    terminationReason,
+    terminationDetail: terminationReason ? row.termination_detail : undefined,
+    terminationEventRecorded: terminalEventId !== undefined,
+    terminalEventId,
     lastEventId: row.last_event_id ?? 0,
     lastReadEventId: row.last_read_event_id ?? 0,
     interventionQueue: [],

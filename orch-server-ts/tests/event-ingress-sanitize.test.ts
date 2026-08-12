@@ -42,6 +42,7 @@ describe("parseEventAppendBatch sanitization", () => {
     const effect = {
       kind: "running_transition",
       review_state: "none",
+      expected_terminal_event_id: 41,
       updated_at: "2026-08-11T00:00:00.000Z",
     };
 

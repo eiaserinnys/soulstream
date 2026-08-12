@@ -6,8 +6,10 @@ import {
 import {
   EventIngressValidationError,
   parseEventAppendBatch,
+  type EventCanonicalSessionProjection,
   type EventAppendAck,
   type EventAppendBatch,
+  type EventSessionEffectApplication,
 } from "./event_ingress_types.js";
 
 export type NodeEventIngressCommitter = Pick<EventIngressRepository, "commitBatch">;
@@ -83,11 +85,12 @@ export class NodeEventIngressController {
           event: payload,
         });
         const sessionUpdate = item.duplicateReceipt
+          && !item.sessionEffectApplication?.canonicalSession
           ? null
           : committedEffectSessionUpdate(item.envelope.session_effect, {
               sessionId: item.envelope.session_id,
               eventId: item.eventId,
-            });
+            }, item.sessionEffectApplication);
         // receiveCommittedEvent updates the session cache as a side effect. Apply the
         // effect before publishing session_ended so cache-reading sinks such as
         // PushNotifier observe the committed final assistant text.
@@ -114,6 +117,14 @@ export class NodeEventIngressController {
         events: committed.map((item) => ({
           source_seq: item.envelope.source_seq,
           event_id: item.eventId,
+          ...(item.sessionEffectApplication?.canonicalSession
+            ? {
+                effect_application: {
+                  applied: item.sessionEffectApplication.applied,
+                  canonical_session: item.sessionEffectApplication.canonicalSession,
+                },
+              }
+            : {}),
         })),
       };
       this.options.send(ack);
@@ -138,8 +149,12 @@ export class NodeEventIngressController {
 function committedEffectSessionUpdate(
   effect: EventAppendBatch["events"][number]["session_effect"],
   input: { sessionId: string; eventId: number },
+  application?: EventSessionEffectApplication,
 ): Record<string, unknown> | null {
   if (!effect) return null;
+  if (application?.canonicalSession) {
+    return canonicalSessionUpdate(input.sessionId, application.canonicalSession);
+  }
   if (effect.kind === "last_message") {
     return {
       type: "session_updated",
@@ -175,6 +190,24 @@ function committedEffectSessionUpdate(
     };
   }
   return null;
+}
+
+function canonicalSessionUpdate(
+  sessionId: string,
+  session: EventCanonicalSessionProjection,
+): Record<string, unknown> {
+  return {
+    type: "session_updated",
+    agentSessionId: sessionId,
+    status: session.status,
+    termination_reason: session.termination_reason,
+    termination_detail: session.termination_detail,
+    review_state: session.review_state,
+    last_assistant_text: session.last_assistant_text,
+    termination_event_id: session.termination_event_id,
+    updated_at: session.updated_at,
+    last_event_id: session.last_event_id,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

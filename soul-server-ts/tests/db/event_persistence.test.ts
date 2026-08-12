@@ -150,11 +150,32 @@ function makeMockIngress() {
   };
   const append = vi.fn().mockResolvedValue(record);
   const waitForAcknowledgement = vi.fn().mockResolvedValue(42);
+  const waitForAcknowledgementResult = vi.fn().mockResolvedValue({
+    source_seq: 7,
+    event_id: 42,
+    effect_application: {
+      applied: true,
+      canonical_session: {
+        status: "running",
+        termination_reason: null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: null,
+        updated_at: "2026-08-11T00:00:00.000Z",
+        last_event_id: 42,
+      },
+    },
+  });
   return {
     outbox: { append },
-    pump: { waitForAcknowledgement } as unknown as EventOutboxPump,
+    pump: {
+      waitForAcknowledgement,
+      waitForAcknowledgementResult,
+    } as unknown as EventOutboxPump,
     append,
     waitForAcknowledgement,
+    waitForAcknowledgementResult,
     record,
   };
 }
@@ -337,13 +358,17 @@ describe("EventPersistence durable ingress", () => {
     await expect(ep.enqueueRunningTransition("sess-1", {
       reviewState: "not_required",
       transitionId: "resume:7",
+      expectedTerminalEventId: 41,
       updatedAt: new Date("2026-08-11T00:00:00.000Z"),
     })).resolves.toBe(ingress.record);
 
     expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
       session_id: "sess-1",
       semantic_dedupe_key: "running_transition:sess-1:resume:7",
-      session_effect: expect.objectContaining({ kind: "running_transition" }),
+      session_effect: expect.objectContaining({
+        kind: "running_transition",
+        expected_terminal_event_id: 41,
+      }),
     }));
     expect(ingress.waitForAcknowledgement).not.toHaveBeenCalled();
   });
@@ -384,7 +409,109 @@ describe("EventPersistence durable ingress", () => {
         updated_at: "2026-08-11T00:00:00.000Z",
       },
     });
-    expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
+    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(ingress.record);
+  });
+
+  it("returns the canonical session when a running transition CAS is rejected", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
+      source_seq: 7,
+      event_id: 42,
+      effect_application: {
+        applied: false,
+        canonical_session: {
+          status: "completed",
+          termination_reason: "completed_ok",
+          termination_detail: null,
+          review_state: "needs_review",
+          last_assistant_text: "done",
+          termination_event_id: 41,
+          updated_at: "2026-08-11T00:00:00.000Z",
+          last_event_id: 42,
+        },
+      },
+    });
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueRunningTransitionAndWaitForApplication("sess-1", {
+      reviewState: "acknowledged",
+      transitionId: "resume:wrong-receipt",
+      expectedTerminalEventId: 999,
+    })).resolves.toMatchObject({
+      eventId: 42,
+      applied: false,
+      canonicalSession: {
+        status: "completed",
+        termination_event_id: 41,
+      },
+    });
+  });
+
+  it("returns the canonical session when a terminal transition CAS is rejected", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
+      source_seq: 7,
+      event_id: 43,
+      effect_application: {
+        applied: false,
+        canonical_session: {
+          status: "interrupted",
+          termination_reason: "killed",
+          termination_detail: "operator stop",
+          review_state: "needs_review",
+          last_assistant_text: "canonical answer",
+          termination_event_id: 41,
+          updated_at: "2026-08-11T00:00:00.000Z",
+          last_event_id: 42,
+        },
+      },
+    });
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueTerminalTransitionAndWaitForApplication(
+      "sess-1",
+      {
+        type: "session_ended",
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        timestamp: 1,
+      },
+      {
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        review_state: "acknowledged",
+        last_assistant_text: "stale answer",
+        updated_at: "2026-08-12T00:00:00.000Z",
+      },
+    )).resolves.toMatchObject({
+      eventId: 43,
+      applied: false,
+      canonicalSession: {
+        status: "interrupted",
+        termination_event_id: 41,
+        last_event_id: 42,
+      },
+    });
+    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(ingress.record);
   });
 
   it("waits for the last event enqueued for the session at the turn boundary", async () => {

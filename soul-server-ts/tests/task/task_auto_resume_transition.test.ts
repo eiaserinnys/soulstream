@@ -24,6 +24,7 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T01:00:00.000Z"),
     completedAt: new Date("2026-05-23T01:05:00.000Z"),
     lastEventId: 7,
+    terminalEventId: 6,
     lastReadEventId: 3,
     result: "old result",
     error: "old error",
@@ -61,9 +62,29 @@ describe("AutoResumeTransition", () => {
       expect(input).toMatchObject({
         reviewState: "not_required",
         transitionId: "resume:7",
+        expectedTerminalEventId: 6,
       });
       return { source_seq: 2 };
     });
+    const enqueueRunningTransitionAndWaitForApplication = vi.fn(
+      async (sessionId, input) => {
+        await enqueueRunningTransition(sessionId, input);
+        return {
+          eventId: 8,
+          applied: true,
+          canonicalSession: {
+            status: "running",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: "not_required",
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-11T00:00:00.000Z",
+            last_event_id: 8,
+          },
+        };
+      },
+    );
     const handleSideEffects = vi.fn(async (_sessionId, event, handledTask) => {
       order.push("handleSideEffects");
       expect(handledTask).toBe(task);
@@ -73,6 +94,7 @@ describe("AutoResumeTransition", () => {
     const persistence = {
       enqueueEvent,
       enqueueRunningTransition,
+      enqueueRunningTransitionAndWaitForApplication,
       handleSideEffects,
       enqueueMetadataEffect: appendMetadata,
     } as unknown as EventPersistence;
@@ -116,6 +138,53 @@ describe("AutoResumeTransition", () => {
       type: "caller_info",
       value: callerInfo,
     });
+  });
+
+  it("keeps the local task on the canonical terminal row when resume CAS is rejected", async () => {
+    const task = makeTerminalTask({
+      status: "interrupted",
+      terminationReason: "killed",
+      terminationDetail: "operator stop",
+      reviewState: "needs_review",
+      lastAssistantText: "canonical answer",
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    persistenceDouble.enqueueRunningTransitionAndWaitForApplication
+      .mockResolvedValueOnce({
+        eventId: 9,
+        applied: false,
+        canonicalSession: {
+          status: "interrupted",
+          termination_reason: "killed",
+          termination_detail: "operator stop",
+          review_state: "needs_review",
+          last_assistant_text: "canonical answer",
+          termination_event_id: 6,
+          updated_at: "2026-08-11T00:00:00.000Z",
+          last_event_id: 9,
+        },
+      });
+    const onResume = vi.fn();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await expect(
+      transition.resume(task, { text: "resume", user: "u" }, onResume),
+    ).rejects.toThrow("auto-resume running transition rejected");
+
+    expect(task).toMatchObject({
+      status: "interrupted",
+      terminationReason: "killed",
+      terminationDetail: "operator stop",
+      reviewState: "needs_review",
+      terminalEventId: 6,
+      lastEventId: 9,
+      lastAssistantText: "canonical answer",
+    });
+    expect(task.completedAt?.toISOString()).toBe("2026-08-11T00:00:00.000Z");
+    expect(onResume).not.toHaveBeenCalled();
   });
 
   it("rejects auto-resume before changing task state when user_message persistence fails", async () => {
@@ -210,7 +279,7 @@ describe("AutoResumeTransition", () => {
     expect(task.terminationReason).toBe("limit_hit");
     expect(task.terminationDetail).toBe("fresh limit");
     expect(task.terminationEventRecorded).toBe(true);
-    expect(persistenceDouble.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "session_ended",
@@ -294,7 +363,10 @@ describe("AutoResumeTransition", () => {
     );
     expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledWith(
       "s1",
-      expect.objectContaining({ reviewState: "acknowledged" }),
+      expect.objectContaining({
+        reviewState: "acknowledged",
+        expectedTerminalEventId: 6,
+      }),
     );
   });
 

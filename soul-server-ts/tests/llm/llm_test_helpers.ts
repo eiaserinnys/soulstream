@@ -8,6 +8,9 @@ import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { LlmAdapter, LlmResult } from "../../src/llm/types.js";
 import { TaskManager } from "../../src/task/task_manager.js";
+import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
+import type { EventAppendAcknowledgement } from
+  "../../src/upstream/event_outbox_pump.js";
 import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 export const silentLogger = pino({ level: "silent" });
@@ -45,6 +48,9 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
   const waitForAcknowledgement = vi.fn().mockImplementation(
     async (record: { source_seq: number }) => record.source_seq,
   );
+  const waitForAcknowledgementResult = vi.fn().mockImplementation(
+    async (record: EventOutboxRecord) => makeAppliedTransitionAcknowledgement(record),
+  );
   const updateLastMessage = vi.fn().mockResolvedValue(undefined);
 
   const db = {
@@ -68,7 +74,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     broadcaster,
     silentLogger,
     { append: outboxAppend } as never,
-    { waitForAcknowledgement } as never,
+    { waitForAcknowledgement, waitForAcknowledgementResult } as never,
   );
   const sessionMutations = {
     registerSession,
@@ -112,7 +118,35 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
       appendEvent,
       outboxAppend,
       waitForAcknowledgement,
+      waitForAcknowledgementResult,
       updateLastMessage,
+    },
+  };
+}
+
+function makeAppliedTransitionAcknowledgement(
+  record: EventOutboxRecord,
+): EventAppendAcknowledgement {
+  const effect = record.session_effect;
+  if (effect?.kind !== "running_transition" && effect?.kind !== "terminal_transition") {
+    throw new Error("transition acknowledgement requires a transition effect");
+  }
+  const terminal = effect.kind === "terminal_transition";
+  return {
+    source_seq: record.source_seq,
+    event_id: record.source_seq,
+    effect_application: {
+      applied: true,
+      canonical_session: {
+        status: terminal ? effect.status : "running",
+        termination_reason: terminal ? effect.termination_reason : null,
+        termination_detail: terminal ? effect.termination_detail : null,
+        review_state: effect.review_state,
+        last_assistant_text: terminal ? effect.last_assistant_text ?? null : null,
+        termination_event_id: terminal ? record.source_seq : null,
+        updated_at: effect.updated_at,
+        last_event_id: record.source_seq,
+      },
     },
   };
 }

@@ -75,7 +75,12 @@ export function makeEventPersistenceTestDouble(
   const enqueueRunningTransition = vi.fn(
     async (
       sessionId: string,
-      input: { reviewState: string; transitionId: string; updatedAt?: Date },
+      input: {
+        reviewState: string;
+        transitionId: string;
+        expectedTerminalEventId?: number | null;
+        updatedAt?: Date;
+      },
     ): Promise<EventOutboxRecord> => {
       const timestamp = (input.updatedAt ?? new Date()).toISOString();
       sourceSeq += 1;
@@ -92,6 +97,9 @@ export function makeEventPersistenceTestDouble(
         {
           kind: "running_transition",
           review_state: input.reviewState,
+          ...(input.expectedTerminalEventId === undefined
+            ? {}
+            : { expected_terminal_event_id: input.expectedTerminalEventId }),
           updated_at: timestamp,
         },
       );
@@ -100,11 +108,71 @@ export function makeEventPersistenceTestDouble(
   const enqueueRunningTransitionAndWaitForAck = vi.fn(
     async (
       sessionId: string,
-      input: { reviewState: string; transitionId: string; updatedAt?: Date },
+      input: {
+        reviewState: string;
+        transitionId: string;
+        expectedTerminalEventId?: number | null;
+        updatedAt?: Date;
+      },
     ): Promise<number> => {
       const record = await enqueueRunningTransition(sessionId, input);
       latestBySession.delete(sessionId);
       return record.source_seq;
+    },
+  );
+  const enqueueRunningTransitionAndWaitForApplication = vi.fn(
+    async (
+      sessionId: string,
+      input: {
+        reviewState: string;
+        transitionId: string;
+        expectedTerminalEventId?: number | null;
+        updatedAt?: Date;
+      },
+    ) => {
+      const record = await enqueueRunningTransition(sessionId, input);
+      latestBySession.delete(sessionId);
+      return {
+        eventId: record.source_seq,
+        applied: true,
+        canonicalSession: {
+          status: "running",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: input.reviewState,
+          last_assistant_text: null,
+          termination_event_id: null,
+          updated_at: input.updatedAt?.toISOString() ?? new Date().toISOString(),
+          // Transport source_seq is not a DB event id. Preserve the Task's
+          // existing DB cursor unless a test supplies an explicit projection.
+          last_event_id: null,
+        },
+      };
+    },
+  );
+  const enqueueTerminalTransitionAndWaitForApplication = vi.fn(
+    async (
+      sessionId: string,
+      event: SSEEventPayload,
+      effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+    ) => {
+      const result = await enqueueEvent(sessionId, event, effect);
+      const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
+      latestBySession.delete(sessionId);
+      return {
+        eventId,
+        applied: true,
+        canonicalSession: {
+          status: effect.status,
+          termination_reason: effect.termination_reason,
+          termination_detail: effect.termination_detail,
+          review_state: effect.review_state,
+          last_assistant_text: effect.last_assistant_text ?? null,
+          termination_event_id: eventId,
+          updated_at: effect.updated_at,
+          last_event_id: eventId,
+        },
+      };
     },
   );
   const handleSideEffects = vi.fn(
@@ -116,6 +184,8 @@ export function makeEventPersistenceTestDouble(
     enqueueMetadataEffect,
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;
@@ -127,6 +197,8 @@ export function makeEventPersistenceTestDouble(
     enqueueMetadataEffect,
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   };

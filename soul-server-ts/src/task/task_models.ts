@@ -335,6 +335,8 @@ export interface Task {
   pendingTerminationHint?: PendingTerminationHint;
   pendingTerminationDetail?: string | null;
   terminationEventRecorded?: boolean;
+  /** Immutable events.id of the first durable session_ended transition. */
+  terminalEventId?: number;
   /** Claude Agent SDK 장기 실행 runtime 상태. */
   claudeRuntime?: ClaudeRuntimeState;
 

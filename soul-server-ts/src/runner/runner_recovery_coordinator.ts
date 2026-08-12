@@ -15,6 +15,7 @@ import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
+import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
   stateDirectory: string;
@@ -28,6 +29,7 @@ export interface RunnerRecoveryCoordinatorOptions {
     TaskExecutor,
     "recoverRegisteredRunner" | "restartRegisteredRunner"
   >;
+  closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;
   spawner?: Pick<RunnerProcessSpawner, "terminate">;
   scan?: typeof scanRunnerRegistrations;
@@ -170,7 +172,7 @@ export class RunnerRecoveryCoordinator {
     }
     if (disposition === "closed") {
       if (registration.pidAlive) await this.terminateRegistration(registration);
-      await this.recoverRegistered({ ...registration, pidAlive: false }, "offline");
+      await this.options.closedTailDrainer.drain({ ...registration, pidAlive: false });
       return;
     }
     if (disposition === "already_reaped") {

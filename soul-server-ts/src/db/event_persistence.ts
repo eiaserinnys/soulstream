@@ -25,7 +25,10 @@ import type {
   EventOutboxRecord,
   EventOutboxSessionEffect,
 } from "../upstream/event_outbox.js";
-import type { EventOutboxPump } from "../upstream/event_outbox_pump.js";
+import type {
+  EventCanonicalSessionProjection,
+  EventOutboxPump,
+} from "../upstream/event_outbox_pump.js";
 
 import type { SessionDB } from "./session_db.js";
 import {
@@ -39,6 +42,12 @@ const LAST_MESSAGE_PREVIEW_LIMIT = 200;
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 
 export { sanitizeJsonText, sanitizeJsonValue, truncateJsonText };
+
+export type EventSessionTransitionApplication = {
+  eventId: number;
+  applied: boolean;
+  canonicalSession: EventCanonicalSessionProjection;
+};
 
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
@@ -70,7 +79,10 @@ export class EventPersistence {
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     private readonly outbox: Pick<EventOutbox, "append">,
-    private readonly outboxPump: Pick<EventOutboxPump, "waitForAcknowledgement">,
+    private readonly outboxPump: Pick<
+      EventOutboxPump,
+      "waitForAcknowledgement" | "waitForAcknowledgementResult"
+    >,
   ) {}
 
   /**
@@ -156,6 +168,7 @@ export class EventPersistence {
     input: {
       reviewState: string;
       transitionId: string;
+      expectedTerminalEventId?: number | null;
       updatedAt?: Date;
     },
   ): Promise<EventOutboxRecord> {
@@ -173,13 +186,54 @@ export class EventPersistence {
     input: {
       reviewState: string;
       transitionId: string;
+      expectedTerminalEventId?: number | null;
       updatedAt?: Date;
     },
   ): Promise<number> {
+    return (await this.enqueueRunningTransitionAndWaitForApplication(
+      sessionId,
+      input,
+    )).eventId;
+  }
+
+  async enqueueRunningTransitionAndWaitForApplication(
+    sessionId: string,
+    input: {
+      reviewState: string;
+      transitionId: string;
+      expectedTerminalEventId?: number | null;
+      updatedAt?: Date;
+    },
+  ): Promise<EventSessionTransitionApplication> {
     const record = await this.enqueueRunningTransition(sessionId, input);
-    const eventId = await this.outboxPump.waitForAcknowledgement(record);
+    return await this.waitForTransitionApplication(sessionId, record, "running");
+  }
+
+  async enqueueTerminalTransitionAndWaitForApplication(
+    sessionId: string,
+    event: SSEEventPayload,
+    effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+  ): Promise<EventSessionTransitionApplication> {
+    const record = await this.enqueueEvent(sessionId, event, effect);
+    return await this.waitForTransitionApplication(sessionId, record, "terminal");
+  }
+
+  private async waitForTransitionApplication(
+    sessionId: string,
+    record: EventOutboxRecord,
+    transition: "running" | "terminal",
+  ): Promise<EventSessionTransitionApplication> {
+    const acknowledgement = await this.outboxPump.waitForAcknowledgementResult(record);
     this.clearPendingAckTarget(sessionId, record.source_seq);
-    return eventId;
+    const application = acknowledgement.effect_application;
+    if (!application) {
+      throw new Error(`${transition} transition ACK missing effect application`);
+    }
+    return {
+      eventId: acknowledgement.event_id,
+      applied: application.applied,
+      canonicalSession: application.canonical_session,
+    };
   }
 
   private clearPendingAckTarget(sessionId: string, sourceSeq: number): void {
@@ -229,6 +283,7 @@ function buildRunningTransitionRecord(
   input: {
     reviewState: string;
     transitionId: string;
+    expectedTerminalEventId?: number | null;
     updatedAt?: Date;
   },
 ): { event: SSEEventPayload; effect: EventOutboxSessionEffect } {
@@ -248,6 +303,9 @@ function buildRunningTransitionRecord(
     effect: {
       kind: "running_transition",
       review_state: input.reviewState,
+      ...(input.expectedTerminalEventId === undefined
+        ? {}
+        : { expected_terminal_event_id: input.expectedTerminalEventId }),
       updated_at: timestamp,
     },
   };

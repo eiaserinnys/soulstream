@@ -198,6 +198,69 @@ describe("NodeEventIngressController", () => {
     }]);
   });
 
+  it("projects and ACKs the canonical terminal row when running receipt CAS is rejected", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "metadata";
+    value.events[0]!.session_effect = {
+      kind: "running_transition",
+      review_state: "acknowledged",
+      expected_terminal_event_id: 999,
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const received: Array<Record<string, unknown>> = [];
+    const sent: Array<Record<string, unknown>> = [];
+    const canonicalSession = {
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "needs_review",
+      last_assistant_text: "done",
+      termination_event_id: 41,
+      updated_at: "2026-08-06T00:01:00.000Z",
+      last_event_id: 101,
+    };
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+          sessionEffectApplication: {
+            applied: false,
+            canonicalSession,
+          },
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        received.push(message);
+        return [];
+      },
+      send: (frame: Record<string, unknown>) => sent.push(frame),
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(received.at(-1)).toEqual({
+      type: "session_updated",
+      agentSessionId: "session-a",
+      ...canonicalSession,
+    });
+    expect(sent.at(-1)).toEqual({
+      type: "event_append_ack",
+      stream_id: STREAM_ID,
+      acked_through: 1,
+      events: [{
+        source_seq: 1,
+        event_id: 101,
+        effect_application: {
+          applied: false,
+          canonical_session: canonicalSession,
+        },
+      }],
+    });
+  });
+
   it("projects a terminal effect into session cache before publishing session_ended", async () => {
     const value = batch(1);
     value.events[0]!.event_type = "session_ended";

@@ -4,6 +4,8 @@ import type { EventPersistence } from "../db/event_persistence.js";
 
 import type { Task } from "./task_models.js";
 import { reviewStateAfterTerminal } from "./session_review.js";
+import { applyCanonicalSessionProjection } from
+  "./task_canonical_session_projection.js";
 import {
   buildSessionEndedEvent,
   finalizeTaskTermination,
@@ -19,6 +21,11 @@ export interface ExternalFinalizeParams {
 interface TaskLifecycleTransitionDeps {
   logger: Logger;
   persistence?: EventPersistence;
+}
+
+export interface TaskFinalStatePersistenceResult {
+  newlyFinalized: boolean;
+  terminalTransitionApplied: boolean;
 }
 
 export class TaskLifecycleTransition {
@@ -99,30 +106,40 @@ export class TaskLifecycleTransition {
     return task;
   }
 
-  async persistExecutorFinalState(task: Task): Promise<void> {
-    await this.persistFinalState(task);
+  async persistExecutorFinalState(task: Task): Promise<TaskFinalStatePersistenceResult> {
+    return await this.persistFinalState(task);
   }
 
-  private async persistFinalState(task: Task): Promise<void> {
+  private async persistFinalState(task: Task): Promise<TaskFinalStatePersistenceResult> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
+    let terminalTransitionApplied = false;
     if (termination.newlyFinalized && !task.terminationEventRecorded) {
-      await this.enqueueAndAwaitSessionEnded(task, termination.reason, termination.detail);
+      terminalTransitionApplied = await this.enqueueAndAwaitSessionEnded(
+        task,
+        termination.reason,
+        termination.detail,
+      );
     }
+    return {
+      newlyFinalized: termination.newlyFinalized,
+      terminalTransitionApplied,
+    };
   }
 
   private async enqueueAndAwaitSessionEnded(
     task: Task,
     terminationReason: string,
     terminationDetail: string | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!this.deps.persistence) {
       throw new Error("session_ended durable event persistence is required");
     }
     const event = buildSessionEndedEvent(task);
-    const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
+    const application = await this.deps.persistence
+      .enqueueTerminalTransitionAndWaitForApplication(
       task.agentSessionId,
       event,
       {
@@ -135,8 +152,8 @@ export class TaskLifecycleTransition {
         updated_at: (task.completedAt ?? new Date()).toISOString(),
       },
     );
-    task.lastEventId = eventId;
-    task.terminationEventRecorded = true;
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    return application.applied;
   }
 
 }

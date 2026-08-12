@@ -17,6 +17,7 @@ export type EventSessionEffect =
   | {
       kind: "running_transition";
       review_state: string;
+      expected_terminal_event_id?: number | null;
       updated_at: string;
     }
   | {
@@ -60,13 +61,39 @@ export type EventAppendAck = {
   type: "event_append_ack";
   stream_id: string;
   acked_through: number;
-  events: Array<{ source_seq: number; event_id: number }>;
+  events: Array<{
+    source_seq: number;
+    event_id: number;
+    effect_application?: EventSessionEffectApplicationWire;
+  }>;
+};
+
+export type EventCanonicalSessionProjection = {
+  status: string;
+  termination_reason: string | null;
+  termination_detail: string | null;
+  review_state: string;
+  last_assistant_text: string | null;
+  termination_event_id: number | null;
+  updated_at: string;
+  last_event_id: number | null;
+};
+
+export type EventSessionEffectApplication = {
+  applied: boolean;
+  canonicalSession: EventCanonicalSessionProjection | null;
+};
+
+export type EventSessionEffectApplicationWire = {
+  applied: boolean;
+  canonical_session: EventCanonicalSessionProjection;
 };
 
 export type CommittedIngressEvent = {
   envelope: EventIngressEnvelope;
   eventId: number;
   duplicateReceipt: boolean;
+  sessionEffectApplication?: EventSessionEffectApplication;
 };
 
 export class EventIngressValidationError extends Error {}
@@ -189,10 +216,24 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     };
   }
   if (value.kind === "running_transition") {
-    assertExactKeys(value, ["kind", "review_state", "updated_at"], field);
+    assertExactKeys(
+      value,
+      ["kind", "review_state", "expected_terminal_event_id", "updated_at"],
+      field,
+    );
     return {
       kind: value.kind,
       review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.expected_terminal_event_id === undefined
+        ? {}
+        : {
+            expected_terminal_event_id: value.expected_terminal_event_id === null
+              ? null
+              : positiveInteger(
+                  value.expected_terminal_event_id,
+                  `${field}.expected_terminal_event_id`,
+                ),
+          }),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }

@@ -113,8 +113,10 @@ function makeMocks() {
     waitForSessionAck: persistenceDouble.waitForSessionAck,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
-    enqueueRunningTransitionAndWaitForAck:
-      persistenceDouble.enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication:
+      persistenceDouble.enqueueRunningTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication:
+      persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
     enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
@@ -495,7 +497,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.runner).toBeUndefined();
 
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({
@@ -580,7 +582,7 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
     ]);
     expect(task.lastEventId).toBe(4);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({
@@ -898,7 +900,7 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toContain("engine boom");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -941,7 +943,7 @@ describe("TaskExecutor.startExecution", () => {
       message: "claude boom",
       fatal: true,
     });
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1033,7 +1035,7 @@ describe("TaskExecutor.startExecution", () => {
         }),
       ]),
     );
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1111,7 +1113,7 @@ describe("TaskExecutor.startExecution", () => {
         },
       },
     });
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1177,7 +1179,7 @@ describe("TaskExecutor.startExecution", () => {
         "claude_runtime_pending_after_turn",
     );
     expect(pendingAfterTurnError).toBeUndefined();
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({
@@ -1251,7 +1253,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitEventEnvelope.mock.calls.some(
       (call) => (call[1] as { type: string }).type === "error",
     )).toBe(false);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1437,7 +1439,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
     // 정상 종료 분기의 `if (status === "running") status = "completed"`가 발동 안 함
     expect(task.status).toBe("interrupted");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "interrupted" }),
       expect.objectContaining({
@@ -1491,7 +1493,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.error).toBe("prepare boom");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.interventionQueue).toEqual([]);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1582,7 +1584,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
@@ -1662,9 +1664,22 @@ describe("TaskExecutor runner process boundary", () => {
   it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
     const mocks = makeMocks();
     let releaseRunningTransition!: () => void;
-    mocks.enqueueRunningTransitionAndWaitForAck.mockImplementationOnce(
-      () => new Promise<number>((resolve) => {
-        releaseRunningTransition = () => resolve(101);
+    mocks.enqueueRunningTransitionAndWaitForApplication.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releaseRunningTransition = () => resolve({
+          eventId: 101,
+          applied: true,
+          canonicalSession: {
+            status: "running",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: "not_required",
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-11T00:00:00.000Z",
+            last_event_id: 101,
+          },
+        });
       }),
     );
     const { runner, dispatcher } = makeRunnerProcessRuntime([
@@ -1682,7 +1697,9 @@ describe("TaskExecutor runner process boundary", () => {
 
     const recovery = executor.recoverRunnerExecution(task, agent, runner, "execute-old");
 
-    await vi.waitFor(() => expect(mocks.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(
+      mocks.enqueueRunningTransitionAndWaitForApplication,
+    ).toHaveBeenCalledWith(
       task.agentSessionId,
       {
         reviewState: "not_required",

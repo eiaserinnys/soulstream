@@ -23,19 +23,40 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makeMocks() {
-  const enqueueEventAndWaitForSessionAck = vi.fn().mockResolvedValue({
-    record: { source_seq: 8 },
+  const enqueueTerminalTransitionAndWaitForApplication = vi.fn(async (
+    _sessionId: string,
+    _event: unknown,
+    effect: {
+      status: string;
+      termination_reason: string;
+      termination_detail: string | null;
+      review_state: string;
+      last_assistant_text?: string | null;
+      updated_at: string;
+    },
+  ) => ({
     eventId: 8,
-  });
+    applied: true,
+    canonicalSession: {
+      status: effect.status,
+      termination_reason: effect.termination_reason,
+      termination_detail: effect.termination_detail,
+      review_state: effect.review_state,
+      last_assistant_text: effect.last_assistant_text ?? null,
+      termination_event_id: 8,
+      updated_at: effect.updated_at,
+      last_event_id: 8,
+    },
+  }));
 
   const transition = new TaskLifecycleTransition({
     logger: silentLogger,
-    persistence: { enqueueEventAndWaitForSessionAck } as never,
+    persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
   });
 
   return {
     transition,
-    enqueueEventAndWaitForSessionAck,
+    enqueueTerminalTransitionAndWaitForApplication,
   };
 }
 
@@ -83,7 +104,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
 describe("TaskLifecycleTransition.finalizeExternalTask", () => {
   it("records completed result, usage, and final-state side effects", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({ lastAssistantText: "final answer" });
 
     const result = await transition.finalizeExternalTask(task, {
@@ -97,7 +118,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     expect(task.error).toBeUndefined();
     expect(task.llmUsage).toEqual({ input_tokens: 1, output_tokens: 2 });
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({
@@ -111,15 +132,18 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
   });
 
   it("enqueues and ACKs session_ended once when finalizing a completed task", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
 
     await transition.finalizeExternalTask(task, { result: "done" });
-    await transition.persistExecutorFinalState(task);
+    await expect(transition.persistExecutorFinalState(task)).resolves.toEqual({
+      newlyFinalized: false,
+      terminalTransitionApplied: false,
+    });
 
     expect(task.terminationReason).toBe("completed_ok");
-    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledTimes(1);
-    expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({
         type: "session_ended",
@@ -135,7 +159,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
   });
 
   it("lets completed_ok outrank a prior limit_hit hint", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       pendingTerminationHint: "limit_hit",
       pendingTerminationDetail: "rate limited once",
@@ -144,14 +168,14 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     await transition.finalizeExternalTask(task, { result: "done" });
 
     expect(task.terminationReason).toBe("completed_ok");
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       kind: "terminal_transition",
       termination_reason: "completed_ok",
     });
   });
 
   it("records error result and clears stale completed result", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({ result: "old" });
 
     await transition.finalizeExternalTask(task, { error: "boom" });
@@ -160,7 +184,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     expect(task.error).toBe("boom");
     expect(task.result).toBeUndefined();
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       status: "error",
       termination_reason: "unknown",
       review_state: "acknowledged",
@@ -168,7 +192,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
   });
 
   it("marks every human-owned terminal result as needs_review", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       reviewRequired: true,
       reviewState: "acknowledged",
@@ -177,13 +201,13 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     await transition.finalizeExternalTask(task, { result: "new result" });
 
     expect(task.reviewState).toBe("needs_review");
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       review_state: "needs_review",
     });
   });
 
   it("auto-acknowledges a non-user terminal result", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       callerInfo: { source: "agent", agent_id: "delegator" },
       reviewRequired: false,
@@ -193,13 +217,13 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     await transition.finalizeExternalTask(task, { result: "delegated result" });
 
     expect(task.reviewState).toBe("acknowledged");
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       review_state: "acknowledged",
     });
   });
 
   it("does not reopen an acknowledged review when finalization is retried", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       status: "completed",
       completedAt: new Date("2026-05-23T01:05:00.000Z"),
@@ -209,14 +233,17 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       reviewState: "acknowledged",
     });
 
-    await transition.persistExecutorFinalState(task);
+    await expect(transition.persistExecutorFinalState(task)).resolves.toEqual({
+      newlyFinalized: false,
+      terminalTransitionApplied: false,
+    });
 
     expect(task.reviewState).toBe("acknowledged");
-    expect(enqueueEventAndWaitForSessionAck).not.toHaveBeenCalled();
+    expect(enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
   });
 
   it("uses pending termination hints by precedence for non-completed final states", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       pendingTerminationHint: "limit_hit",
       pendingTerminationDetail: "rate limit",
@@ -225,7 +252,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     await transition.finalizeExternalTask(task, { error: "boom" });
 
     expect(task.terminationReason).toBe("limit_hit");
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       status: "error",
       termination_reason: "limit_hit",
       termination_detail: "rate limit",
@@ -236,15 +263,19 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
 
 describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
   it("persists and broadcasts the existing final status without mutating it", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const completedAt = new Date("2026-05-23T01:05:00.000Z");
     const task = makeTask({ status: "interrupted", completedAt });
 
-    await transition.persistExecutorFinalState(task);
+    await expect(transition.persistExecutorFinalState(task)).resolves.toEqual({
+      newlyFinalized: true,
+      terminalTransitionApplied: true,
+    });
 
     expect(task.status).toBe("interrupted");
-    expect(task.completedAt).toBe(completedAt);
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(task.completedAt).toEqual(completedAt);
+    expect(task.terminalEventId).toBe(8);
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       status: "interrupted",
       termination_reason: "unknown",
       termination_detail: null,
@@ -253,30 +284,50 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
   });
 
   it("does not append another terminal effect after it was recorded", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       status: "completed",
       terminationReason: "completed_ok",
       terminationEventRecorded: true,
     });
 
-    await expect(transition.persistExecutorFinalState(task)).resolves.toBeUndefined();
+    await expect(transition.persistExecutorFinalState(task)).resolves.toEqual({
+      newlyFinalized: false,
+      terminalTransitionApplied: false,
+    });
 
-    expect(enqueueEventAndWaitForSessionAck).not.toHaveBeenCalled();
+    expect(enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
+  });
+
+  it("treats a durable terminal receipt as finalized even when a legacy reason is absent", async () => {
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
+    const task = makeTask({
+      status: "completed",
+      terminationEventRecorded: true,
+      terminalEventId: 41,
+    });
+
+    await expect(transition.persistExecutorFinalState(task)).resolves.toEqual({
+      newlyFinalized: false,
+      terminalTransitionApplied: false,
+    });
+
+    expect(task.terminationReason).toBe("completed_ok");
+    expect(enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
   });
 });
 
 describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
   it("marks running tasks interrupted for shutdown and persists that state", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
     const shutdownAt = new Date("2026-05-23T01:10:00.000Z");
 
     await transition.markRunningTaskInterruptedForShutdown(task, shutdownAt);
 
     expect(task.status).toBe("interrupted");
-    expect(task.completedAt).toBe(shutdownAt);
-    expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
+    expect(task.completedAt).toEqual(shutdownAt);
+    expect(enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2]).toMatchObject({
       status: "interrupted",
       termination_reason: "killed",
       termination_detail: "shutdown",
@@ -285,7 +336,7 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
   });
 
   it("does not mutate terminal tasks during shutdown interrupt preparation", async () => {
-    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const completedAt = new Date("2026-05-23T01:05:00.000Z");
     const task = makeTask({ status: "completed", completedAt });
 
@@ -293,7 +344,7 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
 
     expect(task.status).toBe("completed");
     expect(task.completedAt).toBe(completedAt);
-    expect(enqueueEventAndWaitForSessionAck).not.toHaveBeenCalled();
+    expect(enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
   });
 
   it("delete interrupt helper waits for drain and isolates interrupt/drain failures", async () => {
