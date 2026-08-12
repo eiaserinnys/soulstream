@@ -14,7 +14,10 @@ import { useIsMobile } from "../hooks/use-mobile";
 import type { SessionSummary } from "../shared/types";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
-import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
+import {
+  applyCatalogDisplayNames,
+  dedupeSessionSnapshots,
+} from "../hooks/session-stream-helpers";
 import { SessionItem } from "./SessionItem";
 import { resolveFolderActiveSessionDecision } from "./folder-active-session";
 import { FolderScrollHeader, useScrollHeaderMargin } from "./folder-scroll-header";
@@ -299,7 +302,7 @@ export function FolderContents({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
   const displaySessions = useMemo(() => {
-    return applyCatalogDisplayNames(sessionsProp, catalog);
+    return applyCatalogDisplayNames(dedupeSessionSnapshots(sessionsProp), catalog);
   }, [sessionsProp, catalog]);
 
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);

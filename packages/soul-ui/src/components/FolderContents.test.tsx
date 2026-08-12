@@ -361,4 +361,26 @@ describe("FolderContents", () => {
     expect(intersectionObserverMockState.options[0]?.root).toBe(scrollRoot);
     expect(scrollRoot?.contains(intersectionObserverMockState.observedTargets[0])).toBe(true);
   });
+
+  it("renders one row and one status for duplicate session snapshots", async () => {
+    const duplicateSnapshots: SessionSummary[] = [
+      {
+        ...sessions[0],
+        status: "completed",
+        updatedAt: "2026-06-10T00:00:00.000Z",
+      },
+      {
+        ...sessions[0],
+        status: "running",
+        updatedAt: "2026-06-09T00:00:00.000Z",
+      },
+    ];
+
+    ({ container, root } = renderFolderContents({ sessions: duplicateSnapshots }));
+    await Promise.resolve();
+
+    expect(container.querySelectorAll('[data-session-id="session-a"]')).toHaveLength(1);
+    expect(container.textContent).toContain("완료");
+    expect(container.textContent).not.toContain("실행 중");
+  });
 });

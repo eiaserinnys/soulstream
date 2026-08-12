@@ -5,12 +5,10 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
 import type { SessionStorageProvider } from "../providers/types";
 import { BATCH_SIZE, BATCH_FLUSH_MS } from "../lib/event-batch";
-import { applySessionUpdated, type SessionPage } from "./session-stream-helpers";
 
 export interface UseSessionProviderOptions {
   /** 구독할 세션 키. null이면 구독 안 함 */
@@ -29,7 +27,6 @@ interface QueuedEvent {
 export function useSessionProvider(options: UseSessionProviderOptions) {
   const { sessionKey, getSessionProvider } = options;
 
-  const queryClient = useQueryClient();
   const processEvents = useDashboardStore((s) => s.processEvents);
   const clearTree = useDashboardStore((s) => s.clearTree);
 
@@ -60,25 +57,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     }
 
     const chunk = queue.splice(0, BATCH_SIZE);
-    const result = processEventsRef.current(chunk);
-    // status 변경을 TanStack Query sessions 캐시에 반영
-    for (const { agentSessionId, status } of result.statusUpdates) {
-      queryClient.setQueriesData(
-        { queryKey: ["sessions"] },
-        (old: InfiniteData<SessionPage> | undefined) => {
-          if (!old) return old;
-          return applySessionUpdated(old, agentSessionId, { status });
-        },
-      );
-      // 활성 세션의 status를 Zustand store에도 즉시 반영 (ChatInput 버튼 라벨 갱신)
-      const storeState = useDashboardStore.getState();
-      if (agentSessionId === storeState.activeSessionKey) {
-        const current = storeState.activeSessionSummary;
-        if (current) {
-          storeState.setActiveSessionSummary({ ...current, status });
-        }
-      }
-    }
+    processEventsRef.current(chunk);
 
     if (queue.length > 0) {
       drainTimerRef.current = setTimeout(() => {
@@ -187,17 +166,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
           }
         }
         if (batch.length > 0) {
-          const result = processEvents(batch);
-          // status 변경을 TanStack Query sessions 캐시에 반영
-          for (const { agentSessionId, status } of result.statusUpdates) {
-            queryClient.setQueriesData(
-              { queryKey: ["sessions"] },
-              (old: InfiniteData<SessionPage> | undefined) => {
-                if (!old) return old;
-                return applySessionUpdated(old, agentSessionId, { status });
-              },
-            );
-          }
+          processEvents(batch);
         }
 
         setStatus("connected");
@@ -225,7 +194,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       setStatus("disconnected");
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, queryClient]);
+  }, [sessionKey, processEvents, clearTree, enqueueEvent, clearTimersAndQueue]);
 
   const reconnect = useCallback(() => {
     // 재연결은 sessionKey 변경으로 트리거됨

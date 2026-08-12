@@ -27,7 +27,7 @@ function Harness() {
   return null;
 }
 
-describe("useSessionStreamCacheSync catalog_updated", () => {
+describe("useSessionStreamCacheSync", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
@@ -45,6 +45,52 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+  });
+
+  it("applies live lifecycle transitions from the sessions stream without broad invalidation", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const queryKey = ["sessions", "all", "feed", null] as const;
+    queryClient.setQueryData(queryKey, {
+      pages: [{
+        sessions: [{
+          agentSessionId: "session-a",
+          sessionType: "claude",
+          status: "completed",
+          reviewState: "needs_review",
+          prompt: "preserved",
+          createdAt: "2026-08-12T00:00:00Z",
+        }],
+        total: 1,
+      }],
+      pageParams: [0],
+    });
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onSessionUpdated?.({
+      type: "session_updated",
+      agent_session_id: "session-a",
+      status: "running",
+      review_state: "not_required",
+      updated_at: "2026-08-12T00:01:00Z",
+    });
+
+    const cached = queryClient.getQueryData<{
+      pages: Array<{ sessions: Array<Record<string, unknown>> }>;
+    }>(queryKey);
+    expect(cached?.pages[0].sessions[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
   it("applies folder rename, move, and delete snapshots to the store immediately", () => {

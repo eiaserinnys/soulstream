@@ -202,4 +202,38 @@ describe("FeedView sidebar placement", () => {
     expect(state.activeSessionSummary?.agentSessionId).toBe("orphan");
     expect(state.leftNavigationMode).toBe("folders");
   });
+
+  it("renders one card and one status for duplicate session snapshots", async () => {
+    queryClient.clear();
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(
+            DndContext,
+            null,
+            createElement(SidebarFeedView, {
+              placement: "sidebar",
+              sessions: [
+                makeSession("duplicate", {
+                  status: "completed",
+                  updatedAt: "2026-06-06T00:00:00Z",
+                }),
+                makeSession("duplicate", {
+                  status: "running",
+                  updatedAt: "2026-06-05T00:00:00Z",
+                }),
+              ],
+            }),
+          ),
+        ),
+      );
+    });
+    await Promise.resolve();
+
+    expect(container.querySelectorAll('[data-session-id="duplicate"]')).toHaveLength(1);
+    expect(container.textContent).toContain("완료");
+    expect(container.textContent).not.toContain("실행 중");
+  });
 });

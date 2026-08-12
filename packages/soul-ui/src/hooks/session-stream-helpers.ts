@@ -38,6 +38,37 @@ export interface SessionPage {
   total: number;
 }
 
+function sessionSnapshotTime(session: SessionSummary): number {
+  const timestamp = new Date(session.updatedAt ?? session.createdAt ?? 0).getTime();
+  return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
+}
+
+/**
+ * 같은 세션의 페이지/캐시 스냅샷이 잠시 겹쳐도 표시 계층에는 한 개만 넘긴다.
+ * updatedAt/createdAt이 더 최신인 스냅샷을 선택하고, 동률이면 먼저 온 값을 보존한다.
+ */
+export function dedupeSessionSnapshots(
+  sessions: readonly SessionSummary[],
+): SessionSummary[] {
+  const indexes = new Map<string, number>();
+  const unique: SessionSummary[] = [];
+
+  for (const session of sessions) {
+    const index = indexes.get(session.agentSessionId);
+    if (index === undefined) {
+      indexes.set(session.agentSessionId, unique.length);
+      unique.push(session);
+      continue;
+    }
+
+    if (sessionSnapshotTime(session) > sessionSnapshotTime(unique[index])) {
+      unique[index] = session;
+    }
+  }
+
+  return unique;
+}
+
 /**
  * 피드 세션 필터링 + 정렬 순수 함수.
  * Zustand getFeedSessions와 동일한 로직 — 훅/컴포넌트에서 import하여 사용.
@@ -50,7 +81,7 @@ export function filterFeedSessions(
   sessions: SessionSummary[],
   catalog: CatalogState | null,
 ): SessionSummary[] {
-  return sessions
+  const visibleSessions = sessions
     .filter((s) => {
       if (s.sessionType === "llm") return false;
       if (catalog) {
@@ -68,7 +99,9 @@ export function filterFeedSessions(
       const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
       const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
       return tb - ta;
-    })
+    });
+
+  return dedupeSessionSnapshots(visibleSessions)
     .map((s) => {
       const assignment = catalog?.sessions[s.agentSessionId];
       if (assignment?.displayName) {
@@ -92,8 +125,8 @@ export function filterSessionsInFolder(
   catalog: CatalogState | null,
   folderId: string | null,
 ): SessionSummary[] {
-  if (!catalog?.sessions) return sessions;
-  return sessions
+  if (!catalog?.sessions) return dedupeSessionSnapshots(sessions);
+  const folderSessions = sessions
     .filter((s) => {
       if (s.sessionType === "llm") return false;
       const assignment = catalog.sessions[s.agentSessionId];
@@ -102,7 +135,9 @@ export function filterSessionsInFolder(
         return !assignment || assignment.folderId === null;
       }
       return assignment?.folderId === folderId;
-    })
+    });
+
+  return dedupeSessionSnapshots(folderSessions)
     .map((s) => {
       const assignment = catalog.sessions[s.agentSessionId];
       if (assignment?.displayName) {

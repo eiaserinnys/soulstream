@@ -5,7 +5,7 @@
  * Phase 7: thinking/text 분리. lastThinkingByParent 삭제, TextTargetNode → TextNode.
  * Phase 2-A: 트리 평탄화로 historyMode/orphans 필드 폐기 (atom 260507.01.fe-tree-flattening).
  *   parent_event_id를 무시하므로 부모 부재로 인한 큐(orphan) / 라이브-히스토리 분기(historyMode)가
- *   필요 없다. activeTextTarget·historySynced는 별개 목적으로 보존된다 (text 스트림 누적, 세션 상태 게이트).
+ *   필요 없다. activeTextTarget·historySynced는 별개 목적으로 보존된다 (text 스트림 누적, 알림 게이트).
  *   TreeChangeType / TreeChangeInfo도 NodeGraph 제거(Phase 1) 후 dead state라 폐기.
  */
 
@@ -23,7 +23,7 @@ export interface ProcessingContext {
   activeTextTarget: TextTargetNode | null;
   /** final assistant_message가 먼저 도착한 app-server 텍스트 스트림 키. */
   finalizedTextStreams: Set<string>;
-  /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 중이므로 세션 상태 갱신을 억제. */
+  /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 알림을 억제. */
   historySynced: boolean;
 }
 

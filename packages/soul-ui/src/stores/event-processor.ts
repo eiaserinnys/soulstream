@@ -15,12 +15,10 @@
 
 import type {
   SessionSummary,
-  SessionStatus,
   SoulSSEEvent,
   EventTreeNode,
   SessionNode,
   TextStartEvent,
-  HistorySyncEvent,
   PromptSuggestionEvent,
 } from "@shared/types";
 import {
@@ -33,7 +31,7 @@ import {
   applyUpdate,
 } from "./node-factory";
 import { placeInTree, handleTextStart } from "./tree-placer";
-import { shouldNotify, deriveSessionStatus } from "./session-updater";
+import { shouldNotify } from "./session-updater";
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
 const NEEDS_ROOT = new Set([
@@ -68,7 +66,6 @@ function applyLlmMetadata(
 export interface SingleEventResult {
   root: EventTreeNode | null;
   updated: boolean;
-  statusUpdate: { agentSessionId: string; status: SessionStatus } | null;
   notify: boolean;
   newLastEventId: number;
   isHistorySync: boolean;
@@ -93,7 +90,7 @@ export function processEventSingle(
 ): SingleEventResult {
   // Dedup
   if (eventId > 0 && eventId <= lastEventId) {
-    return { root, updated: false, statusUpdate: null, notify: false, newLastEventId: lastEventId, isHistorySync: false };
+    return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
   // subtree_update / task_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
@@ -102,7 +99,6 @@ export function processEventSingle(
     return {
       root,
       updated: false,
-      statusUpdate: null,
       notify: false,
       newLastEventId: eventId > 0 ? eventId : lastEventId,
       isHistorySync: false,
@@ -115,7 +111,6 @@ export function processEventSingle(
     return {
       root,
       updated: false,
-      statusUpdate: null,
       notify: false,
       newLastEventId: eventId > 0 ? eventId : lastEventId,
       isHistorySync: false,
@@ -128,14 +123,9 @@ export function processEventSingle(
   // history_sync
   if (event.type === "history_sync") {
     ctx.historySynced = true;
-    const syncEvent = event as HistorySyncEvent;
-    const statusUpdate = syncEvent.status && activeSessionKey
-      ? { agentSessionId: activeSessionKey, status: syncEvent.status as SessionStatus }
-      : null;
     return {
       root,
       updated: false,
-      statusUpdate,
       notify: false,
       newLastEventId: eventId > 0 ? eventId : lastEventId,
       isHistorySync: true,
@@ -166,21 +156,11 @@ export function processEventSingle(
     updated = applyUpdate(event, eventId, ctx, root);
   }
 
-  // 세션 상태 갱신 (히스토리 리플레이 중에는 억제)
-  let statusUpdate: { agentSessionId: string; status: SessionStatus } | null = null;
-  if (ctx.historySynced) {
-    const derivedStatus = deriveSessionStatus(event);
-    if (derivedStatus && activeSessionKey) {
-      statusUpdate = { agentSessionId: activeSessionKey, status: derivedStatus };
-    }
-  }
-
   const notify = ctx.historySynced && shouldNotify(event);
 
   return {
     root,
     updated,
-    statusUpdate,
     notify,
     newLastEventId: eventId > 0 ? eventId : lastEventId,
     isHistorySync: false,
@@ -194,7 +174,6 @@ export interface BatchEventResult {
   root: EventTreeNode | null;
   updated: boolean;
   maxEventId: number;
-  statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
   notifications: SoulSSEEvent[];
   /** 배치 내 마지막 prompt_suggestion (later wins). 없으면 null. */
   promptSuggestion: { sessionId: string; text: string } | null;
@@ -223,7 +202,6 @@ export function processEventsBatch(
 ): BatchEventResult {
   let updated = false;
   let maxEventId = lastEventId;
-  const statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }> = [];
   const notifications: SoulSSEEvent[] = [];
 
   // prompt_suggestion / text_start 추적 — later wins.
@@ -259,10 +237,6 @@ export function processEventsBatch(
     // history_sync
     if (event.type === "history_sync") {
       ctx.historySynced = true;
-      const syncEvent = event as HistorySyncEvent;
-      if (syncEvent.status && activeSessionKey) {
-        statusUpdates.push({ agentSessionId: activeSessionKey, status: syncEvent.status as SessionStatus });
-      }
       continue;
     }
 
@@ -292,12 +266,7 @@ export function processEventsBatch(
       }
     }
 
-    // 세션 상태 갱신 (히스토리 리플레이 중에는 억제)
     if (ctx.historySynced) {
-      const derivedStatus = deriveSessionStatus(event);
-      if (derivedStatus && activeSessionKey) {
-        statusUpdates.push({ agentSessionId: activeSessionKey, status: derivedStatus });
-      }
       if (shouldNotify(event)) {
         notifications.push(event);
       }
@@ -308,7 +277,6 @@ export function processEventsBatch(
     root,
     updated,
     maxEventId,
-    statusUpdates,
     notifications,
     promptSuggestion,
     clearPromptSuggestionFor,

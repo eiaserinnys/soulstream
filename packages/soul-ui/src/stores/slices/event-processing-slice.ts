@@ -96,7 +96,7 @@ export const createEventProcessingSlice: StateCreator<
   ...getEventProcessingInitialState(),
 
   // --- SSE 이벤트 처리 ---
-  // createNodeFromEvent + placeInTree + applyUpdate + updateSessionStatus + enqueueNotification
+  // createNodeFromEvent + placeInTree + applyUpdate + enqueueNotification
   // 트리에 in-place 변경 후 treeVersion++ 으로 리렌더 트리거
 
   processEvent: (event, eventId) => {
@@ -132,7 +132,7 @@ export const createEventProcessingSlice: StateCreator<
           ? { claudeRuntime: nextClaudeRuntime }
           : {}),
       });
-      return result.statusUpdate;
+      return;
     }
 
     if (result.updated) {
@@ -159,13 +159,13 @@ export const createEventProcessingSlice: StateCreator<
       });
     }
 
-    return result.statusUpdate;
+    return;
   },
 
   // --- SSE 이벤트 배치 처리 ---
 
   processEvents: (events) => {
-    if (events.length === 0) return { statusUpdates: [] };
+    if (events.length === 0) return;
 
     const state = get();
     const nextClaudeRuntime = events.reduce(
@@ -205,7 +205,7 @@ export const createEventProcessingSlice: StateCreator<
         : {}),
     });
 
-    return { statusUpdates: result.statusUpdates };
+    return;
   },
 
   // --- 히스토리 prepend 처리 ---

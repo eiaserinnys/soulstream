@@ -50,7 +50,6 @@ export type {
   WallpaperMode,
   WallpaperSettings,
   ChatFontSize,
-  ProcessEventsResult,
   DashboardState,
   DashboardActions,
 } from "./dashboard-store-types";
