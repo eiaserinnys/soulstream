@@ -27,6 +27,7 @@ import type {
   CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
   TaskUpdatedStreamEvent,
+  SessionListStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionUpdatedStreamEvent,
@@ -35,6 +36,8 @@ import type {
 } from "../shared/stream-events";
 import {
   applyMetadataUpdated,
+  applySessionLifecycleSnapshot,
+  applySessionLifecycleSnapshotToList,
   applySessionCreated,
   mergeSessionCreatedSummary,
   applySessionDeleted,
@@ -327,9 +330,54 @@ export function useSessionStreamCacheSync(
     [onEventIdAdvance],
   );
 
-  const onSessionList = useCallback(() => {
-    // 무시: TanStack Query fetch로 대체
-  }, []);
+  const onSessionList = useCallback((event: SessionListStreamEvent) => {
+    const lifecycleSnapshots = new Map(
+      event.sessions.map((rawSession) => {
+        const session = toSessionSummary(
+          rawSession as unknown as Record<string, unknown>,
+        );
+        return [session.agentSessionId, session] as const;
+      }),
+    );
+    const state = useDashboardStore.getState();
+    if (state.catalog?.sessionList) {
+      const sessionList = applySessionLifecycleSnapshotToList(
+        state.catalog.sessionList,
+        lifecycleSnapshots,
+      );
+      if (sessionList !== state.catalog.sessionList) {
+        state.setCatalog({ ...state.catalog, sessionList });
+      }
+    }
+
+    queryClient.setQueriesData<InfiniteData<SessionPage>>(
+      { queryKey: ["sessions"], exact: false },
+      (old) => old
+        ? applySessionLifecycleSnapshot(old, lifecycleSnapshots)
+        : old,
+    );
+
+    const storeState = useDashboardStore.getState();
+    const activeSessionKey = storeState.activeSessionKey;
+    if (activeSessionKey === null || !lifecycleSnapshots.has(activeSessionKey)) return;
+    if (storeState.activeSessionSummary) {
+      const [summary] = applySessionLifecycleSnapshotToList(
+        [storeState.activeSessionSummary],
+        lifecycleSnapshots,
+      );
+      if (summary !== storeState.activeSessionSummary) {
+        setActiveSessionSummary(summary);
+      }
+      return;
+    }
+
+    const allQueries = queryClient.getQueriesData<InfiniteData<SessionPage>>({
+      queryKey: ["sessions"],
+      exact: false,
+    });
+    const found = findSessionInPages(allQueries, activeSessionKey);
+    if (found) setActiveSessionSummary(found);
+  }, [queryClient, setActiveSessionSummary]);
 
   useSessionStreamSSE({
     enabled,

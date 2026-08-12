@@ -716,6 +716,40 @@ describe("dedupeSessionSnapshots", () => {
       status: "completed",
     });
   });
+
+  it("uses lastEventId as the monotonic tie-break regardless of arrival order", () => {
+    const older = makeSession("duplicate", {
+      status: "completed",
+      updatedAt: "2026-06-10T00:00:00Z",
+      lastEventId: 40,
+    });
+    const newer = makeSession("duplicate", {
+      status: "running",
+      updatedAt: "2026-06-10T00:00:00Z",
+      lastEventId: 41,
+    });
+
+    expect(dedupeSessionSnapshots([older, newer])[0]).toBe(newer);
+    expect(dedupeSessionSnapshots([newer, older])[0]).toBe(newer);
+  });
+
+  it("lets the later arrival win when timestamps and monotonic revisions cannot order snapshots", () => {
+    const first = makeSession("duplicate", {
+      status: "completed",
+      createdAt: undefined,
+      updatedAt: "invalid",
+      lastEventId: undefined,
+    });
+    const second = makeSession("duplicate", {
+      status: "running",
+      createdAt: undefined,
+      updatedAt: undefined,
+      lastEventId: undefined,
+    });
+
+    expect(dedupeSessionSnapshots([first, second])[0]).toBe(second);
+    expect(dedupeSessionSnapshots([second, first])[0]).toBe(first);
+  });
 });
 
 describe("shared normalizeSessionStatus", () => {

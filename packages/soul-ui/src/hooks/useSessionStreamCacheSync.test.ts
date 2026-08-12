@@ -93,6 +93,83 @@ describe("useSessionStreamCacheSync", () => {
     expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
+  it("applies a pre-subscription resume from the initial session_list snapshot", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const queryKey = ["sessions", "all", "feed", null] as const;
+    const staleSession = {
+      agentSessionId: "session-a",
+      sessionType: "claude" as const,
+      status: "completed" as const,
+      reviewState: "needs_review" as const,
+      prompt: "preserved",
+      eventCount: 4,
+      createdAt: "2026-08-12T00:00:00Z",
+    };
+    const unchangedSession = {
+      agentSessionId: "session-b",
+      sessionType: "claude" as const,
+      status: "completed" as const,
+      reviewState: "not_required" as const,
+      eventCount: 2,
+      createdAt: "2026-08-11T00:00:00Z",
+    };
+    queryClient.setQueryData(queryKey, {
+      pages: [{ sessions: [staleSession, unchangedSession], total: 2 }],
+      pageParams: [0],
+    });
+    useDashboardStore.getState().setCatalog({
+      folders: [],
+      sessions: {},
+      sessionList: [staleSession, unchangedSession],
+    });
+    useDashboardStore.getState().setActiveSession("session-a");
+    useDashboardStore.getState().setActiveSessionSummary(staleSession);
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onSessionList?.({
+      type: "session_list",
+      sessions: [{
+        agentSessionId: "session-a",
+        sessionType: "claude",
+        status: "running",
+        reviewState: "not_required",
+        eventCount: 5,
+        createdAt: "2026-08-12T00:00:00Z",
+      }],
+      total: 1,
+    });
+
+    const cached = queryClient.getQueryData<{
+      pages: Array<{ sessions: Array<typeof staleSession | typeof unchangedSession> }>;
+    }>(queryKey);
+    expect(cached?.pages[0].sessions[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(cached?.pages[0].sessions[1]).toBe(unchangedSession);
+    expect(useDashboardStore.getState().catalog?.sessionList?.[0]).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(useDashboardStore.getState().catalog?.sessionList?.[1]).toBe(unchangedSession);
+    expect(useDashboardStore.getState().activeSessionSummary).toMatchObject({
+      status: "running",
+      reviewState: "not_required",
+      prompt: "preserved",
+    });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
   it("applies folder rename, move, and delete snapshots to the store immediately", () => {
     const initialCatalog: CatalogState = {
       folders: [

@@ -19,6 +19,12 @@ import {
   applyCatalogDisplayName,
   mergeSessionCreatedSummary,
 } from "./session-catalog-helpers";
+import { dedupeSessionSnapshots } from "./session-snapshot-helpers";
+export {
+  applySessionLifecycleSnapshot,
+  applySessionLifecycleSnapshotToList,
+  dedupeSessionSnapshots,
+} from "./session-snapshot-helpers";
 export { normalizeSessionStatus } from "../shared/session-status";
 export {
   applyCatalogDisplayNames,
@@ -36,37 +42,6 @@ export {
 export interface SessionPage {
   sessions: SessionSummary[];
   total: number;
-}
-
-function sessionSnapshotTime(session: SessionSummary): number {
-  const timestamp = new Date(session.updatedAt ?? session.createdAt ?? 0).getTime();
-  return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
-}
-
-/**
- * 같은 세션의 페이지/캐시 스냅샷이 잠시 겹쳐도 표시 계층에는 한 개만 넘긴다.
- * updatedAt/createdAt이 더 최신인 스냅샷을 선택하고, 동률이면 먼저 온 값을 보존한다.
- */
-export function dedupeSessionSnapshots(
-  sessions: readonly SessionSummary[],
-): SessionSummary[] {
-  const indexes = new Map<string, number>();
-  const unique: SessionSummary[] = [];
-
-  for (const session of sessions) {
-    const index = indexes.get(session.agentSessionId);
-    if (index === undefined) {
-      indexes.set(session.agentSessionId, unique.length);
-      unique.push(session);
-      continue;
-    }
-
-    if (sessionSnapshotTime(session) > sessionSnapshotTime(unique[index])) {
-      unique[index] = session;
-    }
-  }
-
-  return unique;
 }
 
 /**
