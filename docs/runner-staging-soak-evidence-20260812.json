@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-12T01:36:00.000Z",
+  "purpose": "Sanitized evidence manifest for the Phase 8 final isolated runner cutover staging soak",
+  "sourceCommit": "531bca85eb961f0c97f80d87dc7390615332e0cf",
+  "runnerReleaseId": "sha256-002df4474f894f8567c92508de30d0026f44d1f8ad508a7407954b13abe270be",
+  "gateStatus": "failed",
+  "sanitization": {
+    "omitted": [
+      "agent session identifiers",
+      "prompts and message content",
+      "tool inputs and outputs",
+      "OAuth credentials and authorization headers",
+      "absolute snapshot and credential paths"
+    ],
+    "rawEvidence": "Retained only in the gitignored .local/runner-staging-soak/final-531bca85/captures directory of the originating workspace",
+    "verification": "Each raw evidence file is identified by byte length, line count, and SHA-256 below"
+  },
+  "isolation": {
+    "host": "127.0.0.1",
+    "orchPort": 25200,
+    "soulPort": 23105,
+    "internalMcpPort": 23106,
+    "internalMcpPath": "/mcp/internal",
+    "databaseName": "soulstream_runner_soak_531bca85",
+    "livePortsAndDatabaseUntouched": true
+  },
+  "preflightNotes": [
+    {
+      "kind": "internal_mcp_port_collision",
+      "summary": "The first staging start inherited a non-staging MCP_INTERNAL_PORT and failed closed with EADDRINUSE before any soak session was created. The timed runs started only after explicitly binding the isolated internal listener to 127.0.0.1:23106."
+    }
+  ],
+  "newFixtureCandidates": [
+    {
+      "event": "intervention_sent",
+      "backend": "codex",
+      "shapeSha256": "a7636d0c24c1fce6c5d58ef1aa71b7616907fe0193d8ecefe0eeb0943edef110",
+      "dataKeys": [
+        "_event_id",
+        "caller_info",
+        "id",
+        "text",
+        "timestamp",
+        "type",
+        "user"
+      ],
+      "callerInfoKeys": [
+        "forwarded_for",
+        "ip",
+        "referer",
+        "source",
+        "user_agent"
+      ],
+      "comparison": "The only structural fixture shape not present in the 2026-08-11 Claude and Codex soak candidates. Existing wire and task tests already cover intervention_sent; this manifest records the first live staging observation of this envelope shape."
+    }
+  ],
+  "anomalies": [
+    {
+      "severity": "gate_blocking",
+      "backend": "codex",
+      "count": 1,
+      "message": "engine.execute drain threw: recovered runner cannot contain an unpersisted intervention queue",
+      "observedAt": "2026-08-12T01:06:03.445Z",
+      "impact": "The runner survived, replay fully acknowledged, and the session eventually completed, but an intervention accepted after recovery reached the explicit unpersisted-queue guard. The soak therefore does not satisfy the zero-anomaly recutover gate."
+    }
+  ],
+  "runs": [
+    {
+      "runId": "claude-2026-08-12T00-24-55-892Z",
+      "backend": "claude",
+      "startedAt": "2026-08-12T00:24:55.893Z",
+      "completedAt": "2026-08-12T00:59:57.980Z",
+      "durationMinutes": 35,
+      "finalStatus": "completed",
+      "runnerPidBeforeRestart": 2397812,
+      "runnerPidAfterRestart": 2397812,
+      "runnerSurvivedRestart": true,
+      "postRestartReplayObserved": true,
+      "finalSourceSeq": 365,
+      "finalAckedThrough": 365,
+      "mcpRoundTripObserved": true,
+      "dropCount": 0,
+      "warningCount": 0,
+      "errorCount": 0,
+      "fatalCount": 0,
+      "durableEventCount": 356,
+      "ipcJournalCount": 0,
+      "fixtureCandidateCount": 389,
+      "eventTypeCounts": {
+        "init": 1,
+        "history_sync": 1,
+        "context_manifest": 1,
+        "user_message": 8,
+        "metadata": 16,
+        "claude_runtime_hook_event": 116,
+        "session": 8,
+        "credential_alert": 7,
+        "tool_start": 56,
+        "tool_result": 56,
+        "assistant_message": 11,
+        "subagent_start": 20,
+        "claude_runtime_task_started": 20,
+        "subagent_stop": 20,
+        "claude_runtime_task_notification": 20,
+        "result": 7,
+        "context_usage": 7,
+        "complete": 7,
+        "session_ended": 7
+      },
+      "files": [
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/claude-2026-08-12T00-24-55-892Z/soak-result.json",
+          "bytes": 2174,
+          "lines": 98,
+          "sha256": "bfff9b17043c61cbbfe66d526596aab7e2fea68ee99d193b95f79c8e227ff901"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/claude-2026-08-12T00-24-55-892Z/runner-events.jsonl",
+          "bytes": 459390,
+          "lines": 356,
+          "sha256": "aa1aa06636f7e5c7e1f48d5fd2eb204d8295f97184492c22da6635975095a098"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/claude-2026-08-12T00-24-55-892Z/orch-session-sse.jsonl",
+          "bytes": 238788,
+          "lines": 389,
+          "sha256": "2f35bbfb8ef193b9b03aca91ad2d82bad13186be99d22a7b8fc12d4119c69ecc"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/claude-2026-08-12T00-24-55-892Z/fixture-candidates.jsonl",
+          "bytes": 212912,
+          "lines": 389,
+          "sha256": "f9855092cda661c7c6075a581860fb34751c0867375a7f3be29cdd3d081d1a41"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/claude-2026-08-12T00-24-55-892Z/runner-ipc-journal.jsonl",
+          "bytes": 0,
+          "lines": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "runId": "codex-2026-08-12T01-00-12-661Z",
+      "backend": "codex",
+      "startedAt": "2026-08-12T01:00:12.662Z",
+      "completedAt": "2026-08-12T01:35:14.755Z",
+      "durationMinutes": 35,
+      "finalStatus": "completed",
+      "runnerPidBeforeRestart": 2447826,
+      "runnerPidAfterRestart": 2447826,
+      "runnerSurvivedRestart": true,
+      "postRestartReplayObserved": true,
+      "finalSourceSeq": 354,
+      "finalAckedThrough": 354,
+      "mcpRoundTripObserved": true,
+      "dropCount": 0,
+      "warningCount": 1,
+      "errorCount": 0,
+      "fatalCount": 0,
+      "durableEventCount": 344,
+      "ipcJournalCount": 0,
+      "fixtureCandidateCount": 917,
+      "eventTypeCounts": {
+        "init": 1,
+        "history_sync": 1,
+        "context_manifest": 1,
+        "user_message": 7,
+        "metadata": 14,
+        "debug": 189,
+        "session": 1,
+        "progress": 27,
+        "text_start": 18,
+        "text_delta": 933,
+        "text_end": 18,
+        "assistant_message": 18,
+        "tool_start": 51,
+        "tool_result": 51,
+        "intervention_sent": 1,
+        "complete": 6,
+        "session_ended": 6
+      },
+      "files": [
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/codex-2026-08-12T01-00-12-661Z/soak-result.json",
+          "bytes": 2063,
+          "lines": 96,
+          "sha256": "797c3a1600988ed72f9990db2ad098d3b5cf36369966ad47464d59bbff0fdb0a"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/codex-2026-08-12T01-00-12-661Z/runner-events.jsonl",
+          "bytes": 341827,
+          "lines": 344,
+          "sha256": "d9dc6106d6f06f51b4d41a4aade384598191ae6694ff9bf76759ec9c9e350d85"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/codex-2026-08-12T01-00-12-661Z/orch-session-sse.jsonl",
+          "bytes": 491901,
+          "lines": 1343,
+          "sha256": "b154913387567bd4d9f85800e6c14637880aff9842c321b8bb96364d53c337b7"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/codex-2026-08-12T01-00-12-661Z/fixture-candidates.jsonl",
+          "bytes": 284679,
+          "lines": 917,
+          "sha256": "ba9400ec7ba5b6ed2001a8352e3ec0ef99d5e4265667d8ea89b5617f84dca1f1"
+        },
+        {
+          "path": ".local/runner-staging-soak/final-531bca85/captures/codex-2026-08-12T01-00-12-661Z/runner-ipc-journal.jsonl",
+          "bytes": 0,
+          "lines": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ]
+}
