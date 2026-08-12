@@ -1,7 +1,4 @@
-/**
- * @vitest-environment jsdom
- */
-
+/** @vitest-environment jsdom */
 import { act, createElement, useEffect, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +16,6 @@ interface Deferred<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
 }
-
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -30,7 +26,7 @@ function deferred<T>(): Deferred<T> {
 
 function timelineMessage(
   id: number,
-  eventType: "tool_start" | "user_message" | "result" = "user_message",
+  eventType: "tool_start" | "user_message" | "intervention_sent" | "result" = "user_message",
 ) {
   return {
     id,
@@ -44,7 +40,9 @@ function timelineMessage(
           tool_input: { file_path: `/tmp/${id}` },
           timestamp: id,
         }
-      : eventType === "result"
+      : eventType === "intervention_sent"
+        ? { type: eventType, user: "dashboard", text: `message-${id}`, timestamp: id }
+        : eventType === "result"
         ? { type: eventType, output: `state-${id}`, timestamp: id }
         : { type: eventType, text: `message-${id}`, timestamp: id },
     created_at: new Date(id * 1_000).toISOString(),
@@ -54,10 +52,31 @@ function timelineMessage(
 function page(
   ids: number[],
   nextCursor: string | null,
-  eventType: "tool_start" | "user_message" | "result" = "user_message",
+  eventType: "tool_start" | "user_message" | "intervention_sent" | "result" = "user_message",
 ): Response {
   return new Response(JSON.stringify({
     messages: ids.map((id) => timelineMessage(id, eventType)),
+    next_cursor: nextCursor,
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function timelinePage(
+  messages: Array<{
+    id: number;
+    event_type: string;
+    payload: Record<string, unknown>;
+  }>,
+  nextCursor: string | null,
+): Response {
+  return new Response(JSON.stringify({
+    messages: messages.map((message) => ({
+      ...message,
+      parent_event_id: null,
+      created_at: new Date(message.id * 1_000).toISOString(),
+    })),
     next_cursor: nextCursor,
   }), {
     status: 200,
@@ -192,6 +211,113 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(1);
     expect(latest?.reachedTop).toBe(true);
+  });
+
+  it("재진입 이력에서 interrupt 동반·queued 개입을 모두 사용자 개입 말풍선으로 복원한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      page([443, 442], null, "intervention_sent"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-interventions");
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), "https://example.test");
+    expect(requestUrl.pathname).toBe("/api/sessions/sess-interventions/timeline");
+    expect(requestUrl.searchParams.get("limit")).toBe("100");
+    expect(requestUrl.searchParams.get("event_types")).not.toContain("thinking");
+    expect(flattenTree(useDashboardStore.getState().tree)).toEqual([
+      expect.objectContaining({
+        role: "intervention",
+        content: "message-442",
+      }),
+      expect.objectContaining({
+        role: "intervention",
+        content: "message-443",
+      }),
+    ]);
+  });
+
+  it("최신 resolution page를 원본 request page보다 먼저 받아도 세 상태를 소급 완료한다", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(timelinePage([
+        {
+          id: 6,
+          event_type: "tool_approval_resolved",
+          payload: {
+            approval_id: "approval-1",
+            decision: "approved",
+            approved: true,
+            rejected: false,
+            message: "approved",
+            timestamp: 6,
+          },
+        },
+        {
+          id: 5,
+          event_type: "input_request_expired",
+          payload: { request_id: "request-expired", timestamp: 5 },
+        },
+        {
+          id: 4,
+          event_type: "input_request_responded",
+          payload: { request_id: "request-responded", timestamp: 4 },
+        },
+      ], "cursor-requests"))
+      .mockResolvedValueOnce(timelinePage([
+        {
+          id: 3,
+          event_type: "tool_approval_requested",
+          payload: {
+            approval_id: "approval-1",
+            tool_name: "Bash",
+            tool_input: { command: "true" },
+            timestamp: 3,
+          },
+        },
+        {
+          id: 2,
+          event_type: "input_request",
+          payload: {
+            request_id: "request-expired",
+            questions: [{ question: "Expired?", options: [] }],
+            started_at: 2,
+            timeout_sec: 300,
+            timestamp: 2,
+          },
+        },
+        {
+          id: 1,
+          event_type: "input_request",
+          payload: {
+            request_id: "request-responded",
+            questions: [{ question: "Responded?", options: [] }],
+            started_at: 1,
+            timeout_sec: 300,
+            timestamp: 1,
+          },
+        },
+      ], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-resolution-boundary");
+    expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
+
+    await notifyGeometry();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const tree = useDashboardStore.getState().tree;
+    const responded = tree?.children.find((node) => node.id === "input-request-1");
+    const expired = tree?.children.find((node) => node.id === "input-request-2");
+    const approval = tree?.children.find((node) => node.id === "tool-approval-3");
+    expect(responded).toEqual(expect.objectContaining({ responded: true, completed: true }));
+    expect(expired).toEqual(expect.objectContaining({ expired: true, completed: true }));
+    expect(approval).toEqual(expect.objectContaining({
+      resolved: true,
+      completed: true,
+      approved: true,
+      rejected: false,
+      message: "approved",
+    }));
   });
 
   it("scrollHeight가 clientHeight + margin을 넘으면 추가 요청을 멈춘다", async () => {

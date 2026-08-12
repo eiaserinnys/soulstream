@@ -10,6 +10,7 @@ import {
   type SessionHistoryProvider,
   type SessionHistoryRawEvent,
 } from "./session_history_service.js";
+import { parseTimelineEventTypesQuery } from "./session_history_query.js";
 import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
@@ -57,7 +58,9 @@ type TimelineTraceParams = SessionParams & {
 
 type QueryParseResult<TValue> =
   | { ok: true; value: TValue }
-  | { ok: false; field: string; message: string };
+  | QueryParseError;
+
+type QueryParseError = { ok: false; field: string; message: string };
 
 type SessionHistorySseFrame = {
   event: string;
@@ -106,12 +109,15 @@ export function registerSessionHistoryRoutes(
   app.get("/api/sessions/:session_id/timeline", async (request, reply) => {
     const limit = limitQuery(request.query);
     if (!limit.ok) return sendInvalidQuery(reply, limit);
+    const eventTypes = parseTimelineEventTypesQuery(queryValue(request.query, "event_types"));
+    if (!eventTypes.ok) return sendInvalidQuery(reply, eventTypes);
 
     if (!(await ensureSessionAccess(options, request, reply))) return;
     return service.readTimelinePage(
       sessionParams(request).session_id,
       optionalStringQuery(request.query, "before"),
       limit.value,
+      eventTypes.value,
     );
   });
 
@@ -210,7 +216,7 @@ function queryValue(query: unknown, key: string): unknown {
 
 function sendInvalidQuery(
   reply: FastifyReply,
-  error: Extract<QueryParseResult<number>, { ok: false }>,
+  error: QueryParseError,
 ): FastifyReply {
   return reply.code(400).send({
     error: {

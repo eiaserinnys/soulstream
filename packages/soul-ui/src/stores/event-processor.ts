@@ -29,6 +29,7 @@ import {
   createNodeFromEvent,
   applyFinalAssistantMessageToLiveText,
   applyUpdate,
+  applyPendingResolution,
 } from "./node-factory";
 import { placeInTree, handleTextStart } from "./tree-placer";
 import { shouldNotify } from "./session-updater";
@@ -254,6 +255,7 @@ export function processEventsBatch(
     } else if (node) {
       root = ensureRoot(root, ctx);
       placeInTree(node, event, eventId, ctx, root);
+      applyPendingResolution(event, ctx, root);
       updated = true;
     } else if (event.type === "text_start") {
       root = ensureRoot(root, ctx);
