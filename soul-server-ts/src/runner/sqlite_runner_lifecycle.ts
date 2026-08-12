@@ -1,11 +1,16 @@
 import type { DatabaseSync } from "node:sqlite";
 import { readFile } from "node:fs/promises";
-import { renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import {
+  RunnerLifecycleSummaryWriter,
+  type RunnerSqliteLifecycleOptions,
+} from "./runner_lifecycle_summary_writer.js";
 import { loadNodeSqlite } from "./node_sqlite.js";
 import type { RunnerExecutionState } from "./sqlite_event_outbox_schema.js";
 import { stringifyRunnerJson } from "./sqlite_event_outbox_records.js";
+
+export type { RunnerSqliteLifecycleOptions } from "./runner_lifecycle_summary_writer.js";
 
 export interface RunnerLifecycleRecord {
   session_id: string;
@@ -57,18 +62,29 @@ export async function readRunnerLifecycleSummary(
  */
 export class RunnerSqliteLifecycle {
   private closed = false;
+  private readonly summaryWriter: RunnerLifecycleSummaryWriter;
 
   private constructor(
     private readonly database: DatabaseSync,
-    private readonly databaseFilePath: string,
+    databaseFilePath: string,
     private readonly sessionId?: string,
-  ) {}
+    options: RunnerSqliteLifecycleOptions = {},
+  ) {
+    this.summaryWriter = new RunnerLifecycleSummaryWriter(
+      runnerLifecycleSummaryPath(databaseFilePath),
+      options,
+    );
+  }
 
-  static open(databasePath: string, sessionId?: string): RunnerSqliteLifecycle {
+  static open(
+    databasePath: string,
+    sessionId?: string,
+    options: RunnerSqliteLifecycleOptions = {},
+  ): RunnerSqliteLifecycle {
     const { DatabaseSync } = loadNodeSqlite();
     const database = new DatabaseSync(databasePath);
     database.exec("PRAGMA busy_timeout = 5000");
-    return new RunnerSqliteLifecycle(database, databasePath, sessionId);
+    return new RunnerSqliteLifecycle(database, databasePath, sessionId, options);
   }
 
   read(): RunnerLifecycleRecord | null {
@@ -314,10 +330,7 @@ export class RunnerSqliteLifecycle {
   }
 
   private persistSummary(lifecycle: RunnerLifecycleRecord): RunnerLifecycleRecord {
-    const path = runnerLifecycleSummaryPath(this.databaseFilePath);
-    const temporaryPath = `${path}.tmp-${process.pid}`;
-    writeFileSync(temporaryPath, `${JSON.stringify(lifecycle)}\n`, { mode: 0o600 });
-    renameSync(temporaryPath, path);
+    this.summaryWriter.write(lifecycle);
     return lifecycle;
   }
 

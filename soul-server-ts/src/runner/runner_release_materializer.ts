@@ -4,12 +4,13 @@ import {
   copyFile,
   mkdir,
   readFile,
-  rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
+
+import { renameWithTransientRetry } from "../atomic_file_rename.js";
 
 const READY_MARKER = ".runner-release.json";
 const HASH_DOMAIN = "soulstream.runner.release.v1\0";
@@ -95,7 +96,7 @@ export class BuildArtifactReleaseMaterializer implements RunnerReleaseMaterializ
         mode: 0o444,
       });
       await mkdir(dirname(release.releaseRoot), { recursive: true });
-      await rename(stagingPath, release.releaseRoot);
+      await renameWithTransientRetry(stagingPath, release.releaseRoot);
       published = true;
       await makeReleaseReadOnly(release.releaseRoot);
     } catch (error) {

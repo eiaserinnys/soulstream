@@ -15,6 +15,7 @@ const renameFault = vi.hoisted(() => ({
   failuresRemaining: 0,
   targetSuffix: "",
   calls: [] as Array<{ source: string; target: string }>,
+  delays: [] as number[],
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -37,6 +38,16 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+vi.mock("node:timers/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:timers/promises")>();
+  return {
+    ...actual,
+    setTimeout: vi.fn(async (delayMs: number) => {
+      renameFault.delays.push(delayMs);
+    }),
+  };
+});
+
 const {
   EVENT_OUTBOX_COMPACT_ROWS,
   EventOutbox,
@@ -50,6 +61,7 @@ afterEach(async () => {
   renameFault.failuresRemaining = 0;
   renameFault.targetSuffix = "";
   renameFault.calls = [];
+  renameFault.delays = [];
   await Promise.all(tempDirectories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
@@ -67,6 +79,7 @@ describe("EventOutbox Windows atomic replacement retry", () => {
     await outbox.acknowledge(outbox.streamId, appended.source_seq);
 
     expect(renameCallsFor("metadata.json")).toHaveLength(3);
+    expect(renameFault.delays).toEqual([25, 50]);
     expect(JSON.parse(await readFile(join(directory, "metadata.json"), "utf8")))
       .toEqual({ stream_id: outbox.streamId, next_seq: 2, acked_seq: 1 });
     expect(await readdir(directory)).not.toContain("metadata.json.tmp");
@@ -109,6 +122,7 @@ describe("EventOutbox Windows atomic replacement retry", () => {
       .rejects.toMatchObject({ code: "EPERM" });
 
     expect(renameCallsFor("metadata.json")).toHaveLength(6);
+    expect(renameFault.delays).toEqual([25, 50, 100, 200, 400]);
   });
 
   it("does not retry a rename error outside the transient allowlist", async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -589,6 +589,106 @@ describe("RunnerSqliteEventOutbox", () => {
     expect((await outbox.readBootstrap())?.payload_hash).toBe(bootstrap.payload_hash);
     expect(outbox.ackedSeq).toBe(1);
     lifecycle.close();
+    outbox.close();
+  });
+
+  it("keeps the durable lifecycle alive when summary rename retries are exhausted", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    let failuresRemaining = 18;
+    const renameFile = vi.fn(() => {
+      if (failuresRemaining <= 0) return;
+      failuresRemaining -= 1;
+      throw Object.assign(new Error("locked by scanner"), { code: "EPERM" });
+    });
+    const sleep = vi.fn();
+    const onSummaryRenameFailure = vi.fn();
+    const onSummaryRenameRecovery = vi.fn();
+    const lifecycle = RunnerSqliteLifecycle.open(path, undefined, {
+      renameFile,
+      sleep,
+      onSummaryRenameFailure,
+      onSummaryRenameRecovery,
+    });
+
+    expect(() => lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T01:00:00.000Z",
+    })).not.toThrow();
+    await expect(access(`${runnerLifecycleSummaryPath(path)}.tmp-${process.pid}`))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    expect(() => lifecycle.progress(
+      "execute-a",
+      "2026-08-11T01:00:01.000Z",
+    )).not.toThrow();
+    expect(() => lifecycle.finish(
+      "execute-a",
+      "completed",
+      "2026-08-11T01:00:02.000Z",
+    )).not.toThrow();
+    expect(() => lifecycle.syncSummary()).not.toThrow();
+
+    expect(lifecycle.read()).toMatchObject({
+      execution_state: "completed",
+      progress_seq: 3,
+      progress_at: "2026-08-11T01:00:02.000Z",
+    });
+    expect(renameFile).toHaveBeenCalledTimes(19);
+    expect(sleep).toHaveBeenCalledTimes(15);
+    expect(onSummaryRenameFailure).toHaveBeenCalledTimes(3);
+    expect(onSummaryRenameFailure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ code: "EPERM" }),
+      runnerLifecycleSummaryPath(path),
+      { consecutiveFailures: 3, severity: "error" },
+    );
+    expect(onSummaryRenameRecovery).toHaveBeenCalledWith(
+      runnerLifecycleSummaryPath(path),
+      3,
+    );
+
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("scavenges only old lifecycle tmp files owned by dead pid generations", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const lifecycle = RunnerSqliteLifecycle.open(path);
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-12T00:00:00.000Z",
+    });
+    lifecycle.close();
+    const summaryPath = runnerLifecycleSummaryPath(path);
+    const oldDeadTmp = `${summaryPath}.tmp-910001`;
+    const oldAliveTmp = `${summaryPath}.tmp-910002`;
+    const youngDeadTmp = `${summaryPath}.tmp-910003`;
+    await Promise.all([
+      writeFile(oldDeadTmp, "old-dead\n"),
+      writeFile(oldAliveTmp, "old-alive\n"),
+      writeFile(youngDeadTmp, "young-dead\n"),
+    ]);
+    const now = Date.parse("2026-08-12T01:00:00.000Z");
+    const old = new Date(now - 10 * 60_000);
+    await Promise.all([
+      utimes(oldDeadTmp, old, old),
+      utimes(oldAliveTmp, old, old),
+    ]);
+
+    const recovery = RunnerSqliteLifecycle.open(path, undefined, {
+      now: () => now,
+      isPidAlive: (pid) => pid === 910002,
+    });
+    recovery.syncSummary();
+    recovery.close();
+
+    await expect(access(oldDeadTmp)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(oldAliveTmp)).resolves.toBeUndefined();
+    await expect(access(youngDeadTmp)).resolves.toBeUndefined();
     outbox.close();
   });
 

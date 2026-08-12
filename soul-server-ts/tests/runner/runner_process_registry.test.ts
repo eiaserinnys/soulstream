@@ -1,4 +1,5 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { renameSync } from "node:fs";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -217,16 +218,33 @@ describe("runner process registry", () => {
     })).rejects.toThrow("runner inventory incomplete: identity unavailable for /runner/unidentified");
   });
 
-  it("keeps the periodic scan lightweight and never opens the event outbox", async () => {
+  it("reads only the lifecycle row and never opens the event outbox", async () => {
     const stateDirectory = await temporaryDirectory("light");
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeFile(paths.configPath, JSON.stringify({ ...registration().config, paths }));
-    await writeFile(paths.databasePath, "not-opened-by-periodic-scan");
-    await writeFile(
-      runnerLifecycleSummaryPath(paths.databasePath),
-      JSON.stringify(registration().lifecycle),
-    );
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "release-a",
+        snapshot_path: "/release/release-a/soul-server-ts",
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T00:00:20.000Z",
+    });
+    lifecycle.close();
     const open = vi.spyOn(RunnerSqliteEventOutbox, "open");
     const result = await scanRunnerRegistrations(stateDirectory);
     expect(result.errors).toEqual([]);
@@ -235,6 +253,162 @@ describe("runner process registry", () => {
       lifecycle: { execution_state: "running" },
     });
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing", "stale", "invalid"] as const)(
+    "classifies from durable SQLite when the lifecycle cache is %s and regenerates it",
+    async (cacheState) => {
+      const stateDirectory = await temporaryDirectory(`durable-${cacheState}`);
+      const paths = runnerProcessPaths(stateDirectory, `session-${cacheState}`);
+      const current = registration({ sessionId: `session-${cacheState}` });
+      current.config = { ...current.config, paths };
+      await mkdir(paths.sessionDirectory, { recursive: true });
+      await writeFile(paths.configPath, JSON.stringify(current.config));
+      await writeFile(paths.pidPath, String(process.pid));
+      const identity = pendingRunnerRegistrationIdentity(
+        current.config.sessionId,
+        current.config.codeSha,
+      );
+      await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+        ...identity,
+        pid: process.pid,
+        startIdentity: "current-process",
+      });
+      const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+      await outbox.initializeBootstrap({
+        session_id: current.config.sessionId,
+        created_at: "2026-08-11T00:00:00.000Z",
+        resume: {
+          schema_version: 1,
+          backend_session_id: `backend-${cacheState}`,
+          cwd: "/workspace/a",
+          codex_home: "/home/test/.codex",
+          rollout_root: "/home/test/.codex/sessions",
+          code_sha: current.config.codeSha,
+          snapshot_path: current.config.snapshotPath,
+        },
+      });
+      outbox.close();
+      const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+      lifecycle.begin({
+        pid: process.pid,
+        commandId: `execute-${cacheState}`,
+        progressedAt: "2026-08-11T00:00:29.000Z",
+      });
+      lifecycle.close();
+      const summaryPath = runnerLifecycleSummaryPath(paths.databasePath);
+      if (cacheState === "missing") {
+        await rm(summaryPath);
+      } else if (cacheState === "stale") {
+        await writeFile(summaryPath, JSON.stringify({
+          ...current.lifecycle,
+          session_id: current.config.sessionId,
+          runner_pid: process.pid + 100_000,
+          execution_state: "closed",
+        }));
+      } else {
+        await writeFile(summaryPath, "{invalid");
+      }
+
+      const result = await scanRunnerRegistrations(stateDirectory);
+
+      expect(result.errors).toEqual([]);
+      expect(result.registrations).toHaveLength(1);
+      expect(result.registrations[0]).toMatchObject({
+        pid: process.pid,
+        pidAlive: true,
+        lifecycle: {
+          runner_pid: process.pid,
+          execution_command_id: `execute-${cacheState}`,
+          execution_state: "running",
+        },
+      });
+      expect(classifyRunnerRegistration(result.registrations[0]!, NOW, 120_000))
+        .toBe("adopt_running");
+      expect(JSON.parse(await readFile(summaryPath, "utf8"))).toMatchObject({
+        runner_pid: process.pid,
+        execution_command_id: `execute-${cacheState}`,
+        execution_state: "running",
+      });
+    },
+  );
+
+  it("keeps cache refresh failure escalation per path without blocking scan retries", async () => {
+    const stateDirectory = await temporaryDirectory("refresh-escalation");
+    const paths = runnerProcessPaths(stateDirectory, "session-refresh");
+    const current = registration({ sessionId: "session-refresh" });
+    current.config = { ...current.config, paths };
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(current.config));
+    await writeFile(paths.pidPath, String(process.pid));
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      pid: process.pid,
+      startIdentity: "current-process",
+    });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: current.config.sessionId,
+      created_at: "2026-08-12T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-refresh",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: current.config.codeSha,
+        snapshot_path: current.config.snapshotPath,
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-refresh",
+      progressedAt: "2026-08-12T00:00:01.000Z",
+    });
+    lifecycle.close();
+    await writeFile(runnerLifecycleSummaryPath(paths.databasePath), "{invalid");
+    const sleep = vi.fn();
+    const onSummaryRenameFailure = vi.fn();
+    const onSummaryRenameRecovery = vi.fn();
+    const scanOptions = {
+      lifecycleSummaryOptions: {
+        renameFile: () => {
+          throw Object.assign(new Error("persistent lock"), { code: "EPERM" });
+        },
+        sleep,
+        onSummaryRenameFailure,
+      },
+    };
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await scanRunnerRegistrations(stateDirectory, scanOptions);
+      expect(result.errors).toEqual([]);
+      expect(result.registrations[0]?.lifecycle?.runner_pid).toBe(process.pid);
+    }
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(onSummaryRenameFailure).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ code: "EPERM" }),
+      runnerLifecycleSummaryPath(paths.databasePath),
+      { consecutiveFailures: 1, severity: "warn" },
+    );
+    expect(onSummaryRenameFailure).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ code: "EPERM" }),
+      runnerLifecycleSummaryPath(paths.databasePath),
+      { consecutiveFailures: 3, severity: "error" },
+    );
+    const recovered = await scanRunnerRegistrations(stateDirectory, {
+      lifecycleSummaryOptions: { renameFile: renameSync, onSummaryRenameRecovery },
+    });
+    expect(recovered.errors).toEqual([]);
+    expect(onSummaryRenameRecovery).toHaveBeenCalledWith(
+      runnerLifecycleSummaryPath(paths.databasePath),
+      3,
+    );
   });
 
   it("reports a missing database without recreating recovery state", async () => {

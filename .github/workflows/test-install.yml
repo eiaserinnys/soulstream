@@ -11,6 +11,9 @@ on:
       - 'packages/db-schema/**'
       - 'soul-server-ts/scripts/**'
       - 'soul-server-ts/tests/scripts/**'
+      - 'soul-server-ts/src/atomic_file_rename.ts'
+      - 'soul-server-ts/src/runner/runner_lifecycle_summary_writer.ts'
+      - 'soul-server-ts/tests/atomic_file_rename*.test.ts'
       - 'orch-server-ts/scripts/**'
       - 'orch-server-ts/tests/**'
       - 'deploy/release-manifest*.json'
@@ -23,6 +26,9 @@ on:
       - 'packages/db-schema/**'
       - 'soul-server-ts/scripts/**'
       - 'soul-server-ts/tests/scripts/**'
+      - 'soul-server-ts/src/atomic_file_rename.ts'
+      - 'soul-server-ts/src/runner/runner_lifecycle_summary_writer.ts'
+      - 'soul-server-ts/tests/atomic_file_rename*.test.ts'
       - 'orch-server-ts/scripts/**'
       - 'orch-server-ts/tests/**'
       - 'deploy/release-manifest*.json'
@@ -80,6 +86,15 @@ jobs:
             -s deploy/tests \
             -p "test_haniel_release_contract.py" \
             -v
+
+      - name: Run real Windows atomic rename contention contract
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          corepack pnpm --dir soul-server-ts exec vitest run \
+            tests/atomic_file_rename.test.ts \
+            tests/atomic_file_rename_win32.test.ts \
+            --maxWorkers=2 --minWorkers=1
 
   database-release-postgres:
     runs-on: ubuntu-latest

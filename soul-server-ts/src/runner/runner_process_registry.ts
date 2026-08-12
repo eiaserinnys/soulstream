@@ -3,9 +3,12 @@ import { resolve } from "node:path";
 
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import {
+  readAuthoritativeRunnerLifecycle,
+  type AuthoritativeRunnerLifecycleOptions,
+} from "./runner_lifecycle_reader.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
-  readRunnerLifecycleSummary,
   RunnerSqliteLifecycle,
 } from "./sqlite_runner_lifecycle.js";
 import {
@@ -68,7 +71,7 @@ export async function scanRunnerRegistrations(
   options: {
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
-  } = {},
+  } & AuthoritativeRunnerLifecycleOptions = {},
 ): Promise<RunnerRegistrationScan> {
   const registrations: RunnerRegistration[] = [];
   const errors: RunnerRegistrationScan["errors"] = [];
@@ -217,7 +220,7 @@ export async function readRunnerRegistrationSummary(
   options: {
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
-  } = {},
+  } & AuthoritativeRunnerLifecycleOptions = {},
 ): Promise<RunnerRegistration> {
   const configPath = resolve(directory, "runner-config.json");
   let config: RunnerChildConfig;
@@ -239,7 +242,7 @@ export async function readRunnerRegistrationSummary(
     ) {
       throw new Error(`runner identity does not match config: ${directory}`);
     }
-    const lifecycle = await readRunnerLifecycleSummary(config.paths.databasePath);
+    const lifecycle = await readAuthoritativeRunnerLifecycle(config.paths.databasePath, options);
     if (lifecycle && lifecycle.session_id !== config.sessionId) {
       throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
     }

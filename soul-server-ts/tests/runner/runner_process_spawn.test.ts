@@ -5,8 +5,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import { readAuthoritativeRunnerLifecycle } from "../../src/runner/runner_lifecycle_reader.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
-import { readRunnerRegistrationIdentity } from "../../src/runner/runner_registration_identity.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
+import {
+  readRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "../../src/runner/runner_registration_identity.js";
 
 const directories: string[] = [];
 const SNAPSHOT_PATH = join(tmpdir(), "runner-releases", "sha-a");
@@ -36,7 +42,10 @@ describe("RunnerProcessSpawner", () => {
       return { pid: 4123, unref: vi.fn() };
     });
     const spawner = new RunnerProcessSpawner({
-      prepareDatabase: vi.fn(async () => { calls.push("database"); }),
+      prepareDatabase: vi.fn(async (path) => {
+        await prepareDatabase(path);
+        calls.push("database");
+      }),
       validateEntry: vi.fn(async () => { calls.push("entry"); }),
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -84,7 +93,7 @@ describe("RunnerProcessSpawner", () => {
     const signals: NodeJS.Signals[] = [];
     const params = await input();
     const first = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5001, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -96,7 +105,7 @@ describe("RunnerProcessSpawner", () => {
     });
     const registered = await first.spawn(params);
     const replacement = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5002, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -121,7 +130,7 @@ describe("RunnerProcessSpawner", () => {
     const signals: NodeJS.Signals[] = [];
     const params = await input();
     const initial = new RunnerProcessSpawner({
-      prepareDatabase: async () => {}, validateEntry: async () => {},
+      prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6101, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async () => ({ alive: true, startIdentity: "start-6101" }),
@@ -129,7 +138,7 @@ describe("RunnerProcessSpawner", () => {
     });
     const registered = await initial.spawn(params);
     const replacement = new RunnerProcessSpawner({
-      prepareDatabase: async () => {}, validateEntry: async () => {},
+      prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6102, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({
@@ -157,7 +166,7 @@ describe("RunnerProcessSpawner", () => {
     let inspections = 0;
     const params = await input();
     const initial = new RunnerProcessSpawner({
-      prepareDatabase: async () => {}, validateEntry: async () => {},
+      prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6201, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async () => ({ alive: true, startIdentity: "start-6201" }),
@@ -166,7 +175,7 @@ describe("RunnerProcessSpawner", () => {
     await initial.spawn(params);
     const signalPid = vi.fn();
     const replacement = new RunnerProcessSpawner({
-      prepareDatabase: async () => {}, validateEntry: async () => {},
+      prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6202, unref: vi.fn() }),
       registerPid: async () => {},
       inspectProcess: async () => ({
@@ -192,7 +201,7 @@ describe("RunnerProcessSpawner", () => {
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeFile(paths.lockPath, "prior-runner-ownership\n");
     const spawner = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5006, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -212,7 +221,7 @@ describe("RunnerProcessSpawner", () => {
   it("adopts a live registered runner without spawning or replacing it", async () => {
     const params = await input();
     const first = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5101, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -225,7 +234,7 @@ describe("RunnerProcessSpawner", () => {
     const registered = await first.spawn(params);
     const spawnProcess = vi.fn(() => ({ pid: 5102, unref: vi.fn() }));
     const adopter = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -243,10 +252,103 @@ describe("RunnerProcessSpawner", () => {
     expect(spawnProcess).not.toHaveBeenCalled();
   });
 
+  it("recovers across a persistent sidecar failure and runner pid generation change", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    const initializeDatabase = async (path: string) => {
+      const outbox = await RunnerSqliteEventOutbox.create(path);
+      await outbox.initializeBootstrap({
+        session_id: params.sessionId,
+        created_at: "2026-08-12T00:00:00.000Z",
+        resume: {
+          schema_version: 1,
+          backend_session_id: "backend-a",
+          cwd: params.agent.workspace_dir,
+          codex_home: params.codexHome,
+          rollout_root: params.rolloutRoot,
+          code_sha: params.codeSha,
+          snapshot_path: params.snapshotPath,
+        },
+      });
+      outbox.close();
+    };
+    const initial = new RunnerProcessSpawner({
+      prepareDatabase: initializeDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5101, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+    await initial.spawn(params);
+    const firstLifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    firstLifecycle.begin({
+      pid: 5101,
+      commandId: "execute-old",
+      progressedAt: "2026-08-12T00:00:01.000Z",
+    });
+    firstLifecycle.close();
+
+    const persistentRenameFailure = vi.fn(() => {
+      throw Object.assign(new Error("sidecar remains locked"), { code: "EPERM" });
+    });
+    const nextLifecycle = RunnerSqliteLifecycle.open(paths.databasePath, undefined, {
+      renameFile: persistentRenameFailure,
+      retryDelaysMs: [],
+    });
+    nextLifecycle.begin({
+      pid: 5102,
+      commandId: "execute-new",
+      progressedAt: "2026-08-12T00:00:02.000Z",
+    });
+    nextLifecycle.close();
+    await writeFile(paths.pidPath, "5102\n", { mode: 0o600 });
+    const priorIdentity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    expect(priorIdentity).not.toBeNull();
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...priorIdentity!,
+      pid: 5102,
+      startIdentity: "test-5102",
+    });
+
+    let runnerAlive = true;
+    const signalPid = vi.fn((_pid: number) => { runnerAlive = false; });
+    const spawnProcess = vi.fn(() => ({ pid: 5103, unref: vi.fn() }));
+    const recoveredHost = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      isPidAlive: (pid) => pid === 5102 && runnerAlive,
+      signalPid,
+      now: () => 0,
+      delay: async () => {},
+      readLifecycle: async (path) => await readAuthoritativeRunnerLifecycle(path, {
+        lifecycleSummaryOptions: {
+          renameFile: persistentRenameFailure,
+        },
+      }),
+    });
+
+    await expect(recoveredHost.adopt({
+      stateDirectory: params.stateDirectory,
+      sessionId: params.sessionId,
+    })).resolves.toMatchObject({ pid: 5102, adopted: true });
+    await expect(recoveredHost.spawn(params)).resolves.toMatchObject({ pid: 5103, adopted: false });
+
+    expect(persistentRenameFailure).toHaveBeenCalledTimes(3);
+    expect(signalPid).toHaveBeenCalledWith(5102, "SIGTERM");
+    expect(spawnProcess).toHaveBeenCalledOnce();
+  });
+
   it("fails before spawn when the immutable snapshot entry is unavailable", async () => {
     const spawnProcess = vi.fn(() => ({ pid: 5003, unref: vi.fn() }));
     const spawner = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => { throw new Error("snapshot entry missing"); },
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -272,7 +374,7 @@ describe("RunnerProcessSpawner", () => {
       throw Object.assign(new Error("disk full while materializing"), { code: "ENOSPC" });
     };
     const spawner = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
@@ -296,7 +398,7 @@ describe("RunnerProcessSpawner", () => {
       alive = false;
     });
     const spawner = new RunnerProcessSpawner({
-      prepareDatabase: async () => {},
+      prepareDatabase,
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 5004, unref }),
       registerPid: async () => { throw new Error("pid registration denied"); },
@@ -340,4 +442,9 @@ async function input() {
     codexHome: "/home/eias/.codex",
     rolloutRoot: "/home/eias/.codex/sessions",
   };
+}
+
+async function prepareDatabase(path: string): Promise<void> {
+  const outbox = await RunnerSqliteEventOutbox.create(path);
+  outbox.close();
 }

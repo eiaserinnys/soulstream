@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { renameWithTransientRetry } from "../atomic_file_rename.js";
 import { loadNodeSqlite } from "./node_sqlite.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
@@ -52,7 +53,7 @@ export async function writeRunnerRegistrationIdentity(
     encoding: "utf8",
     mode: 0o600,
   });
-  await rename(temporaryPath, path);
+  await renameWithTransientRetry(temporaryPath, path);
 }
 
 export async function readRunnerRegistrationIdentity(
