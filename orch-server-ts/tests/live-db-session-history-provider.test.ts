@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -197,6 +199,75 @@ describe("live DB session history provider", () => {
     ]);
   });
 
+  it("keeps /timeline event inventory in exact parity with Python and returns durable interventions", async () => {
+    const createdAt = new Date("2026-08-12T14:37:00.902Z");
+    const interventionRows = [
+      {
+        id: 443,
+        parent_event_id: null,
+        event_type: "intervention_sent",
+        payload: {
+          type: "intervention_sent",
+          user: "dashboard",
+          text: "interrupting intervention",
+          timestamp: createdAt.getTime() / 1_000,
+        },
+        created_at: createdAt,
+      },
+      {
+        id: 442,
+        parent_event_id: null,
+        event_type: "intervention_sent",
+        payload: {
+          type: "intervention_sent",
+          user: "dashboard",
+          text: "queued intervention",
+          timestamp: createdAt.getTime() / 1_000 - 1,
+        },
+        created_at: new Date(createdAt.getTime() - 1_000),
+      },
+    ];
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: true }];
+      if (text.includes("event_type = ANY")) return interventionRows;
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({
+      sql: harness.sql,
+    }).sessionHistoryProvider;
+    const app = createApp({
+      config: {
+        environment: "test",
+        databaseUrl: "postgresql://test/test",
+        authBearerToken: "test-token",
+      },
+      sessionHistoryRoutes: {
+        provider,
+        closeAfterHistorySync: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/timeline?limit=100",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      messages: interventionRows.map((row) => ({
+        ...row,
+        created_at: row.created_at.toISOString(),
+      })),
+      next_cursor: null,
+    });
+    const timelineQuery = harness.calls.find((call) =>
+      call.text.includes("event_type = ANY"),
+    );
+    expect(timelineQuery?.values[1]).toEqual(readPythonTimelineEventTypes());
+
+    await app.close();
+  });
+
   it("replays DB raw events through the route filter for finalized app-server fragments", async () => {
     const harness = createSqlHarness((text) =>
       text.includes("event_stream_raw")
@@ -268,4 +339,18 @@ function createSqlHarness(
     normalizedCalls: () =>
       calls.map((call) => call.text.replace(/\s+/g, " ").trim()),
   };
+}
+
+function readPythonTimelineEventTypes(): string[] {
+  const source = readFileSync(new URL(
+    "../../packages/soul-common/src/soul_common/db/postgres/viewport.py",
+    import.meta.url,
+  ), "utf8");
+  const block = source.match(
+    /TIMELINE_EVENT_TYPES: tuple\[str, \.\.\.\] = \(([\s\S]*?)\n\)/,
+  )?.[1];
+  if (block === undefined) {
+    throw new Error("Python TIMELINE_EVENT_TYPES declaration was not found");
+  }
+  return [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]!);
 }

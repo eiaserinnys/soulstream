@@ -30,7 +30,7 @@ function deferred<T>(): Deferred<T> {
 
 function timelineMessage(
   id: number,
-  eventType: "tool_start" | "user_message" | "result" = "user_message",
+  eventType: "tool_start" | "user_message" | "intervention_sent" | "result" = "user_message",
 ) {
   return {
     id,
@@ -44,7 +44,9 @@ function timelineMessage(
           tool_input: { file_path: `/tmp/${id}` },
           timestamp: id,
         }
-      : eventType === "result"
+      : eventType === "intervention_sent"
+        ? { type: eventType, user: "dashboard", text: `message-${id}`, timestamp: id }
+        : eventType === "result"
         ? { type: eventType, output: `state-${id}`, timestamp: id }
         : { type: eventType, text: `message-${id}`, timestamp: id },
     created_at: new Date(id * 1_000).toISOString(),
@@ -54,7 +56,7 @@ function timelineMessage(
 function page(
   ids: number[],
   nextCursor: string | null,
-  eventType: "tool_start" | "user_message" | "result" = "user_message",
+  eventType: "tool_start" | "user_message" | "intervention_sent" | "result" = "user_message",
 ): Response {
   return new Response(JSON.stringify({
     messages: ids.map((id) => timelineMessage(id, eventType)),
@@ -192,6 +194,30 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(1);
     expect(latest?.reachedTop).toBe(true);
+  });
+
+  it("재진입 이력에서 interrupt 동반·queued 개입을 모두 사용자 개입 말풍선으로 복원한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      page([443, 442], null, "intervention_sent"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-interventions");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/sessions/sess-interventions/timeline?limit=100`,
+      { credentials: "include" },
+    );
+    expect(flattenTree(useDashboardStore.getState().tree)).toEqual([
+      expect.objectContaining({
+        role: "intervention",
+        content: "message-442",
+      }),
+      expect.objectContaining({
+        role: "intervention",
+        content: "message-443",
+      }),
+    ]);
   });
 
   it("scrollHeight가 clientHeight + margin을 넘으면 추가 요청을 멈춘다", async () => {

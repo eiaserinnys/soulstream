@@ -27,6 +27,7 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
     "intervention_sent",
     "session_notification",
     "assistant_message",
+    "turn_summary",
     "thinking",
     "tool_start",
     "tool_result",
