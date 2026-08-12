@@ -60,12 +60,15 @@ const RunnerChildConfigFields = {
   rolloutRoot: z.string().min(1).nullable(),
 };
 
-export const RunnerChildConfigSchema = z.discriminatedUnion("schemaVersion", [
-  // Version 1 remains readable only when it already contains the complete
-  // launch contract. Missing node-local values are never inferred.
-  z.object({ schemaVersion: z.literal(1), ...RunnerChildConfigFields }),
-  z.object({ schemaVersion: z.literal(2), ...RunnerChildConfigFields }),
-]);
+// Runner configs are consumed by the immutable snapshot selected by codeSha,
+// not necessarily by the host version that writes them. The writer may raise
+// this discriminator only after every snapshot that can be restarted already
+// accepts the new value. Additive fields remain rolling-compatible because
+// older Zod object readers discard unknown keys.
+export const RunnerChildConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+  ...RunnerChildConfigFields,
+});
 
 export type RunnerChildConfig = z.infer<typeof RunnerChildConfigSchema>;
 
@@ -138,7 +141,7 @@ export class RunnerProcessSpawner {
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
 
     const config: RunnerChildConfig = {
-      schemaVersion: 2,
+      schemaVersion: 1,
       sessionId: input.sessionId,
       backend: input.backend,
       agent: input.agent,
