@@ -61,13 +61,39 @@ export type EventAppendAck = {
   type: "event_append_ack";
   stream_id: string;
   acked_through: number;
-  events: Array<{ source_seq: number; event_id: number }>;
+  events: Array<{
+    source_seq: number;
+    event_id: number;
+    effect_application?: EventSessionEffectApplicationWire;
+  }>;
+};
+
+export type EventCanonicalSessionProjection = {
+  status: string;
+  termination_reason: string | null;
+  termination_detail: string | null;
+  review_state: string;
+  last_assistant_text: string | null;
+  termination_event_id: number | null;
+  updated_at: string;
+  last_event_id: number | null;
+};
+
+export type EventSessionEffectApplication = {
+  applied: boolean;
+  canonicalSession: EventCanonicalSessionProjection | null;
+};
+
+export type EventSessionEffectApplicationWire = {
+  applied: boolean;
+  canonical_session: EventCanonicalSessionProjection;
 };
 
 export type CommittedIngressEvent = {
   envelope: EventIngressEnvelope;
   eventId: number;
   duplicateReceipt: boolean;
+  sessionEffectApplication?: EventSessionEffectApplication;
 };
 
 export class EventIngressValidationError extends Error {}

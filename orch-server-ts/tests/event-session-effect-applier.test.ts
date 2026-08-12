@@ -14,8 +14,12 @@ describe("applyEventSessionEffect", () => {
   ] as const)("applies %s through its session stored procedure", async (kind, procedure) => {
     const statements: string[] = [];
     const sql = (async (strings: TemplateStringsArray) => {
-      statements.push(strings.join("?"));
-      return [];
+      const statement = strings.join("?");
+      statements.push(statement);
+      return statement.includes("session_apply_running_transition")
+        || statement.includes("session_apply_terminal_transition")
+        ? [canonicalRow(true)]
+        : [];
     }) as EventIngressQuerySql;
 
     await applyEventSessionEffect(sql, {
@@ -34,7 +38,7 @@ describe("applyEventSessionEffect", () => {
     const values: unknown[][] = [];
     const sql = (async (_strings: TemplateStringsArray, ...params: unknown[]) => {
       values.push(params);
-      return [];
+      return [canonicalRow(true)];
     }) as EventIngressQuerySql;
     const terminal = effect("terminal_transition");
 
@@ -55,7 +59,7 @@ describe("applyEventSessionEffect", () => {
     const sql = (async (strings: TemplateStringsArray, ...params: unknown[]) => {
       statements.push(strings.join("?"));
       values.push(params);
-      return [];
+      return [canonicalRow(true)];
     }) as EventIngressQuerySql;
     const running = {
       ...effect("running_transition"),
@@ -74,7 +78,51 @@ describe("applyEventSessionEffect", () => {
     expect(values[0]).toContain(41);
     expect(values[0]).toContain(true);
   });
+
+  it("returns the canonical terminal row when running receipt CAS is rejected", async () => {
+    const sql = (async () => [canonicalRow(false, {
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_event_id: 41,
+    })]) as EventIngressQuerySql;
+    const running = {
+      ...effect("running_transition"),
+      expected_terminal_event_id: 999,
+    } as EventSessionEffect;
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 42,
+      envelope: envelope(running),
+      effect: running,
+    })).resolves.toEqual({
+      applied: false,
+      canonicalSession: expect.objectContaining({
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_event_id: 41,
+      }),
+    });
+  });
 });
+
+function canonicalRow(
+  applied: boolean,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    applied,
+    status: "running",
+    termination_reason: null,
+    termination_detail: null,
+    review_state: "not_required",
+    last_assistant_text: null,
+    termination_event_id: null,
+    updated_at: new Date("2026-08-06T00:00:00.000Z"),
+    last_event_id: 41,
+    ...overrides,
+  };
+}
 
 function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
   if (kind === "last_message") return {

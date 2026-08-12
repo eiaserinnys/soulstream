@@ -25,7 +25,10 @@ import type {
   EventOutboxRecord,
   EventOutboxSessionEffect,
 } from "../upstream/event_outbox.js";
-import type { EventOutboxPump } from "../upstream/event_outbox_pump.js";
+import type {
+  EventCanonicalSessionProjection,
+  EventOutboxPump,
+} from "../upstream/event_outbox_pump.js";
 
 import type { SessionDB } from "./session_db.js";
 import {
@@ -70,7 +73,10 @@ export class EventPersistence {
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     private readonly outbox: Pick<EventOutbox, "append">,
-    private readonly outboxPump: Pick<EventOutboxPump, "waitForAcknowledgement">,
+    private readonly outboxPump: Pick<
+      EventOutboxPump,
+      "waitForAcknowledgement" | "waitForAcknowledgementResult"
+    >,
   ) {}
 
   /**
@@ -178,10 +184,37 @@ export class EventPersistence {
       updatedAt?: Date;
     },
   ): Promise<number> {
+    return (await this.enqueueRunningTransitionAndWaitForApplication(
+      sessionId,
+      input,
+    )).eventId;
+  }
+
+  async enqueueRunningTransitionAndWaitForApplication(
+    sessionId: string,
+    input: {
+      reviewState: string;
+      transitionId: string;
+      expectedTerminalEventId?: number | null;
+      updatedAt?: Date;
+    },
+  ): Promise<{
+    eventId: number;
+    applied: boolean;
+    canonicalSession: EventCanonicalSessionProjection;
+  }> {
     const record = await this.enqueueRunningTransition(sessionId, input);
-    const eventId = await this.outboxPump.waitForAcknowledgement(record);
+    const acknowledgement = await this.outboxPump.waitForAcknowledgementResult(record);
     this.clearPendingAckTarget(sessionId, record.source_seq);
-    return eventId;
+    const application = acknowledgement.effect_application;
+    if (!application) {
+      throw new Error("running transition ACK missing effect application");
+    }
+    return {
+      eventId: acknowledgement.event_id,
+      applied: application.applied,
+      canonicalSession: application.canonical_session,
+    };
   }
 
   private clearPendingAckTarget(sessionId: string, sourceSeq: number): void {

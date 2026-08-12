@@ -228,8 +228,8 @@ describe("runner cutover all-flags-on integration", () => {
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
-    expect(restartedHost.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledTimes(1);
-    expect(restartedHost.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledWith(
+    expect(restartedHost.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(restartedHost.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledWith(
       task.agentSessionId,
       {
         reviewState: "not_required",
@@ -309,9 +309,9 @@ function taskExecutor(
   runnerProcessFactory: NonNullable<Awaited<ReturnType<typeof composeRunnerProcessRuntime>>>["runtimeFactory"],
 ): {
   executor: TaskExecutor;
-  enqueueRunningTransitionAndWaitForAck: ReturnType<
+  enqueueRunningTransitionAndWaitForApplication: ReturnType<
     typeof makeEventPersistenceTestDouble
-  >["enqueueRunningTransitionAndWaitForAck"];
+  >["enqueueRunningTransitionAndWaitForApplication"];
 } {
   const persistenceDouble = makeEventPersistenceTestDouble(async (_sessionId, event, task) => {
     if (event.type === "assistant_message" && typeof event.content === "string") {
@@ -344,8 +344,8 @@ function taskExecutor(
       undefined,
       runnerProcessFactory,
     ),
-    enqueueRunningTransitionAndWaitForAck:
-      persistenceDouble.enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication:
+      persistenceDouble.enqueueRunningTransitionAndWaitForApplication,
   };
 }
 

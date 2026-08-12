@@ -1875,11 +1875,31 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     const enqueueEvent = vi.fn().mockResolvedValue(2);
     const enqueueMetadataEffect = vi.fn().mockResolvedValue(null);
     const enqueueRunningTransition = vi.fn().mockResolvedValue({ source_seq: 2 });
+    const enqueueRunningTransitionAndWaitForApplication = vi.fn(
+      async (sessionId, input) => {
+        await enqueueRunningTransition(sessionId, input);
+        return {
+          eventId: 2,
+          applied: true,
+          canonicalSession: {
+            status: "running",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: input.reviewState,
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-12T00:00:00.000Z",
+            last_event_id: null,
+          },
+        };
+      },
+    );
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
     const persistence = {
       enqueueEvent,
       enqueueMetadataEffect,
       enqueueRunningTransition,
+      enqueueRunningTransitionAndWaitForApplication,
       handleSideEffects,
     } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);

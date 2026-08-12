@@ -12,7 +12,27 @@ export type EventAppendAck = {
   type: "event_append_ack";
   stream_id: string;
   acked_through: number;
-  events: Array<{ source_seq: number; event_id: number }>;
+  events: EventAppendAcknowledgement[];
+};
+
+export type EventCanonicalSessionProjection = {
+  status: string;
+  termination_reason: string | null;
+  termination_detail: string | null;
+  review_state: string;
+  last_assistant_text: string | null;
+  termination_event_id: number | null;
+  updated_at: string;
+  last_event_id: number | null;
+};
+
+export type EventAppendAcknowledgement = {
+  source_seq: number;
+  event_id: number;
+  effect_application?: {
+    applied: boolean;
+    canonical_session: EventCanonicalSessionProjection;
+  };
 };
 
 export interface EventOutboxPumpTransport {
@@ -37,12 +57,12 @@ export class EventOutboxPump {
   private flushAgain = false;
   private readonly acknowledgementWaiters = new Map<
     number,
-    Set<(eventId: number) => void>
+    Set<(acknowledgement: EventAppendAcknowledgement) => void>
   >();
-  private readonly recentAcknowledgements = new Map<number, number>();
+  private readonly recentAcknowledgements = new Map<number, EventAppendAcknowledgement>();
   private readonly latestAcknowledgementBySession = new Map<
     string,
-    { sourceSeq: number; eventId: number }
+    { sourceSeq: number; acknowledgement: EventAppendAcknowledgement }
   >();
 
   constructor(
@@ -84,6 +104,22 @@ export class EventOutboxPump {
   async waitForAcknowledgement(
     record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
   ): Promise<number> {
+    const immediate = this.takeImmediateAcknowledgement(record);
+    if (immediate) return immediate.event_id;
+    return (await this.waitForDeferredAcknowledgement(record)).event_id;
+  }
+
+  async waitForAcknowledgementResult(
+    record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
+  ): Promise<EventAppendAcknowledgement> {
+    const immediate = this.takeImmediateAcknowledgement(record);
+    if (immediate) return immediate;
+    return await this.waitForDeferredAcknowledgement(record);
+  }
+
+  private takeImmediateAcknowledgement(
+    record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
+  ): EventAppendAcknowledgement | undefined {
     if (record.stream_id !== this.outbox.streamId) {
       throw new Error("event outbox acknowledgement target stream mismatch");
     }
@@ -99,10 +135,15 @@ export class EventOutboxPump {
     const completed = this.latestAcknowledgementBySession.get(record.session_id);
     if (completed?.sourceSeq === record.source_seq) {
       this.latestAcknowledgementBySession.delete(record.session_id);
-      return completed.eventId;
+      return completed.acknowledgement;
     }
+    return undefined;
+  }
 
-    const eventId = await new Promise<number>((resolve) => {
+  private async waitForDeferredAcknowledgement(
+    record: Pick<EventOutboxRecord, "source_seq" | "session_id">,
+  ): Promise<EventAppendAcknowledgement> {
+    const acknowledgement = await new Promise<EventAppendAcknowledgement>((resolve) => {
       const waiters = this.acknowledgementWaiters.get(record.source_seq) ?? new Set();
       waiters.add(resolve);
       this.acknowledgementWaiters.set(record.source_seq, waiters);
@@ -111,7 +152,7 @@ export class EventOutboxPump {
     if (latest?.sourceSeq === record.source_seq) {
       this.latestAcknowledgementBySession.delete(record.session_id);
     }
-    return eventId;
+    return acknowledgement;
   }
 
   async handleAck(ack: EventAppendAck): Promise<void> {
@@ -141,11 +182,11 @@ export class EventOutboxPump {
     }
     for (let index = 0; index < batch.events.length; index += 1) {
       const record = batch.events[index]!;
-      const eventId = ack.events[index]!.event_id;
-      this.recentAcknowledgements.set(record.source_seq, eventId);
+      const acknowledgement = ack.events[index]!;
+      this.recentAcknowledgements.set(record.source_seq, acknowledgement);
       this.latestAcknowledgementBySession.set(record.session_id, {
         sourceSeq: record.source_seq,
-        eventId,
+        acknowledgement,
       });
       const waiters = this.acknowledgementWaiters.get(record.source_seq);
       if (!waiters) continue;
@@ -157,7 +198,7 @@ export class EventOutboxPump {
       ) {
         this.latestAcknowledgementBySession.delete(record.session_id);
       }
-      for (const resolve of waiters) resolve(eventId);
+      for (const resolve of waiters) resolve(acknowledgement);
     }
     this.trimRecentAcknowledgements();
     this.inFlight = undefined;
@@ -219,5 +260,24 @@ function isValidAck(value: EventAppendAck): boolean {
     && Array.isArray(value.events) && value.events.length > 0
     && value.events.every((event) =>
       Number.isSafeInteger(event.source_seq) && event.source_seq > 0
-      && Number.isSafeInteger(event.event_id) && event.event_id > 0);
+      && Number.isSafeInteger(event.event_id) && event.event_id > 0
+      && isValidEffectApplication(event.effect_application));
+}
+
+function isValidEffectApplication(
+  value: EventAppendAcknowledgement["effect_application"],
+): boolean {
+  if (value === undefined) return true;
+  if (typeof value.applied !== "boolean") return false;
+  const session = value.canonical_session;
+  return Boolean(session && typeof session === "object"
+    && typeof session.status === "string"
+    && (session.termination_reason === null || typeof session.termination_reason === "string")
+    && (session.termination_detail === null || typeof session.termination_detail === "string")
+    && typeof session.review_state === "string"
+    && (session.last_assistant_text === null || typeof session.last_assistant_text === "string")
+    && (session.termination_event_id === null
+      || Number.isSafeInteger(session.termination_event_id))
+    && typeof session.updated_at === "string"
+    && (session.last_event_id === null || Number.isSafeInteger(session.last_event_id)));
 }

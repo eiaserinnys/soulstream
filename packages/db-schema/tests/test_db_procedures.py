@@ -509,8 +509,8 @@ async def test_session_review_schema_and_atomic_transitions(test_db):
 async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
     await _create_session(test_db, "sess-terminal-receipt")
     first_at = _utc_now()
-    await test_db.execute(
-        "SELECT session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+    first_application = await test_db.fetchrow(
+        "SELECT * FROM session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
         "sess-terminal-receipt",
         "completed",
         "completed_ok",
@@ -520,8 +520,9 @@ async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
         41,
         first_at,
     )
-    await test_db.execute(
-        "SELECT session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+    assert first_application["applied"] is True
+    duplicate_application = await test_db.fetchrow(
+        "SELECT * FROM session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
         "sess-terminal-receipt",
         "error",
         "unknown",
@@ -531,6 +532,9 @@ async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
         57,
         _utc_now(),
     )
+    assert duplicate_application["applied"] is False
+    assert duplicate_application["status"] == "completed"
+    assert duplicate_application["termination_event_id"] == 41
     row = await test_db.fetchrow(
         """
         SELECT status, termination_reason, termination_event_id, last_assistant_text
@@ -545,27 +549,32 @@ async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
         "last_assistant_text": "first answer",
     }
 
-    await test_db.execute(
-        "SELECT session_apply_running_transition($1, $2, $3, $4, $5)",
+    rejected_resume = await test_db.fetchrow(
+        "SELECT * FROM session_apply_running_transition($1, $2, $3, $4, $5)",
         "sess-terminal-receipt",
         "not_required",
         99,
         True,
         _utc_now(),
     )
+    assert rejected_resume["applied"] is False
+    assert rejected_resume["status"] == "completed"
+    assert rejected_resume["termination_event_id"] == 41
     assert await test_db.fetchval(
         "SELECT status FROM sessions WHERE session_id = $1",
         "sess-terminal-receipt",
     ) == "completed"
 
-    await test_db.execute(
-        "SELECT session_apply_running_transition($1, $2, $3, $4, $5)",
+    accepted_resume = await test_db.fetchrow(
+        "SELECT * FROM session_apply_running_transition($1, $2, $3, $4, $5)",
         "sess-terminal-receipt",
         "not_required",
         41,
         True,
         _utc_now(),
     )
+    assert accepted_resume["applied"] is True
+    assert accepted_resume["status"] == "running"
     running = await test_db.fetchrow(
         """
         SELECT status, termination_reason, termination_event_id, last_assistant_text

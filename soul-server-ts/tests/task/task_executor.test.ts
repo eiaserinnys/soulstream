@@ -113,8 +113,8 @@ function makeMocks() {
     waitForSessionAck: persistenceDouble.waitForSessionAck,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
-    enqueueRunningTransitionAndWaitForAck:
-      persistenceDouble.enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication:
+      persistenceDouble.enqueueRunningTransitionAndWaitForApplication,
     enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
@@ -1662,9 +1662,22 @@ describe("TaskExecutor runner process boundary", () => {
   it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
     const mocks = makeMocks();
     let releaseRunningTransition!: () => void;
-    mocks.enqueueRunningTransitionAndWaitForAck.mockImplementationOnce(
-      () => new Promise<number>((resolve) => {
-        releaseRunningTransition = () => resolve(101);
+    mocks.enqueueRunningTransitionAndWaitForApplication.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releaseRunningTransition = () => resolve({
+          eventId: 101,
+          applied: true,
+          canonicalSession: {
+            status: "running",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: "not_required",
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-11T00:00:00.000Z",
+            last_event_id: 101,
+          },
+        });
       }),
     );
     const { runner, dispatcher } = makeRunnerProcessRuntime([
@@ -1682,7 +1695,9 @@ describe("TaskExecutor runner process boundary", () => {
 
     const recovery = executor.recoverRunnerExecution(task, agent, runner, "execute-old");
 
-    await vi.waitFor(() => expect(mocks.enqueueRunningTransitionAndWaitForAck).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(
+      mocks.enqueueRunningTransitionAndWaitForApplication,
+    ).toHaveBeenCalledWith(
       task.agentSessionId,
       {
         reviewState: "not_required",

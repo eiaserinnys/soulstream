@@ -43,6 +43,8 @@ import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistenc
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
+import { applyCanonicalSessionProjection } from
+  "./task_canonical_session_projection.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
@@ -276,19 +278,26 @@ export class TaskExecutor {
     const frames = runner.dispatcher.recoverFrames?.(commandId);
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
     task.runner = runner;
-    task.status = "running";
+    if (mode === "offline") task.status = "running";
     const promise = (async () => {
       // Adoption must establish the same durable running projection as a new
       // turn before replaying runner frames. A stable execution command id
       // suppresses duplicate client updates across repeated host restarts.
       if (mode === "adopt") {
-        await this.persistence.enqueueRunningTransitionAndWaitForAck(
+        const application = await this.persistence
+          .enqueueRunningTransitionAndWaitForApplication(
           task.agentSessionId,
           {
             reviewState: task.reviewState ?? "not_required",
             transitionId: `adopt:${commandId ?? task.lastEventId}`,
           },
         );
+        applyCanonicalSessionProjection(task, application.canonicalSession);
+        if (!application.applied) {
+          throw new Error(
+            `runner adoption running transition rejected for ${task.agentSessionId}`,
+          );
+        }
       }
       await this.consumeRecoveredRunnerFrames(task, agent, runner, frames);
     })();

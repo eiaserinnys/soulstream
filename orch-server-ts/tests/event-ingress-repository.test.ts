@@ -46,6 +46,7 @@ describe("EventIngressRepository", () => {
           "session-a",
           "a".repeat(64),
           41,
+          null,
         ]);
         return [];
       }
@@ -53,6 +54,7 @@ describe("EventIngressRepository", () => {
     });
     const effect = vi.fn(async () => {
       order.push("session-effect");
+      return { applied: true, canonicalSession: null };
     });
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
@@ -82,7 +84,8 @@ describe("EventIngressRepository", () => {
         last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
         updated_at: "2026-08-06T00:00:00.000Z",
       },
-    }, 2).events[0], eventId: 41, duplicateReceipt: false }]);
+    }, 2).events[0], eventId: 41, duplicateReceipt: false,
+    sessionEffectApplication: { applied: true, canonicalSession: null } }]);
   });
 
   it("returns an existing receipt without re-appending the semantic event", async () => {
@@ -97,6 +100,56 @@ describe("EventIngressRepository", () => {
     await expect(repository.commitBatch("node-a", batch())).resolves.toMatchObject([
       { eventId: 17, duplicateReceipt: true },
     ]);
+  });
+
+  it("replays the exact canonical effect application from a durable transport receipt", async () => {
+    const canonicalSession = {
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "needs_review",
+      last_assistant_text: "done",
+      termination_event_id: 41,
+      updated_at: "2026-08-06T00:01:00.000Z",
+      last_event_id: 42,
+    };
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) {
+        return [{
+          session_id: "session-a",
+          payload_hash: "a".repeat(64),
+          event_id: 42,
+          effect_application: {
+            applied: false,
+            canonical_session: canonicalSession,
+          },
+        }];
+      }
+      throw new Error("durable receipt replay must not execute another statement");
+    });
+    const effect = vi.fn();
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      effect,
+    );
+
+    await expect(repository.commitBatch("node-a", batch({
+      event_type: "metadata",
+      session_effect: {
+        kind: "running_transition",
+        review_state: "acknowledged",
+        expected_terminal_event_id: 999,
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    }))).resolves.toMatchObject([{
+      eventId: 42,
+      duplicateReceipt: true,
+      sessionEffectApplication: {
+        applied: false,
+        canonicalSession,
+      },
+    }]);
+    expect(effect).not.toHaveBeenCalled();
   });
 
   it("raises a 409 protocol conflict for the same ingress key with another hash", async () => {
@@ -129,7 +182,7 @@ describe("EventIngressRepository", () => {
       if (text.includes("INSERT INTO event_ingress_receipts")) return [];
       throw new Error(`unexpected SQL: ${text}`);
     });
-    const effect = vi.fn(async () => undefined);
+    const effect = vi.fn(async () => ({ applied: true, canonicalSession: null }));
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       effect,

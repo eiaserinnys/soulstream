@@ -120,6 +120,36 @@ export function makeEventPersistenceTestDouble(
       return record.source_seq;
     },
   );
+  const enqueueRunningTransitionAndWaitForApplication = vi.fn(
+    async (
+      sessionId: string,
+      input: {
+        reviewState: string;
+        transitionId: string;
+        expectedTerminalEventId?: number | null;
+        updatedAt?: Date;
+      },
+    ) => {
+      const record = await enqueueRunningTransition(sessionId, input);
+      latestBySession.delete(sessionId);
+      return {
+        eventId: record.source_seq,
+        applied: true,
+        canonicalSession: {
+          status: "running",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: input.reviewState,
+          last_assistant_text: null,
+          termination_event_id: null,
+          updated_at: input.updatedAt?.toISOString() ?? new Date().toISOString(),
+          // Transport source_seq is not a DB event id. Preserve the Task's
+          // existing DB cursor unless a test supplies an explicit projection.
+          last_event_id: null,
+        },
+      };
+    },
+  );
   const handleSideEffects = vi.fn(
     sideEffect ?? (async () => undefined),
   );
@@ -129,6 +159,7 @@ export function makeEventPersistenceTestDouble(
     enqueueMetadataEffect,
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;
@@ -140,6 +171,7 @@ export function makeEventPersistenceTestDouble(
     enqueueMetadataEffect,
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
+    enqueueRunningTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   };

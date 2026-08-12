@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ClosedRunnerTailDrainer,
@@ -8,6 +12,15 @@ import type { RunnerRegistration } from "../../src/runner/runner_process_registr
 import type { EventOutboxBatch, EventOutboxRecord } from
   "../../src/upstream/event_outbox.js";
 import type { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+
+const tempDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirectories.splice(0).map(
+    async (directory) => await rm(directory, { recursive: true, force: true }),
+  ));
+});
 
 describe("ClosedRunnerTailDrainer", () => {
   it("is a no-op when the closed runner has no unacknowledged event tail", async () => {
@@ -59,6 +72,69 @@ describe("ClosedRunnerTailDrainer", () => {
     expect(unregister).toHaveBeenCalledOnce();
     expect(outbox.close).toHaveBeenCalledOnce();
   });
+
+  it("reopens the disk outbox across two host runs and drains the terminal tail once", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "closed-runner-tail-"));
+    tempDirectories.push(directory);
+    const databasePath = join(directory, "runner.sqlite");
+    const writer = await RunnerSqliteEventOutbox.create(databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-12T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-session-a",
+        cwd: "/workspace/session-a",
+        codex_home: "/workspace/session-a/.codex",
+        rollout_root: "/workspace/session-a/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/a",
+      },
+    });
+    await writer.append({
+      session_id: "session-a",
+      event_type: "session_ended",
+      payload: { type: "session_ended", status: "completed" },
+      searchable_text: null,
+      created_at: "2026-08-12T00:00:01.000Z",
+      semantic_dedupe_key: "terminal:session-a",
+      session_effect: null,
+    });
+    writer.close();
+
+    const batches: EventOutboxBatch[] = [];
+    const register = vi.fn((pump: EventOutboxPump) => {
+      pump.connect(async (batch) => {
+        batches.push(batch);
+        await pump.handleAck({
+          type: "event_append_ack",
+          stream_id: batch.stream_id,
+          acked_through: batch.events.at(-1)!.source_seq,
+          events: batch.events.map((event) => ({
+            source_seq: event.source_seq,
+            event_id: 100 + event.source_seq,
+          })),
+        });
+      });
+      return vi.fn();
+    });
+    const options = {
+      pumpMux: { register },
+      logger: { error: vi.fn(), info: vi.fn() },
+    };
+
+    await new ClosedRunnerTailDrainer(options).drain(registration(databasePath));
+    await new ClosedRunnerTailDrainer(options).drain(registration(databasePath));
+
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]!.events.map((event) => event.event_type)).toEqual([
+      "session_ended",
+    ]);
+    const reopened = await RunnerSqliteEventOutbox.open(databasePath);
+    await expect(reopened.readLatestPendingRecord()).resolves.toBeNull();
+    reopened.close();
+  });
 });
 
 function fakeOutbox(tail: EventOutboxRecord | null): ClosedRunnerTailOutbox {
@@ -95,7 +171,7 @@ function eventRecord(sourceSeq: number): EventOutboxRecord {
   };
 }
 
-function registration(): RunnerRegistration {
+function registration(databasePath = "/runner/session-a/runner.sqlite"): RunnerRegistration {
   return {
     config: {
       schemaVersion: 1,
@@ -104,7 +180,7 @@ function registration(): RunnerRegistration {
       agent: { id: "agent-a", name: "Agent A", backend: "codex", workspace_dir: "/work" },
       paths: {
         sessionDirectory: "/runner/session-a",
-        databasePath: "/runner/session-a/runner.sqlite",
+        databasePath,
         socketPath: "/runner/session-a/runner.sock",
         pidPath: "/runner/session-a/runner.pid",
         lockPath: "/runner/session-a/runner.lock",

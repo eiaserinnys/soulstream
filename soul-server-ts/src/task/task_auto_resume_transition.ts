@@ -8,6 +8,8 @@ import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
+import { applyCanonicalSessionProjection } from
+  "./task_canonical_session_projection.js";
 import {
   buildUserMessageEvent,
   finishUserMessageEvent,
@@ -67,11 +69,18 @@ export class AutoResumeTransition {
     if (!this.deps.persistence) {
       throw new Error("running transition durable event persistence is required");
     }
-    await this.deps.persistence.enqueueRunningTransition(task.agentSessionId, {
+    const application = await this.deps.persistence
+      .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
       reviewState: resumedReviewState,
       transitionId: `resume:${transitionRevision}`,
       expectedTerminalEventId: task.terminalEventId ?? null,
     });
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    if (!application.applied) {
+      throw new Error(
+        `auto-resume running transition rejected for ${task.agentSessionId}`,
+      );
+    }
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {
       await finishUserMessageEvent(task, userMessageEvent, this.deps);

@@ -3,6 +3,8 @@ import type {
   CommittedIngressEvent,
   EventAppendBatch,
   EventIngressEnvelope,
+  EventSessionEffectApplication,
+  EventSessionEffectApplicationWire,
   EventSessionEffect,
 } from "./event_ingress_types.js";
 
@@ -31,7 +33,7 @@ export type EventSessionEffectApplier = (
     envelope: EventIngressEnvelope;
     effect: EventSessionEffect;
   },
-) => Promise<void>;
+) => Promise<EventSessionEffectApplication>;
 
 export class EventIngressProtocolConflict extends Error {
   readonly statusCode = 409;
@@ -65,7 +67,15 @@ export class EventIngressRepository {
         const receipt = await findReceipt(transaction, nodeId, batch.stream_id, envelope.source_seq);
         if (receipt) {
           assertReceiptMatches(receipt, envelope);
-          committed.push({ envelope, eventId: receipt.event_id, duplicateReceipt: true });
+          const sessionEffectApplication = parseEffectApplication(
+            receipt.effect_application,
+          );
+          committed.push({
+            envelope,
+            eventId: receipt.event_id,
+            duplicateReceipt: true,
+            ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+          });
           continue;
         }
 
@@ -81,24 +91,42 @@ export class EventIngressRepository {
           throw new Error("event_append did not return a positive event id");
         }
 
+        let sessionEffectApplication: EventSessionEffectApplication | undefined;
         if (!semanticReceipt && envelope.session_effect !== null) {
           if (!this.applySessionEffect) {
             throw new Error("typed session effects are not enabled in this release");
           }
-          await this.applySessionEffect(transaction, {
+          sessionEffectApplication = await this.applySessionEffect(transaction, {
             nodeId,
             eventId,
             envelope,
             effect: envelope.session_effect,
           });
+        } else if (
+          semanticReceipt
+          && isCanonicalTransitionEffect(envelope.session_effect)
+        ) {
+          sessionEffectApplication = await findCanonicalEffectApplication(
+            transaction,
+            envelope.session_id,
+            eventId,
+          );
         }
+
+        const receiptApplication = toReceiptEffectApplication(
+          sessionEffectApplication,
+        );
 
         await transaction`
           INSERT INTO event_ingress_receipts (
-            node_id, stream_id, source_seq, session_id, payload_hash, event_id
+            node_id, stream_id, source_seq, session_id, payload_hash, event_id,
+            effect_application
           ) VALUES (
             ${nodeId}, ${batch.stream_id}, ${envelope.source_seq},
-            ${envelope.session_id}, ${envelope.payload_hash}, ${eventId}
+            ${envelope.session_id}, ${envelope.payload_hash}, ${eventId},
+            CAST(${receiptApplication === null
+              ? null
+              : JSON.stringify(receiptApplication)} AS JSONB)
           )
         `;
         // A semantic receipt means the durable event/effect was already
@@ -108,6 +136,7 @@ export class EventIngressRepository {
           envelope,
           eventId,
           duplicateReceipt: semanticReceipt !== undefined,
+          ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
         });
       }
       return committed;
@@ -155,6 +184,7 @@ type ReceiptRow = {
   session_id: string;
   payload_hash: string;
   event_id: number;
+  effect_application?: unknown;
 };
 
 async function findReceipt(
@@ -164,7 +194,7 @@ async function findReceipt(
   sourceSeq: number,
 ): Promise<ReceiptRow | undefined> {
   const rows = await sql<ReceiptRow[]>`
-    SELECT session_id, payload_hash, event_id
+    SELECT session_id, payload_hash, event_id, effect_application
     FROM event_ingress_receipts
     WHERE node_id = ${nodeId}
       AND stream_id = ${streamId}
@@ -172,6 +202,81 @@ async function findReceipt(
     FOR UPDATE
   `;
   return rows[0];
+}
+
+async function findCanonicalEffectApplication(
+  sql: EventIngressQuerySql,
+  sessionId: string,
+  eventId: number,
+): Promise<EventSessionEffectApplication> {
+  const rows = await sql<Array<{ effect_application: unknown }>>`
+    SELECT effect_application
+    FROM event_ingress_receipts
+    WHERE session_id = ${sessionId}
+      AND event_id = ${eventId}
+      AND effect_application IS NOT NULL
+    ORDER BY created_at
+    LIMIT 1
+  `;
+  const application = parseEffectApplication(rows[0]?.effect_application);
+  if (!application?.canonicalSession) {
+    throw new Error(
+      "semantic transition receipt is missing its canonical effect application",
+    );
+  }
+  return application;
+}
+
+function isCanonicalTransitionEffect(
+  effect: EventSessionEffect | null,
+): effect is Extract<
+  EventSessionEffect,
+  { kind: "running_transition" | "terminal_transition" }
+> {
+  return effect?.kind === "running_transition" || effect?.kind === "terminal_transition";
+}
+
+function toReceiptEffectApplication(
+  application: EventSessionEffectApplication | undefined,
+): EventSessionEffectApplicationWire | null {
+  return application?.canonicalSession
+    ? {
+        applied: application.applied,
+        canonical_session: application.canonicalSession,
+      }
+    : null;
+}
+
+function parseEffectApplication(
+  value: unknown,
+): EventSessionEffectApplication | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.applied !== "boolean" || !isCanonicalSession(value.canonical_session)) {
+    throw new Error("event ingress receipt has invalid effect_application");
+  }
+  return {
+    applied: value.applied,
+    canonicalSession: value.canonical_session,
+  };
+}
+
+function isCanonicalSession(
+  value: unknown,
+): value is EventSessionEffectApplicationWire["canonical_session"] {
+  if (!isRecord(value)) return false;
+  return typeof value.status === "string"
+    && (value.termination_reason === null || typeof value.termination_reason === "string")
+    && (value.termination_detail === null || typeof value.termination_detail === "string")
+    && typeof value.review_state === "string"
+    && (value.last_assistant_text === null || typeof value.last_assistant_text === "string")
+    && (value.termination_event_id === null
+      || Number.isSafeInteger(value.termination_event_id))
+    && typeof value.updated_at === "string"
+    && (value.last_event_id === null || Number.isSafeInteger(value.last_event_id));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function assertReceiptMatches(receipt: ReceiptRow, envelope: EventIngressEnvelope): void {
