@@ -240,7 +240,8 @@ function asError(error: unknown): Error {
 
 function normalizeSocketFailure(error: unknown): Error {
   const normalized = asError(error);
-  return (error as NodeJS.ErrnoException | undefined)?.code === "ECONNRESET"
+  return process.platform === "win32" &&
+    (error as NodeJS.ErrnoException | undefined)?.code === "ECONNRESET"
     ? new Error(CONNECTION_CLOSED, { cause: normalized })
     : normalized;
 }
