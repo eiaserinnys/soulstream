@@ -32,7 +32,59 @@ class ControlledEngine implements EnginePort {
 
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
-  async *executeFrames(_params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+  async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    const rolloverScenario = process.env.RUNNER_E2E_ROLLOVER_SCENARIO;
+    if (rolloverScenario) {
+      this.executionCount += 1;
+      await writeFile(
+        `${this.controlDirectory}/rollover-execution-${this.executionCount}.json`,
+        JSON.stringify(params),
+      );
+      if (this.executionCount === 1) {
+        yield engineEventFrame({ type: "session", session_id: "backend-session-old" });
+        yield engineEventFrame({
+          type: "context_usage",
+          used_tokens: 160_000,
+          max_tokens: 200_000,
+          percent: 80,
+        });
+        yield engineEventFrame({ type: "complete", result: "before exhaustion" });
+        return;
+      }
+      if (this.executionCount === 2) {
+        yield engineEventFrame({
+          type: "result",
+          success: false,
+          output: "Prompt is too long",
+          terminal_reason: "prompt_too_long",
+        });
+        yield engineEventFrame({
+          type: "error",
+          message: "Prompt is too long",
+          fatal: false,
+          error_code: "claude_prompt_too_long",
+        });
+        return;
+      }
+      if (this.executionCount !== 3) {
+        throw new Error(`rollover scenario replayed ${this.executionCount} times`);
+      }
+      yield engineEventFrame({ type: "session", session_id: "backend-session-fresh" });
+      if (rolloverScenario === "refail") {
+        yield engineEventFrame({
+          type: "error",
+          message: "Prompt is too long after rollover",
+          fatal: false,
+          error_code: "claude_prompt_too_long",
+        });
+        return;
+      }
+      if (rolloverScenario !== "success") {
+        throw new Error(`unknown rollover scenario: ${rolloverScenario}`);
+      }
+      yield engineEventFrame({ type: "complete", result: "recovered" });
+      return;
+    }
     const preBootstrapScenario = process.env.RUNNER_E2E_PRE_BOOTSTRAP_SCENARIO;
     if (preBootstrapScenario) {
       this.executionCount += 1;
@@ -109,6 +161,13 @@ class ControlledEngine implements EnginePort {
 
   async interrupt(): Promise<boolean> {
     return true;
+  }
+
+  async compact(_resumeSessionId: string): Promise<void> {
+    if (process.env.RUNNER_E2E_ROLLOVER_SCENARIO) {
+      await writeFile(`${this.controlDirectory}/rollover-compact-attempted`, "ready\n");
+      throw new Error("compact boundary not observed");
+    }
   }
 
   async close(): Promise<void> {}

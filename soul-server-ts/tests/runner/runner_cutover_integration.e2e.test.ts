@@ -303,6 +303,128 @@ describe("runner cutover all-flags-on integration", () => {
     ]);
     await secondComposition.hostOwnership.release();
   }, 45_000);
+
+  it.each(["success", "refail"] as const)(
+    "runs prompt-too-long rollover through the real runner child and SQLite (%s)",
+    async (scenario) => {
+      const root = await mkdtemp(join(tmpdir(), `runner-rollover-${scenario}-`));
+      temporaryRoots.push(root);
+      const stateDirectory = join(root, "state");
+      const artifactDirectory = join(root, "artifacts");
+      const releasesDirectory = join(root, "runner-releases");
+      const controlDirectory = join(root, "control");
+      await mkdir(artifactDirectory, { recursive: true });
+      await mkdir(controlDirectory, { recursive: true });
+      await writeFile(join(artifactDirectory, "package.json"), '{"type":"module"}\n');
+      await writeFile(
+        join(artifactDirectory, "runner_entry.js"),
+        `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
+      );
+      const agentsConfigPath = join(root, "agents.yaml");
+      const registryPath = join(root, "mcp-registry.yaml");
+      const profilesPath = join(root, "mcp-profiles.yaml");
+      await writeFile(agentsConfigPath, "agents: []\n");
+      await writeFile(registryPath, "servers: []\n");
+      await writeFile(
+        profilesPath,
+        "profiles:\n  - id: cutover-internal\n    mcp_servers: []\n",
+      );
+      const mcpConfigService = new McpConfigService({
+        agentsConfigPath,
+        registryPath,
+        profilesPath,
+      });
+      const env = parseEnv({
+        SOULSTREAM_NODE_ID: "rollover-test-node",
+        SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:1/ws/node",
+        EVENT_OUTBOX_DIR: join(root, "legacy-outbox"),
+        SOUL_RUNNER_PROCESS_ENABLED: "true",
+        SOUL_RUNNER_STATE_DIR: stateDirectory,
+        SOUL_RUNNER_ARTIFACT_DIR: artifactDirectory,
+        SOUL_RUNNER_RELEASES_DIR: releasesDirectory,
+        SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
+        MCP_ENABLED: "false",
+      });
+      const { mux, batches } = mockOrchIngress();
+      const composition = await composeRunnerProcessRuntime(true, {
+        env,
+        logger: pino({ level: "silent" }),
+        pumpMux: mux,
+        sessionStore: {
+          appendIdempotent: vi.fn(async () => undefined),
+          deleteIdempotent: vi.fn(async () => undefined),
+        } as never,
+        mcpConfigService,
+        buildChildProcessEnv: () => ({
+          ...process.env,
+          NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
+          RUNNER_E2E_CONTROL_DIR: controlDirectory,
+          RUNNER_E2E_ROLLOVER_SCENARIO: scenario,
+        }),
+      });
+      if (!composition) throw new Error("runner rollover composition unexpectedly disabled");
+      const releaseEntries = await import("node:fs/promises")
+        .then(({ readdir }) => readdir(releasesDirectory));
+      const releaseId = releaseEntries.find((entry) => entry.startsWith("sha256-"));
+      if (!releaseId) throw new Error("runner rollover release was not prewarmed");
+      readOnlyReleases.push(join(releasesDirectory, releaseId));
+      const task = makeTask(`session-runner-rollover-${scenario}`);
+      task.codexThreadId = "backend-session-old";
+      task.interventionQueue.push(
+        { text: "seed context usage", user: "u" },
+        { text: "한".repeat(8_000), user: "u" },
+      );
+      const host = taskExecutor(composition.runtimeFactory);
+      const paths = runnerProcessPaths(stateDirectory, task.agentSessionId);
+
+      host.executor.startExecution(task, makeAgent(controlDirectory));
+      await waitFor(async () => await pathExists(paths.pidPath));
+      const pid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
+      childPids.add(pid);
+      await task.executionPromise;
+
+      expect(await pathExists(join(controlDirectory, "rollover-compact-attempted"))).toBe(true);
+      const executionParams = await Promise.all([1, 2, 3].map(async (index) =>
+        JSON.parse(await readFile(
+          join(controlDirectory, `rollover-execution-${index}.json`),
+          "utf8",
+        )) as Record<string, unknown>
+      ));
+      expect(executionParams[1]).toMatchObject({ resumeSessionId: "backend-session-old" });
+      expect(executionParams[2]).toMatchObject({
+        backendSessionRolloverFrom: "backend-session-old",
+      });
+      expect(executionParams[2]).not.toHaveProperty("resumeSessionId");
+      expect((await readRunnerBootstrap(paths.databasePath)).payload).toMatchObject({
+        backend_session_id: "backend-session-fresh",
+      });
+      expect(batches.flatMap((batch) => batch.events).find(
+        (event) => (event.payload as { session_id?: unknown }).session_id
+          === "backend-session-fresh",
+      )).toMatchObject({
+        session_effect: {
+          kind: "rotate_backend_session_id",
+          expected_backend_session_id: "backend-session-old",
+          backend_session_id: "backend-session-fresh",
+        },
+      });
+      if (scenario === "success") {
+        expect(task.status).toBe("completed");
+        expect(task.claudeBackendRolloverAttempts).toBe(0);
+        expect(task.claudeBackendRolloverCycleFrom).toBeUndefined();
+      } else {
+        expect(task.status).toBe("error");
+        expect(task.error).toContain("Prompt is too long after rollover");
+        expect(task.claudeBackendRolloverAttempts).toBe(1);
+        expect(task.claudeBackendRolloverCycleFrom).toBe("backend-session-old");
+      }
+      expect(task.codexThreadId).toBe("backend-session-fresh");
+      await waitFor(async () => !isPidAlive(pid));
+      childPids.delete(pid);
+      await composition.hostOwnership.release();
+    },
+    45_000,
+  );
 });
 
 function taskExecutor(

@@ -11,6 +11,7 @@ import {
 import { formatContextItems } from "../context/prompt_assembler.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
@@ -19,6 +20,8 @@ import { isSessionDataHostError } from "../control_plane/session_data_host_clien
 
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
+export const CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS = 100_000;
+export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS = 50_000;
 const CLAUDE_ROLLOVER_REPLAY_INPUT_MAX_CHARS = 40_000;
 const CLAUDE_ROLLOVER_CONTEXT_MAX_CHARS = 20_000;
 const CLAUDE_ROLLOVER_HISTORY_BLOCK_MAX_CHARS = 14_000;
@@ -128,9 +131,13 @@ export class TaskTurnInputBuilder {
       imageAttachmentPaths: replayBase.imageAttachmentPaths,
       ...(ctx.effectiveSystemPrompt !== undefined
         ? {
-            systemPrompt: truncateWithNotice(
-              ctx.effectiveSystemPrompt,
-              CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
+            systemPrompt: truncateClaudeTextToEstimatedTokens(
+              truncateWithNotice(
+                ctx.effectiveSystemPrompt,
+                CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
+                "system prompt",
+              ),
+              CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS,
               "system prompt",
             ),
           }
@@ -321,9 +328,13 @@ function buildBoundedBackendRolloverPrompt(
     `<replayed_input>\n${boundedReplay}\n</replayed_input>`,
     contextBlock,
   ].filter((value) => value.length > 0);
-  return truncateWithNotice(
-    sections.join("\n\n"),
-    CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
+  return truncateClaudeTextToEstimatedTokens(
+    truncateWithNotice(
+      sections.join("\n\n"),
+      CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
+      "rollover prompt",
+    ),
+    CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
     "rollover prompt",
   );
 }

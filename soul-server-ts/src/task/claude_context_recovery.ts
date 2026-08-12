@@ -1,7 +1,8 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 
 export const CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO = 0.85;
-export const CLAUDE_CONTEXT_ESTIMATED_CHARS_PER_TOKEN = 2;
+export const CLAUDE_CONTEXT_ASCII_CHARS_PER_TOKEN = 3.5;
+export const CLAUDE_CONTEXT_TOKEN_SAFETY_MARGIN = 1.25;
 export const CLAUDE_BACKEND_ROLLOVER_LIMIT = 1;
 export const CLAUDE_PROMPT_TOO_LONG_ERROR_CODE = "claude_prompt_too_long";
 
@@ -81,8 +82,33 @@ export function observeClaudeContextRecoveryEvent(
 }
 
 export function estimateClaudeTurnInputTokens(input: ClaudeEstimatedTurnInput): number {
-  const estimatedCharacters = input.prompt.length + (input.systemPrompt?.length ?? 0);
-  return Math.ceil(estimatedCharacters / CLAUDE_CONTEXT_ESTIMATED_CHARS_PER_TOKEN);
+  return estimateClaudeTokenWeight([input.prompt, input.systemPrompt ?? ""]);
+}
+
+export function estimateClaudeTextTokens(text: string): number {
+  return estimateClaudeTokenWeight([text]);
+}
+
+export function truncateClaudeTextToEstimatedTokens(
+  text: string,
+  maxTokens: number,
+  label: string,
+): string {
+  if (maxTokens <= 0) return "";
+  if (estimateClaudeTextTokens(text) <= maxTokens) return text;
+  const suffix = `\n[${label} truncated to fit Claude token budget]`;
+  const availableWeight = maxTokens / CLAUDE_CONTEXT_TOKEN_SAFETY_MARGIN
+    - rawClaudeTokenWeight(suffix);
+  if (availableWeight <= 0) return "";
+  let consumedWeight = 0;
+  const characters: string[] = [];
+  for (const character of text) {
+    const characterWeight = rawClaudeTokenWeight(character);
+    if (consumedWeight + characterWeight > availableWeight) break;
+    characters.push(character);
+    consumedWeight += characterWeight;
+  }
+  return `${characters.join("")}${suffix}`;
 }
 
 export function shouldPreemptivelyCompact(
@@ -104,18 +130,47 @@ export function fatalPromptTooLongEvent(message: string): SSEEventPayload {
 }
 
 export function claudeBackendRolloverMetadataEntry(
-  attempts: number,
-  previousSessionId: string,
+  input: {
+    attempts: number;
+    phase: "pending" | "completed";
+    previousSessionId: string;
+    backendSessionId?: string;
+  },
 ): Record<string, unknown> {
+  const timestamp = new Date().toISOString();
   return {
     type: "claude_backend_rollover",
     value: {
-      attempts,
+      attempts: input.attempts,
       reason: "prompt_too_long",
-      previous_session_id: previousSessionId,
-      attempted_at: new Date().toISOString(),
+      phase: input.phase,
+      previous_session_id: input.previousSessionId,
+      ...(input.backendSessionId === undefined
+        ? { attempted_at: timestamp }
+        : {
+            backend_session_id: input.backendSessionId,
+            completed_at: timestamp,
+          }),
     },
   };
+}
+
+function estimateClaudeTokenWeight(texts: string[]): number {
+  return Math.ceil(
+    texts.reduce((total, text) => total + rawClaudeTokenWeight(text), 0)
+      * CLAUDE_CONTEXT_TOKEN_SAFETY_MARGIN,
+  );
+}
+
+function rawClaudeTokenWeight(text: string): number {
+  let estimatedTokens = 0;
+  for (const character of text) {
+    const codePoint = character.codePointAt(0)!;
+    estimatedTokens += codePoint <= 0x7f
+      ? 1 / CLAUDE_CONTEXT_ASCII_CHARS_PER_TOKEN
+      : 1;
+  }
+  return estimatedTokens;
 }
 
 function finiteNumber(value: unknown): number | undefined {

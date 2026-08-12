@@ -354,6 +354,9 @@ export interface Task {
   /** Durable one-shot guard restored from claude_backend_rollover metadata. */
   claudeBackendRolloverAttempts?: number;
 
+  /** Durable predecessor that scopes the active rollover recovery cycle. */
+  claudeBackendRolloverCycleFrom?: string;
+
   /** Expected predecessor while a fresh Claude backend session is being established. */
   pendingClaudeBackendRolloverFrom?: string;
 

@@ -6,10 +6,13 @@ import { SessionDataHostError } from "../../src/control_plane/session_data_host_
 import type { ExecutionContextBuilder, PreparedContext } from "../../src/context/context_builder.js";
 import {
   CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
+  CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
   CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
+  CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS,
   type TaskInitialMessagePublisherPort,
   TaskTurnInputBuilder,
 } from "../../src/task/task_turn_input_builder.js";
+import { estimateClaudeTextTokens } from "../../src/task/claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskInitialMessagePublisher } from "../../src/task/task_initial_message_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -390,11 +393,11 @@ describe("TaskTurnInputBuilder", () => {
     const { builder, contextBuilder } = makeSubject({
       contextBuilder: {
         buildBackendRolloverContext: vi.fn().mockResolvedValue({
-          effectiveSystemPrompt: "s".repeat(CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS * 2),
+          effectiveSystemPrompt: "한".repeat(CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS * 2),
           contextItems: [{
             key: "large_context",
             label: "Large context",
-            content: "c".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
+            content: "맥".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
           }],
           currentSessionExcerpt: {
             totalEvents: 4_339,
@@ -413,7 +416,7 @@ describe("TaskTurnInputBuilder", () => {
       task,
       claudeAgent,
       {
-        prompt: "p".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
+        prompt: "질".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
         imageAttachmentPaths: [],
       },
       "claude-exhausted",
@@ -423,6 +426,12 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
     expect(input.systemPrompt?.length).toBeLessThanOrEqual(
       CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
+    );
+    expect(estimateClaudeTextTokens(input.prompt)).toBeLessThanOrEqual(
+      CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
+    );
+    expect(estimateClaudeTextTokens(input.systemPrompt ?? "")).toBeLessThanOrEqual(
+      CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS,
     );
     expect(input.prompt).toContain("<claude_backend_rollover>");
     expect(input.prompt).toContain("4,339");
