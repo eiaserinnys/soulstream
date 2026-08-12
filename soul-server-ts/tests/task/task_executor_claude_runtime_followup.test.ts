@@ -64,6 +64,8 @@ function makeMocks() {
     enqueueEvent: persistenceDouble.enqueueEvent,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueTerminalTransitionAndWaitForApplication:
+      persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
     db,
     broadcaster,
   };
@@ -184,7 +186,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
 
     expect(addIntervention).not.toHaveBeenCalled();
     expect(task.status).toBe("interrupted");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "interrupted" }),
       expect.objectContaining({

@@ -26,6 +26,9 @@ import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskManager } from "../../src/task/task_manager.js";
 import { CommandDispatcher } from "../../src/upstream/dispatcher.js";
+import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
+import type { EventAppendAcknowledgement } from
+  "../../src/upstream/event_outbox_pump.js";
 import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -93,7 +96,37 @@ function makeEventOutboxHarness() {
   const waitForAcknowledgement = vi.fn(
     async (record: { source_seq: number }) => record.source_seq,
   );
-  return { append, waitForAcknowledgement };
+  const waitForAcknowledgementResult = vi.fn(
+    async (record: EventOutboxRecord) => makeAppliedTransitionAcknowledgement(record),
+  );
+  return { append, waitForAcknowledgement, waitForAcknowledgementResult };
+}
+
+function makeAppliedTransitionAcknowledgement(
+  record: EventOutboxRecord,
+): EventAppendAcknowledgement {
+  const effect = record.session_effect;
+  if (effect?.kind !== "running_transition" && effect?.kind !== "terminal_transition") {
+    throw new Error("transition acknowledgement requires a transition effect");
+  }
+  const terminal = effect.kind === "terminal_transition";
+  return {
+    source_seq: record.source_seq,
+    event_id: record.source_seq,
+    effect_application: {
+      applied: true,
+      canonical_session: {
+        status: terminal ? effect.status : "running",
+        termination_reason: terminal ? effect.termination_reason : null,
+        termination_detail: terminal ? effect.termination_detail : null,
+        review_state: effect.review_state,
+        last_assistant_text: terminal ? effect.last_assistant_text ?? null : null,
+        termination_event_id: terminal ? record.source_seq : null,
+        updated_at: effect.updated_at,
+        last_event_id: record.source_seq,
+      },
+    },
+  };
 }
 
 describe("Phase B-3 E2E: create_session → engine drain → ingress effects", () => {
@@ -137,7 +170,10 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       broadcaster,
       silentLogger,
       { append: outbox.append } as never,
-      { waitForAcknowledgement: outbox.waitForAcknowledgement } as never,
+      {
+        waitForAcknowledgement: outbox.waitForAcknowledgement,
+        waitForAcknowledgementResult: outbox.waitForAcknowledgementResult,
+      } as never,
     );
     const registerSession = vi.fn(async () => undefined);
     const sessionMutations = {
@@ -281,7 +317,10 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       broadcaster,
       silentLogger,
       { append: outbox.append } as never,
-      { waitForAcknowledgement: outbox.waitForAcknowledgement } as never,
+      {
+        waitForAcknowledgement: outbox.waitForAcknowledgement,
+        waitForAcknowledgementResult: outbox.waitForAcknowledgementResult,
+      } as never,
     );
     const taskManager = new TaskManager("n", db, broadcaster, silentLogger, persistence);
     const factory = vi.fn();

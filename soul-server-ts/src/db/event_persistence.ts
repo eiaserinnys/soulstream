@@ -43,6 +43,12 @@ const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 
 export { sanitizeJsonText, sanitizeJsonValue, truncateJsonText };
 
+export type EventSessionTransitionApplication = {
+  eventId: number;
+  applied: boolean;
+  canonicalSession: EventCanonicalSessionProjection;
+};
+
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
  * text_start/text_delta/text_end는 live transport 전용이고, complete/result는 turn
@@ -198,17 +204,30 @@ export class EventPersistence {
       expectedTerminalEventId?: number | null;
       updatedAt?: Date;
     },
-  ): Promise<{
-    eventId: number;
-    applied: boolean;
-    canonicalSession: EventCanonicalSessionProjection;
-  }> {
+  ): Promise<EventSessionTransitionApplication> {
     const record = await this.enqueueRunningTransition(sessionId, input);
+    return await this.waitForTransitionApplication(sessionId, record, "running");
+  }
+
+  async enqueueTerminalTransitionAndWaitForApplication(
+    sessionId: string,
+    event: SSEEventPayload,
+    effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+  ): Promise<EventSessionTransitionApplication> {
+    const record = await this.enqueueEvent(sessionId, event, effect);
+    return await this.waitForTransitionApplication(sessionId, record, "terminal");
+  }
+
+  private async waitForTransitionApplication(
+    sessionId: string,
+    record: EventOutboxRecord,
+    transition: "running" | "terminal",
+  ): Promise<EventSessionTransitionApplication> {
     const acknowledgement = await this.outboxPump.waitForAcknowledgementResult(record);
     this.clearPendingAckTarget(sessionId, record.source_seq);
     const application = acknowledgement.effect_application;
     if (!application) {
-      throw new Error("running transition ACK missing effect application");
+      throw new Error(`${transition} transition ACK missing effect application`);
     }
     return {
       eventId: acknowledgement.event_id,

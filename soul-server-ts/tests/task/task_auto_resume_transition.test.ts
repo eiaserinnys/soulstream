@@ -279,7 +279,7 @@ describe("AutoResumeTransition", () => {
     expect(task.terminationReason).toBe("limit_hit");
     expect(task.terminationDetail).toBe("fresh limit");
     expect(task.terminationEventRecorded).toBe(true);
-    expect(persistenceDouble.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(persistenceDouble.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         type: "session_ended",

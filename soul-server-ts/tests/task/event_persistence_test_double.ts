@@ -150,6 +150,31 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
+  const enqueueTerminalTransitionAndWaitForApplication = vi.fn(
+    async (
+      sessionId: string,
+      event: SSEEventPayload,
+      effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+    ) => {
+      const result = await enqueueEvent(sessionId, event, effect);
+      const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
+      latestBySession.delete(sessionId);
+      return {
+        eventId,
+        applied: true,
+        canonicalSession: {
+          status: effect.status,
+          termination_reason: effect.termination_reason,
+          termination_detail: effect.termination_detail,
+          review_state: effect.review_state,
+          last_assistant_text: effect.last_assistant_text ?? null,
+          termination_event_id: eventId,
+          updated_at: effect.updated_at,
+          last_event_id: eventId,
+        },
+      };
+    },
+  );
   const handleSideEffects = vi.fn(
     sideEffect ?? (async () => undefined),
   );
@@ -160,6 +185,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;
@@ -172,6 +198,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   };

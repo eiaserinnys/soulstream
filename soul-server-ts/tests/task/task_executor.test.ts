@@ -115,6 +115,8 @@ function makeMocks() {
       persistenceDouble.enqueueEventAndWaitForSessionAck,
     enqueueRunningTransitionAndWaitForApplication:
       persistenceDouble.enqueueRunningTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication:
+      persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
     enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
@@ -495,7 +497,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.runner).toBeUndefined();
 
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({
@@ -580,7 +582,7 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
     ]);
     expect(task.lastEventId).toBe(4);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({
@@ -898,7 +900,7 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toContain("engine boom");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -941,7 +943,7 @@ describe("TaskExecutor.startExecution", () => {
       message: "claude boom",
       fatal: true,
     });
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1033,7 +1035,7 @@ describe("TaskExecutor.startExecution", () => {
         }),
       ]),
     );
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1111,7 +1113,7 @@ describe("TaskExecutor.startExecution", () => {
         },
       },
     });
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1177,7 +1179,7 @@ describe("TaskExecutor.startExecution", () => {
         "claude_runtime_pending_after_turn",
     );
     expect(pendingAfterTurnError).toBeUndefined();
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({
@@ -1251,7 +1253,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitEventEnvelope.mock.calls.some(
       (call) => (call[1] as { type: string }).type === "error",
     )).toBe(false);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1437,7 +1439,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
     // 정상 종료 분기의 `if (status === "running") status = "completed"`가 발동 안 함
     expect(task.status).toBe("interrupted");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "interrupted" }),
       expect.objectContaining({
@@ -1491,7 +1493,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.error).toBe("prepare boom");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.interventionQueue).toEqual([]);
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
       expect.objectContaining({
@@ -1582,7 +1584,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({ kind: "terminal_transition", status: "completed" }),

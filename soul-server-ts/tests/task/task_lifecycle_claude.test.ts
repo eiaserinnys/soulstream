@@ -82,6 +82,8 @@ function makeMocks() {
     persistEvent,
     enqueueEventAndWaitForSessionAck:
       persistenceDouble.enqueueEventAndWaitForSessionAck,
+    enqueueTerminalTransitionAndWaitForApplication:
+      persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
     emitEventEnvelope,
     emitSessionUpdated,
   };
@@ -199,7 +201,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(completeCalls).toHaveLength(1);
 
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
-    expect(mocks.enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-lc",
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({

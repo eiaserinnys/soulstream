@@ -455,6 +455,65 @@ describe("EventPersistence durable ingress", () => {
     });
   });
 
+  it("returns the canonical session when a terminal transition CAS is rejected", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
+      source_seq: 7,
+      event_id: 43,
+      effect_application: {
+        applied: false,
+        canonical_session: {
+          status: "interrupted",
+          termination_reason: "killed",
+          termination_detail: "operator stop",
+          review_state: "needs_review",
+          last_assistant_text: "canonical answer",
+          termination_event_id: 41,
+          updated_at: "2026-08-11T00:00:00.000Z",
+          last_event_id: 42,
+        },
+      },
+    });
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.enqueueTerminalTransitionAndWaitForApplication(
+      "sess-1",
+      {
+        type: "session_ended",
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        timestamp: 1,
+      },
+      {
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        review_state: "acknowledged",
+        last_assistant_text: "stale answer",
+        updated_at: "2026-08-12T00:00:00.000Z",
+      },
+    )).resolves.toMatchObject({
+      eventId: 43,
+      applied: false,
+      canonicalSession: {
+        status: "interrupted",
+        termination_event_id: 41,
+        last_event_id: 42,
+      },
+    });
+    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(ingress.record);
+  });
+
   it("waits for the last event enqueued for the session at the turn boundary", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

@@ -48,7 +48,9 @@ describe("persistent publisher inventory", () => {
     for (const paths of Object.values(PERSISTENT_PUBLISHER_SURFACES)) {
       for (const path of paths) {
         const source = readSource(path);
-        expect(source, path).toMatch(/\.enqueueEvent(?:AndWaitForSessionAck)?\(/);
+        expect(source, path).toMatch(
+          /\.enqueue(?:Event(?:AndWaitForSessionAck)?|TerminalTransitionAndWaitForApplication)\(/,
+        );
         expect(source, path).not.toMatch(/\.appendEvent\(/);
         if (path !== "task/task_engine_event_publisher.ts") {
           expect(source, path).not.toMatch(/\.emitEventEnvelope\(/);
