@@ -52,6 +52,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     const calls: string[] = [];
     const persistExecutorFinalState = vi.fn(async (task: Task) => {
       calls.push(`persist:${task.runner ? "runner" : "no-runner"}`);
+      return true;
     });
     const close = vi.fn(async () => {
       calls.push("close");
@@ -74,6 +75,24 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(task.runner).toBeUndefined();
     expect(notify).toHaveBeenCalledWith(task);
+  });
+
+  it("does not notify completion when persistence observes an existing terminal transition", async () => {
+    const notify = vi.fn();
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue(false) },
+      logger: makeLogger(),
+      completionNotifier: { notify },
+    });
+
+    await finalizer.finalize(makeTask({
+      callerSessionId: "parent-sess-1",
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+      terminalEventId: 7,
+    }));
+
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("routes production cleanup through a close command ACK", async () => {
@@ -101,7 +120,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
   });
 
   it("isolates engine close failure and still clears engine before notification", async () => {
-    const persistExecutorFinalState = vi.fn(async () => undefined);
+    const persistExecutorFinalState = vi.fn(async () => true);
     const close = vi.fn().mockRejectedValue(new Error("close boom"));
     const notify = vi.fn(async (task: Task) => {
       expect(task.runner).toBeUndefined();
@@ -127,7 +146,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
   });
 
   it("isolates completion notifier failure after final-state persistence and engine cleanup", async () => {
-    const persistExecutorFinalState = vi.fn(async () => undefined);
+    const persistExecutorFinalState = vi.fn(async () => true);
     const close = vi.fn(async () => undefined);
     const notify = vi.fn().mockRejectedValue(new Error("notify boom"));
     const logger = makeLogger();
@@ -152,7 +171,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
   });
 
   it("지연 runtime follow-up이 예약된 중간 종료는 caller 완료로 통지하지 않는다", async () => {
-    const persistExecutorFinalState = vi.fn(async () => undefined);
+    const persistExecutorFinalState = vi.fn(async () => true);
     const close = vi.fn(async () => undefined);
     const notify = vi.fn(async () => undefined);
     const finalizer = new TaskExecutorFinalizer({

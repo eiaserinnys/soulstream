@@ -513,6 +513,20 @@ export class RunnerSqliteEventOutbox {
     return runnerRowToRecord(row);
   }
 
+  async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
+    this.requireOpen();
+    const bootstrap = this.refreshBootstrap();
+    if (!bootstrap) return null;
+    this.acknowledgedThrough = readAcknowledgedThrough(this.database);
+    const row = this.database.prepare(`
+      SELECT * FROM runner_event_outbox
+      WHERE record_kind = 'event' AND source_seq > ?
+      ORDER BY source_seq DESC
+      LIMIT 1
+    `).get(this.acknowledgedThrough) as unknown as RunnerEventOutboxRow | undefined;
+    return row ? runnerRowToRecord(row) : null;
+  }
+
   async acknowledge(streamId: string, ackedThrough: number): Promise<void> {
     const bootstrap = this.requireBootstrap();
     if (streamId !== bootstrap.stream_id) {

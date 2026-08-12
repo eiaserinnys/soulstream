@@ -41,6 +41,7 @@ function makeChild(overrides: Partial<Task> = {}): Task {
     callerSessionId: "parent-sess-1",
     createdAt: new Date(),
     lastEventId: 5,
+    terminalEventId: 5,
     lastReadEventId: 0,
     lastAssistantText: "hello world from child",
     interventionQueue: [],
@@ -223,7 +224,8 @@ describe("TaskCompletionNotifier.notify", () => {
     );
 
     await notifier.notify(makeChild({
-      lastEventId: 42,
+      lastEventId: 57,
+      terminalEventId: 42,
       callerSessionId: "caller-current",
       callerInfo: {
         source: "agent",
@@ -313,6 +315,7 @@ describe("TaskCompletionNotifier.notify", () => {
 
     await notifier.notify(makeChild({
       lastEventId: 43,
+      terminalEventId: 43,
       callerSessionId: "ordinary-agent-caller",
       callerInfo: {
         source: "agent",
@@ -442,6 +445,7 @@ describe("TaskCompletionNotifier.notify", () => {
     );
     const child = makeChild({
       lastEventId: 44,
+      terminalEventId: 44,
       callerSessionId: "ordinary-agent-caller-remote",
       callerInfo: {
         source: "agent",

@@ -14,9 +14,9 @@ export class TaskExecutorFinalizer {
   constructor(private readonly deps: TaskExecutorFinalizerDeps) {}
 
   async finalize(task: Task): Promise<void> {
-    await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+    const newlyFinalized = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
     await this.closeEngine(task);
-    await this.notifyCompletion(task);
+    if (newlyFinalized) await this.notifyCompletion(task);
   }
 
   private async closeEngine(task: Task): Promise<void> {

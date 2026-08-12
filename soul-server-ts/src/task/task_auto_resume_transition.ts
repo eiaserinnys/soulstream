@@ -70,6 +70,7 @@ export class AutoResumeTransition {
     await this.deps.persistence.enqueueRunningTransition(task.agentSessionId, {
       reviewState: resumedReviewState,
       transitionId: `resume:${transitionRevision}`,
+      expectedTerminalEventId: task.terminalEventId ?? null,
     });
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {
@@ -162,5 +163,6 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.pendingTerminationHint = undefined;
   task.pendingTerminationDetail = undefined;
   task.terminationEventRecorded = false;
+  task.terminalEventId = undefined;
   enqueueInterventionOnce(task, message);
 }

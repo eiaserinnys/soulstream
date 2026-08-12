@@ -156,6 +156,7 @@ export class EventPersistence {
     input: {
       reviewState: string;
       transitionId: string;
+      expectedTerminalEventId?: number | null;
       updatedAt?: Date;
     },
   ): Promise<EventOutboxRecord> {
@@ -173,6 +174,7 @@ export class EventPersistence {
     input: {
       reviewState: string;
       transitionId: string;
+      expectedTerminalEventId?: number | null;
       updatedAt?: Date;
     },
   ): Promise<number> {
@@ -229,6 +231,7 @@ function buildRunningTransitionRecord(
   input: {
     reviewState: string;
     transitionId: string;
+    expectedTerminalEventId?: number | null;
     updatedAt?: Date;
   },
 ): { event: SSEEventPayload; effect: EventOutboxSessionEffect } {
@@ -248,6 +251,9 @@ function buildRunningTransitionRecord(
     effect: {
       kind: "running_transition",
       review_state: input.reviewState,
+      ...(input.expectedTerminalEventId === undefined
+        ? {}
+        : { expected_terminal_event_id: input.expectedTerminalEventId }),
       updated_at: timestamp,
     },
   };

@@ -24,6 +24,7 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T01:00:00.000Z"),
     completedAt: new Date("2026-05-23T01:05:00.000Z"),
     lastEventId: 7,
+    terminalEventId: 6,
     lastReadEventId: 3,
     result: "old result",
     error: "old error",
@@ -61,6 +62,7 @@ describe("AutoResumeTransition", () => {
       expect(input).toMatchObject({
         reviewState: "not_required",
         transitionId: "resume:7",
+        expectedTerminalEventId: 6,
       });
       return { source_seq: 2 };
     });
@@ -294,7 +296,10 @@ describe("AutoResumeTransition", () => {
     );
     expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledWith(
       "s1",
-      expect.objectContaining({ reviewState: "acknowledged" }),
+      expect.objectContaining({
+        reviewState: "acknowledged",
+        expectedTerminalEventId: 6,
+      }),
     );
   });
 

@@ -275,6 +275,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     notify_completion       BOOLEAN NOT NULL DEFAULT TRUE,
     termination_reason      TEXT,
     termination_detail      TEXT,
+    termination_event_id    INTEGER,
+    last_assistant_text     TEXT,
     review_required         BOOLEAN NOT NULL DEFAULT FALSE,
     review_state            TEXT NOT NULL DEFAULT 'not_required',
     predecessor_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL
@@ -296,6 +298,8 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
 -- Session termination and review state columns (idempotent).
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_reason TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_detail TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_event_id INTEGER;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_assistant_text TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_required BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_state TEXT NOT NULL DEFAULT 'not_required';
 ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_review_state_check;
@@ -1466,6 +1470,86 @@ CREATE OR REPLACE FUNCTION session_get(
     p_session_id TEXT
 ) RETURNS SETOF sessions LANGUAGE sql STABLE AS $$
     SELECT * FROM sessions WHERE session_id = p_session_id;
+$$;
+
+CREATE OR REPLACE FUNCTION session_apply_terminal_transition(
+    p_session_id           TEXT,
+    p_status               TEXT,
+    p_termination_reason   TEXT,
+    p_termination_detail   TEXT,
+    p_review_state         TEXT,
+    p_last_assistant_text  TEXT,
+    p_terminal_event_id    INTEGER,
+    p_updated_at           TIMESTAMPTZ
+) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
+        RAISE EXCEPTION 'terminal event id must be a positive integer';
+    END IF;
+
+    UPDATE sessions
+       SET status = CASE
+               WHEN termination_event_id IS NULL THEN p_status
+               ELSE status
+           END,
+           termination_reason = CASE
+               WHEN termination_event_id IS NULL
+               THEN p_termination_reason ELSE termination_reason
+           END,
+           termination_detail = CASE
+               WHEN termination_event_id IS NULL
+               THEN p_termination_detail ELSE termination_detail
+           END,
+           review_state = CASE
+               WHEN termination_event_id IS NULL
+               THEN p_review_state ELSE review_state
+           END,
+           last_assistant_text = CASE
+               WHEN termination_event_id IS NULL
+               THEN p_last_assistant_text ELSE last_assistant_text
+           END,
+           termination_event_id = CASE
+               WHEN termination_event_id IS NULL
+               THEN p_terminal_event_id ELSE termination_event_id
+           END,
+           updated_at = CASE
+               WHEN termination_event_id IS NULL THEN p_updated_at ELSE updated_at
+           END
+     WHERE session_id = p_session_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION session_apply_running_transition(
+    p_session_id                 TEXT,
+    p_review_state               TEXT,
+    p_expected_terminal_event_id INTEGER,
+    p_terminal_resume            BOOLEAN,
+    p_updated_at                 TIMESTAMPTZ
+) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_terminal_resume THEN
+        UPDATE sessions
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               termination_event_id = NULL,
+               last_assistant_text = NULL,
+               review_state = p_review_state,
+               updated_at = p_updated_at
+         WHERE session_id = p_session_id
+           AND status IN ('completed', 'error', 'interrupted')
+           AND termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+    ELSE
+        UPDATE sessions
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               review_state = p_review_state,
+               updated_at = p_updated_at
+         WHERE session_id = p_session_id
+           AND status NOT IN ('completed', 'error');
+    END IF;
+END;
 $$;
 
 -- 3. session_get_all

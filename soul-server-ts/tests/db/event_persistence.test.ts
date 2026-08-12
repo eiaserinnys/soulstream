@@ -337,13 +337,17 @@ describe("EventPersistence durable ingress", () => {
     await expect(ep.enqueueRunningTransition("sess-1", {
       reviewState: "not_required",
       transitionId: "resume:7",
+      expectedTerminalEventId: 41,
       updatedAt: new Date("2026-08-11T00:00:00.000Z"),
     })).resolves.toBe(ingress.record);
 
     expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
       session_id: "sess-1",
       semantic_dedupe_key: "running_transition:sess-1:resume:7",
-      session_effect: expect.objectContaining({ kind: "running_transition" }),
+      session_effect: expect.objectContaining({
+        kind: "running_transition",
+        expected_terminal_event_id: 41,
+      }),
     }));
     expect(ingress.waitForAcknowledgement).not.toHaveBeenCalled();
   });

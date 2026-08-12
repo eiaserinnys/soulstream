@@ -75,7 +75,12 @@ export function makeEventPersistenceTestDouble(
   const enqueueRunningTransition = vi.fn(
     async (
       sessionId: string,
-      input: { reviewState: string; transitionId: string; updatedAt?: Date },
+      input: {
+        reviewState: string;
+        transitionId: string;
+        expectedTerminalEventId?: number | null;
+        updatedAt?: Date;
+      },
     ): Promise<EventOutboxRecord> => {
       const timestamp = (input.updatedAt ?? new Date()).toISOString();
       sourceSeq += 1;
@@ -92,6 +97,9 @@ export function makeEventPersistenceTestDouble(
         {
           kind: "running_transition",
           review_state: input.reviewState,
+          ...(input.expectedTerminalEventId === undefined
+            ? {}
+            : { expected_terminal_event_id: input.expectedTerminalEventId }),
           updated_at: timestamp,
         },
       );
@@ -100,7 +108,12 @@ export function makeEventPersistenceTestDouble(
   const enqueueRunningTransitionAndWaitForAck = vi.fn(
     async (
       sessionId: string,
-      input: { reviewState: string; transitionId: string; updatedAt?: Date },
+      input: {
+        reviewState: string;
+        transitionId: string;
+        expectedTerminalEventId?: number | null;
+        updatedAt?: Date;
+      },
     ): Promise<number> => {
       const record = await enqueueRunningTransition(sessionId, input);
       latestBySession.delete(sessionId);

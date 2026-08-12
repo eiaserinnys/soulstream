@@ -974,6 +974,19 @@ describe("RunnerSqliteEventOutbox", () => {
     reopened.close();
   });
 
+  it("reads the latest unacknowledged record for closed-runner tail draining", async () => {
+    const outbox = await createOutbox();
+    const first = await outbox.append(eventInput("one"));
+    const second = await outbox.append(eventInput("two"));
+
+    await expect(outbox.readLatestPendingRecord()).resolves.toEqual(second);
+    await outbox.acknowledge(outbox.streamId, first.source_seq);
+    await expect(outbox.readLatestPendingRecord()).resolves.toEqual(second);
+    await outbox.acknowledge(outbox.streamId, second.source_seq);
+    await expect(outbox.readLatestPendingRecord()).resolves.toBeNull();
+    outbox.close();
+  });
+
   it("rejects stream-mismatched, invalid, and beyond-durable ACK cursors", async () => {
     const outbox = await createOutbox();
     const record = await outbox.append(eventInput("one"));

@@ -24,24 +24,17 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     return;
   }
   if (effect.kind === "running_transition") {
-    await sql`
-      SELECT session_update(
-        ${envelope.session_id},
-        ${["status", "termination_reason", "termination_detail", "review_state"]},
-        ${["running", null, null, effect.review_state]},
-        ${new Date(effect.updated_at)}
-      )
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM sessions
-        WHERE session_id = ${envelope.session_id}
-          AND status IN ('completed', 'error')
-      )
-    `;
+    await sql`SELECT session_apply_running_transition(
+      ${envelope.session_id},
+      ${effect.review_state},
+      ${effect.expected_terminal_event_id ?? null},
+      ${effect.expected_terminal_event_id !== undefined},
+      ${new Date(effect.updated_at)}
+    )`;
     return;
   }
   if (effect.kind === "terminal_transition") {
-    await applyTerminalTransition(sql, envelope.session_id, effect);
+    await applyTerminalTransition(sql, envelope.session_id, input.eventId, effect);
     return;
   }
   await sql`
@@ -57,18 +50,18 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
 async function applyTerminalTransition(
   sql: EventIngressQuerySql,
   sessionId: string,
+  eventId: number,
   effect: Extract<EventSessionEffect, { kind: "terminal_transition" }>,
 ): Promise<void> {
   await sql`
-    SELECT session_update(
+    SELECT session_apply_terminal_transition(
       ${sessionId},
-      ${["status", "termination_reason", "termination_detail", "review_state"]},
-      ${[
-        effect.status,
-        effect.termination_reason,
-        effect.termination_detail,
-        effect.review_state,
-      ]},
+      ${effect.status},
+      ${effect.termination_reason},
+      ${effect.termination_detail},
+      ${effect.review_state},
+      ${effect.last_assistant_text ?? null},
+      ${eventId},
       ${new Date(effect.updated_at)}
     )
   `;

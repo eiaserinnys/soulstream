@@ -162,21 +162,40 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
 
-  it("reopens a closed registration offline so its durable tail can be pumped", async () => {
-    const subject = makeSubject([registration({
+  it("does not re-finalize the same closed registration across two process restarts", async () => {
+    const closed = registration({
       pidAlive: false,
       lifecycleState: "closed",
-    })]);
+    });
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const sessionEnded = vi.fn();
+    const delivery = vi.fn();
+    const callerNotification = vi.fn();
+    const recoverRegisteredRunner = vi.fn(async () => {
+      sessionEnded();
+      delivery();
+      callerNotification();
+    });
+    const taskExecutor = {
+      recoverRegisteredRunner,
+      restartRegisteredRunner: vi.fn(),
+    };
+    const first = makeSubject([closed], Date.now(), [], { closedTailDrainer, taskExecutor });
+    const second = makeSubject([closed], Date.now(), [], { closedTailDrainer, taskExecutor });
 
-    await subject.coordinator.scanOnce();
+    await first.coordinator.scanOnce();
+    await second.coordinator.scanOnce();
 
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
-      subject.task,
-      expect.anything(),
-      "execute-a",
-      "offline",
-    );
-    expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
+    expect(closedTailDrainer.drain).toHaveBeenCalledTimes(2);
+    expect(first.hydrateRunnerRecoveryTask).not.toHaveBeenCalled();
+    expect(second.hydrateRunnerRecoveryTask).not.toHaveBeenCalled();
+    expect(first.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(second.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(first.markRunnerFailureAndResume).not.toHaveBeenCalled();
+    expect(second.markRunnerFailureAndResume).not.toHaveBeenCalled();
+    expect(sessionEnded).not.toHaveBeenCalled();
+    expect(delivery).not.toHaveBeenCalled();
+    expect(callerNotification).not.toHaveBeenCalled();
   });
 
   it("coalesces overlapping scan requests into one filesystem scan", async () => {
@@ -356,6 +375,7 @@ function makeSubject(
     scanIntervalMs: 15_000,
     taskManager: { hydrateRunnerRecoveryTask, markRunnerFailureAndResume },
     taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
+    closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
     spawner: { terminate },
     scan: async () => ({ registrations, errors }),

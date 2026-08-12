@@ -99,11 +99,11 @@ export class TaskLifecycleTransition {
     return task;
   }
 
-  async persistExecutorFinalState(task: Task): Promise<void> {
-    await this.persistFinalState(task);
+  async persistExecutorFinalState(task: Task): Promise<boolean> {
+    return await this.persistFinalState(task);
   }
 
-  private async persistFinalState(task: Task): Promise<void> {
+  private async persistFinalState(task: Task): Promise<boolean> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
@@ -111,6 +111,7 @@ export class TaskLifecycleTransition {
     if (termination.newlyFinalized && !task.terminationEventRecorded) {
       await this.enqueueAndAwaitSessionEnded(task, termination.reason, termination.detail);
     }
+    return termination.newlyFinalized;
   }
 
   private async enqueueAndAwaitSessionEnded(
@@ -136,6 +137,7 @@ export class TaskLifecycleTransition {
       },
     );
     task.lastEventId = eventId;
+    task.terminalEventId = eventId;
     task.terminationEventRecorded = true;
   }
 

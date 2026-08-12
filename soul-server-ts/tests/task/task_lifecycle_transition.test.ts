@@ -115,7 +115,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     const task = makeTask();
 
     await transition.finalizeExternalTask(task, { result: "done" });
-    await transition.persistExecutorFinalState(task);
+    await expect(transition.persistExecutorFinalState(task)).resolves.toBe(false);
 
     expect(task.terminationReason).toBe("completed_ok");
     expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledTimes(1);
@@ -209,7 +209,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       reviewState: "acknowledged",
     });
 
-    await transition.persistExecutorFinalState(task);
+    await expect(transition.persistExecutorFinalState(task)).resolves.toBe(false);
 
     expect(task.reviewState).toBe("acknowledged");
     expect(enqueueEventAndWaitForSessionAck).not.toHaveBeenCalled();
@@ -240,10 +240,11 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
     const completedAt = new Date("2026-05-23T01:05:00.000Z");
     const task = makeTask({ status: "interrupted", completedAt });
 
-    await transition.persistExecutorFinalState(task);
+    await expect(transition.persistExecutorFinalState(task)).resolves.toBe(true);
 
     expect(task.status).toBe("interrupted");
     expect(task.completedAt).toBe(completedAt);
+    expect(task.terminalEventId).toBe(8);
     expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[2]).toMatchObject({
       status: "interrupted",
       termination_reason: "unknown",
@@ -260,8 +261,22 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
       terminationEventRecorded: true,
     });
 
-    await expect(transition.persistExecutorFinalState(task)).resolves.toBeUndefined();
+    await expect(transition.persistExecutorFinalState(task)).resolves.toBe(false);
 
+    expect(enqueueEventAndWaitForSessionAck).not.toHaveBeenCalled();
+  });
+
+  it("treats a durable terminal receipt as finalized even when a legacy reason is absent", async () => {
+    const { transition, enqueueEventAndWaitForSessionAck } = makeMocks();
+    const task = makeTask({
+      status: "completed",
+      terminationEventRecorded: true,
+      terminalEventId: 41,
+    });
+
+    await expect(transition.persistExecutorFinalState(task)).resolves.toBe(false);
+
+    expect(task.terminationReason).toBe("completed_ok");
     expect(enqueueEventAndWaitForSessionAck).not.toHaveBeenCalled();
   });
 });

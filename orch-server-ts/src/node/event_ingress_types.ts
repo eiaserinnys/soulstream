@@ -17,6 +17,7 @@ export type EventSessionEffect =
   | {
       kind: "running_transition";
       review_state: string;
+      expected_terminal_event_id?: number | null;
       updated_at: string;
     }
   | {
@@ -189,10 +190,24 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     };
   }
   if (value.kind === "running_transition") {
-    assertExactKeys(value, ["kind", "review_state", "updated_at"], field);
+    assertExactKeys(
+      value,
+      ["kind", "review_state", "expected_terminal_event_id", "updated_at"],
+      field,
+    );
     return {
       kind: value.kind,
       review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.expected_terminal_event_id === undefined
+        ? {}
+        : {
+            expected_terminal_event_id: value.expected_terminal_event_id === null
+              ? null
+              : positiveInteger(
+                  value.expected_terminal_event_id,
+                  `${field}.expected_terminal_event_id`,
+                ),
+          }),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }

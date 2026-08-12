@@ -29,6 +29,10 @@ function makeRow(overrides: Partial<SessionRow> = {}): SessionRow {
     agent_id: "codex-default",
     caller_session_id: "caller-session-1",
     away_summary: null,
+    termination_reason: "completed_ok",
+    termination_detail: null,
+    termination_event_id: 41,
+    last_assistant_text: "durable final answer",
     ...overrides,
   };
 }
@@ -75,6 +79,43 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
 
     expect(task?.status).toBe("running");
     expect(task?.completedAt).toBeUndefined();
+  });
+
+  it("restores terminal evidence and exact assistant text from the durable row", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        status: "completed",
+        last_event_id: 57,
+        termination_reason: "completed_ok",
+        termination_detail: "recorded once",
+        termination_event_id: 41,
+        last_assistant_text: "durable final answer",
+      }),
+      makeLogger(),
+    );
+
+    expect(task).toMatchObject({
+      terminationReason: "completed_ok",
+      terminationDetail: "recorded once",
+      terminationEventRecorded: true,
+      terminalEventId: 41,
+      lastAssistantText: "durable final answer",
+      lastEventId: 57,
+    });
+  });
+
+  it("rejects invalid durable terminal evidence instead of re-finalizing it", () => {
+    const logger = makeLogger();
+
+    expect(hydrateEvictedTaskFromSessionRow(
+      makeRow({ termination_reason: "not-a-reason" }),
+      logger,
+    )).toBeNull();
+    expect(hydrateEvictedTaskFromSessionRow(
+      makeRow({ termination_event_id: 0 }),
+      logger,
+    )).toBeNull();
+    expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 
   it("maps row fields to Task shape without changing public contract", () => {

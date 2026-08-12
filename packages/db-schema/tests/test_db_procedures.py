@@ -164,6 +164,20 @@ async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_terminal_receipt_migration_contract_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("061_session_terminal_receipt.sql").strip()
+    schema_sql = _schema_sql()
+
+    for required in [
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_event_id INTEGER",
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_assistant_text TEXT",
+        "CREATE OR REPLACE FUNCTION session_apply_terminal_transition(",
+        "CREATE OR REPLACE FUNCTION session_apply_running_transition(",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
 async def test_session_review_filter_migration_is_mirrored_in_schema_sql():
     migration_sql = _migration_sql("052_session_review_state_filter.sql")
     schema_sql = _schema_sql()
@@ -490,6 +504,105 @@ async def test_session_review_schema_and_atomic_transitions(test_db):
         "sess-review",
     )
     assert dict(row) == {"review_required": True, "review_state": "acknowledged"}
+
+
+async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
+    await _create_session(test_db, "sess-terminal-receipt")
+    first_at = _utc_now()
+    await test_db.execute(
+        "SELECT session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+        "sess-terminal-receipt",
+        "completed",
+        "completed_ok",
+        None,
+        "acknowledged",
+        "first answer",
+        41,
+        first_at,
+    )
+    await test_db.execute(
+        "SELECT session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+        "sess-terminal-receipt",
+        "error",
+        "unknown",
+        "duplicate",
+        "needs_review",
+        "duplicate answer",
+        57,
+        _utc_now(),
+    )
+    row = await test_db.fetchrow(
+        """
+        SELECT status, termination_reason, termination_event_id, last_assistant_text
+        FROM sessions WHERE session_id = $1
+        """,
+        "sess-terminal-receipt",
+    )
+    assert dict(row) == {
+        "status": "completed",
+        "termination_reason": "completed_ok",
+        "termination_event_id": 41,
+        "last_assistant_text": "first answer",
+    }
+
+    await test_db.execute(
+        "SELECT session_apply_running_transition($1, $2, $3, $4, $5)",
+        "sess-terminal-receipt",
+        "not_required",
+        99,
+        True,
+        _utc_now(),
+    )
+    assert await test_db.fetchval(
+        "SELECT status FROM sessions WHERE session_id = $1",
+        "sess-terminal-receipt",
+    ) == "completed"
+
+    await test_db.execute(
+        "SELECT session_apply_running_transition($1, $2, $3, $4, $5)",
+        "sess-terminal-receipt",
+        "not_required",
+        41,
+        True,
+        _utc_now(),
+    )
+    running = await test_db.fetchrow(
+        """
+        SELECT status, termination_reason, termination_event_id, last_assistant_text
+        FROM sessions WHERE session_id = $1
+        """,
+        "sess-terminal-receipt",
+    )
+    assert dict(running) == {
+        "status": "running",
+        "termination_reason": None,
+        "termination_event_id": None,
+        "last_assistant_text": None,
+    }
+    await test_db.execute(
+        "SELECT session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+        "sess-terminal-receipt",
+        "error",
+        "limit_hit",
+        "fresh turn",
+        "needs_review",
+        "second answer",
+        73,
+        _utc_now(),
+    )
+    row = await test_db.fetchrow(
+        """
+        SELECT status, termination_reason, termination_event_id, last_assistant_text
+        FROM sessions WHERE session_id = $1
+        """,
+        "sess-terminal-receipt",
+    )
+    assert dict(row) == {
+        "status": "error",
+        "termination_reason": "limit_hit",
+        "termination_event_id": 73,
+        "last_assistant_text": "second answer",
+    }
 
 
 async def test_sessions_notify_completion_schema_contract(test_db):
