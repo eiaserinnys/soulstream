@@ -159,6 +159,34 @@ describe("CommandTransportObserver", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  it("does not let an uncorrelated send hide a missing command response", async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn() } as unknown as Logger;
+    const timestamps = [0, 1, 2];
+    const nowMs = vi.fn(() => timestamps.shift() ?? 2);
+    const socket = {
+      bufferedAmount: 0,
+      send: vi.fn((_data: unknown, callback: (err?: Error) => void) => callback()),
+    } as unknown as WebSocket;
+    const observer = new CommandTransportObserver(logger, nowMs);
+
+    await observer.observe(
+      { type: "create_session", requestId: "req-command" },
+      async () => await observer.send(socket, {
+        type: "event_batch",
+        requestId: "req-other",
+      }),
+      true,
+    );
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "create_session",
+        requestId: "req-command",
+      }),
+      "Upstream command completed without response",
+    );
+  });
+
   it("does not mislabel non-command sends as command responses", async () => {
     const logger = { debug: vi.fn(), warn: vi.fn() } as unknown as Logger;
     const socket = {

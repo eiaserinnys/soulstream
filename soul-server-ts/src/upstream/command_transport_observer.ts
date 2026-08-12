@@ -4,6 +4,7 @@ import type { Logger } from "pino";
 import type { WebSocket } from "ws";
 
 import {
+  commandRequestId,
   commandTraceFields,
   type CommandLike,
   type CommandTraceFields,
@@ -88,7 +89,14 @@ export class CommandTransportObserver {
     const sentAtMs = this.nowMs();
     const trace = this.activeCommand.getStore();
     if (!trace) return;
-    trace.responseSent = true;
+    // Unrelated event/outbox traffic can inherit the command's async context.
+    // Only the matching requestId proves that this command sent its response.
+    if (
+      trace.requestId !== null
+      && commandRequestId((data ?? {}) as CommandLike) === trace.requestId
+    ) {
+      trace.responseSent = true;
+    }
     const durationMs = sentAtMs - trace.receivedAtMs;
     const fields = {
       type: trace.type,
