@@ -7,14 +7,19 @@ interface SessionPage {
   total: number;
 }
 
-function sessionSnapshotTime(session: SessionSummary): number | null {
+type SessionSnapshotFreshness = Pick<
+  SessionSummary,
+  "updatedAt" | "createdAt" | "lastEventId"
+>;
+
+function sessionSnapshotTime(session: SessionSnapshotFreshness): number | null {
   const timestamp = session.updatedAt ?? session.createdAt;
   if (timestamp === undefined) return null;
   const parsed = new Date(timestamp).getTime();
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function sessionSnapshotRevision(session: SessionSummary): number | null {
+function sessionSnapshotRevision(session: SessionSnapshotFreshness): number | null {
   const revision = session.lastEventId;
   return typeof revision === "number" && Number.isFinite(revision) && revision >= 0
     ? revision
@@ -22,8 +27,8 @@ function sessionSnapshotRevision(session: SessionSummary): number | null {
 }
 
 function shouldReplaceSessionSnapshot(
-  current: SessionSummary,
-  incoming: SessionSummary,
+  current: SessionSnapshotFreshness,
+  incoming: SessionSnapshotFreshness,
 ): boolean {
   const currentTime = sessionSnapshotTime(current);
   const incomingTime = sessionSnapshotTime(incoming);
@@ -79,7 +84,12 @@ export function dedupeSessionSnapshots(
 
 export type SessionLifecycleSnapshot = Pick<
   SessionSummary,
-  "agentSessionId" | "status" | "reviewState"
+  | "agentSessionId"
+  | "status"
+  | "reviewState"
+  | "updatedAt"
+  | "createdAt"
+  | "lastEventId"
 >;
 
 /**
@@ -112,6 +122,7 @@ export function applySessionLifecycleSnapshotToList(
     const snapshot = snapshots.get(session.agentSessionId);
     if (
       snapshot === undefined
+      || !shouldReplaceSessionSnapshot(session, snapshot)
       || (
         snapshot.status === session.status
         && snapshot.reviewState === session.reviewState

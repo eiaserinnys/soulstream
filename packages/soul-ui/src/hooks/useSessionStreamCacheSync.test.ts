@@ -170,6 +170,62 @@ describe("useSessionStreamCacheSync", () => {
     expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
+  it("ignores a stale initial session_list snapshot across cache, catalog, and active summary", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryKey = ["sessions", "all", "feed", null] as const;
+    const currentSession = {
+      agentSessionId: "session-a",
+      sessionType: "claude" as const,
+      status: "running" as const,
+      reviewState: "not_required" as const,
+      prompt: "preserved",
+      eventCount: 5,
+      createdAt: "2026-08-12T00:00:00Z",
+      updatedAt: "2026-08-12T00:02:00Z",
+      lastEventId: 41,
+    };
+    const cachedData = {
+      pages: [{ sessions: [currentSession], total: 1 }],
+      pageParams: [0],
+    };
+    const catalogSessionList = [currentSession];
+    queryClient.setQueryData(queryKey, cachedData);
+    useDashboardStore.getState().setCatalog({
+      folders: [],
+      sessions: {},
+      sessionList: catalogSessionList,
+    });
+    useDashboardStore.getState().setActiveSession("session-a");
+    useDashboardStore.getState().setActiveSessionSummary(currentSession);
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onSessionList?.({
+      type: "session_list",
+      sessions: [{
+        agentSessionId: "session-a",
+        sessionType: "claude",
+        status: "completed",
+        reviewState: "needs_review",
+        eventCount: 4,
+        createdAt: "2026-08-12T00:00:00Z",
+        updatedAt: "2026-08-12T00:01:00Z",
+        lastEventId: 40,
+      }],
+      total: 1,
+    });
+
+    expect(queryClient.getQueryData(queryKey)).toBe(cachedData);
+    expect(useDashboardStore.getState().catalog?.sessionList).toBe(catalogSessionList);
+    expect(useDashboardStore.getState().activeSessionSummary).toBe(currentSession);
+  });
+
   it("applies folder rename, move, and delete snapshots to the store immediately", () => {
     const initialCatalog: CatalogState = {
       folders: [
