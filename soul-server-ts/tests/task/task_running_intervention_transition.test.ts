@@ -2,7 +2,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
-import { createInProcessTaskRunnerRuntime } from
+import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
+import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -33,6 +34,73 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
+  it("persists a process-runner intervention in the SQLite inbox and ACKs it before interrupt", async () => {
+    const stageIntervention = vi.fn().mockResolvedValue({
+      eventSourceSeq: 42,
+      queuePosition: 1,
+    });
+    const waitForSessionAck = vi.fn().mockResolvedValue(142);
+    const invoke = vi.fn().mockResolvedValue(true);
+    const dispatcher = {
+      stageIntervention,
+      waitForSessionAck,
+      invoke,
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      prepareSession: vi.fn(),
+      interrupt: vi.fn(),
+      close: vi.fn(),
+      detachHost: vi.fn(),
+      sendControlFrame: vi.fn(),
+      requestContext: vi.fn(),
+    };
+    const task = makeRunningTask({
+      runner: createTaskRunnerRuntime(
+        new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+        dispatcher as never,
+        "runner",
+      ),
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await expect(
+      transition.deliver(task, { text: "durable after adopt", user: "soak" }),
+    ).resolves.toEqual({ steered: true, queuePosition: 1 });
+
+    expect(stageIntervention).toHaveBeenCalledWith({
+      interventionId: expect.any(String),
+      message: expect.objectContaining({
+        text: "durable after adopt",
+        user: "soak",
+        runnerInterventionId: expect.any(String),
+      }),
+      event: expect.objectContaining({
+        type: "intervention_sent",
+        text: "durable after adopt",
+      }),
+      queued: true,
+    });
+    expect(stageIntervention.mock.invocationCallOrder[0]).toBeLessThan(
+      waitForSessionAck.mock.invocationCallOrder[0],
+    );
+    expect(waitForSessionAck.mock.invocationCallOrder[0]).toBeLessThan(
+      invoke.mock.invocationCallOrder[0],
+    );
+    expect(task.lastEventId).toBe(142);
+    expect(task.interventionQueue).toEqual([
+      expect.objectContaining({
+        text: "durable after adopt",
+        runnerInterventionId: expect.any(String),
+      }),
+    ]);
+    expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
+  });
+
   it("publishes acceptance before queueing and interrupting a steer-interrupt engine", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const interruptForSteer = vi.fn().mockResolvedValue(true);

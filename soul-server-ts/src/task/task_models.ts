@@ -81,6 +81,8 @@ export interface InterventionMessage {
    */
   storedDeliveryPayload?: Record<string, unknown>;
   storedDeliveryPayloadHash?: string;
+  /** Runner SQLite inbox identity. Internal only; never copied into public wire events. */
+  runnerInterventionId?: string;
   /**
    * Phase A context 정본 (Y-10, atom d7a1ad86 정본 둘 안티패턴 차단):
    * intervention_sent 통합 후 wire에 박는 context_items 정본과 정합.

@@ -24,6 +24,11 @@ import {
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
+  claimRunnerInterventionExecution,
+  finishRunnerInterventionExecution,
+  handleRunnerInterventionCommand,
+} from "./runner_intervention_command.js";
+import {
   runnerDroppedFrameLogContext,
   type RunnerDroppedFrame,
 } from "./runner_frame_drop.js";
@@ -148,7 +153,36 @@ export class RunnerChildRuntime {
   private async handleCommand(command: RunnerCommandFrame): Promise<void> {
     const connection = this.endpoint.currentConnection;
     if (!connection) throw new Error("Runner command arrived without a host connection");
+    const intervention = await handleRunnerInterventionCommand(
+      command,
+      this.outbox,
+      this.config.sessionId,
+    );
+    if (intervention) {
+      await connection.send(intervention.result);
+      if (intervention.eventSourceSeq !== null) {
+        await this.sendBestEffort(outboxAvailableControlFrame(intervention.eventSourceSeq));
+      }
+      return;
+    }
+    const interventionClaimFailure = command.kind === "execute"
+      ? await claimRunnerInterventionExecution(command, this.outbox)
+      : null;
+    if (interventionClaimFailure) {
+      await connection.send(interventionClaimFailure);
+      return;
+    }
     const result = await this.dispatcher.dispatch(command);
+    if (
+      result.result.status !== "ok"
+      && command.kind === "execute"
+      && command.params.runnerInterventionId
+    ) {
+      await this.outbox.releaseInterventionClaim(
+        command.params.runnerInterventionId,
+        command.commandId,
+      );
+    }
     await connection.send(result);
     if (result.result.status !== "ok") return;
     if (command.kind === "execute") {
@@ -215,6 +249,13 @@ export class RunnerChildRuntime {
     } catch (error) {
       this.logger.error({ error }, "Runner terminal lifecycle record failed");
     }
+    await finishRunnerInterventionExecution(
+      command,
+      this.outbox,
+      terminalError !== undefined,
+    ).catch((error) => {
+      this.logger.error({ error }, "Runner intervention claim cleanup failed");
+    });
     const ended = executionEndedControlFrame(command.commandId, terminalError);
     await this.sendRequired(ended).catch((error) => {
       this.logger.warn({ error }, "Runner execution end could not reach host");

@@ -83,6 +83,8 @@ export interface EngineExecuteParams {
    * input with a fresh random identity. Other engines ignore it.
    */
   inputUuid?: string;
+  /** Durable runner inbox entry consumed by this turn. Runner boundary only. */
+  runnerInterventionId?: string;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;

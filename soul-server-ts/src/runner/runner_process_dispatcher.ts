@@ -17,6 +17,7 @@ import {
   invokeCommandFrame,
   prepareSessionCommandFrame,
   runnerControlResponseFrame,
+  stageInterventionCommandFrame,
   type RunnerCommandFrame,
   type RunnerCommandResultFrame,
   type RunnerControlFrame,
@@ -24,6 +25,11 @@ import {
   type RunnerFrame,
 } from "./frame_protocol.js";
 import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
+import type {
+  RunnerInterventionStageInput,
+  RunnerInterventionStageResult,
+  RunnerPendingIntervention,
+} from "./runner_command_dispatcher.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
 import {
   type RunnerIpcConnection,
@@ -185,6 +191,38 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.latestPendingRecord = undefined;
     }
     return eventId;
+  }
+
+  async stageIntervention(
+    input: RunnerInterventionStageInput,
+  ): Promise<RunnerInterventionStageResult> {
+    const response = await this.dispatch(stageInterventionCommandFrame({
+      commandId: `stage-intervention:${input.interventionId}`,
+      ...input,
+    }));
+    assertCommandAccepted(response);
+    const data = response.result.status === "ok" && isRecord(response.result.data)
+      ? response.result.data
+      : undefined;
+    const eventSourceSeq = typeof data?.eventSourceSeq === "number"
+      ? data.eventSourceSeq
+      : null;
+    const queuePosition = typeof data?.queuePosition === "number"
+      ? data.queuePosition
+      : 0;
+    if (eventSourceSeq !== null) {
+      const record = await this.outbox.readRecord(eventSourceSeq);
+      if (!record) throw new Error("staged runner intervention event is missing");
+      this.latestPendingRecord = record;
+      await this.ensurePump();
+      this.pump?.notifyAvailable();
+    }
+    return { eventSourceSeq, queuePosition };
+  }
+
+  async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
+    await this.ready;
+    return await this.outbox.readPendingInterventions();
   }
 
   async invoke(capability: string, args: unknown[]): Promise<unknown> {

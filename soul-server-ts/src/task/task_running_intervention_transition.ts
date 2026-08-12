@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -11,7 +13,10 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { InterventionMessage, Task } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
-import { publishInterventionSent } from "./task_intervention_events.js";
+import {
+  buildInterventionSentEvent,
+  publishInterventionSent,
+} from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 
 export type RunningInterventionResult =
@@ -43,6 +48,15 @@ export class RunningInterventionTransition {
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
+    if (isDurableRunnerQueue(task)) {
+      const staged = await this.stageRunnerIntervention(
+        task,
+        message,
+        publishBeforeDelivery,
+      );
+      return await this.tryInterruptForSteer(task, staged.message)
+        ?? { queued: true, queuePosition: enqueueInterventionOnce(task, staged.message) };
+    }
     if (publishBeforeDelivery) {
       await publishInterventionSent(task, message, this.deps);
     }
@@ -92,6 +106,15 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { publishEvent?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    if (isDurableRunnerQueue(task)) {
+      const staged = await this.stageRunnerIntervention(
+        task,
+        message,
+        options.publishEvent !== false,
+      );
+      const queuePosition = enqueueInterventionOnce(task, staged.message);
+      return { queued: true, queuePosition };
+    }
     if (options.publishEvent !== false) {
       await publishInterventionSent(task, message, this.deps);
     }
@@ -131,6 +154,38 @@ export class RunningInterventionTransition {
       "running intervention queued after steer interrupt race",
     );
     return { queued: true, queuePosition };
+  }
+
+  private async stageRunnerIntervention(
+    task: Task,
+    message: InterventionMessage,
+    publishEvent: boolean,
+  ): Promise<{ message: InterventionMessage }> {
+    const dispatcher = task.runner?.dispatcher;
+    if (!dispatcher?.stageIntervention) {
+      throw new Error("runner intervention inbox is unavailable");
+    }
+    const durableMessage: InterventionMessage = {
+      ...message,
+      runnerInterventionId:
+        message.runnerInterventionId ?? message.deliveryId ?? randomUUID(),
+    };
+    const staged = await dispatcher.stageIntervention({
+      interventionId: durableMessage.runnerInterventionId!,
+      message: toRunnerJsonRecord(durableMessage),
+      ...(publishEvent
+        ? { event: buildInterventionSentEvent(durableMessage) }
+        : {}),
+      queued: true,
+    });
+    if (publishEvent) {
+      const eventId = await dispatcher.waitForSessionAck();
+      if (eventId === null || staged.eventSourceSeq === null) {
+        throw new Error("runner intervention receipt did not reach its durable ACK boundary");
+      }
+      task.lastEventId = eventId;
+    }
+    return { message: durableMessage };
   }
 
   private async retryTransientBoundary(
@@ -180,6 +235,15 @@ export class RunningInterventionTransition {
       };
     }
   }
+}
+
+function isDurableRunnerQueue(task: Task): boolean {
+  return task.runner?.eventPersistence === "runner"
+    && isSteerInterruptEngine(task.runner.engine);
+}
+
+function toRunnerJsonRecord(message: InterventionMessage): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(message)) as Record<string, unknown>;
 }
 
 function isTransientSteerBoundary(status: LiveTurnSteerStatus): boolean {

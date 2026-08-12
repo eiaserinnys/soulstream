@@ -50,6 +50,13 @@ import {
   readRunnerHostCallApplied,
   recordRunnerHostCallApplied,
 } from "./sqlite_ipc_journal.js";
+import {
+  claimRunnerIntervention,
+  completeRunnerInterventionClaim,
+  readPendingRunnerInterventions,
+  releaseRunnerInterventionClaim,
+  stageRunnerIntervention,
+} from "./sqlite_intervention_inbox.js";
 import { loadNodeSqlite } from "./node_sqlite.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
@@ -248,6 +255,64 @@ export class RunnerSqliteEventOutbox {
     });
     for (const listener of this.appendListeners) listener();
     return record;
+  }
+
+  async stageIntervention(input: {
+    interventionId: string;
+    message: Record<string, unknown>;
+    event?: EventOutboxAppendInput;
+    queued: boolean;
+    queuedAt: string;
+  }): Promise<{ eventSourceSeq: number | null; queuePosition: number }> {
+    const bootstrap = this.requireBootstrap();
+    const staged = stageRunnerIntervention(
+      this.database,
+      (operation) => this.transaction(operation),
+      bootstrap,
+      input,
+    );
+    for (const listener of this.appendListeners) listener();
+    return staged;
+  }
+
+  async readPendingInterventions(): Promise<Array<{
+    interventionId: string;
+    message: Record<string, unknown>;
+  }>> {
+    this.requireOpen();
+    return readPendingRunnerInterventions(
+      this.database,
+      (operation) => this.transaction(operation),
+    );
+  }
+
+  async claimIntervention(interventionId: string, commandId: string): Promise<boolean> {
+    this.requireOpen();
+    return claimRunnerIntervention(
+      this.database,
+      (operation) => this.transaction(operation),
+      interventionId,
+      commandId,
+    );
+  }
+
+  async releaseInterventionClaim(interventionId: string, commandId: string): Promise<void> {
+    this.requireOpen();
+    releaseRunnerInterventionClaim(
+      this.database,
+      (operation) => this.transaction(operation),
+      interventionId,
+      commandId,
+    );
+  }
+
+  async completeInterventionClaim(commandId: string): Promise<void> {
+    this.requireOpen();
+    completeRunnerInterventionClaim(
+      this.database,
+      (operation) => this.transaction(operation),
+      commandId,
+    );
   }
 
   /**
@@ -499,7 +564,10 @@ export class RunnerSqliteEventOutbox {
     const pendingIpc = this.database.prepare(`
       SELECT 1 FROM runner_ipc_journal LIMIT 1
     `).get();
-    return pendingIpc !== undefined;
+    if (pendingIpc !== undefined) return true;
+    return this.database.prepare(`
+      SELECT 1 FROM runner_intervention_inbox LIMIT 1
+    `).get() !== undefined;
   }
 
   async compactAppliedHostCallsForTerminalRecovery(): Promise<void> {
@@ -542,6 +610,10 @@ export class RunnerSqliteEventOutbox {
           AND NOT EXISTS (
             SELECT 1 FROM runner_ipc_journal
             WHERE outbox_source_seq = runner_event_outbox.source_seq
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM runner_intervention_inbox
+            WHERE event_source_seq = runner_event_outbox.source_seq
           )
       `).run(this.acknowledgedThrough);
     });

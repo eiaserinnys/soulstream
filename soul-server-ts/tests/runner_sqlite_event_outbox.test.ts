@@ -74,6 +74,7 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(tables.map((table) => table.name)).toEqual([
         "runner_event_outbox",
         "runner_prebootstrap_lifecycle",
+        "runner_intervention_inbox",
         "runner_ipc_journal",
       ]);
       const outboxTable = tables.find((table) => table.name === "runner_event_outbox")!;
@@ -81,6 +82,9 @@ describe("RunnerSqliteEventOutbox", () => {
         (table) => table.name === "runner_prebootstrap_lifecycle",
       )!;
       const journalTable = tables.find((table) => table.name === "runner_ipc_journal")!;
+      const interventionTable = tables.find(
+        (table) => table.name === "runner_intervention_inbox",
+      )!;
       expect(outboxTable.sql).toContain("source_seq INTEGER PRIMARY KEY AUTOINCREMENT");
       expect(outboxTable.sql).toContain("runner_metadata_json");
       expect(outboxTable.sql).toContain("execution_command_id");
@@ -96,12 +100,103 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(lifecycleTable.sql).toContain("liveness_at");
       expect(lifecycleTable.sql).toContain("in_flight_tools_json");
       expect(lifecycleTable.sql).not.toMatch(/payload|metadata|session_effect/);
+      expect(interventionTable.sql).toContain("intervention_id TEXT PRIMARY KEY");
+      expect(interventionTable.sql).toContain("event_source_seq INTEGER UNIQUE");
+      expect(interventionTable.sql).toContain("claimed_execution_command_id TEXT");
       expect(outboxTable.sql).toContain("STRICT");
       expect(lifecycleTable.sql).toContain("STRICT");
       expect(journalTable.sql).toContain("STRICT");
     } finally {
       database.close();
     }
+  });
+
+  it("atomically persists an intervention receipt and restart-safe next-turn inbox entry", async () => {
+    const path = await temporaryDatabasePath();
+    const writer = await RunnerSqliteEventOutbox.create(path);
+    await writer.initializeBootstrap(bootstrapInput());
+
+    const stage = {
+      interventionId: "intervention-1",
+      message: { text: "after restart", user: "soak" },
+      event: {
+        session_id: "session-a",
+        event_type: "intervention_sent",
+        payload: { type: "intervention_sent", text: "after restart", user: "soak" },
+        searchable_text: "after restart",
+        created_at: "2026-08-11T00:00:02.000Z",
+        semantic_dedupe_key: null,
+        session_effect: null,
+      },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    };
+    await expect(writer.stageIntervention(stage)).resolves.toEqual({
+      eventSourceSeq: 2,
+      queuePosition: 1,
+    });
+    await expect(writer.stageIntervention(stage)).resolves.toEqual({
+      eventSourceSeq: 2,
+      queuePosition: 1,
+    });
+    writer.close();
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.readRecord(2)).resolves.toMatchObject({
+      event_type: "intervention_sent",
+    });
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([{
+      interventionId: "intervention-1",
+      message: { text: "after restart", user: "soak" },
+    }]);
+
+    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-followup",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await expect(
+      recovered.claimIntervention("intervention-1", "execute-followup"),
+    ).resolves.toBe(true);
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
+    await recovered.completeInterventionClaim("execute-followup");
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
+    lifecycle.close();
+    recovered.close();
+  });
+
+  it("releases a claimed intervention for retry when its execution terminates unsuccessfully", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "retry-after-failure",
+      message: { text: "do not lose me", user: "soak" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-failed",
+      progressedAt: "2026-08-11T00:00:03.000Z",
+    });
+    await expect(
+      outbox.claimIntervention("retry-after-failure", "execute-failed"),
+    ).resolves.toBe(true);
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+
+    lifecycle.finish(
+      "execute-failed",
+      "failed",
+      "2026-08-11T00:00:04.000Z",
+      { code: "execution_failed", message: "boom" },
+    );
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([{
+      interventionId: "retry-after-failure",
+      message: { text: "do not lose me", user: "soak" },
+    }]);
+    lifecycle.close();
+    outbox.close();
   });
 
   it("rejects a zero-byte database created by a concurrent opener", async () => {
@@ -329,7 +424,7 @@ describe("RunnerSqliteEventOutbox", () => {
         expect(columns).toContain("liveness_at");
         expect(columns).toContain("in_flight_tools_json");
       }
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 7 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
     } finally {
       verified.close();
     }
@@ -790,7 +885,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const verified = new DatabaseSync(path);
     try {
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 7 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
       expect(verified.prepare(`
         SELECT acked_through, ack_checkpoint_hash
         FROM runner_event_outbox WHERE record_kind = 'bootstrap'
