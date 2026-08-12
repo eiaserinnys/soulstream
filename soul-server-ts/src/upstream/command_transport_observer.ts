@@ -11,24 +11,67 @@ import {
 
 interface InboundCommandTrace extends CommandTraceFields {
   receivedAtMs: number;
+  responseSent: boolean;
 }
+
+// One second is 1/30 of the orch command timeout: early enough to expose
+// starvation before a 30s 503 while leaving ample room for normal local ACKs.
+export const SLOW_COMMAND_RESPONSE_THRESHOLD_MS = 1_000;
 
 export class CommandTransportObserver {
   private readonly activeCommand = new AsyncLocalStorage<InboundCommandTrace>();
 
   constructor(
-    private readonly logger: Pick<Logger, "debug">,
+    private readonly logger: Pick<Logger, "debug" | "warn">,
     private readonly nowMs: () => number = performance.now.bind(performance),
   ) {}
 
-  async observe<T>(rawCmd: unknown, dispatch: () => Promise<T>): Promise<T> {
+  async observe<T>(
+    rawCmd: unknown,
+    dispatch: () => Promise<T>,
+    expectsResponse?: boolean,
+  ): Promise<T> {
     const cmd = (rawCmd ?? {}) as CommandLike;
     const trace = {
       ...commandTraceFields(cmd),
       receivedAtMs: this.nowMs(),
+      responseSent: false,
     };
+    const shouldExpectResponse = expectsResponse ?? (trace.requestId !== null);
     this.logger.debug(commandTraceFields(cmd), "Upstream command received");
-    return await this.activeCommand.run(trace, dispatch);
+    const pendingWarningTimer = !shouldExpectResponse
+      ? null
+      : setTimeout(() => {
+          if (trace.responseSent) return;
+          this.logger.warn(
+            {
+              type: trace.type,
+              requestId: trace.requestId,
+              sessionId: trace.sessionId,
+              durationMs: this.nowMs() - trace.receivedAtMs,
+              slowThresholdMs: SLOW_COMMAND_RESPONSE_THRESHOLD_MS,
+            },
+            "Upstream command response pending",
+          );
+        }, SLOW_COMMAND_RESPONSE_THRESHOLD_MS);
+    pendingWarningTimer?.unref();
+    try {
+      return await this.activeCommand.run(trace, dispatch);
+    } finally {
+      if (pendingWarningTimer) clearTimeout(pendingWarningTimer);
+      if (shouldExpectResponse && !trace.responseSent) {
+        this.logger.warn(
+          {
+            type: trace.type,
+            requestId: trace.requestId,
+            sessionId: trace.sessionId,
+            durationMs: this.nowMs() - trace.receivedAtMs,
+            slowThresholdMs: SLOW_COMMAND_RESPONSE_THRESHOLD_MS,
+          },
+          "Upstream command completed without response",
+        );
+      }
+    }
   }
 
   async send(ws: WebSocket, data: unknown): Promise<void> {
@@ -45,20 +88,25 @@ export class CommandTransportObserver {
     const sentAtMs = this.nowMs();
     const trace = this.activeCommand.getStore();
     if (!trace) return;
-    this.logger.debug(
-      {
-        type: trace.type,
-        requestId: trace.requestId,
-        sessionId: trace.sessionId,
-        responseType: responseType(data),
-        elapsedMs: sentAtMs - trace.receivedAtMs,
-        webSocketSendElapsedMs: sentAtMs - sendStartedAtMs,
-        payloadBytes,
-        webSocketBufferedAmountBefore: bufferedAmountBefore,
-        webSocketBufferedAmountAfter: ws.bufferedAmount,
-      },
-      "Upstream command response sent",
-    );
+    trace.responseSent = true;
+    const durationMs = sentAtMs - trace.receivedAtMs;
+    const fields = {
+      type: trace.type,
+      requestId: trace.requestId,
+      sessionId: trace.sessionId,
+      responseType: responseType(data),
+      durationMs,
+      slowThresholdMs: SLOW_COMMAND_RESPONSE_THRESHOLD_MS,
+      webSocketSendElapsedMs: sentAtMs - sendStartedAtMs,
+      payloadBytes,
+      webSocketBufferedAmountBefore: bufferedAmountBefore,
+      webSocketBufferedAmountAfter: ws.bufferedAmount,
+    };
+    if (durationMs >= SLOW_COMMAND_RESPONSE_THRESHOLD_MS) {
+      this.logger.warn(fields, "Slow upstream command response sent");
+    } else {
+      this.logger.debug(fields, "Upstream command response sent");
+    }
   }
 }
 

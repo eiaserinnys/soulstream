@@ -271,6 +271,7 @@ export class UpstreamAdapter {
           await this.commandTransportObserver.observe(
             cmd,
             () => this.dispatcher.dispatch(cmd),
+            this.dispatcher.expectsResponse(cmd),
           );
         } catch (err) {
           this.logger.error({ err }, "Dispatcher threw");

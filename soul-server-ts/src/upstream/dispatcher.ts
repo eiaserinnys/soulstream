@@ -32,6 +32,7 @@ import {
 } from "./claude_runtime_commands.js";
 import { createClaudeRuntimeCommandFamily } from "./claude_runtime_command_family.js";
 import {
+  commandRequestId,
   CommandDispatchError,
   type CommandHandlerMap,
   type CommandLike,
@@ -194,6 +195,13 @@ export class CommandDispatcher {
         `Not implemented in soul-server-ts: ${cmd.type}`,
       );
     }
+  }
+
+  expectsResponse(rawCmd: unknown): boolean {
+    const cmd = (rawCmd ?? {}) as CommandLike;
+    // subscribe_events is the sole wire-level fire-and-forget command and may
+    // carry a requestId even though both runtimes intentionally emit no ACK.
+    return commandRequestId(cmd).length > 0 && cmd.type !== "subscribe_events";
   }
 
   private async sendError(cmd: CommandLike, message: string): Promise<void> {

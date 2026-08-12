@@ -1512,12 +1512,14 @@ describe("CommandDispatcher.subscribe_events (SSE realtime sync fix)", () => {
 
   it("subscribe_events에 requestId 있어도 ACK 안 발행 (Python 정본 정합)", async () => {
     const { dispatcher, sent } = createDispatcher();
-    await dispatcher.dispatch({
+    const command = {
       type: "subscribe_events",
       agentSessionId: "sess-x",
       subscribeId: "sub-1",
       requestId: "req-1",
-    });
+    };
+    expect(dispatcher.expectsResponse(command)).toBe(false);
+    await dispatcher.dispatch(command);
     // Python `_handle_subscribe_events`도 ACK type emit 안 함 — relay loop만 시작.
     // orch send_subscribe_events는 fire-and-forget이라 ACK 없어도 동작 영향 0.
     expect(sent).toHaveLength(0);
