@@ -177,52 +177,37 @@ describe("NodeEventIngressController", () => {
     );
   });
 
-  it("retries a transient repository failure on the same connection", async () => {
-    vi.useFakeTimers();
-    try {
-      const value = batch(1);
-      const commitBatch = vi.fn()
-        .mockRejectedValueOnce(
-          Object.assign(new Error("database unavailable"), { code: "57P01" }),
-        )
-        .mockResolvedValueOnce([{
-          envelope: value.events[0]!,
-          eventId: 101,
-          duplicateReceipt: false,
-        }]);
-      const send = vi.fn();
-      const close = vi.fn();
-      const controller = createController({
-        committer: { commitBatch },
-        send,
-        close,
-      });
+  it("reports a transient repository failure once and leaves the resend to the node", async () => {
+    const value = batch(1);
+    const commitBatch = vi.fn().mockRejectedValue(
+      Object.assign(new Error("database unavailable"), { code: "57P01" }),
+    );
+    const send = vi.fn();
+    const close = vi.fn();
+    const controller = createController({ committer: { commitBatch }, send, close });
 
-      controller.enqueue(value as unknown as Record<string, unknown>);
-      await controller.drain();
-      expect(send).toHaveBeenCalledWith(expect.objectContaining({
-        type: "error",
-        code: "EVENT_INGRESS_TRANSIENT_FAILURE",
-        retryable: true,
-        stream_id: STREAM_ID,
-        source_seq: 1,
-      }));
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    await controller.drain();
+    controller.stop();
 
-      await vi.advanceTimersByTimeAsync(1_000);
-      await controller.drain();
-      controller.stop();
-
-      expect(commitBatch).toHaveBeenCalledTimes(2);
-      expect(send).toHaveBeenLastCalledWith({
-        type: "event_append_ack",
-        stream_id: STREAM_ID,
-        acked_through: 1,
-        events: [{ source_seq: 1, event_id: 101 }],
-      });
-      expect(close).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+    // The node holds the durable copy of this batch and is the only party that
+    // may resend it. Retrying orch's in-memory copy makes two owners of one
+    // retry: both eventually acknowledge, and the second ACK reaches a pump
+    // that has already retired the batch ("event_append_ack has no in-flight
+    // batch"). A received frame is processed exactly once.
+    expect(commitBatch).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "error",
+      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+      retryable: true,
+      stream_id: STREAM_ID,
+      source_seq: 1,
+    }));
+    // The connection stays up — that is what #760 set out to fix.
+    expect(close).not.toHaveBeenCalled();
   });
 
   it("publishes the committed session effect before sending the ACK", async () => {

@@ -334,6 +334,61 @@ describe("EventOutboxPump", () => {
     expect(outbox.ackedSeq).toBe(0);
   });
 
+  it("resends a retryable rejection on the same connection instead of waiting for a reconnect", async () => {
+    const outbox = await createOutbox();
+    await outbox.append(eventInput("retry me"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn(), { retryFlushDelayMs: 1 });
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+
+    await expect(pump.handleRejection({
+      type: "error",
+      command_type: "event_append_batch",
+      status: 503,
+      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+      retryable: true,
+      stream_id: outbox.streamId,
+      source_seq: 1,
+    } as const)).resolves.toBeNull();
+
+    // Nothing but an ACK or a reconnect clears the in-flight batch, so before
+    // this the stream sat idle until the socket happened to drop. The node owns
+    // the durable copy and must reclaim it — orch retrying its own copy instead
+    // is what produced a second ACK with no batch left to match.
+    await waitFor(() => sent.length === 2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(outbox.ackedSeq).toBe(0);
+  });
+
+  it("abandons a pending retry when the connection is replaced", async () => {
+    const outbox = await createOutbox();
+    await outbox.append(eventInput("retry me"));
+    const first: EventOutboxBatch[] = [];
+    const second: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn(), { retryFlushDelayMs: 20 });
+    pump.connect(async (batch) => first.push(batch));
+    await waitFor(() => first.length === 1);
+
+    await pump.handleRejection({
+      type: "error",
+      command_type: "event_append_batch",
+      status: 503,
+      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+      retryable: true,
+      stream_id: outbox.streamId,
+      source_seq: 1,
+    } as const);
+    pump.disconnect();
+    pump.connect(async (batch) => second.push(batch));
+    await waitFor(() => second.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    // The reconnect already re-sent it; the stale timer must not send it twice.
+    expect(second).toHaveLength(1);
+    expect(first).toHaveLength(1);
+  });
+
   it("probes one event after a later batch member is rejected without quarantining the prefix", async () => {
     const outbox = await createOutbox();
     const first = await outbox.append(eventInput("valid prefix"));

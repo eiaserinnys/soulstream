@@ -24,15 +24,20 @@ export type NodeEventIngressControllerOptions = {
   logWarn(context: Record<string, unknown>, message: string): void;
 };
 
-const TRANSIENT_RETRY_DELAY_MS = 1_000;
-
 export class NodeEventIngressController {
   private tail: Promise<void> = Promise.resolve();
   private accepting = true;
-  private readonly retryTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(private readonly options: NodeEventIngressControllerOptions) {}
 
+  /**
+   * A received frame is processed exactly once.
+   *
+   * The node owns the durable copy of this batch and is the only party that
+   * may resend it. Retrying orch's in-memory copy would make two owners of one
+   * retry, and both would eventually acknowledge — the second ACK reaching a
+   * pump that has already retired the batch.
+   */
   enqueue(frame: Record<string, unknown>): void {
     if (!this.accepting) return;
     this.tail = this.tail.then(async () => await this.process(frame)).catch((error) => {
@@ -50,27 +55,15 @@ export class NodeEventIngressController {
       } catch (sendError) {
         this.options.logError(sendError, "Event ingress transient failure report failed");
       }
-      this.scheduleRetry(frame);
     });
   }
 
   stop(): void {
     this.accepting = false;
-    for (const timer of this.retryTimers) clearTimeout(timer);
-    this.retryTimers.clear();
   }
 
   async drain(): Promise<void> {
     await this.tail;
-  }
-
-  private scheduleRetry(frame: Record<string, unknown>): void {
-    const timer = setTimeout(() => {
-      this.retryTimers.delete(timer);
-      this.enqueue(frame);
-    }, TRANSIENT_RETRY_DELAY_MS);
-    timer.unref();
-    this.retryTimers.add(timer);
   }
 
   private async process(frame: Record<string, unknown>): Promise<void> {
