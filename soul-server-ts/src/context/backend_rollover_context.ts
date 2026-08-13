@@ -24,13 +24,13 @@ export async function buildBestEffortBackendRolloverContext(input: {
   ]);
   if (contextResult.status === "rejected") {
     input.logger.warn(
-      { error: contextResult.reason, sessionId: input.sessionId },
+      { err: contextResult.reason, sessionId: input.sessionId },
       "Backend rollover full context unavailable; continuing with bounded history",
     );
   }
   if (excerptResult.status === "rejected") {
     input.logger.warn(
-      { error: excerptResult.reason, sessionId: input.sessionId },
+      { err: excerptResult.reason, sessionId: input.sessionId },
       "Backend rollover history unavailable; continuing with metadata-only notice",
     );
   }

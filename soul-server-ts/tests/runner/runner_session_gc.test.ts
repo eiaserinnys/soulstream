@@ -64,7 +64,7 @@ describe("RunnerSessionGarbageCollector", () => {
       retained: [{ sessionId: "broken", reason: "evidence_unreadable" }],
     });
     expect(subject.logger.warn).toHaveBeenCalledWith(
-      { error: evidenceError, sessionId: "broken" },
+      { err: evidenceError, sessionId: "broken" },
       "runner session GC retained unreadable session evidence",
     );
   });

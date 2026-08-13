@@ -83,7 +83,7 @@ export class RunnerChildRuntime {
       this.config.sessionId,
       {
         onSummaryRenameFailure: (error, path, details) => {
-          const context = { error, path, consecutiveFailures: details.consecutiveFailures };
+          const context = { err: error, path, consecutiveFailures: details.consecutiveFailures };
           if (details.severity === "error") {
             this.logger.error(
               context,
@@ -105,7 +105,7 @@ export class RunnerChildRuntime {
     this.endpoint = new RunnerSocketEndpoint(
       this.config.paths.socketPath,
       async (frame) => await this.handleFrame(frame),
-      (error) => this.logger.warn({ error }, "Runner host socket disconnected"),
+      (error) => this.logger.warn({ err: error }, "Runner host socket disconnected"),
       (drop) => this.logDroppedFrame(drop),
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
@@ -134,7 +134,7 @@ export class RunnerChildRuntime {
     this.closing = true;
     try {
       await this.dispatcher?.close().catch((error) => {
-        this.logger.warn({ error }, "Runner engine close failed during shutdown");
+        this.logger.warn({ err: error }, "Runner engine close failed during shutdown");
       });
       await this.endpoint?.close();
       this.stopLiveness();
@@ -210,7 +210,7 @@ export class RunnerChildRuntime {
       this.activeCommandId = command.commandId;
       this.startLiveness();
       void this.drainExecution(command).catch((error) => {
-        this.logger.error({ error }, "Runner execution drain failed");
+        this.logger.error({ err: error }, "Runner execution drain failed");
       });
       return;
     }
@@ -269,7 +269,7 @@ export class RunnerChildRuntime {
     try {
       await this.finishLifecycle(command, terminalError);
     } catch (error) {
-      this.logger.error({ error }, "Runner terminal lifecycle commit failed");
+      this.logger.error({ err: error }, "Runner terminal lifecycle commit failed");
       storageFailure = true;
       terminalError = {
         code: "runner_terminal_commit_failed",
@@ -278,7 +278,7 @@ export class RunnerChildRuntime {
     }
     const ended = executionEndedControlFrame(command.commandId, terminalError);
     await this.sendRequired(ended).catch((error) => {
-      this.logger.warn({ error }, "Runner execution end could not reach host");
+      this.logger.warn({ err: error }, "Runner execution end could not reach host");
     });
     if (storageFailure) queueMicrotask(() => { void this.shutdown(); });
   }
@@ -503,7 +503,7 @@ export class RunnerChildRuntime {
     const connection = this.endpoint.currentConnection;
     if (!connection) return;
     await connection.send(frame).catch((error) => {
-      this.logger.warn({ error }, "Transient runner frame dropped during disconnect");
+      this.logger.warn({ err: error }, "Transient runner frame dropped during disconnect");
     });
   }
 
@@ -562,7 +562,7 @@ export class RunnerChildRuntime {
       try {
         this.recordLiveness();
       } catch (error) {
-        this.logger.error({ error }, "Runner lifecycle liveness update failed");
+        this.logger.error({ err: error }, "Runner lifecycle liveness update failed");
       }
     }, intervalMs);
     this.livenessTimer.unref?.();

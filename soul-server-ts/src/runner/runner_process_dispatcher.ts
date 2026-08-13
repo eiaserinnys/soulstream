@@ -347,11 +347,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     connection.onFailure((error) => {
       if (this.connection !== connection || this.closed) return;
       this.connection = undefined;
-      this.options.logger.warn({ error }, "Runner IPC disconnected; reconnecting");
+      this.options.logger.warn({ err: error }, "Runner IPC disconnected; reconnecting");
       void this.reconnect(socketPath);
     });
     void this.replayPendingFrames().catch((error) => {
-      this.options.logger.error({ error }, "Runner IPC replay failed");
+      this.options.logger.error({ err: error }, "Runner IPC replay failed");
       this.activeStream?.fail(asError(error));
     });
   }
@@ -461,7 +461,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const bootstrap = await this.outbox.readBootstrap();
     if (!bootstrap) return;
     this.pump = new EventOutboxPump(this.outbox, (error) => {
-      this.options.logger.error({ error }, "Runner event outbox pump failed");
+      this.options.logger.error({ err: error }, "Runner event outbox pump failed");
     }, {
       onQuarantine: (result) => {
         this.options.logger.warn({
@@ -527,7 +527,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const connection = this.connection;
     if (!connection) return;
     await connection.send(frame).catch((error) => {
-      this.options.logger.warn({ error }, "Runner host response dropped during reconnect");
+      this.options.logger.warn({ err: error }, "Runner host response dropped during reconnect");
     });
   }
 

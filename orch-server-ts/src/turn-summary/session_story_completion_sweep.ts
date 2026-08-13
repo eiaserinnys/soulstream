@@ -80,7 +80,7 @@ export class SessionStoryCompletionSweep {
       }
     } catch (error) {
       this.deps.logger.warn(
-        { error },
+        { err: error },
         "Session story completion sweep failed",
       );
     }

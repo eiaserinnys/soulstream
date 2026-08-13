@@ -1,12 +1,8 @@
-import type { Logger } from "pino";
 import { AgentConfigService } from "../agent_config_service.js";
-import type { AgentRegistry } from "../agent_registry.js";
-import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
-import type { Env } from "../config.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
@@ -22,14 +18,11 @@ import {
 import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
-import type { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
-import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
-import type { McpConfigService } from "../mcp_config_service.js";
 import { ModelCatalog } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { TaskHandoffNotifier } from "../work-task/task_handoff_notifier.js";
@@ -38,15 +31,13 @@ import { TaskIdentityHostClient } from "../work-task/task_identity_host_client.j
 import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
-import type { ChecklistTaskAdapter } from "../page/checklist_task_adapter.js";
-import type { ChecklistTaskReconciler } from "../page/checklist_task_reconciler.js";
 import {
   SessionLegacyProjection,
   SessionPageBindingService,
 } from "../page/session_page_binding_service.js";
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
-import { buildServer, type ServerInstance } from "../server.js";
+import { buildServer } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
 import { TaskManager } from "../task/task_manager.js";
@@ -55,47 +46,16 @@ import { UpstreamAdapter } from "../upstream/adapter.js";
 import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
-import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { composeTaskRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
-import type { ClaudeRuntimeStartupRecovery } from "./claude_runtime_startup_recovery.js";
 import { createEngineFactory } from "./engine_factory.js";
 import { composeRunnerProcessRuntime, composeRunnerReconciliationReporter, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
-export interface WorkerCompositionParams {
-  env: Env;
-  logger: Logger;
-  agentRegistry: AgentRegistry;
-  mcpConfigService: McpConfigService;
-  codexCliPath?: CodexCliPathResolution;
-  modelCatalog?: ModelCatalog;
-  agentProfileSource?: NewSessionAgentProfileSource;
-}
-export interface WorkerComposition extends TaskRuntimeComposition {
-  db: SessionDB;
-  server: ServerInstance;
-  taskManager: TaskManager;
-  agentRegistry: AgentRegistry;
-  agentProfileSource?: NewSessionAgentProfileSource;
-  attachmentStore: FileAttachmentStore;
-  claudeAuth: ClaudeAuthService;
-  realtimeBroker: RealtimeBroker;
-  agentConfigService: AgentConfigService;
-  mcpRuntime: McpRuntime;
-  scheduleService: SoulstreamScheduleService;
-  sessionPageBindingService: SessionPageBindingService;
-  checklistTaskAdapter: ChecklistTaskAdapter;
-  checklistTaskReconciler: ChecklistTaskReconciler;
-  claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
-  claudeRuntimeStartupRecovery?: ClaudeRuntimeStartupRecovery;
-  eventOutbox: EventOutbox;
-  eventOutboxPump: EventOutboxPump;
-  eventOutboxPumpMux: EventOutboxPumpMux;
-  runnerRecoveryCoordinator?: RunnerRecoveryCoordinator;
-  runnerStateHostOwnership?: import("../runner/runner_state_host_lock.js").RunnerStateHostLock;
-  createUpstreamAdapter(): UpstreamAdapter;
-}
+import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
+
+export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
@@ -124,7 +84,7 @@ export async function composeWorkerRuntime(
   );
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
-    logger.error({ error }, "Durable event outbox pump failed");
+    logger.error({ err: error }, "Durable event outbox pump failed");
   }, {
     onQuarantine: (result) => {
       logger.warn({
@@ -141,7 +101,10 @@ export async function composeWorkerRuntime(
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const send = async (data: unknown): Promise<void> => {
     if (!upstreamAdapter) {
-      logger.warn({ data }, "broadcast send called before UpstreamAdapter ready");
+      logger.warn(
+        summarizePayloadForLog(data),
+        "broadcast send called before UpstreamAdapter ready",
+      );
       return;
     }
     await upstreamAdapter.sendBroadcast(data);

@@ -265,7 +265,7 @@ function createEventIngressController(input: {
     send: (frame) => socket.send(JSON.stringify(frame)),
     close: (code, reason) => closeAndFinalize(code, reason, "event_ingress_error"),
     logError: (error, message) => {
-      app.log.error({ error, nodeId: source.nodeId }, message);
+      app.log.error({ err: error, nodeId: source.nodeId }, message);
     },
     logWarn: (context, message) => {
       app.log.warn(context, message);

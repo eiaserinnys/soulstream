@@ -16,7 +16,7 @@ const logger = pino({
 const stopLogRotation = startRunnerLogRotation(
   process.stdout.fd,
   config.paths.logPath,
-  (error) => logger.error({ error }, "Runner log rotation failed"),
+  (error) => logger.error({ err: error }, "Runner log rotation failed"),
 );
 const runtime = new RunnerChildRuntime(config, logger);
 process.once("SIGTERM", () => { stopLogRotation(); void runtime.shutdown(); });

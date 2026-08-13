@@ -168,7 +168,7 @@ export class TaskTurnInputBuilder {
       });
     } catch (error) {
       this.deps.logger.warn(
-        { error, sessionId: task.agentSessionId },
+        { err: error, sessionId: task.agentSessionId },
         "Backend rollover context failed; continuing with metadata-only recovery",
       );
       return { contextItems: [] };

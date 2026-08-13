@@ -281,7 +281,7 @@ async function runMutation(
         },
       });
     }
-    request.log.error({ error }, "Task browser CRUD failed");
+    request.log.error({ err: error }, "Task browser CRUD failed");
     return reply.code(500).send(errorPayload(
       "TASK_MUTATION_FAILED",
       error instanceof Error ? error.message : "Task mutation failed",

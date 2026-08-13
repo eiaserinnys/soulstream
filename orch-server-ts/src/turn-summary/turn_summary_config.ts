@@ -121,7 +121,7 @@ export class TurnSummaryConfigService {
     } catch (error) {
       if (this.lastSuccessful === undefined) throw error;
       this.logger.warn(
-        { error, configPath: this.configPath },
+        { err: error, configPath: this.configPath },
         "Invalid turn summary config update; keeping the last successful config",
       );
       return this.lastSuccessful;

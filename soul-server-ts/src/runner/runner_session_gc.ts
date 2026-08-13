@@ -129,7 +129,7 @@ export class RunnerSessionGarbageCollector {
               reason: "evidence_unreadable",
             });
             this.logger.warn(
-              { error, sessionId: registration.config.sessionId },
+              { err: error, sessionId: registration.config.sessionId },
               "runner session GC retained unreadable session evidence",
             );
           }

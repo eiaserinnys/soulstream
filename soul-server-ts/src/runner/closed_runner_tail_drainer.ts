@@ -33,7 +33,7 @@ export class ClosedRunnerTailDrainer {
       if (!tail) return;
       const pump = new EventOutboxPump(outbox, (error) => {
         this.options.logger.error(
-          { error, sessionId: registration.config.sessionId },
+          { err: error, sessionId: registration.config.sessionId },
           "closed runner tail pump failed",
         );
       }, {
