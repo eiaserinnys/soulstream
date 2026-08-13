@@ -81,7 +81,7 @@ export interface LiveRunnerSessionIdsOptions {
   scan?: typeof scanRunnerRegistrations;
   now?: () => number;
   onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
-  logger?: Pick<Logger, "debug">;
+  logger?: Pick<Logger, "info">;
 }
 
 const RUNNER_TOOL_LEASE_MULTIPLIER = 2;
@@ -217,7 +217,7 @@ export async function listLiveRunnerSessionIds(
   }
   if (disappearedDirectories.length > 0) {
     disappearedDirectories.sort();
-    options.logger?.debug(
+    options.logger?.info(
       { count: disappearedDirectories.length, directories: disappearedDirectories },
       "skipped runner inventory entries removed during scan",
     );

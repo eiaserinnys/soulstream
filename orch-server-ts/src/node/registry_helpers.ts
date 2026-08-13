@@ -43,6 +43,20 @@ export function snapshotNode(
   };
 }
 
+export function registryStats(
+  nodes: Iterable<MutableNodeConnection>,
+): { nodes: number; connectedNodes: number; pendingCommands: number } {
+  let nodeCount = 0;
+  let connectedNodes = 0;
+  let pendingCommands = 0;
+  for (const node of nodes) {
+    nodeCount += 1;
+    if (node.connected) connectedNodes += 1;
+    pendingCommands += node.pendingCommands.pendingCount;
+  }
+  return { nodes: nodeCount, connectedNodes, pendingCommands };
+}
+
 export function normalizeMessageSource(source: NodeMessageSource): {
   nodeId: string;
   connectionId: string | undefined;

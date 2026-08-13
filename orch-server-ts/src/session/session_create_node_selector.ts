@@ -201,20 +201,28 @@ function leastLoaded(
   registry: InMemoryNodeRegistry,
   candidates: NodeProfileCandidate[],
 ): NodeProfileCandidate {
-  const [first, ...rest] = candidates;
-  if (first === undefined) throw new Error("leastLoaded requires candidates");
+  const reported = candidates.flatMap((candidate) => {
+    const load = registry.getReportedRunnerLoad(candidate.node.nodeId);
+    return load === undefined ? [] : [{ candidate, load }];
+  });
+  const [first, ...rest] = reported;
+  if (first === undefined) {
+    throw selectionError(
+      503,
+      "NO_AVAILABLE_NODE",
+      "No compatible node has reported runner load",
+    );
+  }
   return rest.reduce((selected, candidate) =>
-    sessionCount(registry, candidate.node) < sessionCount(registry, selected.node)
-      ? candidate
-      : selected,
-  first);
+    loadRatio(candidate.load) < loadRatio(selected.load) ? candidate : selected,
+  first).candidate;
 }
 
-function sessionCount(
-  registry: InMemoryNodeRegistry,
-  node: NodeConnectionSnapshot,
-): number {
-  return registry.sessionCache.getSessionsForNode(node.nodeId).length;
+function loadRatio(load: {
+  runningSessionCount: number;
+  maxConcurrent: number;
+}): number {
+  return load.runningSessionCount / load.maxConcurrent;
 }
 
 function toSelection(candidate: NodeProfileCandidate): SessionCreateNodeSelection {

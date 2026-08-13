@@ -223,4 +223,5 @@ export type MutableNodeConnection = {
   lastSeenAtMs: number;
   heartbeat: NodeHeartbeatState;
   pendingCommands: PendingNodeCommands;
+  runningSessionIds: Set<string> | undefined;
 };

@@ -11,12 +11,19 @@ import {
   ignoredStaleMessageEvent,
   isRecord,
   normalizeMessageSource,
+  registryStats,
   snapshotNode,
   supportsAppHeartbeat,
 } from "./registry_helpers.js";
 import { PerNodeSessionCache } from "./session_cache.js";
 import { collectDirectNodeSessionEvents } from "./session_message_events.js";
 import { resolvedCommandEvents } from "./registry_command_events.js";
+import {
+  replaceReportedRunnerInventory,
+  reportedRunnerLoad,
+  type ReportedRunnerLoad,
+  updateReportedRunnerSession,
+} from "./runner_load_tracker.js";
 import type {
   DisconnectNodeInput,
   InMemoryNodeRegistryOptions,
@@ -126,6 +133,7 @@ export class InMemoryNodeRegistry {
         nowMs: this.nowMs,
         requestIdGenerator: this.requestIdGenerator,
       }),
+      runningSessionIds: undefined,
     };
 
     this.nodes.set(node.nodeId, node);
@@ -233,6 +241,10 @@ export class InMemoryNodeRegistry {
     return snapshotNode(node);
   }
 
+  getReportedRunnerLoad(nodeId: string): ReportedRunnerLoad | undefined {
+    return reportedRunnerLoad(this.nodes.get(nodeId));
+  }
+
   listConnectedNodes(): NodeConnectionSnapshot[] {
     return this.listConnectedNodesInRegistrationOrder().sort((left, right) => {
       const nodeOrder = left.nodeId.localeCompare(right.nodeId);
@@ -257,22 +269,8 @@ export class InMemoryNodeRegistry {
     return { ...(this.nodes.get(nodeId)?.userInfo ?? {}) };
   }
 
-  getStats(): {
-    nodes: number;
-    connectedNodes: number;
-    pendingCommands: number;
-  } {
-    let connectedNodes = 0;
-    let pendingCommands = 0;
-    for (const node of this.nodes.values()) {
-      if (node.connected) connectedNodes += 1;
-      pendingCommands += node.pendingCommands.pendingCount;
-    }
-    return {
-      nodes: this.nodes.size,
-      connectedNodes,
-      pendingCommands,
-    };
+  getStats(): ReturnType<typeof registryStats> {
+    return registryStats(this.nodes.values());
   }
 
   createCommand<
@@ -329,6 +327,7 @@ export class InMemoryNodeRegistry {
 
     const nowMs = this.nowMs();
     node.lastSeenAtMs = nowMs;
+    replaceReportedRunnerInventory(node, message);
 
     if (message.type === "app_heartbeat_pong") {
       node.heartbeat.lastPongAtMs = nowMs;
@@ -381,7 +380,10 @@ export class InMemoryNodeRegistry {
       message,
       nowMs,
     });
-    if (directSessionEvents !== undefined) return directSessionEvents;
+    if (directSessionEvents !== undefined) {
+      updateReportedRunnerSession(node, this.sessionCache, message);
+      return directSessionEvents;
+    }
 
     if (message.type === "event") {
       this.sessionCache.upsertFromEventRelay({

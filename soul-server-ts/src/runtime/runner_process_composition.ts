@@ -116,7 +116,7 @@ export function composeRunnerReconciliationReporter(
   env: Env,
   runnerProcessFactory: RunnerProcessRuntimeFactory | undefined,
   coordinator: RunnerRecoveryCoordinator | undefined,
-  logger: Pick<Logger, "debug">,
+  logger: Pick<Logger, "info">,
 ): Partial<RunnerReconciliationReporter> {
   if (!runnerProcessFactory) return {};
   const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
