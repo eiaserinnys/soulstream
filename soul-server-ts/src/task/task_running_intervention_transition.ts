@@ -111,12 +111,23 @@ export class RunningInterventionTransition {
     if (options.queueIfUndelivered === false) {
       if (durableRunnerInbox) {
         const dispatcher = task.runner?.dispatcher;
-        if (!dispatcher?.discardIntervention) {
-          throw new Error("runner intervention discard operation is unavailable");
+        try {
+          if (!dispatcher?.discardIntervention) {
+            throw new Error("runner intervention discard operation is unavailable");
+          }
+          await dispatcher.discardIntervention(
+            requireRunnerInterventionId(deliveryMessage),
+          );
+        } catch (error) {
+          // Delivery missed, but the durable fence's final state is unknown.
+          // Returning deferred would invite a duplicate retry while that fence
+          // may still be ambiguous in the runner inbox.
+          return this.unknownVerdict(task, {
+            status: "unknown",
+            reason: "verdict_unknown",
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
-        await dispatcher.discardIntervention(
-          requireRunnerInterventionId(deliveryMessage),
-        );
       }
       this.deps.logger.info(
         {

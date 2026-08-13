@@ -784,6 +784,55 @@ describe("RunningInterventionTransition", () => {
     },
   );
 
+  it("returns unknown when a confirmed miss cannot discard its durable fence", async () => {
+    const dispatcher = {
+      stageIntervention: vi.fn().mockResolvedValue({
+        eventSourceSeq: 42,
+        queuePosition: 0,
+      }),
+      waitForSessionAck: vi.fn().mockResolvedValue(142),
+      applyIntervention: vi.fn().mockResolvedValue({
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+      }),
+      discardIntervention: vi.fn().mockRejectedValue(
+        new Error("Runner IPC request timed out after 30000ms"),
+      ),
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      prepareSession: vi.fn(),
+      interrupt: vi.fn(),
+      close: vi.fn(),
+      detachHost: vi.fn(),
+      sendControlFrame: vi.fn(),
+      requestContext: vi.fn(),
+    };
+    const task = makeRunningTask({
+      runner: createTaskRunnerRuntime(
+        new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+        dispatcher as never,
+        "runner",
+      ),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(
+      task,
+      { text: "scheduled while running", user: "scheduler" },
+      { queueIfUndelivered: false },
+    )).resolves.toEqual({
+      delivered: null,
+      reason: "verdict_unknown",
+      consumeWhen: null,
+    });
+    expect(task.interventionQueue).toEqual([]);
+  });
+
   it("returns an unknown delivery verdict immediately when runner intervention IPC times out", async () => {
     const timeout = new Error("Runner IPC request timed out after 30000ms");
     const stageIntervention = vi.fn()
