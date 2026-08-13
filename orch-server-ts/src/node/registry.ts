@@ -16,6 +16,7 @@ import {
 } from "./registry_helpers.js";
 import { PerNodeSessionCache } from "./session_cache.js";
 import { collectDirectNodeSessionEvents } from "./session_message_events.js";
+import { resolvedCommandEvents } from "./registry_command_events.js";
 import type {
   DisconnectNodeInput,
   InMemoryNodeRegistryOptions,
@@ -352,18 +353,12 @@ export class InMemoryNodeRegistry {
             nowMs,
           });
         }
-        const events: NodeRegistryEvent[] = [
-          {
-            type: "command_ack",
-            nodeId,
-            requestId: settlement.requestId,
-            commandType: settlement.commandType,
-          },
-        ];
-        if (message.type === "runner_inventory") {
-          events.push({ type: "node_runner_inventory", nodeId, data: message });
-        }
-        return events;
+        return resolvedCommandEvents({
+          nodeId,
+          requestId: settlement.requestId,
+          commandType: settlement.commandType,
+          response: message as NodeCommandResponse,
+        });
       }
       if (settlement.status === "rejected") {
         return [

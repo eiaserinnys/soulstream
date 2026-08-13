@@ -1,12 +1,12 @@
 import { WebSocket } from "ws";
 import type { Logger } from "pino";
-import type { NodeRegisterAck, RunnerInventory } from "@soulstream/wire-schema";
+import type { NodeRegisterAck } from "@soulstream/wire-schema";
 
 import { CommandDispatcher } from "./dispatcher.js";
 import { CommandTransportObserver } from "./command_transport_observer.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
-import { SessionListCommands } from "./session_list_commands.js";
+import { sendInitialRunnerState } from "./initial_runner_state_sync.js";
 import { isConnectionError } from "./adapter_connection_error.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
 import type {
@@ -27,8 +27,6 @@ const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
 const APP_HEARTBEAT_INTERVAL_MS = 10_000;
 const APP_HEARTBEAT_MAX_MISSED = 2;
 const APP_HEARTBEAT_CLOSE_CODE = 1011;
-const INITIAL_SESSION_REPORT_MAX_ATTEMPTS = 5;
-const INITIAL_SESSION_REPORT_BASE_DELAY_MS = 100;
 
 /**
  * orch에 역방향 WebSocket 연결.
@@ -327,11 +325,17 @@ export class UpstreamAdapter {
       ]);
       if (!registrationAck) return;
       await this.deps.waitForRunnerReconciliation?.();
-      if (registrationAck.capabilities?.runner_inventory_v1 === true) {
-        await this.sendInitialRunnerInventory(ws);
-      } else {
-        await this.sendInitialSessions(ws);
-      }
+      await sendInitialRunnerState({
+        ws,
+        nodeId: this.config.nodeId,
+        supportsRunnerInventory:
+          registrationAck.capabilities?.runner_inventory_v1 === true,
+        sessionDb: this.deps.sessionDb,
+        listRunningSessionIds: async () => await this.listRunningSessionIds(false),
+        isCurrentConnection: () => this.ws === ws,
+        send: async (data) => await this.sendOnSocket(ws, data),
+        logger: this.logger,
+      });
       const established = await Promise.race([
         catchUpReady,
         servePromise.then(() => false),
@@ -427,70 +431,6 @@ export class UpstreamAdapter {
       return true;
     }
     return false;
-  }
-
-  private async sendInitialSessions(ws: WebSocket): Promise<void> {
-    if (!this.deps.sessionDb) {
-      this.logger.warn("sessionDb dependency missing — initial sessions_update skipped");
-      return;
-    }
-
-    for (let attempt = 1; attempt <= INITIAL_SESSION_REPORT_MAX_ATTEMPTS; attempt += 1) {
-      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
-      try {
-        const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
-        const runningSessionIds = await this.listRunningSessionIds(false);
-        const report = await commands.listSessions({ requestId: "", runningSessionIds });
-        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
-        await this.sendOnSocket(ws, report);
-        return;
-      } catch (err) {
-        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
-        if (attempt === INITIAL_SESSION_REPORT_MAX_ATTEMPTS) {
-          this.logger.error(
-            { err, attempts: attempt, nodeId: this.config.nodeId },
-            "initial sessions_update retry limit exhausted",
-          );
-          return;
-        }
-        const delayMs = INITIAL_SESSION_REPORT_BASE_DELAY_MS * 2 ** (attempt - 1);
-        this.logger.warn(
-          { err, attempt, delayMs, nodeId: this.config.nodeId },
-          "initial sessions_update failed — retrying on current connection",
-        );
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-  }
-
-  private async sendInitialRunnerInventory(ws: WebSocket): Promise<void> {
-    for (let attempt = 1; attempt <= INITIAL_SESSION_REPORT_MAX_ATTEMPTS; attempt += 1) {
-      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
-      try {
-        const report: RunnerInventory = {
-          type: "runner_inventory",
-          running_session_ids: await this.listRunningSessionIds(false),
-          requestId: "",
-        };
-        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
-        await this.sendOnSocket(ws, report);
-        return;
-      } catch (err) {
-        if (attempt >= INITIAL_SESSION_REPORT_MAX_ATTEMPTS) {
-          this.logger.error(
-            { err, attempts: attempt, nodeId: this.config.nodeId },
-            "initial runner inventory retry limit exhausted",
-          );
-          return;
-        }
-        const delayMs = INITIAL_SESSION_REPORT_BASE_DELAY_MS * 2 ** (attempt - 1);
-        this.logger.warn(
-          { err, attempt, delayMs, nodeId: this.config.nodeId },
-          "initial runner inventory failed — retrying on current connection",
-        );
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
   }
 
   private async listRunningSessionIds(waitForReconciliation = true): Promise<string[]> {
