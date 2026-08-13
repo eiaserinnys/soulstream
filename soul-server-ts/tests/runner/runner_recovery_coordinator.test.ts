@@ -433,16 +433,12 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 
-  it("bounds concurrent task hydration at four registrations", async () => {
-    let concurrent = 0;
-    let maxConcurrent = 0;
+  it("starts at most four hydrations and leaves the queued remainder for a later scan", async () => {
+    vi.useFakeTimers();
     const registrations = Array.from({ length: 6 }, (_, index) =>
       registration({ sessionId: `session-${index}` }));
     const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) => {
-      concurrent += 1;
-      maxConcurrent = Math.max(maxConcurrent, concurrent);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      concurrent -= 1;
+      await new Promise((resolve) => setTimeout(resolve, 20_000));
       return task(sessionId);
     });
     const subject = makeSubject(registrations, RECOVERY_NOW_MS, [], {
@@ -452,10 +448,60 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       },
     });
 
-    await subject.coordinator.scanOnce();
+    let scanFinished = false;
+    const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
+    let callsAtDeadline = 0;
+    let finishedAtDeadline = false;
+    try {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(10_000);
+      callsAtDeadline = hydrateRunnerRecoveryTask.mock.calls.length;
+      finishedAtDeadline = scanFinished;
+      await vi.advanceTimersByTimeAsync(120_000);
+      await scan;
+    } finally {
+      vi.useRealTimers();
+    }
 
-    expect(maxConcurrent).toBe(4);
-    expect(hydrateRunnerRecoveryTask).toHaveBeenCalledTimes(6);
+    expect(finishedAtDeadline).toBe(true);
+    expect(callsAtDeadline).toBe(4);
+    expect(hydrateRunnerRecoveryTask).toHaveBeenCalledTimes(4);
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("reuses an in-flight hydration result on the next scan instead of duplicating the host call", async () => {
+    vi.useFakeTimers();
+    let finishHydration!: (value: Task) => void;
+    const hydration = new Promise<Task>((resolve) => { finishHydration = resolve; });
+    const hydrateRunnerRecoveryTask = vi.fn(() => hydration);
+    const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask,
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+      },
+    });
+    let firstFinished = false;
+    const firstScan = subject.coordinator.scanOnce().then(() => { firstFinished = true; });
+    let finishedAtDeadline = false;
+    let recoveredBeforeSecondScan = -1;
+
+    try {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(10_000);
+      finishedAtDeadline = firstFinished;
+      finishHydration(task("session-a"));
+      if (!firstFinished) await firstScan;
+      await Promise.resolve();
+      recoveredBeforeSecondScan = subject.recoverRegisteredRunner.mock.calls.length;
+      if (finishedAtDeadline) await subject.coordinator.scanOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(finishedAtDeadline).toBe(true);
+    expect(recoveredBeforeSecondScan).toBe(0);
+    expect(hydrateRunnerRecoveryTask).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
   });
 
   it("executes ready recoveries while a retryable host hydration failure stays deferred", async () => {
