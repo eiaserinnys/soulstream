@@ -64,6 +64,7 @@
     { "id": "060_board_yjs_snapshot_revision.sql", "sha256": "cd91027cea9f0d69b80b34acb57c3c7955e1207dcd3ebc41a59f9935dd02fa62", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "061_session_terminal_receipt.sql", "sha256": "8985963320e8778e40cbb671f19a2a2f64ddd60445f4c27e3ab85ed86348d94e", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "062_notification_outbox_hardening.sql", "sha256": "6a80f463b2cd1de01a81f0c42584baca0e0af7053da7c54597cbb51394193ec8", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "063_session_rotate_claude_id.sql", "sha256": "c519b3f24f6c84a1340902780ac0e3ed6ce054014aa5e46747488f03597497cd", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "063_session_rotate_claude_id.sql", "sha256": "c519b3f24f6c84a1340902780ac0e3ed6ce054014aa5e46747488f03597497cd", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "064_event_ingress_receipt_effect_encoding.sql", "sha256": "47b017870ee54cef92f9d782daef196ea8f25ac7c82c8d1c7e8087a81cda046d", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }

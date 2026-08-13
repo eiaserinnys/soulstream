@@ -394,7 +394,7 @@ describe("database release executor", () => {
     expect(retried).toMatchObject({ status: "applied_reconciled" });
     const verifySql = postgres(testDatabaseUrl, { max: 1, idle_timeout: 1 });
     const [count] = await verifySql`SELECT COUNT(*)::int AS count FROM schema_migrations`;
-    expect(count.count).toBe(64);
+    expect(count.count).toBe(65);
     await verifySql.end({ timeout: 5 });
   }, 90_000);
 

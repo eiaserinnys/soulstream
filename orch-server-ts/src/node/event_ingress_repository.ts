@@ -20,6 +20,10 @@ export type EventIngressQuerySql = {
     strings: TemplateStringsArray,
     ...values: unknown[]
   ): Promise<T>;
+  // postgres.js serialises a plain JS string bound to a JSONB parameter as a
+  // JSON *string*, so JSON.stringify() before the bind double-encodes the value.
+  // Callers writing JSONB must route the object through json().
+  readonly json: (value: unknown) => unknown;
 };
 
 export type EventIngressSql = EventIngressQuerySql & {
@@ -90,6 +94,7 @@ export class EventIngressRepository {
           assertReceiptMatches(receipt, envelope);
           const sessionEffectApplication = parseEffectApplication(
             receipt.effect_application,
+            envelope.source_seq,
           );
           results.push({
             outcome: "committed",
@@ -144,6 +149,7 @@ export class EventIngressRepository {
             transaction,
             envelope.session_id,
             eventId,
+            envelope.source_seq,
           );
         }
 
@@ -158,9 +164,9 @@ export class EventIngressRepository {
           ) VALUES (
             ${nodeId}, ${batch.stream_id}, ${envelope.source_seq},
             ${envelope.session_id}, ${envelope.payload_hash}, ${eventId},
-            CAST(${receiptApplication === null
+            ${receiptApplication === null
               ? null
-              : JSON.stringify(receiptApplication)} AS JSONB)
+              : transaction.json(receiptApplication)}::jsonb
           )
         `;
         // A semantic receipt means the durable event/effect was already
@@ -283,6 +289,7 @@ async function findCanonicalEffectApplication(
   sql: EventIngressQuerySql,
   sessionId: string,
   eventId: number,
+  sourceSeq: number,
 ): Promise<EventSessionEffectApplication> {
   const rows = await sql<Array<{ effect_application: unknown }>>`
     SELECT effect_application
@@ -293,10 +300,15 @@ async function findCanonicalEffectApplication(
     ORDER BY created_at
     LIMIT 1
   `;
-  const application = parseEffectApplication(rows[0]?.effect_application);
+  const application = parseEffectApplication(rows[0]?.effect_application, sourceSeq);
   if (!application?.canonicalSession) {
-    throw new Error(
-      "semantic transition receipt is missing its canonical effect application",
+    // Permanent for this envelope: the durable receipt it replays cannot supply a
+    // canonical projection, and no amount of retrying will make one appear. Raise a
+    // protocol conflict so the node quarantines the head instead of reconnecting
+    // forever and blocking every later event on the stream.
+    throw new EventIngressProtocolConflict(
+      `semantic transition receipt is missing its canonical effect application at source_seq ${sourceSeq}`,
+      sourceSeq,
     );
   }
   return application;
@@ -324,10 +336,15 @@ function toReceiptEffectApplication(
 
 function parseEffectApplication(
   value: unknown,
+  sourceSeq: number,
 ): EventSessionEffectApplication | undefined {
   if (!isRecord(value)) return undefined;
   if (typeof value.applied !== "boolean" || !isCanonicalSession(value.canonical_session)) {
-    throw new Error("event ingress receipt has invalid effect_application");
+    // Stored shape, not transport state: retrying re-reads the same bad row.
+    throw new EventIngressProtocolConflict(
+      `event ingress receipt has invalid effect_application at source_seq ${sourceSeq}`,
+      sourceSeq,
+    );
   }
   return {
     applied: value.applied,
@@ -381,8 +398,11 @@ function createEventIngressSqlAdapter(sql: LivePostgresSql): EventIngressSql {
 }
 
 function createQueryAdapter(sql: LivePostgresSql): EventIngressQuerySql {
-  return (async <T extends QueryRows>(
+  const query = (async <T extends QueryRows>(
     strings: TemplateStringsArray,
     ...values: unknown[]
-  ): Promise<T> => await sql(strings, ...values) as T) as EventIngressQuerySql;
+  ): Promise<T> => await sql(strings, ...values) as T);
+  return Object.assign(query, {
+    json: (value: unknown) => sql.json(value),
+  }) as EventIngressQuerySql;
 }
