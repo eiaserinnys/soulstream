@@ -110,7 +110,7 @@ export function createRunnerProcessRuntimeFactory(
   };
 
   const factory = ((task, agent, backend, snapshots) => {
-    const resolvedMcpServers = options.mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
+    const runtimeMcpConfig = resolveRuntimeMcpConfig(options, agent);
     const childProcessEnv = options.buildChildProcessEnv();
     const codexHome = backend === "codex"
       ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
@@ -135,11 +135,7 @@ export function createRunnerProcessRuntimeFactory(
         claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-        internalMcpUrl: localInternalMcpUrl(
-          options.env.MCP_INTERNAL_PORT,
-          options.env.MCP_PATH,
-        ),
-        ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
+        ...runtimeMcpConfig,
         codexHome,
         rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
         childProcessEnv,
@@ -147,6 +143,8 @@ export function createRunnerProcessRuntimeFactory(
       })),
     );
   }) as RunnerProcessRuntimeFactory;
+  // Adoption and offline replay attach to the existing child without spawning
+  // or rewriting its config, so they must retain that child's MCP settings.
   factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
     task,
     config.agent,
@@ -157,9 +155,12 @@ export function createRunnerProcessRuntimeFactory(
       config,
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
+      storedRuntimeMcpConfig(config),
     ),
     mode,
   );
+  // A replacement child keeps the original release snapshot but binds to the
+  // host's current runtime MCP endpoints and resolved profile.
   factory.restart = (task, config, snapshots) => createRuntime(
     task,
     config.agent,
@@ -170,6 +171,7 @@ export function createRunnerProcessRuntimeFactory(
       config,
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
+      resolveRuntimeMcpConfig(options, config.agent),
     ),
   );
   return factory;
@@ -180,6 +182,7 @@ function spawnInputFromConfig(
   config: RunnerChildConfig,
   runnerLeaseTimeoutMs: number,
   releasePool: Pick<RunnerReleasePool, "ensureRelease" | "describe">,
+  runtimeMcpConfig: RunnerRuntimeMcpConfig,
 ): SpawnRunnerProcessInput {
   const release = releasePool.describe(config.codeSha);
   if (release.runnerModuleRoot !== config.snapshotPath) {
@@ -199,13 +202,41 @@ function spawnInputFromConfig(
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
     claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
     runnerLeaseTimeoutMs,
+    ...runtimeMcpConfig,
+    codexHome: config.codexHome,
+    rolloutRoot: config.rolloutRoot,
+    prepareSnapshot: async () => await releasePool.ensureRelease(release),
+  };
+}
+
+type RunnerRuntimeMcpConfig = Pick<
+  SpawnRunnerProcessInput,
+  "internalMcpUrl" | "resolvedMcpServers"
+>;
+
+function resolveRuntimeMcpConfig(
+  options: Pick<RunnerProcessRuntimeFactoryOptions, "env" | "mcpConfigService">,
+  agent: import("../agent_registry.js").AgentProfile,
+): RunnerRuntimeMcpConfig {
+  const resolvedMcpServers = options.mcpConfigService
+    .resolveMcpProfile(agent)?.mcp_servers;
+  return {
+    internalMcpUrl: localInternalMcpUrl(
+      options.env.MCP_INTERNAL_PORT,
+      options.env.MCP_PATH,
+    ),
+    ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
+  };
+}
+
+function storedRuntimeMcpConfig(
+  config: RunnerChildConfig,
+): RunnerRuntimeMcpConfig {
+  return {
     internalMcpUrl: config.internalMcpUrl,
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),
-    codexHome: config.codexHome,
-    rolloutRoot: config.rolloutRoot,
-    prepareSnapshot: async () => await releasePool.ensureRelease(release),
   };
 }
 
