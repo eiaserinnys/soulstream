@@ -13,6 +13,7 @@ import { getCurrentMcpCallerOrigin } from "../request_context.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import {
+  CALLER_SESSION_ID_FALLBACK_GUIDANCE,
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
@@ -302,7 +303,7 @@ function getPageHostClient(runtime: McpRuntime): PageYjsHostClient {
 }
 
 function mutationDescription(description: string): string {
-  return `${description} Codex 등 헤더 미지원 백엔드는 자기 agent_session_id를 caller_session_id로 전달한다.`;
+  return `${description} ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
 }
 
 function errorMessage(error: unknown): string {

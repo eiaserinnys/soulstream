@@ -58,6 +58,10 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
             apiKey: env.CODEX_API_KEY,
             codexPathOverride: codexCliPath?.path,
             processEnv: codexProcessEnv,
+            internalMcpUrl: localInternalMcpUrl(
+              env.MCP_INTERNAL_PORT,
+              env.MCP_PATH,
+            ),
             ...(resolvedMcpServers !== undefined
               ? { resolvedMcpServers }
               : {}),

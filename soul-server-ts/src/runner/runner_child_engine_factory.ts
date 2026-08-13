@@ -34,6 +34,7 @@ export function createRunnerChildEngine(
         apiKey: process.env.CODEX_API_KEY,
         codexPathOverride: config.codexCliPath,
         processEnv: process.env,
+        internalMcpUrl: config.internalMcpUrl,
         ...(config.resolvedMcpServers
           ? { resolvedMcpServers: config.resolvedMcpServers }
           : {}),

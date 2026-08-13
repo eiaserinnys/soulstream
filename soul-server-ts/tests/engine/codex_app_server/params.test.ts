@@ -75,7 +75,7 @@ describe("Codex app-server parameter builders", () => {
     });
   });
 
-  it("injects supported resolved MCP servers into thread start and resume config", () => {
+  it("routes soulstream MCP through the internal listener with the current session header", () => {
     const mcpServers = [
       {
         type: "stdio" as const,
@@ -89,7 +89,16 @@ describe("Codex app-server parameter builders", () => {
         type: "streamable_http" as const,
         name: "soulstream",
         url: "http://127.0.0.1:3105/mcp",
-        headers: { Authorization: "Bearer secret" },
+        headers: {
+          Authorization: "Bearer secret",
+          "X-Soulstream-Agent-Session-Id": "stale-session",
+        },
+      },
+      {
+        type: "streamable_http" as const,
+        name: "atom",
+        url: "http://127.0.0.1:4200/mcp",
+        headers: { "x-atom-key": "kept" },
       },
       {
         type: "sse" as const,
@@ -107,23 +116,72 @@ describe("Codex app-server parameter builders", () => {
           enabled: true,
         },
         soulstream: {
-          url: "http://127.0.0.1:3105/mcp",
-          http_headers: { Authorization: "Bearer secret" },
+          url: "http://127.0.0.1:3106/mcp/internal",
+          http_headers: {
+            Authorization: "Bearer secret",
+            "x-soulstream-agent-session-id": "agent-session-1",
+          },
+          enabled: true,
+        },
+        atom: {
+          url: "http://127.0.0.1:4200/mcp",
+          http_headers: { "x-atom-key": "kept" },
           enabled: true,
         },
       },
     };
 
     expect(
-      buildThreadStartParams({ prompt: "start" }, "/work", mcpServers).config,
+      buildThreadStartParams(
+        { prompt: "start", agentSessionId: "agent-session-1" },
+        "/work",
+        mcpServers,
+        "http://127.0.0.1:3106/mcp/internal",
+      ).config,
     ).toEqual(expectedConfig);
     expect(
       buildThreadResumeParams(
-        { prompt: "resume", resumeSessionId: "thread-existing" },
+        {
+          prompt: "resume",
+          resumeSessionId: "thread-existing",
+          agentSessionId: "agent-session-1",
+        },
         "/work",
         mcpServers,
+        "http://127.0.0.1:3106/mcp/internal",
       ).config,
     ).toEqual(expectedConfig);
+  });
+
+  it("fails closed when a soulstream HTTP MCP server has no internal listener URL", () => {
+    expect(() =>
+      buildThreadStartParams(
+        { prompt: "start", agentSessionId: "agent-session-1" },
+        "/work",
+        [{
+          type: "streamable_http",
+          name: "soulstream",
+          url: "http://127.0.0.1:3105/mcp",
+        }],
+      )
+    ).toThrow(
+      /Soulstream internal HTTP MCP server requires a node-local internalMcpUrl/,
+    );
+  });
+
+  it("fails closed when a soulstream HTTP MCP server has no agent session id", () => {
+    expect(() =>
+      buildThreadStartParams(
+        { prompt: "start" },
+        "/work",
+        [{
+          type: "streamable_http",
+          name: "soulstream",
+          url: "http://127.0.0.1:3105/mcp",
+        }],
+        "http://127.0.0.1:3106/mcp/internal",
+      )
+    ).toThrow(/requires an agentSessionId/);
   });
 
   it("keeps an explicit empty MCP config when every resolved server uses SSE", () => {

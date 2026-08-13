@@ -149,6 +149,7 @@ function makeAdapter(client = new FakeClient()) {
   const adapter = new CodexAppServerEngineAdapter(
     {
       workspaceDir: "/work",
+      internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
       client,
     },
     pino({ level: "silent" }),
@@ -184,6 +185,7 @@ describe("CodexAppServerEngineAdapter", () => {
     new CodexAppServerEngineAdapter(
       {
         workspaceDir: "/work",
+        internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
         agentId: "writer-seosoyoung-codex",
         client: new FakeClient(),
         resolvedMcpServers: [

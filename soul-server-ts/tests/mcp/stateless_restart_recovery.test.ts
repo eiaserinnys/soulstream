@@ -426,7 +426,6 @@ describe("MCP stateless restart recovery", () => {
     const publicNames = (await rpcPayload(publicList)).result.tools.map(
       (tool: { name: string }) => tool.name,
     );
-    expect(publicNames).not.toContain("delete_session");
 
     const initialized = await postAtPath(
       internalUrl,
@@ -458,7 +457,16 @@ describe("MCP stateless restart recovery", () => {
     const internalNames = (await rpcPayload(internalList)).result.tools.map(
       (tool: { name: string }) => tool.name,
     );
-    expect(internalNames).toContain("delete_session");
+    expect(
+      internalNames.filter((name: string) => !publicNames.includes(name)).sort(),
+    ).toEqual([
+      "delete_folder",
+      "delete_markdown_document",
+      "delete_session",
+    ]);
+    expect(
+      publicNames.filter((name: string) => !internalNames.includes(name)),
+    ).toEqual([]);
 
     const called = await postAtPath(
       internalUrl,
