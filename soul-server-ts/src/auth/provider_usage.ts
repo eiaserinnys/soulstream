@@ -7,8 +7,22 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import type { ClaudeAuthCommandHandler } from "./claude_auth.js";
+import {
+  ANTHROPIC_USAGE_URL,
+  type ClaudeAuthCommandHandler,
+} from "./claude_auth.js";
 import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
+import {
+  PROVIDER_USAGE_REQUEST_TIMEOUT_MS,
+  PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS,
+  type ProviderUsageLogger,
+  providerUsageDurationMs,
+  providerUsageEndpoint,
+  providerUsageFailureResult,
+  providerUsageFinished,
+  providerUsageStarted,
+  withinProviderUsageTimeout,
+} from "./provider_usage_telemetry.js";
 
 export type ProviderUsageName = "claude" | "codex" | "gemini";
 
@@ -69,6 +83,10 @@ export interface ProviderUsageServiceConfig {
   modelCatalog?: Pick<ModelCatalog, "list">;
   homeDir?: string;
   fetchImpl?: typeof fetch;
+  logger?: ProviderUsageLogger;
+  requestTimeoutMs?: number;
+  slowRequestThresholdMs?: number;
+  codexRuntimeLimitsImpl?: (homeDir: string) => ProviderLimits;
 }
 
 const CODEX_USAGE_URLS = [
@@ -87,10 +105,17 @@ const LOCAL_PROVIDER_MAX_FILES = 10000;
 export class ProviderUsageService implements ProviderUsageCommandHandler {
   private readonly homeDir: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly requestTimeoutMs: number;
+  private readonly slowRequestThresholdMs: number;
+  private readonly codexRuntimeLimitsImpl: (homeDir: string) => ProviderLimits;
 
   constructor(private readonly config: ProviderUsageServiceConfig = {}) {
     this.homeDir = config.homeDir ?? homedir();
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? PROVIDER_USAGE_REQUEST_TIMEOUT_MS;
+    this.slowRequestThresholdMs =
+      config.slowRequestThresholdMs ?? PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS;
+    this.codexRuntimeLimitsImpl = config.codexRuntimeLimitsImpl ?? codexRuntimeLimits;
   }
 
   async fetchUsage(
@@ -120,9 +145,9 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
 
   async fetchSnapshot(): Promise<ProviderUsageSnapshot> {
     const [claude, codex, gemini] = await Promise.all([
-      this.fetchClaudeLimits(),
-      this.fetchCodexLimits(),
-      this.fetchGeminiLimits(),
+      this.fetchProvider("claude"),
+      this.fetchProvider("codex"),
+      this.fetchProvider("gemini"),
     ]);
     return {
       generatedAt: new Date().toISOString(),
@@ -131,21 +156,68 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   }
 
   async fetchProvider(provider: ProviderUsageName): Promise<ProviderLimits> {
-    switch (provider) {
-      case "claude":
-        return this.fetchClaudeLimits();
-      case "codex":
-        return this.fetchCodexLimits();
-      case "gemini":
-        return this.fetchGeminiLimits();
+    const endpoint = providerUsageEndpoint(primaryProviderEndpoint(provider));
+    const startedAtMs = Date.now();
+    const signal = AbortSignal.timeout(this.requestTimeoutMs);
+    providerUsageStarted(this.config.logger, provider, endpoint);
+    try {
+      const limits = await withinProviderUsageTimeout(
+        signal,
+        this.fetchProviderLimits(provider, signal),
+      );
+      providerUsageFinished(
+        this.config.logger,
+        {
+          provider,
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result:
+            limits.status === "error"
+              ? "error"
+              : limits.status === "not_configured"
+                ? "not_configured"
+                : "success",
+          status: limits.status,
+        },
+        this.slowRequestThresholdMs,
+      );
+      return limits;
+    } catch (err) {
+      const result = providerUsageFailureResult(signal, err);
+      providerUsageFinished(this.config.logger, {
+        provider,
+        endpoint,
+        durationMs: providerUsageDurationMs(startedAtMs),
+        result,
+      });
+      return emptyLimits(
+        "error",
+        result === "timeout"
+          ? `Provider usage timed out after ${this.requestTimeoutMs}ms`
+          : stringifyError(err),
+      );
     }
   }
 
-  private async fetchClaudeLimits(): Promise<ProviderLimits> {
+  private fetchProviderLimits(
+    provider: ProviderUsageName,
+    signal: AbortSignal,
+  ): Promise<ProviderLimits> {
+    switch (provider) {
+      case "claude":
+        return this.fetchClaudeLimits(signal);
+      case "codex":
+        return this.fetchCodexLimits(signal);
+      case "gemini":
+        return this.fetchGeminiLimits(signal);
+    }
+  }
+
+  private async fetchClaudeLimits(signal: AbortSignal): Promise<ProviderLimits> {
     if (!this.config.claudeAuth) {
       return emptyLimits();
     }
-    const result = await this.config.claudeAuth.fetchUsage("", "provider_usage_get");
+    const result = await this.config.claudeAuth.fetchUsage("", "provider_usage_get", signal);
     if (!result.success) {
       return result.error === "no token"
         ? emptyLimits()
@@ -158,10 +230,11 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     );
   }
 
-  private async fetchCodexLimits(): Promise<ProviderLimits> {
+  private async fetchCodexLimits(signal: AbortSignal): Promise<ProviderLimits> {
     const auth = readJson(join(this.homeDir, ".codex", "auth.json"));
     if (!isRecord(auth)) {
-      return codexRuntimeLimits(this.homeDir);
+      this.logCodexFallback("oauth_not_configured", false);
+      return this.codexRuntimeLimitsImpl(this.homeDir);
     }
 
     const tokens = oauthTokens(auth);
@@ -173,7 +246,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       if (accessToken) {
         for (const url of CODEX_USAGE_URLS) {
           try {
-            const payload = await this.codexUsageRequest(accessToken, accountId, url);
+            const payload = await this.codexUsageRequest(accessToken, accountId, url, signal);
             return codexLimitsFromUsageResponse(payload, url);
           } catch (err) {
             lastError = err;
@@ -181,14 +254,18 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         }
       }
       if (attempt === 0) {
-        accessToken = await this.refreshCodexAccessToken(auth).catch((err) => {
+        accessToken = await this.refreshCodexAccessToken(auth, signal).catch((err) => {
           lastError = err;
           return null;
         });
       }
     }
 
-    const fallback = codexRuntimeLimits(this.homeDir);
+    this.logCodexFallback("remote_usage_unavailable", signal.aborted);
+    if (signal.aborted) {
+      throw signal.reason ?? new Error("Codex provider usage request aborted");
+    }
+    const fallback = this.codexRuntimeLimitsImpl(this.homeDir);
     if (fallback.status !== "not_configured") {
       return {
         ...fallback,
@@ -198,7 +275,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     return emptyLimits("error", lastError ? stringifyError(lastError) : "Codex OAuth token unavailable");
   }
 
-  private async fetchGeminiLimits(): Promise<ProviderLimits> {
+  private async fetchGeminiLimits(signal: AbortSignal): Promise<ProviderLimits> {
     const creds = readJson(join(this.homeDir, ".gemini", "oauth_creds.json"));
     if (!isRecord(creds)) {
       return emptyLimits();
@@ -209,7 +286,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     }
 
     try {
-      const token = await this.geminiAccessToken(creds);
+      const token = await this.geminiAccessToken(creds, signal);
       if (!token) {
         return emptyLimits();
       }
@@ -231,6 +308,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         "loadCodeAssist",
         { cloudaicompanionProject: projectId, metadata },
         token,
+        signal,
       );
       projectId = optionalString(tierPayload.cloudaicompanionProject) ?? projectId;
       if (!projectId) {
@@ -241,6 +319,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         "retrieveUserQuota",
         { project: projectId },
         token,
+        signal,
       );
       return geminiLimitsFromQuotaResponse(
         quotaPayload,
@@ -256,6 +335,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     accessToken: string,
     accountId: string,
     url: string,
+    signal: AbortSignal,
   ): Promise<Record<string, unknown>> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
@@ -265,15 +345,18 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     if (accountId) {
       headers["chatgpt-account-id"] = accountId;
     }
-    return this.fetchJson(url, { headers });
+    return this.fetchJson("codex", url, { headers }, signal);
   }
 
-  private async refreshCodexAccessToken(auth: Record<string, unknown>): Promise<string | null> {
+  private async refreshCodexAccessToken(
+    auth: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<string | null> {
     const refreshToken = optionalString(oauthTokens(auth).refresh_token);
     if (!refreshToken) {
       return null;
     }
-    const payload = await this.fetchJson(CODEX_OAUTH_TOKEN_URL, {
+    const payload = await this.fetchJson("codex", CODEX_OAUTH_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -281,14 +364,17 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         refresh_token: refreshToken,
         client_id: CODEX_OAUTH_CLIENT_ID,
       }).toString(),
-    });
+    }, signal);
     return optionalString(payload.access_token);
   }
 
-  private async geminiAccessToken(creds: Record<string, unknown>): Promise<string | null> {
+  private async geminiAccessToken(
+    creds: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<string | null> {
     const expiresAt = intValue(creds.expiry_date) ?? 0;
     if (expiresAt && Date.now() >= expiresAt - 60_000) {
-      const refreshed = await this.refreshGeminiAccessToken(creds);
+      const refreshed = await this.refreshGeminiAccessToken(creds, signal);
       return optionalString(refreshed.access_token);
     }
     return optionalString(creds.access_token);
@@ -296,13 +382,14 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
 
   private async refreshGeminiAccessToken(
     creds: Record<string, unknown>,
+    signal: AbortSignal,
   ): Promise<Record<string, unknown>> {
     const refreshToken = optionalString(creds.refresh_token);
     if (!refreshToken) {
       throw new Error("No refresh token in ~/.gemini/oauth_creds.json");
     }
     const [clientId, clientSecret] = geminiOauthClientCredentials(this.homeDir, creds);
-    const payload = await this.fetchJson(GEMINI_OAUTH_TOKEN_URL, {
+    const payload = await this.fetchJson("gemini", GEMINI_OAUTH_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -311,7 +398,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         client_id: clientId,
         client_secret: clientSecret,
       }).toString(),
-    });
+    }, signal);
     return {
       ...creds,
       access_token: payload.access_token ?? creds.access_token,
@@ -325,8 +412,9 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     method: string,
     payload: Record<string, unknown>,
     accessToken: string,
+    signal: AbortSignal,
   ): Promise<Record<string, unknown>> {
-    return this.fetchJson(`${GEMINI_CODE_ASSIST_URL}:${method}`, {
+    return this.fetchJson("gemini", `${GEMINI_CODE_ASSIST_URL}:${method}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -335,20 +423,88 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         "User-Agent": "AgentCat/1.0",
       },
       body: JSON.stringify(payload),
-    });
+    }, signal);
   }
 
-  private async fetchJson(url: string, init: RequestInit): Promise<Record<string, unknown>> {
+  private async fetchJson(
+    provider: Exclude<ProviderUsageName, "claude">,
+    url: string,
+    init: RequestInit,
+    signal: AbortSignal,
+  ): Promise<Record<string, unknown>> {
     if (typeof this.fetchImpl !== "function") {
       throw new Error("global fetch is not available");
     }
-    const resp = await this.fetchImpl(url, init);
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(text || `HTTP ${resp.status}`);
+    const endpoint = providerUsageEndpoint(url);
+    const startedAtMs = Date.now();
+    providerUsageStarted(this.config.logger, provider, endpoint);
+    let failureLogged = false;
+    try {
+      const resp = await this.fetchImpl(url, { ...init, signal });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        failureLogged = true;
+        providerUsageFinished(this.config.logger, {
+          provider,
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: "http_error",
+          status: resp.status,
+        });
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
+      const data = (await resp.json()) as unknown;
+      providerUsageFinished(
+        this.config.logger,
+        {
+          provider,
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: "success",
+          status: resp.status,
+        },
+        this.slowRequestThresholdMs,
+      );
+      return isRecord(data) ? data : {};
+    } catch (err) {
+      if (!failureLogged) {
+        providerUsageFinished(this.config.logger, {
+          provider,
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: providerUsageFailureResult(signal, err),
+        });
+      }
+      throw err;
     }
-    const data = (await resp.json()) as unknown;
-    return isRecord(data) ? data : {};
+  }
+
+  private logCodexFallback(
+    reason: "oauth_not_configured" | "remote_usage_unavailable",
+    aborted: boolean,
+  ): void {
+    this.config.logger?.warn(
+      {
+        provider: "codex",
+        endpoint: "filesystem/.codex/sessions",
+        durationMs: 0,
+        result: aborted ? "fallback_skipped" : "fallback",
+        reason,
+        aborted,
+      },
+      "Provider usage local rollout fallback decision",
+    );
+  }
+}
+
+function primaryProviderEndpoint(provider: ProviderUsageName): string {
+  switch (provider) {
+    case "claude":
+      return ANTHROPIC_USAGE_URL;
+    case "codex":
+      return CODEX_USAGE_URLS[0];
+    case "gemini":
+      return `${GEMINI_CODE_ASSIST_URL}:loadCodeAssist`;
   }
 }
 

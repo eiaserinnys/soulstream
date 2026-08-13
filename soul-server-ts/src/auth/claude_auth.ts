@@ -11,6 +11,14 @@ import { dirname } from "node:path";
 import type { Logger } from "pino";
 
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
+import {
+  PROVIDER_USAGE_REQUEST_TIMEOUT_MS,
+  providerUsageDurationMs,
+  providerUsageEndpoint,
+  providerUsageFailureResult,
+  providerUsageFinished,
+  providerUsageStarted,
+} from "./provider_usage_telemetry.js";
 
 export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
@@ -35,7 +43,11 @@ export interface ClaudeAuthCommandHandler {
     responseType: string,
   ): { response?: ClaudeAuthSetTokenResponse; error?: string };
   deleteToken(requestId: string, responseType: string): ClaudeAuthDeleteTokenResponse;
-  fetchUsage(requestId: string, responseType: string): Promise<ClaudeAuthApiResponse>;
+  fetchUsage(
+    requestId: string,
+    responseType: string,
+    signal?: AbortSignal,
+  ): Promise<ClaudeAuthApiResponse>;
   fetchProfile(requestId: string, responseType: string): Promise<ClaudeAuthApiResponse>;
 }
 
@@ -79,12 +91,13 @@ export interface ClaudeAuthHttpResponse {
 
 export type ClaudeAuthHttpGet = (
   url: string,
-  init: { headers: Record<string, string> },
+  init: { headers: Record<string, string>; signal?: AbortSignal },
 ) => Promise<ClaudeAuthHttpResponse>;
 
 export interface ClaudeAuthServiceConfig {
   store: ClaudeAuthTokenStore;
   httpGet?: ClaudeAuthHttpGet;
+  usageTimeoutMs?: number;
 }
 
 interface StoredClaudeCredentials {
@@ -188,10 +201,12 @@ export class FileClaudeAuthTokenStore implements ClaudeAuthTokenStore {
 export class ClaudeAuthService implements ClaudeAuthCommandHandler {
   private readonly store: ClaudeAuthTokenStore;
   private readonly httpGet: ClaudeAuthHttpGet;
+  private readonly usageTimeoutMs: number;
 
   constructor(config: ClaudeAuthServiceConfig, private readonly logger: Logger) {
     this.store = config.store;
     this.httpGet = config.httpGet ?? defaultHttpGet;
+    this.usageTimeoutMs = config.usageTimeoutMs ?? PROVIDER_USAGE_REQUEST_TIMEOUT_MS;
   }
 
   status(requestId: string, responseType: string): ClaudeAuthStatusResponse {
@@ -280,8 +295,12 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
     }
   }
 
-  async fetchUsage(requestId: string, responseType: string): Promise<ClaudeAuthApiResponse> {
-    return this.fetchAuthApi(ANTHROPIC_USAGE_URL, requestId, responseType);
+  async fetchUsage(
+    requestId: string,
+    responseType: string,
+    signal = AbortSignal.timeout(this.usageTimeoutMs),
+  ): Promise<ClaudeAuthApiResponse> {
+    return this.fetchAuthApi(ANTHROPIC_USAGE_URL, requestId, responseType, signal, true);
   }
 
   async fetchProfile(requestId: string, responseType: string): Promise<ClaudeAuthApiResponse> {
@@ -304,6 +323,8 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
     apiUrl: string,
     requestId: string,
     responseType: string,
+    signal?: AbortSignal,
+    observeProviderUsage = false,
   ): Promise<ClaudeAuthApiResponse> {
     let token: string | null;
     try {
@@ -325,14 +346,29 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
       };
     }
 
+    const endpoint = providerUsageEndpoint(apiUrl);
+    const startedAtMs = Date.now();
+    if (observeProviderUsage) {
+      providerUsageStarted(this.logger, "claude", endpoint);
+    }
     try {
       const resp = await this.httpGet(apiUrl, {
         headers: {
           Authorization: `Bearer ${token}`,
           "anthropic-beta": CLAUDE_OAUTH_BETA,
         },
+        ...(signal ? { signal } : {}),
       });
       if (resp.status !== 200) {
+        if (observeProviderUsage) {
+          providerUsageFinished(this.logger, {
+            provider: "claude",
+            endpoint,
+            durationMs: providerUsageDurationMs(startedAtMs),
+            result: "http_error",
+            status: resp.status,
+          });
+        }
         return {
           type: responseType,
           requestId,
@@ -341,6 +377,15 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
         };
       }
       const data = await resp.json();
+      if (observeProviderUsage) {
+        providerUsageFinished(this.logger, {
+          provider: "claude",
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: "success",
+          status: resp.status,
+        });
+      }
       return {
         type: responseType,
         requestId,
@@ -348,6 +393,14 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
         data: isRecord(data) ? data : { value: data },
       };
     } catch (err) {
+      if (observeProviderUsage && signal) {
+        providerUsageFinished(this.logger, {
+          provider: "claude",
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: providerUsageFailureResult(signal, err),
+        });
+      }
       return {
         type: responseType,
         requestId,
@@ -401,7 +454,10 @@ const defaultHttpGet: ClaudeAuthHttpGet = async (url, init) => {
   if (typeof globalThis.fetch !== "function") {
     throw new Error("global fetch is not available");
   }
-  const resp = await globalThis.fetch(url, { headers: init.headers });
+  const resp = await globalThis.fetch(url, {
+    headers: init.headers,
+    ...(init.signal ? { signal: init.signal } : {}),
+  });
   return {
     status: resp.status,
     text: () => resp.text(),
