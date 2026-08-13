@@ -54,7 +54,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   get ackedSeq(): number {
-    return this.requireAcknowledgedThrough();
+    return this.readAcknowledgedThrough() ?? 0;
   }
 
   onAppend(_listener: () => void): () => void {
@@ -77,8 +77,10 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async readBatch(maxEvents?: number) {
+    const acknowledgedThrough = this.readAcknowledgedThrough();
+    if (acknowledgedThrough === null) return null;
     return await this.runner.readBatchAfter(
-      this.requireAcknowledgedThrough(),
+      acknowledgedThrough,
       maxEvents,
     );
   }
@@ -120,7 +122,9 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
-    return await this.runner.readLatestPendingRecordAfter(this.requireAcknowledgedThrough());
+    const acknowledgedThrough = this.readAcknowledgedThrough();
+    if (acknowledgedThrough === null) return null;
+    return await this.runner.readLatestPendingRecordAfter(acknowledgedThrough);
   }
 
   async readPendingIpcFrames(): Promise<Array<{
@@ -139,7 +143,9 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async hasPendingDurableWork(): Promise<boolean> {
-    return await this.runner.hasPendingDurableWork(this.requireAcknowledgedThrough());
+    const acknowledgedThrough = this.readAcknowledgedThrough();
+    if (acknowledgedThrough === null) return false;
+    return await this.runner.hasPendingDurableWork(acknowledgedThrough);
   }
 
   async readHostCallApplied(correlationId: string) {
@@ -162,6 +168,11 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   close(): void {
     this.host.close();
     this.runner.close();
+  }
+
+  private readAcknowledgedThrough(): number | null {
+    if (!this.runner.hasDurableRecords()) return null;
+    return this.requireAcknowledgedThrough();
   }
 
   private requireAcknowledgedThrough(): number {

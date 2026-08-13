@@ -686,6 +686,11 @@ export class RunnerSqliteEventOutbox {
     return latestSequence(this.database);
   }
 
+  hasDurableRecords(): boolean {
+    this.requireOpen();
+    return rowCount(this.database) > 0;
+  }
+
   async acknowledge(streamId: string, ackedThrough: number): Promise<void> {
     const bootstrap = this.requireBootstrap();
     if (streamId !== bootstrap.stream_id) {
