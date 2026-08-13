@@ -316,7 +316,7 @@ export class UpstreamAdapter {
       const catchUpReady = this.deps.eventOutboxPump
         ? Promise.resolve(this.deps.eventOutboxPump.connect(async (batch) => {
             await this.sendOnSocket(ws, batch);
-          })).then((ready) => ready !== false)
+          })).then((ready) => ready !== false, () => false)
         : Promise.resolve(true);
       await this.deps.waitForRunnerReconciliation?.();
       // orch-server-ts는 heartbeat ping을 먼저 보내지 않으므로, 허브 ping을 기다리지 않고

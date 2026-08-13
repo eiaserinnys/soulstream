@@ -525,6 +525,64 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("handles outbox rejection while reconciliation is pending and treats readiness as false", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+    const reconciliation = deferred<void>();
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const connectFailure = new Error("outbox catch-up failed");
+    const neverDrained = new Promise<boolean>(() => undefined);
+    const connect = vi.fn()
+      .mockRejectedValueOnce(connectFailure)
+      .mockImplementation(() => neverDrained);
+    const pump = {
+      connect,
+      disconnect: vi.fn(),
+      isAck: () => false,
+      handleAck: vi.fn(),
+      isRejection: () => false,
+      handleRejection: vi.fn(),
+    } as unknown as EventOutboxPump;
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandledRejection);
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({
+        eventOutboxPump: pump,
+        reconnectPolicy,
+        waitForRunnerReconciliation: async () => await reconciliation.promise,
+      }),
+    );
+
+    try {
+      void adapter.run();
+      await waitFor(() => connect.mock.calls.length === 1);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandledRejections).toEqual([]);
+
+      reconciliation.resolve();
+      await waitFor(() => reconnectPolicy.waitedDelays.length === 1);
+      expect(reconnectPolicy.resetCalls).toBe(0);
+    } finally {
+      reconciliation.resolve();
+      process.off("unhandledRejection", onUnhandledRejection);
+      await adapter.shutdown();
+    }
+  });
+
   it("registry 변경 후 같은 WebSocket으로 node_register를 재공지한다", async () => {
     const deps = makeDeps();
     const adapter = new UpstreamAdapter(
