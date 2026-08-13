@@ -129,7 +129,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   if (hasClaudeBackend) {
-    const claudeExecutablePath = configureClaudeExecutablePath(process.env);
+    const claudeExecutablePath = configureClaudeExecutablePath(
+      process.env,
+      process.platform,
+      logger,
+    );
     logger.info(
       { path: claudeExecutablePath },
       "Claude Code executable path resolved",

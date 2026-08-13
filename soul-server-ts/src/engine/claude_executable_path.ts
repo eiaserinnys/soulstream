@@ -3,6 +3,14 @@ import { delimiter } from "node:path";
 
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
+export interface ClaudeExecutablePathLogger {
+  error(bindings: Record<string, unknown>, message: string): void;
+}
+
+type Spawnability =
+  | { spawnable: true }
+  | { spawnable: false; reason: string };
+
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 
@@ -11,34 +19,51 @@ export function resolveClaudeExecutableFromPath(
   platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   for (const candidate of claudePathCandidates(env, platform)) {
-    if (isSpawnable(candidate, platform)) {
+    if (inspectSpawnability(candidate, platform).spawnable) {
       return candidate;
     }
   }
   return undefined;
 }
 
-export function requireClaudeExecutablePath(
-  env: EnvLike = process.env,
-  platform: NodeJS.Platform = process.platform,
+function requireClaudeExecutablePath(
+  env: EnvLike,
+  platform: NodeJS.Platform,
+  logger: ClaudeExecutablePathLogger,
 ): string {
   const explicit = nonEmpty(env[CLAUDE_CODE_EXECPATH_ENV]);
+  const candidates = claudePathCandidates(env, platform);
   if (explicit) {
-    if (isSpawnable(explicit, platform)) return explicit;
-    throw resolutionError(platform, [explicit], CLAUDE_CODE_EXECPATH_ENV);
+    const explicitStatus = inspectSpawnability(explicit, platform);
+    if (explicitStatus.spawnable) return explicit;
+    logger.error(
+      {
+        environmentVariable: CLAUDE_CODE_EXECPATH_ENV,
+        configuredPath: explicit,
+        reason: explicitStatus.reason,
+        platform,
+      },
+      "Configured CLAUDE_CODE_EXECPATH is unusable; falling back to PATH/PATHEXT",
+    );
   }
 
-  const candidates = claudePathCandidates(env, platform);
-  const resolved = candidates.find((candidate) => isSpawnable(candidate, platform));
+  const resolved = candidates.find(
+    (candidate) => inspectSpawnability(candidate, platform).spawnable,
+  );
   if (resolved) return resolved;
-  throw resolutionError(platform, candidates, "PATH/PATHEXT");
+  throw resolutionError(
+    platform,
+    explicit ? [explicit, ...candidates] : candidates,
+    explicit ? `${CLAUDE_CODE_EXECPATH_ENV} then PATH/PATHEXT` : "PATH/PATHEXT",
+  );
 }
 
 export function configureClaudeExecutablePath(
-  env: EnvLike = process.env,
-  platform: NodeJS.Platform = process.platform,
+  env: EnvLike,
+  platform: NodeJS.Platform,
+  logger: ClaudeExecutablePathLogger,
 ): string {
-  const resolved = requireClaudeExecutablePath(env, platform);
+  const resolved = requireClaudeExecutablePath(env, platform, logger);
   env[CLAUDE_CODE_EXECPATH_ENV] = resolved;
   return resolved;
 }
@@ -96,19 +121,23 @@ function joinPath(directory: string, name: string): string {
   return `${base}${separator}${name}`;
 }
 
-function isSpawnable(path: string, platform: NodeJS.Platform): boolean {
-  if (platform === "win32") {
-    try {
-      return statSync(path).isFile();
-    } catch {
-      return false;
-    }
-  }
+function inspectSpawnability(
+  path: string,
+  platform: NodeJS.Platform,
+): Spawnability {
   try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
+    if (!statSync(path).isFile()) {
+      return { spawnable: false, reason: "path is not a regular file" };
+    }
+    if (platform !== "win32") {
+      accessSync(path, constants.X_OK);
+    }
+    return { spawnable: true };
+  } catch (error) {
+    return {
+      spawnable: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 

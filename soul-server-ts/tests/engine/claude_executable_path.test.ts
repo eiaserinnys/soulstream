@@ -2,12 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  configureClaudeExecutablePath,
-  requireClaudeExecutablePath,
-} from "../../src/engine/claude_executable_path.js";
+import { configureClaudeExecutablePath } from "../../src/engine/claude_executable_path.js";
 
 describe("Claude executable startup preflight", () => {
   it("accepts the explicit host executable capability", () => {
@@ -16,10 +13,10 @@ describe("Claude executable startup preflight", () => {
       const executable = join(dir, "claude");
       writeFileSync(executable, "", { mode: 0o755 });
 
-      expect(requireClaudeExecutablePath({
+      expect(configureClaudeExecutablePath({
         CLAUDE_CODE_EXECPATH: executable,
         PATH: "",
-      }, "linux")).toBe(executable);
+      }, "linux", { error: vi.fn() })).toBe(executable);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -35,7 +32,7 @@ describe("Claude executable startup preflight", () => {
         PATHEXT: ".EXE;.CMD",
       };
 
-      expect(configureClaudeExecutablePath(env, "win32")).toBe(executable);
+      expect(configureClaudeExecutablePath(env, "win32", { error: vi.fn() })).toBe(executable);
       expect(env.CLAUDE_CODE_EXECPATH).toBe(executable);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -50,10 +47,10 @@ describe("Claude executable startup preflight", () => {
       mkdirSync(first, { recursive: true });
       mkdirSync(second, { recursive: true });
 
-      expect(() => requireClaudeExecutablePath({
+      expect(() => configureClaudeExecutablePath({
         PATH: `${first};${second}`,
         PATHEXT: ".EXE;.CMD",
-      }, "win32")).toThrow(
+      }, "win32", { error: vi.fn() })).toThrow(
         new RegExp(
           "Claude Code executable path resolution failed before host startup.*"
             + "claude\\.exe.*claude\\.cmd.*claude\\.exe.*claude\\.cmd",
@@ -63,5 +60,56 @@ describe("Claude executable startup preflight", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("falls back to PATH when the explicit executable hint is stale", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-stale-explicit-"));
+    try {
+      const executable = join(dir, "claude");
+      writeFileSync(executable, "", { mode: 0o755 });
+      const env: Record<string, string | undefined> = {
+        CLAUDE_CODE_EXECPATH: join(dir, "deleted-python-release", "claude"),
+        PATH: dir,
+      };
+
+      expect(configureClaudeExecutablePath(env, "linux", { error: vi.fn() })).toBe(executable);
+      expect(env.CLAUDE_CODE_EXECPATH).toBe(executable);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("logs an error before falling back from a stale explicit executable hint", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-stale-explicit-log-"));
+    try {
+      const executable = join(dir, "claude");
+      const stale = join(dir, "deleted-python-release", "claude");
+      writeFileSync(executable, "", { mode: 0o755 });
+      const logger = { error: vi.fn() };
+
+      configureClaudeExecutablePath({
+        CLAUDE_CODE_EXECPATH: stale,
+        PATH: dir,
+      }, "linux", logger);
+
+      expect(logger.error).toHaveBeenCalledOnce();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          configuredPath: stale,
+          reason: expect.stringMatching(/ENOENT|does not exist/i),
+        }),
+        expect.stringMatching(/falling back to PATH\/PATHEXT/i),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails startup when neither an explicit hint nor PATH candidates exist", () => {
+    expect(() => configureClaudeExecutablePath({
+      PATH: "",
+    }, "linux", { error: vi.fn() })).toThrow(
+      /Source: PATH\/PATHEXT\. Searched candidates: \(no candidates\)/,
+    );
   });
 });
