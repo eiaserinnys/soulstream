@@ -168,6 +168,30 @@ describe("Node registry and per-node session cache primitive", () => {
     );
   });
 
+  it("routes lightweight runner inventory without replacing the durable session cache", () => {
+    const { registry, sessionCache } = createRegistry();
+    registry.registerNode(fixture.registration as NodeRegistrationPayload);
+    sessionCache.replaceNodeSessions({
+      nodeId: "fake-node",
+      connectionId: registry.getConnectedNode("fake-node")!.connectionId,
+      sessions: [{ agentSessionId: "session-durable", status: "running" }],
+      nowMs: 1_700_000_000_000,
+    });
+    const inventory = {
+      type: "runner_inventory",
+      running_session_ids: ["session-runner"],
+      requestId: "inventory-1",
+    };
+
+    expect(registry.receiveNodeMessage("fake-node", inventory)).toEqual([{
+      type: "node_runner_inventory",
+      nodeId: "fake-node",
+      data: inventory,
+    }]);
+    expect(sessionCache.findSession("session-durable")).toBeDefined();
+    expect(sessionCache.findSession("session-runner")).toBeUndefined();
+  });
+
   it("ignores late messages from a replaced connection without mutating current state", async () => {
     let nowMs = 1_000;
     const sessionCache = new PerNodeSessionCache();

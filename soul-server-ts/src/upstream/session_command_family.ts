@@ -77,6 +77,7 @@ interface AcknowledgeSessionReviewCmd extends CommandLike {
 }
 
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
+type ListRunnerInventoryCmd = CommandLike & { type: "list_runner_inventory" };
 
 interface SessionCommandFamilyDeps {
   send: SendFn;
@@ -99,6 +100,8 @@ export function createSessionCommandFamily(
     subscribe_events: (cmd) =>
       handleSubscribeEvents(deps, cmd as SubscribeEventsCmd),
     list_sessions: (cmd) => handleListSessions(deps, cmd as ListSessionsCmd),
+    list_runner_inventory: (cmd) =>
+      handleListRunnerInventory(deps, cmd as ListRunnerInventoryCmd),
   };
 }
 
@@ -297,4 +300,20 @@ async function handleListSessions(
     }
     throw err;
   }
+}
+
+async function handleListRunnerInventory(
+  deps: SessionCommandFamilyDeps,
+  cmd: ListRunnerInventoryCmd,
+): Promise<void> {
+  if (!deps.listRunningSessionIds) {
+    throw new CommandDispatchError(
+      "list_runner_inventory requires listRunningSessionIds dependency",
+    );
+  }
+  await deps.send({
+    type: "runner_inventory",
+    running_session_ids: await deps.listRunningSessionIds(),
+    requestId: commandRequestId(cmd),
+  });
 }

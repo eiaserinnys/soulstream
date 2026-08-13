@@ -1,10 +1,11 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 116개 $defs (wire 55 + SSE event 61). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 119개 $defs (wire 58 + SSE event 61). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
+  | NodeRegisterAck
   | AppHeartbeatPing
   | AppHeartbeatPong
   | SessionCreated
@@ -12,6 +13,7 @@ export type SoulstreamUpstreamProtocol =
   | EventAppendBatch
   | EventAppendAck
   | SessionsUpdate
+  | RunnerInventory
   | HealthStatus
   | SessionUpdated
   | SessionDeleted
@@ -41,6 +43,7 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeEvent
   | RealtimeResolveToolApproval
   | ListSessions
+  | ListRunnerInventory
   | UploadAttachment
   | UploadAttachmentStart
   | UploadAttachmentChunk
@@ -69,9 +72,10 @@ export interface NodeRegister {
   host?: string;
   port?: number;
   /**
-   * 노드 자체 가용성 정보. 예: {max_concurrent: 5, app_heartbeat_v1: true}
+   * 노드 자체 가용성 정보. 예: {max_concurrent: 5, app_heartbeat_v1: true, runner_inventory_v1: true}
    */
   capabilities?: {
+    runner_inventory_v1?: boolean;
     [k: string]: unknown;
   };
   /**
@@ -117,6 +121,18 @@ export interface NodeRegister {
    * 선택. 노드 사용자 프로필 (name, hasPortrait, portrait_b64).
    */
   user?: {
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 등록 수락과 orch wire capability 광고.
+ */
+export interface NodeRegisterAck {
+  type: "node_register_ack";
+  node_id: string;
+  capabilities?: {
+    runner_inventory_v1?: boolean;
     [k: string]: unknown;
   };
   [k: string]: unknown;
@@ -1098,6 +1114,16 @@ export interface SessionsUpdate {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: 실행 중 runner session ID만 담는 경량 inventory.
+ */
+export interface RunnerInventory {
+  type: "runner_inventory";
+  running_session_ids: string[];
+  request_id?: string;
+  requestId?: string;
+  [k: string]: unknown;
+}
+/**
  * 노드→orch: 헬스 응답. soul-server-ts/src/upstream/dispatcher.ts.
  */
 export interface HealthStatus {
@@ -1573,6 +1599,15 @@ export interface RealtimeResolveToolApproval {
  */
 export interface ListSessions {
   type: "list_sessions";
+  request_id?: string;
+  requestId?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 실행 중 runner session ID 경량 조회 명령.
+ */
+export interface ListRunnerInventory {
+  type: "list_runner_inventory";
   request_id?: string;
   requestId?: string;
   [k: string]: unknown;

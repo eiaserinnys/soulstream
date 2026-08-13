@@ -222,18 +222,14 @@ export function createSessionReconciliationSink(input: {
     connectionId: string,
   ): void => {
     const pending = pendingReconciliations.get(nodeId);
-    if (
-      pending?.connectionId === connectionId
-      && pending.inventoryRequests > 0
-    ) {
+    if (pending?.connectionId === connectionId) {
       return;
     }
-    requestInventory(nodeId);
     scheduleReconciliationDeadline(
       nodeId,
       connectionId,
       disconnectGraceMs,
-      1,
+      0,
     );
   };
 
@@ -269,7 +265,10 @@ export function createSessionReconciliationSink(input: {
         }
         continue;
       }
-      if (event.type !== "node_session_sessions_update") continue;
+      if (
+        event.type !== "node_session_sessions_update"
+        && event.type !== "node_runner_inventory"
+      ) continue;
       const runningSessionIds = event.data.running_session_ids;
       if (
         !Array.isArray(runningSessionIds)

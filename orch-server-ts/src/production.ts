@@ -36,6 +36,8 @@ import {
 import { FileEventIngressDeadLetterStore } from "./node/event_ingress_dead_letter_store.js";
 import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
+import { runnerInventoryCommandType } from "./node/registry_helpers.js";
+import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
   PushNotifier,
@@ -212,6 +214,11 @@ export async function createLiveProductionApplication(
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
   const foregroundObservers = new SessionForegroundObserverTracker();
+  const sessionCacheSeed = createSessionCacheSeedSink({
+    registry,
+    repository: dbCatalogRepository,
+    logError: (error, message) => context.warn(`${message}: ${String(error)}`),
+  });
   let logPushNotification: ((event: PushNotificationLogEvent) => void) | undefined;
   const pushNotifier = new PushNotifier({
     provider: createExpoPushProvider(),
@@ -242,7 +249,7 @@ export async function createLiveProductionApplication(
       await runtimeServices.sessionBridge.sendFireAndForgetCommand({
         node,
         command: registry.createFireAndForgetCommand(nodeId, {
-          type: "list_sessions",
+          type: runnerInventoryCommandType(node.capabilities),
         }),
       });
     },
@@ -272,6 +279,7 @@ export async function createLiveProductionApplication(
     additionalNodeEventSinks: [
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
+      sessionCacheSeed,
       sessionReconciliation,
     ],
     boardYjsRoutes: {

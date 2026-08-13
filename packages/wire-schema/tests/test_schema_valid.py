@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 116개 $defs (wire 55 + SSE event 61)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 119개 $defs (wire 58 + SSE event 61)를 모두 포함하는지 확인한다.
 """
 
 import ast
@@ -149,6 +149,7 @@ def test_schema_has_all_message_types() -> None:
 
     wire_types = {
         "NodeRegister",
+        "NodeRegisterAck",
         "AppHeartbeatPing",
         "AppHeartbeatPong",
         "SessionCreated",
@@ -156,6 +157,7 @@ def test_schema_has_all_message_types() -> None:
         "EventAppendBatch",
         "EventAppendAck",
         "SessionsUpdate",
+        "RunnerInventory",
         "HealthStatus",
         "SessionUpdated",
         "SessionDeleted",
@@ -183,6 +185,7 @@ def test_schema_has_all_message_types() -> None:
         "RealtimeEvent",
         "RealtimeResolveToolApproval",
         "ListSessions",
+        "ListRunnerInventory",
         "UploadAttachment",
         "UploadAttachmentStart",
         "UploadAttachmentChunk",
@@ -204,7 +207,7 @@ def test_schema_has_all_message_types() -> None:
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
     }
-    assert len(wire_types) == 55
+    assert len(wire_types) == 58
 
     sse_types = {
         "SSEEventInit",
@@ -440,6 +443,7 @@ def test_oneof_covers_all_wire_messages() -> None:
     oneof_refs = {entry["$ref"].rsplit("/", 1)[-1] for entry in schema["oneOf"]}
     wire_types = {
         "NodeRegister",
+        "NodeRegisterAck",
         "AppHeartbeatPing",
         "AppHeartbeatPong",
         "SessionCreated",
@@ -447,6 +451,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "EventAppendBatch",
         "EventAppendAck",
         "SessionsUpdate",
+        "RunnerInventory",
         "HealthStatus",
         "SessionUpdated",
         "SessionDeleted",
@@ -474,6 +479,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "RealtimeEvent",
         "RealtimeResolveToolApproval",
         "ListSessions",
+        "ListRunnerInventory",
         "UploadAttachment",
         "UploadAttachmentStart",
         "UploadAttachmentChunk",

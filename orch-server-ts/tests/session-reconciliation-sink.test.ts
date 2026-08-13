@@ -93,6 +93,29 @@ describe("createSessionReconciliationSink", () => {
     );
   });
 
+  it("accepts the lightweight runner inventory event without a durable session dump", async () => {
+    const repository = {
+      reconcileNodeDisconnected: vi.fn(async () => 0),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 1 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+    });
+
+    sink([{
+      type: "node_runner_inventory",
+      nodeId: "node-a",
+      data: { type: "runner_inventory", running_session_ids: ["session-live"] },
+    } as never]);
+
+    await vi.waitFor(() => expect(repository.reconcileNodeStartup).toHaveBeenCalledWith(
+      "node-a",
+      ["session-live"],
+      expect.any(Date),
+    ));
+  });
+
   it("logs reconciliation rejection and keeps the next operation runnable", async () => {
     const logError = vi.fn();
     const reconcileNodeDisconnected = vi.fn()
@@ -520,7 +543,7 @@ describe("createSessionReconciliationSink", () => {
 
     sink([disconnectEvent("connection-old")]);
     sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-new" }]);
-    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+    expect(requestSessionInventory).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(6);
     sink([{
@@ -532,7 +555,7 @@ describe("createSessionReconciliationSink", () => {
     await vi.advanceTimersByTimeAsync(6);
 
     expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
-    expect(requestSessionInventory).toHaveBeenCalledTimes(2);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
   });
 
   it("terminally reconciles a connected node after the finite inventory retry budget", async () => {
@@ -553,9 +576,13 @@ describe("createSessionReconciliationSink", () => {
     });
 
     sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-new" }]);
-    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+    expect(requestSessionInventory).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(12);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(4);
     expect(requestSessionInventory).toHaveBeenCalledTimes(2);
     expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
 

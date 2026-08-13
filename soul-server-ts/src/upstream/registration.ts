@@ -106,6 +106,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       max_concurrent: agents.length,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      runner_inventory_v1: true,
       ...(params.runnerProcessEnabled === undefined
         ? {}
         : {

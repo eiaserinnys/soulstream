@@ -78,6 +78,7 @@ async function startMockOrch(
     autoPong?: boolean;
     pingOnRegister?: boolean;
     acknowledgeRegistration?: boolean;
+    acknowledgementCapabilities?: Record<string, unknown>;
     closeRegistrations?: number;
   } = {},
 ): Promise<MockOrch> {
@@ -114,6 +115,9 @@ async function startMockOrch(
             socket.send(JSON.stringify({
               type: "node_register_ack",
               node_id: (msg as Record<string, unknown>).node_id,
+              ...(opts.acknowledgementCapabilities === undefined
+                ? {}
+                : { capabilities: opts.acknowledgementCapabilities }),
             }));
           }
           if (registrationCount <= (opts.closeRegistrations ?? 0)) {
@@ -303,6 +307,7 @@ describe("UpstreamAdapter", () => {
       max_concurrent: 1,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      runner_inventory_v1: true,
     });
     // PR(portrait wire): agents 매핑에 portrait_url 추가 (Python adapter.py:212-233 정합).
     // portrait_path 미설정 fixture → portrait_url=""·portrait_b64 키 미박힘.
@@ -633,7 +638,63 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
-  it("sessionDb가 있으면 node_register 직후 현재 세션 dump를 sessions_update로 보낸다", async () => {
+  it("새 orch와 capability가 합의되면 영속 dump 없이 runner inventory만 보낸다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({
+      acknowledgeRegistration: true,
+      acknowledgementCapabilities: { runner_inventory_v1: true },
+    });
+    const reconciliationOrder: string[] = [];
+    const sessionDb = {
+      listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
+    } as unknown as SessionDB;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({
+        sessionDb,
+        runningSessionIds: ["sess-memory", "sess-shared"],
+        waitForRunnerReconciliation: async () => {
+          reconciliationOrder.push("drained");
+        },
+        listLiveRunnerSessionIds: async () => {
+          reconciliationOrder.push("scanned");
+          return ["sess-runner", "sess-shared"];
+        },
+      }),
+    );
+
+    void adapter.run();
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "runner_inventory",
+      ),
+    );
+
+    expect(sessionDb.listSessionsForUpstreamDump).not.toHaveBeenCalled();
+    expect(orch.receivedMessages.find(
+      (msg) => (msg as Record<string, unknown>).type === "runner_inventory",
+    )).toMatchObject({
+      type: "runner_inventory",
+      running_session_ids: ["sess-memory", "sess-shared", "sess-runner"],
+    });
+    expect(reconciliationOrder).toEqual(["drained", "scanned"]);
+
+    await adapter.shutdown();
+  });
+
+  it("구 orch ACK에는 새 frame을 보내지 않고 기존 sessions_update를 유지한다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
     const reconciliationOrder: string[] = [];
     const sessionDb = {
       listSessionsForUpstreamDump: vi.fn(async () => ({
@@ -706,6 +767,9 @@ describe("UpstreamAdapter", () => {
       session_id: "sess-1",
       last_event_id: 3,
     });
+    expect(orch.receivedMessages.some(
+      (msg) => (msg as Record<string, unknown>).type === "runner_inventory",
+    )).toBe(false);
     expect(reconciliationOrder).toEqual(["drained", "scanned"]);
 
     await adapter.shutdown();
@@ -880,7 +944,7 @@ describe("UpstreamAdapter", () => {
 
   it("node_register 직후 초기 세션 dump가 지연되어도 orch heartbeat ping에 응답한다", async () => {
     await stopMockOrch(orch);
-    orch = await startMockOrch({ pingOnRegister: true });
+    orch = await startMockOrch({ pingOnRegister: true, acknowledgeRegistration: true });
 
     const sessionDump = deferred<{
       sessions: [];

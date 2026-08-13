@@ -1887,6 +1887,22 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
   });
 });
 
+describe("CommandDispatcher.list_runner_inventory", () => {
+  it("returns only the live runner IDs and preserves request correlation", async () => {
+    const listRunningSessionIds = vi.fn(async () => ["session-a", "session-b"]);
+    const { dispatcher, sent } = createDispatcher({ listRunningSessionIds });
+
+    await dispatcher.dispatch({ type: "list_runner_inventory", requestId: "inventory-1" });
+
+    expect(listRunningSessionIds).toHaveBeenCalledOnce();
+    expect(sent).toEqual([{
+      type: "runner_inventory",
+      running_session_ids: ["session-a", "session-b"],
+      requestId: "inventory-1",
+    }]);
+  });
+});
+
 describe("CommandDispatcher.plan_agent_profile_update", () => {
   it("delegates to AgentConfigService planProfileUpdate and returns semantic read-only plan", async () => {
     const planProfileUpdate = vi.fn().mockResolvedValue({

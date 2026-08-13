@@ -205,6 +205,7 @@ export function registerNodeWsRoute(
             socket.send(JSON.stringify({
               type: "node_register_ack",
               node_id: result.nodeId,
+              capabilities: { runner_inventory_v1: true },
             }));
           } catch {
             closeAndFinalize(

@@ -7,6 +7,48 @@ import {
 } from "../src/index.js";
 
 describe("PerNodeSessionCache retention", () => {
+  it("seeds durable DB sessions without overwriting newer WebSocket state", () => {
+    const cache = new PerNodeSessionCache();
+    cache.upsertFromSessionUpdated({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      message: {
+        agent_session_id: "session-live",
+        status: "running",
+        display_name: "new wire state",
+      },
+      nowMs: 200,
+    });
+
+    cache.seedNodeSessions({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      sessions: [
+        {
+          agent_session_id: "session-live",
+          status: "interrupted",
+          display_name: "stale DB state",
+        },
+        {
+          agent_session_id: "session-db-only",
+          status: "completed",
+          display_name: "DB only",
+        },
+      ],
+      snapshotStartedAtMs: 100,
+      nowMs: 300,
+    });
+
+    expect(cache.findSession("session-live")?.payload).toMatchObject({
+      status: "running",
+      display_name: "new wire state",
+    });
+    expect(cache.findSession("session-db-only")?.payload).toMatchObject({
+      status: "completed",
+      display_name: "DB only",
+    });
+  });
+
   it("waits for the existing session cache to observe a node session", async () => {
     const cache = new PerNodeSessionCache();
     const observed = cache.waitForSession({
