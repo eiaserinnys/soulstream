@@ -85,6 +85,16 @@ export type InterveneAck =
       type: "intervene_ack";
       requestId: string;
       status: "ok";
+      outcome: "unknown";
+      agentSessionId: string;
+      delivered: null;
+      consumeWhen: null;
+      reason: "verdict_unknown";
+    }
+  | {
+      type: "intervene_ack";
+      requestId: string;
+      status: "ok";
       outcome: "delivered";
       agentSessionId: string;
       delivered: true;
@@ -291,6 +301,18 @@ export function buildInterveneAck(params: {
       delivered: false,
       queuePosition: result.queuePosition,
       consumeWhen: result.consumeWhen,
+      reason: result.reason,
+    };
+  }
+  if ("delivered" in result && result.delivered === null) {
+    return {
+      type: "intervene_ack",
+      requestId,
+      status: "ok",
+      outcome: "unknown",
+      agentSessionId,
+      delivered: null,
+      consumeWhen: null,
       reason: result.reason,
     };
   }

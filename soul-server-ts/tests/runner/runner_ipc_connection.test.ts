@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
   engineEventFrame,
+  hostFrameAppliedControlFrame,
   prepareSessionCommandFrame,
   runnerControlResponseFrame,
   runnerCommandResultFrame,
+  stageInterventionCommandFrame,
 } from "../../src/runner/frame_protocol.js";
 import {
   RunnerIpcConnection,
@@ -39,6 +41,42 @@ describe("RunnerIpcConnection", () => {
       { timeoutMs: 1_000 },
     )).resolves.toMatchObject({ commandId: "prepare-1", result: { status: "ok" } });
     expect(hostConnection.pendingRequestCount).toBe(0);
+  });
+
+  it("does not queue an intervention command behind an unrelated control handler", async () => {
+    const [host, runner] = await socketPair();
+    const hostConnection = new RunnerIpcConnection(host);
+    const runnerConnection = new RunnerIpcConnection(runner);
+    let releaseControl!: () => void;
+    const controlBlocked = new Promise<void>((resolve) => {
+      releaseControl = resolve;
+    });
+    runnerConnection.onFrame(async (frame) => {
+      if (frame.channel === "control" && frame.kind === "host_frame_applied") {
+        await controlBlocked;
+        return;
+      }
+      if (frame.channel === "command" && frame.kind === "stage_intervention") {
+        await runnerConnection.send(runnerCommandResultFrame(frame.commandId, {
+          status: "ok",
+          data: { eventSourceSeq: null, queuePosition: 0 },
+        }));
+      }
+    });
+
+    await hostConnection.send(hostFrameAppliedControlFrame(1));
+    const intervention = hostConnection.request(stageInterventionCommandFrame({
+      commandId: "stage-intervention:priority",
+      interventionId: "priority",
+      message: { text: "redirect now" },
+      queued: false,
+    }), { timeoutMs: 50 });
+
+    await expect(intervention).resolves.toMatchObject({
+      commandId: "stage-intervention:priority",
+      result: { status: "ok" },
+    });
+    releaseControl();
   });
 
   it.each(["timeout", "abort", "close"])(

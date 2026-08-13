@@ -91,6 +91,24 @@ def test_schema_top_level_keys() -> None:
     assert schema["discriminator"]["propertyName"] == "type"
 
 
+def test_intervene_ack_preserves_an_unknown_delivery_verdict() -> None:
+    schema = _load_schema()
+    frame = {
+        "type": "intervene_ack",
+        "requestId": "request-unknown",
+        "status": "ok",
+        "outcome": "unknown",
+        "agentSessionId": "session-a",
+        "delivered": None,
+        "consumeWhen": None,
+        "reason": "verdict_unknown",
+    }
+
+    jsonschema.Draft202012Validator(schema).validate(frame)
+    assert '"unknown"' in GENERATED_TS_PATH.read_text(encoding="utf-8")
+    assert "delivered: bool | None" in GENERATED_PY_PATH.read_text(encoding="utf-8")
+
+
 def test_event_append_batch_accepts_running_transition_effect() -> None:
     schema = _load_schema()
     frame = _event_append_batch_with_effect(

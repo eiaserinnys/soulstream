@@ -13,6 +13,7 @@ import {
   validateRunnerAppendInput,
 } from "./sqlite_event_outbox_records.js";
 import { withRunnerSqliteTransactionSync } from "./runner_sqlite_connection.js";
+import { runnerInterventionApplyCommandId } from "./runner_intervention_identity.js";
 
 type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
 type Transaction = <T>(operation: () => T) => Promise<T>;
@@ -91,9 +92,36 @@ export async function stageRunnerIntervention(
     if (input.event && existing.event_source_seq === null) {
       throw new Error("runner intervention receipt conflicts with durable inbox entry");
     }
+    if (
+      input.queued
+      && existing.application_state === "ambiguous"
+      && existing.claimed_execution_command_id
+        !== runnerInterventionApplyCommandId(input.interventionId)
+    ) {
+      throw new Error(`runner intervention ambiguity requires operator resolution: ${input.interventionId}`);
+    }
+    if (input.queued && existing.application_state === "ambiguous") {
+      await transaction(() => {
+        const released = database.prepare(`
+          UPDATE runner_intervention_inbox
+          SET application_state = 'pending',
+              claimed_execution_command_id = NULL,
+              claimed_at = NULL
+          WHERE intervention_id = ? AND application_state = 'ambiguous'
+        `).run(input.interventionId);
+        if (Number(released.changes) !== 1) {
+          throw new Error(`runner intervention is not releasable: ${input.interventionId}`);
+        }
+      });
+    }
+    if (input.queued && existing.application_state === "claimed") {
+      throw new Error(`runner intervention is already being consumed: ${input.interventionId}`);
+    }
     return {
-      eventSourceSeq: existing.event_source_seq,
-      queuePosition: existing.application_state === "pending" ? 1 : 0,
+      eventSourceSeq: input.event ? existing.event_source_seq : null,
+      queuePosition: input.queued
+        ? runnerInterventionQueuePosition(database, input.interventionId)
+        : 0,
     };
   }
 
@@ -126,13 +154,50 @@ export async function stageRunnerIntervention(
         eventSourceSeq,
         input.queuedAt,
       );
-      queuePosition = Number((database.prepare(`
-        SELECT COUNT(*) AS count FROM runner_intervention_inbox
-        WHERE claimed_execution_command_id IS NULL
-      `).get() as { count: number }).count);
+      queuePosition = runnerInterventionQueuePosition(database, input.interventionId);
+    } else {
+      const applicationCommandId = runnerInterventionApplyCommandId(
+        input.interventionId,
+      );
+      database.prepare(`
+        INSERT INTO runner_intervention_inbox (
+          intervention_id, payload_json, event_source_seq, queued_at,
+          claimed_execution_command_id, claimed_at, application_state
+        ) VALUES (?, ?, ?, ?, ?, ?, 'ambiguous')
+      `).run(
+        input.interventionId,
+        JSON.stringify(input.message),
+        eventSourceSeq,
+        input.queuedAt,
+        applicationCommandId,
+        input.queuedAt,
+      );
     }
   });
   return { eventSourceSeq, queuePosition };
+}
+
+function runnerInterventionQueuePosition(
+  database: SqliteDatabase,
+  interventionId: string,
+): number {
+  const result = database.prepare(`
+    SELECT COUNT(*) AS position
+    FROM runner_intervention_inbox AS queued
+    WHERE queued.application_state = 'pending'
+      AND queued.claimed_execution_command_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM runner_intervention_inbox AS target
+        WHERE target.intervention_id = ?
+          AND target.application_state = 'pending'
+          AND target.claimed_execution_command_id IS NULL
+          AND (
+            queued.queued_at < target.queued_at
+            OR (queued.queued_at = target.queued_at AND queued.rowid <= target.rowid)
+          )
+      )
+  `).get(interventionId) as { position: number };
+  return Number(result.position);
 }
 
 export async function readPendingRunnerInterventions(
@@ -204,7 +269,7 @@ export async function claimRunnerIntervention(
     } | undefined;
     if (!current) return false;
     if (
-      current.application_state === "claimed"
+      (current.application_state === "claimed" || current.application_state === "ambiguous")
       && current.claimed_execution_command_id === commandId
     ) return true;
     if (current.application_state !== "pending") return false;
@@ -229,7 +294,7 @@ export async function markRunnerInterventionAmbiguous(
       UPDATE runner_intervention_inbox
       SET application_state = 'ambiguous'
       WHERE intervention_id = ? AND claimed_execution_command_id = ?
-        AND application_state = 'claimed'
+        AND application_state IN ('claimed', 'ambiguous')
     `).run(interventionId, commandId);
     if (Number(result.changes) !== 1) {
       throw new Error(`runner intervention claim mismatch: ${interventionId}`);

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
+  applyInterventionCommandFrame,
   closeCommandFrame,
   engineEventFrame,
   executeCommandFrame,
@@ -146,5 +147,26 @@ describe("RunnerCommandDispatcher", () => {
       result: { status: "ok", data: { status: "delivered" } },
     });
     expect(deliverInputResponse).toHaveBeenCalledWith("request-1", { answer: "yes" });
+  });
+
+  it("keeps a pre-operation child connected and returns not_supported for live apply", async () => {
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine());
+
+    await expect(dispatcher.dispatch(applyInterventionCommandFrame({
+      commandId: "apply-intervention:rolling-restart",
+      interventionId: "rolling-restart",
+      interventionInput: { prompt: "new host, old child" },
+    }))).resolves.toMatchObject({
+      commandId: "apply-intervention:rolling-restart",
+      result: { status: "ok", data: { status: "not_supported" } },
+    });
+    await expect(dispatcher.dispatch(invokeCommandFrame(
+      "invoke-after-unsupported",
+      "missing_again",
+      [],
+    ))).resolves.toMatchObject({
+      commandId: "invoke-after-unsupported",
+      result: { status: "ok", data: { status: "not_supported" } },
+    });
   });
 });

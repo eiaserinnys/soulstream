@@ -101,6 +101,10 @@ export interface SendMessageRequest {
 
 /** POST /api/sessions/:id/intervene 응답 */
 export interface InterveneResponse {
+  delivered?: boolean | null;
+  outcome?: "delivered" | "queued" | "auto_resumed" | "deferred" | "suppressed" | "unknown";
+  reason?: string;
+  consumeWhen?: "next_turn" | null;
   queued?: boolean;
   queue_position?: number;
   auto_resumed?: boolean;

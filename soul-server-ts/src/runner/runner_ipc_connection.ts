@@ -45,7 +45,8 @@ export class RunnerIpcConnection {
   private readonly pending = new Map<string, PendingRequest>();
   private frameHandler: (frame: RunnerFrame) => Promise<void> = async () => {};
   private failureHandler: (error: Error) => void = () => {};
-  private handling = Promise.resolve();
+  private commandHandling = Promise.resolve();
+  private maintenanceHandling = Promise.resolve();
   private closed = false;
   private droppedFrameCount = 0;
 
@@ -182,10 +183,18 @@ export class RunnerIpcConnection {
         return;
       }
       if (frame.channel === "control" && this.resolvePending(frame)) continue;
-      this.handling = this.handling.then(
-        async () => await this.frameHandler(frame),
-      ).catch((error: unknown) => this.fail(asError(error)));
+      if (frame.channel === "command") {
+        this.commandHandling = this.enqueueFrame(this.commandHandling, frame);
+      } else {
+        this.maintenanceHandling = this.enqueueFrame(this.maintenanceHandling, frame);
+      }
     }
+  }
+
+  private enqueueFrame(handling: Promise<void>, frame: RunnerFrame): Promise<void> {
+    return handling.then(
+      async () => await this.frameHandler(frame),
+    ).catch((error: unknown) => this.fail(asError(error)));
   }
 
   private resolvePending(frame: RunnerControlFrame): boolean {

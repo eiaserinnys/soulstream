@@ -616,6 +616,27 @@ describe("TaskRuntimeCommands ACK builders", () => {
 
     expect(
       buildInterveneAck({
+        requestId: "req-unknown",
+        agentSessionId: "sess-1",
+        result: {
+          delivered: null,
+          consumeWhen: null,
+          reason: "verdict_unknown",
+        },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-unknown",
+      status: "ok",
+      outcome: "unknown",
+      agentSessionId: "sess-1",
+      delivered: null,
+      consumeWhen: null,
+      reason: "verdict_unknown",
+    });
+
+    expect(
+      buildInterveneAck({
         requestId: "req-suppressed",
         agentSessionId: "sess-1",
         result: {

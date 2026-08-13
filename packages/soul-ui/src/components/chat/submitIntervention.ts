@@ -7,6 +7,7 @@
 
 import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { extractErrorMessage } from "./submitErrors";
+import type { InterveneResponse } from "../../shared/api-types";
 
 export interface SubmitInterventionContext {
   /** 세션 식별자 (activeSessionKey). */
@@ -21,6 +22,9 @@ export interface SubmitInterventionContext {
 
 export interface SubmitInterventionResult {
   ok: true;
+  delivered: boolean | null;
+  reason: string | null;
+  consumeWhen: "next_turn" | null;
 }
 
 export async function submitIntervention(
@@ -57,7 +61,12 @@ export async function submitIntervention(
     throw new Error(extractErrorMessage(body, response.status));
   }
 
-  await response.json();
+  const verdict = await response.json() as InterveneResponse;
 
-  return { ok: true };
+  return {
+    ok: true,
+    delivered: typeof verdict.delivered === "boolean" ? verdict.delivered : null,
+    reason: typeof verdict.reason === "string" ? verdict.reason : null,
+    consumeWhen: verdict.consumeWhen === "next_turn" ? "next_turn" : null,
+  };
 }

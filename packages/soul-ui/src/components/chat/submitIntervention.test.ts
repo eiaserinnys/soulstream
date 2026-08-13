@@ -18,7 +18,7 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
     originalFetch = globalThis.fetch;
     fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({}),
+      json: async () => ({ delivered: true, outcome: "delivered" }),
     } as unknown as Response);
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
   });
@@ -74,6 +74,33 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
         sessionKey: "sess-status-authority",
         text: "sessions stream이 lifecycle 정본",
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({
+      ok: true,
+      delivered: true,
+      reason: null,
+      consumeWhen: null,
+    });
+  });
+
+  it("전달 판정이 unknown이면 실패나 성공으로 접지 않는다", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        delivered: null,
+        outcome: "unknown",
+        reason: "verdict_unknown",
+        consumeWhen: null,
+      }),
+    } as unknown as Response);
+
+    await expect(submitIntervention({
+      sessionKey: "sess-unknown",
+      text: "중복 전송 금지",
+    })).resolves.toEqual({
+      ok: true,
+      delivered: null,
+      reason: "verdict_unknown",
+      consumeWhen: null,
+    });
   });
 });
