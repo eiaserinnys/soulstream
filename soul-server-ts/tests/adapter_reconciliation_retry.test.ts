@@ -37,9 +37,9 @@ describe("UpstreamAdapter initial reconciliation retry", () => {
 
     void adapter.run();
     await waitFor(() => listLiveRunnerSessionIds.mock.calls.length === 2);
-    await waitFor(() => orch.receivedMessages.some(isSessionsUpdate));
+    await waitFor(() => orch.receivedMessages.some(isRunnerInventory));
 
-    const inventory = orch.receivedMessages.find(isSessionsUpdate) as Record<string, unknown>;
+    const inventory = orch.receivedMessages.find(isRunnerInventory) as Record<string, unknown>;
     expect(orch.sockets).toHaveLength(1);
     expect(inventory.running_session_ids).toEqual(["session-runner"]);
     await adapter.shutdown();
@@ -57,10 +57,10 @@ describe("UpstreamAdapter initial reconciliation retry", () => {
     await waitFor(() => listLiveRunnerSessionIds.mock.calls.length === 5, 3_000);
 
     expect(orch.sockets).toHaveLength(1);
-    expect(orch.receivedMessages.some(isSessionsUpdate)).toBe(false);
+    expect(orch.receivedMessages.some(isRunnerInventory)).toBe(false);
     expect(logError).toHaveBeenCalledWith(
       expect.objectContaining({ attempts: 5, nodeId: "eias-shopping-ts" }),
-      "initial sessions_update retry limit exhausted",
+      "initial runner inventory retry limit exhausted",
     );
     await adapter.shutdown();
   });
@@ -114,7 +114,15 @@ async function startMockOrch(): Promise<MockOrch> {
   server.on("connection", (socket) => {
     sockets.push(socket);
     socket.on("message", (raw) => {
-      receivedMessages.push(JSON.parse(raw.toString()));
+      const message = JSON.parse(raw.toString()) as Record<string, unknown>;
+      receivedMessages.push(message);
+      if (message.type === "node_register") {
+        socket.send(JSON.stringify({
+          type: "node_register_ack",
+          node_id: message.node_id,
+          capabilities: { runner_inventory_v1: true },
+        }));
+      }
     });
   });
   return {
@@ -133,7 +141,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
   }
 }
 
-function isSessionsUpdate(message: unknown): boolean {
+function isRunnerInventory(message: unknown): boolean {
   return typeof message === "object" && message !== null
-    && (message as Record<string, unknown>).type === "sessions_update";
+    && (message as Record<string, unknown>).type === "runner_inventory";
 }

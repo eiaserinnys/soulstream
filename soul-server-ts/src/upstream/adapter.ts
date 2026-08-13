@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import type { Logger } from "pino";
+import type { NodeRegisterAck, RunnerInventory } from "@soulstream/wire-schema";
 
 import { CommandDispatcher } from "./dispatcher.js";
 import { CommandTransportObserver } from "./command_transport_observer.js";
@@ -209,8 +210,8 @@ export class UpstreamAdapter {
     // 명령 수신 루프 — node_register 직후 orch heartbeat가 와도 놓치지 않도록
     // registration 발행 전에 listener를 먼저 설치한다.
     let registrationAccepted = false;
-    let resolveRegistration!: () => void;
-    const registrationPromise = new Promise<void>((resolve) => {
+    let resolveRegistration!: (ack: NodeRegisterAck) => void;
+    const registrationPromise = new Promise<NodeRegisterAck>((resolve) => {
       resolveRegistration = resolve;
     });
     const activeHandlers = new Set<Promise<void>>();
@@ -235,7 +236,7 @@ export class UpstreamAdapter {
           if (isNodeRegisterAck(cmd, this.config.nodeId)) {
             if (!registrationAccepted) {
               registrationAccepted = true;
-              resolveRegistration();
+              resolveRegistration(cmd);
             }
             return;
           }
@@ -318,14 +319,21 @@ export class UpstreamAdapter {
             await this.sendOnSocket(ws, batch);
           })).then((ready) => ready !== false, () => false)
         : Promise.resolve(true);
-      await this.deps.waitForRunnerReconciliation?.();
-      // orch-server-ts는 heartbeat ping을 먼저 보내지 않으므로, 허브 ping을 기다리지 않고
-      // 등록 직후 노드 쪽에서 능동 시작해야 half-open 연결(원격 서버 리셋 등)을 감지할 수 있다.
-      // 양쪽 orch(Python/TS) 모두 노드발 ping에 pong으로 응답한다.
+      // ACK 협상이나 초기 inventory가 지연되어도 half-open 연결 감지는 즉시 시작한다.
       this.startAppHeartbeat(ws);
-      await this.sendInitialSessions(ws);
+      const registrationAck = await Promise.race([
+        registrationPromise,
+        servePromise.then(() => undefined),
+      ]);
+      if (!registrationAck) return;
+      await this.deps.waitForRunnerReconciliation?.();
+      if (registrationAck.capabilities?.runner_inventory_v1 === true) {
+        await this.sendInitialRunnerInventory(ws);
+      } else {
+        await this.sendInitialSessions(ws);
+      }
       const established = await Promise.race([
-        Promise.all([registrationPromise, catchUpReady]).then(([, ready]) => ready),
+        catchUpReady,
         servePromise.then(() => false),
       ]);
       if (established) {
@@ -455,6 +463,36 @@ export class UpstreamAdapter {
     }
   }
 
+  private async sendInitialRunnerInventory(ws: WebSocket): Promise<void> {
+    for (let attempt = 1; attempt <= INITIAL_SESSION_REPORT_MAX_ATTEMPTS; attempt += 1) {
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        const report: RunnerInventory = {
+          type: "runner_inventory",
+          running_session_ids: await this.listRunningSessionIds(false),
+          requestId: "",
+        };
+        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+        await this.sendOnSocket(ws, report);
+        return;
+      } catch (err) {
+        if (attempt >= INITIAL_SESSION_REPORT_MAX_ATTEMPTS) {
+          this.logger.error(
+            { err, attempts: attempt, nodeId: this.config.nodeId },
+            "initial runner inventory retry limit exhausted",
+          );
+          return;
+        }
+        const delayMs = INITIAL_SESSION_REPORT_BASE_DELAY_MS * 2 ** (attempt - 1);
+        this.logger.warn(
+          { err, attempt, delayMs, nodeId: this.config.nodeId },
+          "initial runner inventory failed — retrying on current connection",
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
   private async listRunningSessionIds(waitForReconciliation = true): Promise<string[]> {
     if (waitForReconciliation) await this.deps.waitForRunnerReconciliation?.();
     const inMemorySessionIds = this.deps.taskManager.listTasks()
@@ -482,7 +520,7 @@ export class UpstreamAdapter {
   }
 }
 
-function isNodeRegisterAck(value: unknown, nodeId: string): boolean {
+function isNodeRegisterAck(value: unknown, nodeId: string): value is NodeRegisterAck {
   return Boolean(value && typeof value === "object"
     && (value as Record<string, unknown>).type === "node_register_ack"
     && (value as Record<string, unknown>).node_id === nodeId);

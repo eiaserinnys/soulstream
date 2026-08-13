@@ -307,6 +307,7 @@ describe("UpstreamAdapter", () => {
       max_concurrent: 1,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      runner_inventory_v1: true,
     });
     // PR(portrait wire): agents 매핑에 portrait_url 추가 (Python adapter.py:212-233 정합).
     // portrait_path 미설정 fixture → portrait_url=""·portrait_b64 키 미박힘.
@@ -940,7 +941,7 @@ describe("UpstreamAdapter", () => {
 
   it("node_register 직후 초기 세션 dump가 지연되어도 orch heartbeat ping에 응답한다", async () => {
     await stopMockOrch(orch);
-    orch = await startMockOrch({ pingOnRegister: true });
+    orch = await startMockOrch({ pingOnRegister: true, acknowledgeRegistration: true });
 
     const sessionDump = deferred<{
       sessions: [];
