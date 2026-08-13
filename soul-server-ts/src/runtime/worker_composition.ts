@@ -125,6 +125,16 @@ export async function composeWorkerRuntime(
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
     logger.error({ error }, "Durable event outbox pump failed");
+  }, {
+    onQuarantine: (result) => {
+      logger.warn({
+        path: result.path,
+        sourceSeq: result.sourceSeq,
+        sessionId: result.sessionId,
+        code: result.code,
+        attempts: result.attempts,
+      }, "Durable event outbox head quarantined after repeated rejection");
+    },
   });
   const eventOutboxPumpMux = new EventOutboxPumpMux(eventOutboxPump);
   const db = new SessionDB();

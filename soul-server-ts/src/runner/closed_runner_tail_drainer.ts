@@ -16,7 +16,7 @@ export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
 
 interface ClosedRunnerTailDrainerOptions {
   pumpMux: Pick<EventOutboxPumpMux, "register">;
-  logger: Pick<Logger, "error" | "info">;
+  logger: Pick<Logger, "error" | "info" | "warn">;
   openOutbox?: (databasePath: string) => Promise<ClosedRunnerTailOutbox>;
 }
 
@@ -36,6 +36,16 @@ export class ClosedRunnerTailDrainer {
           { error, sessionId: registration.config.sessionId },
           "closed runner tail pump failed",
         );
+      }, {
+        onQuarantine: (result) => {
+          this.options.logger.warn({
+            path: result.path,
+            sourceSeq: result.sourceSeq,
+            sessionId: result.sessionId,
+            code: result.code,
+            attempts: result.attempts,
+          }, "closed runner durable event tail quarantined after repeated rejection");
+        },
       });
       const acknowledgement = pump.waitForAcknowledgement(tail);
       unregister = this.options.pumpMux.register(pump);

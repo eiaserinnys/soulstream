@@ -1,6 +1,7 @@
 import type { EventOutboxBatch } from "./event_outbox.js";
 import {
   type EventAppendAck,
+  type EventIngressRejection,
   type EventOutboxPumpTransport,
   EventOutboxPump,
 } from "./event_outbox_pump.js";
@@ -31,9 +32,11 @@ export class EventOutboxPumpMux implements EventOutboxPumpTransport {
     };
   }
 
-  connect(sender: (batch: EventOutboxBatch) => Promise<void>): void {
+  async connect(sender: (batch: EventOutboxBatch) => Promise<void>): Promise<boolean> {
     this.sender = sender;
-    for (const pump of this.pumps.values()) pump.connect(sender);
+    const readiness = [...this.pumps.values()].map(async (pump) =>
+      (await pump.connect(sender)) !== false);
+    return (await Promise.all(readiness)).every(Boolean);
   }
 
   disconnect(): void {
@@ -53,5 +56,15 @@ export class EventOutboxPumpMux implements EventOutboxPumpTransport {
     // pump retransmits, so a late ACK must not poison the shared ACK mux.
     if (!pump) return;
     await pump.handleAck(ack);
+  }
+
+  isRejection(value: unknown): value is EventIngressRejection {
+    return [...this.pumps.values()].some((pump) => pump.isRejection(value));
+  }
+
+  async handleRejection(rejection: EventIngressRejection) {
+    const pump = this.pumps.get(rejection.stream_id);
+    if (!pump) return null;
+    return await pump.handleRejection(rejection);
   }
 }

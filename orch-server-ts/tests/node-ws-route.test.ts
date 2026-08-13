@@ -123,8 +123,13 @@ describe("Node WS Fastify route harness", () => {
 
     await app.ready();
     const ws = await injectAuthenticatedWs(app, "production-service-token");
+    const registrationAck = waitForMessage(ws);
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    await expect(registrationAck).resolves.toBe(JSON.stringify({
+      type: "node_register_ack",
+      node_id: "fake-node",
+    }));
     expect(registry.getConnectedNode("fake-node")).toMatchObject({
       nodeId: "fake-node",
       status: "connected",
@@ -220,8 +225,10 @@ describe("Node WS Fastify route harness", () => {
 
     await app.ready();
     const ws = await injectAuthenticatedWs(app);
+    const registrationAck = waitForMessage(ws);
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    await expect(registrationAck).resolves.toContain("node_register_ack");
     const ackMessage = waitForMessage(ws);
     ws.send(JSON.stringify({
       type: "event_append_batch",
@@ -267,8 +274,10 @@ describe("Node WS Fastify route harness", () => {
 
     await app.ready();
     const ws = await injectAuthenticatedWs(app);
+    const registrationAck = waitForMessage(ws);
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    await expect(registrationAck).resolves.toContain("node_register_ack");
 
     for (const sentAt of ["2026-07-10T06:00:00.000Z", "2026-07-10T06:00:30.000Z"]) {
       const pong = waitForMessage(ws);
