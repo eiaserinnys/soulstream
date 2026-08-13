@@ -11,15 +11,143 @@ import {
   SessionDeliveryNotificationHostClient,
 } from "../src/control_plane/persistence_host_clients.js";
 
-const logger = { warn: vi.fn() } as unknown as Logger;
+const logger = { info: vi.fn(), warn: vi.fn() } as unknown as Logger;
 const orch = { baseUrl: "https://orch.example", headers: { authorization: "Bearer token" } };
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("worker control-plane host clients", () => {
+  it("records all four persistence host round-trip timestamps", async () => {
+    const info = vi.fn();
+    const timingLogger = { info, warn: vi.fn() } as unknown as Logger;
+    const now = vi.spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_300);
+    let requestId = "";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      requestId = new Headers(init?.headers).get("x-soulstream-persistence-request-id") ?? "";
+      return new Response("null", {
+        status: 200,
+        headers: {
+          "x-soulstream-persistence-request-id": requestId,
+          "x-soulstream-host-received-at-ms": "1100",
+          "x-soulstream-host-responded-at-ms": "1200",
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new PersistenceHostTransport({ orch, logger: timingLogger });
+
+    await expect(transport.request("session-data", "get", ["session-a"])).resolves.toBeNull();
+
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(info).toHaveBeenCalledWith(
+      {
+        requestId,
+        domain: "session-data",
+        operation: "get",
+        status: 200,
+        nodeRequestedAtMs: 1_000,
+        hostReceivedAtMs: 1_100,
+        hostRespondedAtMs: 1_200,
+        nodeResponseReadAtMs: 1_300,
+        requestToHostMs: 100,
+        hostProcessingMs: 100,
+        hostToResponseReadMs: 100,
+        totalDurationMs: 300,
+      },
+      "persistence host request completed",
+    );
+    now.mockRestore();
+  });
+
+  it("keeps the correlation id and node timestamps when a response is never read", async () => {
+    const warn = vi.fn();
+    const timingLogger = { info: vi.fn(), warn } as unknown as Logger;
+    const timeout = new Error("The operation was aborted due to timeout");
+    const now = vi.spyOn(Date, "now")
+      .mockReturnValueOnce(2_000)
+      .mockReturnValueOnce(12_000);
+    let requestId = "";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      requestId = new Headers(init?.headers).get("x-soulstream-persistence-request-id") ?? "";
+      throw timeout;
+    }));
+    const transport = new PersistenceHostTransport({ orch, logger: timingLogger });
+
+    await expect(transport.request("session-deliveries", "release_expired_delivery_leases", []))
+      .rejects.toMatchObject({ name: "PersistenceHostRequestError" });
+
+    expect(warn).toHaveBeenCalledWith(
+      {
+        requestId,
+        domain: "session-deliveries",
+        operation: "release_expired_delivery_leases",
+        nodeRequestedAtMs: 2_000,
+        nodeRequestFailedAtMs: 12_000,
+        totalDurationMs: 10_000,
+        err: timeout,
+      },
+      "persistence host request failed before response",
+    );
+    now.mockRestore();
+  });
+
+  it("distinguishes response body read failure from a request that never reached the host", async () => {
+    const warn = vi.fn();
+    const timingLogger = { info: vi.fn(), warn } as unknown as Logger;
+    const readError = new Error("response body stalled");
+    const now = vi.spyOn(Date, "now")
+      .mockReturnValueOnce(3_000)
+      .mockReturnValueOnce(13_000);
+    let requestId = "";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      requestId = new Headers(init?.headers).get("x-soulstream-persistence-request-id") ?? "";
+      const body = new ReadableStream({
+        start(controller) {
+          controller.error(readError);
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "x-soulstream-persistence-request-id": requestId,
+          "x-soulstream-host-received-at-ms": "3100",
+          "x-soulstream-host-responded-at-ms": "3200",
+        },
+      });
+    }));
+    const transport = new PersistenceHostTransport({ orch, logger: timingLogger });
+
+    await expect(transport.request("session-data", "get", ["session-a"]))
+      .rejects.toMatchObject({
+        name: "PersistenceHostRequestError",
+        status: undefined,
+        retryable: true,
+      });
+
+    expect(warn).toHaveBeenCalledWith(
+      {
+        requestId,
+        domain: "session-data",
+        operation: "get",
+        nodeRequestedAtMs: 3_000,
+        nodeRequestFailedAtMs: 13_000,
+        totalDurationMs: 10_000,
+        status: 200,
+        hostReceivedAtMs: 3_100,
+        hostRespondedAtMs: 3_200,
+        err: readError,
+      },
+      "persistence host response read failed",
+    );
+    now.mockRestore();
+  });
+
   it("serializes task provenance in snake_case and dispatches a returned handoff", async () => {
     const notifyHumanHandoff = vi.fn();
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {

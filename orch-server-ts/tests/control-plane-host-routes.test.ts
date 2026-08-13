@@ -21,6 +21,35 @@ afterEach(async () => {
 });
 
 describe("control-plane host routes", () => {
+  it("echoes persistence timing metadata without changing the response body", async () => {
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        sessionReads: { getSession: vi.fn(async () => ({ sessionId: "session-1" })) },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-data/host/get",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-soulstream-persistence-request-id": "persistence-request-1",
+      },
+      payload: { args: ["session-1"] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ sessionId: "session-1" });
+    expect(response.headers["x-soulstream-persistence-request-id"]).toBe("persistence-request-1");
+    expect(response.headers["x-soulstream-host-received-at-ms"]).toMatch(/^\d+$/);
+    expect(response.headers["x-soulstream-host-responded-at-ms"]).toMatch(/^\d+$/);
+    expect(Number(response.headers["x-soulstream-host-responded-at-ms"]))
+      .toBeGreaterThanOrEqual(Number(response.headers["x-soulstream-host-received-at-ms"]));
+  });
+
   it("rejects a task mutation without agent provenance", async () => {
     const app = Fastify();
     apps.push(app);
@@ -354,7 +383,7 @@ describe("control-plane host routes", () => {
           baseUrl: address,
           headers: { authorization: `Bearer ${token}` },
         },
-        logger: { warn: vi.fn() } as never,
+        logger: { info: vi.fn(), warn: vi.fn() } as never,
       }),
     );
     const payload = {
@@ -552,7 +581,10 @@ describe("control-plane host routes", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/session-data/host/delete_session",
-      headers: { authorization: `Bearer ${token}` },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-soulstream-persistence-request-id": "request-conflict-1",
+      },
       payload: {
         args: [{
           session_id: "session-1",
@@ -562,6 +594,11 @@ describe("control-plane host routes", () => {
     });
 
     expect(response.statusCode).toBe(409);
+    expect(response.headers["x-soulstream-persistence-request-id"]).toBe("request-conflict-1");
+    const hostReceivedAtMs = Number(response.headers["x-soulstream-host-received-at-ms"]);
+    const hostRespondedAtMs = Number(response.headers["x-soulstream-host-responded-at-ms"]);
+    expect(Number.isSafeInteger(hostReceivedAtMs)).toBe(true);
+    expect(hostRespondedAtMs).toBeGreaterThanOrEqual(hostReceivedAtMs);
     expect(response.json()).toMatchObject({
       detail: {
         error: {

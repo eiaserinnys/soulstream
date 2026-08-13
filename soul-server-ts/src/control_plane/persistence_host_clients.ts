@@ -1,6 +1,3 @@
-import type { Logger } from "pino";
-
-import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
   ClaudeTranscriptEntry,
   ClaudeTranscriptKey,
@@ -19,75 +16,16 @@ import type {
   RegisterSessionParams,
   SessionUpdateFields,
 } from "../db/session_db_types.js";
+import {
+  PersistenceHostTransport,
+  type HostClientConfig,
+} from "./persistence_host_transport.js";
 
-export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
-const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
-
-export class PersistenceHostRequestError extends Error {
-  readonly retryable: boolean;
-
-  constructor(
-    readonly domain: string,
-    readonly operation: string,
-    message: string,
-    readonly status?: number,
-    options?: { cause?: unknown },
-  ) {
-    super(message, options);
-    this.name = "PersistenceHostRequestError";
-    this.retryable = status === undefined || status === 408 || status === 429 || status >= 500;
-  }
-}
-
-export class PersistenceHostTransport {
-  constructor(private readonly config: HostClientConfig) {}
-
-  async request<T>(
-    domain: string,
-    operation: string,
-    args: unknown[],
-    options: { timeoutMs?: number } = {},
-  ): Promise<T> {
-    let response: Response;
-    try {
-      response = await fetch(
-        `${this.config.orch.baseUrl}/api/${domain}/host/${encodeURIComponent(operation)}`,
-        {
-          method: "POST",
-          headers: { ...this.config.orch.headers, "content-type": "application/json" },
-          body: JSON.stringify({ args: snakeCase(args) }),
-          signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
-        },
-      );
-    } catch (error) {
-      this.config.logger.warn(
-        { domain, operation, err: error },
-        "persistence host request failed before response",
-      );
-      throw new PersistenceHostRequestError(
-        domain,
-        operation,
-        `${domain} host ${operation} request failed`,
-        undefined,
-        { cause: error },
-      );
-    }
-    if (!response.ok) {
-      const message = await response.text();
-      this.config.logger.warn(
-        { domain, operation, status: response.status, message },
-        "persistence host request failed",
-      );
-      throw new PersistenceHostRequestError(
-        domain,
-        operation,
-        `${domain} host ${operation} failed: ${message || response.statusText}`,
-        response.status,
-      );
-    }
-    return reviveDates(await response.json()) as T;
-  }
-}
+export {
+  PersistenceHostRequestError,
+  PersistenceHostTransport,
+  type HostClientConfig,
+} from "./persistence_host_transport.js";
 
 export type SessionTransitionFields = Pick<
   SessionUpdateFields,
@@ -497,29 +435,4 @@ export class SessionPageBindingHostClient {
   async markFailure(sessionId: string, step: "page" | "legacy", error: string, manualRepair: boolean): Promise<void> {
     await this.transport.request("session-page-bindings", "mark_failure", [sessionId, step, error, manualRepair]);
   }
-}
-
-function snakeCase(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(snakeCase);
-  if (!value || typeof value !== "object" || value instanceof Date) return value;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-    .filter(([, child]) => child !== undefined)
-    .map(([key, child]) => {
-      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-      return [
-        snakeKey,
-        OPAQUE_ARGUMENT_KEYS.has(snakeKey) ? child : snakeCase(child),
-      ];
-    }));
-}
-
-function reviveDates(value: unknown, key?: string): unknown {
-  if (Array.isArray(value)) return value.map(child => reviveDates(child));
-  if (typeof value === "string" && key !== "daily_date" && /(?:_at|At|_before|Before|_expires_at)$/.test(key ?? "")) {
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? date : value;
-  }
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-    .map(([childKey, child]) => [childKey, reviveDates(child, childKey)]));
 }
