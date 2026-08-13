@@ -207,15 +207,22 @@ function createHarness() {
       nodeId: string;
       agents: unknown[];
       supportedBackends: string[];
-    }) =>
-      registry.registerNode({
+    }) => {
+      const connectionId = registry.registerNode({
         type: "node_register",
         node_id: input.nodeId,
         host: "127.0.0.1",
         port: 4105,
         agents: input.agents,
+        capabilities: { max_concurrent: 8, runner_inventory_v1: true },
         supported_backends: input.supportedBackends,
-      }).node.connectionId,
+      }).node.connectionId;
+      registry.receiveNodeMessage(input.nodeId, {
+        type: "runner_inventory",
+        running_session_ids: [],
+      });
+      return connectionId;
+    },
     attachTransport: (
       nodeId: string,
       connectionId: string,

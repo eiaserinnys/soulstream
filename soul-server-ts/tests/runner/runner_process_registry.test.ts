@@ -193,7 +193,7 @@ describe("runner process registry", () => {
     const stateDirectory = await temporaryDirectory("inventory-gc-race");
     const collectedDirectory = join(stateDirectory, "collected");
     await mkdir(collectedDirectory);
-    const logger = { debug: vi.fn() };
+    const logger = { info: vi.fn() };
 
     await expect(listLiveRunnerSessionIds({
       stateDirectory,
@@ -211,7 +211,7 @@ describe("runner process registry", () => {
       },
       logger,
     })).resolves.toEqual(["session-live"]);
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.info).toHaveBeenCalledWith(
       { count: 1, directories: [collectedDirectory] },
       "skipped runner inventory entries removed during scan",
     );
