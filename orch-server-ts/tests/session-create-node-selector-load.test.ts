@@ -94,8 +94,7 @@ describe("session create node load selection", () => {
     reportRunningSessions(registry, "node-a", 1);
     registry.receiveNodeMessage("node-a", {
       type: "session_created",
-      agentSessionId: "session-new",
-      status: "running",
+      session: { agent_session_id: "session-new", status: "running" },
     });
     expect(registry.getReportedRunnerLoad("node-a")?.runningSessionCount).toBe(2);
 

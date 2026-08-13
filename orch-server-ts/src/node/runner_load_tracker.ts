@@ -1,5 +1,12 @@
 import type { MutableNodeConnection } from "./registry_types.js";
 import type { PerNodeSessionCache } from "./session_cache.js";
+import { sessionIdFromPayload } from "./session_cache_payload.js";
+
+const TERMINAL_RUNNER_SESSION_STATUSES = new Set([
+  "completed",
+  "error",
+  "interrupted",
+]);
 
 export type ReportedRunnerLoad = {
   runningSessionCount: number;
@@ -49,17 +56,15 @@ export function updateReportedRunnerSession(
   message: Record<string, unknown>,
 ): void {
   if (node.runningSessionIds === undefined) return;
-  const sessionId = directSessionId(message);
+  const sessionId = sessionIdFromPayload(message);
   if (sessionId === undefined) return;
   const cached = sessionCache.getSessionForNode(node.nodeId, sessionId);
-  if (cached?.status === "running") {
+  if (
+    cached !== undefined
+    && !TERMINAL_RUNNER_SESSION_STATUSES.has(cached.status ?? "")
+  ) {
     node.runningSessionIds.add(sessionId);
   } else {
     node.runningSessionIds.delete(sessionId);
   }
-}
-
-function directSessionId(message: Record<string, unknown>): string | undefined {
-  const value = message.agentSessionId ?? message.agent_session_id;
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
