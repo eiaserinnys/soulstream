@@ -4,7 +4,11 @@ import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef } from "../db/session_db.js";
-import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
+import type {
+  ClaudePermissionMode,
+  EngineInterventionFailureReason,
+  ReasoningEffort,
+} from "../engine/protocol.js";
 import { appendAttachmentPathNotes } from "../task/attachment_path_note.js";
 import type {
   AddInterventionResult,
@@ -83,21 +87,18 @@ export type InterveneAck =
       status: "ok";
       outcome: "delivered";
       agentSessionId: string;
+      delivered: true;
     }
   | {
       type: "intervene_ack";
       requestId: string;
       status: "ok";
       outcome: "queued";
-      queuePosition: number;
-    }
-  | {
-      type: "intervene_ack";
-      requestId: string;
-      status: "ok";
-      outcome: "steered";
-      queuePosition: number;
       agentSessionId: string;
+      delivered: false;
+      queuePosition: number;
+      consumeWhen: "next_turn";
+      reason: EngineInterventionFailureReason | "queue_only_policy";
     }
   | {
       type: "intervene_ack";
@@ -105,6 +106,7 @@ export type InterveneAck =
       status: "ok";
       outcome: "auto_resumed";
       agentSessionId: string;
+      delivered: true;
     }
   | {
       type: "intervene_ack";
@@ -112,6 +114,9 @@ export type InterveneAck =
       status: "ok";
       outcome: "deferred";
       agentSessionId: string;
+      delivered: false;
+      retryWhen: "engine_available" | "terminal_state";
+      reason: EngineInterventionFailureReason | "terminal_only_policy";
     }
   | {
       type: "intervene_ack";
@@ -120,6 +125,7 @@ export type InterveneAck =
       outcome: "suppressed";
       agentSessionId: string;
       deliveryId: string;
+      delivered: false;
       reason: string;
     };
 
@@ -281,26 +287,11 @@ export function buildInterveneAck(params: {
       requestId,
       status: "ok",
       outcome: "queued",
-      queuePosition: result.queuePosition,
-    };
-  }
-  if ("steered" in result) {
-    return {
-      type: "intervene_ack",
-      requestId,
-      status: "ok",
-      outcome: "steered",
-      queuePosition: result.queuePosition,
       agentSessionId,
-    };
-  }
-  if ("delivered" in result) {
-    return {
-      type: "intervene_ack",
-      requestId,
-      status: "ok",
-      outcome: "delivered",
-      agentSessionId,
+      delivered: false,
+      queuePosition: result.queuePosition,
+      consumeWhen: result.consumeWhen,
+      reason: result.reason,
     };
   }
   if ("deferred" in result) {
@@ -310,6 +301,19 @@ export function buildInterveneAck(params: {
       status: "ok",
       outcome: "deferred",
       agentSessionId,
+      delivered: false,
+      retryWhen: result.retryWhen,
+      reason: result.reason,
+    };
+  }
+  if ("delivered" in result && result.delivered === true) {
+    return {
+      type: "intervene_ack",
+      requestId,
+      status: "ok",
+      outcome: "delivered",
+      agentSessionId,
+      delivered: true,
     };
   }
   if ("suppressed" in result) {
@@ -320,16 +324,22 @@ export function buildInterveneAck(params: {
       outcome: "suppressed",
       agentSessionId,
       deliveryId: result.deliveryId,
+      delivered: false,
       reason: result.reason,
     };
   }
-  return {
-    type: "intervene_ack",
-    requestId,
-    status: "ok",
-    outcome: "auto_resumed",
-    agentSessionId,
-  };
+  if ("autoResumed" in result) {
+    return {
+      type: "intervene_ack",
+      requestId,
+      status: "ok",
+      outcome: "auto_resumed",
+      agentSessionId,
+      delivered: true,
+    };
+  }
+  const exhaustive: never = result;
+  throw new Error(`Unknown intervention result: ${JSON.stringify(exhaustive)}`);
 }
 
 function normalizeOptionalString(value: string | null | undefined): string | undefined {

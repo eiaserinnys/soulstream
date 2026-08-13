@@ -329,7 +329,13 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     });
     await expect(
       transition.deliver(task, { text: "second at 80ms", user: "alice" }),
-    ).resolves.toEqual({ steered: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
+    });
     expect(task.interventionQueue.map((item) => item.text)).toEqual([
       "second at 80ms",
     ]);
@@ -425,7 +431,13 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         text: "Continue from where you left off.",
         user: "dashboard",
       }),
-    ).resolves.toEqual({ steered: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
+    });
     await task.executionPromise;
 
     expect(queryCalls).toBe(2);

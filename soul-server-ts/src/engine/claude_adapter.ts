@@ -23,6 +23,7 @@ import { readClaudeBackgroundProvenance } from "./claude_background_provenance.j
 import { isPostResultDrainEvent } from "./claude_event_phase.js";
 import type {
   BackendId,
+  EngineInterventionResult,
   EngineUserInput,
   EngineExecuteParams,
   EnginePort,
@@ -34,7 +35,6 @@ import type {
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
   SupportsInputResponse,
-  SupportsLiveTurnSteering,
 } from "./protocol.js";
 import {
   mapClaudeClientEvent,
@@ -136,8 +136,7 @@ export class ClaudeEngineAdapter
     EnginePort,
     SupportsInputResponse,
     SupportsCompact,
-    SupportsClaudeBackgroundTasks,
-    SupportsLiveTurnSteering
+    SupportsClaudeBackgroundTasks
 {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
@@ -304,26 +303,40 @@ export class ClaudeEngineAdapter
     return true;
   }
 
-  async interruptForSteer(): Promise<boolean> {
+  async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    void input;
     if (!this.currentTurn) {
-      return false;
+      return {
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "no_active_turn",
+      };
     }
     const client = this.activeClient ?? this.client;
+    let interrupted: boolean;
     if (client.interruptActiveTurnForSteer) {
-      return await client.interruptActiveTurnForSteer();
+      interrupted = await client.interruptActiveTurnForSteer();
+    } else if (client.interrupt) {
+      interrupted = await client.interrupt();
+    } else {
+      return {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+        message: "Claude client does not support intervention interrupts",
+      };
     }
-    if (client.interrupt) {
-      return await client.interrupt();
-    }
-    return false;
-  }
-
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    void input;
-    return {
-      status: "not_supported",
-      message: "Claude live steering uses interruptForSteer",
-    };
+    return interrupted
+      ? {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "next_turn_required",
+        }
+      : {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "no_active_turn",
+        };
   }
 
   async compact(sessionId: string): Promise<void> {

@@ -572,7 +572,7 @@
     "InterveneAck": {
       "type": "object",
       "description": "노드→orch: intervene 명령 ACK. soul-server-ts/src/task/task_intervention_route.ts. orch _send_command Future 매칭에 사용.",
-      "required": ["type", "requestId"],
+      "required": ["type", "requestId", "status", "outcome", "delivered"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "intervene_ack" },
@@ -582,7 +582,6 @@
           "type": "string",
           "enum": [
             "delivered",
-            "steered",
             "queued",
             "deferred",
             "auto_resumed",
@@ -590,7 +589,13 @@
           ]
         },
         "agentSessionId": { "type": "string" },
+        "delivered": { "type": "boolean" },
         "queuePosition": { "type": "integer", "minimum": 1 },
+        "consumeWhen": { "type": "string", "enum": ["next_turn"] },
+        "retryWhen": {
+          "type": "string",
+          "enum": ["engine_available", "terminal_state"]
+        },
         "deliveryId": { "type": "string" },
         "reason": { "type": "string" }
       }

@@ -542,14 +542,24 @@ describe("TaskRuntimeCommands ACK builders", () => {
       buildInterveneAck({
         requestId: "req-queued",
         agentSessionId: "sess-1",
-        result: { queued: true, queuePosition: 3 },
+        result: {
+          delivered: false,
+          queued: true,
+          queuePosition: 3,
+          consumeWhen: "next_turn",
+          reason: "next_turn_required",
+        },
       }),
     ).toEqual({
       type: "intervene_ack",
       requestId: "req-queued",
       status: "ok",
       outcome: "queued",
+      agentSessionId: "sess-1",
+      delivered: false,
       queuePosition: 3,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
     });
 
     expect(
@@ -564,28 +574,19 @@ describe("TaskRuntimeCommands ACK builders", () => {
       status: "ok",
       outcome: "auto_resumed",
       agentSessionId: "sess-1",
-    });
-
-    expect(
-      buildInterveneAck({
-        requestId: "req-steered",
-        agentSessionId: "sess-1",
-        result: { steered: true, queuePosition: 2 },
-      }),
-    ).toEqual({
-      type: "intervene_ack",
-      requestId: "req-steered",
-      status: "ok",
-      outcome: "steered",
-      queuePosition: 2,
-      agentSessionId: "sess-1",
+      delivered: true,
     });
 
     expect(
       buildInterveneAck({
         requestId: "req-deferred",
         agentSessionId: "sess-1",
-        result: { deferred: true },
+        result: {
+          delivered: false,
+          deferred: true,
+          retryWhen: "engine_available",
+          reason: "no_active_turn",
+        },
       }),
     ).toEqual({
       type: "intervene_ack",
@@ -593,6 +594,9 @@ describe("TaskRuntimeCommands ACK builders", () => {
       status: "ok",
       outcome: "deferred",
       agentSessionId: "sess-1",
+      delivered: false,
+      retryWhen: "engine_available",
+      reason: "no_active_turn",
     });
 
     expect(
@@ -607,6 +611,7 @@ describe("TaskRuntimeCommands ACK builders", () => {
       status: "ok",
       outcome: "delivered",
       agentSessionId: "sess-1",
+      delivered: true,
     });
 
     expect(
@@ -626,6 +631,7 @@ describe("TaskRuntimeCommands ACK builders", () => {
       outcome: "suppressed",
       agentSessionId: "sess-1",
       deliveryId: "77777777-7777-4777-8777-777777777777",
+      delivered: false,
       reason: "delivery_consumed",
     });
   });

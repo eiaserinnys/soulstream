@@ -466,9 +466,9 @@ export class TaskManager {
  * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
  *
  * 분기:
- *   - Running: steer interrupt 지원 엔진이면 queue push 후 현 turn interrupt → `{steered}`.
- *     live delivery 지원 엔진이면 현 turn input stream에 즉시 전달 → `{delivered}`.
- *     지원 없음/짧은 경계 재시도 실패/idle race면 interventionQueue에 push → `{queued, queuePosition}`.
+ *   - Running: `EnginePort.intervene()`가 백엔드별 전달 방식을 감춘다.
+ *     현재 전달하면 `{delivered: true}`, 지금 전달할 수 없으면 사유와 다음 소비 시점을
+ *     포함한 queue/defer 결과를 반환한다.
    *   - Completed/Error/Interrupted: user_message를 박고 status를 "running"으로 돌린 뒤
    *     queue push + session_updated + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
    *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —

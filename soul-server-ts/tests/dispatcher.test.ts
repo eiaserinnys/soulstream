@@ -977,6 +977,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
         status: "ok",
         outcome: "auto_resumed",
         agentSessionId: sessionId,
+        delivered: true,
       },
     ]);
     expect(getSession).toHaveBeenCalledWith(sessionId);

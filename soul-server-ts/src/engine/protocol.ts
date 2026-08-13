@@ -185,6 +185,15 @@ export interface EnginePort {
   sendControlFrame?(frame: RunnerControlFrame): Promise<boolean> | boolean;
 
   /**
+   * 실행 중인 엔진에 사용자 의도를 개입시킨다.
+   *
+   * 백엔드가 현재 turn에 직접 전달하는지, turn을 중단해 다음 turn 경계를
+   * 만드는지는 어댑터 내부 책임이다. 호출자는 status만으로 전달 여부를
+   * 판단하며 mechanism/reason은 관측과 진단에만 사용한다.
+   */
+  intervene(input: EngineUserInput): Promise<EngineInterventionResult>;
+
+  /**
    * 실행 중 turn 중단. 성공 시 true.
    *
    * - Codex SDK: TurnOptions.signal (AbortController)로 처리.
@@ -228,11 +237,12 @@ export interface SupportsThreadFork {
 }
 
 /**
- * 백엔드가 실행 중 turn에 live user input steering을 지원하면 구현.
+ * 어댑터 내부의 live user input 결과 분류.
  *
  * Claude Agent SDK는 열린 `AsyncIterable<SDKUserMessage>` input stream에 user message를
  * yield하여 현재 query stdin에 전달한다. Codex app-server는 `turn/steer`로 현재 active
- * turn에 UserInput[]을 전달한다. 호출자는 capability presence로만 판단한다.
+ * turn에 UserInput[]을 전달한다. 상위 호출자는 이 저수준 차이를 보지 않고
+ * `EnginePort.intervene()`만 사용한다.
  */
 export type LiveTurnSteerStatus =
   | "delivered"
@@ -247,16 +257,26 @@ export interface LiveTurnSteerResult {
   message?: string;
 }
 
-export interface SupportsLiveTurnSteering {
-  steerActiveTurn(
-    input: EngineUserInput,
-  ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
-  /**
-   * 현재 turn을 깨끗하게 중단하고, 호출자가 이미 durable queue에 넣은 steer
-   * 메시지를 다음 turn에서 소비하게 한다. Claude CLI live steering 복제 경로.
-   */
-  interruptForSteer?(): Promise<boolean>;
-}
+export type EngineInterventionMechanism =
+  | "active_turn"
+  | "interrupt_then_next_turn"
+  | "unsupported";
+
+export type EngineInterventionFailureReason =
+  | Exclude<LiveTurnSteerStatus, "delivered">
+  | "next_turn_required";
+
+export type EngineInterventionResult =
+  | {
+      status: "delivered";
+      mechanism: EngineInterventionMechanism;
+    }
+  | {
+      status: "not_delivered";
+      mechanism: EngineInterventionMechanism;
+      reason: EngineInterventionFailureReason;
+      message?: string;
+    };
 
 /**
  * 백엔드가 turn 중 AskUserQuestion 같은 input request 응답 주입을 지원하면 구현.

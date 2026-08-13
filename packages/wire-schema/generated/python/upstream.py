@@ -304,14 +304,13 @@ class InterveneAck(TypedDict):
 
     type: Literal['intervene_ack']
     requestId: str
-    status: NotRequired[Literal['ok']]
-    outcome: NotRequired[
-        Literal[
-            'delivered', 'steered', 'queued', 'deferred', 'auto_resumed', 'suppressed'
-        ]
-    ]
+    status: Literal['ok']
+    outcome: Literal['delivered', 'queued', 'deferred', 'auto_resumed', 'suppressed']
     agentSessionId: NotRequired[str]
+    delivered: bool
     queuePosition: NotRequired[int]
+    consumeWhen: NotRequired[Literal['next_turn']]
+    retryWhen: NotRequired[Literal['engine_available', 'terminal_state']]
     deliveryId: NotRequired[str]
     reason: NotRequired[str]
 

@@ -39,9 +39,16 @@ function makeSubject(
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
   const logger = makeLogger();
   const loadEvictedTask = vi.fn(async (_sessionId: string): Promise<Task | null> => null);
+  const queuedResult = {
+    delivered: false,
+    queued: true,
+    queuePosition: 1,
+    consumeWhen: "next_turn",
+    reason: "queue_only_policy",
+  } as const;
   const runningInterventionTransition = {
-    deliver: vi.fn().mockResolvedValue({ queued: true, queuePosition: 1 }),
-    queueOnly: vi.fn().mockResolvedValue({ queued: true, queuePosition: 1 }),
+    deliver: vi.fn().mockResolvedValue(queuedResult),
+    queueOnly: vi.fn().mockResolvedValue(queuedResult),
   } as unknown as Pick<RunningInterventionTransition, "deliver" | "queueOnly">;
   const autoResumeTransition = {
     resume: vi.fn().mockResolvedValue({ autoResumed: true }),
@@ -123,7 +130,13 @@ describe("TaskInterventionRoute.addIntervention", () => {
       callerInfo: { source: "slack", display_name: "Alice" },
       attachmentPaths: ["/tmp/a.png"],
       context,
-    }, onResume)).resolves.toEqual({ queued: true, queuePosition: 1 });
+    }, onResume)).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
 
     expect(loadEvictedTask).not.toHaveBeenCalled();
     expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(task, {
@@ -182,7 +195,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       user: "system",
       source: "claude_runtime_task_followup",
       onlyIfTerminal: true,
-    }, vi.fn())).resolves.toEqual({ deferred: true });
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      deferred: true,
+      retryWhen: "terminal_state",
+      reason: "terminal_only_policy",
+    });
 
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
@@ -357,7 +375,13 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "completion-2",
       relationKey: "runtime_task:task-1:99",
       source: "runtime_followup",
-    }, vi.fn())).resolves.toEqual({ queued: true, queuePosition: 1 });
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
 
     expect(sessionNotificationPublisher.publish).toHaveBeenCalledWith(
       task,
@@ -521,7 +545,13 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "schedule-1",
       relationKey: "schedule:schedule-1:run-1",
       source: "schedule_dispatcher",
-    }, vi.fn())).resolves.toEqual({ queued: true, queuePosition: 1 });
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
 
     expect(runningInterventionTransition.queueOnly).toHaveBeenCalledWith(
       task,

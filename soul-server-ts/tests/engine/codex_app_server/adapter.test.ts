@@ -251,8 +251,8 @@ describe("CodexAppServerEngineAdapter", () => {
     );
 
     await expect(
-      adapter.steerActiveTurn({ prompt: "steer now" }),
-    ).resolves.toEqual({ status: "delivered" });
+      adapter.intervene({ prompt: "steer now" }),
+    ).resolves.toEqual({ status: "delivered", mechanism: "active_turn" });
     expect(client.steerTurn).toHaveBeenCalledWith({
       threadId: "thread-1",
       expectedTurnId: "turn-1",
@@ -317,8 +317,10 @@ describe("CodexAppServerEngineAdapter", () => {
       content: "answer",
       _final_for_live_stream: true,
     });
-    await expect(adapter.steerActiveTurn({ prompt: "late" })).resolves.toEqual({
-      status: "no_active_turn",
+    await expect(adapter.intervene({ prompt: "late" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
       message: "No active Codex app-server turn",
     });
   });
@@ -442,7 +444,7 @@ describe("CodexAppServerEngineAdapter", () => {
     expect(events).toEqual([]);
   });
 
-  it("steer returns no_active_turn before execute and failed on RPC error", async () => {
+  it("intervene returns no_active_turn before execute and failed on RPC error", async () => {
     const client = new FakeClient();
     client.steerTurn.mockRejectedValueOnce(
       new AppServerRpcError("transport closed", {
@@ -452,15 +454,19 @@ describe("CodexAppServerEngineAdapter", () => {
     );
     const { adapter } = makeAdapter(client);
 
-    await expect(adapter.steerActiveTurn({ prompt: "before" })).resolves.toEqual({
-      status: "no_active_turn",
+    await expect(adapter.intervene({ prompt: "before" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
       message: "No active Codex app-server turn",
     });
 
     const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
-    await expect(adapter.steerActiveTurn({ prompt: "during" })).resolves.toEqual({
-      status: "failed",
+    await expect(adapter.intervene({ prompt: "during" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "failed",
       message: "transport closed",
     });
     client.emit({
@@ -520,8 +526,10 @@ describe("CodexAppServerEngineAdapter", () => {
     expect(events.map((event) => (event as { type: string }).type)).toEqual(["session"]);
     expect(events.some((event) => (event as { type: string }).type === "error")).toBe(false);
     expect(client.close).toHaveBeenCalledTimes(1);
-    await expect(adapter.steerActiveTurn({ prompt: "late" })).resolves.toEqual({
-      status: "no_active_turn",
+    await expect(adapter.intervene({ prompt: "late" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
       message: "No active Codex app-server turn",
     });
   });

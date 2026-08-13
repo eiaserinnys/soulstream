@@ -19,14 +19,20 @@ import type { SessionNotificationPublisher } from "./task_session_notification.j
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
  *
- * - running 세션 → live engine delivery면 `{delivered: true}`, steer interrupt면 `{steered: true}`,
- *   otherwise queue/defer.
+ * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
+ *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
  * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
  *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
   | { autoResumed: true }
+  | {
+      delivered: false;
+      deferred: true;
+      retryWhen: "terminal_state";
+      reason: "terminal_only_policy";
+    }
   | { suppressed: true; deliveryId: string; reason: string };
 
 /** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
@@ -55,8 +61,8 @@ export interface AddInterventionParams {
   storedDeliveryPayloadHash?: string;
   /**
    * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
-   * a running task that cannot be live-steered returns `{deferred: true}` so the
-   * caller can keep its durable store active and retry later.
+   * a running task that cannot be intervened returns an explicit deferred result so
+   * the caller can keep its durable store active and retry later.
    */
   queueIfRunning?: boolean;
   /** Delayed retries must use the terminal auto-resume path, never live steering. */
@@ -146,7 +152,12 @@ export class TaskInterventionRoute {
     try {
       task = await this.resolveTask(params.agentSessionId);
       if (params.onlyIfTerminal === true && task.status === "running") {
-        const result = { deferred: true } as const;
+        const result = {
+          delivered: false,
+          deferred: true,
+          retryWhen: "terminal_state",
+          reason: "terminal_only_policy",
+        } as const;
         if (this.deps.deliveryLedgerGate) {
           await this.deps.deliveryLedgerGate.recordResult(admission, result);
         }

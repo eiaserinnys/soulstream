@@ -34,13 +34,132 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
-  it("persists a process-runner intervention in the SQLite inbox and ACKs it before interrupt", async () => {
-    const stageIntervention = vi.fn().mockResolvedValue({
-      eventSourceSeq: 42,
-      queuePosition: 1,
-    });
+  it.each([
+    {
+      backendId: "claude" as const,
+      engineResult: {
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "next_turn_required",
+      },
+      expected: {
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "next_turn_required",
+      },
+    },
+    {
+      backendId: "codex" as const,
+      engineResult: {
+        status: "delivered",
+        mechanism: "active_turn",
+      },
+      expected: {
+        delivered: true,
+      },
+    },
+  ])(
+    "$backendId intervention has the same outcome through in-process and runner paths",
+    async ({ backendId, engineResult, expected }) => {
+      const intervene = vi.fn().mockResolvedValue(engineResult);
+      const adapter = {
+        backendId,
+        workspaceDir: `/tmp/${backendId}`,
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort;
+      const stageIntervention = vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
+        eventSourceSeq: input.event ? 42 : null,
+        queuePosition: input.queued ? 1 : 0,
+      }));
+      const waitForSessionAck = vi.fn().mockResolvedValue(142);
+      const invoke = vi.fn(async (capability: string, args: unknown[]) => {
+        if (capability !== "intervene") {
+          throw new Error(`unexpected capability: ${capability}`);
+        }
+        return await intervene(...args);
+      });
+      const dispatcher = {
+        stageIntervention,
+        waitForSessionAck,
+        invoke,
+        dispatch: vi.fn(),
+        executeFrames: vi.fn(),
+        prepareSession: vi.fn(),
+        interrupt: vi.fn(),
+        close: vi.fn(),
+        detachHost: vi.fn(),
+        sendControlFrame: vi.fn(),
+        requestContext: vi.fn(),
+      };
+      const transition = new RunningInterventionTransition({
+        broadcaster: makeBroadcaster(),
+        logger: silentLogger,
+        persistence: makeEventPersistenceTestDouble().persistence,
+        liveRetryDelayMs: 0,
+      });
+      const inProcessTask = makeRunningTask({
+        runner: createInProcessTaskRunnerRuntime(adapter),
+      });
+      const runnerTask = makeRunningTask({
+        runner: createTaskRunnerRuntime(
+          new RunnerProcessEngineProxy(backendId, `/tmp/${backendId}`, dispatcher as never),
+          dispatcher as never,
+          "runner",
+        ),
+      });
+
+      const inProcessResult = await transition.deliver(
+        inProcessTask,
+        { text: `redirect ${backendId}`, user: "alice" },
+      );
+      const runnerResult = await transition.deliver(
+        runnerTask,
+        { text: `redirect ${backendId}`, user: "alice" },
+      );
+
+      expect(inProcessResult).toEqual(expected);
+      expect(runnerResult).toEqual(expected);
+      expect(intervene).toHaveBeenCalledTimes(2);
+      expect(invoke).toHaveBeenCalledWith(
+        "intervene",
+        [{ prompt: `redirect ${backendId}`, imageAttachmentPaths: [] }],
+      );
+      if (backendId === "claude") {
+        expect(stageIntervention).toHaveBeenNthCalledWith(1, expect.objectContaining({
+          queued: false,
+          event: expect.objectContaining({ type: "intervention_sent" }),
+        }));
+        expect(stageIntervention).toHaveBeenNthCalledWith(2, expect.objectContaining({
+          queued: true,
+        }));
+        expect(runnerTask.interventionQueue).toHaveLength(1);
+      } else {
+        expect(stageIntervention).toHaveBeenCalledTimes(1);
+        expect(stageIntervention).toHaveBeenCalledWith(expect.objectContaining({
+          queued: false,
+          event: expect.objectContaining({ type: "intervention_sent" }),
+        }));
+        expect(runnerTask.interventionQueue).toEqual([]);
+      }
+    },
+  );
+
+  it("attempts runner delivery before durably queueing an undelivered intervention", async () => {
+    const stageIntervention = vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
+      eventSourceSeq: input.event ? 42 : null,
+      queuePosition: input.queued ? 1 : 0,
+    }));
     const waitForSessionAck = vi.fn().mockResolvedValue(142);
-    const invoke = vi.fn().mockResolvedValue(true);
+    const invoke = vi.fn().mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "interrupt_then_next_turn",
+      reason: "next_turn_required",
+    });
     const dispatcher = {
       stageIntervention,
       waitForSessionAck,
@@ -70,9 +189,15 @@ describe("RunningInterventionTransition", () => {
 
     await expect(
       transition.deliver(task, { text: "durable after adopt", user: "soak" }),
-    ).resolves.toEqual({ steered: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
+    });
 
-    expect(stageIntervention).toHaveBeenCalledWith({
+    expect(stageIntervention).toHaveBeenNthCalledWith(1, {
       interventionId: expect.any(String),
       message: expect.objectContaining({
         text: "durable after adopt",
@@ -83,6 +208,14 @@ describe("RunningInterventionTransition", () => {
         type: "intervention_sent",
         text: "durable after adopt",
       }),
+      queued: false,
+    });
+    expect(stageIntervention).toHaveBeenNthCalledWith(2, {
+      interventionId: expect.any(String),
+      message: expect.objectContaining({
+        text: "durable after adopt",
+        runnerInterventionId: expect.any(String),
+      }),
       queued: true,
     });
     expect(stageIntervention.mock.invocationCallOrder[0]).toBeLessThan(
@@ -90,6 +223,9 @@ describe("RunningInterventionTransition", () => {
     );
     expect(waitForSessionAck.mock.invocationCallOrder[0]).toBeLessThan(
       invoke.mock.invocationCallOrder[0],
+    );
+    expect(invoke.mock.invocationCallOrder[0]).toBeLessThan(
+      stageIntervention.mock.invocationCallOrder[1],
     );
     expect(task.lastEventId).toBe(142);
     expect(task.interventionQueue).toEqual([
@@ -101,9 +237,12 @@ describe("RunningInterventionTransition", () => {
     expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
   });
 
-  it("publishes acceptance before queueing and interrupting a steer-interrupt engine", async () => {
-    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
-    const interruptForSteer = vi.fn().mockResolvedValue(true);
+  it("publishes acceptance before asking a Claude adapter to intervene", async () => {
+    const intervene = vi.fn().mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "interrupt_then_next_turn",
+      reason: "next_turn_required",
+    });
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
@@ -111,8 +250,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn,
-        interruptForSteer,
+        intervene,
       } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -129,10 +267,15 @@ describe("RunningInterventionTransition", () => {
         user: "alice",
         attachmentPaths: ["/tmp/a.png"],
       }),
-    ).resolves.toEqual({ steered: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
+    });
 
-    expect(interruptForSteer).toHaveBeenCalledTimes(1);
-    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(intervene).toHaveBeenCalledTimes(1);
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
@@ -150,8 +293,12 @@ describe("RunningInterventionTransition", () => {
     ]);
   });
 
-  it("keeps the queued steer message when steer interrupt races with turn completion", async () => {
-    const interruptForSteer = vi.fn().mockResolvedValue(false);
+  it("keeps the queued message when intervention races with turn completion", async () => {
+    const intervene = vi.fn().mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "interrupt_then_next_turn",
+      reason: "no_active_turn",
+    });
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
@@ -159,8 +306,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn: vi.fn(),
-        interruptForSteer,
+        intervene,
       } as unknown as EnginePort),
     });
     const persistenceDouble = makeEventPersistenceTestDouble();
@@ -172,14 +318,23 @@ describe("RunningInterventionTransition", () => {
 
     await expect(
       transition.deliver(task, { text: "race-safe steer", user: "alice" }),
-    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "no_active_turn",
+    });
 
-    expect(interruptForSteer).toHaveBeenCalledTimes(1);
+    expect(intervene).toHaveBeenCalledTimes(2);
     expect(task.interventionQueue).toEqual([{ text: "race-safe steer", user: "alice" }]);
   });
 
   it("delivers running interventions to a live engine and publishes intervention_sent immediately", async () => {
-    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
@@ -187,7 +342,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn,
+        intervene,
       } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -206,7 +361,7 @@ describe("RunningInterventionTransition", () => {
       }),
     ).resolves.toEqual({ delivered: true });
 
-    expect(steerActiveTurn).toHaveBeenCalledWith({
+    expect(intervene).toHaveBeenCalledWith({
       prompt: "reach the active turn\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
     });
@@ -223,10 +378,14 @@ describe("RunningInterventionTransition", () => {
   });
 
   it("retries one transient live-steer boundary before falling back", async () => {
-    const steerActiveTurn = vi
+    const intervene = vi
       .fn()
-      .mockResolvedValueOnce({ status: "not_accepting_input" })
-      .mockResolvedValueOnce({ status: "delivered" });
+      .mockResolvedValueOnce({
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "not_accepting_input",
+      })
+      .mockResolvedValueOnce({ status: "delivered", mechanism: "active_turn" });
     const sleep = vi.fn().mockResolvedValue(undefined);
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
@@ -235,7 +394,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn,
+        intervene,
       } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -253,7 +412,7 @@ describe("RunningInterventionTransition", () => {
     ).resolves.toEqual({ delivered: true });
 
     expect(sleep).toHaveBeenCalledWith(25);
-    expect(steerActiveTurn).toHaveBeenCalledTimes(2);
+    expect(intervene).toHaveBeenCalledTimes(2);
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "intervention_sent", text: "safe boundary" }),
@@ -263,10 +422,18 @@ describe("RunningInterventionTransition", () => {
   });
 
   it("falls back to the next-turn queue when transient live-steer boundary remains unsafe", async () => {
-    const steerActiveTurn = vi
+    const intervene = vi
       .fn()
-      .mockResolvedValueOnce({ status: "no_active_turn" })
-      .mockResolvedValueOnce({ status: "not_accepting_input" });
+      .mockResolvedValueOnce({
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "no_active_turn",
+      })
+      .mockResolvedValueOnce({
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "not_accepting_input",
+      });
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
@@ -274,7 +441,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn,
+        intervene,
       } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -288,9 +455,15 @@ describe("RunningInterventionTransition", () => {
 
     await expect(
       transition.deliver(task, { text: "queue after unsafe boundary", user: "alice" }),
-    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "not_accepting_input",
+    });
 
-    expect(steerActiveTurn).toHaveBeenCalledTimes(2);
+    expect(intervene).toHaveBeenCalledTimes(2);
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
@@ -320,7 +493,13 @@ describe("RunningInterventionTransition", () => {
         user: "alice",
         attachmentPaths: ["/tmp/a.png"],
       }),
-    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "not_supported",
+    });
 
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
@@ -337,6 +516,31 @@ describe("RunningInterventionTransition", () => {
         attachmentPaths: ["/tmp/a.png"],
       },
     ]);
+  });
+
+  it("logs final non-delivery with its reason, consumption point, and backlog", async () => {
+    const info = vi.fn();
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: { info, warn: vi.fn(), debug: vi.fn() } as never,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await transition.deliver(
+      makeRunningTask(),
+      { text: "observe the miss", user: "alice" },
+    );
+
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        delivered: false,
+        mechanism: "unsupported",
+        reason: "not_supported",
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+      }),
+      "running intervention not delivered; queued for next turn",
+    );
   });
 
   it("preserves FIFO order and message metadata for the next query turn", async () => {
@@ -359,7 +563,13 @@ describe("RunningInterventionTransition", () => {
         attachmentPaths: ["/tmp/a.png", "/tmp/a.pdf"],
         context: [{ title: "trace", body: "line 1" }],
       }),
-    ).resolves.toEqual({ queued: true, queuePosition: 2 });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 2,
+      consumeWhen: "next_turn",
+      reason: "not_supported",
+    });
 
     expect(task.interventionQueue).toEqual([
       { text: "first", user: "bob" },
@@ -389,14 +599,22 @@ describe("RunningInterventionTransition", () => {
         { text: "durable caller will retry", user: "alice" },
         { queueIfUndelivered: false },
       ),
-    ).resolves.toEqual({ deferred: true });
+    ).resolves.toEqual({
+      delivered: false,
+      deferred: true,
+      retryWhen: "engine_available",
+      reason: "not_supported",
+    });
 
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("does not deliver or queue an accepted intervention when persistence fails", async () => {
-    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "codex",
@@ -404,7 +622,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn,
+        intervene,
       } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -421,16 +639,24 @@ describe("RunningInterventionTransition", () => {
       transition.deliver(task, { text: "must be durable", user: "alice" }),
     ).rejects.toThrow("events DB unavailable");
 
-    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(intervene).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("defer durable callers after a transient live-steer retry still cannot deliver", async () => {
-    const steerActiveTurn = vi
+    const intervene = vi
       .fn()
-      .mockResolvedValueOnce({ status: "not_accepting_input" })
-      .mockResolvedValueOnce({ status: "no_active_turn" });
+      .mockResolvedValueOnce({
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "not_accepting_input",
+      })
+      .mockResolvedValueOnce({
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "no_active_turn",
+      });
     const sleep = vi.fn().mockResolvedValue(undefined);
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
@@ -439,7 +665,7 @@ describe("RunningInterventionTransition", () => {
         async *execute(): AsyncIterable<never> {},
         async interrupt() { return true; },
         async close() {},
-        steerActiveTurn,
+        intervene,
       } as unknown as EnginePort),
     });
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -458,10 +684,15 @@ describe("RunningInterventionTransition", () => {
         { text: "durable retry after boundary", user: "alice" },
         { queueIfUndelivered: false },
       ),
-    ).resolves.toEqual({ deferred: true });
+    ).resolves.toEqual({
+      delivered: false,
+      deferred: true,
+      retryWhen: "engine_available",
+      reason: "no_active_turn",
+    });
 
     expect(sleep).toHaveBeenCalledWith(10);
-    expect(steerActiveTurn).toHaveBeenCalledTimes(2);
+    expect(intervene).toHaveBeenCalledTimes(2);
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });

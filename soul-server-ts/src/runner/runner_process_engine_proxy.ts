@@ -2,10 +2,10 @@ import type {
   BackendId,
   ClaudeBackgroundTaskControlResult,
   EngineExecuteParams,
+  EngineInterventionResult,
   EnginePort,
   EngineUserInput,
   InputResponseDeliveryResult,
-  LiveTurnSteerResult,
   SSEEventPayload,
   ToolApprovalDecision,
   ToolApprovalDeliveryOptions,
@@ -35,11 +35,9 @@ export class RunnerProcessEngineProxy implements EnginePort {
   async compact(sessionId: string): Promise<void> {
     await this.dispatcher.invoke("compact", [sessionId]);
   }
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    return await this.dispatcher.invoke("steerActiveTurn", [input]) as LiveTurnSteerResult;
-  }
-  async interruptForSteer(): Promise<boolean> {
-    return await this.dispatcher.invoke("interruptForSteer", []) === true;
+  async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    const result = await this.dispatcher.invoke("intervene", [input]);
+    return normalizeInterventionResult(result);
   }
   async deliverInputResponse(
     requestId: string,
@@ -72,4 +70,67 @@ export class RunnerProcessEngineProxy implements EnginePort {
       [taskId],
     ) as ClaudeBackgroundTaskControlResult;
   }
+}
+
+function normalizeInterventionResult(result: unknown): EngineInterventionResult {
+  if (
+    isRecord(result)
+    && result.status === "delivered"
+    && isInterventionMechanism(result.mechanism)
+  ) {
+    return {
+      status: "delivered",
+      mechanism: result.mechanism,
+    };
+  }
+  if (
+    isRecord(result)
+    && result.status === "not_delivered"
+    && isInterventionMechanism(result.mechanism)
+    && isInterventionFailureReason(result.reason)
+  ) {
+    return {
+      status: "not_delivered",
+      mechanism: result.mechanism,
+      reason: result.reason,
+      ...(typeof result.message === "string" ? { message: result.message } : {}),
+    };
+  }
+  if (isRecord(result) && result.status === "not_supported") {
+    return {
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+      message: "Runner child does not expose the intervention operation",
+    };
+  }
+  return {
+    status: "not_delivered",
+    mechanism: "unsupported",
+    reason: "failed",
+    message: "Runner child returned an invalid intervention result",
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isInterventionMechanism(
+  value: unknown,
+): value is EngineInterventionResult["mechanism"] {
+  return value === "active_turn"
+    || value === "interrupt_then_next_turn"
+    || value === "unsupported";
+}
+
+function isInterventionFailureReason(
+  value: unknown,
+): value is Extract<EngineInterventionResult, { status: "not_delivered" }>["reason"] {
+  return value === "not_supported"
+    || value === "no_active_turn"
+    || value === "not_accepting_input"
+    || value === "turn_mismatch"
+    || value === "failed"
+    || value === "next_turn_required";
 }

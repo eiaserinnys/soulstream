@@ -1256,7 +1256,7 @@ describe("TaskManager.shutdown", () => {
 });
 
 describe("TaskManager.addIntervention (B-4)", () => {
-  it("running task delivers to a live engine when the engine supports active-turn steering", async () => {
+  it("running task delivers through the engine intervention operation", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({
@@ -1264,14 +1264,17 @@ describe("TaskManager.addIntervention (B-4)", () => {
       prompt: "p",
       profileId: "codex-default",
     });
-    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
-      steerActiveTurn,
+      intervene,
     } as unknown as EnginePort);
 
     const result = await tm.addIntervention(
@@ -1286,7 +1289,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
 
     expect(result).toEqual({ delivered: true });
     expect(task.interventionQueue).toHaveLength(0);
-    expect(steerActiveTurn).toHaveBeenCalledWith({
+    expect(intervene).toHaveBeenCalledWith({
       prompt: "focus on the failing test\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
     });
@@ -1297,7 +1300,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("running Claude task records intervention_sent before queueing and interrupting for live steering", async () => {
+  it("running Claude task records intervention_sent before queueing for its next turn", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({
@@ -1305,16 +1308,18 @@ describe("TaskManager.addIntervention (B-4)", () => {
       prompt: "p",
       profileId: "claude-default",
     });
-    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
-    const interruptForSteer = vi.fn().mockResolvedValue(true);
+    const intervene = vi.fn().mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "interrupt_then_next_turn",
+      reason: "next_turn_required",
+    });
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude",
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
-      steerActiveTurn,
-      interruptForSteer,
+      intervene,
     } as unknown as EnginePort);
 
     const result = await tm.addIntervention(
@@ -1326,9 +1331,14 @@ describe("TaskManager.addIntervention (B-4)", () => {
       vi.fn(),
     );
 
-    expect(result).toEqual({ steered: true, queuePosition: 1 });
-    expect(interruptForSteer).toHaveBeenCalledTimes(1);
-    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
+    });
+    expect(intervene).toHaveBeenCalledTimes(1);
     expect(task.interventionQueue).toEqual([
       { text: "stop and change direction", user: "alice" },
     ]);
@@ -1352,7 +1362,13 @@ describe("TaskManager.addIntervention (B-4)", () => {
       onResume,
     );
 
-    expect(result).toEqual({ queued: true, queuePosition: 1 });
+    expect(result).toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "not_supported",
+    });
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0]).toMatchObject({ text: "hello", user: "alice" });
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
@@ -1370,8 +1386,20 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const onResume = vi.fn();
     const r1 = await tm.addIntervention({ agentSessionId: "s1", text: "a", user: "u" }, onResume);
     const r2 = await tm.addIntervention({ agentSessionId: "s1", text: "b", user: "u" }, onResume);
-    expect(r1).toEqual({ queued: true, queuePosition: 1 });
-    expect(r2).toEqual({ queued: true, queuePosition: 2 });
+    expect(r1).toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "not_supported",
+    });
+    expect(r2).toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 2,
+      consumeWhen: "next_turn",
+      reason: "not_supported",
+    });
   });
 
   it("completed task → user_message + durable running effect + onResume + autoResumed", async () => {

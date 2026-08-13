@@ -41,7 +41,9 @@ import { mapAgentsGuardrailError, mapAgentsRunStreamEvent } from "./agents_event
 import type {
   BackendId,
   EngineExecuteParams,
+  EngineInterventionResult,
   EnginePort,
+  EngineUserInput,
   EngineSessionItemsSnapshot,
   SSEEventPayload,
   SupportsToolApproval,
@@ -129,6 +131,16 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    void input;
+    return {
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+      message: "OpenAI Agents SDK does not expose active-turn intervention",
+    };
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {

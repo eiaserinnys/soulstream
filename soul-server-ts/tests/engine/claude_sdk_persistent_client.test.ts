@@ -576,7 +576,11 @@ describe("ClaudeSdkClient persistent runtime", () => {
       value: { type: "result", success: true },
     });
 
-    await expect(engine.interruptForSteer()).resolves.toBe(false);
+    await expect(engine.intervene({ prompt: "too late" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "interrupt_then_next_turn",
+      reason: "no_active_turn",
+    });
     expect(harness.interrupt).not.toHaveBeenCalled();
     const firstTail = await collectRemaining(firstIterator);
     expect(firstTail.filter((event) => event.type === "error")).toEqual([]);
