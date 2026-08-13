@@ -166,6 +166,8 @@ async function makeSubject(
   const scan = vi.fn(async () => ({ registrations, errors }));
   const inspect = vi.fn(async (registration: RunnerRegistration) => ({
     registration,
+    acknowledgedThrough: incomplete ? 1 : 2,
+    latestDurableSourceSeq: 2,
     incompleteDurableWork: incomplete,
   }));
   const deps: RunnerReleaseGarbageCollectorDependencies = {

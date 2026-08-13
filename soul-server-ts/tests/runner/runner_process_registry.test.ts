@@ -14,6 +14,10 @@ import {
 } from "../../src/runner/runner_process_registry.js";
 import { resolveRegisteredRunnerPid } from "../../src/runner/runner_process_spawn.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import {
+  RunnerHostStateStore,
+  runnerHostStatePath,
+} from "../../src/runner/runner_host_state_store.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import {
   runnerLifecycleSummaryPath,
@@ -540,7 +544,9 @@ describe("runner process registry", () => {
     current.config = { ...current.config, paths };
 
     await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
-      incompleteDurableWork: false,
+      acknowledgedThrough: null,
+      latestDurableSourceSeq: 1,
+      incompleteDurableWork: true,
       registration: { lifecycle: { execution_state: "completed" } },
     });
     const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
@@ -548,6 +554,65 @@ describe("runner process registry", () => {
       correlationId: "host:orphaned",
     });
     recovered.close();
+  });
+
+  it("reports a terminal durable tail as pending when the orch ACK is behind", async () => {
+    const stateDirectory = await temporaryDirectory("terminal-partial-ack");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    const bootstrap = await outbox.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "release-a",
+        snapshot_path: "/release/release-a/soul-server-ts",
+      },
+    });
+    const event = await outbox.append({
+      session_id: "session-a",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "not ACKed" },
+      searchable_text: "not ACKed",
+      created_at: "2026-08-11T00:00:01.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T00:00:01.000Z",
+    });
+    lifecycle.finish("execute-a", "completed", "2026-08-11T00:00:02.000Z");
+    lifecycle.close();
+    const hostPath = runnerHostStatePath(paths.databasePath);
+    const host = RunnerHostStateStore.open(hostPath);
+    host.initializeEventCheckpoint({
+      streamId: bootstrap.stream_id,
+      sessionId: "session-a",
+      acknowledgedThrough: 1,
+    });
+    host.close();
+    const runnerBefore = await readFile(paths.databasePath);
+    const hostBefore = await readFile(hostPath);
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.config = { ...current.config, paths };
+
+    await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
+      acknowledgedThrough: 1,
+      latestDurableSourceSeq: event.source_seq,
+      incompleteDurableWork: true,
+      registration: { lifecycle: { execution_state: "completed" } },
+    });
+    expect(await readFile(paths.databasePath)).toEqual(runnerBefore);
+    expect(await readFile(hostPath)).toEqual(hostBefore);
   });
 });
 

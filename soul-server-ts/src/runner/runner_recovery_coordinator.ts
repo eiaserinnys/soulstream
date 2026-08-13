@@ -22,6 +22,8 @@ import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 
+const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
+
 export interface RunnerRecoveryCoordinatorOptions {
   stateDirectory: string;
   leaseTimeoutMs: number;
@@ -56,6 +58,8 @@ export class RunnerRecoveryCoordinator {
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private readonly unreadableRegistrationFingerprints = new Map<string, string>();
+  private sessionGarbageCollectionInFlight: Promise<void> | undefined;
+  private nextSessionGarbageCollectionAtMs = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
 
@@ -83,6 +87,9 @@ export class RunnerRecoveryCoordinator {
   }
 
   private async performScan(): Promise<void> {
+    if (this.sessionGarbageCollectionInFlight) {
+      await this.sessionGarbageCollectionInFlight;
+    }
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
@@ -129,13 +136,12 @@ export class RunnerRecoveryCoordinator {
         this.options.logger.error({ err: error }, "runner release GC failed");
       }
     }
-    if (this.options.sessionGarbageCollector) {
-      try {
-        await this.options.sessionGarbageCollector.collect(scan);
-      } catch (error) {
-        this.options.logger.error({ err: error }, "runner session GC failed");
-      }
-    }
+    this.scheduleSessionGarbageCollection({
+      ...scan,
+      registrations: scan.registrations.filter(
+        (registration) => !this.active.has(registration.config.sessionId),
+      ),
+    });
   }
 
   private async handleUnreadableRegistrations(
@@ -192,6 +198,7 @@ export class RunnerRecoveryCoordinator {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     await this.waitForSettled();
+    await this.sessionGarbageCollectionInFlight;
     this.active.clear();
   }
 
@@ -234,6 +241,31 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
+  }
+
+  private scheduleSessionGarbageCollection(
+    scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>,
+  ): void {
+    if (
+      !this.options.sessionGarbageCollector
+      || this.sessionGarbageCollectionInFlight
+      || (scan.registrations.length === 0 && scan.errors.length === 0)
+    ) return;
+    const now = (this.options.now ?? Date.now)();
+    if (now < this.nextSessionGarbageCollectionAtMs) return;
+    this.nextSessionGarbageCollectionAtMs = now + RUNNER_SESSION_GC_SWEEP_INTERVAL_MS;
+    const collection = this.options.sessionGarbageCollector.collect(scan)
+      .then(() => undefined)
+      .catch((error) => {
+        this.nextSessionGarbageCollectionAtMs = 0;
+        this.options.logger.error({ err: error }, "runner session GC failed");
+      })
+      .finally(() => {
+        if (this.sessionGarbageCollectionInFlight === collection) {
+          this.sessionGarbageCollectionInFlight = undefined;
+        }
+      });
+    this.sessionGarbageCollectionInFlight = collection;
   }
 
   private logRecoveryFailure(

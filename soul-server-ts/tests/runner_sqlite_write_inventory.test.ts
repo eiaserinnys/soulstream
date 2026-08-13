@@ -107,6 +107,18 @@ describe("runner SQLite write inventory", () => {
       expect(source, relativePath).not.toContain("RunnerSqliteEventOutbox.open(");
       expect(source, relativePath).not.toContain("RunnerSqliteLifecycle.open(");
     }
+    const registry = readFileSync(
+      resolve(SRC_ROOT, "runner/runner_process_registry.ts"),
+      "utf8",
+    );
+    const inspection = registry.slice(
+      registry.indexOf("export async function inspectRunnerDurableState("),
+      registry.indexOf("function isPidAlive("),
+    );
+    expect(inspection).toContain("RunnerSqliteEventOutbox.openReadOnly(");
+    expect(inspection).toContain("readRunnerHostAcknowledgedThrough(");
+    expect(inspection).not.toContain("RunnerParentOutbox.open(");
+    expect(inspection).not.toContain("RunnerHostStateStore.open(");
   });
 
   it("keeps the rolling-restart E2E observer read-only", () => {

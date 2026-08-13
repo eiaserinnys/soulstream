@@ -120,6 +120,78 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.stop();
   });
 
+  it("does not await runner session garbage collection during startup", async () => {
+    let finishCollection!: () => void;
+    const collection = new Promise<{ removed: string[]; retained: [] }>((resolve) => {
+      finishCollection = () => resolve({ removed: [], retained: [] });
+    });
+    const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+    const subject = makeSubject(
+      [registration()],
+      Date.parse("2026-08-11T00:00:30.000Z"),
+      [],
+      { sessionGarbageCollector },
+    );
+
+    await expect(Promise.race([
+      subject.coordinator.start().then(() => "started"),
+      new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
+    ])).resolves.toBe("started");
+    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
+
+    finishCollection();
+    await subject.coordinator.stop();
+  });
+
+  it("serializes later recovery scans behind runner session garbage collection", async () => {
+    let finishCollection!: () => void;
+    const collection = new Promise<{ removed: string[]; retained: [] }>((resolve) => {
+      finishCollection = () => resolve({ removed: [], retained: [] });
+    });
+    const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+    const subject = makeSubject(
+      [registration()],
+      Date.parse("2026-08-11T00:00:30.000Z"),
+      [],
+      { sessionGarbageCollector },
+    );
+
+    await subject.coordinator.scanOnce();
+    const laterScan = subject.coordinator.scanOnce().then(() => "scanned");
+    await expect(Promise.race([
+      laterScan,
+      new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
+    ])).resolves.toBe("blocked");
+
+    finishCollection();
+    await expect(laterScan).resolves.toBe("scanned");
+    await subject.coordinator.stop();
+  });
+
+  it("keeps terminal replay ahead of session garbage collection", async () => {
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const sessionGarbageCollector = {
+      collect: vi.fn(async () => ({ removed: [], retained: [] })),
+    };
+    const subject = makeSubject([registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    })], Date.now(), [], {
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn(() => recovery),
+        restartRegisteredRunner: vi.fn(),
+      },
+      sessionGarbageCollector,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(sessionGarbageCollector.collect).not.toHaveBeenCalled();
+    finishRecovery();
+    await subject.coordinator.stop();
+  });
+
   it("a live but stale progress lease is killed before offline drain and resume", async () => {
     const subject = makeSubject([registration({
       progressedAt: "2026-08-11T00:00:00.000Z",
@@ -346,6 +418,28 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 });
 
 describe("RunnerRecoveryCoordinator GC cadence", () => {
+  it("runs session state GC at startup and then at most hourly", async () => {
+    let now = Date.parse("2026-08-11T00:00:00.000Z");
+    const current = registration();
+    const sessionGarbageCollector = {
+      collect: vi.fn(async () => ({ removed: [], retained: [] })),
+    };
+    const subject = makeSubject([current], now, [], {
+      now: () => now,
+      leaseTimeoutMs: 2 * 60 * 60 * 1_000,
+      sessionGarbageCollector,
+    });
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce());
+    await subject.coordinator.scanOnce();
+    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
+
+    now += 60 * 60 * 1_000;
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(sessionGarbageCollector.collect).toHaveBeenCalledTimes(2));
+  });
+
   it("does not repeat durable release inspection when the lightweight candidate fingerprint is unchanged", async () => {
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
     current.databaseMtimeMs = 1;

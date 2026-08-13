@@ -13,23 +13,55 @@ const NOW = Date.parse("2026-08-12T00:00:00.000Z");
 const RETENTION_MS = 86_400_000;
 
 describe("RunnerSessionGarbageCollector", () => {
-  it("removes only a dead terminal session with final ACK after retention", async () => {
+  it("removes a legacy dead terminal session with final ACK after retention", async () => {
     const subject = makeSubject();
 
     await expect(subject.collector.collect(scan([
-      registration({ sessionId: "expired", progressedAt: "2026-08-10T23:59:59.000Z" }),
+      registration({
+        sessionId: "expired",
+        progressedAt: "2026-08-10T23:59:59.000Z",
+        registrationId: null,
+        pidStartIdentity: null,
+      }),
     ]))).resolves.toEqual({ removed: ["expired"], retained: [] });
     expect(subject.removeDirectory).toHaveBeenCalledWith("/state/expired");
+    expect(subject.logger.info).toHaveBeenLastCalledWith(
+      {
+        inspected: 1,
+        deleted: 1,
+        deletedSessionIds: ["expired"],
+        retained: 0,
+        retainedByReason: {},
+        retainedSessions: [],
+        unreadableRegistrations: 0,
+      },
+      "runner session GC sweep completed",
+    );
   });
 
-  it("retains live, recent, missing-pid, and final-ACK-pending evidence fail-closed", async () => {
+  it("never removes a legacy terminal session whose orch ACK is behind the durable tail", async () => {
+    const subject = makeSubject({ pendingSessions: new Set(["pending"]) });
+
+    await expect(subject.collector.collect(scan([
+      registration({
+        sessionId: "pending",
+        registrationId: null,
+        pidStartIdentity: null,
+      }),
+    ]))).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "pending", reason: "final_ack_pending" }],
+    });
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
+  it("retains live, recent, and missing-pid evidence fail-closed", async () => {
     const subject = makeSubject({ pendingSessions: new Set(["pending"]) });
 
     const result = await subject.collector.collect(scan([
       registration({ sessionId: "live", pidAlive: true }),
       registration({ sessionId: "recent", progressedAt: "2026-08-11T12:00:00.000Z" }),
       registration({ sessionId: "missing", pid: null }),
-      registration({ sessionId: "pending" }),
     ]));
 
     expect(result).toEqual({
@@ -38,7 +70,6 @@ describe("RunnerSessionGarbageCollector", () => {
         { sessionId: "live", reason: "live_runner" },
         { sessionId: "recent", reason: "retention_window" },
         { sessionId: "missing", reason: "pid_evidence_missing" },
-        { sessionId: "pending", reason: "final_ack_pending" },
       ],
     });
     expect(subject.removeDirectory).not.toHaveBeenCalled();
@@ -100,6 +131,8 @@ function makeSubject(options: {
     refresh: options.refresh ?? (async (item: RunnerRegistration) => item),
     inspect: async (item) => ({
       registration: await (options.hydrate ?? (async (candidate) => candidate))(item),
+      acknowledgedThrough: options.pendingSessions?.has(item.config.sessionId) ? 2 : 3,
+      latestDurableSourceSeq: 3,
       incompleteDurableWork: options.pendingSessions?.has(item.config.sessionId) ?? false,
     }),
     removeDirectory,
@@ -126,6 +159,8 @@ function registration(options: {
   pid?: number | null;
   pidAlive?: boolean;
   progressedAt?: string;
+  registrationId?: string | null;
+  pidStartIdentity?: string | null;
 }): RunnerRegistration {
   const sessionId = options.sessionId;
   return {
@@ -139,8 +174,12 @@ function registration(options: {
     } as never,
     pid: options.pid === undefined ? 42 : options.pid,
     pidAlive: options.pidAlive ?? false,
-    registrationId: "registration-a",
-    pidStartIdentity: "process-start-a",
+    registrationId: options.registrationId === undefined
+      ? "registration-a"
+      : options.registrationId,
+    pidStartIdentity: options.pidStartIdentity === undefined
+      ? "process-start-a"
+      : options.pidStartIdentity,
     registeredAtMs: NOW - RETENTION_MS * 2,
     bootstrap: { payload: { code_sha: "release-a" } } as never,
     lifecycle: {
