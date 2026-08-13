@@ -58,6 +58,9 @@ export interface RunnerDurableInspection {
   acknowledgedThrough: number | null;
   latestDurableSourceSeq: number | null;
   incompleteDurableWork: boolean;
+  durableRecordCount: number;
+  unacknowledgedIpcFrameCount: number;
+  pendingInterventionCount: number;
 }
 
 export type RunnerRecoveryDisposition =
@@ -380,7 +383,9 @@ export async function inspectRunnerDurableState(
   let acknowledgedThrough: number | null = null;
   let latestDurableSourceSeq: number | null = null;
   let incompleteDurableWork: boolean;
+  let evidence!: ReturnType<RunnerSqliteEventOutbox["inspectPendingDurableEvidence"]>;
   try {
+    evidence = outbox.inspectPendingDurableEvidence();
     bootstrap = await outbox.readBootstrap();
     if (!bootstrap) {
       incompleteDurableWork = true;
@@ -403,6 +408,7 @@ export async function inspectRunnerDurableState(
     acknowledgedThrough,
     latestDurableSourceSeq,
     incompleteDurableWork,
+    ...evidence,
   };
 }
 

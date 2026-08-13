@@ -542,6 +542,47 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
+  it("enumerates each durable blocker before pre-bootstrap state can be discarded", async () => {
+    const outbox = await RunnerSqliteEventOutbox.create(await temporaryDatabasePath());
+    expect(outbox.inspectPendingDurableEvidence()).toEqual({
+      durableRecordCount: 0,
+      unacknowledgedIpcFrameCount: 0,
+      pendingInterventionCount: 0,
+    });
+
+    await outbox.initializeBootstrap(bootstrapInput());
+    expect(outbox.inspectPendingDurableEvidence()).toEqual({
+      durableRecordCount: 1,
+      unacknowledgedIpcFrameCount: 0,
+      pendingInterventionCount: 0,
+    });
+
+    await outbox.appendEngineFrame(eventInput("pending IPC"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "pending IPC" },
+    });
+    expect(outbox.inspectPendingDurableEvidence()).toMatchObject({
+      durableRecordCount: 2,
+      unacknowledgedIpcFrameCount: 1,
+      pendingInterventionCount: 0,
+    });
+
+    await outbox.stageIntervention({
+      interventionId: "pending-intervention",
+      message: { text: "preserve me" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    expect(outbox.inspectPendingDurableEvidence()).toEqual({
+      durableRecordCount: 2,
+      unacknowledgedIpcFrameCount: 1,
+      pendingInterventionCount: 1,
+    });
+    outbox.close();
+  });
+
   it("exposes final-ACK evidence without treating applied legacy receipts as pending", async () => {
     const outbox = await RunnerSqliteEventOutbox.create(await temporaryDatabasePath());
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());

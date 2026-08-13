@@ -547,6 +547,9 @@ describe("runner process registry", () => {
       acknowledgedThrough: null,
       latestDurableSourceSeq: 1,
       incompleteDurableWork: true,
+      durableRecordCount: 1,
+      unacknowledgedIpcFrameCount: 0,
+      pendingInterventionCount: 0,
       registration: { lifecycle: { execution_state: "completed" } },
     });
     const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
@@ -554,6 +557,34 @@ describe("runner process registry", () => {
       correlationId: "host:orphaned",
     });
     recovered.close();
+  });
+
+  it("proves a terminal pre-bootstrap runner has no durable discard blockers", async () => {
+    const stateDirectory = await temporaryDirectory("terminal-prebootstrap-empty");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath, "session-a");
+    lifecycle.begin({
+      pid: 4123,
+      commandId: "execute-a",
+      progressedAt: "2026-08-11T00:00:01.000Z",
+    });
+    lifecycle.finish("execute-a", "closed", "2026-08-11T00:00:02.000Z");
+    lifecycle.close();
+    const current = registration({ pidAlive: false, lifecycleState: "failed" });
+    current.config = { ...current.config, paths };
+
+    await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
+      acknowledgedThrough: null,
+      latestDurableSourceSeq: null,
+      incompleteDurableWork: true,
+      durableRecordCount: 0,
+      unacknowledgedIpcFrameCount: 0,
+      pendingInterventionCount: 0,
+      registration: { bootstrap: null, lifecycle: { execution_state: "closed" } },
+    });
   });
 
   it("reports a terminal durable tail as pending when the orch ACK is behind", async () => {
