@@ -67,7 +67,7 @@ export class RunnerRecoveryCoordinator {
     if (this.stopped) return;
     this.timer = setInterval(() => {
       void this.scanOnce().catch((error) => {
-        this.options.logger.error({ error }, "runner recovery scan failed");
+        this.options.logger.error({ err: error }, "runner recovery scan failed");
       });
     }, this.options.scanIntervalMs);
     this.timer.unref?.();
@@ -125,14 +125,14 @@ export class RunnerRecoveryCoordinator {
         await this.options.releaseGarbageCollector.collect(scan);
         this.releaseGarbageCollectionFingerprint = releaseFingerprint;
       } catch (error) {
-        this.options.logger.error({ error }, "runner release GC failed");
+        this.options.logger.error({ err: error }, "runner release GC failed");
       }
     }
     if (this.options.sessionGarbageCollector) {
       try {
         await this.options.sessionGarbageCollector.collect(scan);
       } catch (error) {
-        this.options.logger.error({ error }, "runner session GC failed");
+        this.options.logger.error({ err: error }, "runner session GC failed");
       }
     }
   }
@@ -151,7 +151,11 @@ export class RunnerRecoveryCoordinator {
       const shouldLog = this.unreadableRegistrationFingerprints.get(failure.directory)
         !== fingerprint;
       if (shouldLog) {
-        this.options.logger.error(failure, "runner registration is unreadable");
+        const { error, ...failureContext } = failure;
+        this.options.logger.error(
+          { ...failureContext, err: error },
+          "runner registration is unreadable",
+        );
         this.unreadableRegistrationFingerprints.set(failure.directory, fingerprint);
       }
       let result: RunnerRegistrationQuarantineResult;
@@ -162,7 +166,7 @@ export class RunnerRecoveryCoordinator {
       } catch (error) {
         if (shouldLog) {
           this.options.logger.error(
-            { error, directory: failure.directory, sessionId: failure.sessionId },
+            { err: error, directory: failure.directory, sessionId: failure.sessionId },
             "runner registration quarantine failed",
           );
         }
@@ -237,7 +241,7 @@ export class RunnerRecoveryCoordinator {
     error: unknown,
   ): void {
     this.options.logger.error(
-      { error, sessionId: registration.config.sessionId, disposition },
+      { err: error, sessionId: registration.config.sessionId, disposition },
       "runner recovery action failed",
     );
   }
@@ -271,7 +275,7 @@ export class RunnerRecoveryCoordinator {
     } else {
       void completion.catch((error) => {
         this.options.logger.error(
-          { error, sessionId: registration.config.sessionId },
+          { err: error, sessionId: registration.config.sessionId },
           "adopted runner host consumption failed",
         );
       });
@@ -413,7 +417,7 @@ async function markRegistrationReaped(
     {
       onSummaryRenameFailure: (renameError, path, details) => {
         const context = {
-          error: renameError,
+          err: renameError,
           path,
           consecutiveFailures: details.consecutiveFailures,
         };

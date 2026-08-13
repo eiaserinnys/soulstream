@@ -233,7 +233,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.scanOnce();
 
     expect(subject.logger.error).toHaveBeenCalledWith(
-      { directory: "/runner/a", error },
+      { directory: "/runner/a", err: error },
       "runner registration is unreadable",
     );
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
@@ -281,7 +281,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await expect(subject.coordinator.scanOnce()).resolves.toBeUndefined();
     await vi.waitFor(() => expect(subject.logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
-        error,
+        err: error,
         sessionId: "session-a",
         disposition: "reap_dead",
       }),
@@ -432,7 +432,7 @@ function failureContext(message: string) {
   return expect.objectContaining({
     directory: "/runner/a",
     sessionId: "session-a",
-    error: expect.objectContaining({ message }),
+    err: expect.objectContaining({ message }),
   });
 }
 

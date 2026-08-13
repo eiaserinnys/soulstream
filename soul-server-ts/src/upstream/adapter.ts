@@ -7,6 +7,7 @@ import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
 import { isConnectionError } from "./adapter_connection_error.js";
+import { summarizePayloadForLog } from "./log_payload_summary.js";
 import type {
   ReconnectPolicyBoundary,
   UpstreamConfig,
@@ -470,7 +471,7 @@ export class UpstreamAdapter {
   private async send(data: unknown): Promise<void> {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      this.logger.warn({ data }, "Cannot send — WebSocket not open");
+      this.logger.warn(summarizePayloadForLog(data), "Cannot send — WebSocket not open");
       return;
     }
     await this.sendOnSocket(ws, data);

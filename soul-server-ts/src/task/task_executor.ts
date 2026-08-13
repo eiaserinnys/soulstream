@@ -655,7 +655,7 @@ export class TaskExecutor {
       return true;
     } catch (error) {
       this.logger.warn(
-        { error, sessionId: task.agentSessionId },
+        { err: error, sessionId: task.agentSessionId },
         "Claude preemptive compact failed; prompt-too-long rollover remains available",
       );
       return false;
@@ -730,7 +730,7 @@ export class TaskExecutor {
         if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
       } catch (error) {
         this.logger.warn(
-          { error, sessionId: task.agentSessionId },
+          { err: error, sessionId: task.agentSessionId },
           "runner recovery ACK drain failed",
         );
       }

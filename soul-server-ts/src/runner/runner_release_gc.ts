@@ -83,7 +83,7 @@ export class RunnerReleaseGarbageCollector {
             } catch (error) {
               result.retained.push({ releaseId: release.releaseId, reason: "evidence_unreadable" });
               this.logger.warn(
-                { error, releaseId: release.releaseId, sessionId: registration.config.sessionId },
+                { err: error, releaseId: release.releaseId, sessionId: registration.config.sessionId },
                 "runner release GC retained release because session evidence is unreadable",
               );
               continue releaseLoop;

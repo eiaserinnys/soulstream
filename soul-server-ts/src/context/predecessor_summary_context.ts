@@ -34,7 +34,7 @@ export async function buildPredecessorSummaryContextItem(
   } catch (error) {
     if (isSessionDataHostError(error)) throw error;
     logger.warn(
-      { error, sessionId },
+      { err: error, sessionId },
       "Failed to build predecessor session context",
     );
     return null;

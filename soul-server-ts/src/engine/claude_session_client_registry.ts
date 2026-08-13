@@ -312,7 +312,7 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
 
   private reportCloseError(sessionId: string, error: unknown): void {
     this.logger?.warn(
-      { error, sessionId },
+      { err: error, sessionId },
       "Persistent Claude session runtime close failed",
     );
   }

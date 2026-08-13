@@ -81,7 +81,7 @@ export class TurnSummaryPipeline {
         if (error instanceof TurnSummaryProviderUnavailableError) return;
         this.deps.logger.warn(
           {
-            error,
+            err: error,
             sessionId: job.sessionId,
             completeEventId: job.completeEventId,
             ...failureMetrics(error),

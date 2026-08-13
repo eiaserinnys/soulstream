@@ -56,6 +56,7 @@ import { createReflectionCommandFamily } from "./reflection_command_family.js";
 import { SessionListCommands } from "./session_list_commands.js";
 import { createSessionCommandFamily } from "./session_command_family.js";
 import { TaskRuntimeCommands } from "./task_runtime_commands.js";
+import { summarizePayloadForLog } from "./log_payload_summary.js";
 
 export type { SendFn } from "./command_family.js";
 
@@ -165,7 +166,7 @@ export class CommandDispatcher {
   async dispatch(rawCmd: unknown): Promise<void> {
     const cmd = (rawCmd ?? {}) as CommandLike;
     if (!cmd.type) {
-      this.logger.warn({ cmd }, "Upstream command without type — ignoring");
+      this.logger.warn(summarizePayloadForLog(cmd), "Upstream command without type — ignoring");
       return;
     }
     const handler = this.handlers[cmd.type];
@@ -211,7 +212,10 @@ export class CommandDispatcher {
       requestId: cmd.requestId ?? cmd.request_id ?? "",
       command_type: cmd.type ?? "",
     });
-    this.logger.warn({ cmd, message }, "Sent error to upstream");
+    this.logger.warn(
+      { ...summarizePayloadForLog(cmd), message },
+      "Sent error to upstream",
+    );
   }
 
   private async sendRealtimeAckError(

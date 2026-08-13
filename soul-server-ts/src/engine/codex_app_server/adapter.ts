@@ -252,7 +252,7 @@ export class CodexAppServerEngineAdapter
       });
       return true;
     } catch (error) {
-      this.logger.warn({ error }, "Codex app-server interrupt failed");
+      this.logger.warn({ err: error }, "Codex app-server interrupt failed");
       return false;
     }
   }
@@ -291,7 +291,7 @@ export class CodexAppServerEngineAdapter
       } catch (error) {
         if (isNoRolloutFoundResumeError(error)) {
           this.logger.warn(
-            { error, threadId: params.resumeSessionId },
+            { err: error, threadId: params.resumeSessionId },
             "Codex app-server resume skipped: rollout not found",
           );
           queue.close();
@@ -369,7 +369,7 @@ export class CodexAppServerEngineAdapter
         const rejectionError =
           error instanceof Error ? error : new Error(String(error));
         this.logger.error(
-          { error: rejectionError, requestId: request.id, method: request.method },
+          { err: rejectionError, requestId: request.id, method: request.method },
           "Codex app-server server request rejection failed",
         );
         queue.push(fatalErrorPayload(rejectionError));
