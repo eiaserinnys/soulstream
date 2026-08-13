@@ -29,6 +29,18 @@ export interface TaskIdentityHostResult {
   idempotent?: boolean;
 }
 
+export class TaskIdentityHostClientError extends Error {
+  constructor(
+    readonly code: string | null,
+    readonly status: number,
+    message: string,
+    readonly details: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "TaskIdentityHostClientError";
+  }
+}
+
 export class TaskIdentityHostClient {
   constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
 
@@ -112,12 +124,17 @@ export class TaskIdentityHostClient {
       },
     );
     if (!response.ok) {
-      const message = await responseErrorMessage(response);
+      const detail = await responseErrorDetail(response);
       this.config.logger.warn(
-        { operation, status: response.status, message },
+        { operation, status: response.status, message: detail.message, code: detail.code },
         "task identity host request failed",
       );
-      throw new Error(`task identity host ${operation} failed: ${message}`);
+      throw new TaskIdentityHostClientError(
+        detail.code,
+        response.status,
+        `task identity host ${operation} failed: ${detail.message}`,
+        detail.details,
+      );
     }
     return await response.json() as T;
   }
@@ -131,14 +148,31 @@ function actor(input: TaskIdentityActor) {
   };
 }
 
-async function responseErrorMessage(response: Response): Promise<string> {
+async function responseErrorDetail(response: Response): Promise<{
+  message: string;
+  code: string | null;
+  details: Record<string, unknown>;
+}> {
   const text = await response.text();
-  if (!text) return `${response.status} ${response.statusText}`;
-  try {
-    const detail = (JSON.parse(text) as { detail?: { error?: { message?: unknown } } }).detail;
-    if (typeof detail?.error?.message === "string") return detail.error.message;
-  } catch {
-    return text;
+  if (!text) {
+    return { message: `${response.status} ${response.statusText}`, code: null, details: {} };
   }
-  return text;
+  try {
+    const detail = (JSON.parse(text) as {
+      detail?: { error?: { message?: unknown; code?: unknown; details?: unknown } };
+    }).detail;
+    if (typeof detail?.error?.message === "string") {
+      const details = detail.error.details;
+      return {
+        message: detail.error.message,
+        code: typeof detail.error.code === "string" ? detail.error.code : null,
+        details: details !== null && typeof details === "object" && !Array.isArray(details)
+          ? details as Record<string, unknown>
+          : {},
+      };
+    }
+  } catch {
+    return { message: text, code: null, details: {} };
+  }
+  return { message: text, code: null, details: {} };
 }

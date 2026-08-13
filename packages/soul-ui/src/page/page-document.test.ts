@@ -56,6 +56,35 @@ describe("page document projection", () => {
     expect(() => getPageBlockText(doc, "missing")).toThrow("page block not found: missing");
     expect(doc.getMap(BLOCKS_MAP).size).toBe(0);
   });
+
+  it("reads Task-backed checklists through the canonical property contract", () => {
+    const valid = pageDoc();
+    addBlock(valid, {
+      id: "checklist-valid",
+      positionKey: "a",
+      text: "Ship it",
+      type: "checklist",
+      properties: { checked: true, taskId: "task-1", itemId: "item-1" },
+    });
+
+    expect(createPageDocumentProjection(valid, "page-1").getSnapshot().blocks[0])
+      .toMatchObject({
+        type: "checklist",
+        properties: { checked: true, taskId: "task-1", itemId: "item-1" },
+      });
+
+    const invalid = pageDoc();
+    addBlock(invalid, {
+      id: "checklist-invalid",
+      positionKey: "a",
+      text: "Ship it",
+      type: "checklist",
+      properties: { taskId: "task-1", itemId: "item-1" },
+    });
+    expect(() => createPageDocumentProjection(invalid, "page-1")).toThrow(
+      "checklist.checked must be a boolean",
+    );
+  });
 });
 
 function pageDoc(): Y.Doc {
@@ -73,16 +102,27 @@ function pageDoc(): Y.Doc {
 
 function addBlock(
   doc: Y.Doc,
-  input: { id: string; parentId?: string | null; positionKey: string; text: string },
+  input: {
+    id: string;
+    parentId?: string | null;
+    positionKey: string;
+    text: string;
+    type?: string;
+    properties?: Record<string, unknown>;
+  },
 ): Y.Text {
   const block = new Y.Map<unknown>();
   const text = new Y.Text(input.text);
+  const properties = new Y.Map<unknown>();
+  for (const [key, value] of Object.entries(input.properties ?? {})) {
+    properties.set(key, value);
+  }
   block.set("id", input.id);
   block.set("parentId", input.parentId ?? null);
   block.set("positionKey", input.positionKey);
-  block.set("type", "paragraph");
+  block.set("type", input.type ?? "paragraph");
   block.set("text", text);
-  block.set("properties", new Y.Map());
+  block.set("properties", properties);
   block.set("collapsed", false);
   doc.getMap<Y.Map<unknown>>(BLOCKS_MAP).set(input.id, block);
   return text;

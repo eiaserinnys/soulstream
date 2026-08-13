@@ -121,4 +121,28 @@ export class ChecklistProjectionRepository {
         AND lease_owner_node_id = ${nodeId}
     `;
   }
+
+  async markDeadLetter(
+    row: ChecklistProjectionOutboxRow,
+    nodeId: string,
+    error: string,
+  ): Promise<boolean> {
+    const attempts = row.attempts + 1;
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly { block_id: string }[]>`
+      UPDATE checklist_task_projection_outbox
+      SET processed_hash = source_hash,
+          attempts = ${attempts},
+          last_error = ${error},
+          next_retry_at = NOW(),
+          lease_owner_node_id = NULL,
+          lease_expires_at = NULL,
+          updated_at = NOW()
+      WHERE block_id = ${row.block_id}
+        AND source_hash = ${row.source_hash}
+        AND lease_owner_node_id = ${nodeId}
+      RETURNING block_id
+    `;
+    return rows.length === 1;
+  }
 }

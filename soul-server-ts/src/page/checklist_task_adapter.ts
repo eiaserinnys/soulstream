@@ -89,7 +89,7 @@ export class ChecklistBindingMismatchError extends Error {
 
 /**
  * Reconciles checklist block identity with durable Task operations.
- * The caller writes only the returned reference into Y.Doc; status never does.
+ * The caller combines the returned reference and checked projection into Y.Doc.
  */
 export class ChecklistTaskAdapter {
   private readonly itemTails = new Map<string, Promise<void>>();
@@ -264,7 +264,9 @@ export class ChecklistTaskAdapter {
       resolvedReference = { taskId: identity.taskId, itemId: reference.itemId };
       snapshot = await this.tasks.getTask(resolvedReference.taskId);
       if (!snapshot) {
-        throw new Error(`promoted task identity is not readable: ${resolvedReference.taskId}`);
+        throw new ChecklistBindingMismatchError(
+          `promoted task identity is not readable: ${resolvedReference.taskId}`,
+        );
       }
     }
     const sectionId = checklistSectionId(input.page.id);

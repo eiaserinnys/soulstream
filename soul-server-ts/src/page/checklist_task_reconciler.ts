@@ -1,13 +1,24 @@
 import type { Logger } from "pino";
 
-import type { ChecklistBlockProperties, ChecklistTaskReference } from "@soulstream/page-model";
+import {
+  checklistTaskBlockProperties,
+  type ChecklistBlockProperties,
+  type ChecklistTaskBlockProperties,
+} from "@soulstream/page-model";
 
-import type { PageYjsHostClient } from "./page_host_client.js";
-import type { ChecklistTaskAdapter } from "./checklist_task_adapter.js";
+import {
+  PageYjsHostClientError,
+  type PageYjsHostClient,
+} from "./page_host_client.js";
+import {
+  ChecklistBindingMismatchError,
+  type ChecklistTaskAdapter,
+} from "./checklist_task_adapter.js";
 import type {
   ChecklistProjectionOutboxRow,
   ChecklistTaskProjectionRepository,
 } from "./checklist_task_projection_repository.js";
+import { TaskIdentityHostClientError } from "../work-task/task_identity_host_client.js";
 
 export type { ChecklistProjectionOutboxRow } from "./checklist_task_projection_repository.js";
 
@@ -15,6 +26,7 @@ interface ChecklistProjectionRepositoryPort {
   claimDue: ChecklistTaskProjectionRepository["claimDue"];
   markSuccess: ChecklistTaskProjectionRepository["markSuccess"];
   markFailure: ChecklistTaskProjectionRepository["markFailure"];
+  markDeadLetter: ChecklistTaskProjectionRepository["markDeadLetter"];
 }
 
 interface ChecklistProjectionAdapterPort {
@@ -32,8 +44,10 @@ export interface ChecklistTaskReconcilerDeps {
   repository: ChecklistProjectionRepositoryPort;
   adapter: ChecklistProjectionAdapterPort;
   pageHost: ChecklistProjectionPageHostPort;
-  logger: Pick<Logger, "warn" | "info">;
+  logger: Pick<Logger, "warn" | "info" | "error">;
 }
+
+const MAX_PROJECTION_ATTEMPTS = 8;
 
 /** Restart-safe scanner. The outbox, not this timer, owns pending projection state. */
 export class ChecklistTaskReconciler {
@@ -92,7 +106,11 @@ export class ChecklistTaskReconciler {
           },
           actor,
         });
-        if (!isExactReference(block.properties, projected.properties)) {
+        const properties = checklistTaskBlockProperties(
+          projected.properties,
+          projected.checked,
+        );
+        if (!isExactReference(block.properties, properties)) {
           await this.deps.pageHost.batchPageOperations({
             page_id: row.page_id,
             expected_version: current.page.version,
@@ -100,7 +118,7 @@ export class ChecklistTaskReconciler {
               op: "update_block_type_and_properties",
               block_id: row.block_id,
               block_type: "checklist",
-              properties: projected.properties,
+              properties,
             }],
             actor_session_id: row.routing_session_id,
             idempotency_key: `checklist-projection:${row.block_id}:${row.source_hash}`,
@@ -110,6 +128,29 @@ export class ChecklistTaskReconciler {
       await this.deps.repository.markSuccess(row, this.deps.nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const attempts = row.attempts + 1;
+      const disposition = projectionErrorDisposition(error);
+      const permanent = disposition === "permanent";
+      if (permanent || attempts >= MAX_PROJECTION_ATTEMPTS) {
+        const deadLettered = await this.deps.repository.markDeadLetter(
+          row,
+          this.deps.nodeId,
+          message,
+        );
+        if (deadLettered) {
+          this.deps.logger.error(
+            {
+              err: error,
+              pageId: row.page_id,
+              blockId: row.block_id,
+              attempts,
+              reason: permanent ? "permanent_error" : "attempts_exhausted",
+            },
+            "checklist Task projection dead-lettered",
+          );
+        }
+        return;
+      }
       await this.deps.repository.markFailure(row, this.deps.nodeId, message);
       this.deps.logger.warn(
         { err: error, pageId: row.page_id, blockId: row.block_id },
@@ -129,12 +170,34 @@ function projectionActor(row: ChecklistProjectionOutboxRow) {
 
 function isExactReference(
   properties: Record<string, unknown>,
-  reference: ChecklistTaskReference,
+  expected: ChecklistTaskBlockProperties,
 ): boolean {
   const keys = Object.keys(properties).sort();
-  return keys.length === 2
-    && keys[0] === "itemId"
-    && keys[1] === "taskId"
-    && properties.taskId === reference.taskId
-    && properties.itemId === reference.itemId;
+  return keys.length === 3
+    && keys[0] === "checked"
+    && keys[1] === "itemId"
+    && keys[2] === "taskId"
+    && properties.checked === expected.checked
+    && properties.taskId === expected.taskId
+    && properties.itemId === expected.itemId;
+}
+
+function projectionErrorDisposition(error: unknown): "retryable" | "permanent" {
+  if (error instanceof ChecklistBindingMismatchError) return "permanent";
+  if (error instanceof PageYjsHostClientError) {
+    if (error.code === "PAGE_MUTATION_INVALID"
+      || error.code === "INVALID_PAGE_YJS_HOST_REQUEST"
+      || error.code === "PAGE_NOT_FOUND") return "permanent";
+    return "retryable";
+  }
+  if (error instanceof TaskIdentityHostClientError) {
+    if (error.code === "TASK_IDENTITY_BINDING_CONFLICT"
+      || error.code === "TASK_IDENTITY_TITLE_CONFLICT"
+      || error.code === "INVALID_TASK_IDENTITY_REQUEST"
+      || error.code === "INVALID_TASK_IDENTITY_ACTOR") return "permanent";
+    if (error.code === "TASK_IDENTITY_CREATE_COLLISION"
+      || error.code === "TASK_IDENTITY_ALREADY_PROMOTED"
+      || error.code === "TASK_IDENTITY_STALE_PLAN_CONFLICT") return "retryable";
+  }
+  return "retryable";
 }

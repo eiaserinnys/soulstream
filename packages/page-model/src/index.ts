@@ -1,3 +1,4 @@
+export * from "./block_properties.js";
 export * from "./inline_refs.js";
 export * from "./initial_task_context.js";
 export * from "./markdown.js";

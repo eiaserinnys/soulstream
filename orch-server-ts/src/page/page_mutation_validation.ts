@@ -1,3 +1,5 @@
+import { validatePageBlockProperties } from "@soulstream/page-model";
+
 import type { PageMutationActor } from "./page_mutation_core.js";
 
 export class PageMutationValidationError extends Error {
@@ -9,34 +11,8 @@ export function validateBlockProperties(
   value: Record<string, unknown>,
 ): void {
   validateBoundary(type, "block type");
-  const requireField = (key: string, kind: "string" | "boolean") => {
-    if (typeof value[key] !== kind || (kind === "string" && !(value[key] as string).trim())) {
-      throw new PageMutationValidationError(`${type}.${key} must be a ${kind}`);
-    }
-  };
-  if (type === "session_ref") {
-    requireField("sessionId", "string");
-    requireField("primary", "boolean");
-  }
-  if (type === "atom_ref") {
-    requireField("nodeId", "string");
-    if (!["atom", "atom-nl"].includes(String(value.instance))) {
-      throw new PageMutationValidationError("atom_ref.instance invalid");
-    }
-    if (value.limit !== undefined && (!Number.isInteger(value.limit) || Number(value.limit) < 1)) {
-      throw new PageMutationValidationError("atom_ref.limit must be a positive integer");
-    }
-  }
-  if (type === "guidance") {
-    requireField("enabled", "boolean");
-    requireField("scope", "string");
-  }
-  if (type === "checklist") requireField("checked", "boolean");
-  if (type === "custom_view") requireField("customViewId", "string");
-  if (type === "image") {
-    requireField("assetId", "string");
-    requireField("alt", "string");
-  }
+  const error = validatePageBlockProperties(type, value);
+  if (error) throw new PageMutationValidationError(error);
 }
 
 export function validateActor(actor: PageMutationActor): void {

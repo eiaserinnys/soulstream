@@ -66,10 +66,11 @@ describe("page model DTO contract", () => {
     >();
 
     const boundChecklist: ChecklistBlockProperties = {
+      checked: true,
       taskId: "page-task:page-1",
       itemId: "checklist:block-1",
     };
-    expect(boundChecklist).not.toHaveProperty("checked");
+    expect(boundChecklist.checked).toBe(true);
   });
 
   it("exposes backlink DTOs with the canonical link kinds", () => {

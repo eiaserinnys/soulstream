@@ -307,6 +307,45 @@ describe("PageMutationCore", () => {
     expect(deleted.replica.page.archived).toBe(false);
   });
 
+  it("accepts the exact Task-backed checklist projection and rejects a missing checked field", () => {
+    const core = createCore();
+    const seeded = core.mutate(createPage(core).document, {
+      pageId: "page-1",
+      expectedVersion: 1,
+      actor: { actorKind: "agent", actorSessionId: "session-1" },
+      idempotencyKey: "batch_page_operations:session-1:checklist-seed",
+      command: {
+        type: "batch_operations",
+        operations: [{
+          ...createBlock("checklist"),
+          blockType: "checklist",
+          properties: { checked: false },
+        }],
+      },
+    });
+    const blockId = seeded.tempIdMapping.checklist!;
+    const valid = core.mutate(seeded.document, mutation(2, {
+      type: "update_block_type_and_properties",
+      blockId,
+      blockType: "checklist",
+      properties: { checked: true, taskId: "task-1", itemId: "item-1" },
+    }, "checklist-projection"));
+
+    expect(valid.replica.blocks[0]?.properties).toEqual({
+      checked: true,
+      taskId: "task-1",
+      itemId: "item-1",
+    });
+    expect(() => core.mutate(seeded.document, mutation(2, {
+      type: "update_block_type_and_properties",
+      blockId,
+      blockType: "checklist",
+      properties: { taskId: "task-1", itemId: "item-1" },
+    }, "checklist-projection-invalid"))).toThrow(
+      "checklist.checked must be a boolean",
+    );
+  });
+
   it("preserves primary task_ref and session_ref identity while replacing markdown blocks", () => {
     const core = createCore();
     const seeded = core.createPage({
