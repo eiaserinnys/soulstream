@@ -12,6 +12,7 @@ import {
   openRunnerSqliteDatabase,
   openRunnerSqliteReadOnlyDatabase,
   RUNNER_SQLITE_BUSY_TIMEOUT_MS,
+  RUNNER_SQLITE_BUSY_RETRY_DELAYS_MS,
   withRunnerSqliteBusyRetry,
   withRunnerSqliteTransaction,
 } from "../src/runner/runner_sqlite_connection.js";
@@ -21,6 +22,7 @@ import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js"
 const tempDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(tempDirectories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
@@ -85,6 +87,35 @@ describe("runner SQLite contention", () => {
       return timerObservedByRetry;
     }, { retryDelaysMs: [10] })).resolves.toBe(true);
     expect(attempt).toBe(2);
+  });
+
+  it("preserves the legacy contention budget without blocking between attempts", async () => {
+    vi.useFakeTimers();
+    const legacyContentionBudgetMs = 15_250;
+    const transient = Object.assign(new Error("database is locked"), { errcode: 5 });
+    let attempts = 0;
+    let settled = false;
+    const result = withRunnerSqliteBusyRetry(() => {
+      attempts += 1;
+      throw transient;
+    }).then(
+      () => "resolved" as const,
+      () => "rejected" as const,
+    );
+    void result.finally(() => { settled = true; });
+
+    await vi.advanceTimersByTimeAsync(legacyContentionBudgetMs - 1);
+    expect(settled).toBe(false);
+    await vi.runAllTimersAsync();
+
+    await expect(result).resolves.toBe("rejected");
+    expect(attempts).toBe(RUNNER_SQLITE_BUSY_RETRY_DELAYS_MS.length + 1);
+    const configuredBudgetMs = RUNNER_SQLITE_BUSY_RETRY_DELAYS_MS.reduce(
+      (total, delayMs) => total + delayMs,
+      RUNNER_SQLITE_BUSY_TIMEOUT_MS * attempts,
+    );
+    expect(configuredBudgetMs).toBeGreaterThanOrEqual(legacyContentionBudgetMs);
+    expect(RUNNER_SQLITE_BUSY_TIMEOUT_MS).toBeLessThanOrEqual(50);
   });
 
   it("records monotonic transaction attempts and BEGIN/COMMIT stages", async () => {

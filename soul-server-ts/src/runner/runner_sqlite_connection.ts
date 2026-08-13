@@ -4,7 +4,20 @@ import { performance } from "node:perf_hooks";
 import { loadNodeSqlite } from "./node_sqlite.js";
 
 export const RUNNER_SQLITE_BUSY_TIMEOUT_MS = 25;
-export const RUNNER_SQLITE_BUSY_RETRY_DELAYS_MS = [50, 200] as const;
+// Preserve the former ~15.25s contention budget without holding the event loop:
+// exponential async backoff capped at 3.2s totals 15.95s across 11 short attempts.
+export const RUNNER_SQLITE_BUSY_RETRY_DELAYS_MS = [
+  50,
+  100,
+  200,
+  400,
+  800,
+  1_600,
+  3_200,
+  3_200,
+  3_200,
+  3_200,
+] as const;
 
 export interface RunnerSqliteOpenOptions {
   readOnly?: boolean;
