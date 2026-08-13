@@ -283,6 +283,7 @@ describe("production create-session route", () => {
       busyNode.ws.send(JSON.stringify({
         type: "sessions_update",
         sessions: [{ agentSessionId: "existing-session", status: "running" }],
+        running_session_ids: ["existing-session"],
       }));
       await waitForSessionCount(harness, "a-busy-node", 1);
 
@@ -366,10 +367,15 @@ async function connectNode(
     type: "node_register",
     node_id: registration.nodeId,
     agents: registration.agents,
+    capabilities: { max_concurrent: 8, runner_inventory_v1: true },
     supported_backends: registration.supportedBackends,
     user: { email: "dashboard@example.com" },
   }));
   await waitForNode(harness, registration.nodeId);
+  ws.send(JSON.stringify({
+    type: "runner_inventory",
+    running_session_ids: [],
+  }));
   return node;
 }
 

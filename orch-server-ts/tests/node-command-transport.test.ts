@@ -36,10 +36,15 @@ describe("Node command transport bridge", () => {
     registry: InMemoryNodeRegistry,
     nodeId = "fake-node",
   ): string {
-    return registry.registerNode({
+    const connectionId = registry.registerNode({
       ...(reconnect.registration as NodeRegistrationPayload),
       node_id: nodeId,
     }).node.connectionId;
+    registry.receiveNodeMessage(nodeId, {
+      type: "runner_inventory",
+      running_session_ids: [],
+    });
+    return connectionId;
   }
 
   async function createExistingSession(

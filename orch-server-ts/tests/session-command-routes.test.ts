@@ -46,9 +46,14 @@ describe("session command HTTP route harness", () => {
   }
 
   function registerNode(registry: InMemoryNodeRegistry): string {
-    return registry.registerNode(
+    const connectionId = registry.registerNode(
       reconnect.registration as NodeRegistrationPayload,
     ).node.connectionId;
+    registry.receiveNodeMessage("fake-node", {
+      type: "runner_inventory",
+      running_session_ids: [],
+    });
+    return connectionId;
   }
 
   async function createExistingSession(

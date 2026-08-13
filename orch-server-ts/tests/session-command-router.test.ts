@@ -37,10 +37,15 @@ describe("Session command router primitive", () => {
     registry: InMemoryNodeRegistry,
     nodeId: string,
   ): string {
-    return registry.registerNode({
+    const connectionId = registry.registerNode({
       ...(reconnect.registration as NodeRegistrationPayload),
       node_id: nodeId,
     }).node.connectionId;
+    registry.receiveNodeMessage(nodeId, {
+      type: "runner_inventory",
+      running_session_ids: [],
+    });
+    return connectionId;
   }
 
   const dbProfile: AgentProfileRecord = {
@@ -123,6 +128,10 @@ describe("Session command router primitive", () => {
         { id: "db-preset", backend: "codex", available: true },
         { id: "alias-preset", backend: "codex", available: true },
       ],
+    });
+    registry.receiveNodeMessage("db-node", {
+      type: "runner_inventory",
+      running_session_ids: [],
     });
     const router = new SessionCommandRouter({
       registry,

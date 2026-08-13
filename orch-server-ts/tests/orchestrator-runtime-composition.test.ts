@@ -138,6 +138,11 @@ describe("orchestrator runtime composition harness", () => {
     const ws = await injectAuthenticatedWs(runtime.app);
     ws.send(JSON.stringify(reconnect.registration));
     await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
+    ws.send(JSON.stringify({
+      type: "runner_inventory",
+      running_session_ids: [],
+    }));
+    await waitFor(() => runtime.registry.getReportedRunnerLoad("fake-node") !== undefined);
     const connectionId = requireDefined(
       runtime.registry.getConnectedNode("fake-node")?.connectionId,
     );

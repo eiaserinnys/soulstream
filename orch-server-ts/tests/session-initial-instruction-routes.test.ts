@@ -37,6 +37,10 @@ async function createSession(
   const connectionId = registry.registerNode(
     fixtures.fakeNodeReconnect.registration as NodeRegistrationPayload,
   ).node.connectionId;
+  registry.receiveNodeMessage("fake-node", {
+    type: "runner_inventory",
+    running_session_ids: [],
+  });
   let command: Record<string, unknown> | undefined;
   transports.attach({
     nodeId: "fake-node",
