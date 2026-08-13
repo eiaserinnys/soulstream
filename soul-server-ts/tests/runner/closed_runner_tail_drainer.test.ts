@@ -10,6 +10,7 @@ import {
   type ClosedRunnerTailOutbox,
 } from "../../src/runner/closed_runner_tail_drainer.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { runnerHostStatePath } from "../../src/runner/runner_host_state_store.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import type { EventOutboxBatch, EventOutboxRecord } from
   "../../src/upstream/event_outbox.js";
@@ -81,7 +82,7 @@ describe("ClosedRunnerTailDrainer", () => {
     expect(register).not.toHaveBeenCalled();
   });
 
-  it("rejects an outbox that contains an event row without a bootstrap record", async () => {
+  it("does not swallow bootstrap corruption rejected while opening the drainer outbox", async () => {
     const directory = await mkdtemp(join(tmpdir(), "closed-runner-corrupt-bootstrap-"));
     tempDirectories.push(directory);
     const databasePath = join(directory, "runner.sqlite");
@@ -111,9 +112,58 @@ describe("ClosedRunnerTailDrainer", () => {
       logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     });
 
+    // This fails in RunnerSqliteEventOutbox.openReadOnly before a parent read
+    // method runs. The assertion protects propagation through the drainer.
     await expect(drainer.drain(registration(databasePath))).rejects.toThrow(
       "runner bootstrap record must be source_seq 1",
     );
+  });
+
+  it("rejects a parent read when a normal bootstrap loses its host ACK checkpoint", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "closed-runner-missing-host-checkpoint-"));
+    tempDirectories.push(directory);
+    const databasePath = join(directory, "runner.sqlite");
+    const writer = await RunnerSqliteEventOutbox.create(databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-12T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-session-a",
+        cwd: "/workspace/session-a",
+        codex_home: "/workspace/session-a/.codex",
+        rollout_root: "/workspace/session-a/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/a",
+      },
+    });
+    await writer.append({
+      session_id: "session-a",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "must not be hidden" },
+      searchable_text: "must not be hidden",
+      created_at: "2026-08-12T00:00:01.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    });
+    writer.close();
+
+    const parent = await RunnerParentOutbox.open(databasePath, "session-a");
+    // A host file missing before open is safely reinitialized from bootstrap.
+    // Removing its checkpoint after open exercises the strict parent read guard.
+    const hostDatabase = new DatabaseSync(runnerHostStatePath(databasePath));
+    try {
+      hostDatabase.exec("DELETE FROM runner_event_ack_checkpoint");
+    } finally {
+      hostDatabase.close();
+    }
+    try {
+      await expect(parent.readLatestPendingRecord()).rejects.toThrow(
+        "runner parent ACK checkpoint is unavailable before bootstrap",
+      );
+    } finally {
+      parent.close();
+    }
   });
 
   it("pumps only the unacknowledged tail through the shared upstream mux", async () => {

@@ -347,29 +347,36 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("logs a repeated closed-runner recovery failure once until its fingerprint changes", async () => {
+  it("periodically re-emits a repeated recovery failure until its fingerprint changes", async () => {
+    let now = Date.parse("2026-08-14T00:00:00.000Z");
     let failure = Object.assign(
       new Error("runner bootstrap record required before event append"),
       { code: "SQLITE_CORRUPT" },
     );
     const drain = vi.fn(async () => { throw failure; });
     const current = registration({ pidAlive: false, lifecycleState: "closed" });
-    const subject = makeSubject([current], Date.now(), [], {
+    const subject = makeSubject([current], now, [], {
       closedTailDrainer: { drain },
+      now: () => now,
     });
 
     await subject.coordinator.scanOnce();
     await subject.coordinator.waitForSettled();
+    now += 15_000;
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    now += 14 * 60 * 1_000 + 45_000;
     await subject.coordinator.scanOnce();
     await subject.coordinator.waitForSettled();
     failure = Object.assign(new Error("runner host checkpoint is corrupt"), {
       code: "SQLITE_CORRUPT",
     });
+    now += 1;
     await subject.coordinator.scanOnce();
     await subject.coordinator.waitForSettled();
 
-    expect(drain).toHaveBeenCalledTimes(3);
-    expect(subject.logger.error).toHaveBeenCalledTimes(2);
+    expect(drain).toHaveBeenCalledTimes(4);
+    expect(subject.logger.error).toHaveBeenCalledTimes(3);
     expect(subject.logger.error).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -383,6 +390,16 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
     expect(subject.logger.error).toHaveBeenNthCalledWith(
       2,
+      expect.objectContaining({
+        suppressedSince: "2026-08-14T00:00:15.000Z",
+        suppressedCount: 1,
+        sessionId: "session-a",
+        disposition: "closed",
+      }),
+      "runner recovery action failed",
+    );
+    expect(subject.logger.error).toHaveBeenNthCalledWith(
+      3,
       expect.objectContaining({
         err: expect.objectContaining({ message: "runner host checkpoint is corrupt" }),
         sessionId: "session-a",
@@ -557,7 +574,7 @@ function makeSubject(
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
     spawner: { terminate },
-    scan: async () => ({ registrations, errors }),
+    scan: async () => structuredClone({ registrations, errors }),
     hydrate: async (registration) => registration,
     now: () => now,
     markReaped,

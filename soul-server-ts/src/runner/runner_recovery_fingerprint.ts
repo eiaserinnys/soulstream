@@ -3,15 +3,73 @@ import type {
   RunnerRegistration,
 } from "./runner_process_registry.js";
 
-export function pruneRecoveryFailureFingerprints(
-  fingerprints: Map<string, string>,
-  registrations: RunnerRegistration[],
-): void {
-  const currentSessionIds = new Set(
-    registrations.map((registration) => registration.config.sessionId),
-  );
-  for (const sessionId of fingerprints.keys()) {
-    if (!currentSessionIds.has(sessionId)) fingerprints.delete(sessionId);
+export const RUNNER_RECOVERY_FAILURE_REEMIT_INTERVAL_MS = 15 * 60 * 1_000;
+
+interface RecoveryFailureLogState {
+  fingerprint: string;
+  lastEmittedAtMs: number;
+  suppressedSinceMs: number | null;
+  suppressedCount: number;
+}
+
+export interface RecoveryFailureLogContext {
+  suppressedSince?: string;
+  suppressedCount?: number;
+}
+
+export class RunnerRecoveryFailureLogTracker {
+  private readonly states = new Map<string, RecoveryFailureLogState>();
+
+  constructor(
+    private readonly reemitIntervalMs = RUNNER_RECOVERY_FAILURE_REEMIT_INTERVAL_MS,
+  ) {
+    if (!Number.isSafeInteger(reemitIntervalMs) || reemitIntervalMs <= 0) {
+      throw new Error("runner recovery failure re-emit interval must be positive");
+    }
+  }
+
+  clear(sessionId: string): void {
+    this.states.delete(sessionId);
+  }
+
+  prune(registrations: RunnerRegistration[]): void {
+    const currentSessionIds = new Set(
+      registrations.map((registration) => registration.config.sessionId),
+    );
+    for (const sessionId of this.states.keys()) {
+      if (!currentSessionIds.has(sessionId)) this.states.delete(sessionId);
+    }
+  }
+
+  record(sessionId: string, fingerprint: string, nowMs: number): RecoveryFailureLogContext | null {
+    const current = this.states.get(sessionId);
+    if (!current || current.fingerprint !== fingerprint) {
+      this.states.set(sessionId, {
+        fingerprint,
+        lastEmittedAtMs: nowMs,
+        suppressedSinceMs: null,
+        suppressedCount: 0,
+      });
+      return {};
+    }
+    if (nowMs - current.lastEmittedAtMs < this.reemitIntervalMs) {
+      current.suppressedSinceMs ??= nowMs;
+      current.suppressedCount += 1;
+      return null;
+    }
+    const context = current.suppressedSinceMs === null
+      ? {}
+      : {
+          suppressedSince: new Date(current.suppressedSinceMs).toISOString(),
+          suppressedCount: current.suppressedCount,
+        };
+    this.states.set(sessionId, {
+      fingerprint,
+      lastEmittedAtMs: nowMs,
+      suppressedSinceMs: null,
+      suppressedCount: 0,
+    });
+    return context;
   }
 }
 
@@ -53,7 +111,6 @@ export function recoveryFailureFingerprint(
     pid: registration.pid,
     pidStartIdentity: registration.pidStartIdentity ?? null,
     pidAlive: registration.pidAlive,
-    bootstrapStreamId: registration.bootstrap?.stream_id ?? null,
     lifecycleState: registration.lifecycle?.execution_state ?? null,
     lifecycleProgressSeq: registration.lifecycle?.progress_seq ?? null,
     lifecycleProgressAt: registration.lifecycle?.progress_at ?? null,

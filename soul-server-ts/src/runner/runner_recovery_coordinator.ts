@@ -12,7 +12,7 @@ import {
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
 import {
-  pruneRecoveryFailureFingerprints,
+  RunnerRecoveryFailureLogTracker,
   recoveryFailureFingerprint,
   unreadableRegistrationFingerprint,
 } from "./runner_recovery_fingerprint.js";
@@ -63,7 +63,7 @@ export class RunnerRecoveryCoordinator {
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private readonly unreadableRegistrationFingerprints = new Map<string, string>();
-  private readonly recoveryFailureFingerprints = new Map<string, string>();
+  private readonly recoveryFailureLogs = new RunnerRecoveryFailureLogTracker();
   private sessionGarbageCollectionInFlight: Promise<void> | undefined;
   private nextSessionGarbageCollectionAtMs = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -100,7 +100,7 @@ export class RunnerRecoveryCoordinator {
       this.options.stateDirectory,
     );
     await this.handleUnreadableRegistrations(scan.errors);
-    pruneRecoveryFailureFingerprints(this.recoveryFailureFingerprints, scan.registrations);
+    this.recoveryFailureLogs.prune(scan.registrations);
     for (const registration of scan.registrations) {
       const sessionId = registration.config.sessionId;
       if (this.active.has(sessionId)) continue;
@@ -112,7 +112,7 @@ export class RunnerRecoveryCoordinator {
       if (
         disposition === "wait_for_bootstrap"
       ) {
-        this.recoveryFailureFingerprints.delete(sessionId);
+        this.recoveryFailureLogs.clear(sessionId);
         continue;
       }
       if (
@@ -280,12 +280,13 @@ export class RunnerRecoveryCoordinator {
   ): void {
     const sessionId = registration.config.sessionId;
     const fingerprint = recoveryFailureFingerprint(registration, disposition, error);
-    if (this.recoveryFailureFingerprints.get(sessionId) === fingerprint) return;
+    const logContext = this.recoveryFailureLogs.record(
+      sessionId, fingerprint, (this.options.now ?? Date.now)());
+    if (!logContext) return;
     this.options.logger.error(
-      { err: error, sessionId, disposition },
+      { err: error, sessionId, disposition, ...logContext },
       "runner recovery action failed",
     );
-    this.recoveryFailureFingerprints.set(sessionId, fingerprint);
   }
 
   private async handleWithFailureTracking(
@@ -294,7 +295,7 @@ export class RunnerRecoveryCoordinator {
   ): Promise<void> {
     try {
       await this.handle(registration, disposition);
-      this.recoveryFailureFingerprints.delete(registration.config.sessionId);
+      this.recoveryFailureLogs.clear(registration.config.sessionId);
     } catch (error) {
       this.logRecoveryFailure(registration, disposition, error);
     }
