@@ -471,6 +471,17 @@ export function applyInterventionCommandFrame(input: {
   );
 }
 
+export function discardInterventionCommandFrame(input: {
+  commandId: string;
+  interventionId: string;
+}): Extract<RunnerCommandFrame, { kind: "invoke" }> {
+  return invokeCommandFrame(
+    input.commandId,
+    "runner.discard_intervention",
+    [input.interventionId],
+  );
+}
+
 export function closeCommandFrame(
   commandId: string,
 ): Extract<RunnerCommandFrame, { kind: "close" }> {

@@ -52,6 +52,7 @@ export interface RunnerCommandDispatcher {
   applyIntervention?(
     input: RunnerInterventionApplyInput,
   ): Promise<EngineInterventionResult>;
+  discardIntervention?(interventionId: string): Promise<void>;
   recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
 }
 

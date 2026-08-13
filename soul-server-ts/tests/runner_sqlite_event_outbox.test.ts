@@ -21,7 +21,7 @@ import {
 } from "../src/runner/sqlite_event_outbox.js";
 import { resolveAmbiguousRunnerIntervention } from
   "../src/runner/runner_intervention_resolution.js";
-import { applyInterventionCommandFrame } from
+import { applyInterventionCommandFrame, invokeCommandFrame } from
   "../src/runner/frame_protocol.js";
 import { handleRunnerInterventionCommand } from
   "../src/runner/runner_intervention_command.js";
@@ -399,6 +399,54 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:05.000Z",
     })).resolves.toEqual({ eventSourceSeq: null, queuePosition: 3 });
     await expect(outbox.readPendingInterventions()).resolves.toHaveLength(3);
+    outbox.close();
+  });
+
+  it("discards a confirmed miss without making it pending for a durable caller", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "durable-no-queue",
+      message: { text: "scheduler owns retry", user: "scheduler" },
+      event: eventInput("scheduler owns retry"),
+      queued: false,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    await handleRunnerInterventionCommand(
+      applyInterventionCommandFrame({
+        commandId: "apply-intervention:durable-no-queue",
+        interventionId: "durable-no-queue",
+        interventionInput: { prompt: "scheduler owns retry" },
+      }),
+      outbox,
+      "session-a",
+      vi.fn().mockResolvedValue({
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+      }),
+    );
+
+    const discarded = await handleRunnerInterventionCommand(
+      invokeCommandFrame(
+        "discard-intervention:durable-no-queue",
+        "runner.discard_intervention",
+        ["durable-no-queue"],
+      ),
+      outbox,
+      "session-a",
+      vi.fn(),
+    );
+
+    expect(discarded?.result).toMatchObject({
+      result: { status: "ok", data: { status: "discarded" } },
+    });
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT COUNT(*) AS count FROM runner_intervention_inbox
+      WHERE intervention_id = 'durable-no-queue'
+    `).get()).toEqual({ count: 0 });
+    database.close();
     outbox.close();
   });
 

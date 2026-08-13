@@ -23,7 +23,7 @@ export interface PendingRunnerIntervention {
   message: Record<string, unknown>;
 }
 
-export type RunnerInterventionResolution = "applied" | "not_applied";
+export type RunnerInterventionResolution = "applied" | "not_applied" | "discarded";
 
 export function migrateRunnerInterventionInboxV9(
   database: SqliteDatabase,
@@ -310,7 +310,7 @@ export async function resolveRunnerInterventionAmbiguity(
 ): Promise<void> {
   if (!interventionId) throw new Error("runner intervention id is required");
   await transaction(() => {
-    const result = resolution === "applied"
+    const result = resolution === "applied" || resolution === "discarded"
       ? database.prepare(`
           DELETE FROM runner_intervention_inbox
           WHERE intervention_id = ? AND application_state IN ('claimed', 'ambiguous')

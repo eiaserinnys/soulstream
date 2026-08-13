@@ -4,6 +4,7 @@ import type { EnginePort } from "../../src/engine/protocol.js";
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
   applyInterventionCommandFrame,
+  discardInterventionCommandFrame,
   closeCommandFrame,
   engineEventFrame,
   executeCommandFrame,
@@ -160,12 +161,11 @@ describe("RunnerCommandDispatcher", () => {
       commandId: "apply-intervention:rolling-restart",
       result: { status: "ok", data: { status: "not_supported" } },
     });
-    await expect(dispatcher.dispatch(invokeCommandFrame(
-      "invoke-after-unsupported",
-      "missing_again",
-      [],
-    ))).resolves.toMatchObject({
-      commandId: "invoke-after-unsupported",
+    await expect(dispatcher.dispatch(discardInterventionCommandFrame({
+      commandId: "discard-intervention:rolling-restart",
+      interventionId: "rolling-restart",
+    }))).resolves.toMatchObject({
+      commandId: "discard-intervention:rolling-restart",
       result: { status: "ok", data: { status: "not_supported" } },
     });
   });

@@ -694,6 +694,96 @@ describe("RunningInterventionTransition", () => {
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      label: "delivered",
+      verdict: { status: "delivered", mechanism: "active_turn" } as const,
+      expected: { delivered: true } as const,
+      discardCalls: 0,
+    },
+    {
+      label: "not delivered",
+      verdict: {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+      } as const,
+      expected: {
+        delivered: false,
+        deferred: true,
+        retryWhen: "engine_available",
+        reason: "not_supported",
+      } as const,
+      discardCalls: 1,
+    },
+    {
+      label: "unknown",
+      verdict: { status: "unknown", reason: "verdict_unknown" } as const,
+      expected: {
+        delivered: null,
+        reason: "verdict_unknown",
+        consumeWhen: null,
+      } as const,
+      discardCalls: 0,
+    },
+  ])(
+    "process runner with queueIfUndelivered=false reaches the engine and resolves $label",
+    async ({ verdict, expected, discardCalls }) => {
+      const stageIntervention = vi.fn().mockResolvedValue({
+        eventSourceSeq: 42,
+        queuePosition: 0,
+      });
+      const waitForSessionAck = vi.fn().mockResolvedValue(142);
+      const applyIntervention = vi.fn().mockResolvedValue(verdict);
+      const discardIntervention = vi.fn().mockResolvedValue(undefined);
+      const dispatcher = {
+        stageIntervention,
+        waitForSessionAck,
+        applyIntervention,
+        discardIntervention,
+        dispatch: vi.fn(),
+        executeFrames: vi.fn(),
+        prepareSession: vi.fn(),
+        interrupt: vi.fn(),
+        close: vi.fn(),
+        detachHost: vi.fn(),
+        sendControlFrame: vi.fn(),
+        requestContext: vi.fn(),
+      };
+      const task = makeRunningTask({
+        runner: createTaskRunnerRuntime(
+          new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+          dispatcher as never,
+          "runner",
+        ),
+      });
+      const transition = new RunningInterventionTransition({
+        broadcaster: makeBroadcaster(),
+        logger: silentLogger,
+        persistence: makeEventPersistenceTestDouble().persistence,
+      });
+
+      await expect(transition.deliver(
+        task,
+        { text: "scheduled while running", user: "scheduler" },
+        { queueIfUndelivered: false },
+      )).resolves.toEqual(expected);
+
+      expect(stageIntervention).toHaveBeenCalledOnce();
+      expect(stageIntervention).toHaveBeenCalledWith(expect.objectContaining({
+        queued: false,
+        event: expect.objectContaining({ type: "intervention_sent" }),
+      }));
+      expect(waitForSessionAck).toHaveBeenCalledOnce();
+      expect(applyIntervention).toHaveBeenCalledOnce();
+      expect(stageIntervention.mock.invocationCallOrder[0]).toBeLessThan(
+        applyIntervention.mock.invocationCallOrder[0],
+      );
+      expect(discardIntervention).toHaveBeenCalledTimes(discardCalls);
+      expect(task.interventionQueue).toEqual([]);
+    },
+  );
+
   it("returns an unknown delivery verdict immediately when runner intervention IPC times out", async () => {
     const timeout = new Error("Runner IPC request timed out after 30000ms");
     const stageIntervention = vi.fn()

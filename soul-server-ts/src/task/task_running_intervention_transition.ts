@@ -61,11 +61,12 @@ export class RunningInterventionTransition {
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
-    const deliveryMessage = usesDurableRunnerInterventionInbox(task)
+    const durableRunnerInbox = usesDurableRunnerInterventionInbox(task);
+    const deliveryMessage = durableRunnerInbox
       ? withRunnerInterventionId(message)
       : message;
-    if (publishBeforeDelivery) {
-      if (!usesDurableRunnerInterventionInbox(task)) {
+    if (publishBeforeDelivery || durableRunnerInbox) {
+      if (!durableRunnerInbox) {
         await this.publishAcceptance(task, deliveryMessage);
       } else {
         try {
@@ -82,7 +83,7 @@ export class RunningInterventionTransition {
 
     const initialResult = await this.tryIntervene(task, deliveryMessage);
     if (initialResult.status === "delivered") {
-      if (!publishBeforeDelivery) {
+      if (!publishBeforeDelivery && !durableRunnerInbox) {
         await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
@@ -97,7 +98,7 @@ export class RunningInterventionTransition {
       initialResult,
     );
     if (retryResult?.status === "delivered") {
-      if (!publishBeforeDelivery) {
+      if (!publishBeforeDelivery && !durableRunnerInbox) {
         await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
@@ -108,6 +109,15 @@ export class RunningInterventionTransition {
     const finalResult = retryResult ?? initialResult;
 
     if (options.queueIfUndelivered === false) {
+      if (durableRunnerInbox) {
+        const dispatcher = task.runner?.dispatcher;
+        if (!dispatcher?.discardIntervention) {
+          throw new Error("runner intervention discard operation is unavailable");
+        }
+        await dispatcher.discardIntervention(
+          requireRunnerInterventionId(deliveryMessage),
+        );
+      }
       this.deps.logger.info(
         {
           sessionId: task.agentSessionId,

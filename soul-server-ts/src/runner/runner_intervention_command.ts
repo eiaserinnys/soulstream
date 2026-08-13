@@ -28,6 +28,12 @@ export async function handleRunnerInterventionCommand(
       applyIntervention,
     );
   }
+  if (
+    command.kind === "invoke"
+    && command.capability === "runner.discard_intervention"
+  ) {
+    return await discardRunnerIntervention(command, outbox);
+  }
   if (command.kind !== "stage_intervention") return null;
   try {
     const event = command.event
@@ -56,6 +62,40 @@ export async function handleRunnerInterventionCommand(
         status: "error",
         error: {
           code: "stage_intervention_failed",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }),
+      eventSourceSeq: null,
+    };
+  }
+}
+
+async function discardRunnerIntervention(
+  command: Extract<RunnerCommandFrame, { kind: "invoke" }>,
+  outbox: RunnerSqliteEventOutbox,
+): Promise<{
+  result: RunnerCommandResultFrame;
+  eventSourceSeq: null;
+}> {
+  try {
+    const [interventionId] = command.args;
+    if (typeof interventionId !== "string" || interventionId.length === 0) {
+      throw new Error("runner intervention id is required");
+    }
+    await outbox.resolveAmbiguousIntervention(interventionId, "discarded");
+    return {
+      result: runnerCommandResultFrame(command.commandId, {
+        status: "ok",
+        data: { status: "discarded" },
+      }),
+      eventSourceSeq: null,
+    };
+  } catch (error) {
+    return {
+      result: runnerCommandResultFrame(command.commandId, {
+        status: "error",
+        error: {
+          code: "discard_intervention_failed",
           message: error instanceof Error ? error.message : String(error),
         },
       }),
