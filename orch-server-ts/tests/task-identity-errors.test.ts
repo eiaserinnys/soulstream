@@ -5,6 +5,8 @@ import {
   isTaskIdentityBindingConflict,
   isTaskIdentityCreateCollision,
   isTaskIdentityStalePlanConflict,
+  taskIdentityHostErrorCode,
+  TaskIdentityTitleConflictError,
 } from "../src/tasks/task_identity_errors.js";
 
 describe("task identity error classification", () => {
@@ -52,5 +54,26 @@ describe("task identity error classification", () => {
     expect(isTaskIdentityBindingConflict(
       new Error("page is already a task identity: page-a"),
     )).toBe(false);
+  });
+
+  it("preserves the four host conflict classes on the cross-node error wire", () => {
+    expect(taskIdentityHostErrorCode(
+      new Error("task identity task already exists: task-a"),
+    )).toBe("TASK_IDENTITY_CREATE_COLLISION");
+    expect(taskIdentityHostErrorCode(
+      new Error("page is already a task identity: page-a"),
+    )).toBe("TASK_IDENTITY_ALREADY_PROMOTED");
+    expect(taskIdentityHostErrorCode(
+      new Error("task version conflict: task-a"),
+    )).toBe("TASK_IDENTITY_STALE_PLAN_CONFLICT");
+    expect(taskIdentityHostErrorCode(
+      new Error("legacy task is already bound to page page-a"),
+    )).toBe("TASK_IDENTITY_BINDING_CONFLICT");
+    expect(taskIdentityHostErrorCode(
+      new TaskIdentityTitleConflictError("title conflict"),
+    )).toBe("TASK_IDENTITY_TITLE_CONFLICT");
+    expect(taskIdentityHostErrorCode(new Error("database unavailable"))).toBe(
+      "TASK_IDENTITY_OPERATION_FAILED",
+    );
   });
 });

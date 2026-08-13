@@ -59,7 +59,7 @@ function mutation(snapshot: TaskSnapshot): TaskMutationResult {
   };
 }
 
-function harness(options: { adoptedTaskId?: string } = {}) {
+function harness(options: { adoptedTaskId?: string; promotionUnreadable?: boolean } = {}) {
   let snapshot: TaskSnapshot | null = null;
   let failCreateSectionOnce = false;
   let conflictStatusOnce = false;
@@ -72,27 +72,29 @@ function harness(options: { adoptedTaskId?: string } = {}) {
     }),
     promoteExistingPage: vi.fn(async (params) => {
       const taskId = options.adoptedTaskId ?? params.pageId;
-      snapshot ??= {
-        task: {
-          id: taskId,
-          board_item_id: `task:${taskId}`,
-          title: params.title,
-          status: "open",
-          archived: false,
-          version: 1,
-          created_session_id: params.actorSessionId,
-          created_event_id: 1,
-          completed_kind: null,
-          completed_session_id: null,
-          completed_event_id: null,
-          completed_user_id: null,
-          completed_at: null,
-          created_at: new Date(0),
-          updated_at: new Date(0),
-        },
-        sections: [],
-        items: [],
-      };
+      if (!options.promotionUnreadable) {
+        snapshot ??= {
+          task: {
+            id: taskId,
+            board_item_id: `task:${taskId}`,
+            title: params.title,
+            status: "open",
+            archived: false,
+            version: 1,
+            created_session_id: params.actorSessionId,
+            created_event_id: 1,
+            completed_kind: null,
+            completed_session_id: null,
+            completed_event_id: null,
+            completed_user_id: null,
+            completed_at: null,
+            created_at: new Date(0),
+            updated_at: new Date(0),
+          },
+          sections: [],
+          items: [],
+        };
+      }
       return { id: taskId, pageId: params.pageId, taskId, adopted: taskId !== params.pageId };
     }),
   } satisfies ChecklistTaskIdentityPort;
@@ -268,6 +270,15 @@ describe("ChecklistTaskAdapter", () => {
     expect(h.taskIdentities.promoteExistingPage).toHaveBeenCalledTimes(1);
     expect(h.port.createSection).toHaveBeenCalledWith(expect.objectContaining({ taskId }));
     expect(h.port.createItem).toHaveBeenCalledWith(expect.objectContaining({ taskId }));
+  });
+
+  it("marks a promoted identity without a readable task row as a binding mismatch", async () => {
+    const h = harness({ promotionUnreadable: true });
+
+    await expect(h.adapter.reconcile(legacyInput(true))).rejects.toMatchObject({
+      name: "ChecklistBindingMismatchError",
+      message: "promoted task identity is not readable: page-1",
+    });
   });
 
   it("treats a bound reference as canonical and ignores a leftover legacy checked value", async () => {

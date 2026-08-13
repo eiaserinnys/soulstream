@@ -35,5 +35,7 @@ export function createBoardProjectionHost(
       checklist.markSuccess(row, nodeId),
     markChecklistTaskProjectionFailure: (row, nodeId, error) =>
       checklist.markFailure(row, nodeId, error),
+    markChecklistTaskProjectionDeadLetter: (row, nodeId, error) =>
+      checklist.markDeadLetter(row, nodeId, error),
   };
 }

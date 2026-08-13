@@ -269,6 +269,18 @@ export class BoardYjsHostClient
     await this.request("mark-checklist-task-projection-failure", { row, nodeId, error });
   }
 
+  async markDeadLetter(
+    row: ChecklistProjectionOutboxRow,
+    nodeId: string,
+    error: string,
+  ): Promise<boolean> {
+    return await this.request("mark-checklist-task-projection-dead-letter", {
+      row,
+      nodeId,
+      error,
+    });
+  }
+
   private async request<T>(operation: string, body: unknown): Promise<T> {
     const url = `${this.config.orch.baseUrl}/api/board-yjs/host/${encodeURIComponent(operation)}`;
     const headers = {

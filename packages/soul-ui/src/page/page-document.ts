@@ -1,4 +1,5 @@
 import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
+import { validatePageBlockProperties } from "@soulstream/page-model";
 import * as Y from "yjs";
 
 export const PAGE_META_MAP = "pageMeta";
@@ -94,14 +95,18 @@ export function readPageDocument(doc: Y.Doc, expectedPageId: string): PageDocume
     if (!(text instanceof Y.Text)) throw new Error(`block ${blockId}.text must be a Y.Text`);
     const properties = value.get("properties");
     if (!(properties instanceof Y.Map)) throw new Error(`block ${blockId}.properties must be a Y.Map`);
+    const type = nonEmptyString(value.get("type"), `block ${blockId}.type`);
+    const propertyRecord = record(properties.toJSON(), `block ${blockId}.properties`);
+    const propertyError = validatePageBlockProperties(type, propertyRecord);
+    if (propertyError) throw new Error(propertyError);
     byId.set(blockId, Object.freeze({
       id: blockId,
       parentId: nullableIdentifier(value.get("parentId"), `block ${blockId}.parentId`),
       positionKey: nonEmptyString(value.get("positionKey"), `block ${blockId}.positionKey`),
-      type: nonEmptyString(value.get("type"), `block ${blockId}.type`),
+      type,
       text,
       textValue: text.toString(),
-      properties: Object.freeze(record(properties.toJSON(), `block ${blockId}.properties`)),
+      properties: Object.freeze(propertyRecord),
       collapsed: boolean(value.get("collapsed"), `block ${blockId}.collapsed`),
     }));
   }

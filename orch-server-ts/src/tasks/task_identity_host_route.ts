@@ -11,6 +11,7 @@ import {
   isTaskIdentityCreateCollision,
   isTaskIdentityStalePlanConflict,
   isTaskIdentityTitleConflictError,
+  taskIdentityHostErrorCode,
 } from "./task_identity_errors.js";
 
 export interface TaskIdentityHostRouteOptions {
@@ -164,7 +165,7 @@ export function registerTaskIdentityHostRoute(
         return errorReply(
           reply,
           conflictStatus(error),
-          "TASK_IDENTITY_OPERATION_FAILED",
+          taskIdentityHostErrorCode(error),
           error instanceof Error ? error.message : "Task identity operation failed",
         );
       }

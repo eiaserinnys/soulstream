@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { TaskIdentityHostClient } from "../../src/work-task/task_identity_host_client.js";
+import {
+  TaskIdentityHostClient,
+  TaskIdentityHostClientError,
+} from "../../src/work-task/task_identity_host_client.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -129,5 +132,37 @@ describe("TaskIdentityHostClient", () => {
         ),
       }),
     );
+  });
+
+  it("preserves the orchestrator error code for retry classification", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      detail: {
+        error: {
+          code: "TASK_IDENTITY_BINDING_CONFLICT",
+          message: "legacy task is already bound to page page-a",
+          details: { pageId: "page-a" },
+        },
+      },
+    }), { status: 409, headers: { "Content-Type": "application/json" } })));
+    const client = new TaskIdentityHostClient({
+      orch: { baseUrl: "http://orch.local", headers: { authorization: "Bearer test" } },
+      logger: { warn: vi.fn() } as never,
+    });
+
+    const error = await client.promoteExistingPage({
+      actorKind: "agent",
+      actorSessionId: "session-a",
+      pageId: "page-a",
+      title: "Page A",
+      folderId: "folder-a",
+      idempotencyKey: "promote:page:a",
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(TaskIdentityHostClientError);
+    expect(error).toMatchObject({
+      code: "TASK_IDENTITY_BINDING_CONFLICT",
+      status: 409,
+      details: { pageId: "page-a" },
+    });
   });
 });

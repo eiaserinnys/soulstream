@@ -43,6 +43,15 @@ export function isTaskIdentityBindingConflict(error: unknown): boolean {
       || error.message.startsWith("backfill page already exists:"));
 }
 
+export function taskIdentityHostErrorCode(error: unknown): string {
+  if (isTaskIdentityTitleConflictError(error)) return "TASK_IDENTITY_TITLE_CONFLICT";
+  if (isTaskIdentityCreateCollision(error)) return "TASK_IDENTITY_CREATE_COLLISION";
+  if (isTaskIdentityAlreadyPromotedError(error)) return "TASK_IDENTITY_ALREADY_PROMOTED";
+  if (isTaskIdentityStalePlanConflict(error)) return "TASK_IDENTITY_STALE_PLAN_CONFLICT";
+  if (isTaskIdentityBindingConflict(error)) return "TASK_IDENTITY_BINDING_CONFLICT";
+  return "TASK_IDENTITY_OPERATION_FAILED";
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>

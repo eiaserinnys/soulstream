@@ -24,4 +24,9 @@ export interface ChecklistTaskProjectionRepository {
     nodeId: string,
     error: string,
   ): Promise<void>;
+  markDeadLetter(
+    row: ChecklistProjectionOutboxRow,
+    nodeId: string,
+    error: string,
+  ): Promise<boolean>;
 }

@@ -181,4 +181,9 @@ export interface BoardProjectionHost {
     nodeId: string,
     error: string,
   ): Promise<void>;
+  markChecklistTaskProjectionDeadLetter(
+    row: ChecklistProjectionOutboxRow,
+    nodeId: string,
+    error: string,
+  ): Promise<boolean>;
 }

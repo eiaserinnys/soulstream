@@ -132,6 +132,42 @@ describe("board Yjs orchestrator delegation", () => {
       leaseMs: 30_000,
     });
   });
+
+  it("sends checklist dead-letter transitions through the explicit host route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("true", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new BoardYjsHostClient({
+      orch: {
+        baseUrl: "http://orch.local",
+        headers: { authorization: "Bearer test-token" },
+      },
+      logger: createSilentLogger() as never,
+    });
+    const row = {
+      block_id: "block-1",
+      page_id: "page-1",
+      source_hash: "hash-1",
+      actor_kind: "agent" as const,
+      actor_session_id: "session-1",
+      actor_user_id: null,
+      routing_session_id: "session-1",
+      attempts: 7,
+    };
+
+    await expect(client.markDeadLetter(row, "node-1", "permanent")).resolves.toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "http://orch.local/api/board-yjs/host/mark-checklist-task-projection-dead-letter",
+    );
+    expect(JSON.parse(init.body as string)).toEqual({
+      row,
+      nodeId: "node-1",
+      error: "permanent",
+    });
+  });
 });
 
 function collectTypeScriptFiles(directory: string): string[] {

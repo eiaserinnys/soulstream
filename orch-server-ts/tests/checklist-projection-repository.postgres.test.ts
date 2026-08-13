@@ -105,6 +105,38 @@ describe("ChecklistProjectionRepository PostgreSQL integration", () => {
     expect(pending).toEqual({ source_hash: "source-new", processed_hash: null });
   });
 
+  it("terminally records a dead letter and does not claim it again", async () => {
+    await insertPending("block-dead", "source-dead");
+    const subject = repository(() => new Date("2030-07-13T00:00:00.000Z"));
+    const [claimed] = await subject.claimDue("node-1");
+
+    await expect(subject.markDeadLetter(
+      claimed!,
+      "node-1",
+      "permanent binding mismatch",
+    )).resolves.toBe(true);
+
+    const [deadLetter] = await harness.sql<Array<{
+      source_hash: string;
+      processed_hash: string | null;
+      attempts: number;
+      last_error: string | null;
+      lease_owner_node_id: string | null;
+    }>>`
+      SELECT source_hash, processed_hash, attempts, last_error, lease_owner_node_id
+      FROM checklist_task_projection_outbox
+      WHERE block_id = 'block-dead'
+    `;
+    expect(deadLetter).toEqual({
+      source_hash: "source-dead",
+      processed_hash: "source-dead",
+      attempts: 1,
+      last_error: "permanent binding mismatch",
+      lease_owner_node_id: null,
+    });
+    await expect(subject.claimDue("node-1")).resolves.toEqual([]);
+  });
+
   function repository(now: () => Date): ChecklistProjectionRepository {
     return new ChecklistProjectionRepository(
       createLiveDbSqlResolver({ sql: harness.liveSql }),

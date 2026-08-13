@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PageYjsHostClient } from "../src/page/page_host_client.js";
+import {
+  PageYjsHostClient,
+  PageYjsHostClientError,
+} from "../src/page/page_host_client.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -79,11 +82,25 @@ describe("PageYjsHostClient", () => {
 
   it("surfaces the orch structured error without a local fallback", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      detail: { error: { message: "page not found: missing" } },
+      detail: {
+        error: {
+          code: "PAGE_NOT_FOUND",
+          message: "page not found: missing",
+          details: { pageId: "missing" },
+        },
+      },
     }), { status: 404 })));
 
-    await expect(makeClient().getPage("missing", true))
-      .rejects.toThrow("page Yjs host get-page failed: page not found: missing");
+    const error = await makeClient().getPage("missing", true)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PageYjsHostClientError);
+    expect(error).toMatchObject({
+      code: "PAGE_NOT_FOUND",
+      status: 404,
+      details: { pageId: "missing" },
+      message: "page Yjs host get-page failed: page not found: missing",
+    });
   });
 });
 

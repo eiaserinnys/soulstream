@@ -61,9 +61,13 @@ export interface ChecklistTaskReference {
   [key: string]: unknown;
 }
 
+export interface ChecklistTaskBlockProperties extends ChecklistTaskReference {
+  checked: boolean;
+}
+
 export type ChecklistBlockProperties =
   | LegacyChecklistBlockProperties
-  | ChecklistTaskReference;
+  | ChecklistTaskBlockProperties;
 
 export interface CustomViewBlockProperties {
   customViewId: string;

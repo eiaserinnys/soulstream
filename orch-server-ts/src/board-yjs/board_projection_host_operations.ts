@@ -80,6 +80,11 @@ const schemas = {
     nodeId: z.string().min(1),
     error: z.string(),
   }),
+  "mark-checklist-task-projection-dead-letter": z.object({
+    row: checklistRowSchema,
+    nodeId: z.string().min(1),
+    error: z.string(),
+  }),
 } as const;
 
 export function getBoardProjectionHostOperationSchema(
@@ -164,6 +169,16 @@ export async function dispatchBoardProjectionHostOperation(
       >;
       await host.markChecklistTaskProjectionFailure(value.row, value.nodeId, value.error);
       return { ok: true };
+    }
+    case "mark-checklist-task-projection-dead-letter": {
+      const value = input as z.infer<
+        typeof schemas["mark-checklist-task-projection-dead-letter"]
+      >;
+      return await host.markChecklistTaskProjectionDeadLetter(
+        value.row,
+        value.nodeId,
+        value.error,
+      );
     }
     default:
       throw new Error(`Unknown board projection host operation: ${operation}`);
