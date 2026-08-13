@@ -45,8 +45,10 @@ export class RunnerIpcConnection {
   private readonly pending = new Map<string, PendingRequest>();
   private frameHandler: (frame: RunnerFrame) => Promise<void> = async () => {};
   private failureHandler: (error: Error) => void = () => {};
-  private commandHandling = Promise.resolve();
-  private maintenanceHandling = Promise.resolve();
+  // Receipt/apply/discard share one priority FIFO. Every other frame keeps the
+  // original socket order so a later execute cannot overtake durable ACK work.
+  private priorityHandling = Promise.resolve();
+  private orderedHandling = Promise.resolve();
   private closed = false;
   private droppedFrameCount = 0;
 
@@ -183,10 +185,10 @@ export class RunnerIpcConnection {
         return;
       }
       if (frame.channel === "control" && this.resolvePending(frame)) continue;
-      if (frame.channel === "command") {
-        this.commandHandling = this.enqueueFrame(this.commandHandling, frame);
+      if (isPriorityInterventionCommand(frame)) {
+        this.priorityHandling = this.enqueueFrame(this.priorityHandling, frame);
       } else {
-        this.maintenanceHandling = this.enqueueFrame(this.maintenanceHandling, frame);
+        this.orderedHandling = this.enqueueFrame(this.orderedHandling, frame);
       }
     }
   }
@@ -223,6 +225,16 @@ export class RunnerIpcConnection {
     }
     this.pending.clear();
   }
+}
+
+function isPriorityInterventionCommand(frame: RunnerFrame): boolean {
+  if (frame.channel !== "command") return false;
+  if (frame.kind === "stage_intervention") return true;
+  return frame.kind === "invoke"
+    && (
+      frame.capability === "runner.apply_intervention"
+      || frame.capability === "runner.discard_intervention"
+    );
 }
 
 function requestKey(frame: RunnerCommandFrame | Extract<RunnerEventFrame, { kind: "request" }>): string {

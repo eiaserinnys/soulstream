@@ -412,7 +412,10 @@ describe("runner cutover all-flags-on integration", () => {
         },
       });
       if (scenario === "success") {
-        expect(task.status).toBe("completed");
+        expect({ status: task.status, error: task.error }).toEqual({
+          status: "completed",
+          error: undefined,
+        });
         expect(task.claudeBackendRolloverAttempts).toBe(0);
         expect(task.claudeBackendRolloverCycleFrom).toBeUndefined();
       } else {
