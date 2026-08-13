@@ -1,3 +1,8 @@
+/**
+ * Runner child turn state machine. This file intentionally keeps command,
+ * drain, persistence, and terminal sequencing in one control path; splitting
+ * those transitions would make the ordering contract implicit.
+ */
 import type { Logger } from "pino";
 
 import { shouldPersistEvent } from "../db/event_persistence.js";
@@ -156,7 +161,7 @@ export class RunnerChildRuntime {
     }
     if (frame.kind === "host_frame_applied") {
       await this.outbox.acknowledgeHostFrame(frame.frameSeq);
-      this.recordProgress();
+      await this.recordProgress();
       return;
     }
     if (
@@ -165,7 +170,7 @@ export class RunnerChildRuntime {
       || frame.kind === "tool_approval_response"
     ) {
       await this.dispatcher.sendControlFrame(frame);
-      this.recordProgress();
+      await this.recordProgress();
       return;
     }
     throw new Error(`Runner child received unsupported control frame: ${frame.kind}`);
@@ -217,7 +222,7 @@ export class RunnerChildRuntime {
     if (command.kind === "close") {
       const lifecycle = this.lifecycle.read();
       if (lifecycle) {
-        this.lifecycle.finish(
+        await this.lifecycle.finish(
           lifecycle.execution_command_id,
           "closed",
           new Date().toISOString(),
@@ -289,21 +294,21 @@ export class RunnerChildRuntime {
   ): Promise<void> {
     if (frame.kind === "run_state_snapshot") {
       await this.callHostSnapshot("persistRunState", frame.snapshot);
-      this.recordProgress();
+      await this.recordProgress();
       return;
     }
     if (frame.kind === "session_items_snapshot") {
       await this.callHostSnapshot("persistSessionItems", frame.snapshot);
-      this.recordProgress();
+      await this.recordProgress();
       return;
     }
     if (frame.kind === "request") {
       await this.sendRequired(frame);
-      this.recordProgress();
+      await this.recordProgress();
       return;
     }
     const event = frame.payload as SSEEventPayload;
-    this.recordEngineProgress(event);
+    await this.recordEngineProgress(event);
     let effect = sessionIdEffect(event);
     let backendSessionRotation: {
       expectedBackendSessionId: string;
@@ -410,7 +415,7 @@ export class RunnerChildRuntime {
           throw new Error("runner backend session rollover conflicts with durable bootstrap");
         }
         this.pendingBackendSessionRolloverFrom = rolloverFrom;
-        this.beginLifecycle(command.commandId);
+        await this.beginLifecycle(command.commandId);
         return;
       }
       const resumeSessionId = command.params.resumeSessionId;
@@ -420,7 +425,7 @@ export class RunnerChildRuntime {
       ) {
         throw new Error("runner execute resume session ID conflicts with durable bootstrap");
       }
-      this.beginLifecycle(command.commandId);
+      await this.beginLifecycle(command.commandId);
       return;
     }
     if (command.params.backendSessionRolloverFrom !== undefined) {
@@ -434,7 +439,7 @@ export class RunnerChildRuntime {
       await this.ensureBootstrap(null, command.commandId);
       return;
     }
-    this.beginLifecycle(command.commandId);
+    await this.beginLifecycle(command.commandId);
   }
 
   private async ensureBootstrap(
@@ -457,17 +462,17 @@ export class RunnerChildRuntime {
     // Force the pre-bootstrap execution lease, when present, into the durable
     // bootstrap row. A same-command fast path in beginLifecycle() would leave
     // the temporary row behind and split lifecycle ownership.
-    this.lifecycle.begin({
+    await this.lifecycle.begin({
       pid: process.pid,
       commandId,
       progressedAt: new Date().toISOString(),
     });
   }
 
-  private beginLifecycle(commandId: string): void {
+  private async beginLifecycle(commandId: string): Promise<void> {
     const existing = this.lifecycle.read();
     if (!existing || existing.execution_command_id !== commandId) {
-      this.lifecycle.begin({
+      await this.lifecycle.begin({
         pid: process.pid,
         commandId,
         progressedAt: new Date().toISOString(),
@@ -528,29 +533,29 @@ export class RunnerChildRuntime {
     throw new Error("Required runner frame could not reach host", { cause: lastError });
   }
 
-  private recordProgress(): void {
+  private async recordProgress(): Promise<void> {
     if (!this.activeCommandId || !this.lifecycle.read()) return;
-    this.lifecycle.progress(this.activeCommandId, new Date().toISOString());
+    await this.lifecycle.progress(this.activeCommandId, new Date().toISOString());
   }
 
-  private recordEngineProgress(event: SSEEventPayload): void {
+  private async recordEngineProgress(event: SSEEventPayload): Promise<void> {
     if (!this.activeCommandId || !this.lifecycle.read()) return;
     const progressedAt = new Date().toISOString();
     const transition = runnerToolLeaseTransition(event);
     if (transition?.kind === "start") {
-      this.lifecycle.toolStarted(this.activeCommandId, transition.toolUseId, progressedAt);
+      await this.lifecycle.toolStarted(this.activeCommandId, transition.toolUseId, progressedAt);
       return;
     }
     if (transition?.kind === "finish") {
-      this.lifecycle.toolFinished(this.activeCommandId, transition.toolUseId, progressedAt);
+      await this.lifecycle.toolFinished(this.activeCommandId, transition.toolUseId, progressedAt);
       return;
     }
-    this.lifecycle.progress(this.activeCommandId, progressedAt);
+    await this.lifecycle.progress(this.activeCommandId, progressedAt);
   }
 
-  private recordLiveness(): void {
+  private async recordLiveness(): Promise<void> {
     if (!this.activeCommandId || !this.lifecycle.read()) return;
-    this.lifecycle.liveness(this.activeCommandId, new Date().toISOString());
+    await this.lifecycle.liveness(this.activeCommandId, new Date().toISOString());
   }
 
   private startLiveness(): void {
@@ -559,11 +564,9 @@ export class RunnerChildRuntime {
     if (leaseTimeoutMs === undefined) return;
     const intervalMs = runnerLivenessIntervalMs(leaseTimeoutMs);
     this.livenessTimer = setInterval(() => {
-      try {
-        this.recordLiveness();
-      } catch (error) {
+      void this.recordLiveness().catch((error) => {
         this.logger.error({ err: error }, "Runner lifecycle liveness update failed");
-      }
+      });
     }, intervalMs);
     this.livenessTimer.unref?.();
   }

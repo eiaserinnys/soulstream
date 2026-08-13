@@ -119,19 +119,19 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(databasePath);
-    lifecycle.begin({
+    await lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-07-12T00:00:00.000Z",
     });
-    lifecycle.toolStarted("execute-a", "tool-duplicate", "2026-07-12T00:00:01.000Z");
+    await lifecycle.toolStarted("execute-a", "tool-duplicate", "2026-07-12T00:00:01.000Z");
     for (const repeatedAt of [
       "2026-07-12T01:00:01.000Z",
       "2026-07-13T00:00:01.000Z",
       "2026-08-10T00:00:01.000Z",
       "2026-08-11T00:00:29.000Z",
     ]) {
-      lifecycle.toolStarted("execute-a", "tool-duplicate", repeatedAt);
+      await lifecycle.toolStarted("execute-a", "tool-duplicate", repeatedAt);
     }
     const durable = lifecycle.read();
     lifecycle.close();
@@ -273,7 +273,7 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    lifecycle.begin({
+    await lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-11T00:00:20.000Z",
@@ -324,7 +324,7 @@ describe("runner process registry", () => {
       });
       outbox.close();
       const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-      lifecycle.begin({
+      await lifecycle.begin({
         pid: process.pid,
         commandId: `execute-${cacheState}`,
         progressedAt: "2026-08-11T00:00:29.000Z",
@@ -396,7 +396,7 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    lifecycle.begin({
+    await lifecycle.begin({
       pid: process.pid,
       commandId: "execute-refresh",
       progressedAt: "2026-08-12T00:00:01.000Z",
@@ -529,12 +529,12 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    lifecycle.begin({
+    await lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-11T00:00:01.000Z",
     });
-    lifecycle.finish("execute-a", "completed", "2026-08-11T00:00:02.000Z");
+    await lifecycle.finish("execute-a", "completed", "2026-08-11T00:00:02.000Z");
     lifecycle.close();
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
     current.config = { ...current.config, paths };

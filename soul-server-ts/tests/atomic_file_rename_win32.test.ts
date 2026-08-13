@@ -72,7 +72,7 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
     });
     outbox.close();
     const initial = RunnerSqliteLifecycle.open(databasePath);
-    initial.begin({
+    await initial.begin({
       pid: process.pid,
       commandId: "execute-win32",
       progressedAt: "2026-08-12T00:00:00.000Z",
@@ -95,10 +95,10 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
       retryDelaysMs: [50, 100, 200, 400, 800],
     });
 
-    expect(() => lifecycle.progress(
+    await expect(lifecycle.progress(
       "execute-win32",
       "2026-08-12T00:00:01.000Z",
-    )).not.toThrow();
+    )).resolves.toBeDefined();
     lifecycle.close();
     await lock.closed;
 

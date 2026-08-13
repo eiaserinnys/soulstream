@@ -4,6 +4,7 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { Task } from "./task_models.js";
+import { recordTerminationHint } from "./task_termination.js";
 
 export interface TaskEngineFailureRecoveryDeps {
   broadcaster: SessionBroadcaster;
@@ -56,6 +57,7 @@ export class TaskEngineFailureRecovery {
   ): void {
     if (!options.overwriteNonRunning && task.status !== "running") return;
 
+    recordTerminationHint(task, "error_aborted", message);
     task.status = "error";
     task.error = message;
   }

@@ -198,10 +198,10 @@ describe("runner SQLite contention", () => {
     expect(events.every((event) => event.attemptElapsedMs >= 0)).toBe(true);
   });
 
-  it("keeps a WAL lifecycle reader and critical writer alive across a process lock", async () => {
+  it("keeps a lifecycle progress frame alive across a process lock", async () => {
     const databasePath = await createDatabase();
     const lifecycle = RunnerSqliteLifecycle.open(databasePath);
-    lifecycle.begin({
+    await lifecycle.begin({
       pid: process.pid,
       commandId: "execute-a",
       progressedAt: "2026-08-13T00:00:00.000Z",
@@ -212,17 +212,22 @@ describe("runner SQLite contention", () => {
       RUNNER_SQLITE_BUSY_TIMEOUT_MS + 200,
     );
     const startedAt = Date.now();
+    let eventLoopYielded = false;
+    const yieldProbe = setTimeout(() => { eventLoopYielded = true; }, 0);
     try {
       await expect(readAuthoritativeRunnerLifecycle(databasePath)).resolves.toMatchObject({
         execution_command_id: "execute-a",
         progress_seq: 1,
       });
-      expect(() => lifecycle.progress("execute-a", "2026-08-13T00:00:01.000Z"))
-        .toThrow(/database is locked/i);
-      expect(Date.now() - startedAt).toBeLessThan(500);
+      await expect(lifecycle.progress("execute-a", "2026-08-13T00:00:01.000Z"))
+        .resolves.toMatchObject({ progress_seq: 2 });
+      expect(eventLoopYielded).toBe(true);
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(200);
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
       const [exitCode] = await exited;
       expect(exitCode).toBe(0);
     } finally {
+      clearTimeout(yieldProbe);
       if (child.exitCode === null) child.kill();
       lifecycle.close();
     }

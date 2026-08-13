@@ -440,7 +440,7 @@ async function markRegistrationReaped(
     },
   );
   try {
-    lifecycle.reap(
+    await lifecycle.reap(
       registration.lifecycle!.execution_command_id,
       progressedAt,
       error,

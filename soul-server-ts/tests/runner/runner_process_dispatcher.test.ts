@@ -229,12 +229,12 @@ describe("RunnerProcessDispatcher", () => {
       payload: { type: "assistant_message", content: "replayed" },
     });
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    lifecycle.begin({
+    await lifecycle.begin({
       pid: 1001,
       commandId: "execute-old",
       progressedAt: "2026-08-11T00:00:01.000Z",
     });
-    lifecycle.finish("execute-old", "completed", "2026-08-11T00:00:02.000Z");
+    await lifecycle.finish("execute-old", "completed", "2026-08-11T00:00:02.000Z");
     lifecycle.close();
     const endpoint = new RunnerSocketEndpoint(paths.socketPath, async () => {}, vi.fn());
     await endpoint.listen();
