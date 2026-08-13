@@ -467,11 +467,13 @@ describe("session command HTTP route harness", () => {
   it("keeps NODE_COMMAND_TIMEOUT when the node session event is absent", async () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);
+    let requestId = "";
     transports.attach({
       nodeId: "fake-node",
       connectionId,
       transport: {
-        send: () => {
+        send: (data) => {
+          requestId = (JSON.parse(data) as { requestId: string }).requestId;
           // Keep the command pending until its timeout.
         },
       },
@@ -493,9 +495,11 @@ describe("session command HTTP route harness", () => {
     });
 
     expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({
+    expect(response.json()).toEqual({
       error: {
         code: "NODE_COMMAND_TIMEOUT",
+        message: `Command create_session timed out after 1ms (requestId=${requestId})`,
+        requestId,
       },
     });
   });

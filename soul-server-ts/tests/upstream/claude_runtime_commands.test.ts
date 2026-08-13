@@ -186,26 +186,89 @@ describe("ClaudeRuntimeCommands", () => {
     expect(schedules.deleteSchedule).toHaveBeenCalledWith("sess-1", "sched-1");
   });
 
-  it("returns null for fire-and-forget commands and validates required ids", async () => {
-    const commands = new ClaudeRuntimeCommands({
-      listClaudeRuntimeTasks: vi.fn(async () => ({
-        sessionId: "sess-1",
-        sessionState: null,
-        runtimeSessionId: null,
-        updatedAt: null,
-        tasks: [],
-      })),
-      getClaudeRuntimeTaskOutput: vi.fn(),
-      stopClaudeRuntimeTask: vi.fn(),
-      backgroundClaudeRuntimeTasks: vi.fn(),
-    });
+  it("rejects commands without requestId before invoking runtime side effects", async () => {
+    const listClaudeRuntimeTasks = vi.fn(async () => ({
+      sessionId: "sess-1",
+      sessionState: null,
+      runtimeSessionId: null,
+      updatedAt: null,
+      tasks: [],
+    }));
+    const getClaudeRuntimeTaskOutput = vi.fn();
+    const stopClaudeRuntimeTask = vi.fn();
+    const backgroundClaudeRuntimeTasks = vi.fn();
+    const listSchedules = vi.fn();
+    const deleteSchedule = vi.fn();
+    const commands = new ClaudeRuntimeCommands(
+      {
+        listClaudeRuntimeTasks,
+        getClaudeRuntimeTaskOutput,
+        stopClaudeRuntimeTask,
+        backgroundClaudeRuntimeTasks,
+      },
+      { listSchedules, deleteSchedule },
+    );
 
-    await expect(
-      commands.listTasks({
+    const cases = [
+      {
         type: "claude_runtime_list_tasks",
-        agentSessionId: "sess-1",
-      }),
-    ).resolves.toBeNull();
+        run: () => commands.listTasks({
+          type: "claude_runtime_list_tasks",
+          agentSessionId: "sess-1",
+        }),
+      },
+      {
+        type: "claude_runtime_task_output",
+        run: () => commands.taskOutput({
+          type: "claude_runtime_task_output",
+          agentSessionId: "sess-1",
+          taskId: "task-1",
+        }),
+      },
+      {
+        type: "claude_runtime_stop_task",
+        run: () => commands.stopTask({
+          type: "claude_runtime_stop_task",
+          agentSessionId: "sess-1",
+          taskId: "task-1",
+        }),
+      },
+      {
+        type: "claude_runtime_background_tasks",
+        run: () => commands.backgroundTasks({
+          type: "claude_runtime_background_tasks",
+          agentSessionId: "sess-1",
+        }),
+      },
+      {
+        type: "claude_runtime_list_schedules",
+        run: () => commands.listSchedules({
+          type: "claude_runtime_list_schedules",
+          agentSessionId: "sess-1",
+        }),
+      },
+      {
+        type: "claude_runtime_delete_schedule",
+        run: () => commands.deleteSchedule({
+          type: "claude_runtime_delete_schedule",
+          agentSessionId: "sess-1",
+          scheduleId: "schedule-1",
+        }),
+      },
+    ];
+
+    for (const testCase of cases) {
+      await expect(testCase.run()).rejects.toThrow(`${testCase.type} requires requestId`);
+    }
+    expect([
+      listClaudeRuntimeTasks,
+      getClaudeRuntimeTaskOutput,
+      stopClaudeRuntimeTask,
+      backgroundClaudeRuntimeTasks,
+      listSchedules,
+      deleteSchedule,
+    ].every((operation) => operation.mock.calls.length === 0)).toBe(true);
+
     await expect(
       commands.stopTask({
         type: "claude_runtime_stop_task",

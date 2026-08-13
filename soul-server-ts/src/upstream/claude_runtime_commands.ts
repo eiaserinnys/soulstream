@@ -86,28 +86,31 @@ export class ClaudeRuntimeCommands {
     private readonly schedules?: ClaudeRuntimeScheduleCommands,
   ) {}
 
-  async listTasks(cmd: ClaudeRuntimeListTasksCommand): Promise<Record<string, unknown> | null> {
+  async listTasks(cmd: ClaudeRuntimeListTasksCommand): Promise<Record<string, unknown>> {
+    const requestId = requiredRequestId(cmd);
     const sessionId = sessionIdFromCommand(cmd);
     if (!sessionId) throw new ClaudeRuntimeCommandError(`${cmd.type} requires agentSessionId`);
     const result = await this.taskManager.listClaudeRuntimeTasks(sessionId);
-    return this.ack(cmd, result);
+    return this.ack(cmd.type, requestId, result);
   }
 
   async listSchedules(
     cmd: ClaudeRuntimeListSchedulesCommand,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<Record<string, unknown>> {
+    const requestId = requiredRequestId(cmd);
     if (!this.schedules) {
       throw new ClaudeRuntimeCommandError("schedule service is not configured");
     }
     const sessionId = sessionIdFromCommand(cmd);
     if (!sessionId) throw new ClaudeRuntimeCommandError(`${cmd.type} requires agentSessionId`);
     const result = await this.schedules.listSchedules(sessionId);
-    return this.ack(cmd, result);
+    return this.ack(cmd.type, requestId, result);
   }
 
   async deleteSchedule(
     cmd: ClaudeRuntimeDeleteScheduleCommand,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<Record<string, unknown>> {
+    const requestId = requiredRequestId(cmd);
     if (!this.schedules) {
       throw new ClaudeRuntimeCommandError("schedule service is not configured");
     }
@@ -119,12 +122,13 @@ export class ClaudeRuntimeCommands {
       );
     }
     const result = await this.schedules.deleteSchedule(sessionId, scheduleId);
-    return this.ack(cmd, result);
+    return this.ack(cmd.type, requestId, result);
   }
 
   async taskOutput(
     cmd: ClaudeRuntimeTaskOutputCommand,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<Record<string, unknown>> {
+    const requestId = requiredRequestId(cmd);
     const sessionId = sessionIdFromCommand(cmd);
     const taskId = cmd.taskId ?? cmd.task_id ?? "";
     if (!sessionId || !taskId) {
@@ -133,10 +137,11 @@ export class ClaudeRuntimeCommands {
       );
     }
     const result = await this.taskManager.getClaudeRuntimeTaskOutput(sessionId, taskId);
-    return this.ack(cmd, result);
+    return this.ack(cmd.type, requestId, result);
   }
 
-  async stopTask(cmd: ClaudeRuntimeStopTaskCommand): Promise<Record<string, unknown> | null> {
+  async stopTask(cmd: ClaudeRuntimeStopTaskCommand): Promise<Record<string, unknown>> {
+    const requestId = requiredRequestId(cmd);
     const sessionId = sessionIdFromCommand(cmd);
     const taskId = cmd.taskId ?? cmd.task_id ?? "";
     if (!sessionId || !taskId) {
@@ -145,26 +150,29 @@ export class ClaudeRuntimeCommands {
       );
     }
     const result = await this.taskManager.stopClaudeRuntimeTask(sessionId, taskId);
-    return this.ack(cmd, result);
+    return this.ack(cmd.type, requestId, result);
   }
 
   async backgroundTasks(
     cmd: ClaudeRuntimeBackgroundTasksCommand,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<Record<string, unknown>> {
+    const requestId = requiredRequestId(cmd);
     const sessionId = sessionIdFromCommand(cmd);
     if (!sessionId) throw new ClaudeRuntimeCommandError(`${cmd.type} requires agentSessionId`);
     const result = await this.taskManager.backgroundClaudeRuntimeTasks(
       sessionId,
       cmd.toolUseId ?? cmd.tool_use_id,
     );
-    return this.ack(cmd, result);
+    return this.ack(cmd.type, requestId, result);
   }
 
-  private ack(cmd: ClaudeRuntimeCommand, result: object): Record<string, unknown> | null {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!requestId) return null;
+  private ack(
+    commandType: ClaudeRuntimeCommand["type"],
+    requestId: string,
+    result: object,
+  ): Record<string, unknown> {
     return {
-      type: `${cmd.type}_ack`,
+      type: `${commandType}_ack`,
       requestId,
       status: "ok",
       ...result,
@@ -174,4 +182,12 @@ export class ClaudeRuntimeCommands {
 
 function sessionIdFromCommand(cmd: ClaudeRuntimeCommand): string {
   return cmd.agentSessionId ?? cmd.session_id ?? "";
+}
+
+function requiredRequestId(cmd: ClaudeRuntimeCommand): string {
+  const requestId = cmd.requestId ?? cmd.request_id ?? "";
+  if (!requestId) {
+    throw new ClaudeRuntimeCommandError(`${cmd.type} requires requestId`);
+  }
+  return requestId;
 }

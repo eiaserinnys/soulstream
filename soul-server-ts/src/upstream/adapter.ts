@@ -14,6 +14,7 @@ import type { AttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js";
 
 import { CommandDispatcher } from "./dispatcher.js";
+import { CommandTransportObserver } from "./command_transport_observer.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
@@ -78,6 +79,7 @@ export class UpstreamAdapter {
   private running = false;
   private readonly reconnect = new ReconnectPolicy();
   private readonly dispatcher: CommandDispatcher;
+  private readonly commandTransportObserver: CommandTransportObserver;
   private authWarned = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private awaitingHeartbeatPong = false;
@@ -88,6 +90,7 @@ export class UpstreamAdapter {
     private readonly logger: Logger,
     private readonly deps: UpstreamDependencies,
   ) {
+    this.commandTransportObserver = new CommandTransportObserver(logger);
     this.dispatcher = new CommandDispatcher(
       (data) => this.send(data),
       logger,
@@ -265,7 +268,11 @@ export class UpstreamAdapter {
             await this.deps.eventOutboxPump.handleAck(cmd);
             return;
           }
-          await this.dispatcher.dispatch(cmd);
+          await this.commandTransportObserver.observe(
+            cmd,
+            () => this.dispatcher.dispatch(cmd),
+            this.dispatcher.expectsResponse(cmd),
+          );
         } catch (err) {
           this.logger.error({ err }, "Dispatcher threw");
         }
@@ -460,12 +467,7 @@ export class UpstreamAdapter {
   }
 
   private async sendOnSocket(ws: WebSocket, data: unknown): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      ws.send(JSON.stringify(data), (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await this.commandTransportObserver.send(ws, data);
   }
 }
 
