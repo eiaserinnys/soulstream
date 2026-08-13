@@ -563,6 +563,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const hydrateRunnerRecoveryTask = vi.fn(async () => { throw transient; });
     const subject = makeSubject([registration()], now, [], {
       now: () => now,
+      leaseTimeoutMs: 2 * 60 * 60 * 1_000,
       taskManager: {
         hydrateRunnerRecoveryTask,
         markRunnerFailureAndResume: vi.fn(async () => {}),
