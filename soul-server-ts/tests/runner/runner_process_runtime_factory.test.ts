@@ -1,9 +1,123 @@
+import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
+import type { AgentProfile } from "../../src/agent_registry.js";
 import { readClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
-import { applyRunnerHostCall } from
+import {
+  applyRunnerHostCall,
+  createRunnerProcessRuntimeFactory,
+} from
   "../../src/runner/runner_process_runtime_factory.js";
+import type { RunnerChildConfig } from
+  "../../src/runner/runner_process_spawn.js";
+import type { Task } from "../../src/task/task_models.js";
+
+describe("createRunnerProcessRuntimeFactory", () => {
+  it("refreshes runtime MCP settings when restarting a stored runner config", async () => {
+    const agent: AgentProfile = {
+      id: "agent-a",
+      name: "Agent A",
+      backend: "codex",
+      workspace_dir: "/workspace/a",
+      mcp_profile: "runtime-profile",
+    };
+    const currentResolvedMcpServers = [{
+      type: "streamable_http" as const,
+      name: "soulstream",
+      url: "http://127.0.0.1:4308/mcp",
+      headers: { Authorization: "Bearer current" },
+    }];
+    const spawn = vi.fn(async () => {
+      throw new Error("captured restart spawn input");
+    });
+    const factory = createRunnerProcessRuntimeFactory({
+      env: {
+        SOUL_RUNNER_STATE_DIR: "/runner",
+        SOUL_RUNNER_ARTIFACT_DIR: "/artifacts",
+        SOUL_RUNNER_RELEASES_DIR: "/releases",
+        SOUL_RUNNER_TERMINAL_RETENTION_MS: 60_000,
+        SOUL_RUNNER_LEASE_TIMEOUT_MS: 90_000,
+        CODEX_ADAPTER_MODE: "sdk",
+        CLAUDE_SESSION_RUNTIME_V2_ENABLED: true,
+        CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: 300_000,
+        CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: 16,
+        CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: 1_800_000,
+        MCP_INTERNAL_PORT: 4308,
+        MCP_PATH: "/mcp",
+      },
+      logger: pino({ level: "silent" }),
+      pumpMux: {} as never,
+      sessionStore: {} as never,
+      mcpConfigService: {
+        resolveMcpProfile: vi.fn(() => ({
+          mcp_servers: currentResolvedMcpServers,
+          hosted_tools: [],
+        })),
+      } as never,
+      releasePool: {
+        resolveCurrentRelease: vi.fn(),
+        describe: vi.fn(() => ({
+          releaseId: "sha-a",
+          releaseRoot: "/release/sha-a",
+          runnerModuleRoot: "/release/sha-a/soul-server-ts",
+        })),
+        ensureRelease: vi.fn(async () => undefined),
+      },
+      buildChildProcessEnv: () => ({}),
+      spawner: { spawn },
+    });
+    const storedConfig: RunnerChildConfig = {
+      schemaVersion: 1,
+      sessionId: "session-a",
+      backend: "codex",
+      agent,
+      paths: {
+        sessionDirectory: "/runner/session-a",
+        databasePath: "/runner/session-a/runner.sqlite",
+        socketPath: "/runner/session-a/runner.sock",
+        pidPath: "/runner/session-a/runner.pid",
+        lockPath: "/runner/session-a/runner.lock",
+        configPath: "/runner/session-a/runner-config.json",
+        logPath: "/runner/session-a/runner.log",
+      },
+      codeSha: "sha-a",
+      snapshotPath: "/release/sha-a/soul-server-ts",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4307/mcp/internal",
+      resolvedMcpServers: [{
+        type: "streamable_http",
+        name: "soulstream",
+        url: "http://127.0.0.1:4306/mcp",
+        headers: { Authorization: "Bearer stale" },
+      }],
+      codexHome: "/home/test/.codex",
+      rolloutRoot: "/home/test/.codex/sessions",
+    };
+    const task = {
+      agentSessionId: "session-a",
+      prompt: "resume",
+      status: "pending",
+    } as Task;
+    const runtime = factory.restart!(task, storedConfig, {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-a"))
+      .rejects.toThrow("captured restart spawn input");
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      codeSha: "sha-a",
+      snapshotPath: "/release/sha-a/soul-server-ts",
+      internalMcpUrl: "http://127.0.0.1:4308/mcp/internal",
+      resolvedMcpServers: currentResolvedMcpServers,
+    }));
+  });
+});
 
 describe("applyRunnerHostCall", () => {
   it("threads correlation to all six mutating owner operations", async () => {
