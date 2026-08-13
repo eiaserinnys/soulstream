@@ -13,6 +13,7 @@ import {
 } from "./runner_process_registry.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import { RunnerWriterLock } from "./runner_writer_lock.js";
 import {
   quarantineUnreadableRunnerRegistration,
   type RunnerRegistrationQuarantineResult,
@@ -311,6 +312,10 @@ export class RunnerRecoveryCoordinator {
       code: disposition === "reap_stalled" ? "lease_expired" : "runner_exited",
       message,
     };
+    if (registration.pidAlive) {
+      await this.terminateRegistration(registration);
+      registration = { ...registration, pidAlive: false };
+    }
     if (registration.lifecycle) {
       const progressedAt = new Date((this.options.now ?? Date.now)()).toISOString();
       if (this.options.markReaped) {
@@ -318,9 +323,6 @@ export class RunnerRecoveryCoordinator {
       } else {
         await markRegistrationReaped(registration, progressedAt, error, this.options.logger);
       }
-    }
-    if (registration.pidAlive) {
-      await this.terminateRegistration(registration);
     }
     let task = registration.lifecycle
       ? await this.recoverRegistered({
@@ -411,42 +413,47 @@ async function markRegistrationReaped(
   error: { code: string; message: string },
   logger: Pick<Logger, "error" | "info" | "warn">,
 ): Promise<void> {
-  const lifecycle = RunnerSqliteLifecycle.open(
-    registration.config.paths.databasePath,
-    undefined,
-    {
-      onSummaryRenameFailure: (renameError, path, details) => {
-        const context = {
-          err: renameError,
-          path,
-          consecutiveFailures: details.consecutiveFailures,
-        };
-        if (details.severity === "error") {
-          logger.error(
-            context,
-            "Runner lifecycle summary rename failure persisted; durable SQLite state retained",
-          );
-        } else {
-          logger.warn(
-            context,
-            "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
-          );
-        }
-      },
-      onSummaryRenameRecovery: (path, recoveredAfterFailures) => logger.info(
-        { path, recoveredAfterFailures },
-        "Runner lifecycle summary rename recovered",
-      ),
-    },
-  );
+  const writerLock = await RunnerWriterLock.acquire(registration.config.paths.lockPath);
   try {
-    await lifecycle.reap(
-      registration.lifecycle!.execution_command_id,
-      progressedAt,
-      error,
+    const lifecycle = RunnerSqliteLifecycle.open(
+      registration.config.paths.databasePath,
+      undefined,
+      {
+        onSummaryRenameFailure: (renameError, path, details) => {
+          const context = {
+            err: renameError,
+            path,
+            consecutiveFailures: details.consecutiveFailures,
+          };
+          if (details.severity === "error") {
+            logger.error(
+              context,
+              "Runner lifecycle summary rename failure persisted; durable SQLite state retained",
+            );
+          } else {
+            logger.warn(
+              context,
+              "Runner lifecycle summary rename retries exhausted; durable SQLite state retained",
+            );
+          }
+        },
+        onSummaryRenameRecovery: (path, recoveredAfterFailures) => logger.info(
+          { path, recoveredAfterFailures },
+          "Runner lifecycle summary rename recovered",
+        ),
+      },
     );
+    try {
+      lifecycle.reap(
+        registration.lifecycle!.execution_command_id,
+        progressedAt,
+        error,
+      );
+    } finally {
+      lifecycle.close();
+    }
   } finally {
-    lifecycle.close();
+    await writerLock.release();
   }
 }
 

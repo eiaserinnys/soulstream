@@ -296,7 +296,7 @@ describe("RunnerProcessSpawner", () => {
     });
     await initial.spawn(params);
     const firstLifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    await firstLifecycle.begin({
+    firstLifecycle.begin({
       pid: 5101,
       commandId: "execute-old",
       progressedAt: "2026-08-12T00:00:01.000Z",
@@ -310,7 +310,7 @@ describe("RunnerProcessSpawner", () => {
       renameFile: persistentRenameFailure,
       retryDelaysMs: [],
     });
-    await nextLifecycle.begin({
+    nextLifecycle.begin({
       pid: 5102,
       commandId: "execute-new",
       progressedAt: "2026-08-12T00:00:02.000Z",

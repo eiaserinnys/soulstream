@@ -119,19 +119,19 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(databasePath);
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-07-12T00:00:00.000Z",
     });
-    await lifecycle.toolStarted("execute-a", "tool-duplicate", "2026-07-12T00:00:01.000Z");
+    lifecycle.toolStarted("execute-a", "tool-duplicate", "2026-07-12T00:00:01.000Z");
     for (const repeatedAt of [
       "2026-07-12T01:00:01.000Z",
       "2026-07-13T00:00:01.000Z",
       "2026-08-10T00:00:01.000Z",
       "2026-08-11T00:00:29.000Z",
     ]) {
-      await lifecycle.toolStarted("execute-a", "tool-duplicate", repeatedAt);
+      lifecycle.toolStarted("execute-a", "tool-duplicate", repeatedAt);
     }
     const durable = lifecycle.read();
     lifecycle.close();
@@ -273,7 +273,7 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-11T00:00:20.000Z",
@@ -324,7 +324,7 @@ describe("runner process registry", () => {
       });
       outbox.close();
       const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-      await lifecycle.begin({
+      lifecycle.begin({
         pid: process.pid,
         commandId: `execute-${cacheState}`,
         progressedAt: "2026-08-11T00:00:29.000Z",
@@ -396,7 +396,7 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-refresh",
       progressedAt: "2026-08-12T00:00:01.000Z",
@@ -503,7 +503,7 @@ describe("runner process registry", () => {
       .resolves.toEqual(["session-sqlite"]);
   });
 
-  it("drops orphaned host-call receipts while inspecting a dead terminal runner", async () => {
+  it("ignores applied legacy host-call receipts without writing during inspection", async () => {
     const stateDirectory = await temporaryDirectory("terminal-host-call");
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -529,12 +529,12 @@ describe("runner process registry", () => {
     });
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-11T00:00:01.000Z",
     });
-    await lifecycle.finish("execute-a", "completed", "2026-08-11T00:00:02.000Z");
+    lifecycle.finish("execute-a", "completed", "2026-08-11T00:00:02.000Z");
     lifecycle.close();
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
     current.config = { ...current.config, paths };
@@ -544,7 +544,9 @@ describe("runner process registry", () => {
       registration: { lifecycle: { execution_state: "completed" } },
     });
     const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
-    await expect(recovered.readHostCallApplied("host:orphaned")).resolves.toBeNull();
+    await expect(recovered.readHostCallApplied("host:orphaned")).resolves.toMatchObject({
+      correlationId: "host:orphaned",
+    });
     recovered.close();
   });
 });

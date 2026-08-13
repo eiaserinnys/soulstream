@@ -212,7 +212,7 @@ describe("RunnerSqliteEventOutbox", () => {
     }]);
 
     const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-followup",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -242,7 +242,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-failed",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -342,7 +342,7 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
-  it("never replays a completed execution whose legacy inbox cleanup was interrupted", async () => {
+  it("never replays a completed claim without a parent-side cleanup write", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "completed-but-retained",
@@ -351,7 +351,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-completed",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -360,17 +360,22 @@ describe("RunnerSqliteEventOutbox", () => {
 
     // Models the old split commit: lifecycle reached completed but inbox delete
     // did not. Recovery must treat completed as the durable apply receipt.
-    await lifecycle.finish(
+    lifecycle.finish(
       "execute-completed",
       "completed",
       "2026-08-11T00:00:04.000Z",
     );
 
     await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
     const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(
-      "SELECT COUNT(*) AS count FROM runner_intervention_inbox",
-    ).get()).toEqual({ count: 0 });
+    expect(database.prepare(`
+      SELECT application_state, claimed_execution_command_id
+      FROM runner_intervention_inbox
+    `).get()).toEqual({
+      application_state: "claimed",
+      claimed_execution_command_id: "execute-completed",
+    });
     database.close();
     lifecycle.close();
     outbox.close();
@@ -385,12 +390,12 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "previous-execution",
       progressedAt: "2026-08-11T00:00:03.000Z",
     });
-    await lifecycle.finish(
+    lifecycle.finish(
       "previous-execution",
       "completed",
       "2026-08-11T00:00:04.000Z",
@@ -400,6 +405,12 @@ describe("RunnerSqliteEventOutbox", () => {
     await expect(outbox.readPendingInterventions()).rejects.toThrow(
       "runner intervention application outcome is ambiguous: claimed-before-lifecycle",
     );
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT application_state FROM runner_intervention_inbox
+      WHERE intervention_id = 'claimed-before-lifecycle'
+    `).get()).toEqual({ application_state: "claimed" });
+    database.close();
     lifecycle.close();
     outbox.close();
   });
@@ -413,7 +424,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-atomic",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -531,7 +542,7 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
-  it("exposes final-ACK evidence across outbox and IPC journal for release GC", async () => {
+  it("exposes final-ACK evidence without treating applied legacy receipts as pending", async () => {
     const outbox = await RunnerSqliteEventOutbox.create(await temporaryDatabasePath());
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     expect(await outbox.hasPendingDurableWork()).toBe(false);
@@ -547,7 +558,7 @@ describe("RunnerSqliteEventOutbox", () => {
       operation: "append",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
-    expect(await outbox.hasPendingDurableWork()).toBe(true);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
     await outbox.acknowledgeHostCall("host-call-a");
     expect(await outbox.hasPendingDurableWork()).toBe(false);
     outbox.close();
@@ -560,7 +571,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const lifecycle = RunnerSqliteLifecycle.open(path);
 
     expect(lifecycle.read()).toBeNull();
-    expect(await lifecycle.begin({
+    expect(lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-11T01:00:00.000Z",
@@ -575,14 +586,14 @@ describe("RunnerSqliteEventOutbox", () => {
       in_flight_tools: [],
       terminal_error: null,
     });
-    expect(await lifecycle.liveness("execute-a", "2026-08-11T01:00:00.500Z"))
+    expect(lifecycle.liveness("execute-a", "2026-08-11T01:00:00.500Z"))
       .toMatchObject({
         progress_seq: 1,
         progress_at: "2026-08-11T01:00:00.000Z",
         liveness_at: "2026-08-11T01:00:00.500Z",
         in_flight_tools: [],
       });
-    expect(await lifecycle.toolStarted(
+    expect(lifecycle.toolStarted(
       "execute-a",
       "tool-long",
       "2026-08-11T01:00:00.750Z",
@@ -595,7 +606,7 @@ describe("RunnerSqliteEventOutbox", () => {
         started_at: "2026-08-11T01:00:00.750Z",
       }],
     });
-    expect(await lifecycle.toolStarted(
+    expect(lifecycle.toolStarted(
       "execute-a",
       "tool-long",
       "2026-08-11T01:00:00.800Z",
@@ -608,7 +619,7 @@ describe("RunnerSqliteEventOutbox", () => {
         started_at: "2026-08-11T01:00:00.750Z",
       }],
     });
-    expect(await lifecycle.liveness("execute-a", "2026-08-11T01:00:00.900Z"))
+    expect(lifecycle.liveness("execute-a", "2026-08-11T01:00:00.900Z"))
       .toMatchObject({
         progress_seq: 2,
         progress_at: "2026-08-11T01:00:00.750Z",
@@ -618,7 +629,7 @@ describe("RunnerSqliteEventOutbox", () => {
           started_at: "2026-08-11T01:00:00.750Z",
         }],
       });
-    expect(await lifecycle.toolFinished(
+    expect(lifecycle.toolFinished(
       "execute-a",
       "tool-long",
       "2026-08-11T01:00:00.950Z",
@@ -628,9 +639,9 @@ describe("RunnerSqliteEventOutbox", () => {
       liveness_at: "2026-08-11T01:00:00.950Z",
       in_flight_tools: [],
     });
-    expect(await lifecycle.progress("execute-a", "2026-08-11T01:00:01.000Z"))
+    expect(lifecycle.progress("execute-a", "2026-08-11T01:00:01.000Z"))
       .toMatchObject({ progress_seq: 4, progress_at: "2026-08-11T01:00:01.000Z" });
-    expect(await lifecycle.finish(
+    expect(lifecycle.finish(
       "execute-a",
       "completed",
       "2026-08-11T01:00:02.000Z",
@@ -670,22 +681,22 @@ describe("RunnerSqliteEventOutbox", () => {
       onSummaryRenameRecovery,
     });
 
-    await expect(lifecycle.begin({
+    expect(() => lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-11T01:00:00.000Z",
-    })).resolves.toBeDefined();
+    })).not.toThrow();
     await expect(access(`${runnerLifecycleSummaryPath(path)}.tmp-${process.pid}`))
       .rejects.toMatchObject({ code: "ENOENT" });
-    await expect(lifecycle.progress(
+    expect(() => lifecycle.progress(
       "execute-a",
       "2026-08-11T01:00:01.000Z",
-    )).resolves.toBeDefined();
-    await expect(lifecycle.finish(
+    )).not.toThrow();
+    expect(() => lifecycle.finish(
       "execute-a",
       "completed",
       "2026-08-11T01:00:02.000Z",
-    )).resolves.toBeDefined();
+    )).not.toThrow();
     expect(() => lifecycle.syncSummary()).not.toThrow();
 
     expect(lifecycle.read()).toMatchObject({
@@ -715,7 +726,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
     const lifecycle = RunnerSqliteLifecycle.open(path);
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-a",
       progressedAt: "2026-08-12T00:00:00.000Z",
@@ -814,7 +825,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-v8",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -856,7 +867,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-interrupted-v9",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -901,7 +912,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
     const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: process.pid,
       commandId: "execute-atomic-v9",
       progressedAt: "2026-08-11T00:00:03.000Z",
@@ -939,12 +950,12 @@ describe("RunnerSqliteEventOutbox", () => {
     const outbox = await RunnerSqliteEventOutbox.create(path);
     const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
 
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-failed",
       progressedAt: "2026-08-11T01:00:00.000Z",
     });
-    await lifecycle.finish(
+    lifecycle.finish(
       "execute-failed",
       "failed",
       "2026-08-11T01:00:01.000Z",
@@ -956,7 +967,7 @@ describe("RunnerSqliteEventOutbox", () => {
       execution_state: "failed",
     });
 
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-next",
       progressedAt: "2026-08-11T01:00:02.000Z",
@@ -968,7 +979,7 @@ describe("RunnerSqliteEventOutbox", () => {
         backend_session_id: "backend-session-next",
       },
     });
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 4123,
       commandId: "execute-next",
       progressedAt: "2026-08-11T01:00:03.000Z",
@@ -994,17 +1005,17 @@ describe("RunnerSqliteEventOutbox", () => {
     const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
     const lifecycle = RunnerSqliteLifecycle.open(path);
-    await lifecycle.begin({
+    lifecycle.begin({
       pid: 5001,
       commandId: "execute-current",
       progressedAt: "2026-08-11T01:00:00.000Z",
     });
 
-    await expect(lifecycle.progress(
+    expect(() => lifecycle.progress(
       "execute-stale",
       "2026-08-11T01:00:01.000Z",
-    )).rejects.toThrow("runner lifecycle command mismatch");
-    expect(await lifecycle.reap(
+    )).toThrow("runner lifecycle command mismatch");
+    expect(lifecycle.reap(
       "execute-current",
       "2026-08-11T01:02:00.000Z",
       { code: "lease_expired", message: "runner made no progress" },
@@ -1662,7 +1673,7 @@ describe("RunnerSqliteEventOutbox", () => {
     secondHost.close();
   });
 
-  it("compacts orphaned applied host-call receipts only during terminal recovery", async () => {
+  it("can compact legacy applied receipts without treating them as pending work", async () => {
     const outbox = await createOutbox();
     await outbox.recordHostCallApplied({
       correlationId: "host:orphaned",
@@ -1670,7 +1681,7 @@ describe("RunnerSqliteEventOutbox", () => {
       operation: "persistRunState",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
-    expect(await outbox.hasPendingDurableWork()).toBe(true);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
 
     await outbox.compactAppliedHostCallsForTerminalRecovery();
 
@@ -1746,7 +1757,7 @@ async function createAmbiguousIntervention(
   });
   const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
   const commandId = `execute-${interventionId}`;
-  await lifecycle.begin({
+  lifecycle.begin({
     pid: process.pid,
     commandId,
     progressedAt: "2026-08-11T00:00:03.000Z",

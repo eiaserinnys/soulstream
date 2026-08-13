@@ -1,3 +1,8 @@
+/**
+ * Parent-side runner state machine. Connection, frame consumption, host calls,
+ * and pump ordering intentionally remain in one control path so persistence
+ * acknowledgements cannot be reordered across shallow wrapper modules.
+ */
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
@@ -32,6 +37,7 @@ import type {
   RunnerPendingIntervention,
 } from "./runner_command_dispatcher.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
+import { RunnerParentOutbox } from "./runner_parent_outbox.js";
 import {
   type RunnerIpcConnection,
 } from "./runner_ipc_connection.js";
@@ -47,7 +53,8 @@ import { runnerProcessPaths } from "./runner_process_paths.js";
 import { ProcessFrameStream } from "./runner_process_frame_stream.js";
 import { connectRunnerSocket } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
-import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import { readRunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import { RunnerWriterLock } from "./runner_writer_lock.js";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 const RECENT_HOST_RESPONSE_LIMIT = 128;
@@ -87,14 +94,17 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private spawnInput!: SpawnRunnerProcessInput;
   private connection: RunnerIpcConnection | undefined;
   private socketPath: string | undefined;
-  private outbox!: RunnerSqliteEventOutbox;
-  private lifecycle!: RunnerSqliteLifecycle;
+  private outbox!: RunnerParentOutbox;
+  private stoppedRunnerWriter: RunnerSqliteEventOutbox | undefined;
+  private stoppedRunnerWriterLock: RunnerWriterLock | undefined;
+  private runnerDatabasePath!: string;
   private pump: EventOutboxPump | undefined;
   private unregisterPump: (() => void) | undefined;
   private connecting: Promise<RunnerIpcConnection> | undefined;
   private activeExecuteCommandId: string | undefined;
   private activeStream: ProcessFrameStream | undefined;
   private latestPendingRecord: EventOutboxRecord | undefined;
+  private latestConsumedFrameSeq: number | undefined;
   private readonly requestLifetimes = new Map<string, RequestLifetime>();
   private readonly recentHostResponses = new Map<string, RunnerControlFrame>();
   private hostCallIdempotency!: RunnerHostCallIdempotency;
@@ -128,8 +138,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     const commandId = `execute:${randomUUID()}`;
     const stream = new ProcessFrameStream(async (frameSeq) => {
-      await this.outbox.acknowledgeHostFrame(frameSeq);
-      await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
+      await this.acknowledgeConsumedFrame(frameSeq);
     });
     this.activeExecuteCommandId = commandId;
     this.activeStream = stream;
@@ -139,8 +148,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   recoverFrames(commandId?: string): AsyncIterable<RunnerEventFrame> {
     const stream = new ProcessFrameStream(async (frameSeq) => {
-      await this.outbox.acknowledgeHostFrame(frameSeq);
-      await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
+      await this.acknowledgeConsumedFrame(frameSeq);
     });
     this.activeExecuteCommandId = commandId;
     this.activeStream = stream;
@@ -168,13 +176,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner closed"));
     if (this.options.offlineExisting) {
-      this.releaseHostResources();
+      await this.releaseHostResources();
       return;
     }
     try {
       assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
     } finally {
-      this.releaseHostResources();
+      await this.releaseHostResources();
     }
   }
 
@@ -182,7 +190,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (this.closed) return;
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner host detached"));
-    this.releaseHostResources();
+    await this.releaseHostResources();
   }
 
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {
@@ -258,12 +266,25 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         this.spawnInput.sessionId,
       );
       this.socketPath = paths.socketPath;
-      this.outbox = await RunnerSqliteEventOutbox.open(
-        paths.databasePath,
-        this.outboxOptions(),
-      );
+      this.runnerDatabasePath = paths.databasePath;
+      this.stoppedRunnerWriterLock = await RunnerWriterLock.acquire(paths.lockPath);
+      try {
+        this.stoppedRunnerWriter = await RunnerSqliteEventOutbox.open(paths.databasePath, {
+          sessionId: this.spawnInput.sessionId,
+        });
+        this.outbox = await RunnerParentOutbox.open(
+          paths.databasePath,
+          this.spawnInput.sessionId,
+          { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
+        );
+      } catch (error) {
+        this.stoppedRunnerWriter?.close();
+        this.stoppedRunnerWriter = undefined;
+        await this.stoppedRunnerWriterLock.release();
+        this.stoppedRunnerWriterLock = undefined;
+        throw error;
+      }
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
-      this.lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
       return;
     }
     const spawner = this.options.spawner ?? new RunnerProcessSpawner();
@@ -271,12 +292,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       ? await this.adoptExisting(spawner)
       : await spawner.spawn(this.spawnInput);
     this.socketPath = spawned.paths.socketPath;
-    this.outbox = await RunnerSqliteEventOutbox.open(
+    this.runnerDatabasePath = spawned.paths.databasePath;
+    this.outbox = await RunnerParentOutbox.open(
       spawned.paths.databasePath,
-      this.outboxOptions(),
+      this.spawnInput.sessionId,
+      { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
     );
     this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
-    this.lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
     await this.connect(spawned.paths.socketPath);
   }
 
@@ -308,7 +330,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         this.activeExecuteCommandId = commandId;
       }
       this.observeActiveExecution(commandId, "recover");
-      const lifecycle = this.lifecycle.read();
+      const lifecycle = readRunnerSqliteLifecycle(this.runnerDatabasePath);
       if (lifecycle && lifecycle.execution_command_id !== commandId) {
         throw new Error(`runner recovery command unavailable: ${commandId}`);
       }
@@ -422,13 +444,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       return;
     }
     if (frame.kind === "host_call_applied") {
-      const cleanup = await this.hostCallIdempotency.acknowledge(frame.correlationId);
-      if (cleanup.status === "deferred_busy") {
-        this.options.logger.warn({
-          err: cleanup.error,
+      await this.hostCallIdempotency.acknowledge(frame.correlationId).catch((error) => {
+        this.options.logger.error({
+          err: error,
           correlationId: frame.correlationId,
-        }, "Runner host-call receipt cleanup deferred after SQLite contention");
-      }
+        }, "Runner host-call receipt cleanup deferred; durable owner remains authoritative");
+      });
       this.recentHostResponses.delete(frame.correlationId);
       return;
     }
@@ -563,15 +584,40 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     });
   }
 
-  private releaseHostResources(): void {
+  private async acknowledgeConsumedFrame(frameSeq: number): Promise<void> {
+    this.latestConsumedFrameSeq = Math.max(this.latestConsumedFrameSeq ?? 0, frameSeq);
+    if (this.stoppedRunnerWriter) {
+      await this.stoppedRunnerWriter.acknowledgeHostFrame(frameSeq);
+      return;
+    }
+    await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
+  }
+
+  private async synchronizeChildCheckpoint(acknowledgedThrough: number): Promise<void> {
+    if (this.stoppedRunnerWriter) {
+      await this.stoppedRunnerWriter.acknowledge(
+        this.outbox.streamId,
+        acknowledgedThrough,
+      );
+      return;
+    }
+    if (this.latestConsumedFrameSeq !== undefined) {
+      await this.sendBestEffort(hostFrameAppliedControlFrame(this.latestConsumedFrameSeq));
+    }
+  }
+
+  private async releaseHostResources(): Promise<void> {
     this.finishActiveRunnerObservation?.();
     this.finishActiveRunnerObservation = undefined;
     this.connection?.close();
     this.connection = undefined;
     this.unregisterPump?.();
     this.unregisterPump = undefined;
-    this.lifecycle?.close();
     this.outbox?.close();
+    this.stoppedRunnerWriter?.close();
+    this.stoppedRunnerWriter = undefined;
+    await this.stoppedRunnerWriterLock?.release();
+    this.stoppedRunnerWriterLock = undefined;
   }
 
   private observeActiveExecution(commandId: string, operation: "execute" | "recover"): void {
@@ -583,14 +629,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     });
   }
 
-  private outboxOptions(): Parameters<typeof RunnerSqliteEventOutbox.open>[1] {
-    return {
-      sessionId: this.spawnInput.sessionId,
-      ...(this.options.nodeStallMonitor
-        ? { transactionObserver: this.options.nodeStallMonitor.sqliteTransactionObserver }
-        : {}),
-    };
-  }
 }
 
 function assertCommandAccepted(frame: RunnerCommandResultFrame): RunnerCommandResultFrame {

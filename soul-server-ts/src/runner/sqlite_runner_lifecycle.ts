@@ -10,7 +10,7 @@ import {
   openRunnerSqliteDatabase,
   openRunnerSqliteReadOnlyDatabase,
   requireRunnerSqliteWal,
-  withRunnerSqliteTransaction,
+  withRunnerSqliteTransactionSync,
 } from "./runner_sqlite_connection.js";
 import {
   readRunnerLifecycleRecord,
@@ -101,17 +101,17 @@ export class RunnerSqliteLifecycle {
     return readRunnerLifecycleRecord(this.database);
   }
 
-  async begin(input: BeginRunnerExecutionInput): Promise<RunnerLifecycleRecord> {
+  begin(input: BeginRunnerExecutionInput): RunnerLifecycleRecord {
     validatePositiveInteger(input.pid, "runner pid");
     if (!input.commandId) throw new Error("runner execution command id required");
     validateTimestamp(input.progressedAt, "runner progress timestamp");
-    await this.transaction("lifecycle.begin", () => this.beginWithinTransaction(input));
+    this.transaction("lifecycle.begin", () => this.beginWithinTransaction(input));
     return this.persistSummary(this.requireLifecycle());
   }
 
-  async progress(commandId: string, progressedAt: string): Promise<RunnerLifecycleRecord> {
+  progress(commandId: string, progressedAt: string): RunnerLifecycleRecord {
     validateTimestamp(progressedAt, "runner progress timestamp");
-    await this.transaction("lifecycle.progress", () => {
+    this.transaction("lifecycle.progress", () => {
       this.updateActiveWithinTransaction(commandId, `
         progress_seq = progress_seq + 1, progress_at = ?, liveness_at = ?
       `, [progressedAt, progressedAt]);
@@ -119,36 +119,36 @@ export class RunnerSqliteLifecycle {
     return this.persistSummary(this.requireLifecycle());
   }
 
-  async liveness(commandId: string, observedAt: string): Promise<RunnerLifecycleRecord> {
+  liveness(commandId: string, observedAt: string): RunnerLifecycleRecord {
     validateTimestamp(observedAt, "runner liveness timestamp");
-    await this.transaction("lifecycle.liveness", () => {
+    this.transaction("lifecycle.liveness", () => {
       this.updateActiveWithinTransaction(commandId, "liveness_at = ?", [observedAt]);
     });
     return this.persistSummary(this.requireLifecycle());
   }
 
-  async toolStarted(
+  toolStarted(
     commandId: string,
     toolUseId: string,
     progressedAt: string,
-  ): Promise<RunnerLifecycleRecord> {
-    return await this.updateToolLease(commandId, toolUseId, progressedAt, true);
+  ): RunnerLifecycleRecord {
+    return this.updateToolLease(commandId, toolUseId, progressedAt, true);
   }
 
-  async toolFinished(
+  toolFinished(
     commandId: string,
     toolUseId: string,
     progressedAt: string,
-  ): Promise<RunnerLifecycleRecord> {
-    return await this.updateToolLease(commandId, toolUseId, progressedAt, false);
+  ): RunnerLifecycleRecord {
+    return this.updateToolLease(commandId, toolUseId, progressedAt, false);
   }
 
-  async finish(
+  finish(
     commandId: string,
     state: "completed" | "failed" | "closed",
     progressedAt: string,
     error: { code: string; message: string } | null = null,
-  ): Promise<RunnerLifecycleRecord> {
+  ): RunnerLifecycleRecord {
     validateTimestamp(progressedAt, "runner progress timestamp");
     if (state === "failed" && error === null) {
       throw new Error("failed runner execution requires terminal error");
@@ -156,7 +156,7 @@ export class RunnerSqliteLifecycle {
     const terminalError = error === null
       ? null
       : stringifyRunnerJson(error, "terminal runner error");
-    await this.transaction("lifecycle.finish", () => {
+    this.transaction("lifecycle.finish", () => {
       this.updateActiveWithinTransaction(commandId, `
         execution_state = ?, progress_seq = progress_seq + 1,
         progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
@@ -171,12 +171,12 @@ export class RunnerSqliteLifecycle {
     return lifecycle === null ? null : this.persistSummary(lifecycle);
   }
 
-  async reap(commandId: string, progressedAt: string, error: {
+  reap(commandId: string, progressedAt: string, error: {
     code: string;
     message: string;
-  }): Promise<RunnerLifecycleRecord> {
+  }): RunnerLifecycleRecord {
     validateTimestamp(progressedAt, "runner progress timestamp");
-    await this.transaction("lifecycle.reap", () => {
+    this.transaction("lifecycle.reap", () => {
       this.updateActiveWithinTransaction(commandId, `
         execution_state = 'reaped', progress_seq = progress_seq + 1,
         progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
@@ -287,15 +287,15 @@ export class RunnerSqliteLifecycle {
     }
   }
 
-  private async updateToolLease(
+  private updateToolLease(
     commandId: string,
     toolUseId: string,
     progressedAt: string,
     started: boolean,
-  ): Promise<RunnerLifecycleRecord> {
+  ): RunnerLifecycleRecord {
     if (!toolUseId) throw new Error("runner tool use id required");
     validateTimestamp(progressedAt, "runner progress timestamp");
-    await this.transaction(started ? "lifecycle.tool_started" : "lifecycle.tool_finished", () => {
+    this.transaction(started ? "lifecycle.tool_started" : "lifecycle.tool_finished", () => {
       const current = this.requireLifecycle();
       if (current.execution_command_id !== commandId) {
         throw new Error(`runner lifecycle command mismatch: ${commandId}`);
@@ -333,9 +333,9 @@ export class RunnerSqliteLifecycle {
     }
   }
 
-  private async transaction<T>(transactionLabel: string, operation: () => T): Promise<T> {
+  private transaction<T>(transactionLabel: string, operation: () => T): T {
     this.requireOpen();
-    return await withRunnerSqliteTransaction(this.database, operation, {
+    return withRunnerSqliteTransactionSync(this.database, operation, {
       transactionLabel,
       ...(this.sessionId ? { sessionId: this.sessionId } : {}),
     });

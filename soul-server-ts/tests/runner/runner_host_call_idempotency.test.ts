@@ -1,53 +1,24 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   RunnerHostCallIdempotency,
   isMutatingRunnerHostCall,
+  type RunnerHostCallReceiptStore,
 } from "../../src/runner/runner_host_call_idempotency.js";
-import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-
-const directories: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(directories.splice(0).map(
-    async (directory) => await rm(directory, { recursive: true, force: true }),
-  ));
-});
 
 describe("RunnerHostCallIdempotency", () => {
-  it("defers an exhausted SQLite busy receipt cleanup without failing the runner frame", async () => {
-    const busy = Object.assign(new Error("database is locked"), { errcode: 5 });
-    const acknowledgeHostCall = vi.fn(async () => { throw busy; });
-    const host = new RunnerHostCallIdempotency(
-      { acknowledgeHostCall } as unknown as RunnerSqliteEventOutbox,
-    );
-
-    await expect(host.acknowledge("host:cleanup-busy")).resolves.toEqual({
-      status: "deferred_busy",
-      error: busy,
-    });
-    expect(acknowledgeHostCall).toHaveBeenCalledWith("host:cleanup-busy");
-  });
-
-  it("keeps non-busy receipt cleanup failures fatal", async () => {
-    const failure = new Error("runner IPC journal corrupt");
-    const host = new RunnerHostCallIdempotency({
-      acknowledgeHostCall: vi.fn(async () => { throw failure; }),
-    } as unknown as RunnerSqliteEventOutbox);
+  it("reports parent-owned receipt cleanup failures to its caller", async () => {
+    const failure = new Error("runner host receipt store corrupt");
+    const store = memoryReceiptStore();
+    vi.spyOn(store, "acknowledgeHostCall").mockRejectedValueOnce(failure);
+    const host = new RunnerHostCallIdempotency(store);
 
     await expect(host.acknowledge("host:cleanup-corrupt")).rejects.toBe(failure);
   });
 
   it("retries through the durable owner after apply committed but host receipt was not recorded", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "runner-host-call-"));
-    directories.push(directory);
-    const path = join(directory, "runner.sqlite");
-    const firstStore = await RunnerSqliteEventOutbox.create(path);
-    const secondStore = await RunnerSqliteEventOutbox.create(path);
+    const firstStore = memoryReceiptStore();
+    const secondStore = memoryReceiptStore();
     const firstHost = new RunnerHostCallIdempotency(firstStore);
     const secondHost = new RunnerHostCallIdempotency(secondStore);
     const ownerReceipts = new Set<string>();
@@ -83,8 +54,6 @@ describe("RunnerHostCallIdempotency", () => {
     expect(applications).toBe(1);
     await secondHost.acknowledge(call.correlationId);
     await expect(firstStore.readHostCallApplied(call.correlationId)).resolves.toBeNull();
-    firstStore.close();
-    secondStore.close();
   });
 
   it("enumerates mutating and read-only host operations without an implicit fallback", () => {
@@ -101,3 +70,20 @@ describe("RunnerHostCallIdempotency", () => {
       .toThrow("unsupported runner host call inventory");
   });
 });
+
+function memoryReceiptStore(): RunnerHostCallReceiptStore {
+  const receipts = new Map<string, {
+    correlationId: string;
+    service: string;
+    operation: string;
+  }>();
+  return {
+    readHostCallApplied: async (correlationId) => receipts.get(correlationId) ?? null,
+    recordHostCallApplied: async (input) => {
+      receipts.set(input.correlationId, input);
+    },
+    acknowledgeHostCall: async (correlationId) => {
+      receipts.delete(correlationId);
+    },
+  };
+}

@@ -9,6 +9,7 @@ import {
   type ClosedRunnerTailOutbox,
 } from "../../src/runner/closed_runner_tail_drainer.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import type { EventOutboxBatch, EventOutboxRecord } from
   "../../src/upstream/event_outbox.js";
 import type { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
@@ -131,9 +132,14 @@ describe("ClosedRunnerTailDrainer", () => {
     expect(batches[0]!.events.map((event) => event.event_type)).toEqual([
       "session_ended",
     ]);
-    const reopened = await RunnerSqliteEventOutbox.open(databasePath);
+    const reopened = await RunnerParentOutbox.open(databasePath, "session-a");
     await expect(reopened.readLatestPendingRecord()).resolves.toBeNull();
     reopened.close();
+    const childLedger = await RunnerSqliteEventOutbox.open(databasePath);
+    await expect(childLedger.readRecord(2)).resolves.toMatchObject({
+      event_type: "session_ended",
+    });
+    childLedger.close();
   });
 });
 

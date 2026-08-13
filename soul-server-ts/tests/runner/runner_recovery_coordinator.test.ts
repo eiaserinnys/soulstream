@@ -132,6 +132,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       { pid: 4123, startIdentity: "start-4123" },
     );
+    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
+      subject.markReaped.mock.invocationCallOrder[0]!,
+    );
     expect(subject.markRunnerFailureAndResume).toHaveBeenCalledWith(
       subject.task,
       "runner progress lease expired",
@@ -358,6 +361,11 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
     await subject.coordinator.scanOnce();
 
     expect(releaseGarbageCollector.collect).toHaveBeenCalledTimes(2);
+
+    current.hostDatabaseWalMtimeMs = 3;
+    await subject.coordinator.scanOnce();
+
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledTimes(3);
   });
 
   it("does not run durable release inspection for database churn on an active runner", async () => {
@@ -423,6 +431,7 @@ function makeSubject(
     recoverRegisteredRunner,
     restartRegisteredRunner,
     markRunnerFailureAndResume,
+    markReaped,
     terminate,
     logger,
   };

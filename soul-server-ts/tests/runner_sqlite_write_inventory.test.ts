@@ -14,6 +14,10 @@ const OUTBOX_PATH = fileURLToPath(new URL(
   "../src/runner/sqlite_event_outbox.ts",
   import.meta.url,
 ));
+const INTERVENTION_PATH = fileURLToPath(new URL(
+  "../src/runner/sqlite_intervention_inbox.ts",
+  import.meta.url,
+));
 
 const LIFECYCLE_MUTATIONS = [
   "begin",
@@ -26,14 +30,14 @@ const LIFECYCLE_MUTATIONS = [
 ] as const;
 
 describe("runner SQLite write inventory", () => {
-  it("keeps every lifecycle mutation behind the async transaction seam", () => {
+  it("keeps child lifecycle mutations short and synchronous without retry masking", () => {
     const source = readFileSync(LIFECYCLE_PATH, "utf8");
     for (const mutation of LIFECYCLE_MUTATIONS) {
-      expect(source, mutation).toMatch(new RegExp(`\\n  async ${mutation}\\(`));
+      expect(source, mutation).toMatch(new RegExp(`\\n  ${mutation}\\(`));
     }
-    expect(source).toContain("private async transaction<T>(");
-    expect(source).toContain("withRunnerSqliteTransaction(");
-    expect(source).not.toContain("withRunnerSqliteTransactionSync");
+    expect(source).toContain("private transaction<T>(");
+    expect(source).toContain("withRunnerSqliteTransactionSync(");
+    expect(source).not.toContain("withRunnerSqliteTransaction(");
   });
 
   it("freezes every raw lifecycle write owner", () => {
@@ -44,22 +48,111 @@ describe("runner SQLite write inventory", () => {
     });
   });
 
-  it("allows synchronous transactions only for migrations inside retried database open", () => {
+  it("freezes every synchronous transaction owner", () => {
     expect(syncTransactionCallers(SRC_ROOT)).toEqual({
+      "runner/runner_host_state_store.ts": ["transaction"],
       "runner/sqlite_intervention_inbox.ts": ["migrateRunnerInterventionInboxV9"],
       "runner/sqlite_ipc_journal.ts": ["ensureRunnerIpcJournalV4"],
+      "runner/sqlite_runner_lifecycle.ts": ["transaction"],
+    });
+  });
+
+  it("freezes every writable runner.sqlite opener and its ownership boundary", () => {
+    expect(classMethodCallers(SRC_ROOT, "RunnerSqliteEventOutbox", ["open", "create"], [
+      OUTBOX_PATH,
+    ])).toEqual({
+      "runner/runner_child_runtime.ts": ["start"],
+      "runner/runner_intervention_resolution.ts": ["resolveAmbiguousRunnerIntervention"],
+      "runner/runner_process_dispatcher.ts": ["initialize"],
+      "runner/runner_process_spawn.ts": ["defaultDependencies"],
+      "runner/runner_release_prewarm.ts": ["module"],
+    });
+    expect(classMethodCallers(SRC_ROOT, "RunnerSqliteLifecycle", ["open"])).toEqual({
+      "runner/runner_child_runtime.ts": ["start"],
+      "runner/runner_recovery_coordinator.ts": ["markRegistrationReaped"],
     });
 
-    const outboxSource = readFileSync(OUTBOX_PATH, "utf8");
-    const retriedOpen = outboxSource.slice(
-      outboxSource.indexOf("private static async openDatabase("),
-      outboxSource.indexOf("\n  get streamId(): string"),
+    const dispatcher = readFileSync(resolve(SRC_ROOT, "runner/runner_process_dispatcher.ts"), "utf8");
+    const offline = dispatcher.slice(
+      dispatcher.indexOf("if (this.options.offlineExisting)"),
+      dispatcher.indexOf("const spawner ="),
     );
-    expect(retriedOpen).toContain("await withRunnerSqliteBusyRetry(() => {");
-    expect(retriedOpen).toContain("ensureRunnerIpcJournalV4(database);");
-    expect(retriedOpen).toContain("migrateRunnerInterventionInboxV9(database, version);");
+    expect(offline.indexOf("RunnerWriterLock.acquire")).toBeLessThan(
+      offline.indexOf("RunnerSqliteEventOutbox.open"),
+    );
+    expect(dispatcher).toContain("RunnerParentOutbox.open(");
+
+    const recovery = readFileSync(resolve(SRC_ROOT, "runner/runner_recovery_coordinator.ts"), "utf8");
+    const reap = recovery.slice(recovery.indexOf("async function markRegistrationReaped("));
+    expect(reap.indexOf("RunnerWriterLock.acquire")).toBeLessThan(
+      reap.indexOf("RunnerSqliteLifecycle.open"),
+    );
+  });
+
+  it("keeps active parent reads free of hidden runner.sqlite writes", () => {
+    expect(sqliteWriteOwnersForFunction(
+      INTERVENTION_PATH,
+      "readPendingRunnerInterventions",
+    )).toEqual({});
+    for (const relativePath of [
+      "runner/runner_parent_outbox.ts",
+      "runner/runner_process_registry.ts",
+      "runner/closed_runner_tail_drainer.ts",
+    ]) {
+      const source = readFileSync(resolve(SRC_ROOT, relativePath), "utf8");
+      expect(source, relativePath).not.toContain("RunnerSqliteEventOutbox.open(");
+      expect(source, relativePath).not.toContain("RunnerSqliteLifecycle.open(");
+    }
   });
 });
+
+function classMethodCallers(
+  root: string,
+  className: string,
+  methodNames: string[],
+  excludedPaths: string[] = [],
+): Record<string, string[]> {
+  const callers: Record<string, string[]> = {};
+  for (const path of collectTypeScriptFiles(root)) {
+    if (excludedPaths.includes(path)) continue;
+    const source = parseSource(path);
+    const functions = new Set<string>();
+    const visit = (node: ts.Node, owner = "module"): void => {
+      const nextOwner = declarationName(node) ?? owner;
+      if (
+        ts.isCallExpression(node)
+        && ts.isPropertyAccessExpression(node.expression)
+        && ts.isIdentifier(node.expression.expression)
+        && node.expression.expression.text === className
+        && methodNames.includes(node.expression.name.text)
+      ) functions.add(nextOwner);
+      ts.forEachChild(node, (child) => visit(child, nextOwner));
+    };
+    visit(source);
+    if (functions.size > 0) callers[relative(root, path)] = [...functions].sort();
+  }
+  return Object.fromEntries(Object.entries(callers).sort(([left], [right]) =>
+    left.localeCompare(right)));
+}
+
+function sqliteWriteOwnersForFunction(path: string, functionName: string): Record<string, number> {
+  const source = parseSource(path);
+  const declaration = source.statements.find((statement) =>
+    ts.isFunctionDeclaration(statement) && statement.name?.text === functionName);
+  if (!declaration) throw new Error(`function unavailable: ${functionName}`);
+  const owners: Record<string, number> = {};
+  const visit = (node: ts.Node, owner = functionName): void => {
+    const nextOwner = declarationName(node) ?? owner;
+    if (
+      ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && ["run", "exec"].includes(node.expression.name.text)
+    ) owners[nextOwner] = (owners[nextOwner] ?? 0) + 1;
+    ts.forEachChild(node, (child) => visit(child, nextOwner));
+  };
+  visit(declaration);
+  return owners;
+}
 
 function syncTransactionCallers(root: string): Record<string, string[]> {
   const callers: Record<string, string[]> = {};

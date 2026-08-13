@@ -1,6 +1,4 @@
 import type { RunnerHostCall } from "./runner_process_dispatcher.js";
-import { isRunnerSqliteBusyError } from "./runner_sqlite_connection.js";
-import type { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 
 type HostService = RunnerHostCall["service"];
 
@@ -22,7 +20,7 @@ const OPERATION_MUTABILITY = {
 
 /** Payload-free IPC replay receipt; exactly-once belongs to each mutation owner. */
 export class RunnerHostCallIdempotency {
-  constructor(private readonly journal: RunnerSqliteEventOutbox) {}
+  constructor(private readonly journal: RunnerHostCallReceiptStore) {}
 
   async execute(
     call: RunnerHostCall,
@@ -52,21 +50,24 @@ export class RunnerHostCallIdempotency {
     return { data, replayed: applied !== null };
   }
 
-  async acknowledge(correlationId: string): Promise<
-    | { status: "deleted" }
-    | { status: "deferred_busy"; error: unknown }
-  > {
-    try {
-      await this.journal.acknowledgeHostCall(correlationId);
-      return { status: "deleted" };
-    } catch (error) {
-      if (!isRunnerSqliteBusyError(error)) throw error;
-      // The external mutation owner is the exactly-once authority. Retaining
-      // this payload-free receipt only causes an idempotent replay and later
-      // terminal compaction; it must not terminate the active runner frame.
-      return { status: "deferred_busy", error };
-    }
+  async acknowledge(correlationId: string): Promise<void> {
+    await this.journal.acknowledgeHostCall(correlationId);
   }
+}
+
+export interface RunnerHostCallReceiptStore {
+  readHostCallApplied(correlationId: string): Promise<{
+    correlationId: string;
+    service: string;
+    operation: string;
+  } | null>;
+  recordHostCallApplied(input: {
+    correlationId: string;
+    service: string;
+    operation: string;
+    createdAt: string;
+  }): Promise<void>;
+  acknowledgeHostCall(correlationId: string): Promise<void>;
 }
 
 export function isMutatingRunnerHostCall(

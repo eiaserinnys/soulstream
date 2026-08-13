@@ -6,8 +6,8 @@ import {
   type EventOutboxPumpStore,
 } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
+import { RunnerParentOutbox } from "./runner_parent_outbox.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
-import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 
 export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
   readLatestPendingRecord(): Promise<EventOutboxRecord | null>;
@@ -17,7 +17,7 @@ export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
 interface ClosedRunnerTailDrainerOptions {
   pumpMux: Pick<EventOutboxPumpMux, "register">;
   logger: Pick<Logger, "error" | "info" | "warn">;
-  openOutbox?: (databasePath: string) => Promise<ClosedRunnerTailOutbox>;
+  openOutbox?: (databasePath: string, sessionId: string) => Promise<ClosedRunnerTailOutbox>;
 }
 
 /** Drains only orch-bound events retained after a runner is durably closed. */
@@ -25,8 +25,11 @@ export class ClosedRunnerTailDrainer {
   constructor(private readonly options: ClosedRunnerTailDrainerOptions) {}
 
   async drain(registration: RunnerRegistration): Promise<void> {
-    const openOutbox = this.options.openOutbox ?? RunnerSqliteEventOutbox.open;
-    const outbox = await openOutbox(registration.config.paths.databasePath);
+    const openOutbox = this.options.openOutbox ?? RunnerParentOutbox.open;
+    const outbox = await openOutbox(
+      registration.config.paths.databasePath,
+      registration.config.sessionId,
+    );
     let unregister: (() => void) | undefined;
     try {
       const tail = await outbox.readLatestPendingRecord();
