@@ -1561,7 +1561,13 @@ describe("remote agent config mutation tools", () => {
 
 describe("send_message_to_session", () => {
   it("local delivery succeeds without orch fallback", async () => {
-    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const runtime = makeRuntime({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "next_turn_required",
+    });
     const client = await createClient(runtime);
 
     const result = await client.callTool({
@@ -1576,7 +1582,13 @@ describe("send_message_to_session", () => {
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toEqual({
       ok: true,
-      detail: { queued: true, queuePosition: 1 },
+      detail: {
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "next_turn_required",
+      },
     });
     expect(runtime.addIntervention).toHaveBeenCalledTimes(1);
     const params = runtime.addIntervention.mock.calls[0]![0] as AddInterventionParams;

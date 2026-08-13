@@ -11,12 +11,11 @@ import { sanitizeCodexEnv } from "../codex_env.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import type {
   BackendId,
+  EngineInterventionResult,
   EngineExecuteParams,
   EnginePort,
   EngineUserInput,
-  LiveTurnSteerResult,
   SSEEventPayload,
-  SupportsLiveTurnSteering,
 } from "../protocol.js";
 import { AppServerRpcError, CodexAppServerClient } from "./client.js";
 import {
@@ -90,9 +89,7 @@ export interface CodexAppServerAdapterConfig {
   resolvedMcpServers?: ResolvedMcpServer[];
 }
 
-export class CodexAppServerEngineAdapter
-  implements EnginePort, SupportsLiveTurnSteering
-{
+export class CodexAppServerEngineAdapter implements EnginePort {
   public readonly backendId: BackendId = "codex";
   public readonly workspaceDir: string;
 
@@ -215,11 +212,13 @@ export class CodexAppServerEngineAdapter
     }
   }
 
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+  async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
     const activeTurn = this.notificationLifecycle.activeTurn;
     if (!activeTurn) {
       return {
-        status: "no_active_turn",
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "no_active_turn",
         message: "No active Codex app-server turn",
       };
     }
@@ -232,11 +231,13 @@ export class CodexAppServerEngineAdapter
       });
       if (result.turnId !== activeTurn.turnId) {
         return {
-          status: "turn_mismatch",
+          status: "not_delivered",
+          mechanism: "active_turn",
+          reason: "turn_mismatch",
           message: `Codex app-server steered turn ${result.turnId}, expected ${activeTurn.turnId}`,
         };
       }
-      return { status: "delivered" };
+      return { status: "delivered", mechanism: "active_turn" };
     } catch (error) {
       return mapSteerError(error);
     }
@@ -418,17 +419,37 @@ function isNoRolloutFoundResumeError(error: unknown): boolean {
   return error.message.toLowerCase().includes("no rollout found");
 }
 
-function mapSteerError(error: unknown): LiveTurnSteerResult {
+function mapSteerError(error: unknown): EngineInterventionResult {
   const message = error instanceof Error ? error.message : String(error);
   if (error instanceof AppServerRpcError && error.code === -32601) {
-    return { status: "not_supported", message };
+    return {
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+      message,
+    };
   }
   const lower = message.toLowerCase();
   if (lower.includes("no active") || lower.includes("active turn")) {
-    return { status: "no_active_turn", message };
+    return {
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+      message,
+    };
   }
   if (lower.includes("expected") || lower.includes("mismatch")) {
-    return { status: "turn_mismatch", message };
+    return {
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "turn_mismatch",
+      message,
+    };
   }
-  return { status: "failed", message };
+  return {
+    status: "not_delivered",
+    mechanism: "active_turn",
+    reason: "failed",
+    message,
+  };
 }

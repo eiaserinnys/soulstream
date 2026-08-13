@@ -32,7 +32,9 @@ import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 import type {
   BackendId,
   EngineExecuteParams,
+  EngineInterventionResult,
   EnginePort,
+  EngineUserInput,
   ReasoningEffort,
   SSEEventPayload,
 } from "./protocol.js";
@@ -127,6 +129,16 @@ export class CodexEngineAdapter implements EnginePort {
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
+  }
+
+  async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    void input;
+    return {
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+      message: "Codex SDK does not expose active-turn intervention",
+    };
   }
 
   async executeToFrameChannel(

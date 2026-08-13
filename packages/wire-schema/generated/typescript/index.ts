@@ -1149,10 +1149,13 @@ export interface ErrorMessage {
 export interface InterveneAck {
   type: "intervene_ack";
   requestId: string;
-  status?: "ok";
-  outcome?: "delivered" | "steered" | "queued" | "deferred" | "auto_resumed" | "suppressed";
+  status: "ok";
+  outcome: "delivered" | "queued" | "deferred" | "auto_resumed" | "suppressed";
   agentSessionId?: string;
+  delivered: boolean;
   queuePosition?: number;
+  consumeWhen?: "next_turn";
+  retryWhen?: "engine_available" | "terminal_state";
   deliveryId?: string;
   reason?: string;
   [k: string]: unknown;

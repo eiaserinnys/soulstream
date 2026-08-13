@@ -650,7 +650,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     ).resolves.toEqual({ status: "expired" });
   });
 
-  it("interruptForSteer forwards a clean client interrupt without aborting the active turn", async () => {
+  it("intervene exposes next-turn delivery while preserving a clean client interrupt", async () => {
     const release = deferred<void>();
     const captured: ClaudeRunOptions[] = [];
     const interruptActiveTurnForSteer = vi.fn().mockResolvedValue(true);
@@ -676,7 +676,11 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       value: { type: "session", session_id: "claude-sess-1" },
     });
 
-    await expect(engine.interruptForSteer()).resolves.toBe(true);
+    await expect(engine.intervene({ prompt: "redirect" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "interrupt_then_next_turn",
+      reason: "next_turn_required",
+    });
     expect(interruptActiveTurnForSteer).toHaveBeenCalledTimes(1);
     expect(activeSignal?.aborted).toBe(false);
     expect(captured[0]).not.toHaveProperty("onIntervention");

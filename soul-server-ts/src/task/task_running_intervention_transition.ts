@@ -4,10 +4,8 @@ import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import type {
-  EngineUserInput,
-  LiveTurnSteerResult,
-  LiveTurnSteerStatus,
-  SupportsLiveTurnSteering,
+  EngineInterventionFailureReason,
+  EngineInterventionResult,
 } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
@@ -21,9 +19,19 @@ import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 
 export type RunningInterventionResult =
   | { delivered: true }
-  | { steered: true; queuePosition: number }
-  | { queued: true; queuePosition: number }
-  | { deferred: true };
+  | {
+      delivered: false;
+      queued: true;
+      queuePosition: number;
+      consumeWhen: "next_turn";
+      reason: EngineInterventionFailureReason | "queue_only_policy";
+    }
+  | {
+      delivered: false;
+      deferred: true;
+      retryWhen: "engine_available";
+      reason: EngineInterventionFailureReason;
+    };
 
 export interface RunningInterventionTransitionDeps {
   broadcaster: SessionBroadcaster;
@@ -48,56 +56,61 @@ export class RunningInterventionTransition {
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
-    if (isDurableRunnerQueue(task)) {
-      const staged = await this.stageRunnerIntervention(
-        task,
-        message,
-        publishBeforeDelivery,
-      );
-      return await this.tryInterruptForSteer(task, staged.message)
-        ?? { queued: true, queuePosition: enqueueInterventionOnce(task, staged.message) };
-    }
+    const deliveryMessage = usesDurableRunnerInterventionInbox(task)
+      ? withRunnerInterventionId(message)
+      : message;
     if (publishBeforeDelivery) {
-      await publishInterventionSent(task, message, this.deps);
+      await this.publishAcceptance(task, deliveryMessage);
     }
 
-    const steerInterruptResult = await this.tryInterruptForSteer(task, message);
-    if (steerInterruptResult) {
+    const initialResult = await this.tryIntervene(task, deliveryMessage);
+    if (initialResult.status === "delivered") {
       if (!publishBeforeDelivery) {
-        await publishInterventionSent(task, message, this.deps);
-      }
-      return steerInterruptResult;
-    }
-
-    const liveResult = await this.tryDeliverLive(task, message);
-    if (liveResult.status === "delivered") {
-      if (!publishBeforeDelivery) {
-        await publishInterventionSent(task, message, this.deps);
+        await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
     }
 
-    const retryResult = await this.retryTransientBoundary(task, message, liveResult);
+    const retryResult = await this.retryTransientBoundary(
+      task,
+      deliveryMessage,
+      initialResult,
+    );
     if (retryResult?.status === "delivered") {
       if (!publishBeforeDelivery) {
-        await publishInterventionSent(task, message, this.deps);
+        await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
     }
-    const finalLiveResult = retryResult ?? liveResult;
+    const finalResult = retryResult ?? initialResult;
 
     if (options.queueIfUndelivered === false) {
-      this.deps.logger.debug?.(
-        { sessionId: task.agentSessionId, liveStatus: finalLiveResult.status },
+      this.deps.logger.info(
+        {
+          sessionId: task.agentSessionId,
+          delivered: false,
+          mechanism: finalResult.mechanism,
+          reason: finalResult.reason,
+          retryWhen: "engine_available",
+        },
         "running intervention deferred by durable caller policy",
       );
-      return { deferred: true };
+      return {
+        delivered: false,
+        deferred: true,
+        retryWhen: "engine_available",
+        reason: finalResult.reason,
+      };
     }
 
-    const queuePosition = enqueueInterventionOnce(task, message);
+    const queuePosition = await this.queueUndelivered(task, deliveryMessage);
+    this.logQueued(task, finalResult, queuePosition);
     return {
+      delivered: false,
       queued: true,
       queuePosition,
+      consumeWhen: "next_turn",
+      reason: finalResult.reason,
     };
   }
 
@@ -106,76 +119,118 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { publishEvent?: boolean } = {},
   ): Promise<RunningInterventionResult> {
-    if (isDurableRunnerQueue(task)) {
-      const staged = await this.stageRunnerIntervention(
+    const deliveryMessage = usesDurableRunnerInterventionInbox(task)
+      ? withRunnerInterventionId(message)
+      : message;
+    let queuePosition: number;
+    if (usesDurableRunnerInterventionInbox(task)) {
+      queuePosition = await this.stageRunnerQueue(
         task,
-        message,
+        deliveryMessage,
         options.publishEvent !== false,
       );
-      const queuePosition = enqueueInterventionOnce(task, staged.message);
-      return { queued: true, queuePosition };
+      enqueueInterventionOnce(task, deliveryMessage);
+    } else {
+      if (options.publishEvent !== false) {
+        await publishInterventionSent(task, deliveryMessage, this.deps);
+      }
+      queuePosition = enqueueInterventionOnce(task, deliveryMessage);
     }
-    if (options.publishEvent !== false) {
-      await publishInterventionSent(task, message, this.deps);
-    }
-    const queuePosition = enqueueInterventionOnce(task, message);
+    this.deps.logger.info(
+      {
+        sessionId: task.agentSessionId,
+        delivered: false,
+        reason: "queue_only_policy",
+        queuePosition,
+        consumeWhen: "next_turn",
+      },
+      "running intervention queued by delivery policy",
+    );
     return {
+      delivered: false,
       queued: true,
       queuePosition,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
     };
   }
 
-  private async tryInterruptForSteer(
+  private async publishAcceptance(
     task: Task,
     message: InterventionMessage,
-  ): Promise<RunningInterventionResult | null> {
-    const engine = task.runner?.engine;
-    if (!isSteerInterruptEngine(engine)) {
-      return null;
+  ): Promise<void> {
+    if (!usesDurableRunnerInterventionInbox(task)) {
+      await publishInterventionSent(task, message, this.deps);
+      return;
     }
+    await this.stageRunnerReceipt(task, message);
+  }
 
-    task.interventionQueue.push(message);
-    const queuePosition = task.interventionQueue.length;
-
+  private async tryIntervene(
+    task: Task,
+    message: InterventionMessage,
+  ): Promise<EngineInterventionResult> {
+    const engine = task.runner?.engine;
+    if (!engine) {
+      return {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+        message: "Task runner engine is unavailable",
+      };
+    }
+    const input = composeInterventionTurnPrompt(message);
     try {
-      const interrupted = await engine.interruptForSteer();
-      if (interrupted) {
-        return { steered: true, queuePosition };
-      }
+      return await engine.intervene(input);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
-        "running intervention steer interrupt failed",
+        "running engine intervention failed",
       );
+      return {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      };
     }
-
-    this.deps.logger.debug?.(
-      { sessionId: task.agentSessionId },
-      "running intervention queued after steer interrupt race",
-    );
-    return { queued: true, queuePosition };
   }
 
-  private async stageRunnerIntervention(
+  private async stageRunnerReceipt(
     task: Task,
     message: InterventionMessage,
-    publishEvent: boolean,
-  ): Promise<{ message: InterventionMessage }> {
+  ): Promise<void> {
     const dispatcher = task.runner?.dispatcher;
     if (!dispatcher?.stageIntervention) {
       throw new Error("runner intervention inbox is unavailable");
     }
-    const durableMessage: InterventionMessage = {
-      ...message,
-      runnerInterventionId:
-        message.runnerInterventionId ?? message.deliveryId ?? randomUUID(),
-    };
+    const interventionId = requireRunnerInterventionId(message);
     const staged = await dispatcher.stageIntervention({
-      interventionId: durableMessage.runnerInterventionId!,
-      message: toRunnerJsonRecord(durableMessage),
-      ...(publishEvent
-        ? { event: buildInterventionSentEvent(durableMessage) }
-        : {}),
+      interventionId,
+      message: toRunnerJsonRecord(message),
+      event: buildInterventionSentEvent(message),
+      queued: false,
+    });
+    const eventId = await dispatcher.waitForSessionAck();
+    if (eventId === null || staged.eventSourceSeq === null) {
+      throw new Error("runner intervention receipt did not reach its durable ACK boundary");
+    }
+    task.lastEventId = eventId;
+  }
+
+  private async stageRunnerQueue(
+    task: Task,
+    message: InterventionMessage,
+    publishEvent: boolean,
+  ): Promise<number> {
+    const dispatcher = task.runner?.dispatcher;
+    if (!dispatcher?.stageIntervention) {
+      throw new Error("runner intervention inbox is unavailable");
+    }
+    const staged = await dispatcher.stageIntervention({
+      interventionId: requireRunnerInterventionId(message),
+      message: toRunnerJsonRecord(message),
+      ...(publishEvent ? { event: buildInterventionSentEvent(message) } : {}),
       queued: true,
     });
     if (publishEvent) {
@@ -185,87 +240,93 @@ export class RunningInterventionTransition {
       }
       task.lastEventId = eventId;
     }
-    return { message: durableMessage };
+    return staged.queuePosition;
+  }
+
+  private async queueUndelivered(
+    task: Task,
+    message: InterventionMessage,
+  ): Promise<number> {
+    if (!usesDurableRunnerInterventionInbox(task)) {
+      return enqueueInterventionOnce(task, message);
+    }
+    const queuePosition = await this.stageRunnerQueue(task, message, false);
+    enqueueInterventionOnce(task, message);
+    return queuePosition;
+  }
+
+  private logQueued(
+    task: Task,
+    result: Extract<EngineInterventionResult, { status: "not_delivered" }>,
+    queuePosition: number,
+  ): void {
+    this.deps.logger.info(
+      {
+        sessionId: task.agentSessionId,
+        delivered: false,
+        mechanism: result.mechanism,
+        reason: result.reason,
+        detail: result.message,
+        queuePosition,
+        consumeWhen: "next_turn",
+      },
+      "running intervention not delivered; queued for next turn",
+    );
   }
 
   private async retryTransientBoundary(
     task: Task,
     message: InterventionMessage,
-    liveResult: LiveTurnSteerResult,
-  ): Promise<LiveTurnSteerResult | null> {
-    if (!isTransientSteerBoundary(liveResult.status)) return null;
+    interventionResult: EngineInterventionResult,
+  ): Promise<EngineInterventionResult | null> {
+    if (!isTransientInterventionBoundary(interventionResult)) return null;
     const delayMs = this.deps.liveRetryDelayMs ?? 50;
     if (delayMs > 0) {
       await (this.deps.sleep ?? sleep)(delayMs);
     }
-    const retryResult = await this.tryDeliverLive(task, message);
+    const retryResult = await this.tryIntervene(task, message);
     if (retryResult.status !== "delivered") {
       this.deps.logger.debug?.(
         {
           sessionId: task.agentSessionId,
-          initialLiveStatus: liveResult.status,
-          retryLiveStatus: retryResult.status,
+          initialReason: interventionResult.reason,
+          retryReason: retryResult.reason,
         },
-        "running intervention live delivery boundary retry did not deliver",
+        "running engine intervention boundary retry did not deliver",
       );
     }
     return retryResult;
   }
-
-  private async tryDeliverLive(
-    task: Task,
-    message: InterventionMessage,
-  ): Promise<LiveTurnSteerResult> {
-    const engine = task.runner?.engine;
-    if (!isLiveTurnSteeringEngine(engine)) {
-      return { status: "not_supported" };
-    }
-
-    const input = composeInterventionTurnPrompt(message);
-    try {
-      return await engine.steerActiveTurn(input);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "running intervention live delivery failed",
-      );
-      return {
-        status: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
 }
 
-function isDurableRunnerQueue(task: Task): boolean {
-  return task.runner?.eventPersistence === "runner"
-    && isSteerInterruptEngine(task.runner.engine);
+function usesDurableRunnerInterventionInbox(task: Task): boolean {
+  return task.runner?.eventPersistence === "runner";
+}
+
+function withRunnerInterventionId(message: InterventionMessage): InterventionMessage {
+  return {
+    ...message,
+    runnerInterventionId:
+      message.runnerInterventionId ?? message.deliveryId ?? randomUUID(),
+  };
+}
+
+function requireRunnerInterventionId(message: InterventionMessage): string {
+  if (!message.runnerInterventionId) {
+    throw new Error("runner intervention id is unavailable");
+  }
+  return message.runnerInterventionId;
 }
 
 function toRunnerJsonRecord(message: InterventionMessage): Record<string, unknown> {
   return JSON.parse(JSON.stringify(message)) as Record<string, unknown>;
 }
 
-function isTransientSteerBoundary(status: LiveTurnSteerStatus): boolean {
-  return status === "no_active_turn" || status === "not_accepting_input";
-}
-
-function isLiveTurnSteeringEngine(
-  engine: NonNullable<Task["runner"]>["engine"] | undefined,
-): engine is NonNullable<Task["runner"]>["engine"] & SupportsLiveTurnSteering {
-  return Boolean(
-    engine && typeof (engine as Partial<SupportsLiveTurnSteering>).steerActiveTurn === "function",
-  );
-}
-
-function isSteerInterruptEngine(
-  engine: NonNullable<Task["runner"]>["engine"] | undefined,
-): engine is NonNullable<Task["runner"]>["engine"] &
-  SupportsLiveTurnSteering &
-  Required<Pick<SupportsLiveTurnSteering, "interruptForSteer">> {
-  return Boolean(
-    engine && typeof (engine as Partial<SupportsLiveTurnSteering>).interruptForSteer === "function",
-  );
+function isTransientInterventionBoundary(
+  result: EngineInterventionResult,
+): result is Extract<EngineInterventionResult, { status: "not_delivered" }> {
+  return result.status === "not_delivered"
+    && (result.reason === "no_active_turn" || result.reason === "not_accepting_input");
 }
 
 function sleep(ms: number): Promise<void> {
