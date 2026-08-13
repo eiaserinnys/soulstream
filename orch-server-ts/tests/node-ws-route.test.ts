@@ -205,15 +205,21 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
-  it("routes event_append_batch through the dedicated async ingress before ACK", async () => {
+  it("keeps heartbeat responsive while event ingress is waiting on a commit", async () => {
     const { registry, sessionCache } = createRegistry();
     const eventSink = vi.fn();
-    const commitBatch = vi.fn(async (_nodeId: string, batch: EventAppendBatch) =>
-      batch.events.map((envelope) => ({
-      envelope,
-      eventId: 73,
-      duplicateReceipt: false,
-      })));
+    let releaseCommit!: () => void;
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const commitBatch = vi.fn(async (_nodeId: string, batch: EventAppendBatch) => {
+      await commitGate;
+      return batch.events.map((envelope) => ({
+        envelope,
+        eventId: 73,
+        duplicateReceipt: false,
+      }));
+    });
     const app = createApp({
       config: explicitTestConfig,
       nodeWsRoute: {
@@ -229,7 +235,6 @@ describe("Node WS Fastify route harness", () => {
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
     await expect(registrationAck).resolves.toContain("node_register_ack");
-    const ackMessage = waitForMessage(ws);
     ws.send(JSON.stringify({
       type: "event_append_batch",
       protocol_version: 1,
@@ -248,6 +253,16 @@ describe("Node WS Fastify route harness", () => {
         payload_hash: "a".repeat(64),
       }],
     }));
+
+    await waitFor(() => commitBatch.mock.calls.length === 1);
+    const sentAt = "2026-08-13T00:00:00.000Z";
+    const pong = waitForMessage(ws);
+    ws.send(JSON.stringify({ type: "app_heartbeat_ping", sentAt }));
+    await expect(pong).resolves.toBe(
+      JSON.stringify({ type: "app_heartbeat_pong", sentAt }),
+    );
+    const ackMessage = waitForMessage(ws);
+    releaseCommit();
 
     await expect(ackMessage).resolves.toBe(JSON.stringify({
       type: "event_append_ack",

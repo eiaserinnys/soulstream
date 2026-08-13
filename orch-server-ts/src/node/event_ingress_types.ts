@@ -78,7 +78,7 @@ export type EventAppendAcknowledgement =
   | {
       source_seq: number;
       dead_letter: {
-        code: "SESSION_NOT_FOUND";
+        code: string;
         reason: string;
         rejected_at: string;
       };
@@ -117,7 +117,7 @@ export type DeadLetteredIngressEvent = {
   outcome: "dead_lettered";
   envelope: EventIngressEnvelope;
   deadLetter: {
-    code: "SESSION_NOT_FOUND";
+    code: string;
     reason: string;
     rejectedAt: string;
     path: string;

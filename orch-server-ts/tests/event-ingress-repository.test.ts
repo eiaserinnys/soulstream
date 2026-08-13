@@ -332,9 +332,8 @@ describe("EventIngressRepository", () => {
     });
     const repository = new EventIngressRepository({ resolveSql: async () => sql });
 
-    // Retrying re-reads the same durable rows, so this must be reported as a
-    // permanent conflict the node can quarantine -- not a transient failure that
-    // reconnects and replays the identical head forever.
+    // Without a dead-letter store, the repository still exposes the invariant
+    // violation to its caller instead of hiding a malformed durable row.
     await expect(repository.commitBatch("node-a", batch({
       session_effect: {
         kind: "terminal_transition",
@@ -380,7 +379,7 @@ describe("EventIngressRepository", () => {
     }, 2))).rejects.toBeInstanceOf(EventIngressProtocolConflict);
   });
 
-  it("dead-letters exactly two deleted-session head events without calling event_append", async () => {
+  it("dead-letters deleted-session events through the generic repeated-failure policy", async () => {
     const directory = await mkdtemp(join(tmpdir(), "event-ingress-dead-letter-"));
     try {
       const statements: string[] = [];
@@ -388,6 +387,7 @@ describe("EventIngressRepository", () => {
         statements.push(text);
         if (text.includes("FROM event_ingress_receipts")) return [];
         if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) return [];
+        if (text.includes("SELECT 1 AS event_ingress_health")) return [{ event_ingress_health: 1 }];
         throw new Error(`deleted-session event must not reach another statement: ${text}`);
       });
       const store = new FileEventIngressDeadLetterStore(directory, () =>
@@ -396,6 +396,11 @@ describe("EventIngressRepository", () => {
         { resolveSql: async () => sql },
         undefined,
         store,
+        {
+          failureThreshold: 3,
+          retryDelaysMs: [0, 0],
+          sleep: async () => undefined,
+        },
       );
       const input = batch({}, 1);
       input.events.push({
@@ -411,12 +416,12 @@ describe("EventIngressRepository", () => {
         expect.objectContaining({
           outcome: "dead_lettered",
           envelope: expect.objectContaining({ source_seq: 1 }),
-          deadLetter: expect.objectContaining({ code: "SESSION_NOT_FOUND" }),
+          deadLetter: expect.objectContaining({ code: "REPEATED_FAILURE" }),
         }),
         expect.objectContaining({
           outcome: "dead_lettered",
           envelope: expect.objectContaining({ source_seq: 2 }),
-          deadLetter: expect.objectContaining({ code: "SESSION_NOT_FOUND" }),
+          deadLetter: expect.objectContaining({ code: "REPEATED_FAILURE" }),
         }),
       ]);
       expect(statements.some((text) => text.includes("SELECT event_append"))).toBe(false);
@@ -425,7 +430,9 @@ describe("EventIngressRepository", () => {
         : "";
       const stored = JSON.parse(await readFile(firstPath, "utf8")) as Record<string, unknown>;
       expect(stored).toMatchObject({
-        code: "SESSION_NOT_FOUND",
+        code: "REPEATED_FAILURE",
+        state: "dead_lettered",
+        failure_count: 3,
         node_id: "node-a",
         rejected_at: "2026-08-13T00:00:00.000Z",
         envelope: expect.objectContaining({
@@ -443,8 +450,29 @@ describe("EventIngressRepository", () => {
     }
   });
 
-  it("keeps non-session FK failures retryable instead of dead-lettering them", async () => {
-    const persist = vi.fn();
+  it("uses the same retry threshold for a previously unclassified database error", async () => {
+    let failureCount = 0;
+    const recordFailure = vi.fn(async (input: {
+      failure: { errorCode?: string; reason: string };
+      threshold: number;
+    }) => {
+      failureCount += 1;
+      expect(input.failure).toMatchObject({
+        errorCode: "23503",
+        reason: "another foreign key failed",
+      });
+      return {
+        failureCount,
+        deadLetter: failureCount < input.threshold
+          ? null
+          : {
+              code: "REPEATED_FAILURE" as const,
+              reason: input.failure.reason,
+              rejectedAt: "2026-08-13T00:00:00.000Z",
+              path: "/dead-letter/generic.json",
+            },
+      };
+    });
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
@@ -455,18 +483,25 @@ describe("EventIngressRepository", () => {
       if (text.includes("SELECT event_append")) {
         throw Object.assign(new Error("another foreign key failed"), { code: "23503" });
       }
+      if (text.includes("SELECT 1 AS event_ingress_health")) return [{ event_ingress_health: 1 }];
       throw new Error(`unexpected SQL: ${text}`);
     });
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       undefined,
-      { find: vi.fn(async () => null), persist },
+      { find: vi.fn(async () => null), recordFailure },
+      {
+        failureThreshold: 3,
+        retryDelaysMs: [0, 0],
+        sleep: async () => undefined,
+      },
     );
 
-    await expect(repository.commitBatch("node-a", batch())).rejects.toMatchObject({
-      code: "23503",
-    });
-    expect(persist).not.toHaveBeenCalled();
+    await expect(repository.commitBatch("node-a", batch())).resolves.toMatchObject([{
+      outcome: "dead_lettered",
+      deadLetter: { code: "REPEATED_FAILURE" },
+    }]);
+    expect(recordFailure).toHaveBeenCalledTimes(3);
   });
 });
 

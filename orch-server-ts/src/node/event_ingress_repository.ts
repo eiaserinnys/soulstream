@@ -8,10 +8,14 @@ import type {
   EventSessionEffect,
 } from "./event_ingress_types.js";
 import {
-  EVENT_INGRESS_SESSION_NOT_FOUND,
   type EventIngressDeadLetterStore,
   type PersistedEventIngressDeadLetter,
 } from "./event_ingress_dead_letter_store.js";
+import {
+  completedIngressResults,
+  EventIngressRetryPolicy,
+  type EventIngressRetryPolicyOptions,
+} from "./event_ingress_retry_policy.js";
 
 type QueryRows = readonly Record<string, unknown>[];
 
@@ -44,6 +48,8 @@ export type EventSessionEffectApplier = (
   },
 ) => Promise<EventSessionEffectApplication>;
 
+export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions;
+
 export class EventIngressProtocolConflict extends Error {
   readonly statusCode = 409;
 
@@ -64,140 +70,138 @@ export class LiveEventIngressSqlProvider implements EventIngressSqlProvider {
 }
 
 export class EventIngressRepository {
+  private readonly retryPolicy: EventIngressRetryPolicy;
+
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
     private readonly applySessionEffect?: EventSessionEffectApplier,
     private readonly deadLetterStore?: EventIngressDeadLetterStore,
-  ) {}
+    options: EventIngressRepositoryOptions = {},
+  ) {
+    this.retryPolicy = new EventIngressRetryPolicy(options);
+  }
 
   async commitBatch(
     nodeId: string,
     batch: EventAppendBatch,
   ): Promise<EventIngressResult[]> {
-    const existingDeadLetters = await Promise.all(batch.events.map(async (envelope) =>
-      this.deadLetterStore?.find({ nodeId, envelope }) ?? null));
-    const sql = await this.sqlProvider.resolveSql();
-    const transactional = await sql.begin(async (transaction) => {
-      const results: Array<
-        EventIngressResult
-        | { outcome: "pending_dead_letter"; envelope: EventIngressEnvelope; reason: string }
-      > = [];
-      for (let index = 0; index < batch.events.length; index += 1) {
-        const envelope = batch.events[index]!;
-        const existingDeadLetter = existingDeadLetters[index];
-        if (existingDeadLetter) {
-          results.push(deadLetterResult(envelope, existingDeadLetter));
-          continue;
-        }
-        const receipt = await findReceipt(transaction, nodeId, batch.stream_id, envelope.source_seq);
-        if (receipt) {
-          assertReceiptMatches(receipt, envelope);
-          const sessionEffectApplication = parseEffectApplication(
-            receipt.effect_application,
-            envelope.source_seq,
-          );
-          results.push({
-            outcome: "committed",
-            envelope,
-            eventId: receipt.event_id,
-            duplicateReceipt: true,
-            ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
-          });
-          continue;
-        }
-
-        if (!await lockSession(transaction, envelope.session_id)) {
-          if (!this.deadLetterStore) {
-            throw new Error("event ingress dead-letter store is not configured");
-          }
-          results.push({
-            outcome: "pending_dead_letter",
-            envelope,
-            reason: `session ${envelope.session_id} does not exist`,
-          });
-          continue;
-        }
-
-        const semanticReceipt = envelope.semantic_dedupe_key
-          ? await findSemanticEvent(
-              transaction,
-              envelope.session_id,
-              envelope.semantic_dedupe_key,
-            )
-          : undefined;
-        const eventId = semanticReceipt?.event_id ?? await appendEvent(transaction, envelope);
-        if (!Number.isSafeInteger(eventId) || eventId <= 0) {
-          throw new Error("event_append did not return a positive event id");
-        }
-
-        let sessionEffectApplication: EventSessionEffectApplication | undefined;
-        if (!semanticReceipt && envelope.session_effect !== null) {
-          if (!this.applySessionEffect) {
-            throw new Error("typed session effects are not enabled in this release");
-          }
-          sessionEffectApplication = await this.applySessionEffect(transaction, {
-            nodeId,
-            eventId,
-            envelope,
-            effect: envelope.session_effect,
-          });
-        } else if (
-          semanticReceipt
-          && isCanonicalTransitionEffect(envelope.session_effect)
-        ) {
-          sessionEffectApplication = await findCanonicalEffectApplication(
-            transaction,
-            envelope.session_id,
-            eventId,
-            envelope.source_seq,
-          );
-        }
-
-        const receiptApplication = toReceiptEffectApplication(
-          sessionEffectApplication,
-        );
-
-        await transaction`
-          INSERT INTO event_ingress_receipts (
-            node_id, stream_id, source_seq, session_id, payload_hash, event_id,
-            effect_application
-          ) VALUES (
-            ${nodeId}, ${batch.stream_id}, ${envelope.source_seq},
-            ${envelope.session_id}, ${envelope.payload_hash}, ${eventId},
-            ${receiptApplication === null
-              ? null
-              : transaction.json(receiptApplication)}::jsonb
-          )
-        `;
-        // A semantic receipt means the durable event/effect was already
-        // committed under a prior transport coordinate. Preserve the stable
-        // event identity and suppress a second projection-side effect.
-        results.push({
-          outcome: "committed",
-          envelope,
-          eventId,
-          duplicateReceipt: semanticReceipt !== undefined,
-          ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
-        });
-      }
-      return results;
-    });
-
-    const persisted: EventIngressResult[] = [];
-    for (const result of transactional) {
-      if (result.outcome !== "pending_dead_letter") {
-        persisted.push(result);
-        continue;
-      }
-      const deadLetter = await this.deadLetterStore!.persist({
-        nodeId,
-        envelope: result.envelope,
-        code: EVENT_INGRESS_SESSION_NOT_FOUND,
-        reason: result.reason,
-      });
-      persisted.push(deadLetterResult(result.envelope, deadLetter));
+    const results = new Array<EventIngressResult | undefined>(batch.events.length);
+    let pending: Array<{ index: number; envelope: EventIngressEnvelope }> = [];
+    for (let index = 0; index < batch.events.length; index += 1) {
+      const envelope = batch.events[index]!;
+      const existing = await this.deadLetterStore?.find({ nodeId, envelope }) ?? null;
+      if (existing) results[index] = deadLetterResult(envelope, existing);
+      else pending.push({ index, envelope });
     }
-    return persisted;
+    if (pending.length === 0) return completedIngressResults(results);
+
+    const sql = await this.sqlProvider.resolveSql();
+    while (pending.length > 0) {
+      const retry: Array<{
+        index: number;
+        envelope: EventIngressEnvelope;
+        failureCount: number;
+      }> = [];
+      for (const item of pending) {
+        try {
+          results[item.index] = await sql.begin(async (transaction) =>
+            await this.commitEnvelope(transaction, nodeId, batch.stream_id, item.envelope));
+        } catch (error) {
+          if (!this.deadLetterStore) throw error;
+          await this.retryPolicy.assertDatabaseReachable(sql, error);
+          const decision = await this.deadLetterStore.recordFailure({
+            nodeId,
+            envelope: item.envelope,
+            failure: this.retryPolicy.failureDetail(error),
+            threshold: this.retryPolicy.failureThreshold,
+          });
+          if (decision.deadLetter) {
+            results[item.index] = deadLetterResult(item.envelope, decision.deadLetter);
+          } else {
+            retry.push({ ...item, failureCount: decision.failureCount });
+          }
+        }
+      }
+      if (retry.length === 0) break;
+      await this.retryPolicy.waitForRetry(retry.map((item) => item.failureCount));
+      pending = retry;
+    }
+    return completedIngressResults(results);
+  }
+
+  private async commitEnvelope(
+    transaction: EventIngressQuerySql,
+    nodeId: string,
+    streamId: string,
+    envelope: EventIngressEnvelope,
+  ): Promise<EventIngressResult> {
+    const receipt = await findReceipt(transaction, nodeId, streamId, envelope.source_seq);
+    if (receipt) {
+      assertReceiptMatches(receipt, envelope);
+      const sessionEffectApplication = parseEffectApplication(
+        receipt.effect_application,
+        envelope.source_seq,
+      );
+      return {
+        outcome: "committed",
+        envelope,
+        eventId: receipt.event_id,
+        duplicateReceipt: true,
+        ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+      };
+    }
+    if (!await lockSession(transaction, envelope.session_id)) {
+      throw new Error(`session ${envelope.session_id} does not exist`);
+    }
+
+    const semanticReceipt = envelope.semantic_dedupe_key
+      ? await findSemanticEvent(transaction, envelope.session_id, envelope.semantic_dedupe_key)
+      : undefined;
+    const eventId = semanticReceipt?.event_id ?? await appendEvent(transaction, envelope);
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+      throw new Error("event_append did not return a positive event id");
+    }
+
+    let sessionEffectApplication: EventSessionEffectApplication | undefined;
+    if (!semanticReceipt && envelope.session_effect !== null) {
+      if (!this.applySessionEffect) {
+        throw new Error("typed session effects are not enabled in this release");
+      }
+      sessionEffectApplication = await this.applySessionEffect(transaction, {
+        nodeId,
+        eventId,
+        envelope,
+        effect: envelope.session_effect,
+      });
+    } else if (semanticReceipt && isCanonicalTransitionEffect(envelope.session_effect)) {
+      sessionEffectApplication = await findCanonicalEffectApplication(
+        transaction,
+        envelope.session_id,
+        eventId,
+        envelope.source_seq,
+      );
+    }
+
+    const receiptApplication = toReceiptEffectApplication(sessionEffectApplication);
+    await transaction`
+      INSERT INTO event_ingress_receipts (
+        node_id, stream_id, source_seq, session_id, payload_hash, event_id,
+        effect_application
+      ) VALUES (
+        ${nodeId}, ${streamId}, ${envelope.source_seq},
+        ${envelope.session_id}, ${envelope.payload_hash}, ${eventId},
+        ${receiptApplication === null
+          ? null
+          : transaction.json(receiptApplication)}::jsonb
+      )
+    `;
+    return {
+      outcome: "committed",
+      envelope,
+      eventId,
+      duplicateReceipt: semanticReceipt !== undefined,
+      ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+    };
   }
 }
 
@@ -303,9 +307,8 @@ async function findCanonicalEffectApplication(
   const application = parseEffectApplication(rows[0]?.effect_application, sourceSeq);
   if (!application?.canonicalSession) {
     // Permanent for this envelope: the durable receipt it replays cannot supply a
-    // canonical projection, and no amount of retrying will make one appear. Raise a
-    // protocol conflict so the node quarantines the head instead of reconnecting
-    // forever and blocking every later event on the stream.
+    // canonical projection, and no amount of retrying will make one appear. The
+    // repository's error-agnostic retry policy eventually dead-letters this envelope.
     throw new EventIngressProtocolConflict(
       `semantic transition receipt is missing its canonical effect application at source_seq ${sourceSeq}`,
       sourceSeq,
