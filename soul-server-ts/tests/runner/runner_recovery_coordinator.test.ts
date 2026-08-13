@@ -347,6 +347,51 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
+  it("logs a repeated closed-runner recovery failure once until its fingerprint changes", async () => {
+    let failure = Object.assign(
+      new Error("runner bootstrap record required before event append"),
+      { code: "SQLITE_CORRUPT" },
+    );
+    const drain = vi.fn(async () => { throw failure; });
+    const current = registration({ pidAlive: false, lifecycleState: "closed" });
+    const subject = makeSubject([current], Date.now(), [], {
+      closedTailDrainer: { drain },
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    failure = Object.assign(new Error("runner host checkpoint is corrupt"), {
+      code: "SQLITE_CORRUPT",
+    });
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(drain).toHaveBeenCalledTimes(3);
+    expect(subject.logger.error).toHaveBeenCalledTimes(2);
+    expect(subject.logger.error).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        err: expect.objectContaining({
+          message: "runner bootstrap record required before event append",
+        }),
+        sessionId: "session-a",
+        disposition: "closed",
+      }),
+      "runner recovery action failed",
+    );
+    expect(subject.logger.error).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        err: expect.objectContaining({ message: "runner host checkpoint is corrupt" }),
+        sessionId: "session-a",
+        disposition: "closed",
+      }),
+      "runner recovery action failed",
+    );
+  });
+
   it("isolates a disk-full reap write without killing the scan or resuming invented state", async () => {
     const error = Object.assign(new Error("database or disk is full"), { code: "SQLITE_FULL" });
     const subject = makeSubject([registration({ pidAlive: false })], Date.now(), [], {
