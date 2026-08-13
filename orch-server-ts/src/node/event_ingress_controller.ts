@@ -1,8 +1,5 @@
 import type { NodeRegistryEvent } from "./registry.js";
-import {
-  EventIngressProtocolConflict,
-  type EventIngressRepository,
-} from "./event_ingress_repository.js";
+import type { EventIngressRepository } from "./event_ingress_repository.js";
 import {
   EventIngressValidationError,
   parseEventAppendBatch,
@@ -27,36 +24,53 @@ export type NodeEventIngressControllerOptions = {
   logWarn(context: Record<string, unknown>, message: string): void;
 };
 
+const TRANSIENT_RETRY_DELAY_MS = 1_000;
+
 export class NodeEventIngressController {
   private tail: Promise<void> = Promise.resolve();
   private accepting = true;
+  private readonly retryTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(private readonly options: NodeEventIngressControllerOptions) {}
 
   enqueue(frame: Record<string, unknown>): void {
     if (!this.accepting) return;
     this.tail = this.tail.then(async () => await this.process(frame)).catch((error) => {
-      this.accepting = false;
       this.options.logError(error, "Event ingress controller failed");
-      this.options.send({
-        type: "error",
-        command_type: "event_append_batch",
-        status: 503,
-        code: "EVENT_INGRESS_TRANSIENT_FAILURE",
-        retryable: true,
-        message: "event ingress temporarily unavailable",
-        ...ingressCoordinate(frame),
-      });
-      this.options.close(1011, "event_ingress:TRANSIENT_FAILURE");
+      try {
+        this.options.send({
+          type: "error",
+          command_type: "event_append_batch",
+          status: 503,
+          code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+          retryable: true,
+          message: "event ingress temporarily unavailable",
+          ...ingressCoordinate(frame),
+        });
+      } catch (sendError) {
+        this.options.logError(sendError, "Event ingress transient failure report failed");
+      }
+      this.scheduleRetry(frame);
     });
   }
 
   stop(): void {
     this.accepting = false;
+    for (const timer of this.retryTimers) clearTimeout(timer);
+    this.retryTimers.clear();
   }
 
   async drain(): Promise<void> {
     await this.tail;
+  }
+
+  private scheduleRetry(frame: Record<string, unknown>): void {
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(timer);
+      this.enqueue(frame);
+    }, TRANSIENT_RETRY_DELAY_MS);
+    timer.unref();
+    this.retryTimers.add(timer);
   }
 
   private async process(frame: Record<string, unknown>): Promise<void> {
@@ -82,105 +96,85 @@ export class NodeEventIngressController {
       throw error;
     }
 
-    try {
-      const results = await this.options.committer.commitBatch(this.options.nodeId, batch);
-      for (const item of results) {
-        if (item.outcome === "dead_lettered") {
-          this.options.logWarn({
-            code: item.deadLetter.code,
-            nodeId: this.options.nodeId,
-            streamId: item.envelope.stream_id,
-            sourceSeq: item.envelope.source_seq,
+    const results = await this.options.committer.commitBatch(this.options.nodeId, batch);
+    for (const item of results) {
+      if (item.outcome === "dead_lettered") {
+        this.options.logWarn({
+          code: item.deadLetter.code,
+          nodeId: this.options.nodeId,
+          streamId: item.envelope.stream_id,
+          sourceSeq: item.envelope.source_seq,
+          sessionId: item.envelope.session_id,
+          path: item.deadLetter.path,
+        }, "Event ingress dead-lettered permanent failure");
+        continue;
+      }
+      const payload = isRecord(item.envelope.payload)
+        ? { ...item.envelope.payload, id: item.eventId, _event_id: item.eventId }
+        : {
+            id: item.eventId,
+            type: item.envelope.event_type,
+            value: item.envelope.payload,
+            _event_id: item.eventId,
+          };
+      const registryEvents = this.options.receiveCommittedEvent({
+        type: "event",
+        agentSessionId: item.envelope.session_id,
+        event: payload,
+      });
+      const sessionUpdate = item.duplicateReceipt
+        && !item.sessionEffectApplication?.canonicalSession
+        ? null
+        : committedEffectSessionUpdate(item.envelope.session_effect, {
             sessionId: item.envelope.session_id,
-            path: item.deadLetter.path,
-          }, "Event ingress dead-lettered permanent failure");
-          continue;
-        }
-        const payload = isRecord(item.envelope.payload)
-          ? { ...item.envelope.payload, id: item.eventId, _event_id: item.eventId }
-          : {
-              id: item.eventId,
-              type: item.envelope.event_type,
-              value: item.envelope.payload,
-              _event_id: item.eventId,
-            };
-        const registryEvents = this.options.receiveCommittedEvent({
-          type: "event",
-          agentSessionId: item.envelope.session_id,
-          event: payload,
-        });
-        const sessionUpdate = item.duplicateReceipt
-          && !item.sessionEffectApplication?.canonicalSession
-          ? null
-          : committedEffectSessionUpdate(item.envelope.session_effect, {
-              sessionId: item.envelope.session_id,
-              eventId: item.eventId,
-            }, item.sessionEffectApplication);
-        // receiveCommittedEvent updates the session cache as a side effect. Apply the
-        // effect before publishing session_ended so cache-reading sinks such as
-        // PushNotifier observe the committed final assistant text.
-        const effectEvents = sessionUpdate
-          ? this.options.receiveCommittedEvent(sessionUpdate)
-          : undefined;
+            eventId: item.eventId,
+          }, item.sessionEffectApplication);
+      // receiveCommittedEvent updates the session cache as a side effect. Apply the
+      // effect before publishing session_ended so cache-reading sinks such as
+      // PushNotifier observe the committed final assistant text.
+      const effectEvents = sessionUpdate
+        ? this.options.receiveCommittedEvent(sessionUpdate)
+        : undefined;
+      try {
+        this.options.publish(registryEvents);
+      } catch (error) {
+        this.options.logError(error, "Committed event broadcast failed");
+      }
+      if (effectEvents) {
         try {
-          this.options.publish(registryEvents);
+          this.options.publish(effectEvents);
         } catch (error) {
-          this.options.logError(error, "Committed event broadcast failed");
-        }
-        if (effectEvents) {
-          try {
-            this.options.publish(effectEvents);
-          } catch (error) {
-            this.options.logError(error, "Committed session effect broadcast failed");
-          }
+          this.options.logError(error, "Committed session effect broadcast failed");
         }
       }
-      const ack: EventAppendAck = {
-        type: "event_append_ack",
-        stream_id: batch.stream_id,
-        acked_through: results.at(-1)!.envelope.source_seq,
-        events: results.map((item) => item.outcome === "dead_lettered"
-          ? {
-              source_seq: item.envelope.source_seq,
-              dead_letter: {
-                code: item.deadLetter.code,
-                reason: item.deadLetter.reason,
-                rejected_at: item.deadLetter.rejectedAt,
-              },
-            }
-          : {
-              source_seq: item.envelope.source_seq,
-              event_id: item.eventId,
-              ...(item.sessionEffectApplication?.canonicalSession
-                ? {
-                    effect_application: {
-                      applied: item.sessionEffectApplication.applied,
-                      canonical_session: item.sessionEffectApplication.canonicalSession,
-                    },
-                  }
-                : {}),
-            }),
-      };
-      this.options.send(ack);
-    } catch (error) {
-      if (error instanceof EventIngressProtocolConflict) {
-        this.accepting = false;
-        this.options.logError(error, "Event ingress receipt protocol conflict");
-        this.options.send({
-          type: "error",
-          command_type: "event_append_batch",
-          status: 409,
-          code: "EVENT_INGRESS_PROTOCOL_CONFLICT",
-          retryable: false,
-          message: error.message,
-          stream_id: batch.stream_id,
-          source_seq: error.sourceSeq ?? batch.first_seq,
-        });
-        this.options.close(1008, "event_ingress:PROTOCOL_CONFLICT");
-        return;
-      }
-      throw error;
     }
+    const ack: EventAppendAck = {
+      type: "event_append_ack",
+      stream_id: batch.stream_id,
+      acked_through: results.at(-1)!.envelope.source_seq,
+      events: results.map((item) => item.outcome === "dead_lettered"
+        ? {
+            source_seq: item.envelope.source_seq,
+            dead_letter: {
+              code: item.deadLetter.code,
+              reason: item.deadLetter.reason,
+              rejected_at: item.deadLetter.rejectedAt,
+            },
+          }
+        : {
+            source_seq: item.envelope.source_seq,
+            event_id: item.eventId,
+            ...(item.sessionEffectApplication?.canonicalSession
+              ? {
+                  effect_application: {
+                    applied: item.sessionEffectApplication.applied,
+                    canonical_session: item.sessionEffectApplication.canonicalSession,
+                  },
+                }
+              : {}),
+          }),
+    };
+    this.options.send(ack);
   }
 }
 

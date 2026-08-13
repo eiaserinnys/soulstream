@@ -77,7 +77,7 @@ describe("NodeEventIngressController", () => {
     ]);
   });
 
-  it("sends status 409 and closes without ACK on receipt conflict", async () => {
+  it("keeps the connection for a repository failure regardless of error type", async () => {
     const sent: Array<Record<string, unknown>> = [];
     const close = vi.fn();
     const controller = createController({
@@ -92,18 +92,19 @@ describe("NodeEventIngressController", () => {
 
     controller.enqueue(batch(1));
     await controller.drain();
+    controller.stop();
 
     expect(sent).toEqual([expect.objectContaining({
       type: "error",
-      status: 409,
-      code: "EVENT_INGRESS_PROTOCOL_CONFLICT",
+      status: 503,
+      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
     })]);
     expect(sent[0]).toMatchObject({
       stream_id: STREAM_ID,
       source_seq: 1,
-      retryable: false,
+      retryable: true,
     });
-    expect(close).toHaveBeenCalledWith(1008, "event_ingress:PROTOCOL_CONFLICT");
+    expect(close).not.toHaveBeenCalled();
   });
 
   it("dead-letters two deleted-session head events, warns, advances ACK, and keeps the connection", async () => {
@@ -176,33 +177,52 @@ describe("NodeEventIngressController", () => {
     );
   });
 
-  it("classifies a retryable repository failure without acknowledging it", async () => {
-    const send = vi.fn();
-    const close = vi.fn();
-    const controller = createController({
-      committer: {
-        commitBatch: vi.fn(async () => {
-          throw Object.assign(new Error("database unavailable"), { code: "57P01" });
-        }),
-      },
-      send,
-      close,
-    });
+  it("retries a transient repository failure on the same connection", async () => {
+    vi.useFakeTimers();
+    try {
+      const value = batch(1);
+      const commitBatch = vi.fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error("database unavailable"), { code: "57P01" }),
+        )
+        .mockResolvedValueOnce([{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+        }]);
+      const send = vi.fn();
+      const close = vi.fn();
+      const controller = createController({
+        committer: { commitBatch },
+        send,
+        close,
+      });
 
-    controller.enqueue(batch(1));
-    await controller.drain();
+      controller.enqueue(value as unknown as Record<string, unknown>);
+      await controller.drain();
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({
+        type: "error",
+        code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+        retryable: true,
+        stream_id: STREAM_ID,
+        source_seq: 1,
+      }));
 
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      type: "error",
-      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
-      retryable: true,
-      stream_id: STREAM_ID,
-      source_seq: 1,
-    }));
-    expect(close).toHaveBeenCalledWith(1011, "event_ingress:TRANSIENT_FAILURE");
-    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: "event_append_ack",
-    }));
+      await vi.advanceTimersByTimeAsync(1_000);
+      await controller.drain();
+      controller.stop();
+
+      expect(commitBatch).toHaveBeenCalledTimes(2);
+      expect(send).toHaveBeenLastCalledWith({
+        type: "event_append_ack",
+        stream_id: STREAM_ID,
+        acked_through: 1,
+        events: [{ source_seq: 1, event_id: 101 }],
+      });
+      expect(close).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("publishes the committed session effect before sending the ACK", async () => {
