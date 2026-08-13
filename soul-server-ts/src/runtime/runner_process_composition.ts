@@ -116,6 +116,7 @@ export function composeRunnerReconciliationReporter(
   env: Env,
   runnerProcessFactory: RunnerProcessRuntimeFactory | undefined,
   coordinator: RunnerRecoveryCoordinator | undefined,
+  logger: Pick<Logger, "debug">,
 ): Partial<RunnerReconciliationReporter> {
   if (!runnerProcessFactory) return {};
   const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
@@ -126,6 +127,7 @@ export function composeRunnerReconciliationReporter(
     listLiveRunnerSessionIds: async () => await listLiveRunnerSessionIds({
       stateDirectory,
       leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      logger,
     }),
     waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
   };

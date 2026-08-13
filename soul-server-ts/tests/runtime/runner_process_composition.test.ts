@@ -117,6 +117,7 @@ describe("runner process composition feature gate", () => {
       {} as never,
       undefined,
       undefined,
+      { debug: vi.fn() } as never,
     )).toEqual({});
   });
 
@@ -129,6 +130,7 @@ describe("runner process composition feature gate", () => {
       } as never,
       {} as never,
       { waitForSettled } as never,
+      { debug: vi.fn() } as never,
     );
 
     await reporter.waitForRunnerReconciliation!();

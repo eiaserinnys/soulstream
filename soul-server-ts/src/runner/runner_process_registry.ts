@@ -2,6 +2,8 @@ import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import type { Logger } from "pino";
+
 import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapRecord,
@@ -79,6 +81,7 @@ export interface LiveRunnerSessionIdsOptions {
   scan?: typeof scanRunnerRegistrations;
   now?: () => number;
   onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
+  logger?: Pick<Logger, "debug">;
 }
 
 const RUNNER_TOOL_LEASE_MULTIPLIER = 2;
@@ -203,8 +206,24 @@ export async function listLiveRunnerSessionIds(
   options: LiveRunnerSessionIdsOptions,
 ): Promise<string[]> {
   const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory);
-  for (const failure of result.errors) options.onScanError?.(failure);
-  const unidentified = result.errors.filter((failure) => !failure.sessionId);
+  const errors: RunnerRegistrationScan["errors"] = [];
+  const disappearedDirectories: string[] = [];
+  for (const failure of result.errors) {
+    if (await pathIsAbsent(failure.directory)) {
+      disappearedDirectories.push(failure.directory);
+    } else {
+      errors.push(failure);
+    }
+  }
+  if (disappearedDirectories.length > 0) {
+    disappearedDirectories.sort();
+    options.logger?.debug(
+      { count: disappearedDirectories.length, directories: disappearedDirectories },
+      "skipped runner inventory entries removed during scan",
+    );
+  }
+  for (const failure of errors) options.onScanError?.(failure);
+  const unidentified = errors.filter((failure) => !failure.sessionId);
   if (unidentified.length > 0) {
     throw new Error(
       `runner inventory incomplete: identity unavailable for ${unidentified
@@ -216,7 +235,7 @@ export async function listLiveRunnerSessionIds(
   }
   const nowMs = (options.now ?? Date.now)();
   const sessionIds = new Set<string>();
-  for (const failure of result.errors) {
+  for (const failure of errors) {
     if (failure.sessionId) sessionIds.add(failure.sessionId);
   }
   for (const registration of result.registrations) {
@@ -427,6 +446,15 @@ async function statIfExists(path: string): Promise<Stats | null> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
+  }
+}
+
+async function pathIsAbsent(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
   }
 }
 
