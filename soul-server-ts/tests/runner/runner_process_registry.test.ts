@@ -281,15 +281,11 @@ describe("runner process registry", () => {
     const stateDirectory = await temporaryDirectory("damaged-inventory");
     const damagedDirectory = join(stateDirectory, "unidentified");
     await mkdir(damagedDirectory);
-    const failure = new Error("runner identity cannot be recovered");
+    await writeFile(join(damagedDirectory, "runner-config.json"), "{damaged");
     await expect(listLiveRunnerSessionIds({
       stateDirectory,
       leaseTimeoutMs: 120_000,
       now: () => NOW,
-      scan: async () => ({
-        registrations: [registration({ sessionId: "session-live" })],
-        errors: [{ directory: damagedDirectory, error: failure }],
-      }),
     })).rejects.toThrow(
       `runner inventory incomplete: identity unavailable for ${damagedDirectory}`,
     );
