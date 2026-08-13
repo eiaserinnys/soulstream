@@ -11,6 +11,11 @@ import {
   type RunnerRegistration,
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
+import {
+  RunnerRecoveryFailureLogTracker,
+  recoveryFailureFingerprint,
+  unreadableRegistrationFingerprint,
+} from "./runner_recovery_fingerprint.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
@@ -58,6 +63,7 @@ export class RunnerRecoveryCoordinator {
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private readonly unreadableRegistrationFingerprints = new Map<string, string>();
+  private readonly recoveryFailureLogs = new RunnerRecoveryFailureLogTracker();
   private sessionGarbageCollectionInFlight: Promise<void> | undefined;
   private nextSessionGarbageCollectionAtMs = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -94,6 +100,7 @@ export class RunnerRecoveryCoordinator {
       this.options.stateDirectory,
     );
     await this.handleUnreadableRegistrations(scan.errors);
+    this.recoveryFailureLogs.prune(scan.registrations);
     for (const registration of scan.registrations) {
       const sessionId = registration.config.sessionId;
       if (this.active.has(sessionId)) continue;
@@ -104,21 +111,19 @@ export class RunnerRecoveryCoordinator {
       );
       if (
         disposition === "wait_for_bootstrap"
-      ) continue;
+      ) {
+        this.recoveryFailureLogs.clear(sessionId);
+        continue;
+      }
       if (
         disposition === "adopt_prebootstrap"
         || disposition === "adopt_running"
         || (disposition === "replay_terminal" && registration.pidAlive)
       ) {
-        await this.handle(registration, disposition).catch((error) => {
-          this.logRecoveryFailure(registration, disposition, error);
-        });
+        await this.handleWithFailureTracking(registration, disposition);
         continue;
       }
-      const recovery = this.handle(registration, disposition)
-        .catch((error) => {
-          this.logRecoveryFailure(registration, disposition, error);
-        })
+      const recovery = this.handleWithFailureTracking(registration, disposition)
         .finally(() => {
           if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
         });
@@ -273,10 +278,27 @@ export class RunnerRecoveryCoordinator {
     disposition: RunnerRecoveryDisposition,
     error: unknown,
   ): void {
+    const sessionId = registration.config.sessionId;
+    const fingerprint = recoveryFailureFingerprint(registration, disposition, error);
+    const logContext = this.recoveryFailureLogs.record(
+      sessionId, fingerprint, (this.options.now ?? Date.now)());
+    if (!logContext) return;
     this.options.logger.error(
-      { err: error, sessionId: registration.config.sessionId, disposition },
+      { err: error, sessionId, disposition, ...logContext },
       "runner recovery action failed",
     );
+  }
+
+  private async handleWithFailureTracking(
+    registration: RunnerRegistration,
+    disposition: RunnerRecoveryDisposition,
+  ): Promise<void> {
+    try {
+      await this.handle(registration, disposition);
+      this.recoveryFailureLogs.clear(registration.config.sessionId);
+    } catch (error) {
+      this.logRecoveryFailure(registration, disposition, error);
+    }
   }
 
   private async recoverRegistered(
@@ -418,25 +440,6 @@ export class RunnerRecoveryCoordinator {
       { pid: registration.pid, startIdentity: registration.pidStartIdentity },
     );
   }
-}
-
-function unreadableRegistrationFingerprint(failure: {
-  error: Error;
-  sessionId?: string;
-  codeSha?: string;
-}): string {
-  const error = failure.error as Error & {
-    code?: unknown;
-    runnerRegistrationStage?: unknown;
-  };
-  return JSON.stringify({
-    name: error.name,
-    message: error.message,
-    code: error.code ?? null,
-    stage: error.runnerRegistrationStage ?? null,
-    sessionId: failure.sessionId ?? null,
-    codeSha: failure.codeSha ?? null,
-  });
 }
 
 async function markRegistrationReaped(

@@ -18,6 +18,8 @@ import {
 } from "./sqlite_event_outbox.js";
 
 export class RunnerParentOutbox implements EventOutboxPumpStore {
+  private bootstrap: RunnerBootstrapRecord | null = null;
+
   private constructor(
     private readonly runner: RunnerSqliteEventOutbox,
     private readonly host: RunnerHostStateStore,
@@ -54,7 +56,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   get ackedSeq(): number {
-    return this.requireAcknowledgedThrough();
+    return this.bootstrap ? this.requireAcknowledgedThrough() : 0;
   }
 
   onAppend(_listener: () => void): () => void {
@@ -63,11 +65,8 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async readBootstrap(): Promise<RunnerBootstrapRecord | null> {
-    const bootstrap = await this.runner.readBootstrap();
+    const bootstrap = await this.readRunnerBootstrap();
     if (!bootstrap) return null;
-    if (bootstrap.session_id !== this.sessionId) {
-      throw new Error("runner parent outbox session differs from durable bootstrap");
-    }
     this.host.initializeEventCheckpoint({
       streamId: bootstrap.stream_id,
       sessionId: bootstrap.session_id,
@@ -77,8 +76,10 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async readBatch(maxEvents?: number) {
+    const acknowledgedThrough = await this.readAcknowledgedThrough();
+    if (acknowledgedThrough === null) return null;
     return await this.runner.readBatchAfter(
-      this.requireAcknowledgedThrough(),
+      acknowledgedThrough,
       maxEvents,
     );
   }
@@ -120,7 +121,9 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
-    return await this.runner.readLatestPendingRecordAfter(this.requireAcknowledgedThrough());
+    const acknowledgedThrough = await this.readAcknowledgedThrough();
+    if (acknowledgedThrough === null) return null;
+    return await this.runner.readLatestPendingRecordAfter(acknowledgedThrough);
   }
 
   async readPendingIpcFrames(): Promise<Array<{
@@ -138,8 +141,14 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     return await this.runner.readPendingInterventions();
   }
 
+  /**
+   * host_acked=0 is CHECK-limited to engine_event, whose non-null outbox_source_seq has an outbox FK.
+   * stageRunnerIntervention passes requireBootstrap(), so an empty ledger also proves an empty inbox.
+   */
   async hasPendingDurableWork(): Promise<boolean> {
-    return await this.runner.hasPendingDurableWork(this.requireAcknowledgedThrough());
+    const acknowledgedThrough = await this.readAcknowledgedThrough();
+    if (acknowledgedThrough === null) return false;
+    return await this.runner.hasPendingDurableWork(acknowledgedThrough);
   }
 
   async readHostCallApplied(correlationId: string) {
@@ -162,6 +171,20 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   close(): void {
     this.host.close();
     this.runner.close();
+  }
+
+  private async readAcknowledgedThrough(): Promise<number | null> {
+    if (!(await this.readRunnerBootstrap())) return null;
+    return this.requireAcknowledgedThrough();
+  }
+
+  private async readRunnerBootstrap(): Promise<RunnerBootstrapRecord | null> {
+    const bootstrap = await this.runner.readBootstrap();
+    if (bootstrap && bootstrap.session_id !== this.sessionId) {
+      throw new Error("runner parent outbox session differs from durable bootstrap");
+    }
+    this.bootstrap = bootstrap;
+    return bootstrap;
   }
 
   private requireAcknowledgedThrough(): number {

@@ -99,6 +99,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private stoppedRunnerWriterLock: RunnerWriterLock | undefined;
   private runnerDatabasePath!: string;
   private pump: EventOutboxPump | undefined;
+  private pumpInitialization: Promise<void> | undefined;
   private unregisterPump: (() => void) | undefined;
   private connecting: Promise<RunnerIpcConnection> | undefined;
   private activeExecuteCommandId: string | undefined;
@@ -509,9 +510,21 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   private async ensurePump(): Promise<void> {
     if (this.pump) return;
+    // Socket attachment and recovery both replay immediately; publish one
+    // initialization before the bootstrap read yields so they cannot double-register.
+    if (!this.pumpInitialization) {
+      this.pumpInitialization = this.initializePump().finally(() => {
+        this.pumpInitialization = undefined;
+      });
+    }
+    await this.pumpInitialization;
+  }
+
+  private async initializePump(): Promise<void> {
+    if (this.pump) return;
     const bootstrap = await this.outbox.readBootstrap();
     if (!bootstrap) return;
-    this.pump = new EventOutboxPump(this.outbox, (error) => {
+    const pump = new EventOutboxPump(this.outbox, (error) => {
       this.options.logger.error({ err: error }, "Runner event outbox pump failed");
     }, {
       onQuarantine: (result) => {
@@ -524,7 +537,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         }, "Runner event outbox head quarantined after repeated rejection");
       },
     });
-    this.unregisterPump = this.options.pumpMux.register(this.pump);
+    const unregisterPump = this.options.pumpMux.register(pump);
+    this.pump = pump;
+    this.unregisterPump = unregisterPump;
   }
 
   private async replayPendingFrames(): Promise<void> {
