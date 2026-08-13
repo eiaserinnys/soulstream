@@ -422,7 +422,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       return;
     }
     if (frame.kind === "host_call_applied") {
-      await this.hostCallIdempotency.acknowledge(frame.correlationId);
+      const cleanup = await this.hostCallIdempotency.acknowledge(frame.correlationId);
+      if (cleanup.status === "deferred_busy") {
+        this.options.logger.warn({
+          err: cleanup.error,
+          correlationId: frame.correlationId,
+        }, "Runner host-call receipt cleanup deferred after SQLite contention");
+      }
       this.recentHostResponses.delete(frame.correlationId);
       return;
     }

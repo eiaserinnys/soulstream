@@ -1,4 +1,5 @@
 import type { RunnerHostCall } from "./runner_process_dispatcher.js";
+import { isRunnerSqliteBusyError } from "./runner_sqlite_connection.js";
 import type { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 
 type HostService = RunnerHostCall["service"];
@@ -51,8 +52,20 @@ export class RunnerHostCallIdempotency {
     return { data, replayed: applied !== null };
   }
 
-  async acknowledge(correlationId: string): Promise<void> {
-    await this.journal.acknowledgeHostCall(correlationId);
+  async acknowledge(correlationId: string): Promise<
+    | { status: "deleted" }
+    | { status: "deferred_busy"; error: unknown }
+  > {
+    try {
+      await this.journal.acknowledgeHostCall(correlationId);
+      return { status: "deleted" };
+    } catch (error) {
+      if (!isRunnerSqliteBusyError(error)) throw error;
+      // The external mutation owner is the exactly-once authority. Retaining
+      // this payload-free receipt only causes an idempotent replay and later
+      // terminal compaction; it must not terminate the active runner frame.
+      return { status: "deferred_busy", error };
+    }
   }
 }
 

@@ -19,6 +19,29 @@ afterEach(async () => {
 });
 
 describe("RunnerHostCallIdempotency", () => {
+  it("defers an exhausted SQLite busy receipt cleanup without failing the runner frame", async () => {
+    const busy = Object.assign(new Error("database is locked"), { errcode: 5 });
+    const acknowledgeHostCall = vi.fn(async () => { throw busy; });
+    const host = new RunnerHostCallIdempotency(
+      { acknowledgeHostCall } as unknown as RunnerSqliteEventOutbox,
+    );
+
+    await expect(host.acknowledge("host:cleanup-busy")).resolves.toEqual({
+      status: "deferred_busy",
+      error: busy,
+    });
+    expect(acknowledgeHostCall).toHaveBeenCalledWith("host:cleanup-busy");
+  });
+
+  it("keeps non-busy receipt cleanup failures fatal", async () => {
+    const failure = new Error("runner IPC journal corrupt");
+    const host = new RunnerHostCallIdempotency({
+      acknowledgeHostCall: vi.fn(async () => { throw failure; }),
+    } as unknown as RunnerSqliteEventOutbox);
+
+    await expect(host.acknowledge("host:cleanup-corrupt")).rejects.toBe(failure);
+  });
+
   it("retries through the durable owner after apply committed but host receipt was not recorded", async () => {
     const directory = await mkdtemp(join(tmpdir(), "runner-host-call-"));
     directories.push(directory);
