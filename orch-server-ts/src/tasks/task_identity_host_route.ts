@@ -5,11 +5,22 @@ import { parseInitialTaskContextWire } from "@soulstream/page-model";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { PageMutationActor } from "../page/page_mutation_core.js";
 import type { TaskIdentityService } from "./task_identity_service.js";
+import {
+  isTaskIdentityAlreadyPromotedError,
+  isTaskIdentityBindingConflict,
+  isTaskIdentityCreateCollision,
+  isTaskIdentityStalePlanConflict,
+  isTaskIdentityTitleConflictError,
+} from "./task_identity_errors.js";
 
 export interface TaskIdentityHostRouteOptions {
   service: Pick<
     TaskIdentityService,
-    "create" | "promoteExistingPage" | "mutateFromTask" | "backfillLegacyTask"
+    | "create"
+    | "resolvePageIdentity"
+    | "promoteExistingPage"
+    | "mutateFromTask"
+    | "backfillLegacyTask"
   >;
   authBearerToken: string;
 }
@@ -27,6 +38,7 @@ const mutationFields = {
   reason: z.string().nullable().optional(),
 };
 const schemas = {
+  "resolve-page": z.object({ page_id: id }),
   create: z.object({
     title: id,
     description: z.string().optional(),
@@ -91,13 +103,16 @@ export function registerTaskIdentityHostRoute(
       if (!parsed.success) {
         return errorReply(reply, 422, "INVALID_TASK_IDENTITY_REQUEST", parsed.error.message);
       }
-      const actor = toActor(parsed.data);
-      if ((actor.actorKind === "agent" && !actor.actorSessionId)
-        || (actor.actorKind === "user" && !actor.actorUserId)) {
-        return errorReply(reply, 422, "INVALID_TASK_IDENTITY_ACTOR", "actor provenance is required");
-      }
       try {
         const input = parsed.data as Record<string, unknown>;
+        if (operation === "resolve-page") {
+          return reply.send(await options.service.resolvePageIdentity(input.page_id as string));
+        }
+        const actor = toActor(parsed.data);
+        if ((actor.actorKind === "agent" && !actor.actorSessionId)
+          || (actor.actorKind === "user" && !actor.actorUserId)) {
+          return errorReply(reply, 422, "INVALID_TASK_IDENTITY_ACTOR", "actor provenance is required");
+        }
         const common = {
           actor,
           idempotencyKey: input.idempotency_key as string,
@@ -166,12 +181,12 @@ function toActor(input: Record<string, unknown>): PageMutationActor {
 }
 
 function conflictStatus(error: unknown): number {
-  if (!(error instanceof Error)) return 500;
-  return error.message.includes("version conflict")
-      || error.message.includes("already")
-      || error.message.includes("mapping changed")
-    ? 409
-    : 500;
+  if (isTaskIdentityTitleConflictError(error)
+    || isTaskIdentityCreateCollision(error)
+    || isTaskIdentityAlreadyPromotedError(error)
+    || isTaskIdentityBindingConflict(error)
+    || isTaskIdentityStalePlanConflict(error)) return 409;
+  return 500;
 }
 
 function errorReply(reply: FastifyReply, status: number, code: string, message: string) {

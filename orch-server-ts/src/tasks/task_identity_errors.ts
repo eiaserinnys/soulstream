@@ -11,19 +11,36 @@ export function isTaskIdentityTitleConflictError(
   return error instanceof TaskIdentityTitleConflictError;
 }
 
-export function isTaskIdentityTitleRace(error: unknown): boolean {
+export function isTaskIdentityCreateCollision(error: unknown): boolean {
   if (error instanceof Error
     && (error.message.startsWith("task identity task already exists:")
-      || error.message.startsWith("page is already a task identity:")
-      || error.message.startsWith("task mount projection changed:")
-      || error.message.startsWith("task identity project mapping changed:"))) {
-    return true;
-  }
+      || error.message.startsWith("task identity already exists:"))) return true;
   const record = asRecord(error);
-  if (record.code === "PAGE_MUTATION_VERSION_CONFLICT") return true;
   return record.code === "23505"
     && (record.constraint_name === "uq_pages_title_key"
       || record.constraint === "uq_pages_title_key");
+}
+
+export function isTaskIdentityAlreadyPromotedError(error: unknown): boolean {
+  return error instanceof Error
+    && error.message.startsWith("page is already a task identity:");
+}
+
+export function isTaskIdentityStalePlanConflict(error: unknown): boolean {
+  if (error instanceof Error
+    && (error.message.startsWith("task mount projection changed:")
+      || error.message.startsWith("task mount projection changed on ")
+      || error.message.startsWith("task identity project mapping changed:")
+      || error.message.startsWith("task identity mapping changed:")
+      || error.message.startsWith("task identity source folder changed:")
+      || error.message.startsWith("task version conflict:"))) return true;
+  return asRecord(error).code === "PAGE_MUTATION_VERSION_CONFLICT";
+}
+
+export function isTaskIdentityBindingConflict(error: unknown): boolean {
+  return error instanceof Error
+    && (error.message.startsWith("legacy task is already bound to page ")
+      || error.message.startsWith("backfill page already exists:"));
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

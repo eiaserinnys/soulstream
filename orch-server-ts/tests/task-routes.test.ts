@@ -211,6 +211,7 @@ function createAppWithTasks(
         snapshot: { task: { id, title: input.title }, sections: [], items: [] },
       };
     }),
+    resolvePageIdentity: vi.fn(),
     promoteExistingPage: vi.fn(),
     mutateFromTask: vi.fn(),
     backfillLegacyTask: vi.fn(),
@@ -327,6 +328,7 @@ describe("task route harness", () => {
           items: [],
         },
       })),
+      resolvePageIdentity: vi.fn(),
       promoteExistingPage: vi.fn(),
       mutateFromTask: vi.fn(),
       backfillLegacyTask: vi.fn(),
@@ -401,6 +403,7 @@ describe("task route harness", () => {
   it("accepts a service-authenticated MCP creation through the same identity service", async () => {
     const taskIdentityService = {
       create: vi.fn(async () => createTaskIdentityResult()),
+      resolvePageIdentity: vi.fn(),
       promoteExistingPage: vi.fn(),
       mutateFromTask: vi.fn(),
       backfillLegacyTask: vi.fn(),
@@ -452,9 +455,48 @@ describe("task route harness", () => {
     await app.close();
   });
 
+  it("resolves an existing page identity to its actual task id", async () => {
+    const taskIdentityService = {
+      create: vi.fn(async () => createTaskIdentityResult()),
+      resolvePageIdentity: vi.fn(async () => ({
+        id: "page-runbook:page-1",
+        pageId: "page-1",
+        taskId: "page-runbook:page-1",
+        adopted: true,
+      })),
+      promoteExistingPage: vi.fn(),
+      mutateFromTask: vi.fn(),
+      backfillLegacyTask: vi.fn(),
+    };
+    const { app } = createAppWithTasks(
+      { restricted: false },
+      {},
+      undefined,
+      taskIdentityService,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/task-identities/host/resolve-page",
+      headers: { authorization: "Bearer service-token" },
+      payload: { page_id: "page-1" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      id: "page-runbook:page-1",
+      pageId: "page-1",
+      taskId: "page-runbook:page-1",
+      adopted: true,
+    });
+    expect(taskIdentityService.resolvePageIdentity).toHaveBeenCalledWith("page-1");
+    await app.close();
+  });
+
   it("accepts a service-authenticated sessionless llm task identity actor", async () => {
     const taskIdentityService = {
       create: vi.fn(async () => createTaskIdentityResult()),
+      resolvePageIdentity: vi.fn(),
       promoteExistingPage: vi.fn(),
       mutateFromTask: vi.fn(),
       backfillLegacyTask: vi.fn(),

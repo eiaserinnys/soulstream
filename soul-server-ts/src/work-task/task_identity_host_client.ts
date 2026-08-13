@@ -12,6 +12,13 @@ export interface TaskIdentityActor {
   actorUserId?: string | null;
 }
 
+export interface TaskIdentityPageResolution {
+  id: string;
+  pageId: string;
+  taskId: string;
+  adopted: boolean;
+}
+
 export interface TaskIdentityHostResult {
   id: string;
   pageId: string;
@@ -24,6 +31,12 @@ export interface TaskIdentityHostResult {
 
 export class TaskIdentityHostClient {
   constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
+
+  async resolvePageIdentity(pageId: string): Promise<TaskIdentityPageResolution | null> {
+    return await this.request<TaskIdentityPageResolution | null>("resolve-page", {
+      page_id: pageId,
+    });
+  }
 
   async create(input: TaskIdentityActor & {
     title: string;
@@ -56,8 +69,8 @@ export class TaskIdentityHostClient {
     x?: number;
     y?: number;
     idempotencyKey: string;
-  }): Promise<TaskIdentityHostResult> {
-    return await this.request("promote-page", {
+  }): Promise<TaskIdentityPageResolution> {
+    return await this.request<TaskIdentityPageResolution>("promote-page", {
       page_id: input.pageId,
       title: input.title,
       folder_id: input.folderId,
@@ -89,7 +102,7 @@ export class TaskIdentityHostClient {
     });
   }
 
-  private async request(operation: string, body: unknown): Promise<TaskIdentityHostResult> {
+  private async request<T = TaskIdentityHostResult>(operation: string, body: unknown): Promise<T> {
     const response = await fetch(
       `${this.config.orch.baseUrl}/api/task-identities/host/${encodeURIComponent(operation)}`,
       {
@@ -106,7 +119,7 @@ export class TaskIdentityHostClient {
       );
       throw new Error(`task identity host ${operation} failed: ${message}`);
     }
-    return await response.json() as TaskIdentityHostResult;
+    return await response.json() as T;
   }
 }
 

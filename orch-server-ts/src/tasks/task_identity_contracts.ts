@@ -58,6 +58,23 @@ export interface TaskIdentityBinding {
   pageVersion: number;
 }
 
+export interface TaskIdentityPageResolution {
+  id: string;
+  pageId: string;
+  taskId: string;
+  adopted: boolean;
+}
+
+export interface TaskIdentityPromotionInput {
+  pageId: string;
+  folderId: string;
+  title: string;
+  actor: PageMutationActor;
+  idempotencyKey: string;
+  x?: number;
+  y?: number;
+}
+
 export interface TaskProjectPageBinding {
   pageId: string;
 }

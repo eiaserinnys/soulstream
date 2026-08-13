@@ -13,13 +13,17 @@ import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
 import type {
   LegacyTaskBackfillResult,
   TaskIdentityMutationResult,
+  TaskIdentityPageResolution,
+  TaskIdentityPromotionInput,
   TaskIdentityRepository,
   TaskIdentityServiceConfig,
   TaskProjectPageBinding,
   TaskIdentityBinding,
 } from "./task_identity_contracts.js";
 import {
-  isTaskIdentityTitleRace,
+  isTaskIdentityAlreadyPromotedError,
+  isTaskIdentityCreateCollision,
+  isTaskIdentityStalePlanConflict,
   TaskIdentityTitleConflictError,
 } from "./task_identity_errors.js";
 import {
@@ -32,7 +36,11 @@ import {
   requireNonEmpty,
 } from "./task_identity_page.js";
 import { backfillLegacyTaskIdentity } from "./task_identity_legacy.js";
-import { promoteTaskPage } from "./task_identity_promotion.js";
+import {
+  promoteTaskPage,
+  resolveOrPromoteTaskPage,
+  resolveTaskPageIdentity,
+} from "./task_identity_promotion.js";
 import { canonicalizeInitialTaskContext } from "./task_initial_context_alias.js";
 import {
   hydrateAndNotifyTaskMounts,
@@ -158,7 +166,8 @@ export class TaskIdentityService {
           : {}),
       }));
     } catch (error) {
-      if (!isTaskIdentityTitleRace(error)) throw error;
+      if (!isTaskIdentityCreateCollision(error)
+        && !isTaskIdentityStalePlanConflict(error)) throw error;
       const recovered = await this.resolveTitleOrRace(input, title);
       if (recovered) return recovered;
       throw new TaskIdentityTitleConflictError(
@@ -215,7 +224,9 @@ export class TaskIdentityService {
     try {
       return await this.resolveExistingTitle(input, title);
     } catch (error) {
-      if (!isTaskIdentityTitleRace(error)) throw error;
+      if (!isTaskIdentityCreateCollision(error)
+        && !isTaskIdentityAlreadyPromotedError(error)
+        && !isTaskIdentityStalePlanConflict(error)) throw error;
       return await this.resolveExistingTitle(input, title);
     }
   }
@@ -281,28 +292,20 @@ export class TaskIdentityService {
     notifyPageUpdates([result], this.config.onPageUpdated);
     return result;
   }
-
-  async promoteExistingPage(input: {
-    pageId: string;
-    folderId: string;
-    title: string;
-    actor: PageMutationActor;
-    idempotencyKey: string;
-    x?: number;
-    y?: number;
-  }): Promise<TaskIdentityMutationResult> {
-    const result = await promoteTaskPage({
+  async resolvePageIdentity(pageId: string): Promise<TaskIdentityPageResolution | null> {
+    return await resolveTaskPageIdentity(this.config, pageId);
+  }
+  async promoteExistingPage(input: TaskIdentityPromotionInput): Promise<TaskIdentityPageResolution> {
+    const outcome = await resolveOrPromoteTaskPage({
       config: this.config,
       mutationCore: this.mutationCore,
       createBlockId: this.createBlockId,
       createOperationId: this.createOperationId,
-      ensureProjectMount: false,
-      ...input,
+      promotion: input,
     });
-    notifyPageUpdates([result], this.config.onPageUpdated);
-    return result;
+    if (outcome.promoted) notifyPageUpdates([outcome.promoted], this.config.onPageUpdated);
+    return outcome.resolution;
   }
-
   async mutateFromPage(input: {
     pageId: string;
     expectedVersion: number;
@@ -490,7 +493,6 @@ export class TaskIdentityService {
     await hydrateAndNotifyTaskMounts(this.config, mountPageApplications);
     return result;
   }
-
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -59,18 +59,23 @@ function mutation(snapshot: TaskSnapshot): TaskMutationResult {
   };
 }
 
-function harness() {
+function harness(options: { adoptedTaskId?: string } = {}) {
   let snapshot: TaskSnapshot | null = null;
   let failCreateSectionOnce = false;
   let conflictStatusOnce = false;
   const statusResults = new Map<string, TaskMutationResult>();
 
   const taskIdentities = {
+    resolvePageIdentity: vi.fn(async (pageId: string) => {
+      const taskId = options.adoptedTaskId ?? pageId;
+      return { id: taskId, pageId, taskId, adopted: taskId !== pageId };
+    }),
     promoteExistingPage: vi.fn(async (params) => {
+      const taskId = options.adoptedTaskId ?? params.pageId;
       snapshot ??= {
         task: {
-          id: params.pageId,
-          board_item_id: `task:${params.pageId}`,
+          id: taskId,
+          board_item_id: `task:${taskId}`,
           title: params.title,
           status: "open",
           archived: false,
@@ -88,11 +93,11 @@ function harness() {
         sections: [],
         items: [],
       };
-      return { id: params.pageId, pageId: params.pageId, taskId: params.pageId } as never;
+      return { id: taskId, pageId: params.pageId, taskId, adopted: taskId !== params.pageId };
     }),
   } satisfies ChecklistTaskIdentityPort;
   const port = {
-    getTask: vi.fn(async () => snapshot),
+    getTask: vi.fn(async (taskId: string) => snapshot?.task.id === taskId ? snapshot : null),
     createSection: vi.fn(async (params) => {
       if (failCreateSectionOnce) {
         failCreateSectionOnce = false;
@@ -242,9 +247,32 @@ describe("ChecklistTaskAdapter", () => {
     );
   });
 
+  it("adopts an existing page identity whose task id differs from the page id", async () => {
+    const taskId = "page-runbook:page-1";
+    const h = harness({ adoptedTaskId: taskId });
+
+    const first = await h.adapter.reconcile(legacyInput(true));
+    const second = await h.adapter.reconcile({
+      ...legacyInput(true),
+      block: {
+        id: "block-1",
+        text: "배포 확인",
+        properties: first.properties,
+      },
+    });
+
+    expect(first.properties).toEqual({ taskId, itemId: "checklist:block-1" });
+    expect(second.properties).toEqual(first.properties);
+    expect(h.port.getTask).toHaveBeenCalledWith("page-1");
+    expect(h.port.getTask).toHaveBeenCalledWith(taskId);
+    expect(h.taskIdentities.promoteExistingPage).toHaveBeenCalledTimes(1);
+    expect(h.port.createSection).toHaveBeenCalledWith(expect.objectContaining({ taskId }));
+    expect(h.port.createItem).toHaveBeenCalledWith(expect.objectContaining({ taskId }));
+  });
+
   it("treats a bound reference as canonical and ignores a leftover legacy checked value", async () => {
     const h = harness();
-    await h.adapter.reconcile(legacyInput(true));
+    const first = await h.adapter.reconcile(legacyInput(true));
     await h.port.setItemStatus({
       ...actor,
       itemId: "checklist:block-1",
@@ -260,8 +288,7 @@ describe("ChecklistTaskAdapter", () => {
         id: "block-1",
         text: "배포 확인",
         properties: {
-          taskId: "page-task:page-1",
-          itemId: "checklist:block-1",
+          ...first.properties,
           checked: true,
         } as never,
       },

@@ -7,6 +7,31 @@ afterEach(() => {
 });
 
 describe("TaskIdentityHostClient", () => {
+  it("resolves the actual task id for an existing page identity", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: "page-runbook:page-1",
+      pageId: "page-1",
+      taskId: "page-runbook:page-1",
+      adopted: true,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new TaskIdentityHostClient({
+      orch: { baseUrl: "http://orch.local", headers: { authorization: "Bearer test" } },
+      logger: { warn: vi.fn() } as never,
+    });
+
+    await expect(client.resolvePageIdentity("page-1")).resolves.toEqual({
+      id: "page-runbook:page-1",
+      pageId: "page-1",
+      taskId: "page-runbook:page-1",
+      adopted: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://orch.local/api/task-identities/host/resolve-page",
+      expect.objectContaining({ body: JSON.stringify({ page_id: "page-1" }) }),
+    );
+  });
+
   it("forwards initial context through the cross-node create wire", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       id: "task-1",
