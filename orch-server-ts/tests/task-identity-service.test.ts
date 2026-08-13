@@ -183,16 +183,92 @@ describe("TaskIdentityService", () => {
       onPageUpdated,
     });
 
-    await service.promoteExistingPage({
+    await expect(service.promoteExistingPage({
       pageId: identityId,
       folderId: "folder-a",
       title: "승격 업무",
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "promote-ae",
+    })).resolves.toEqual({
+      id: identityId,
+      pageId: identityId,
+      taskId: identityId,
+      adopted: false,
     });
 
     expect(onPageUpdated).toHaveBeenCalledOnce();
     expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 2 });
+  });
+
+  it("adopts an existing page identity instead of promoting it again", async () => {
+    const repository = createRepository();
+    const taskId = `page-runbook:${identityId}`;
+    vi.mocked(repository.findByPageId).mockResolvedValue({
+      ...taskBinding(),
+      taskId,
+      boardItemId: `task:${taskId}`,
+    });
+    const onPageUpdated = vi.fn();
+    const hydratePage = vi.fn();
+    const service = new TaskIdentityService({
+      board: new MemoryBoardPort(),
+      repository,
+      createOperationId: () => "operation-ae",
+      hydratePage,
+      onPageUpdated,
+    });
+
+    await expect(service.promoteExistingPage({
+      pageId: identityId,
+      folderId: "folder-a",
+      title: "승격 업무",
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "promote-existing-ae",
+    })).resolves.toEqual({
+      id: taskId,
+      pageId: identityId,
+      taskId,
+      adopted: true,
+    });
+
+    expect(repository.promote).not.toHaveBeenCalled();
+    expect(hydratePage).not.toHaveBeenCalled();
+    expect(onPageUpdated).not.toHaveBeenCalled();
+  });
+
+  it("adopts the winner when the page becomes an identity during promotion", async () => {
+    const repository = createRepository();
+    const taskId = `page-runbook:${identityId}`;
+    vi.mocked(repository.findByPageId)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({
+        ...taskBinding(),
+        taskId,
+        boardItemId: `task:${taskId}`,
+      });
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    vi.mocked(repository.promote).mockRejectedValue(
+      new Error(`page is already a task identity: ${identityId}`),
+    );
+    const service = new TaskIdentityService({
+      board: new MemoryBoardPort(),
+      repository,
+      createOperationId: () => "operation-ae",
+      hydratePage: vi.fn(),
+    });
+
+    await expect(service.promoteExistingPage({
+      pageId: identityId,
+      folderId: "folder-a",
+      title: "승격 업무",
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "promote-race-ae",
+    })).resolves.toEqual({
+      id: taskId,
+      pageId: identityId,
+      taskId,
+      adopted: true,
+    });
   });
 
   it("notifies after a task-originated page mutation", async () => {

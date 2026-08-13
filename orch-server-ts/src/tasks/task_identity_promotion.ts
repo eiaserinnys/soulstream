@@ -6,11 +6,17 @@ import type { InitialTaskContext } from "@soulstream/page-model";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
 import type {
   TaskIdentityMutationResult,
+  TaskIdentityPageResolution,
+  TaskIdentityPromotionInput,
   TaskIdentityServiceConfig,
   TaskMountExpectation,
   TaskMountPageApplication,
 } from "./task_identity_contracts.js";
-import { TaskIdentityTitleConflictError } from "./task_identity_errors.js";
+import {
+  isTaskIdentityAlreadyPromotedError,
+  isTaskIdentityCreateCollision,
+  TaskIdentityTitleConflictError,
+} from "./task_identity_errors.js";
 import {
   planTaskProjectMountReconciliation,
 } from "./task_mount_reconciliation.js";
@@ -20,6 +26,59 @@ import {
   pageMutationIdempotencyKey,
   requireNonEmpty,
 } from "./task_identity_page.js";
+
+export async function resolveTaskPageIdentity(
+  config: TaskIdentityServiceConfig,
+  pageId: string,
+): Promise<TaskIdentityPageResolution | null> {
+  const binding = await config.repository.findByPageId(pageId);
+  if (!binding) return null;
+  return {
+    id: binding.taskId,
+    pageId: binding.pageId,
+    taskId: binding.taskId,
+    adopted: true,
+  };
+}
+
+export async function resolveOrPromoteTaskPage(input: {
+  config: TaskIdentityServiceConfig;
+  mutationCore: PageMutationCore;
+  createBlockId: () => string;
+  createOperationId: () => string;
+  promotion: TaskIdentityPromotionInput;
+}): Promise<{
+  resolution: TaskIdentityPageResolution;
+  promoted?: TaskIdentityMutationResult;
+}> {
+  const existing = await resolveTaskPageIdentity(input.config, input.promotion.pageId);
+  if (existing) return { resolution: existing };
+  try {
+    const promoted = await promoteTaskPage({
+      config: input.config,
+      mutationCore: input.mutationCore,
+      createBlockId: input.createBlockId,
+      createOperationId: input.createOperationId,
+      ensureProjectMount: false,
+      ...input.promotion,
+    });
+    return {
+      resolution: {
+        id: promoted.taskId,
+        pageId: promoted.pageId,
+        taskId: promoted.taskId,
+        adopted: false,
+      },
+      promoted,
+    };
+  } catch (error) {
+    if (!isTaskIdentityAlreadyPromotedError(error)
+      && !isTaskIdentityCreateCollision(error)) throw error;
+    const adopted = await resolveTaskPageIdentity(input.config, input.promotion.pageId);
+    if (!adopted) throw error;
+    return { resolution: adopted };
+  }
+}
 
 export async function promoteTaskPage(input: {
   config: TaskIdentityServiceConfig;

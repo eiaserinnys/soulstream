@@ -109,7 +109,11 @@ export type TaskRouteOptions = {
   ) => Promise<string | null> | string | null;
   taskIdentityService?: Pick<
     TaskIdentityService,
-    "create" | "promoteExistingPage" | "mutateFromTask" | "backfillLegacyTask"
+    | "create"
+    | "resolvePageIdentity"
+    | "promoteExistingPage"
+    | "mutateFromTask"
+    | "backfillLegacyTask"
   >;
   taskControlPlaneServiceProvider?: () => Promise<TaskControlPlaneService>;
   authBearerToken?: string;

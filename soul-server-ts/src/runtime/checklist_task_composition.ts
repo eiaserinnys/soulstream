@@ -11,7 +11,10 @@ export interface ChecklistTaskCompositionParams {
   nodeId: string;
   db: Pick<SessionDB, "checklistTaskProjections">;
   taskService: TaskService;
-  taskIdentityHost: Pick<TaskIdentityHostClient, "promoteExistingPage">;
+  taskIdentityHost: Pick<
+    TaskIdentityHostClient,
+    "promoteExistingPage" | "resolvePageIdentity"
+  >;
   pageHost: Pick<PageYjsHostClient, "getPage" | "batchPageOperations">;
   logger: Logger;
 }

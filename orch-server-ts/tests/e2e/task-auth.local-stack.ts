@@ -92,6 +92,7 @@ try {
           snapshot: { task: {}, sections: [], items: [] },
         };
       },
+      resolvePageIdentity: async () => null,
       promoteExistingPage: async () => {
         throw new Error("not used");
       },

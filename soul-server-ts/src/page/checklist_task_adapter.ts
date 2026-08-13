@@ -34,7 +34,7 @@ export type ChecklistTaskPort = Pick<
 
 export type ChecklistTaskIdentityPort = Pick<
   TaskIdentityHostClient,
-  "promoteExistingPage"
+  "promoteExistingPage" | "resolvePageIdentity"
 >;
 
 export interface ChecklistAdapterPage
@@ -102,21 +102,27 @@ export class ChecklistTaskAdapter {
   async reconcile(input: ChecklistReconcileInput): Promise<ChecklistProjection> {
     const expected = expectedReference(input.page.id, input.block.id);
     const existingReference = checklistReference(input.block.properties);
-    if (existingReference && !isCompatibleReference(
-      existingReference,
-      input.page.id,
-      expected.itemId,
-    )) {
+    if (existingReference && existingReference.itemId !== expected.itemId) {
       throw new ChecklistBindingMismatchError(
         `checklist ${input.block.id} binding does not match its deterministic page identity`,
       );
     }
-    const reference = existingReference ?? expected;
+    let reference = existingReference ?? expected;
+    if (existingReference && !isDeterministicTaskId(existingReference.taskId, input.page.id)) {
+      const identity = await this.taskIdentities.resolvePageIdentity(input.page.id);
+      if (identity?.taskId !== existingReference.taskId) {
+        throw new ChecklistBindingMismatchError(
+          `checklist ${input.block.id} task does not match its page identity`,
+        );
+      }
+    }
     const adoptChecked = existingReference || typeof input.block.properties.checked !== "boolean"
       ? undefined
       : input.block.properties.checked;
     return await this.withItemLock(reference.itemId, async () => {
-      let snapshot = await this.ensureHierarchy(input, reference, existingReference !== null);
+      const hierarchy = await this.ensureHierarchy(input, reference, existingReference !== null);
+      reference = hierarchy.reference;
+      let snapshot = hierarchy.snapshot;
       let item = requireItem(snapshot, reference.itemId);
       const needsPatch = item.title !== input.block.text || item.archived;
       if (needsPatch) {
@@ -237,15 +243,16 @@ export class ChecklistTaskAdapter {
     input: ChecklistReconcileInput,
     reference: ChecklistTaskReference,
     hasStoredReference: boolean,
-  ): Promise<TaskSnapshot> {
+  ): Promise<{ reference: ChecklistTaskReference; snapshot: TaskSnapshot }> {
     let snapshot = await this.tasks.getTask(reference.taskId);
+    let resolvedReference = reference;
     if (!snapshot) {
       if (hasStoredReference) {
         throw new ChecklistBindingMismatchError(
           `stored checklist task not found: ${reference.taskId}`,
         );
       }
-      await this.taskIdentities.promoteExistingPage({
+      const identity = await this.taskIdentities.promoteExistingPage({
         actorKind: input.actor.actorKind ?? "agent",
         actorSessionId: input.actor.actorSessionId,
         actorUserId: input.actor.actorUserId,
@@ -254,16 +261,17 @@ export class ChecklistTaskAdapter {
         title: input.page.title,
         idempotencyKey: `checklist-adapter:${input.page.id}:create-task`,
       });
-      snapshot = await this.tasks.getTask(reference.taskId);
+      resolvedReference = { taskId: identity.taskId, itemId: reference.itemId };
+      snapshot = await this.tasks.getTask(resolvedReference.taskId);
       if (!snapshot) {
-        throw new Error(`promoted task identity is not readable: ${reference.taskId}`);
+        throw new Error(`promoted task identity is not readable: ${resolvedReference.taskId}`);
       }
     }
     const sectionId = checklistSectionId(input.page.id);
     if (!snapshot.sections.some((section) => section.id === sectionId)) {
       const result = await this.tasks.createSection({
         ...input.actor,
-        taskId: reference.taskId,
+        taskId: resolvedReference.taskId,
         sectionId,
         title: CHECKLIST_SECTION_TITLE,
         idempotencyKey: `checklist-adapter:${input.page.id}:create-section`,
@@ -273,7 +281,7 @@ export class ChecklistTaskAdapter {
     if (!snapshot.items.some((item) => item.id === reference.itemId)) {
       const result = await this.tasks.createItem({
         ...input.actor,
-        taskId: reference.taskId,
+        taskId: resolvedReference.taskId,
         sectionId,
         itemId: reference.itemId,
         title: input.block.text,
@@ -281,7 +289,7 @@ export class ChecklistTaskAdapter {
       });
       snapshot = result.snapshot;
     }
-    return snapshot;
+    return { reference: resolvedReference, snapshot };
   }
 
   private async resolveExistingReference(
@@ -292,6 +300,13 @@ export class ChecklistTaskAdapter {
     for (const taskId of [checklistTaskId(pageId), legacyChecklistTaskId(pageId)]) {
       const snapshot = await this.tasks.getTask(taskId);
       if (snapshot?.items.some((item) => item.id === itemId)) return { taskId, itemId };
+    }
+    const identity = await this.taskIdentities.resolvePageIdentity(pageId);
+    if (identity) {
+      const snapshot = await this.tasks.getTask(identity.taskId);
+      if (snapshot?.items.some((item) => item.id === itemId)) {
+        return { taskId: identity.taskId, itemId };
+      }
     }
     return { taskId: checklistTaskId(pageId), itemId };
   }
@@ -372,13 +387,8 @@ function checklistReference(
     : null;
 }
 
-function isCompatibleReference(
-  reference: ChecklistTaskReference,
-  pageId: string,
-  itemId: string,
-): boolean {
-  return reference.itemId === itemId
-    && (reference.taskId === pageId || reference.taskId === legacyChecklistTaskId(pageId));
+function isDeterministicTaskId(taskId: string, pageId: string): boolean {
+  return taskId === pageId || taskId === legacyChecklistTaskId(pageId);
 }
 
 function pageTaskFolder(metadata: Record<string, unknown>): string {
