@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+import { advanceUnacknowledgedSourceSequence } from "../event_outbox_recovery.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import type {
   RunnerBootstrapRecord,
@@ -77,18 +78,11 @@ function recoverSnapshot(
     if (row.stream_id !== bootstrap.stream_id) throw new Error("event outbox record stream mismatch");
     if (row.session_id !== bootstrap.session_id) throw new Error("event outbox record session mismatch");
     runnerRowToRecord(row);
-    // ACKed rows may be sparse: compaction deletes every ACKed event that is
-    // no longer pinned by the IPC journal, while host-unacknowledged frames
-    // retain their corresponding event rows. Only the unacknowledged suffix
-    // is an orch replay contract and must remain contiguous.
-    if (row.source_seq <= ackedThrough) continue;
-    if (row.source_seq !== previousUnacknowledged + 1) {
-      throw new Error(
-        `event outbox source_seq gap detected: expected ${previousUnacknowledged + 1}, `
-        + `found ${row.source_seq}, acked_through ${ackedThrough}`,
-      );
-    }
-    previousUnacknowledged = row.source_seq;
+    previousUnacknowledged = advanceUnacknowledgedSourceSequence(
+      row.source_seq,
+      ackedThrough,
+      previousUnacknowledged,
+    );
   }
   const latest = latestRunnerSequence(database);
   if (latest > ackedThrough && previousUnacknowledged < latest) {

@@ -8,6 +8,7 @@ import {
 import { join } from "node:path";
 
 import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { advanceUnacknowledgedSourceSequence } from "../event_outbox_recovery.js";
 import {
   appendEventOutboxQuarantine,
   type EventOutboxQuarantineInput,
@@ -414,23 +415,20 @@ function validateRecoveredRecords(
   records: EventOutboxRecord[],
   metadata: EventOutboxMetadata,
 ): void {
-  let previous = 0;
+  let previousUnacknowledged = metadata.acked_seq;
   for (const record of records) {
     if (record.stream_id !== metadata.stream_id) {
       throw new Error("event outbox record stream mismatch");
-    }
-    if (previous !== 0 && record.source_seq !== previous + 1) {
-      throw new Error("event outbox source_seq gap detected");
     }
     const { payload_hash: payloadHash, ...unsigned } = record;
     if (computeEventOutboxPayloadHash(unsigned) !== payloadHash) {
       throw new Error(`event outbox payload hash mismatch at source_seq ${record.source_seq}`);
     }
-    previous = record.source_seq;
-  }
-  const firstUnacked = records.find((record) => record.source_seq > metadata.acked_seq);
-  if (firstUnacked && firstUnacked.source_seq !== metadata.acked_seq + 1) {
-    throw new Error("event outbox durable unacknowledged prefix has a gap");
+    previousUnacknowledged = advanceUnacknowledgedSourceSequence(
+      record.source_seq,
+      metadata.acked_seq,
+      previousUnacknowledged,
+    );
   }
   const lastSeq = records.at(-1)?.source_seq;
   if (
