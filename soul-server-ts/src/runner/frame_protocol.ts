@@ -456,6 +456,32 @@ export function stageInterventionCommandFrame(input: {
   }) as Extract<RunnerCommandFrame, { kind: "stage_intervention" }>;
 }
 
+export function applyInterventionCommandFrame(input: {
+  commandId: string;
+  interventionId: string;
+  interventionInput: {
+    prompt: string;
+    imageAttachmentPaths?: string[];
+  };
+}): Extract<RunnerCommandFrame, { kind: "invoke" }> {
+  return invokeCommandFrame(
+    input.commandId,
+    "runner.apply_intervention",
+    [input.interventionId, input.interventionInput],
+  );
+}
+
+export function discardInterventionCommandFrame(input: {
+  commandId: string;
+  interventionId: string;
+}): Extract<RunnerCommandFrame, { kind: "invoke" }> {
+  return invokeCommandFrame(
+    input.commandId,
+    "runner.discard_intervention",
+    [input.interventionId],
+  );
+}
+
 export function closeCommandFrame(
   commandId: string,
 ): Extract<RunnerCommandFrame, { kind: "close" }> {

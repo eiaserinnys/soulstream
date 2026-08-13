@@ -9,13 +9,16 @@ import type { Logger } from "pino";
 
 import type {
   EngineExecuteParams,
+  EngineInterventionResult,
 } from "../engine/protocol.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 import {
+  applyInterventionCommandFrame,
   closeCommandFrame,
+  discardInterventionCommandFrame,
   executeCommandFrame,
   executionStatusCommandFrame,
   hostFrameAppliedControlFrame,
@@ -34,8 +37,14 @@ import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import type {
   RunnerInterventionStageInput,
   RunnerInterventionStageResult,
+  RunnerInterventionApplyInput,
   RunnerPendingIntervention,
 } from "./runner_command_dispatcher.js";
+import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
+import {
+  runnerInterventionApplyCommandId,
+  runnerInterventionDiscardCommandId,
+} from "./runner_intervention_identity.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
 import {
@@ -242,6 +251,33 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.pump?.notifyAvailable();
     }
     return { eventSourceSeq, queuePosition };
+  }
+
+  async applyIntervention(
+    input: RunnerInterventionApplyInput,
+  ): Promise<EngineInterventionResult> {
+    const response = await this.dispatch(applyInterventionCommandFrame({
+      commandId: runnerInterventionApplyCommandId(input.interventionId),
+      interventionId: input.interventionId,
+      interventionInput: input.input,
+    }));
+    assertCommandAccepted(response);
+    return normalizeRunnerInterventionResult(
+      response.result.status === "ok" ? response.result.data : undefined,
+    );
+  }
+
+  async discardIntervention(interventionId: string): Promise<void> {
+    const response = await this.dispatch(discardInterventionCommandFrame({
+      commandId: runnerInterventionDiscardCommandId(interventionId),
+      interventionId,
+    }));
+    assertCommandAccepted(response);
+    const data = response.result.status === "ok" ? response.result.data : undefined;
+    if (isRecord(data) && data.status === "not_supported") return;
+    if (!isRecord(data) || data.status !== "discarded") {
+      throw new Error("Runner child returned an invalid intervention discard result");
+    }
   }
 
   async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {

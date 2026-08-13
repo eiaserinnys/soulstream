@@ -1150,11 +1150,11 @@ export interface InterveneAck {
   type: "intervene_ack";
   requestId: string;
   status: "ok";
-  outcome: "delivered" | "queued" | "deferred" | "auto_resumed" | "suppressed";
+  outcome: "delivered" | "queued" | "deferred" | "auto_resumed" | "suppressed" | "unknown";
   agentSessionId?: string;
-  delivered: boolean;
+  delivered: boolean | null;
   queuePosition?: number;
-  consumeWhen?: "next_turn";
+  consumeWhen?: "next_turn" | null;
   retryWhen?: "engine_available" | "terminal_state";
   deliveryId?: string;
   reason?: string;

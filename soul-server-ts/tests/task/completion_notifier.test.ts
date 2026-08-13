@@ -155,6 +155,29 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
   });
 
+  it("local unknown 판정은 성공이나 orch 재시도로 접지 않는다", async () => {
+    const tm = makeTaskManagerStub({
+      delivered: null,
+      reason: "verdict_unknown",
+      consumeWhen: null,
+    });
+    const fetchImpl = vi.fn();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+    );
+
+    await expect(notifier.notify(makeChild())).resolves.toBeUndefined();
+
+    expect(tm.addIntervention).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("v2는 durable identity를 등록한 뒤 직접 지정된 target에 전달한다", async () => {
     const tm = makeTaskManagerStub();
     let stored: Record<string, unknown> | undefined;
@@ -426,7 +449,7 @@ describe("TaskCompletionNotifier.notify", () => {
         session_id: sessionId,
         ...body,
       });
-      return new Response("{}", { status: 200 });
+      return new Response(JSON.stringify({ delivered: true }), { status: 200 });
     });
     const sourceTaskManager = makeTaskManagerStub();
     const notifier = new TaskCompletionNotifier(
@@ -477,6 +500,90 @@ describe("TaskCompletionNotifier.notify", () => {
         agent_id: "codex-default",
       },
     });
+  });
+
+  it("v2 cross-node unknown 판정은 source ledger를 uncertain으로 막아 자동 재시도하지 않는다", async () => {
+    let stored: Record<string, unknown> | undefined;
+    const markUncertain = vi.fn(async (deliveryId: string) => {
+      stored = { ...stored, delivery_id: deliveryId, state: "uncertain" };
+      return stored;
+    });
+    const claimRecoverableCompletionDeliveries = vi.fn().mockResolvedValue([]);
+    const repository = {
+      register: vi.fn(async (params: Record<string, unknown>) => {
+        stored = {
+          delivery_id: params.deliveryId,
+          target_session_id: params.targetSessionId,
+          source_session_id: params.sourceSessionId,
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          intent: params.intent,
+          source: params.source,
+          producer_kind: params.producerKind,
+          producer_id: params.producerId,
+          producer_terminal_revision: params.producerTerminalRevision,
+          parent_delivery_id: null,
+          caller_turn_id: null,
+          payload_hash: params.payloadHash,
+          payload: params.payload,
+          state: "pending",
+          created_at: params.createdAt,
+          updated_at: params.createdAt,
+          claimed_at: null,
+          dispatching_at: null,
+          queued_at: null,
+          delivered_at: null,
+          consumed_at: null,
+        };
+        return { row: stored, inserted: true, conflict: false };
+      }),
+      get: vi.fn(async () => stored),
+      claimForTarget: vi.fn(async (
+        _deliveryId: string,
+        targetSessionId: string,
+        leaseOwner: string,
+      ) => {
+        stored = {
+          ...stored,
+          target_session_id: targetSessionId,
+          state: "claimed",
+          lease_owner: leaseOwner,
+        };
+        return stored;
+      }),
+      claimRecoverableCompletionDeliveries,
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+      markUncertain,
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      delivered: null,
+      outcome: "unknown",
+      reason: "verdict_unknown",
+      consumeWhen: null,
+    }), { status: 200 }));
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      makeTaskManagerStub().taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+      { getSession: vi.fn().mockResolvedValue({ node_id: "node-remote" }) } as never,
+      true,
+      repository as never,
+    );
+
+    await notifier.notify(makeChild({ terminalEventId: 45 }));
+    await notifier.recoverPending();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(markUncertain).toHaveBeenCalledTimes(1);
+    expect(stored).toMatchObject({ state: "uncertain" });
+    expect(claimRecoverableCompletionDeliveries).toHaveBeenCalledTimes(1);
+    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
   });
 
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {

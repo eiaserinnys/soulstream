@@ -21,6 +21,10 @@ import {
 } from "../src/runner/sqlite_event_outbox.js";
 import { resolveAmbiguousRunnerIntervention } from
   "../src/runner/runner_intervention_resolution.js";
+import { applyInterventionCommandFrame, invokeCommandFrame } from
+  "../src/runner/frame_protocol.js";
+import { handleRunnerInterventionCommand } from
+  "../src/runner/runner_intervention_command.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
 import {
@@ -267,6 +271,182 @@ describe("RunnerSqliteEventOutbox", () => {
       execution_state: "failed",
     });
     lifecycle.close();
+    outbox.close();
+  });
+
+  it("fences an in-flight live intervention as ambiguous before engine application", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "live-timeout",
+      message: { text: "apply at most once", user: "operator" },
+      event: eventInput("apply at most once"),
+      queued: false,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    await expect(outbox.readPendingInterventions()).rejects.toThrow(
+      "runner intervention application outcome is ambiguous: live-timeout",
+    );
+
+    const apply = vi.fn(async () => await new Promise<never>(() => {}));
+    const application = handleRunnerInterventionCommand(
+      applyInterventionCommandFrame({
+        commandId: "apply-intervention:live-timeout",
+        interventionId: "live-timeout",
+        interventionInput: { prompt: "apply at most once" },
+      }),
+      outbox,
+      "session-a",
+      apply,
+    );
+    void application;
+
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    await expect(outbox.readPendingInterventions()).rejects.toThrow(
+      "runner intervention application outcome is ambiguous: live-timeout",
+    );
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT application_state FROM runner_intervention_inbox
+      WHERE intervention_id = 'live-timeout'
+    `).get()).toEqual({ application_state: "ambiguous" });
+    database.close();
+    outbox.close();
+  });
+
+  it.each([
+    {
+      label: "delivered",
+      verdict: { status: "delivered", mechanism: "active_turn" },
+      pending: [],
+    },
+    {
+      label: "explicitly not delivered",
+      verdict: {
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "next_turn_required",
+      },
+      pending: null,
+    },
+  ])("resolves a live intervention that is $label", async ({ label, verdict, pending }) => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "live-definitive",
+      message: { text: "definitive outcome", user: "operator" },
+      event: eventInput("definitive outcome"),
+      queued: false,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+
+    const result = await handleRunnerInterventionCommand(
+      applyInterventionCommandFrame({
+        commandId: "apply-intervention:live-definitive",
+        interventionId: "live-definitive",
+        interventionInput: { prompt: "definitive outcome" },
+      }),
+      outbox,
+      "session-a",
+      vi.fn().mockResolvedValue(verdict),
+    );
+
+    expect(result?.result).toMatchObject({
+      result: { status: "ok", data: verdict },
+    });
+    if (pending === null) {
+      await expect(outbox.readPendingInterventions()).rejects.toThrow(
+        "runner intervention application outcome is ambiguous: live-definitive",
+      );
+    } else {
+      await expect(outbox.readPendingInterventions()).resolves.toEqual(pending);
+    }
+    if (label === "explicitly not delivered") {
+      await expect(outbox.stageIntervention({
+        interventionId: "live-definitive",
+        message: { text: "definitive outcome", user: "operator" },
+        queued: true,
+        queuedAt: "2026-08-11T00:00:03.000Z",
+      })).resolves.toEqual({ eventSourceSeq: null, queuePosition: 1 });
+      await expect(outbox.readPendingInterventions()).resolves.toEqual([{
+        interventionId: "live-definitive",
+        message: { text: "definitive outcome", user: "operator" },
+      }]);
+    }
+    outbox.close();
+  });
+
+  it("reports the actual queue position when a confirmed miss releases an ambiguous receipt", async () => {
+    const outbox = await createOutbox();
+    for (const [index, interventionId] of ["ahead-1", "ahead-2"].entries()) {
+      await outbox.stageIntervention({
+        interventionId,
+        message: { text: `ahead ${index + 1}`, user: "operator" },
+        queued: true,
+        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
+      });
+    }
+    await outbox.stageIntervention({
+      interventionId: "live-third",
+      message: { text: "third", user: "operator" },
+      event: eventInput("third"),
+      queued: false,
+      queuedAt: "2026-08-11T00:00:04.000Z",
+    });
+
+    await expect(outbox.stageIntervention({
+      interventionId: "live-third",
+      message: { text: "third", user: "operator" },
+      queued: true,
+      queuedAt: "2026-08-11T00:00:05.000Z",
+    })).resolves.toEqual({ eventSourceSeq: null, queuePosition: 3 });
+    await expect(outbox.readPendingInterventions()).resolves.toHaveLength(3);
+    outbox.close();
+  });
+
+  it("discards a confirmed miss without making it pending for a durable caller", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "durable-no-queue",
+      message: { text: "scheduler owns retry", user: "scheduler" },
+      event: eventInput("scheduler owns retry"),
+      queued: false,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    await handleRunnerInterventionCommand(
+      applyInterventionCommandFrame({
+        commandId: "apply-intervention:durable-no-queue",
+        interventionId: "durable-no-queue",
+        interventionInput: { prompt: "scheduler owns retry" },
+      }),
+      outbox,
+      "session-a",
+      vi.fn().mockResolvedValue({
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+      }),
+    );
+
+    const discarded = await handleRunnerInterventionCommand(
+      invokeCommandFrame(
+        "discard-intervention:durable-no-queue",
+        "runner.discard_intervention",
+        ["durable-no-queue"],
+      ),
+      outbox,
+      "session-a",
+      vi.fn(),
+    );
+
+    expect(discarded?.result).toMatchObject({
+      result: { status: "ok", data: { status: "discarded" } },
+    });
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT COUNT(*) AS count FROM runner_intervention_inbox
+      WHERE intervention_id = 'durable-no-queue'
+    `).get()).toEqual({ count: 0 });
+    database.close();
     outbox.close();
   });
 

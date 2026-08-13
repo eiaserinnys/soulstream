@@ -92,6 +92,13 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       },
       async interrupt() { return true; },
       async close() {},
+      async intervene() {
+        return {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "next_turn_required",
+        };
+      },
     };
 
     runningIntervention = new RunningInterventionTransition({

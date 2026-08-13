@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { EngineExecuteParams, EnginePort } from "../engine/protocol.js";
+import type {
+  EngineExecuteParams,
+  EngineInterventionResult,
+  EnginePort,
+  EngineUserInput,
+} from "../engine/protocol.js";
 
 import {
   RunnerControlFrameSchema,
@@ -44,6 +49,10 @@ export interface RunnerCommandDispatcher {
   } | undefined;
   waitForSessionAck(): Promise<number | null>;
   stageIntervention?(input: RunnerInterventionStageInput): Promise<RunnerInterventionStageResult>;
+  applyIntervention?(
+    input: RunnerInterventionApplyInput,
+  ): Promise<EngineInterventionResult>;
+  discardIntervention?(interventionId: string): Promise<void>;
   recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
 }
 
@@ -57,6 +66,11 @@ export interface RunnerInterventionStageInput {
 export interface RunnerInterventionStageResult {
   eventSourceSeq: number | null;
   queuePosition: number;
+}
+
+export interface RunnerInterventionApplyInput {
+  interventionId: string;
+  input: EngineUserInput;
 }
 
 export interface RunnerPendingIntervention {

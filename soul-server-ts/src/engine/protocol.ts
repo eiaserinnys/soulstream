@@ -276,6 +276,11 @@ export type EngineInterventionResult =
       mechanism: EngineInterventionMechanism;
       reason: EngineInterventionFailureReason;
       message?: string;
+    }
+  | {
+      status: "unknown";
+      reason: "verdict_unknown";
+      message?: string;
     };
 
 /**

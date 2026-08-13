@@ -20,6 +20,11 @@ import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 export type RunningInterventionResult =
   | { delivered: true }
   | {
+      delivered: null;
+      reason: "verdict_unknown";
+      consumeWhen: null;
+    }
+  | {
       delivered: false;
       queued: true;
       queuePosition: number;
@@ -56,19 +61,35 @@ export class RunningInterventionTransition {
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
-    const deliveryMessage = usesDurableRunnerInterventionInbox(task)
+    const durableRunnerInbox = usesDurableRunnerInterventionInbox(task);
+    const deliveryMessage = durableRunnerInbox
       ? withRunnerInterventionId(message)
       : message;
-    if (publishBeforeDelivery) {
-      await this.publishAcceptance(task, deliveryMessage);
+    if (publishBeforeDelivery || durableRunnerInbox) {
+      if (!durableRunnerInbox) {
+        await this.publishAcceptance(task, deliveryMessage);
+      } else {
+        try {
+          await this.publishAcceptance(task, deliveryMessage);
+        } catch (error) {
+          return this.unknownVerdict(task, {
+            status: "unknown",
+            reason: "verdict_unknown",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
 
     const initialResult = await this.tryIntervene(task, deliveryMessage);
     if (initialResult.status === "delivered") {
-      if (!publishBeforeDelivery) {
+      if (!publishBeforeDelivery && !durableRunnerInbox) {
         await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
+    }
+    if (initialResult.status === "unknown") {
+      return this.unknownVerdict(task, initialResult);
     }
 
     const retryResult = await this.retryTransientBoundary(
@@ -77,14 +98,37 @@ export class RunningInterventionTransition {
       initialResult,
     );
     if (retryResult?.status === "delivered") {
-      if (!publishBeforeDelivery) {
+      if (!publishBeforeDelivery && !durableRunnerInbox) {
         await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
     }
+    if (retryResult?.status === "unknown") {
+      return this.unknownVerdict(task, retryResult);
+    }
     const finalResult = retryResult ?? initialResult;
 
     if (options.queueIfUndelivered === false) {
+      if (durableRunnerInbox) {
+        const dispatcher = task.runner?.dispatcher;
+        try {
+          if (!dispatcher?.discardIntervention) {
+            throw new Error("runner intervention discard operation is unavailable");
+          }
+          await dispatcher.discardIntervention(
+            requireRunnerInterventionId(deliveryMessage),
+          );
+        } catch (error) {
+          // Delivery missed, but the durable fence's final state is unknown.
+          // Returning deferred would invite a duplicate retry while that fence
+          // may still be ambiguous in the runner inbox.
+          return this.unknownVerdict(task, {
+            status: "unknown",
+            reason: "verdict_unknown",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       this.deps.logger.info(
         {
           sessionId: task.agentSessionId,
@@ -170,7 +214,8 @@ export class RunningInterventionTransition {
     task: Task,
     message: InterventionMessage,
   ): Promise<EngineInterventionResult> {
-    const engine = task.runner?.engine;
+    const runner = task.runner;
+    const engine = runner?.engine;
     if (!engine) {
       return {
         status: "not_delivered",
@@ -181,6 +226,20 @@ export class RunningInterventionTransition {
     }
     const input = composeInterventionTurnPrompt(message);
     try {
+      if (usesDurableRunnerInterventionInbox(task)) {
+        if (!runner?.dispatcher.applyIntervention) {
+          return {
+            status: "not_delivered",
+            mechanism: "unsupported",
+            reason: "not_supported",
+            message: "Runner intervention apply operation is unavailable",
+          };
+        }
+        return await runner.dispatcher.applyIntervention({
+          interventionId: requireRunnerInterventionId(message),
+          input,
+        });
+      }
       return await engine.intervene(input);
     } catch (err) {
       this.deps.logger.warn(
@@ -188,12 +247,32 @@ export class RunningInterventionTransition {
         "running engine intervention failed",
       );
       return {
-        status: "not_delivered",
-        mechanism: "unsupported",
-        reason: "failed",
+        status: "unknown",
+        reason: "verdict_unknown",
         message: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  private unknownVerdict(
+    task: Task,
+    result: Extract<EngineInterventionResult, { status: "unknown" }>,
+  ): RunningInterventionResult {
+    this.deps.logger.warn(
+      {
+        sessionId: task.agentSessionId,
+        delivered: null,
+        reason: result.reason,
+        detail: result.message,
+        consumeWhen: null,
+      },
+      "running intervention delivery verdict is unknown",
+    );
+    return {
+      delivered: null,
+      reason: "verdict_unknown",
+      consumeWhen: null,
+    };
   }
 
   private async stageRunnerReceipt(

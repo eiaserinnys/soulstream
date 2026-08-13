@@ -585,13 +585,14 @@
             "queued",
             "deferred",
             "auto_resumed",
-            "suppressed"
+            "suppressed",
+            "unknown"
           ]
         },
         "agentSessionId": { "type": "string" },
-        "delivered": { "type": "boolean" },
+        "delivered": { "type": ["boolean", "null"] },
         "queuePosition": { "type": "integer", "minimum": 1 },
-        "consumeWhen": { "type": "string", "enum": ["next_turn"] },
+        "consumeWhen": { "type": ["string", "null"], "enum": ["next_turn", null] },
         "retryWhen": {
           "type": "string",
           "enum": ["engine_available", "terminal_state"]

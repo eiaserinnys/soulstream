@@ -11,6 +11,7 @@ import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import {
   executionEndedControlFrame,
   hostFrameAppliedControlFrame,
+  invokeCommandFrame,
   outboxAvailableControlFrame,
   runnerCommandResultFrame,
   type RunnerCommandFrame,
@@ -201,6 +202,17 @@ export class RunnerChildRuntime {
       command,
       this.outbox,
       this.config.sessionId,
+      async (input) => {
+        const invoked = await this.dispatcher.dispatch(invokeCommandFrame(
+          command.commandId,
+          "intervene",
+          [input],
+        ));
+        if (invoked.result.status !== "ok") {
+          throw new Error(invoked.result.error.message);
+        }
+        return invoked.result.data;
+      },
     );
     if (intervention) {
       await connection.send(intervention.result);

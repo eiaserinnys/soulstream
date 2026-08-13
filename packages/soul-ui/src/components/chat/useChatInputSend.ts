@@ -106,7 +106,18 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
             attachmentPaths,
             signal: controller.signal,
           };
-          await (args.isFinished ? submitResume(ctx) : submitIntervention(ctx));
+          const result = await (
+            args.isFinished ? submitResume(ctx) : submitIntervention(ctx)
+          );
+          if (result.delivered === null) {
+            args.onSendError?.(trimmed);
+            setError(
+              result.reason
+                ? `전달 여부를 확인할 수 없습니다: ${result.reason}`
+                : "전달 여부를 확인할 수 없습니다. 자동으로 다시 보내지 않았습니다.",
+            );
+            return;
+          }
           // 파일 첨부가 있었으면 로컬 상태 초기화 (서버 파일은 유지 — Claude가 읽어야 함)
           if (args.fileUploadUrl && args.hasFiles) args.resetLocal();
         }
