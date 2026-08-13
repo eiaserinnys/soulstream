@@ -66,12 +66,23 @@ export type EventAppendAck = {
   type: "event_append_ack";
   stream_id: string;
   acked_through: number;
-  events: Array<{
-    source_seq: number;
-    event_id: number;
-    effect_application?: EventSessionEffectApplicationWire;
-  }>;
+  events: EventAppendAcknowledgement[];
 };
+
+export type EventAppendAcknowledgement =
+  | {
+      source_seq: number;
+      event_id: number;
+      effect_application?: EventSessionEffectApplicationWire;
+    }
+  | {
+      source_seq: number;
+      dead_letter: {
+        code: "SESSION_NOT_FOUND";
+        reason: string;
+        rejected_at: string;
+      };
+    };
 
 export type EventCanonicalSessionProjection = {
   status: string;
@@ -95,11 +106,25 @@ export type EventSessionEffectApplicationWire = {
 };
 
 export type CommittedIngressEvent = {
+  outcome?: "committed";
   envelope: EventIngressEnvelope;
   eventId: number;
   duplicateReceipt: boolean;
   sessionEffectApplication?: EventSessionEffectApplication;
 };
+
+export type DeadLetteredIngressEvent = {
+  outcome: "dead_lettered";
+  envelope: EventIngressEnvelope;
+  deadLetter: {
+    code: "SESSION_NOT_FOUND";
+    reason: string;
+    rejectedAt: string;
+    path: string;
+  };
+};
+
+export type EventIngressResult = CommittedIngressEvent | DeadLetteredIngressEvent;
 
 export class EventIngressValidationError extends Error {}
 

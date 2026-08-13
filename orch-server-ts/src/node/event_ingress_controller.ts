@@ -24,6 +24,7 @@ export type NodeEventIngressControllerOptions = {
   send(frame: Record<string, unknown>): void;
   close(code: number, reason: string): void;
   logError(error: unknown, message: string): void;
+  logWarn(context: Record<string, unknown>, message: string): void;
 };
 
 export class NodeEventIngressController {
@@ -35,8 +36,18 @@ export class NodeEventIngressController {
   enqueue(frame: Record<string, unknown>): void {
     if (!this.accepting) return;
     this.tail = this.tail.then(async () => await this.process(frame)).catch((error) => {
+      this.accepting = false;
       this.options.logError(error, "Event ingress controller failed");
-      this.options.close(1011, "event ingress failed");
+      this.options.send({
+        type: "error",
+        command_type: "event_append_batch",
+        status: 503,
+        code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+        retryable: true,
+        message: "event ingress temporarily unavailable",
+        ...ingressCoordinate(frame),
+      });
+      this.options.close(1011, "event_ingress:TRANSIENT_FAILURE");
     });
   }
 
@@ -55,22 +66,36 @@ export class NodeEventIngressController {
       batch = parseEventAppendBatch(frame);
     } catch (error) {
       if (error instanceof EventIngressValidationError) {
+        this.accepting = false;
         this.options.send({
           type: "error",
           command_type: "event_append_batch",
           status: 400,
           code: "EVENT_INGRESS_INVALID",
+          retryable: false,
           message: error.message,
+          ...ingressCoordinate(frame),
         });
-        this.options.close(1008, "invalid event ingress batch");
+        this.options.close(1008, "event_ingress:INVALID_BATCH");
         return;
       }
       throw error;
     }
 
     try {
-      const committed = await this.options.committer.commitBatch(this.options.nodeId, batch);
-      for (const item of committed) {
+      const results = await this.options.committer.commitBatch(this.options.nodeId, batch);
+      for (const item of results) {
+        if (item.outcome === "dead_lettered") {
+          this.options.logWarn({
+            code: item.deadLetter.code,
+            nodeId: this.options.nodeId,
+            streamId: item.envelope.stream_id,
+            sourceSeq: item.envelope.source_seq,
+            sessionId: item.envelope.session_id,
+            path: item.deadLetter.path,
+          }, "Event ingress dead-lettered permanent failure");
+          continue;
+        }
         const payload = isRecord(item.envelope.payload)
           ? { ...item.envelope.payload, id: item.eventId, _event_id: item.eventId }
           : {
@@ -113,37 +138,57 @@ export class NodeEventIngressController {
       const ack: EventAppendAck = {
         type: "event_append_ack",
         stream_id: batch.stream_id,
-        acked_through: committed.at(-1)!.envelope.source_seq,
-        events: committed.map((item) => ({
-          source_seq: item.envelope.source_seq,
-          event_id: item.eventId,
-          ...(item.sessionEffectApplication?.canonicalSession
-            ? {
-                effect_application: {
-                  applied: item.sessionEffectApplication.applied,
-                  canonical_session: item.sessionEffectApplication.canonicalSession,
-                },
-              }
-            : {}),
-        })),
+        acked_through: results.at(-1)!.envelope.source_seq,
+        events: results.map((item) => item.outcome === "dead_lettered"
+          ? {
+              source_seq: item.envelope.source_seq,
+              dead_letter: {
+                code: item.deadLetter.code,
+                reason: item.deadLetter.reason,
+                rejected_at: item.deadLetter.rejectedAt,
+              },
+            }
+          : {
+              source_seq: item.envelope.source_seq,
+              event_id: item.eventId,
+              ...(item.sessionEffectApplication?.canonicalSession
+                ? {
+                    effect_application: {
+                      applied: item.sessionEffectApplication.applied,
+                      canonical_session: item.sessionEffectApplication.canonicalSession,
+                    },
+                  }
+                : {}),
+            }),
       };
       this.options.send(ack);
     } catch (error) {
       if (error instanceof EventIngressProtocolConflict) {
+        this.accepting = false;
         this.options.logError(error, "Event ingress receipt protocol conflict");
         this.options.send({
           type: "error",
           command_type: "event_append_batch",
           status: 409,
           code: "EVENT_INGRESS_PROTOCOL_CONFLICT",
+          retryable: false,
           message: error.message,
+          stream_id: batch.stream_id,
+          source_seq: error.sourceSeq ?? batch.first_seq,
         });
-        this.options.close(1008, "event ingress protocol conflict");
+        this.options.close(1008, "event_ingress:PROTOCOL_CONFLICT");
         return;
       }
       throw error;
     }
   }
+}
+
+function ingressCoordinate(frame: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...(typeof frame.stream_id === "string" ? { stream_id: frame.stream_id } : {}),
+    ...(Number.isSafeInteger(frame.first_seq) ? { source_seq: frame.first_seq } : {}),
+  };
 }
 
 function committedEffectSessionUpdate(

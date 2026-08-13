@@ -7,10 +7,7 @@ import {
   type EventIngressSql,
   type EventIngressSqlProvider,
 } from "../../../orch-server-ts/src/node/event_ingress_repository.js";
-import type {
-  CommittedIngressEvent,
-  EventAppendBatch,
-} from "../../../orch-server-ts/src/node/event_ingress_types.js";
+import type { EventAppendBatch } from "../../../orch-server-ts/src/node/event_ingress_types.js";
 import type { EventOutbox, EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import {
   EventOutboxPump,
@@ -86,6 +83,9 @@ export class InMemoryEventIngressSqlProvider implements EventIngressSqlProvider 
             }]
           : [];
       }
+      if (statement.includes("FROM sessions") && statement.includes("FOR KEY SHARE")) {
+        return [{ session_id: values[0] }];
+      }
       if (statement.includes("SELECT event_append(")) {
         const [sessionId, eventType, payloadJson] = values as [string, string, string];
         const eventId = state.events
@@ -137,7 +137,7 @@ export class EventIngressTestHarness {
         commitBatch: async (nodeId: string, value: EventAppendBatch) => {
           const committed = await this.repository.commitBatch(nodeId, value);
           this.duplicateReceiptCount += committed.filter(
-            (item: CommittedIngressEvent) => item.duplicateReceipt,
+            (item) => item.outcome !== "dead_lettered" && item.duplicateReceipt,
           ).length;
           return committed;
         },
@@ -164,6 +164,7 @@ export class EventIngressTestHarness {
       },
       close: (_code, reason) => this.closeReasons.push(reason),
       logError: () => undefined,
+      logWarn: () => undefined,
     });
 
     controller.enqueue(batch as unknown as Record<string, unknown>);

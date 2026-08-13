@@ -1,6 +1,7 @@
 // 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
 // 도메인 동작은 각 service/repository 모듈에 있고, 이 파일은 연결만 소유한다.
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { FastifyInstance } from "fastify";
@@ -32,6 +33,7 @@ import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
 } from "./node/event_ingress_repository.js";
+import { FileEventIngressDeadLetterStore } from "./node/event_ingress_dead_letter_store.js";
 import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
@@ -185,6 +187,12 @@ export async function createLiveProductionApplication(
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
     applyEventSessionEffect,
+    new FileEventIngressDeadLetterStore(resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      ".local",
+      "event-ingress-dead-letter",
+    )),
   );
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const boardProjectionHost = createBoardProjectionHost(sqlResolver, boardYjsRepository);

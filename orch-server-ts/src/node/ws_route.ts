@@ -251,6 +251,9 @@ function createEventIngressController(input: {
     logError: (error, message) => {
       app.log.error({ error, nodeId: source.nodeId }, message);
     },
+    logWarn: (context, message) => {
+      app.log.warn(context, message);
+    },
   });
 }
 
