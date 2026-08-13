@@ -4,8 +4,12 @@ import {
   RunnerRecoveryCoordinator,
   type RunnerRecoveryCoordinatorOptions,
 } from "../../src/runner/runner_recovery_coordinator.js";
+import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import type { Task } from "../../src/task/task_models.js";
+
+const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("adopts a live registered runner before its first durable bootstrap event", async () => {
@@ -359,6 +363,185 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     expect(subject.hydrateRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
     expect(subject.hydrateRunnerRecoveryTask).toHaveBeenCalledWith("session-b");
+  });
+
+  it("hydrates every admitted task before starting any recovery execution", async () => {
+    const order: string[] = [];
+    const first = registration({ sessionId: "session-a" });
+    const second = registration({ sessionId: "session-b" });
+    const tasks = new Map([
+      ["session-a", task("session-a")],
+      ["session-b", task("session-b")],
+    ]);
+    const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) => {
+      order.push(`hydrate:${sessionId}`);
+      return tasks.get(sessionId) ?? null;
+    });
+    const recoverRegisteredRunner = vi.fn(async (recovered: Task) => {
+      order.push(`recover:${recovered.agentSessionId}`);
+    });
+    const subject = makeSubject([first, second], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask,
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+      },
+      taskExecutor: {
+        recoverRegisteredRunner,
+        restartRegisteredRunner: vi.fn(),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(order).toEqual([
+      "hydrate:session-a",
+      "hydrate:session-b",
+      "recover:session-a",
+      "recover:session-b",
+    ]);
+  });
+
+  it("caps the default hydration phase at ten seconds and defers unresolved work", async () => {
+    vi.useFakeTimers();
+    let finishHydration!: (value: Task) => void;
+    const hydration = new Promise<Task>((resolve) => { finishHydration = resolve; });
+    const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(() => hydration),
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+      },
+    });
+    let scanFinished = false;
+    const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
+    let beforeDeadline = false;
+    let atDeadline = false;
+
+    try {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(9_999);
+      beforeDeadline = scanFinished;
+      await vi.advanceTimersByTimeAsync(1);
+      atDeadline = scanFinished;
+    } finally {
+      finishHydration(task("session-a"));
+      await scan;
+      vi.useRealTimers();
+    }
+
+    expect(beforeDeadline).toBe(false);
+    expect(atDeadline).toBe(true);
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("bounds concurrent task hydration at four registrations", async () => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const registrations = Array.from({ length: 6 }, (_, index) =>
+      registration({ sessionId: `session-${index}` }));
+    const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) => {
+      concurrent += 1;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      concurrent -= 1;
+      return task(sessionId);
+    });
+    const subject = makeSubject(registrations, RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask,
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(maxConcurrent).toBe(4);
+    expect(hydrateRunnerRecoveryTask).toHaveBeenCalledTimes(6);
+  });
+
+  it("executes ready recoveries while a retryable host hydration failure stays deferred", async () => {
+    const transient = new TaskHydrationFailedError(
+      "session-a",
+      new SessionDataHostError({
+        operation: "get",
+        retryable: true,
+        message: "session-data host get failed",
+      }),
+    );
+    const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) => {
+      if (sessionId === "session-a") throw transient;
+      return task(sessionId);
+    });
+    const subject = makeSubject([
+      registration({ sessionId: "session-a" }),
+      registration({ sessionId: "session-b" }),
+    ], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask,
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+      },
+    });
+
+    await expect(subject.coordinator.scanOnce()).resolves.toBeUndefined();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-b" }),
+      expect.anything(),
+      "execute-a",
+      "adopt",
+    );
+    expect(subject.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: transient,
+        sessionId: "session-a",
+        disposition: "adopt_running",
+      }),
+      "runner recovery hydration deferred",
+    );
+    expect(subject.logger.error).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "runner recovery action failed",
+    );
+  });
+
+  it("periodically re-emits repeated hydration deferral without log flooding", async () => {
+    let now = RECOVERY_NOW_MS;
+    const transient = new TaskHydrationFailedError(
+      "session-a",
+      new SessionDataHostError({
+        operation: "get",
+        retryable: true,
+        message: "session-data host get failed",
+      }),
+    );
+    const hydrateRunnerRecoveryTask = vi.fn(async () => { throw transient; });
+    const subject = makeSubject([registration()], now, [], {
+      now: () => now,
+      taskManager: {
+        hydrateRunnerRecoveryTask,
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+    now += 15_000;
+    await subject.coordinator.scanOnce();
+    now += 14 * 60 * 1_000 + 45_000;
+    await subject.coordinator.scanOnce();
+
+    const deferredWarnings = subject.logger.warn.mock.calls.filter(
+      ([, message]) => message === "runner recovery hydration deferred",
+    );
+    expect(deferredWarnings).toHaveLength(2);
+    expect(deferredWarnings[1]).toEqual([
+      expect.objectContaining({
+        sessionId: "session-a",
+        disposition: "adopt_running",
+        suppressedSince: "2026-08-11T00:00:45.000Z",
+        suppressedCount: 1,
+      }),
+      "runner recovery hydration deferred",
+    ]);
   });
 
   it("disk or registration read failure is loud and does not invent recovery state", async () => {
