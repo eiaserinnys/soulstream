@@ -452,6 +452,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
     let callsAtDeadline = 0;
     let finishedAtDeadline = false;
+    let callsOnSecondScan = 0;
+    let recoveriesOnSecondScan = 0;
     try {
       await Promise.resolve();
       await vi.advanceTimersByTimeAsync(10_000);
@@ -459,14 +461,20 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       finishedAtDeadline = scanFinished;
       await vi.advanceTimersByTimeAsync(120_000);
       await scan;
+      const secondScan = subject.coordinator.scanOnce();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await secondScan;
+      callsOnSecondScan = hydrateRunnerRecoveryTask.mock.calls.length;
+      recoveriesOnSecondScan = subject.recoverRegisteredRunner.mock.calls.length;
     } finally {
       vi.useRealTimers();
     }
 
     expect(finishedAtDeadline).toBe(true);
     expect(callsAtDeadline).toBe(4);
-    expect(hydrateRunnerRecoveryTask).toHaveBeenCalledTimes(4);
-    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(callsOnSecondScan).toBe(6);
+    expect(recoveriesOnSecondScan).toBe(4);
   });
 
   it("reuses an in-flight hydration result on the next scan instead of duplicating the host call", async () => {
