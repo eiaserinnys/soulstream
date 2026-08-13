@@ -84,6 +84,8 @@ export class EventOutboxQuarantinedError extends Error {
 
 export type EventOutboxPumpOptions = {
   rejectionThreshold?: number;
+  /** Delay before re-sending a batch the far side rejected as retryable. */
+  retryFlushDelayMs?: number;
   now?: () => Date;
   onQuarantine?: (result: EventOutboxQuarantineResult) => void;
 };

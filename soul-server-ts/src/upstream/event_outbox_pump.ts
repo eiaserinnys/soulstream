@@ -32,6 +32,7 @@ export {
 // the per-session cache below remains the long-lived turn-boundary source.
 const RECENT_ACKNOWLEDGEMENT_LIMIT = 128;
 const DEFAULT_REJECTION_THRESHOLD = 3;
+const DEFAULT_RETRY_FLUSH_DELAY_MS = 1_000;
 
 export class EventOutboxPump {
   private sender?: (batch: EventOutboxBatch) => Promise<void>;
@@ -40,6 +41,7 @@ export class EventOutboxPump {
   private flushScheduled = false;
   private flushActive = false;
   private flushAgain = false;
+  private readonly retryFlushTimers = new Set<ReturnType<typeof setTimeout>>();
   private singleEventProbe = false;
   private readiness?: { generation: number; resolve(value: boolean): void };
   private rejectionState?: {
@@ -107,6 +109,8 @@ export class EventOutboxPump {
     this.generation += 1;
     this.sender = undefined;
     this.inFlight = undefined;
+    for (const timer of this.retryFlushTimers) clearTimeout(timer);
+    this.retryFlushTimers.clear();
   }
 
   isAck(value: unknown): value is EventAppendAck {
@@ -145,10 +149,18 @@ export class EventOutboxPump {
     if (rejection.source_seq < first.source_seq || rejection.source_seq > last.source_seq) {
       throw new Error("event ingress rejection source_seq is outside the in-flight batch");
     }
-    if (
-      rejection.retryable
-      || rejection.code !== "EVENT_INGRESS_PROTOCOL_CONFLICT"
-    ) {
+    if (rejection.retryable) {
+      // Nothing clears an in-flight batch except an ACK or a reconnect, so a
+      // retryable rejection would otherwise stall this stream until the socket
+      // happened to drop. We own the durable copy — reclaim the batch and send
+      // it again ourselves. orch must not retry its own copy; two owners of one
+      // retry produce two ACKs, and the second finds no batch to match.
+      this.rejectionState = undefined;
+      this.inFlight = undefined;
+      this.scheduleRetryFlush();
+      return null;
+    }
+    if (rejection.code !== "EVENT_INGRESS_PROTOCOL_CONFLICT") {
       this.rejectionState = undefined;
       return null;
     }
@@ -337,6 +349,22 @@ export class EventOutboxPump {
       this.flushScheduled = false;
       void this.flush().catch(this.onError);
     });
+  }
+
+  /**
+   * Resend after a delay. A retryable rejection usually means the far side is
+   * briefly unable to commit; re-sending on the next microtask would spin a hot
+   * loop against it for as long as the condition lasts.
+   */
+  private scheduleRetryFlush(): void {
+    const generation = this.generation;
+    const timer = setTimeout(() => {
+      this.retryFlushTimers.delete(timer);
+      if (generation !== this.generation) return;
+      this.scheduleFlush();
+    }, this.options.retryFlushDelayMs ?? DEFAULT_RETRY_FLUSH_DELAY_MS);
+    timer.unref?.();
+    this.retryFlushTimers.add(timer);
   }
 
   private trimRecentAcknowledgements(): void {
