@@ -13,6 +13,61 @@ const NOW = Date.parse("2026-08-12T00:00:00.000Z");
 const RETENTION_MS = 86_400_000;
 
 describe("RunnerSessionGarbageCollector", () => {
+  it.each(["completed", "failed", "reaped", "closed"] as const)(
+    "removes an expired terminal pre-bootstrap %s session only when durable evidence is empty",
+    async (lifecycleState) => {
+      const subject = makeSubject();
+
+      await expect(subject.collector.collect(scan([
+        registration({
+          sessionId: `empty-${lifecycleState}`,
+          bootstrap: false,
+          lifecycleState,
+        }),
+      ]))).resolves.toEqual({ removed: [`empty-${lifecycleState}`], retained: [] });
+      expect(subject.removeDirectory).toHaveBeenCalledWith(`/state/empty-${lifecycleState}`);
+      expect(subject.logger.info).toHaveBeenCalledWith(
+        {
+          sessionId: `empty-${lifecycleState}`,
+          reason: "expired_terminal_prebootstrap_without_durable_work",
+          executionState: lifecycleState,
+          durableRecordCount: 0,
+          unacknowledgedIpcFrameCount: 0,
+          pendingInterventionCount: 0,
+        },
+        "removed expired terminal runner session state",
+      );
+    },
+  );
+
+  it.each([
+    ["durable outbox records", "durable-records"],
+    ["unacknowledged IPC frames", "unacknowledged-ipc"],
+    ["pending interventions", "pending-interventions"],
+  ] as const)(
+    "retains an expired terminal pre-bootstrap session with %s",
+    async (_evidence, evidenceKind) => {
+      const sessionId = `retained-${evidenceKind}`;
+      const subject = makeSubject({
+        durableRecordSessions: evidenceKind === "durable-records" ? new Set([sessionId]) : undefined,
+        unacknowledgedIpcSessions: evidenceKind === "unacknowledged-ipc"
+          ? new Set([sessionId])
+          : undefined,
+        pendingInterventionSessions: evidenceKind === "pending-interventions"
+          ? new Set([sessionId])
+          : undefined,
+      });
+
+      await expect(subject.collector.collect(scan([
+        registration({ sessionId, bootstrap: false, lifecycleState: "closed" }),
+      ]))).resolves.toEqual({
+        removed: [],
+        retained: [{ sessionId, reason: "incomplete_bootstrap" }],
+      });
+      expect(subject.removeDirectory).not.toHaveBeenCalled();
+    },
+  );
+
   it("removes a legacy dead terminal session with final ACK after retention", async () => {
     const subject = makeSubject();
 
@@ -60,7 +115,12 @@ describe("RunnerSessionGarbageCollector", () => {
 
     const result = await subject.collector.collect(scan([
       registration({ sessionId: "live", pidAlive: true }),
-      registration({ sessionId: "recent", progressedAt: "2026-08-11T12:00:00.000Z" }),
+      registration({
+        sessionId: "recent",
+        bootstrap: false,
+        lifecycleState: "closed",
+        progressedAt: "2026-08-11T12:00:00.000Z",
+      }),
       registration({ sessionId: "missing", pid: null }),
     ]));
 
@@ -122,6 +182,9 @@ describe("RunnerSessionGarbageCollector", () => {
 
 function makeSubject(options: {
   pendingSessions?: Set<string>;
+  durableRecordSessions?: Set<string>;
+  unacknowledgedIpcSessions?: Set<string>;
+  pendingInterventionSessions?: Set<string>;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   refresh?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
 } = {}) {
@@ -129,12 +192,25 @@ function makeSubject(options: {
   const deps = {
     now: () => NOW,
     refresh: options.refresh ?? (async (item: RunnerRegistration) => item),
-    inspect: async (item) => ({
-      registration: await (options.hydrate ?? (async (candidate) => candidate))(item),
-      acknowledgedThrough: options.pendingSessions?.has(item.config.sessionId) ? 2 : 3,
-      latestDurableSourceSeq: 3,
-      incompleteDurableWork: options.pendingSessions?.has(item.config.sessionId) ?? false,
-    }),
+    inspect: async (item) => {
+      const hydrated = await (options.hydrate ?? (async (candidate) => candidate))(item);
+      const hasBootstrap = hydrated.bootstrap !== null;
+      return {
+        registration: hydrated,
+        acknowledgedThrough: hasBootstrap
+          ? options.pendingSessions?.has(item.config.sessionId) ? 2 : 3
+          : null,
+        latestDurableSourceSeq: hasBootstrap ? 3 : null,
+        incompleteDurableWork: options.pendingSessions?.has(item.config.sessionId) ?? false,
+        durableRecordCount: options.durableRecordSessions?.has(item.config.sessionId)
+          ? 1
+          : hydrated.bootstrap === null ? 0 : 3,
+        unacknowledgedIpcFrameCount: options.unacknowledgedIpcSessions
+          ?.has(item.config.sessionId) ? 1 : 0,
+        pendingInterventionCount: options.pendingInterventionSessions
+          ?.has(item.config.sessionId) ? 1 : 0,
+      };
+    },
     removeDirectory,
   } as RunnerSessionGarbageCollectorDependencies;
   const logger = { info: vi.fn(), warn: vi.fn() };
@@ -161,6 +237,8 @@ function registration(options: {
   progressedAt?: string;
   registrationId?: string | null;
   pidStartIdentity?: string | null;
+  bootstrap?: boolean;
+  lifecycleState?: "running" | "completed" | "failed" | "reaped" | "closed";
 }): RunnerRegistration {
   const sessionId = options.sessionId;
   return {
@@ -181,12 +259,14 @@ function registration(options: {
       ? "process-start-a"
       : options.pidStartIdentity,
     registeredAtMs: NOW - RETENTION_MS * 2,
-    bootstrap: { payload: { code_sha: "release-a" } } as never,
+    bootstrap: options.bootstrap === false
+      ? null
+      : { payload: { code_sha: "release-a" } } as never,
     lifecycle: {
       session_id: sessionId,
       runner_pid: 42,
       execution_command_id: "execute-a",
-      execution_state: "completed",
+      execution_state: options.lifecycleState ?? "completed",
       progress_seq: 2,
       progress_at: options.progressedAt ?? "2026-08-10T00:00:00.000Z",
       liveness_at: options.progressedAt ?? "2026-08-10T00:00:00.000Z",

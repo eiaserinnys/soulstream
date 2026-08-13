@@ -90,6 +90,12 @@ export interface RunnerSqliteEventOutboxOptions {
   transactionObserver?: RunnerSqliteTransactionObserver;
 }
 
+export interface RunnerPendingDurableEvidence {
+  durableRecordCount: number;
+  unacknowledgedIpcFrameCount: number;
+  pendingInterventionCount: number;
+}
+
 export class RunnerSqliteEventOutbox {
   private readonly appendListeners = new Set<() => void>();
   private closed = false;
@@ -686,6 +692,31 @@ export class RunnerSqliteEventOutbox {
     return latestSequence(this.database);
   }
 
+  inspectPendingDurableEvidence(): RunnerPendingDurableEvidence {
+    this.requireOpen();
+    return {
+      durableRecordCount: rowCount(this.database),
+      unacknowledgedIpcFrameCount: Number((this.database.prepare(`
+        SELECT COUNT(*) AS count FROM runner_ipc_journal WHERE host_acked = 0
+      `).get() as { count: number }).count),
+      pendingInterventionCount: Number((this.database.prepare(`
+        SELECT COUNT(*) AS count FROM runner_intervention_inbox AS inbox
+        WHERE inbox.application_state <> 'claimed'
+           OR NOT EXISTS (
+             SELECT 1 FROM runner_event_outbox AS lifecycle
+             WHERE lifecycle.record_kind = 'bootstrap'
+               AND lifecycle.execution_state = 'completed'
+               AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
+             UNION ALL
+             SELECT 1 FROM runner_prebootstrap_lifecycle AS lifecycle
+             WHERE lifecycle.singleton = 1
+               AND lifecycle.execution_state = 'completed'
+               AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
+           )
+      `).get() as { count: number }).count),
+    };
+  }
+
   async acknowledge(streamId: string, ackedThrough: number): Promise<void> {
     const bootstrap = this.requireBootstrap();
     if (streamId !== bootstrap.stream_id) {
@@ -777,26 +808,9 @@ export class RunnerSqliteEventOutbox {
       LIMIT 1
     `).get(acknowledgedThrough);
     if (pendingEvent) return true;
-    const pendingIpc = this.database.prepare(`
-      SELECT 1 FROM runner_ipc_journal WHERE host_acked = 0 LIMIT 1
-    `).get();
-    if (pendingIpc !== undefined) return true;
-    return this.database.prepare(`
-      SELECT 1 FROM runner_intervention_inbox AS inbox
-      WHERE inbox.application_state <> 'claimed'
-         OR NOT EXISTS (
-           SELECT 1 FROM runner_event_outbox AS lifecycle
-           WHERE lifecycle.record_kind = 'bootstrap'
-             AND lifecycle.execution_state = 'completed'
-             AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
-           UNION ALL
-           SELECT 1 FROM runner_prebootstrap_lifecycle AS lifecycle
-           WHERE lifecycle.singleton = 1
-             AND lifecycle.execution_state = 'completed'
-             AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
-         )
-      LIMIT 1
-    `).get() !== undefined;
+    const evidence = this.inspectPendingDurableEvidence();
+    return evidence.unacknowledgedIpcFrameCount > 0
+      || evidence.pendingInterventionCount > 0;
   }
 
   async compactAppliedHostCallsForTerminalRecovery(): Promise<void> {

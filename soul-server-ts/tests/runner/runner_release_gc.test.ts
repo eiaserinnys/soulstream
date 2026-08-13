@@ -169,6 +169,9 @@ async function makeSubject(
     acknowledgedThrough: incomplete ? 1 : 2,
     latestDurableSourceSeq: 2,
     incompleteDurableWork: incomplete,
+    durableRecordCount: 2,
+    unacknowledgedIpcFrameCount: 0,
+    pendingInterventionCount: 0,
   }));
   const deps: RunnerReleaseGarbageCollectorDependencies = {
     scan,

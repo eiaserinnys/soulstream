@@ -86,30 +86,40 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            if (!hydrated.bootstrap || !hydrated.lifecycle) {
+            if (!hydrated.lifecycle) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
                 reason: "incomplete_bootstrap",
               });
               return;
             }
-            if (
-              inspection.acknowledgedThrough === null
-              || inspection.latestDurableSourceSeq === null
-              || inspection.acknowledgedThrough !== inspection.latestDurableSourceSeq
-            ) {
-              result.retained.push({
-                sessionId: registration.config.sessionId,
-                reason: "final_ack_pending",
-              });
-              return;
-            }
-            if (inspection.incompleteDurableWork) {
-              result.retained.push({
-                sessionId: registration.config.sessionId,
-                reason: "durable_replay_pending",
-              });
-              return;
+            if (!hydrated.bootstrap) {
+              if (!hasProvenEmptyPrebootstrapEvidence(inspection)) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: "incomplete_bootstrap",
+                });
+                return;
+              }
+            } else {
+              if (
+                inspection.acknowledgedThrough === null
+                || inspection.latestDurableSourceSeq === null
+                || inspection.acknowledgedThrough !== inspection.latestDurableSourceSeq
+              ) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: "final_ack_pending",
+                });
+                return;
+              }
+              if (inspection.incompleteDurableWork) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: "durable_replay_pending",
+                });
+                return;
+              }
             }
             const latest = await this.deps.refresh(hydrated);
             if (!sameRegistrationGeneration(hydrated, latest)) {
@@ -130,8 +140,20 @@ export class RunnerSessionGarbageCollector {
             }
             await this.deps.removeDirectory(latest.config.paths.sessionDirectory);
             result.removed.push(latest.config.sessionId);
+            const prebootstrap = hydrated.bootstrap === null;
             this.logger.info(
-              { sessionId: latest.config.sessionId },
+              {
+                sessionId: latest.config.sessionId,
+                reason: prebootstrap
+                  ? "expired_terminal_prebootstrap_without_durable_work"
+                  : "expired_terminal_final_ack_complete",
+                executionState: hydrated.lifecycle.execution_state,
+                ...(prebootstrap ? {
+                  durableRecordCount: inspection.durableRecordCount,
+                  unacknowledgedIpcFrameCount: inspection.unacknowledgedIpcFrameCount,
+                  pendingInterventionCount: inspection.pendingInterventionCount,
+                } : {}),
+              },
               "removed expired terminal runner session state",
             );
           } catch (error) {
@@ -161,6 +183,14 @@ export class RunnerSessionGarbageCollector {
     );
     return result;
   }
+}
+
+function hasProvenEmptyPrebootstrapEvidence(
+  inspection: Awaited<ReturnType<typeof inspectRunnerDurableState>>,
+): boolean {
+  return inspection.durableRecordCount === 0
+    && inspection.unacknowledgedIpcFrameCount === 0
+    && inspection.pendingInterventionCount === 0;
 }
 
 function terminalCandidateReason(
