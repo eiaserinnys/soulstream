@@ -13,6 +13,10 @@ import {
 } from "./runner_process_registry.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import {
+  quarantineUnreadableRunnerRegistration,
+  type RunnerRegistrationQuarantineResult,
+} from "./runner_registration_quarantine.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
@@ -42,6 +46,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   ) => Promise<void>;
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
   sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
+  quarantineFailure?: typeof quarantineUnreadableRunnerRegistration;
 }
 
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
@@ -49,6 +54,7 @@ export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
+  private readonly unreadableRegistrationFingerprints = new Map<string, string>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
 
@@ -79,9 +85,7 @@ export class RunnerRecoveryCoordinator {
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
-    for (const failure of scan.errors) {
-      this.options.logger.error(failure, "runner registration is unreadable");
-    }
+    await this.handleUnreadableRegistrations(scan.errors);
     for (const registration of scan.registrations) {
       const sessionId = registration.config.sessionId;
       if (this.active.has(sessionId)) continue;
@@ -129,6 +133,51 @@ export class RunnerRecoveryCoordinator {
         await this.options.sessionGarbageCollector.collect(scan);
       } catch (error) {
         this.options.logger.error({ error }, "runner session GC failed");
+      }
+    }
+  }
+
+  private async handleUnreadableRegistrations(
+    failures: Array<{ directory: string; error: Error; sessionId?: string; codeSha?: string }>,
+  ): Promise<void> {
+    const currentDirectories = new Set(failures.map((failure) => failure.directory));
+    for (const directory of this.unreadableRegistrationFingerprints.keys()) {
+      if (!currentDirectories.has(directory)) {
+        this.unreadableRegistrationFingerprints.delete(directory);
+      }
+    }
+    for (const failure of failures) {
+      const fingerprint = unreadableRegistrationFingerprint(failure);
+      const shouldLog = this.unreadableRegistrationFingerprints.get(failure.directory)
+        !== fingerprint;
+      if (shouldLog) {
+        this.options.logger.error(failure, "runner registration is unreadable");
+        this.unreadableRegistrationFingerprints.set(failure.directory, fingerprint);
+      }
+      let result: RunnerRegistrationQuarantineResult;
+      try {
+        result = await (
+          this.options.quarantineFailure ?? quarantineUnreadableRunnerRegistration
+        )(this.options.stateDirectory, failure);
+      } catch (error) {
+        if (shouldLog) {
+          this.options.logger.error(
+            { error, directory: failure.directory, sessionId: failure.sessionId },
+            "runner registration quarantine failed",
+          );
+        }
+        continue;
+      }
+      if (result.status === "quarantined") {
+        this.options.logger.info(
+          {
+            directory: failure.directory,
+            quarantinePath: result.path,
+            pid: result.pid,
+            sessionId: failure.sessionId,
+          },
+          "proven-dead unreadable runner registration quarantined",
+        );
       }
     }
   }
@@ -331,6 +380,25 @@ export class RunnerRecoveryCoordinator {
       { pid: registration.pid, startIdentity: registration.pidStartIdentity },
     );
   }
+}
+
+function unreadableRegistrationFingerprint(failure: {
+  error: Error;
+  sessionId?: string;
+  codeSha?: string;
+}): string {
+  const error = failure.error as Error & {
+    code?: unknown;
+    runnerRegistrationStage?: unknown;
+  };
+  return JSON.stringify({
+    name: error.name,
+    message: error.message,
+    code: error.code ?? null,
+    stage: error.runnerRegistrationStage ?? null,
+    sessionId: failure.sessionId ?? null,
+    codeSha: failure.codeSha ?? null,
+  });
 }
 
 async function markRegistrationReaped(

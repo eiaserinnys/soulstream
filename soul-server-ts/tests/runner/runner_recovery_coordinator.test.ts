@@ -240,6 +240,38 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
 
+  it("logs an unreadable registration once until its error fingerprint changes", async () => {
+    let failure = {
+      directory: "/runner/a",
+      error: new Error("internalMcpUrl is required"),
+      sessionId: "session-a",
+    };
+    const scan = vi.fn(async () => ({ registrations: [], errors: [failure] }));
+    const quarantineFailure = vi.fn(async () => ({
+      status: "retained" as const,
+      reason: "runner_alive" as const,
+    }));
+    const subject = makeSubject([], Date.now(), [], { scan, quarantineFailure });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
+    failure = { ...failure, error: new Error("runner config JSON is damaged") };
+    await subject.coordinator.scanOnce();
+
+    expect(quarantineFailure).toHaveBeenCalledTimes(3);
+    expect(subject.logger.error).toHaveBeenCalledTimes(2);
+    expect(subject.logger.error).toHaveBeenNthCalledWith(
+      1,
+      failureContext("internalMcpUrl is required"),
+      "runner registration is unreadable",
+    );
+    expect(subject.logger.error).toHaveBeenNthCalledWith(
+      2,
+      failureContext("runner config JSON is damaged"),
+      "runner registration is unreadable",
+    );
+  });
+
   it("isolates a disk-full reap write without killing the scan or resuming invented state", async () => {
     const error = Object.assign(new Error("database or disk is full"), { code: "SQLITE_FULL" });
     const subject = makeSubject([registration({ pidAlive: false })], Date.now(), [], {
@@ -394,6 +426,14 @@ function makeSubject(
     terminate,
     logger,
   };
+}
+
+function failureContext(message: string) {
+  return expect.objectContaining({
+    directory: "/runner/a",
+    sessionId: "session-a",
+    error: expect.objectContaining({ message }),
+  });
 }
 
 function registration(options: {

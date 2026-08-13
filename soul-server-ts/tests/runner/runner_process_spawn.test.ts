@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import { readAuthoritativeRunnerLifecycle } from "../../src/runner/runner_lifecycle_reader.js";
@@ -16,6 +17,11 @@ import {
 
 const directories: string[] = [];
 const SNAPSHOT_PATH = join(tmpdir(), "runner-releases", "sha-a");
+// Immutable runner snapshots deployed before the host update embed this
+// discriminator. Unknown fields are intentionally irrelevant to this contract.
+const LegacyRunnerSnapshotConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+}).passthrough();
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(
@@ -24,7 +30,7 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessSpawner", () => {
-  it("registers SQLite before detached spawn and executes the immutable snapshot entry", async () => {
+  it("writes config readable by immutable v1 snapshots before executing their entry", async () => {
     const calls: string[] = [];
     const spawnProcess = vi.fn((entry: string, args: string[], options: unknown) => {
       calls.push("spawn");
@@ -78,7 +84,12 @@ describe("RunnerProcessSpawner", () => {
       pid: 4123,
       startIdentity: "test-4123",
     });
-    expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
+    const writtenConfig = JSON.parse(await readFile(spawned.paths.configPath, "utf8"));
+    expect(LegacyRunnerSnapshotConfigSchema.parse(writtenConfig)).toMatchObject({
+      schemaVersion: 1,
+    });
+    expect(writtenConfig).toMatchObject({
+      schemaVersion: 1,
       sessionId: "session-a",
       codeSha: "sha-a",
       snapshotPath: SNAPSHOT_PATH,

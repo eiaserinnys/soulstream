@@ -40,8 +40,7 @@ const RunnerProcessPathsSchema = z.object({
   logPath: paths.logPath ?? join(paths.sessionDirectory, "runner.log"),
 }));
 
-export const RunnerChildConfigSchema = z.object({
-  schemaVersion: z.literal(1),
+const RunnerChildConfigFields = {
   sessionId: z.string().min(1),
   backend: AgentBackendSchema,
   agent: AgentProfileSchema,
@@ -59,6 +58,16 @@ export const RunnerChildConfigSchema = z.object({
   resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
   codexHome: z.string().min(1).nullable(),
   rolloutRoot: z.string().min(1).nullable(),
+};
+
+// Runner configs are consumed by the immutable snapshot selected by codeSha,
+// not necessarily by the host version that writes them. The writer may raise
+// this discriminator only after every snapshot that can be restarted already
+// accepts the new value. Additive fields remain rolling-compatible because
+// older Zod object readers discard unknown keys.
+export const RunnerChildConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+  ...RunnerChildConfigFields,
 });
 
 export type RunnerChildConfig = z.infer<typeof RunnerChildConfigSchema>;
