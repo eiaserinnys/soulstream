@@ -226,10 +226,7 @@ export class RunnerRecoveryCoordinator {
       || disposition === "adopt_running"
       || disposition === "replay_terminal"
     ) {
-      await this.recoverRegistered(
-        registration,
-        registration.pidAlive ? "adopt" : "offline",
-      );
+      await this.recoverByDisposition(registration, disposition);
       return;
     }
     if (disposition === "reap_dead" || disposition === "reap_stalled") {
@@ -304,6 +301,9 @@ export class RunnerRecoveryCoordinator {
   private async recoverRegistered(
     registration: RunnerRegistration,
     mode: "adopt" | "offline",
+    prepareRegistrationAfterTaskGuard?: (
+      registration: RunnerRegistration,
+    ) => Promise<RunnerRegistration>,
   ): Promise<Task | null> {
     const task = await this.options.taskManager.hydrateRunnerRecoveryTask(
       registration.config.sessionId,
@@ -316,6 +316,9 @@ export class RunnerRecoveryCoordinator {
       return null;
     }
     if (task.runner || task.executionPromise) return task;
+    if (prepareRegistrationAfterTaskGuard) {
+      registration = await prepareRegistrationAfterTaskGuard(registration);
+    }
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
@@ -354,7 +357,7 @@ export class RunnerRecoveryCoordinator {
         || verifiedDisposition === "adopt_running"
         || verifiedDisposition === "replay_terminal"
       ) {
-        await this.recoverRegistered(hydrated, hydrated.pidAlive ? "adopt" : "offline");
+        await this.recoverByDisposition(hydrated, verifiedDisposition);
       }
       return;
     }
@@ -426,6 +429,24 @@ export class RunnerRecoveryCoordinator {
     this.options.logger.info(
       { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
       "reaped runner recovery resumed",
+    );
+  }
+
+  private async recoverByDisposition(
+    registration: RunnerRegistration,
+    disposition: "adopt_prebootstrap" | "adopt_running" | "replay_terminal",
+  ): Promise<Task | null> {
+    if (disposition !== "replay_terminal") {
+      return await this.recoverRegistered(registration, "adopt");
+    }
+    return await this.recoverRegistered(
+      registration,
+      "offline",
+      async (guardedRegistration) => {
+        if (!guardedRegistration.pidAlive) return guardedRegistration;
+        await this.terminateRegistration(guardedRegistration);
+        return { ...guardedRegistration, pidAlive: false };
+      },
     );
   }
 
