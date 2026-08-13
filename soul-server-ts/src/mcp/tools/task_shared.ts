@@ -7,6 +7,7 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
 import {
+  CALLER_SESSION_ID_FALLBACK_GUIDANCE,
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
@@ -42,7 +43,7 @@ export const mutationResponseInputSchema = {
   include_snapshot: z.boolean().default(false),
 };
 export const CALLER_SESSION_ID_GUIDANCE =
-  "Codex 등 헤더 미지원 백엔드는 자기 agent_session_id를 caller_session_id로 전달한다.";
+  CALLER_SESSION_ID_FALLBACK_GUIDANCE;
 
 type AssigneeToolInput = z.infer<typeof assigneeSchema>;
 

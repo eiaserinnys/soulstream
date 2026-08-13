@@ -66,6 +66,7 @@ describe("CodexAppServerEngineAdapter env", () => {
       new CodexAppServerEngineAdapter(
         {
           workspaceDir: "/tmp/right-app-server-work",
+          internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
           agentId: "app-server-agent",
           processEnv: {
             OPENAI_API_KEY: "",

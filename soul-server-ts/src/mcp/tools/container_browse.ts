@@ -8,6 +8,7 @@ import {
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { CALLER_SESSION_ID_FALLBACK_GUIDANCE } from "./caller_session.js";
 
 const containerSchema = z.object({
   kind: boardContainerKindInputSchema,
@@ -22,7 +23,7 @@ export function registerContainerBrowseTools(
     "browse_container",
     {
       description:
-        "현재 업무 컨테이너의 형제 세션과 산출물을 조회한다. 세션 간 협업 대상을 찾거나 같은 폴더/업무의 문서·업무·커스텀뷰·파일을 열기 전에 사용한다. Codex 등 위임 세션은 caller_session_id에 자기 agent_session_id를 명시한다.",
+        `현재 업무 컨테이너의 형제 세션과 산출물을 조회한다. 세션 간 협업 대상을 찾거나 같은 폴더/업무의 문서·업무·커스텀뷰·파일을 열기 전에 사용한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`,
       inputSchema: {
         container: containerSchema,
         caller_session_id: z.string().min(1).optional(),
@@ -53,7 +54,7 @@ export function registerContainerBrowseTools(
     "search_container_items",
     {
       description:
-        `한 폴더/업무 안에서만 최근 갱신된 최대 ${CONTAINER_SEARCH_SCAN_LIMIT}개 형제 세션·마크다운의 표시명·제목·본문을 검색한다. 응답의 truncated가 true면 더 오래된 항목은 검색하지 않았다는 뜻이다. 전역 세션 기록 검색에는 search_session_history를 사용한다. Codex 등 위임 세션은 caller_session_id에 자기 agent_session_id를 명시한다.`,
+        `한 폴더/업무 안에서만 최근 갱신된 최대 ${CONTAINER_SEARCH_SCAN_LIMIT}개 형제 세션·마크다운의 표시명·제목·본문을 검색한다. 응답의 truncated가 true면 더 오래된 항목은 검색하지 않았다는 뜻이다. 전역 세션 기록 검색에는 search_session_history를 사용한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`,
       inputSchema: {
         container: containerSchema,
         query: z.string().min(1),

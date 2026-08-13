@@ -81,6 +81,7 @@ export interface CodexAppServerClientPort {
 
 export interface CodexAppServerAdapterConfig {
   workspaceDir: string;
+  internalMcpUrl: string;
   agentId?: string;
   apiKey?: string;
   codexPathOverride?: string;
@@ -98,6 +99,7 @@ export class CodexAppServerEngineAdapter
   private readonly logger: Logger;
   private readonly client: CodexAppServerClientPort;
   private readonly resolvedMcpServers?: ResolvedMcpServer[];
+  private readonly internalMcpUrl: string;
   private initialized = false;
   private executing = false;
   private closed = false;
@@ -107,6 +109,7 @@ export class CodexAppServerEngineAdapter
 
   constructor(config: CodexAppServerAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
+    this.internalMcpUrl = config.internalMcpUrl;
     this.logger = logger;
     this.client = config.client ?? this.createClient(config, logger);
     const { supportedServers, skippedSseServers } = selectCodexMcpServers(
@@ -286,6 +289,7 @@ export class CodexAppServerEngineAdapter
             params,
             this.workspaceDir,
             this.resolvedMcpServers,
+            this.internalMcpUrl,
           ),
         );
       } catch (error) {
@@ -308,6 +312,7 @@ export class CodexAppServerEngineAdapter
         params,
         this.workspaceDir,
         this.resolvedMcpServers,
+        this.internalMcpUrl,
       ),
     );
     if (this.closed) return null;

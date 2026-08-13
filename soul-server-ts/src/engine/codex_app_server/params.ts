@@ -1,6 +1,11 @@
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import { resolveCodexModelReasoningEffort } from "../codex_adapter.js";
 import type { EngineExecuteParams } from "../protocol.js";
+import {
+  isSoulstreamMcpServerName,
+  mergeSoulstreamAgentSessionHeader,
+  normalizeSoulstreamInternalMcpUrl,
+} from "../soulstream_internal_mcp.js";
 import type {
   JsonObject,
   ThreadResumeParams,
@@ -13,6 +18,7 @@ export function buildThreadStartParams(
   params: EngineExecuteParams,
   workspaceDir: string,
   resolvedMcpServers?: ResolvedMcpServer[],
+  internalMcpUrl?: string,
 ): ThreadStartParams {
   const model = normalizedModel(params.model);
   return {
@@ -25,7 +31,11 @@ export function buildThreadStartParams(
     approvalsReviewer: null,
     sandbox: "danger-full-access",
     permissions: null,
-    config: buildCodexMcpConfig(resolvedMcpServers),
+    config: buildCodexMcpConfig(
+      resolvedMcpServers,
+      params.agentSessionId,
+      internalMcpUrl,
+    ),
     serviceName: "soul-server-ts",
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
@@ -45,6 +55,7 @@ export function buildThreadResumeParams(
   params: EngineExecuteParams,
   workspaceDir: string,
   resolvedMcpServers?: ResolvedMcpServer[],
+  internalMcpUrl?: string,
 ): ThreadResumeParams {
   return {
     threadId: params.resumeSessionId ?? "",
@@ -59,7 +70,11 @@ export function buildThreadResumeParams(
     approvalsReviewer: null,
     sandbox: "danger-full-access",
     permissions: null,
-    config: buildCodexMcpConfig(resolvedMcpServers),
+    config: buildCodexMcpConfig(
+      resolvedMcpServers,
+      params.agentSessionId,
+      internalMcpUrl,
+    ),
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
     personality: null,
@@ -131,6 +146,8 @@ function normalizedModel(model: string | null | undefined): string | null {
 
 function buildCodexMcpConfig(
   servers: ResolvedMcpServer[] | undefined,
+  agentSessionId: string | undefined,
+  internalMcpUrl: string | undefined,
 ): JsonObject | null {
   const { supportedServers } = selectCodexMcpServers(servers);
   if (supportedServers === undefined) return null;
@@ -161,9 +178,26 @@ function buildCodexMcpConfig(
       continue;
     }
 
+    const soulstreamOwned = isSoulstreamMcpServerName(name);
+    if (soulstreamOwned && !internalMcpUrl) {
+      throw new Error(
+        "Soulstream internal HTTP MCP server requires a node-local internalMcpUrl",
+      );
+    }
+    const callerSessionId = agentSessionId?.trim();
+    if (soulstreamOwned && !callerSessionId) {
+      throw new Error(
+        "Soulstream internal HTTP MCP server requires an agentSessionId",
+      );
+    }
+    const headers = soulstreamOwned && callerSessionId
+      ? mergeSoulstreamAgentSessionHeader(server.headers, callerSessionId)
+      : server.headers;
     mcpServers[name] = {
-      url: server.url,
-      ...(server.headers ? { http_headers: server.headers } : {}),
+      url: soulstreamOwned
+        ? normalizeSoulstreamInternalMcpUrl(internalMcpUrl!)
+        : server.url,
+      ...(headers ? { http_headers: headers } : {}),
       enabled: true,
     };
   }

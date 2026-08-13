@@ -14,7 +14,7 @@ import { EmptyTaskPatchError } from "../../src/work-task/task_models.js";
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
 const callerSessionIdGuidance =
-  "Codex 등 헤더 미지원 백엔드는 자기 agent_session_id를 caller_session_id로 전달한다.";
+  "세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.";
 const taskMutationToolNames = [
   "create_task",
   "update_task",

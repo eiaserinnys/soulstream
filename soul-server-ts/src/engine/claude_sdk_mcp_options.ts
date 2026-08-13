@@ -13,15 +13,13 @@ import {
   asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
-import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
-import { internalMcpPath } from "../mcp/endpoint_paths.js";
+import {
+  isSoulstreamMcpServerName,
+  mergeSoulstreamAgentSessionHeader,
+  normalizeSoulstreamInternalMcpUrl,
+} from "./soulstream_internal_mcp.js";
 
 const MCP_CONFIG_FILES = ["mcp_config.json", ".mcp.json"] as const;
-const SOULSTREAM_MCP_SERVER_NAMES = new Set([
-  "soulstream",
-  "soulstream-cogito",
-  "soul-server-ts",
-]);
 
 export function buildMcpOptions(
   options: ClaudeRunOptions,
@@ -146,7 +144,7 @@ function prepareSoulstreamInternalMcpServers(
 }
 
 function shouldPrepareSoulstreamInternalServer(serverName: string): boolean {
-  return SOULSTREAM_MCP_SERVER_NAMES.has(serverName);
+  return isSoulstreamMcpServerName(serverName);
 }
 
 function prepareSoulstreamInternalMcpServer(
@@ -167,33 +165,16 @@ function prepareSoulstreamInternalMcpServer(
 
   return {
     ...record,
-    ...(type === "sse" ? {} : { url: normalizeInternalMcpUrl(internalMcpUrl!) }),
+    ...(type === "sse"
+      ? {}
+      : { url: normalizeSoulstreamInternalMcpUrl(internalMcpUrl!) }),
     ...(agentSessionId
-      ? { headers: mergeAgentSessionHeader(record?.headers, agentSessionId) }
+      ? {
+          headers: mergeSoulstreamAgentSessionHeader(
+            record?.headers,
+            agentSessionId,
+          ),
+        }
       : {}),
   } as McpServerConfig;
-}
-
-function normalizeInternalMcpUrl(value: string): string {
-  const url = new URL(value);
-  url.pathname = internalMcpPath(url.pathname);
-  return url.toString();
-}
-
-function mergeAgentSessionHeader(
-  headers: unknown,
-  agentSessionId: string,
-): Record<string, string> {
-  const merged: Record<string, string> = {};
-  const record = asRecord(headers);
-  if (record) {
-    for (const [key, value] of Object.entries(record)) {
-      if (key.toLowerCase() === SOULSTREAM_AGENT_SESSION_HEADER) continue;
-      if (typeof value === "string") {
-        merged[key] = value;
-      }
-    }
-  }
-  merged[SOULSTREAM_AGENT_SESSION_HEADER] = agentSessionId;
-  return merged;
 }
