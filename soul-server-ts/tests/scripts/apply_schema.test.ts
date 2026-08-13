@@ -14,6 +14,8 @@ import {
   type TestDatabaseLease,
 } from "./database_test_harness.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const SCRIPT_PATH = fileURLToPath(new URL("../../scripts/apply-schema.mjs", import.meta.url));
 const RELEASE_EXECUTOR_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/release-executor.mjs",
@@ -942,7 +944,7 @@ function prepareDatabaseRelease(cwd: string): Record<string, string> {
 }
 
 function writeEnv(databaseUrl: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "soul-apply-schema-"));
+  const dir = makeTempDirSync("soul-apply-schema-");
   tempDirs.push(dir);
   writeFileSync(
     join(dir, ".env.soul-server-ts"),

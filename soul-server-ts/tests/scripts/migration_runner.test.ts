@@ -13,6 +13,8 @@ import {
   type TestDatabaseLease,
 } from "./database_test_harness.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 import { assertPostgresBackupPrerequisites } from
   "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
 import { MIGRATION_LOCK_ID, MIGRATION_LOCK_NAMESPACE } from
@@ -365,7 +367,7 @@ function runWithEnv(
 }
 
 function environmentDirectory(databaseUrl: string) {
-  const directory = mkdtempSync(join(tmpdir(), "soul-migration-runner-"));
+  const directory = makeTempDirSync("soul-migration-runner-");
   tempDirs.push(directory);
   writeFileSync(
     join(directory, ".env.soul-server-ts"),

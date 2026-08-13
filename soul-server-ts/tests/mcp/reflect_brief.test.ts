@@ -8,10 +8,12 @@ import { AgentRegistry } from "../../src/agent_registry.js";
 import { buildBriefSnapshot } from "../../src/mcp/reflection/self_reflection.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const tempDirs: string[] = [];
 
 function tempAgentsConfig() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soul-reflect-brief-"));
+  const dir = makeTempDirSync("soul-reflect-brief-");
   tempDirs.push(dir);
   const configPath = path.join(dir, "agents.yaml");
   fs.writeFileSync(

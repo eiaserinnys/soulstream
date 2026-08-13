@@ -27,6 +27,8 @@ import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const EXPECTED_TOOLS = [
   // reflect
   "reflect_service",
@@ -420,7 +422,7 @@ describe("MCP SDK client smoke", () => {
   let agentRegistry: AgentRegistry;
 
   beforeAll(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "soul-mcp-smoke-"));
+    tempDir = makeTempDirSync("soul-mcp-smoke-");
     configPath = path.join(tempDir, "agents.yaml");
     fs.writeFileSync(
       path.join(tempDir, "mcp-registry.yaml"),

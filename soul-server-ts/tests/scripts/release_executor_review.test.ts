@@ -16,6 +16,8 @@ import {
   runDatabaseRelease,
 } from "../../../packages/db-schema/scripts/release-executor.mjs";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const directories: string[] = [];
 
 afterEach(() => {
@@ -75,7 +77,7 @@ function plan(pending = [migration()], ledger: Array<Record<string, unknown>> = 
 }
 
 function tempDirectory(prefix: string) {
-  const directory = mkdtempSync(join(tmpdir(), prefix));
+  const directory = makeTempDirSync(prefix);
   directories.push(directory);
   return directory;
 }

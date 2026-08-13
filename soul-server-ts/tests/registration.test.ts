@@ -13,6 +13,8 @@ import {
   _resetPortraitCacheForTest,
 } from "../src/upstream/registration.js";
 
+import { makeTempDirSync } from "./helpers/temp_dir.js";
+
 const codexAgent = {
   id: "codex-default",
   name: "Codex Default",
@@ -214,7 +216,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
   });
 
   it("userName과 userPortraitPath가 있으면 user portrait_b64까지 광고", () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "registration-user-portrait-"));
+    const tmpDir = makeTempDirSync("registration-user-portrait-");
     const userPortraitPath = join(tmpDir, "user.png");
     const userPortraitBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02]);
     writeFileSync(userPortraitPath, userPortraitBytes);
@@ -259,7 +261,7 @@ describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정�
   const expectedB64 = portraitBytes.toString("base64");
 
   beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "registration-portrait-"));
+    tmpDir = makeTempDirSync("registration-portrait-");
     portraitPath = join(tmpDir, "portrait.png");
     writeFileSync(portraitPath, portraitBytes);
   });

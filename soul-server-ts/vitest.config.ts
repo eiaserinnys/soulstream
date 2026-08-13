@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    setupFiles: ["tests/setup/temp_dir_cleanup.ts"],
     testTimeout: 10000,
     hookTimeout: 10000,
   },
