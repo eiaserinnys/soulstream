@@ -18,6 +18,10 @@ const INTERVENTION_PATH = fileURLToPath(new URL(
   "../src/runner/sqlite_intervention_inbox.ts",
   import.meta.url,
 ));
+const CUTOVER_E2E_PATH = fileURLToPath(new URL(
+  "./runner/runner_cutover_integration.e2e.test.ts",
+  import.meta.url,
+));
 
 const LIFECYCLE_MUTATIONS = [
   "begin",
@@ -103,6 +107,13 @@ describe("runner SQLite write inventory", () => {
       expect(source, relativePath).not.toContain("RunnerSqliteEventOutbox.open(");
       expect(source, relativePath).not.toContain("RunnerSqliteLifecycle.open(");
     }
+  });
+
+  it("keeps the rolling-restart E2E observer read-only", () => {
+    const source = readFileSync(CUTOVER_E2E_PATH, "utf8");
+    expect(source).not.toContain("RunnerSqliteEventOutbox.create(");
+    expect(source).not.toContain("RunnerSqliteEventOutbox.open(");
+    expect(source).toContain("RunnerSqliteEventOutbox.openReadOnly(");
   });
 });
 

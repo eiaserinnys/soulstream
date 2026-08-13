@@ -196,7 +196,10 @@ describe("runner cutover all-flags-on integration", () => {
     task.runner = undefined;
     task.executionPromise = undefined;
     await writeFile(join(controlDirectory, "emit-after-detach"), "go\n");
-    await waitFor(async () => await hasDurableEvent(paths.databasePath, 3));
+    // Force the detached append to commit before adoption. Its doorbell has no
+    // host connection and is therefore intentionally lost; recovery must kick
+    // the durable backlog instead of relying on a future child notification.
+    await waitFor(async () => await hasDurableContent(paths.databasePath, "after-detach"));
     expect(isPidAlive(pid)).toBe(true);
 
     const config = parseRunnerChildConfig(JSON.parse(await readFile(paths.configPath, "utf8")));
@@ -587,7 +590,7 @@ function emptyStore(): EventOutboxPumpStore {
 }
 
 async function readRunnerBootstrap(path: string) {
-  const outbox = await RunnerSqliteEventOutbox.create(path);
+  const outbox = await RunnerSqliteEventOutbox.openReadOnly(path);
   try {
     const bootstrap = await outbox.readBootstrap();
     if (!bootstrap) throw new Error("runner bootstrap missing");
@@ -598,7 +601,7 @@ async function readRunnerBootstrap(path: string) {
 }
 
 async function pendingFrameCount(path: string): Promise<number> {
-  const outbox = await RunnerSqliteEventOutbox.create(path);
+  const outbox = await RunnerSqliteEventOutbox.openReadOnly(path);
   try {
     return (await outbox.readPendingIpcFrames()).length;
   } finally {
@@ -606,10 +609,12 @@ async function pendingFrameCount(path: string): Promise<number> {
   }
 }
 
-async function hasDurableEvent(path: string, sourceSeq: number): Promise<boolean> {
-  const outbox = await RunnerSqliteEventOutbox.create(path);
+async function hasDurableContent(path: string, expectedContent: string): Promise<boolean> {
+  const outbox = await RunnerSqliteEventOutbox.openReadOnly(path);
   try {
-    return await outbox.readRecord(sourceSeq) !== null;
+    const batch = await outbox.readBatchAfter(1);
+    return batch?.events.some((event) =>
+      (event.payload as { content?: unknown }).content === expectedContent) ?? false;
   } finally {
     outbox.close();
   }
