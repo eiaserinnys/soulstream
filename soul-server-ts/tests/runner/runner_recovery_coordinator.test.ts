@@ -95,6 +95,16 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
 
+  it("does not terminate a live terminal registration already owned by this host", async () => {
+    const subject = makeSubject([registration({ lifecycleState: "completed" })]);
+    subject.task.runner = {} as NonNullable<Task["runner"]>;
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
   it("replays a durable terminal state offline when the child exited before host recovery", async () => {
     const subject = makeSubject([registration({
       pidAlive: false,

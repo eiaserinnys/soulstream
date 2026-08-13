@@ -301,6 +301,9 @@ export class RunnerRecoveryCoordinator {
   private async recoverRegistered(
     registration: RunnerRegistration,
     mode: "adopt" | "offline",
+    prepareRegistrationAfterTaskGuard?: (
+      registration: RunnerRegistration,
+    ) => Promise<RunnerRegistration>,
   ): Promise<Task | null> {
     const task = await this.options.taskManager.hydrateRunnerRecoveryTask(
       registration.config.sessionId,
@@ -313,6 +316,9 @@ export class RunnerRecoveryCoordinator {
       return null;
     }
     if (task.runner || task.executionPromise) return task;
+    if (prepareRegistrationAfterTaskGuard) {
+      registration = await prepareRegistrationAfterTaskGuard(registration);
+    }
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
@@ -433,11 +439,15 @@ export class RunnerRecoveryCoordinator {
     if (disposition !== "replay_terminal") {
       return await this.recoverRegistered(registration, "adopt");
     }
-    if (registration.pidAlive) {
-      await this.terminateRegistration(registration);
-      registration = { ...registration, pidAlive: false };
-    }
-    return await this.recoverRegistered(registration, "offline");
+    return await this.recoverRegistered(
+      registration,
+      "offline",
+      async (guardedRegistration) => {
+        if (!guardedRegistration.pidAlive) return guardedRegistration;
+        await this.terminateRegistration(guardedRegistration);
+        return { ...guardedRegistration, pidAlive: false };
+      },
+    );
   }
 
   private async terminateRegistration(registration: RunnerRegistration): Promise<void> {
