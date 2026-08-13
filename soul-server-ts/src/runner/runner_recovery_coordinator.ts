@@ -226,10 +226,7 @@ export class RunnerRecoveryCoordinator {
       || disposition === "adopt_running"
       || disposition === "replay_terminal"
     ) {
-      await this.recoverRegistered(
-        registration,
-        registration.pidAlive ? "adopt" : "offline",
-      );
+      await this.recoverByDisposition(registration, disposition);
       return;
     }
     if (disposition === "reap_dead" || disposition === "reap_stalled") {
@@ -354,7 +351,7 @@ export class RunnerRecoveryCoordinator {
         || verifiedDisposition === "adopt_running"
         || verifiedDisposition === "replay_terminal"
       ) {
-        await this.recoverRegistered(hydrated, hydrated.pidAlive ? "adopt" : "offline");
+        await this.recoverByDisposition(hydrated, verifiedDisposition);
       }
       return;
     }
@@ -427,6 +424,20 @@ export class RunnerRecoveryCoordinator {
       { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
       "reaped runner recovery resumed",
     );
+  }
+
+  private async recoverByDisposition(
+    registration: RunnerRegistration,
+    disposition: "adopt_prebootstrap" | "adopt_running" | "replay_terminal",
+  ): Promise<Task | null> {
+    if (disposition !== "replay_terminal") {
+      return await this.recoverRegistered(registration, "adopt");
+    }
+    if (registration.pidAlive) {
+      await this.terminateRegistration(registration);
+      registration = { ...registration, pidAlive: false };
+    }
+    return await this.recoverRegistered(registration, "offline");
   }
 
   private async terminateRegistration(registration: RunnerRegistration): Promise<void> {

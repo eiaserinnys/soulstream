@@ -27,6 +27,20 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.terminate).not.toHaveBeenCalled();
   });
 
+  it("adopts a live runner whose execution is still running", async () => {
+    const subject = makeSubject([registration({ lifecycleState: "running" })]);
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "adopt",
+    );
+    expect(subject.terminate).not.toHaveBeenCalled();
+  });
+
   it("runner death while the server lives drains offline, marks error, and auto-resumes", async () => {
     const subject = makeSubject([registration({ pidAlive: false })]);
 
@@ -56,7 +70,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("CLI-only failure replays its durable terminal error without runner auto-resume", async () => {
+  it("terminates a live terminal runner before replaying its durable error offline", async () => {
     const subject = makeSubject([registration({
       lifecycleState: "failed",
       terminalError: { code: "execution_failed", message: "CLI exited 1" },
@@ -69,7 +83,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       subject.task,
       expect.anything(),
       "execute-a",
-      "adopt",
+      "offline",
+    );
+    expect(subject.terminate).toHaveBeenCalledWith(
+      expect.anything(),
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
+      subject.recoverRegisteredRunner.mock.invocationCallOrder[0]!,
     );
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
@@ -212,6 +233,35 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "runner progress lease expired",
       expect.any(Function),
     );
+  });
+
+  it("replays offline when reap verification discovers a live terminal runner", async () => {
+    const scanned = registration({
+      progressedAt: "2026-08-11T00:00:00.000Z",
+    });
+    const terminal = registration({ lifecycleState: "completed" });
+    const subject = makeSubject(
+      [scanned],
+      Date.parse("2026-08-11T00:03:00.000Z"),
+      [],
+      { hydrate: async () => terminal },
+    );
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce());
+
+    expect(subject.terminate).toHaveBeenCalledWith(
+      expect.anything(),
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "offline",
+    );
+    expect(subject.markReaped).not.toHaveBeenCalled();
+    expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("retries a previously reaped registration through offline drain and auto-resume", async () => {
