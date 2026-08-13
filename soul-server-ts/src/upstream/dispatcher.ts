@@ -115,7 +115,7 @@ export class CommandDispatcher {
     const providerUsageCommands = new ProviderUsageCommands({
       providerUsage:
         providerUsage
-        ?? new ProviderUsageService({ claudeAuth, modelCatalog }),
+        ?? new ProviderUsageService({ claudeAuth, modelCatalog, logger }),
     });
     const deliveryCommands = new DeliveryCommands({
       agentRegistry,

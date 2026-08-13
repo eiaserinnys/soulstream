@@ -2,8 +2,9 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
+import type { Logger } from "pino";
 
 import {
   ANTHROPIC_PROFILE_URL,
@@ -16,6 +17,11 @@ import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 
 const silentLogger = pino({ level: "silent" });
 const VALID_TOKEN = "sk-ant-oat01-valid_token";
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 async function withTempStore<T>(fn: (tokenPath: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), "soul-ts-claude-auth-"));
@@ -29,14 +35,32 @@ async function withTempStore<T>(fn: (tokenPath: string) => Promise<T>): Promise<
 function makeService(
   tokenPath: string | undefined,
   httpGet?: ClaudeAuthHttpGet,
+  options: { logger?: Logger; usageTimeoutMs?: number } = {},
 ): ClaudeAuthService {
   return new ClaudeAuthService(
     {
       store: new FileClaudeAuthTokenStore(tokenPath),
       httpGet,
+      ...(options.usageTimeoutMs !== undefined
+        ? { usageTimeoutMs: options.usageTimeoutMs }
+        : {}),
     },
-    silentLogger,
+    options.logger ?? silentLogger,
   );
+}
+
+function captureLogger(): { logger: Logger; entries: Array<Record<string, unknown>> } {
+  const entries: Array<Record<string, unknown>> = [];
+  const logger = {
+    debug(fields: Record<string, unknown>, message: string) {
+      entries.push({ level: "debug", message, ...fields });
+    },
+    warn(fields: Record<string, unknown>, message: string) {
+      entries.push({ level: "warn", message, ...fields });
+    },
+    info: vi.fn(),
+  } as unknown as Logger;
+  return { logger, entries };
 }
 
 describe("ClaudeAuthService token storage", () => {
@@ -159,6 +183,57 @@ describe("ClaudeAuthService token storage", () => {
 });
 
 describe("ClaudeAuthService profile/usage API", () => {
+  it("default HTTP usage fetch is bounded and logs timeout without the OAuth token", async () => {
+    await withTempStore(async (tokenPath) => {
+      const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const signal = init?.signal;
+        if (!signal) {
+          throw new Error("Claude default HTTP fetch did not receive an AbortSignal");
+        }
+        return await new Promise<Response>((_resolve, reject) => {
+          const rejectAbort = () => reject(signal.reason ?? new Error("aborted"));
+          if (signal.aborted) {
+            rejectAbort();
+            return;
+          }
+          signal.addEventListener("abort", rejectAbort, { once: true });
+        });
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      const { logger, entries } = captureLogger();
+      const svc = makeService(tokenPath, undefined, {
+        logger,
+        usageTimeoutMs: 25,
+      });
+      svc.setToken(
+        { type: "claude_auth_set_token", token: VALID_TOKEN },
+        "r-set",
+        "claude_auth_set_token",
+      );
+
+      const startedAt = Date.now();
+      const result = await svc.fetchUsage("u-timeout", "claude_auth_get_usage");
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(elapsedMs).toBeLessThan(500);
+      expect(result).toMatchObject({ success: false });
+      expect(fetchImpl).toHaveBeenCalledWith(
+        ANTHROPIC_USAGE_URL,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          level: "warn",
+          provider: "claude",
+          endpoint: "api.anthropic.com/api/oauth/usage",
+          result: "timeout",
+          durationMs: expect.any(Number),
+        }),
+      );
+      expect(JSON.stringify(entries)).not.toContain(VALID_TOKEN);
+    });
+  });
+
   it("usage/profile은 토큰이 없으면 no token 실패 응답", async () => {
     await withTempStore(async (tokenPath) => {
       const svc = makeService(tokenPath);
@@ -213,6 +288,7 @@ describe("ClaudeAuthService profile/usage API", () => {
           Authorization: `Bearer ${VALID_TOKEN}`,
           "anthropic-beta": "oauth-2025-04-20",
         },
+        signal: expect.any(AbortSignal),
       });
       expect(httpGet).toHaveBeenNthCalledWith(2, ANTHROPIC_PROFILE_URL, {
         headers: {
