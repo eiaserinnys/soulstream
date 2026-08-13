@@ -60,6 +60,79 @@ describe("EventOutbox", () => {
     expect((await recovered.readBatch())?.events).toEqual([record]);
   });
 
+  it("reopens a quarantined sparse ACKed prefix without rewriting the journal", async () => {
+    const directory = await temporaryDirectory();
+    const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
+    const records = Array.from(
+      { length: 24_500 - 24_310 + 1 },
+      (_, index) => record(streamId, 24_310 + index),
+    ).filter((item) => item.source_seq !== 24_489 && item.source_seq !== 24_490);
+    await writeFixture(directory, streamId, records, 24_500);
+    const journalBeforeRecovery = await readFile(join(directory, "events.jsonl"), "utf8");
+
+    const recovered = await EventOutbox.open(directory);
+
+    expect(recovered.ackedSeq).toBe(24_500);
+    expect(await readFile(join(directory, "events.jsonl"), "utf8"))
+      .toBe(journalBeforeRecovery);
+    await expect(recovered.readBatch()).resolves.toBeNull();
+    await expect(recovered.append(eventInput("after restart"))).resolves.toMatchObject({
+      source_seq: 24_501,
+    });
+  });
+
+  it("fails closed when the unacknowledged JSONL replay suffix has a source_seq gap", async () => {
+    const directory = await temporaryDirectory();
+    const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
+    const records = [
+      record(streamId, 24_488),
+      record(streamId, 24_491),
+      record(streamId, 24_492),
+    ];
+    await writeFixture(directory, streamId, records, 24_488);
+
+    await expect(EventOutbox.open(directory)).rejects.toThrow(
+      "event outbox source_seq gap detected",
+    );
+  });
+
+  it("still verifies payload hashes throughout a sparse ACKed prefix", async () => {
+    const directory = await temporaryDirectory();
+    const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
+    const corrupted = {
+      ...record(streamId, 24_491),
+      payload_hash: "0".repeat(64),
+    };
+    await writeFixture(
+      directory,
+      streamId,
+      [record(streamId, 24_488), corrupted],
+      24_491,
+    );
+
+    await expect(EventOutbox.open(directory)).rejects.toThrow(
+      "event outbox payload hash mismatch at source_seq 24491",
+    );
+  });
+
+  it("still verifies stream identity throughout a sparse ACKed prefix", async () => {
+    const directory = await temporaryDirectory();
+    const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
+    await writeFixture(
+      directory,
+      streamId,
+      [
+        record(streamId, 24_488),
+        record("018f47b7-c6de-7d64-9c8d-0b62cbbb2e99", 24_491),
+      ],
+      24_491,
+    );
+
+    await expect(EventOutbox.open(directory)).rejects.toThrow(
+      "event outbox record stream mismatch",
+    );
+  });
+
   it("cuts batches at 64 events and advances only the acknowledged prefix", async () => {
     const directory = await temporaryDirectory();
     const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
@@ -218,9 +291,14 @@ async function writeFixture(
   records: EventOutboxRecord[],
   ackedSeq: number,
 ): Promise<void> {
+  const lastSeq = records.at(-1)?.source_seq ?? 0;
   await writeFile(
     join(directory, "metadata.json"),
-    `${JSON.stringify({ stream_id: streamId, next_seq: records.length + 1, acked_seq: ackedSeq })}\n`,
+    `${JSON.stringify({
+      stream_id: streamId,
+      next_seq: Math.max(lastSeq, ackedSeq) + 1,
+      acked_seq: ackedSeq,
+    })}\n`,
     "utf8",
   );
   await writeFile(
