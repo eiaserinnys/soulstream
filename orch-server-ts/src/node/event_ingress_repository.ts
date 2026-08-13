@@ -1,12 +1,17 @@
 import type { LiveDbSqlResolver, LivePostgresSql } from "../runtime/live_db_sql.js";
 import type {
-  CommittedIngressEvent,
   EventAppendBatch,
   EventIngressEnvelope,
+  EventIngressResult,
   EventSessionEffectApplication,
   EventSessionEffectApplicationWire,
   EventSessionEffect,
 } from "./event_ingress_types.js";
+import {
+  EVENT_INGRESS_SESSION_NOT_FOUND,
+  type EventIngressDeadLetterStore,
+  type PersistedEventIngressDeadLetter,
+} from "./event_ingress_dead_letter_store.js";
 
 type QueryRows = readonly Record<string, unknown>[];
 
@@ -37,6 +42,10 @@ export type EventSessionEffectApplier = (
 
 export class EventIngressProtocolConflict extends Error {
   readonly statusCode = 409;
+
+  constructor(message: string, readonly sourceSeq?: number) {
+    super(message);
+  }
 }
 
 export class LiveEventIngressSqlProvider implements EventIngressSqlProvider {
@@ -54,27 +63,52 @@ export class EventIngressRepository {
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
     private readonly applySessionEffect?: EventSessionEffectApplier,
+    private readonly deadLetterStore?: EventIngressDeadLetterStore,
   ) {}
 
   async commitBatch(
     nodeId: string,
     batch: EventAppendBatch,
-  ): Promise<CommittedIngressEvent[]> {
+  ): Promise<EventIngressResult[]> {
+    const existingDeadLetters = await Promise.all(batch.events.map(async (envelope) =>
+      this.deadLetterStore?.find({ nodeId, envelope }) ?? null));
     const sql = await this.sqlProvider.resolveSql();
-    return await sql.begin(async (transaction) => {
-      const committed: CommittedIngressEvent[] = [];
-      for (const envelope of batch.events) {
+    const transactional = await sql.begin(async (transaction) => {
+      const results: Array<
+        EventIngressResult
+        | { outcome: "pending_dead_letter"; envelope: EventIngressEnvelope; reason: string }
+      > = [];
+      for (let index = 0; index < batch.events.length; index += 1) {
+        const envelope = batch.events[index]!;
+        const existingDeadLetter = existingDeadLetters[index];
+        if (existingDeadLetter) {
+          results.push(deadLetterResult(envelope, existingDeadLetter));
+          continue;
+        }
         const receipt = await findReceipt(transaction, nodeId, batch.stream_id, envelope.source_seq);
         if (receipt) {
           assertReceiptMatches(receipt, envelope);
           const sessionEffectApplication = parseEffectApplication(
             receipt.effect_application,
           );
-          committed.push({
+          results.push({
+            outcome: "committed",
             envelope,
             eventId: receipt.event_id,
             duplicateReceipt: true,
             ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+          });
+          continue;
+        }
+
+        if (!await lockSession(transaction, envelope.session_id)) {
+          if (!this.deadLetterStore) {
+            throw new Error("event ingress dead-letter store is not configured");
+          }
+          results.push({
+            outcome: "pending_dead_letter",
+            envelope,
+            reason: `session ${envelope.session_id} does not exist`,
           });
           continue;
         }
@@ -132,16 +166,57 @@ export class EventIngressRepository {
         // A semantic receipt means the durable event/effect was already
         // committed under a prior transport coordinate. Preserve the stable
         // event identity and suppress a second projection-side effect.
-        committed.push({
+        results.push({
+          outcome: "committed",
           envelope,
           eventId,
           duplicateReceipt: semanticReceipt !== undefined,
           ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
         });
       }
-      return committed;
+      return results;
     });
+
+    const persisted: EventIngressResult[] = [];
+    for (const result of transactional) {
+      if (result.outcome !== "pending_dead_letter") {
+        persisted.push(result);
+        continue;
+      }
+      const deadLetter = await this.deadLetterStore!.persist({
+        nodeId,
+        envelope: result.envelope,
+        code: EVENT_INGRESS_SESSION_NOT_FOUND,
+        reason: result.reason,
+      });
+      persisted.push(deadLetterResult(result.envelope, deadLetter));
+    }
+    return persisted;
   }
+}
+
+async function lockSession(
+  sql: EventIngressQuerySql,
+  sessionId: string,
+): Promise<boolean> {
+  const rows = await sql<Array<{ session_id: string }>>`
+    SELECT session_id
+    FROM sessions
+    WHERE session_id = ${sessionId}
+    FOR KEY SHARE
+  `;
+  return rows.length > 0;
+}
+
+function deadLetterResult(
+  envelope: EventIngressEnvelope,
+  deadLetter: PersistedEventIngressDeadLetter,
+): EventIngressResult {
+  return {
+    outcome: "dead_lettered",
+    envelope,
+    deadLetter,
+  };
 }
 
 async function appendEvent(
@@ -286,6 +361,7 @@ function assertReceiptMatches(receipt: ReceiptRow, envelope: EventIngressEnvelop
   ) {
     throw new EventIngressProtocolConflict(
       `ingress receipt conflict at source_seq ${envelope.source_seq}`,
+      envelope.source_seq,
     );
   }
 }

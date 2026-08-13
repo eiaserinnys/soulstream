@@ -1,3 +1,7 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,6 +10,7 @@ import {
   type EventIngressQuerySql,
   type EventIngressSql,
 } from "../src/node/event_ingress_repository.js";
+import { FileEventIngressDeadLetterStore } from "../src/node/event_ingress_dead_letter_store.js";
 import type { EventAppendBatch } from "../src/node/event_ingress_types.js";
 
 const STREAM_ID = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
@@ -18,6 +23,10 @@ describe("EventIngressRepository", () => {
         order.push("receipt-read");
         expect(values).toEqual(["node-a", STREAM_ID, 2]);
         return [];
+      }
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        order.push("session-lock");
+        return [{ session_id: "session-a" }];
       }
       if (text.includes("pg_advisory_xact_lock")) {
         order.push("semantic-lock");
@@ -72,6 +81,7 @@ describe("EventIngressRepository", () => {
     expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(order).toEqual([
       "receipt-read",
+      "session-lock",
       "semantic-lock",
       "semantic-read",
       "event-append",
@@ -84,7 +94,7 @@ describe("EventIngressRepository", () => {
         last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
         updated_at: "2026-08-06T00:00:00.000Z",
       },
-    }, 2).events[0], eventId: 41, duplicateReceipt: false,
+    }, 2).events[0], outcome: "committed", eventId: 41, duplicateReceipt: false,
     sessionEffectApplication: { applied: true, canonicalSession: null } }]);
   });
 
@@ -171,6 +181,9 @@ describe("EventIngressRepository", () => {
     let semanticEventId: number | undefined;
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        return [{ session_id: "session-a" }];
+      }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
         return semanticEventId ? [{ event_id: semanticEventId }] : [];
@@ -202,9 +215,98 @@ describe("EventIngressRepository", () => {
       payload_hash: "b".repeat(64),
     }, 3));
 
-    expect(first[0]?.duplicateReceipt).toBe(false);
-    expect(replay[0]?.duplicateReceipt).toBe(true);
+    expect(first[0]).toMatchObject({ outcome: "committed", duplicateReceipt: false });
+    expect(replay[0]).toMatchObject({ outcome: "committed", duplicateReceipt: true });
     expect(effect).toHaveBeenCalledOnce();
+  });
+
+  it("dead-letters exactly two deleted-session head events without calling event_append", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "event-ingress-dead-letter-"));
+    try {
+      const statements: string[] = [];
+      const sql = fakeSql(async (text) => {
+        statements.push(text);
+        if (text.includes("FROM event_ingress_receipts")) return [];
+        if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) return [];
+        throw new Error(`deleted-session event must not reach another statement: ${text}`);
+      });
+      const store = new FileEventIngressDeadLetterStore(directory, () =>
+        new Date("2026-08-13T00:00:00.000Z"));
+      const repository = new EventIngressRepository(
+        { resolveSql: async () => sql },
+        undefined,
+        store,
+      );
+      const input = batch({}, 1);
+      input.events.push({
+        ...input.events[0]!,
+        source_seq: 2,
+        payload: { type: "assistant_message", content: "second" },
+        payload_hash: "b".repeat(64),
+      });
+
+      const results = await repository.commitBatch("node-a", input);
+
+      expect(results).toEqual([
+        expect.objectContaining({
+          outcome: "dead_lettered",
+          envelope: expect.objectContaining({ source_seq: 1 }),
+          deadLetter: expect.objectContaining({ code: "SESSION_NOT_FOUND" }),
+        }),
+        expect.objectContaining({
+          outcome: "dead_lettered",
+          envelope: expect.objectContaining({ source_seq: 2 }),
+          deadLetter: expect.objectContaining({ code: "SESSION_NOT_FOUND" }),
+        }),
+      ]);
+      expect(statements.some((text) => text.includes("SELECT event_append"))).toBe(false);
+      const firstPath = results[0]!.outcome === "dead_lettered"
+        ? results[0]!.deadLetter.path
+        : "";
+      const stored = JSON.parse(await readFile(firstPath, "utf8")) as Record<string, unknown>;
+      expect(stored).toMatchObject({
+        code: "SESSION_NOT_FOUND",
+        node_id: "node-a",
+        rejected_at: "2026-08-13T00:00:00.000Z",
+        envelope: expect.objectContaining({
+          source_seq: 1,
+          session_id: "session-a",
+          payload: { type: "assistant_message", content: "done" },
+        }),
+      });
+      const statementCount = statements.length;
+      const replay = await repository.commitBatch("node-a", input);
+      expect(replay).toEqual(results);
+      expect(statements).toHaveLength(statementCount);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps non-session FK failures retryable instead of dead-lettering them", async () => {
+    const persist = vi.fn();
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        return [{ session_id: "session-a" }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) {
+        throw Object.assign(new Error("another foreign key failed"), { code: "23503" });
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      { find: vi.fn(async () => null), persist },
+    );
+
+    await expect(repository.commitBatch("node-a", batch())).rejects.toMatchObject({
+      code: "23503",
+    });
+    expect(persist).not.toHaveBeenCalled();
   });
 });
 

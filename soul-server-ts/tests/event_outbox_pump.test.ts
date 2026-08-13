@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventOutbox, type EventOutboxBatch } from "../src/upstream/event_outbox.js";
-import { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
+import {
+  EventOutboxDeadLetterError,
+  EventOutboxPump,
+} from "../src/upstream/event_outbox_pump.js";
 
 const tempDirectories: string[] = [];
 
@@ -210,6 +213,37 @@ describe("EventOutboxPump", () => {
     });
 
     await expect(acknowledged).resolves.toBe(9031);
+  });
+
+  it("advances the durable cursor for a dead-letter ACK and rejects the exact barrier", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("deleted session"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+
+    const acknowledged = pump.waitForAcknowledgement(record);
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: record.source_seq,
+      events: [{
+        source_seq: record.source_seq,
+        dead_letter: {
+          code: "SESSION_NOT_FOUND",
+          reason: "session session-a does not exist",
+          rejected_at: "2026-08-13T00:00:00.000Z",
+        },
+      }],
+    });
+
+    expect(outbox.ackedSeq).toBe(record.source_seq);
+    await expect(acknowledged).rejects.toMatchObject({
+      constructor: EventOutboxDeadLetterError,
+      code: "SESSION_NOT_FOUND",
+      sourceSeq: record.source_seq,
+    });
   });
 });
 

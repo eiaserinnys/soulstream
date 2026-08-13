@@ -98,7 +98,111 @@ describe("NodeEventIngressController", () => {
       status: 409,
       code: "EVENT_INGRESS_PROTOCOL_CONFLICT",
     })]);
-    expect(close).toHaveBeenCalledWith(1008, "event ingress protocol conflict");
+    expect(sent[0]).toMatchObject({
+      stream_id: STREAM_ID,
+      source_seq: 1,
+      retryable: false,
+    });
+    expect(close).toHaveBeenCalledWith(1008, "event_ingress:PROTOCOL_CONFLICT");
+  });
+
+  it("dead-letters two deleted-session head events, warns, advances ACK, and keeps the connection", async () => {
+    const value = batch(1);
+    value.events.push({
+      ...value.events[0]!,
+      source_seq: 2,
+      payload: { type: "assistant_message", content: "second" },
+      payload_hash: "b".repeat(64),
+    });
+    const send = vi.fn();
+    const close = vi.fn();
+    const publish = vi.fn();
+    const logWarn = vi.fn();
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => value.events.map((envelope) => ({
+          outcome: "dead_lettered" as const,
+          envelope,
+          deadLetter: {
+            code: "SESSION_NOT_FOUND" as const,
+            reason: `session ${envelope.session_id} does not exist`,
+            rejectedAt: "2026-08-13T00:00:00.000Z",
+            path: `/dead-letter/${envelope.source_seq}.json`,
+          },
+        }))),
+      },
+      send,
+      close,
+      publish,
+      logWarn,
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(send).toHaveBeenCalledWith({
+      type: "event_append_ack",
+      stream_id: STREAM_ID,
+      acked_through: 2,
+      events: [
+        {
+          source_seq: 1,
+          dead_letter: {
+            code: "SESSION_NOT_FOUND",
+            reason: "session session-a does not exist",
+            rejected_at: "2026-08-13T00:00:00.000Z",
+          },
+        },
+        {
+          source_seq: 2,
+          dead_letter: {
+            code: "SESSION_NOT_FOUND",
+            reason: "session session-a does not exist",
+            rejected_at: "2026-08-13T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+    expect(close).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(logWarn).toHaveBeenCalledTimes(2);
+    expect(logWarn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "SESSION_NOT_FOUND",
+        sourceSeq: 1,
+        path: "/dead-letter/1.json",
+      }),
+      "Event ingress dead-lettered permanent failure",
+    );
+  });
+
+  it("classifies a retryable repository failure without acknowledging it", async () => {
+    const send = vi.fn();
+    const close = vi.fn();
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => {
+          throw Object.assign(new Error("database unavailable"), { code: "57P01" });
+        }),
+      },
+      send,
+      close,
+    });
+
+    controller.enqueue(batch(1));
+    await controller.drain();
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "error",
+      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+      retryable: true,
+      stream_id: STREAM_ID,
+      source_seq: 1,
+    }));
+    expect(close).toHaveBeenCalledWith(1011, "event_ingress:TRANSIENT_FAILURE");
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: "event_append_ack",
+    }));
   });
 
   it("publishes the committed session effect before sending the ACK", async () => {
@@ -371,7 +475,7 @@ describe("NodeEventIngressController", () => {
     await controller.drain();
 
     expect(commitBatch).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
+    expect(close).toHaveBeenCalledWith(1008, "event_ingress:INVALID_BATCH");
   });
 
   it("rejects non-contiguous batches before calling the repository", async () => {
@@ -391,7 +495,7 @@ describe("NodeEventIngressController", () => {
 
     expect(commitBatch).not.toHaveBeenCalled();
     expect(sent[0]).toMatchObject({ status: 400, code: "EVENT_INGRESS_INVALID" });
-    expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
+    expect(close).toHaveBeenCalledWith(1008, "event_ingress:INVALID_BATCH");
   });
 
   it("rejects a multi-event batch larger than 256 KiB", async () => {
@@ -416,7 +520,7 @@ describe("NodeEventIngressController", () => {
 
     expect(commitBatch).not.toHaveBeenCalled();
     expect(sent[0]).toMatchObject({ status: 400, code: "EVENT_INGRESS_INVALID" });
-    expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
+    expect(close).toHaveBeenCalledWith(1008, "event_ingress:INVALID_BATCH");
   });
 
   it("rejects a single event larger than 2 MiB", async () => {
@@ -436,7 +540,7 @@ describe("NodeEventIngressController", () => {
 
     expect(commitBatch).not.toHaveBeenCalled();
     expect(sent[0]).toMatchObject({ status: 400, code: "EVENT_INGRESS_INVALID" });
-    expect(close).toHaveBeenCalledWith(1008, "invalid event ingress batch");
+    expect(close).toHaveBeenCalledWith(1008, "event_ingress:INVALID_BATCH");
   });
 });
 
@@ -455,6 +559,7 @@ function createController(overrides: Record<string, unknown>) {
     send: () => undefined,
     close: () => undefined,
     logError: () => undefined,
+    logWarn: () => undefined,
     ...overrides,
   } as ConstructorParameters<typeof NodeEventIngressController>[0]);
 }

@@ -12,7 +12,16 @@ export type EventAppendAck = {
   type: "event_append_ack";
   stream_id: string;
   acked_through: number;
-  events: EventAppendAcknowledgement[];
+  events: Array<EventAppendAcknowledgement | EventAppendDeadLetterAcknowledgement>;
+};
+
+export type EventAppendDeadLetterAcknowledgement = {
+  source_seq: number;
+  dead_letter: {
+    code: string;
+    reason: string;
+    rejected_at: string;
+  };
 };
 
 export type EventCanonicalSessionProjection = {
@@ -34,6 +43,17 @@ export type EventAppendAcknowledgement = {
     canonical_session: EventCanonicalSessionProjection;
   };
 };
+
+export class EventOutboxDeadLetterError extends Error {
+  constructor(
+    readonly sourceSeq: number,
+    readonly code: string,
+    readonly rejectedAt: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 export interface EventOutboxPumpTransport {
   connect(sender: (batch: EventOutboxBatch) => Promise<void>): void;
@@ -57,9 +77,16 @@ export class EventOutboxPump {
   private flushAgain = false;
   private readonly acknowledgementWaiters = new Map<
     number,
-    Set<(acknowledgement: EventAppendAcknowledgement) => void>
+    Set<{
+      resolve(acknowledgement: EventAppendAcknowledgement): void;
+      reject(error: EventOutboxDeadLetterError): void;
+    }>
   >();
   private readonly recentAcknowledgements = new Map<number, EventAppendAcknowledgement>();
+  private readonly recentDeadLetters = new Map<
+    number,
+    EventAppendDeadLetterAcknowledgement
+  >();
   private readonly latestAcknowledgementBySession = new Map<
     string,
     { sourceSeq: number; acknowledgement: EventAppendAcknowledgement }
@@ -123,6 +150,11 @@ export class EventOutboxPump {
     if (record.stream_id !== this.outbox.streamId) {
       throw new Error("event outbox acknowledgement target stream mismatch");
     }
+    const deadLetter = this.recentDeadLetters.get(record.source_seq);
+    if (deadLetter) {
+      this.recentDeadLetters.delete(record.source_seq);
+      throw deadLetterError(deadLetter);
+    }
     const exact = this.recentAcknowledgements.get(record.source_seq);
     if (exact !== undefined) {
       this.recentAcknowledgements.delete(record.source_seq);
@@ -143,9 +175,9 @@ export class EventOutboxPump {
   private async waitForDeferredAcknowledgement(
     record: Pick<EventOutboxRecord, "source_seq" | "session_id">,
   ): Promise<EventAppendAcknowledgement> {
-    const acknowledgement = await new Promise<EventAppendAcknowledgement>((resolve) => {
+    const acknowledgement = await new Promise<EventAppendAcknowledgement>((resolve, reject) => {
       const waiters = this.acknowledgementWaiters.get(record.source_seq) ?? new Set();
-      waiters.add(resolve);
+      waiters.add({ resolve, reject });
       this.acknowledgementWaiters.set(record.source_seq, waiters);
     });
     const latest = this.latestAcknowledgementBySession.get(record.session_id);
@@ -183,12 +215,21 @@ export class EventOutboxPump {
     for (let index = 0; index < batch.events.length; index += 1) {
       const record = batch.events[index]!;
       const acknowledgement = ack.events[index]!;
+      const waiters = this.acknowledgementWaiters.get(record.source_seq);
+      if (isDeadLetterAcknowledgement(acknowledgement)) {
+        this.recentDeadLetters.set(record.source_seq, acknowledgement);
+        if (!waiters) continue;
+        this.acknowledgementWaiters.delete(record.source_seq);
+        this.recentDeadLetters.delete(record.source_seq);
+        const error = deadLetterError(acknowledgement);
+        for (const waiter of waiters) waiter.reject(error);
+        continue;
+      }
       this.recentAcknowledgements.set(record.source_seq, acknowledgement);
       this.latestAcknowledgementBySession.set(record.session_id, {
         sourceSeq: record.source_seq,
         acknowledgement,
       });
-      const waiters = this.acknowledgementWaiters.get(record.source_seq);
       if (!waiters) continue;
       this.acknowledgementWaiters.delete(record.source_seq);
       this.recentAcknowledgements.delete(record.source_seq);
@@ -198,7 +239,7 @@ export class EventOutboxPump {
       ) {
         this.latestAcknowledgementBySession.delete(record.session_id);
       }
-      for (const resolve of waiters) resolve(acknowledgement);
+      for (const waiter of waiters) waiter.resolve(acknowledgement);
     }
     this.trimRecentAcknowledgements();
     this.inFlight = undefined;
@@ -223,6 +264,11 @@ export class EventOutboxPump {
       const oldest = this.recentAcknowledgements.keys().next().value;
       if (oldest === undefined) return;
       this.recentAcknowledgements.delete(oldest);
+    }
+    while (this.recentDeadLetters.size > RECENT_ACKNOWLEDGEMENT_LIMIT) {
+      const oldest = this.recentDeadLetters.keys().next().value;
+      if (oldest === undefined) return;
+      this.recentDeadLetters.delete(oldest);
     }
   }
 
@@ -260,8 +306,30 @@ function isValidAck(value: EventAppendAck): boolean {
     && Array.isArray(value.events) && value.events.length > 0
     && value.events.every((event) =>
       Number.isSafeInteger(event.source_seq) && event.source_seq > 0
-      && Number.isSafeInteger(event.event_id) && event.event_id > 0
-      && isValidEffectApplication(event.effect_application));
+      && (isDeadLetterAcknowledgement(event)
+        ? typeof event.dead_letter.code === "string"
+          && typeof event.dead_letter.reason === "string"
+          && typeof event.dead_letter.rejected_at === "string"
+        : Number.isSafeInteger(event.event_id) && event.event_id > 0
+          && isValidEffectApplication(event.effect_application)));
+}
+
+function isDeadLetterAcknowledgement(
+  value: EventAppendAcknowledgement | EventAppendDeadLetterAcknowledgement,
+): value is EventAppendDeadLetterAcknowledgement {
+  return "dead_letter" in value
+    && Boolean(value.dead_letter && typeof value.dead_letter === "object");
+}
+
+function deadLetterError(
+  acknowledgement: EventAppendDeadLetterAcknowledgement,
+): EventOutboxDeadLetterError {
+  return new EventOutboxDeadLetterError(
+    acknowledgement.source_seq,
+    acknowledgement.dead_letter.code,
+    acknowledgement.dead_letter.rejected_at,
+    acknowledgement.dead_letter.reason,
+  );
 }
 
 function isValidEffectApplication(
