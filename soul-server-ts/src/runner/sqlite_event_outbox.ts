@@ -1,3 +1,7 @@
+// This legacy store intentionally remains a single module: its append, journal,
+// checkpoint, ACK, and quarantine operations share one SQLite connection and
+// transaction-coupled prepared-statement state. Splitting those invariants during
+// the incident fix would create a wider persistence-boundary migration.
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -13,6 +17,11 @@ import {
   type EventOutboxBatch,
   type EventOutboxRecord,
 } from "../upstream/event_outbox.js";
+import {
+  appendEventOutboxQuarantine,
+  type EventOutboxQuarantineInput,
+  type EventOutboxQuarantineResult,
+} from "../upstream/event_outbox_quarantine.js";
 import {
   RUNNER_BOOTSTRAP_EVENT_TYPE,
   RUNNER_EVENT_OUTBOX_DDL,
@@ -535,8 +544,9 @@ export class RunnerSqliteEventOutbox {
     acknowledgeRunnerHostCall(this.database, correlationId);
   }
 
-  async readBatch(): Promise<EventOutboxBatch | null> {
+  async readBatch(maxEvents = EVENT_OUTBOX_MAX_BATCH_EVENTS): Promise<EventOutboxBatch | null> {
     this.requireOpen();
+    assertBatchEventLimit(maxEvents);
     const bootstrap = this.refreshBootstrap();
     if (!bootstrap) return null;
     this.acknowledgedThrough = readAcknowledgedThrough(this.database);
@@ -545,7 +555,7 @@ export class RunnerSqliteEventOutbox {
       WHERE record_kind = 'event' AND source_seq > ?
       ORDER BY source_seq
       LIMIT ?
-    `).all(this.acknowledgedThrough, EVENT_OUTBOX_MAX_BATCH_EVENTS) as unknown as RunnerEventOutboxRow[];
+    `).all(this.acknowledgedThrough, maxEvents) as unknown as RunnerEventOutboxRow[];
     const pending = rows.map(runnerRowToRecord);
     if (pending.length === 0) return null;
 
@@ -654,6 +664,27 @@ export class RunnerSqliteEventOutbox {
     }
   }
 
+  async quarantineHead(
+    input: EventOutboxQuarantineInput,
+  ): Promise<EventOutboxQuarantineResult> {
+    const bootstrap = this.requireBootstrap();
+    if (input.record.stream_id !== bootstrap.stream_id) {
+      throw new Error("runner event outbox quarantine stream_id mismatch");
+    }
+    this.acknowledgedThrough = readAcknowledgedThrough(this.database);
+    const expectedHead = this.acknowledgedThrough + 1;
+    if (input.record.source_seq !== expectedHead) {
+      throw new Error("runner event outbox quarantine target is not the durable head");
+    }
+    const durable = await this.readRecord(expectedHead);
+    if (!durable || durable.payload_hash !== input.record.payload_hash) {
+      throw new Error("runner event outbox quarantine target differs from durable head");
+    }
+    const result = await appendEventOutboxQuarantine(dirname(this.databasePath), input);
+    await this.acknowledge(bootstrap.stream_id, expectedHead);
+    return result;
+  }
+
   /** Final-ACK evidence used by release GC; true is fail-safe retention. */
   async hasPendingDurableWork(): Promise<boolean> {
     this.requireOpen();
@@ -757,6 +788,12 @@ export class RunnerSqliteEventOutbox {
 
   private requireOpen(): void {
     if (this.closed) throw new Error("runner event outbox is closed");
+  }
+}
+
+function assertBatchEventLimit(value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > EVENT_OUTBOX_MAX_BATCH_EVENTS) {
+    throw new Error(`event outbox batch event limit must be 1-${EVENT_OUTBOX_MAX_BATCH_EVENTS}`);
   }
 }
 

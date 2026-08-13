@@ -1,72 +1,37 @@
 import type { EventOutboxBatch, EventOutboxRecord } from "./event_outbox.js";
+import type { EventOutboxQuarantineResult } from "./event_outbox_quarantine.js";
+import {
+  deadLetterError,
+  EventOutboxQuarantinedError,
+  isDeadLetterAcknowledgement,
+  isValidEventAppendAck,
+  type EventAppendAck,
+  type EventAppendAcknowledgement,
+  type EventAppendDeadLetterAcknowledgement,
+  type EventIngressRejection,
+  type EventOutboxPumpOptions,
+  type EventOutboxPumpStore,
+} from "./event_outbox_pump_protocol.js";
 
-export type EventOutboxPumpStore = {
-  readonly streamId: string;
-  readonly ackedSeq: number;
-  onAppend(listener: () => void): () => void;
-  readBatch(): Promise<EventOutboxBatch | null>;
-  acknowledge(streamId: string, ackedThrough: number): Promise<void>;
-};
-
-export type EventAppendAck = {
-  type: "event_append_ack";
-  stream_id: string;
-  acked_through: number;
-  events: Array<EventAppendAcknowledgement | EventAppendDeadLetterAcknowledgement>;
-};
-
-export type EventAppendDeadLetterAcknowledgement = {
-  source_seq: number;
-  dead_letter: {
-    code: string;
-    reason: string;
-    rejected_at: string;
-  };
-};
-
-export type EventCanonicalSessionProjection = {
-  status: string;
-  termination_reason: string | null;
-  termination_detail: string | null;
-  review_state: string;
-  last_assistant_text: string | null;
-  termination_event_id: number | null;
-  updated_at: string;
-  last_event_id: number | null;
-};
-
-export type EventAppendAcknowledgement = {
-  source_seq: number;
-  event_id: number;
-  effect_application?: {
-    applied: boolean;
-    canonical_session: EventCanonicalSessionProjection;
-  };
-};
-
-export class EventOutboxDeadLetterError extends Error {
-  constructor(
-    readonly sourceSeq: number,
-    readonly code: string,
-    readonly rejectedAt: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-export interface EventOutboxPumpTransport {
-  connect(sender: (batch: EventOutboxBatch) => Promise<void>): void;
-  disconnect(): void;
-  isAck(value: unknown): value is EventAppendAck;
-  handleAck(ack: EventAppendAck): Promise<void>;
-}
+export {
+  EventOutboxDeadLetterError,
+  EventOutboxQuarantinedError,
+  type EventAppendAck,
+  type EventAppendAcknowledgement,
+  type EventAppendDeadLetterAcknowledgement,
+  type EventCanonicalSessionProjection,
+  type EventIngressRejection,
+  type EventOutboxPumpOptions,
+  type EventOutboxPumpStore,
+  type EventOutboxPumpTransport,
+} from "./event_outbox_pump_protocol.js";
 
 // An ACK may arrive in the microtask between EventOutbox.append() returning and
 // a DB-event-ID barrier registering its waiter. One batch has at most 64 rows;
 // two batches retain enough exact results to bridge that scheduling race while
 // the per-session cache below remains the long-lived turn-boundary source.
 const RECENT_ACKNOWLEDGEMENT_LIMIT = 128;
+const DEFAULT_REJECTION_THRESHOLD = 3;
 
 export class EventOutboxPump {
   private sender?: (batch: EventOutboxBatch) => Promise<void>;
@@ -75,11 +40,19 @@ export class EventOutboxPump {
   private flushScheduled = false;
   private flushActive = false;
   private flushAgain = false;
+  private singleEventProbe = false;
+  private readiness?: { generation: number; resolve(value: boolean): void };
+  private rejectionState?: {
+    streamId: string;
+    sourceSeq: number;
+    code: string;
+    attempts: number;
+  };
   private readonly acknowledgementWaiters = new Map<
     number,
     Set<{
       resolve(acknowledgement: EventAppendAcknowledgement): void;
-      reject(error: EventOutboxDeadLetterError): void;
+      reject(error: Error): void;
     }>
   >();
   private readonly recentAcknowledgements = new Map<number, EventAppendAcknowledgement>();
@@ -87,6 +60,7 @@ export class EventOutboxPump {
     number,
     EventAppendDeadLetterAcknowledgement
   >();
+  private readonly recentQuarantines = new Map<number, EventOutboxQuarantinedError>();
   private readonly latestAcknowledgementBySession = new Map<
     string,
     { sourceSeq: number; acknowledgement: EventAppendAcknowledgement }
@@ -95,7 +69,12 @@ export class EventOutboxPump {
   constructor(
     private readonly outbox: EventOutboxPumpStore,
     private readonly onError: (error: unknown) => void,
+    private readonly options: EventOutboxPumpOptions = {},
   ) {
+    const threshold = options.rejectionThreshold ?? DEFAULT_REJECTION_THRESHOLD;
+    if (!Number.isSafeInteger(threshold) || threshold <= 0) {
+      throw new Error("event outbox rejection threshold must be a positive integer");
+    }
     outbox.onAppend(() => this.notifyAvailable());
   }
 
@@ -110,14 +89,21 @@ export class EventOutboxPump {
     this.scheduleFlush();
   }
 
-  connect(sender: (batch: EventOutboxBatch) => Promise<void>): void {
+  connect(sender: (batch: EventOutboxBatch) => Promise<void>): Promise<boolean> {
+    this.resolveReadiness(false);
     this.generation += 1;
     this.sender = sender;
     this.inFlight = undefined;
+    const generation = this.generation;
+    const ready = new Promise<boolean>((resolve) => {
+      this.readiness = { generation, resolve };
+    });
     this.scheduleFlush();
+    return ready;
   }
 
   disconnect(): void {
+    this.resolveReadiness(false);
     this.generation += 1;
     this.sender = undefined;
     this.inFlight = undefined;
@@ -126,6 +112,93 @@ export class EventOutboxPump {
   isAck(value: unknown): value is EventAppendAck {
     return Boolean(value && typeof value === "object"
       && (value as Record<string, unknown>).type === "event_append_ack");
+  }
+
+  isRejection(value: unknown): value is EventIngressRejection {
+    if (!value || typeof value !== "object") return false;
+    const frame = value as Record<string, unknown>;
+    return frame.type === "error"
+      && frame.command_type === "event_append_batch"
+      && typeof frame.code === "string"
+      && typeof frame.retryable === "boolean"
+      && typeof frame.stream_id === "string"
+      && Number.isSafeInteger(frame.source_seq)
+      && Number(frame.source_seq) > 0;
+  }
+
+  async handleRejection(
+    rejection: EventIngressRejection,
+  ): Promise<EventOutboxQuarantineResult | null> {
+    if (!this.isRejection(rejection)) {
+      throw new Error("invalid event ingress rejection frame");
+    }
+    if (rejection.stream_id !== this.outbox.streamId) {
+      throw new Error("event ingress rejection stream mismatch");
+    }
+    const batch = this.inFlight;
+    if (!batch) {
+      if (rejection.source_seq <= this.outbox.ackedSeq) return null;
+      throw new Error("event ingress rejection has no in-flight batch");
+    }
+    const first = batch.events[0]!;
+    const last = batch.events.at(-1)!;
+    if (rejection.source_seq < first.source_seq || rejection.source_seq > last.source_seq) {
+      throw new Error("event ingress rejection source_seq is outside the in-flight batch");
+    }
+    if (
+      rejection.retryable
+      || rejection.code !== "EVENT_INGRESS_PROTOCOL_CONFLICT"
+    ) {
+      this.rejectionState = undefined;
+      return null;
+    }
+    if (rejection.source_seq !== first.source_seq) {
+      this.singleEventProbe = true;
+      this.rejectionState = undefined;
+      return null;
+    }
+
+    const previous = this.rejectionState;
+    const attempts = previous
+      && previous.streamId === rejection.stream_id
+      && previous.sourceSeq === rejection.source_seq
+      && previous.code === rejection.code
+      ? previous.attempts + 1
+      : 1;
+    this.rejectionState = {
+      streamId: rejection.stream_id,
+      sourceSeq: rejection.source_seq,
+      code: rejection.code,
+      attempts,
+    };
+    const threshold = this.options.rejectionThreshold ?? DEFAULT_REJECTION_THRESHOLD;
+    if (attempts < threshold) return null;
+    if (!this.outbox.quarantineHead) {
+      throw new Error("event outbox store does not support automatic quarantine");
+    }
+
+    const quarantinedAt = (this.options.now ?? (() => new Date()))().toISOString();
+    const result = await this.outbox.quarantineHead({
+      record: first,
+      rejection: {
+        code: rejection.code,
+        reason: rejection.message ?? rejection.code,
+      },
+      attempts,
+      quarantinedAt,
+    });
+    const error = new EventOutboxQuarantinedError(
+      first.source_seq,
+      rejection.code,
+      quarantinedAt,
+      `event outbox source_seq ${first.source_seq} quarantined after ${attempts} rejections`,
+    );
+    this.rejectAcknowledgementWaiters(first.source_seq, error);
+    this.options.onQuarantine?.(result);
+    this.rejectionState = undefined;
+    this.singleEventProbe = false;
+    this.disconnect();
+    return result;
   }
 
   async waitForAcknowledgement(
@@ -154,6 +227,11 @@ export class EventOutboxPump {
     if (deadLetter) {
       this.recentDeadLetters.delete(record.source_seq);
       throw deadLetterError(deadLetter);
+    }
+    const quarantined = this.recentQuarantines.get(record.source_seq);
+    if (quarantined) {
+      this.recentQuarantines.delete(record.source_seq);
+      throw quarantined;
     }
     const exact = this.recentAcknowledgements.get(record.source_seq);
     if (exact !== undefined) {
@@ -188,7 +266,7 @@ export class EventOutboxPump {
   }
 
   async handleAck(ack: EventAppendAck): Promise<void> {
-    if (!isValidAck(ack)) throw new Error("invalid event_append_ack frame");
+    if (!isValidEventAppendAck(ack)) throw new Error("invalid event_append_ack frame");
     if (ack.stream_id !== this.outbox.streamId) {
       throw new Error("event_append_ack stream mismatch");
     }
@@ -212,6 +290,8 @@ export class EventOutboxPump {
     if (ack.acked_through > durableAckedThrough) {
       await this.outbox.acknowledge(ack.stream_id, ack.acked_through);
     }
+    this.rejectionState = undefined;
+    this.singleEventProbe = false;
     for (let index = 0; index < batch.events.length; index += 1) {
       const record = batch.events[index]!;
       const acknowledgement = ack.events[index]!;
@@ -270,6 +350,11 @@ export class EventOutboxPump {
       if (oldest === undefined) return;
       this.recentDeadLetters.delete(oldest);
     }
+    while (this.recentQuarantines.size > RECENT_ACKNOWLEDGEMENT_LIMIT) {
+      const oldest = this.recentQuarantines.keys().next().value;
+      if (oldest === undefined) return;
+      this.recentQuarantines.delete(oldest);
+    }
   }
 
   private async flush(): Promise<void> {
@@ -282,8 +367,12 @@ export class EventOutboxPump {
     this.flushActive = true;
     try {
       const generation = this.generation;
-      const batch = await this.outbox.readBatch();
-      if (!batch || sender !== this.sender || generation !== this.generation) return;
+      const batch = await this.outbox.readBatch(this.singleEventProbe ? 1 : undefined);
+      if (sender !== this.sender || generation !== this.generation) return;
+      if (!batch) {
+        this.resolveReadiness(true, generation);
+        return;
+      }
       this.inFlight = batch;
       try {
         await sender(batch);
@@ -298,54 +387,22 @@ export class EventOutboxPump {
       }
     }
   }
-}
 
-function isValidAck(value: EventAppendAck): boolean {
-  return typeof value.stream_id === "string"
-    && Number.isSafeInteger(value.acked_through) && value.acked_through > 0
-    && Array.isArray(value.events) && value.events.length > 0
-    && value.events.every((event) =>
-      Number.isSafeInteger(event.source_seq) && event.source_seq > 0
-      && (isDeadLetterAcknowledgement(event)
-        ? typeof event.dead_letter.code === "string"
-          && typeof event.dead_letter.reason === "string"
-          && typeof event.dead_letter.rejected_at === "string"
-        : Number.isSafeInteger(event.event_id) && event.event_id > 0
-          && isValidEffectApplication(event.effect_application)));
-}
+  private resolveReadiness(value: boolean, generation = this.generation): void {
+    if (!this.readiness || this.readiness.generation !== generation) return;
+    const readiness = this.readiness;
+    this.readiness = undefined;
+    readiness.resolve(value);
+  }
 
-function isDeadLetterAcknowledgement(
-  value: EventAppendAcknowledgement | EventAppendDeadLetterAcknowledgement,
-): value is EventAppendDeadLetterAcknowledgement {
-  return "dead_letter" in value
-    && Boolean(value.dead_letter && typeof value.dead_letter === "object");
-}
-
-function deadLetterError(
-  acknowledgement: EventAppendDeadLetterAcknowledgement,
-): EventOutboxDeadLetterError {
-  return new EventOutboxDeadLetterError(
-    acknowledgement.source_seq,
-    acknowledgement.dead_letter.code,
-    acknowledgement.dead_letter.rejected_at,
-    acknowledgement.dead_letter.reason,
-  );
-}
-
-function isValidEffectApplication(
-  value: EventAppendAcknowledgement["effect_application"],
-): boolean {
-  if (value === undefined) return true;
-  if (typeof value.applied !== "boolean") return false;
-  const session = value.canonical_session;
-  return Boolean(session && typeof session === "object"
-    && typeof session.status === "string"
-    && (session.termination_reason === null || typeof session.termination_reason === "string")
-    && (session.termination_detail === null || typeof session.termination_detail === "string")
-    && typeof session.review_state === "string"
-    && (session.last_assistant_text === null || typeof session.last_assistant_text === "string")
-    && (session.termination_event_id === null
-      || Number.isSafeInteger(session.termination_event_id))
-    && typeof session.updated_at === "string"
-    && (session.last_event_id === null || Number.isSafeInteger(session.last_event_id)));
+  private rejectAcknowledgementWaiters(sourceSeq: number, error: EventOutboxQuarantinedError): void {
+    const waiters = this.acknowledgementWaiters.get(sourceSeq);
+    if (!waiters) {
+      this.recentQuarantines.set(sourceSeq, error);
+      this.trimRecentAcknowledgements();
+      return;
+    }
+    this.acknowledgementWaiters.delete(sourceSeq);
+    for (const waiter of waiters) waiter.reject(error);
+  }
 }

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -244,6 +244,153 @@ describe("EventOutboxPump", () => {
       code: "SESSION_NOT_FOUND",
       sourceSeq: record.source_seq,
     });
+  });
+
+  it("quarantines the same rejected head after three reconnects and advances only that cursor", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "soulstream-event-outbox-pump-"));
+    tempDirectories.push(directory);
+    const outbox = await EventOutbox.open(directory);
+    const first = await outbox.append({
+      ...eventInput("poison"),
+      session_id: "7eb9d6ef-dead-4bad-8bad-000000000001",
+    });
+    const second = await outbox.append({
+      ...eventInput("survivor"),
+      session_id: "7eb9d6ef-dead-4bad-8bad-000000000001",
+    });
+    const sent: EventOutboxBatch[] = [];
+    const onQuarantine = vi.fn();
+    const pump = new EventOutboxPump(outbox, vi.fn(), {
+      rejectionThreshold: 3,
+      now: () => new Date("2026-08-13T00:00:00.000Z"),
+      onQuarantine,
+    });
+    const rejection = {
+      type: "error" as const,
+      command_type: "event_append_batch" as const,
+      status: 409,
+      code: "EVENT_INGRESS_PROTOCOL_CONFLICT" as const,
+      retryable: false as const,
+      message: "ingress receipt conflict",
+      stream_id: outbox.streamId,
+      source_seq: first.source_seq,
+    };
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      pump.connect(async (batch) => sent.push(batch));
+      await waitFor(() => sent.length === attempt);
+      await pump.handleRejection(rejection);
+      if (attempt < 3) {
+        expect(outbox.ackedSeq).toBe(0);
+        pump.disconnect();
+      }
+    }
+
+    expect(outbox.ackedSeq).toBe(first.source_seq);
+    expect((await outbox.readBatch())?.events.map((event) => event.source_seq))
+      .toEqual([second.source_seq]);
+    const quarantinePath = join(directory, "quarantine-20260813-7eb9.jsonl");
+    const quarantine = JSON.parse((await readFile(quarantinePath, "utf8")).trim()) as {
+      event: EventOutboxBatch["events"][number];
+      rejection: { code: string; attempts: number };
+    };
+    expect(quarantine).toMatchObject({
+      quarantined_at: "2026-08-13T00:00:00.000Z",
+      event: first,
+      rejection: { code: "EVENT_INGRESS_PROTOCOL_CONFLICT", attempts: 3 },
+    });
+    expect(onQuarantine).toHaveBeenCalledWith(expect.objectContaining({
+      path: quarantinePath,
+      sourceSeq: first.source_seq,
+      attempts: 3,
+    }));
+  });
+
+  it("keeps retryable ingress failures in the outbox for the next connection", async () => {
+    const outbox = await createOutbox();
+    await outbox.append(eventInput("retry me"));
+    const firstConnection: EventOutboxBatch[] = [];
+    const secondConnection: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => firstConnection.push(batch));
+    await waitFor(() => firstConnection.length === 1);
+
+    const rejection = {
+      type: "error",
+      command_type: "event_append_batch",
+      status: 503,
+      code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+      retryable: true,
+      stream_id: outbox.streamId,
+      source_seq: 1,
+    } as const;
+    expect(pump.isRejection(rejection)).toBe(true);
+    await expect(pump.handleRejection(rejection)).resolves.toBeNull();
+    pump.disconnect();
+    pump.connect(async (batch) => secondConnection.push(batch));
+    await waitFor(() => secondConnection.length === 1);
+
+    expect(secondConnection[0]).toEqual(firstConnection[0]);
+    expect(outbox.ackedSeq).toBe(0);
+  });
+
+  it("probes one event after a later batch member is rejected without quarantining the prefix", async () => {
+    const outbox = await createOutbox();
+    const first = await outbox.append(eventInput("valid prefix"));
+    const second = await outbox.append(eventInput("later poison"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+    expect(sent[0]?.events.map((event) => event.source_seq)).toEqual([
+      first.source_seq,
+      second.source_seq,
+    ]);
+
+    await pump.handleRejection({
+      type: "error",
+      command_type: "event_append_batch",
+      status: 409,
+      code: "EVENT_INGRESS_PROTOCOL_CONFLICT",
+      retryable: false,
+      message: "later event conflicts",
+      stream_id: outbox.streamId,
+      source_seq: second.source_seq,
+    });
+    pump.disconnect();
+    pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 2);
+    expect(sent[1]?.events.map((event) => event.source_seq)).toEqual([first.source_seq]);
+
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: first.source_seq,
+      events: [{ source_seq: first.source_seq, event_id: 101 }],
+    });
+    await waitFor(() => sent.length === 3);
+
+    expect(outbox.ackedSeq).toBe(first.source_seq);
+    expect(sent[2]?.events.map((event) => event.source_seq)).toEqual([second.source_seq]);
+  });
+
+  it("reports initial catch-up ready only after the durable backlog is acknowledged", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("backlog"));
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(outbox, vi.fn());
+
+    const ready = pump.connect(async (batch) => sent.push(batch));
+    await waitFor(() => sent.length === 1);
+    await expect(Promise.race([ready, Promise.resolve("pending")])).resolves.toBe("pending");
+    await pump.handleAck({
+      type: "event_append_ack",
+      stream_id: outbox.streamId,
+      acked_through: record.source_seq,
+      events: [{ source_seq: record.source_seq, event_id: 99 }],
+    });
+
+    await expect(ready).resolves.toBe(true);
   });
 });
 

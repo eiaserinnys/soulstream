@@ -462,6 +462,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (!bootstrap) return;
     this.pump = new EventOutboxPump(this.outbox, (error) => {
       this.options.logger.error({ error }, "Runner event outbox pump failed");
+    }, {
+      onQuarantine: (result) => {
+        this.options.logger.warn({
+          path: result.path,
+          sourceSeq: result.sourceSeq,
+          sessionId: result.sessionId,
+          code: result.code,
+          attempts: result.attempts,
+        }, "Runner event outbox head quarantined after repeated rejection");
+      },
     });
     this.unregisterPump = this.options.pumpMux.register(this.pump);
   }

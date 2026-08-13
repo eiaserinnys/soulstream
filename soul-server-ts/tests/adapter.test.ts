@@ -9,6 +9,7 @@ import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { SessionDB } from "../src/db/session_db.js";
 import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
+import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -25,6 +26,7 @@ function makeDeps(
     waitForRunnerReconciliation?: () => Promise<void>;
     sessionDb?: SessionDB;
     eventOutboxPump?: EventOutboxPump;
+    reconnectPolicy?: ReconnectPolicyBoundary;
   } = {},
 ) {
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
@@ -52,6 +54,7 @@ function makeDeps(
     taskExecutor,
     sessionDb: opts.sessionDb,
     eventOutboxPump: opts.eventOutboxPump,
+    reconnectPolicy: opts.reconnectPolicy,
     listLiveRunnerSessionIds: opts.listLiveRunnerSessionIds,
     waitForRunnerReconciliation: opts.waitForRunnerReconciliation,
   };
@@ -71,6 +74,8 @@ async function startMockOrch(
     authToken?: string;
     autoPong?: boolean;
     pingOnRegister?: boolean;
+    acknowledgeRegistration?: boolean;
+    closeRegistrations?: number;
   } = {},
 ): Promise<MockOrch> {
   const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
@@ -79,6 +84,7 @@ async function startMockOrch(
   const url = `ws://127.0.0.1:${port}/ws/node`;
   const received: unknown[] = [];
   const sockets: WSServerWebSocket[] = [];
+  let registrationCount = 0;
 
   wss.on("connection", (socket, req) => {
     // Bearer auth 확인 (orch ws_handler.py L52-62 등가)
@@ -95,6 +101,22 @@ async function startMockOrch(
       try {
         const msg = JSON.parse(text);
         received.push(msg);
+        if (
+          typeof msg === "object"
+          && msg !== null
+          && (msg as Record<string, unknown>).type === "node_register"
+        ) {
+          registrationCount += 1;
+          if (opts.acknowledgeRegistration) {
+            socket.send(JSON.stringify({
+              type: "node_register_ack",
+              node_id: (msg as Record<string, unknown>).node_id,
+            }));
+          }
+          if (registrationCount <= (opts.closeRegistrations ?? 0)) {
+            socket.close(1011, "event_ingress:PROTOCOL_CONFLICT");
+          }
+        }
         if (
           opts.pingOnRegister &&
           typeof msg === "object" &&
@@ -239,6 +261,80 @@ describe("UpstreamAdapter", () => {
     await waitFor(() => handleAck.mock.calls.length === 1);
 
     expect(handleAck).toHaveBeenCalledWith(expect.objectContaining({ acked_through: 1 }));
+    await adapter.shutdown();
+  });
+
+  it("resets reconnect backoff only after registration ACK and initial outbox catch-up", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const pump = {
+      connect: vi.fn(async () => true),
+      disconnect: vi.fn(),
+      isAck: () => false,
+      handleAck: vi.fn(),
+      isRejection: () => false,
+      handleRejection: vi.fn(),
+    } as unknown as EventOutboxPump;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({ eventOutboxPump: pump, reconnectPolicy }),
+    );
+
+    void adapter.run();
+    await waitFor(() => reconnectPolicy.resetCalls === 1);
+
+    expect(pump.connect).toHaveBeenCalledOnce();
+    expect(reconnectPolicy.waitedDelays).toEqual([]);
+    await adapter.shutdown();
+  });
+
+  it("grows reconnect backoff when registration ACK arrives but poison catch-up never completes", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({
+      acknowledgeRegistration: true,
+      closeRegistrations: 3,
+    });
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const neverDrained = new Promise<boolean>(() => undefined);
+    const pump = {
+      connect: vi.fn(() => neverDrained),
+      disconnect: vi.fn(),
+      isAck: () => false,
+      handleAck: vi.fn(),
+      isRejection: () => false,
+      handleRejection: vi.fn(),
+    } as unknown as EventOutboxPump;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({ eventOutboxPump: pump, reconnectPolicy }),
+    );
+
+    void adapter.run();
+    await waitFor(() => reconnectPolicy.waitedDelays.length >= 3);
+
+    expect(reconnectPolicy.waitedDelays.slice(0, 3)).toEqual([3, 6, 12]);
+    expect(reconnectPolicy.resetCalls).toBe(0);
     await adapter.shutdown();
   });
 
@@ -679,6 +775,29 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 });
+
+class RecordingReconnectPolicy implements ReconnectPolicyBoundary {
+  private currentDelay = 3;
+  attempt = 0;
+  resetCalls = 0;
+  readonly waitedDelays: number[] = [];
+
+  get currentDelaySeconds(): number {
+    return this.currentDelay;
+  }
+
+  reset(): void {
+    this.resetCalls += 1;
+    this.currentDelay = 3;
+    this.attempt = 0;
+  }
+
+  async wait(): Promise<void> {
+    this.waitedDelays.push(this.currentDelay);
+    this.attempt += 1;
+    this.currentDelay = Math.min(this.currentDelay * 2, 60);
+  }
+}
 
 describe("isConnectionError", () => {
   it("ECONNREFUSED는 연결 오류", () => {
