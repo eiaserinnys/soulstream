@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { PersistenceHostRepositories } from "./persistence_host_runtime.js";
@@ -11,6 +11,9 @@ export interface PersistenceHostRouteOptions {
 type RepositoryKey = keyof PersistenceHostRepositories;
 type OperationTarget = readonly [RepositoryKey, string | null, string];
 const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
+const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
+const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
+const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
 
 const deliveryOperations = {
   register: ["deliveries", null, "register"],
@@ -114,33 +117,89 @@ function registerDomain(
   app.post<{ Params: { operation: string } }>(
     `/api/${domain}/host/:operation`,
     async (request, reply) => {
+      const timing = beginHostTiming(request, domain, request.params.operation);
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
       );
       if (!authorization.ok) {
-        return errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
+        return sendTimed(request, reply, timing, 401, () =>
+          errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`));
       }
       const target = operations[request.params.operation];
-      if (!target) return errorReply(reply, 404, "HOST_OPERATION_NOT_FOUND", `unknown ${domain} operation`);
+      if (!target) {
+        return sendTimed(request, reply, timing, 404, () =>
+          errorReply(reply, 404, "HOST_OPERATION_NOT_FOUND", `unknown ${domain} operation`));
+      }
       const args = readArgs(request.body);
-      if (!args) return errorReply(reply, 422, "INVALID_HOST_REQUEST", "body.args must be an array");
+      if (!args) {
+        return sendTimed(request, reply, timing, 422, () =>
+          errorReply(reply, 422, "INVALID_HOST_REQUEST", "body.args must be an array"));
+      }
       try {
         const repositories = await options.repositoryProvider();
         const result = await invoke(repositories, target, args);
-        return reply.type("application/json").send(JSON.stringify(result ?? null));
+        return sendTimed(request, reply, timing, 200, () =>
+          reply.type("application/json").send(JSON.stringify(result ?? null)));
       } catch (error) {
         request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
         const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
-        return errorReply(
-          reply,
-          typeof statusCode === "number" ? statusCode : 500,
-          "HOST_OPERATION_FAILED",
-          error instanceof Error ? error.message : "Persistence host operation failed",
-        );
+        const status = typeof statusCode === "number" ? statusCode : 500;
+        return sendTimed(request, reply, timing, status, () =>
+          errorReply(
+            reply,
+            status,
+            "HOST_OPERATION_FAILED",
+            error instanceof Error ? error.message : "Persistence host operation failed",
+          ));
       }
     },
   );
+}
+
+interface PersistenceHostTiming {
+  requestId: string | null;
+  domain: string;
+  operation: string;
+  hostReceivedAtMs: number;
+}
+
+function beginHostTiming(
+  request: FastifyRequest,
+  domain: string,
+  operation: string,
+): PersistenceHostTiming {
+  const rawRequestId = request.headers[REQUEST_ID_HEADER];
+  return {
+    requestId: typeof rawRequestId === "string" && rawRequestId.length > 0 ? rawRequestId : null,
+    domain,
+    operation,
+    hostReceivedAtMs: Date.now(),
+  };
+}
+
+function sendTimed(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  timing: PersistenceHostTiming,
+  statusCode: number,
+  send: () => FastifyReply,
+): FastifyReply {
+  const hostRespondedAtMs = Date.now();
+  if (timing.requestId) reply.header(REQUEST_ID_HEADER, timing.requestId);
+  reply.header(HOST_RECEIVED_AT_HEADER, String(timing.hostReceivedAtMs));
+  reply.header(HOST_RESPONDED_AT_HEADER, String(hostRespondedAtMs));
+  const response = send();
+  request.log.info(
+    {
+      ...timing,
+      hostRespondedAtMs,
+      hostDurationMs: hostRespondedAtMs - timing.hostReceivedAtMs,
+      statusCode,
+    },
+    "Persistence host response sent",
+  );
+  return response;
 }
 
 type CallableTarget = Record<string, (...args: never[]) => unknown>;
