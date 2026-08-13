@@ -7,9 +7,12 @@ import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
+import type { Task } from "../src/task/task_models.js";
 import type { SessionDB } from "../src/db/session_db.js";
 import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
+import { RunnerRecoveryCoordinator } from "../src/runner/runner_recovery_coordinator.js";
+import type { RunnerRegistration } from "../src/runner/runner_process_registry.js";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -175,6 +178,92 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function recoveryRegistration(
+  sessionId: string,
+  lifecycleState: "reaped" | "completed",
+): RunnerRegistration {
+  return {
+    config: {
+      schemaVersion: 1,
+      sessionId,
+      backend: "codex",
+      agent: {
+        id: "agent-a",
+        name: "Agent A",
+        backend: "codex",
+        workspace_dir: "/workspace/a",
+      },
+      paths: {
+        sessionDirectory: `/runner/${sessionId}`,
+        databasePath: `/runner/${sessionId}/runner.sqlite`,
+        socketPath: `/runner/${sessionId}/runner.sock`,
+        pidPath: `/runner/${sessionId}/runner.pid`,
+        lockPath: `/runner/${sessionId}/runner.lock`,
+        configPath: `/runner/${sessionId}/runner-config.json`,
+      },
+      codeSha: "sha-a",
+      snapshotPath: "/release/sha-a/soul-server-ts",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      codexHome: "/home/test/.codex",
+      rolloutRoot: "/home/test/.codex/sessions",
+    },
+    pid: 4123,
+    pidStartIdentity: "start-4123",
+    pidAlive: false,
+    registeredAtMs: Date.parse("2026-08-13T09:01:47.000Z"),
+    bootstrap: {
+      stream_id: `stream-${sessionId}`,
+      source_seq: 1,
+      session_id: sessionId,
+      event_type: "runner_bootstrap",
+      payload: {
+        schema_version: 1,
+        backend_session_id: `backend-${sessionId}`,
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+      searchable_text: null,
+      created_at: "2026-08-13T09:01:47.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+      payload_hash: "0".repeat(64),
+    },
+    lifecycle: {
+      session_id: sessionId,
+      runner_pid: 4123,
+      execution_command_id: `execute-${sessionId}`,
+      execution_state: lifecycleState,
+      progress_seq: 3,
+      progress_at: "2026-08-13T09:01:47.735Z",
+      liveness_at: "2026-08-13T09:01:47.735Z",
+      in_flight_tools: [],
+      terminal_error: lifecycleState === "reaped"
+        ? { code: "runner_exited", message: "runner process exited" }
+        : null,
+    },
+  };
+}
+
+function recoveryTask(agentSessionId: string): Task {
+  return {
+    agentSessionId,
+    prompt: "continue",
+    status: "running",
+    createdAt: new Date("2026-08-13T09:00:00.000Z"),
+    lastEventId: 0,
+    lastReadEventId: 0,
+    interventionQueue: [],
+  };
+}
+
 describe("UpstreamAdapter", () => {
   let orch: MockOrch;
 
@@ -262,6 +351,104 @@ describe("UpstreamAdapter", () => {
 
     expect(handleAck).toHaveBeenCalledWith(expect.objectContaining({ acked_through: 1 }));
     await adapter.shutdown();
+  });
+
+  it("dead reaped/completed runner 복구가 outbox ACK에 의존해도 부팅을 완료한다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true, autoPong: true });
+    const logger = pino({ level: "silent" });
+    const logInfo = vi.spyOn(logger, "info");
+    const recoveryApplicationReady = deferred<void>();
+    const registrations = [
+      recoveryRegistration("reaped-a", "reaped"),
+      recoveryRegistration("reaped-b", "reaped"),
+      recoveryRegistration("completed-a", "completed"),
+    ];
+    const tasks = new Map(
+      registrations.map((registration) => [
+        registration.config.sessionId,
+        recoveryTask(registration.config.sessionId),
+      ]),
+    );
+    const markRunnerFailureAndResume = vi.fn(async (
+      task: Task,
+      _message: string,
+      resume: (task: Task) => void,
+    ) => {
+      await recoveryApplicationReady.promise;
+      resume(task);
+    });
+    const recoverRegisteredRunner = vi.fn(async () => {
+      await recoveryApplicationReady.promise;
+    });
+    const coordinator = new RunnerRecoveryCoordinator({
+      stateDirectory: "/runner",
+      leaseTimeoutMs: 120_000,
+      scanIntervalMs: 15_000,
+      taskManager: {
+        hydrateRunnerRecoveryTask: async (sessionId) => tasks.get(sessionId) ?? null,
+        markRunnerFailureAndResume,
+      },
+      taskExecutor: {
+        recoverRegisteredRunner,
+        restartRegisteredRunner: vi.fn(async () => undefined),
+      },
+      closedTailDrainer: { drain: vi.fn(async () => undefined) },
+      logger: silentLogger,
+      scan: async () => ({ registrations, errors: [] }),
+      hydrate: async (registration) => registration,
+    });
+    await coordinator.start();
+
+    const connect = vi.fn(async () => {
+      recoveryApplicationReady.resolve();
+      return true;
+    });
+    const pump = {
+      connect,
+      disconnect: vi.fn(),
+      isAck: () => false,
+      handleAck: vi.fn(),
+      isRejection: () => false,
+      handleRejection: vi.fn(),
+    } as unknown as EventOutboxPump;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      logger,
+      makeDeps({
+        eventOutboxPump: pump,
+        waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
+      }),
+    );
+
+    try {
+      void adapter.run();
+      await waitFor(() => connect.mock.calls.length === 1);
+      await waitFor(() => orch.receivedMessages.some(
+        (message) => (message as Record<string, unknown>).type === "app_heartbeat_ping",
+      ));
+
+      expect((orch.receivedMessages[0] as Record<string, unknown>).type).toBe("node_register");
+      expect(markRunnerFailureAndResume).toHaveBeenCalledTimes(2);
+      expect(recoverRegisteredRunner).toHaveBeenCalledTimes(3);
+      expect(logInfo).toHaveBeenCalledWith(
+        expect.objectContaining({ nodeId: "eias-shopping-ts" }),
+        "Registered with upstream",
+      );
+    } finally {
+      recoveryApplicationReady.resolve();
+      await adapter.shutdown();
+      await coordinator.stop();
+    }
   });
 
   it("resets reconnect backoff only after registration ACK and initial outbox catch-up", async () => {
