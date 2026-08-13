@@ -2,9 +2,15 @@ import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
+import {
+  RunnerSqliteEventOutbox,
+  type RunnerBootstrapRecord,
+} from "./sqlite_event_outbox.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
-import { runnerHostStatePath } from "./runner_host_state_store.js";
+import {
+  readRunnerHostAcknowledgedThrough,
+  runnerHostStatePath,
+} from "./runner_host_state_store.js";
 import {
   readAuthoritativeRunnerLifecycle,
   type AuthoritativeRunnerLifecycleOptions,
@@ -49,6 +55,8 @@ export interface RunnerRegistrationScan {
 
 export interface RunnerDurableInspection {
   registration: RunnerRegistration;
+  acknowledgedThrough: number | null;
+  latestDurableSourceSeq: number | null;
   incompleteDurableWork: boolean;
 }
 
@@ -363,21 +371,37 @@ export async function hydrateRunnerRegistration(
 export async function inspectRunnerDurableState(
   registration: RunnerRegistration,
 ): Promise<RunnerDurableInspection> {
-  const outbox = await RunnerParentOutbox.open(
+  const outbox = await RunnerSqliteEventOutbox.openReadOnly(
     registration.config.paths.databasePath,
-    registration.config.sessionId,
+    { sessionId: registration.config.sessionId },
   );
   const lifecycle = readRunnerSqliteLifecycle(registration.config.paths.databasePath);
   let bootstrap: RunnerBootstrapRecord | null;
+  let acknowledgedThrough: number | null = null;
+  let latestDurableSourceSeq: number | null = null;
   let incompleteDurableWork: boolean;
   try {
     bootstrap = await outbox.readBootstrap();
-    incompleteDurableWork = await outbox.hasPendingDurableWork();
+    if (!bootstrap) {
+      incompleteDurableWork = true;
+    } else {
+      latestDurableSourceSeq = outbox.latestDurableSourceSeq();
+      acknowledgedThrough = readRunnerHostAcknowledgedThrough(
+        runnerHostStatePath(registration.config.paths.databasePath),
+        bootstrap.stream_id,
+        bootstrap.session_id,
+      );
+      incompleteDurableWork = acknowledgedThrough === null
+        || acknowledgedThrough !== latestDurableSourceSeq
+        || await outbox.hasPendingDurableWork(acknowledgedThrough);
+    }
   } finally {
     outbox.close();
   }
   return {
     registration: { ...registration, bootstrap, lifecycle },
+    acknowledgedThrough,
+    latestDurableSourceSeq,
     incompleteDurableWork,
   };
 }

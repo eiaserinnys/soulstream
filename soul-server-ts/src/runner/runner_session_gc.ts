@@ -93,10 +93,21 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            if (inspection.incompleteDurableWork) {
+            if (
+              inspection.acknowledgedThrough === null
+              || inspection.latestDurableSourceSeq === null
+              || inspection.acknowledgedThrough !== inspection.latestDurableSourceSeq
+            ) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
                 reason: "final_ack_pending",
+              });
+              return;
+            }
+            if (inspection.incompleteDurableWork) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: "durable_replay_pending",
               });
               return;
             }
@@ -136,6 +147,18 @@ export class RunnerSessionGarbageCollector {
         },
       );
     }
+    this.logger.info(
+      {
+        inspected: scan.registrations.length,
+        deleted: result.removed.length,
+        deletedSessionIds: result.removed,
+        retained: result.retained.length,
+        retainedByReason: countRetainedReasons(result.retained),
+        retainedSessions: result.retained,
+        unreadableRegistrations: scan.errors.length,
+      },
+      "runner session GC sweep completed",
+    );
     return result;
   }
 }
@@ -147,9 +170,6 @@ function terminalCandidateReason(
 ): string | null {
   if (registration.pid === null) return "pid_evidence_missing";
   if (registration.pidAlive) return "live_runner";
-  if (!registration.registrationId || !registration.pidStartIdentity) {
-    return "ownership_evidence_missing";
-  }
   const lifecycle = registration.lifecycle;
   if (!lifecycle) return "lifecycle_missing";
   if (lifecycle.execution_state === "running") return "running_lifecycle";
@@ -157,6 +177,14 @@ function terminalCandidateReason(
   if (!Number.isFinite(terminalAt)) return "terminal_timestamp_invalid";
   if (nowMs - terminalAt < retentionMs) return "retention_window";
   return null;
+}
+
+function countRetainedReasons(
+  retained: RunnerSessionGcResult["retained"],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of retained) counts[item.reason] = (counts[item.reason] ?? 0) + 1;
+  return counts;
 }
 
 function assertOwnedSessionDirectory(stateDirectory: string, sessionDirectory: string): void {
