@@ -73,7 +73,7 @@ describe("runner SQLite write inventory", () => {
     });
     expect(classMethodCallers(SRC_ROOT, "RunnerSqliteLifecycle", ["open"])).toEqual({
       "runner/runner_child_runtime.ts": ["start"],
-      "runner/runner_recovery_coordinator.ts": ["markRegistrationReaped"],
+      "runner/runner_recovery_task.ts": ["markRegistrationReaped"],
     });
 
     const dispatcher = readFileSync(resolve(SRC_ROOT, "runner/runner_process_dispatcher.ts"), "utf8");
@@ -86,8 +86,8 @@ describe("runner SQLite write inventory", () => {
     );
     expect(dispatcher).toContain("RunnerParentOutbox.open(");
 
-    const recovery = readFileSync(resolve(SRC_ROOT, "runner/runner_recovery_coordinator.ts"), "utf8");
-    const reap = recovery.slice(recovery.indexOf("async function markRegistrationReaped("));
+    const recovery = readFileSync(resolve(SRC_ROOT, "runner/runner_recovery_task.ts"), "utf8");
+    const reap = recovery.slice(recovery.indexOf("function markRegistrationReaped("));
     expect(reap.indexOf("RunnerWriterLock.acquire")).toBeLessThan(
       reap.indexOf("RunnerSqliteLifecycle.open"),
     );
