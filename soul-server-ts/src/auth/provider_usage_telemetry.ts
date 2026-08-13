@@ -2,11 +2,20 @@ import type { Logger } from "pino";
 
 // Must remain below the orch provider usage command timeout (15 seconds), or the
 // node response will be discarded before it can cross the upstream boundary.
-export const PROVIDER_USAGE_REQUEST_TIMEOUT_MS = 10_000;
+export const PROVIDER_USAGE_REQUEST_TIMEOUT_MS = 14_000;
 export const PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS = 5_000;
 
-export type ProviderUsageLogger = Pick<Logger, "debug" | "warn">;
+export type ProviderUsageLogger = Pick<Logger, "debug" | "info" | "warn">;
 export type ProviderUsageProvider = "claude" | "codex" | "gemini";
+
+export interface ProviderUsageAttempt {
+  endpoint: string;
+  durationMs: number;
+  result: string;
+  status?: number | string;
+  budgetMs?: number;
+  [key: string]: unknown;
+}
 
 interface ProviderUsageLogFields {
   provider: ProviderUsageProvider;
@@ -34,7 +43,7 @@ export function providerUsageStarted(
   provider: ProviderUsageProvider,
   endpoint: string,
 ): void {
-  logger?.debug({ provider, endpoint, durationMs: 0, result: "started" }, "Provider usage request started");
+  logger?.info({ provider, endpoint, durationMs: 0, result: "started" }, "Provider usage request started");
 }
 
 export function providerUsageFinished(
@@ -46,13 +55,75 @@ export function providerUsageFinished(
   if (
     fields.result === "error" ||
     fields.result === "http_error" ||
+    fields.result === "cloudflare_challenge" ||
     fields.result === "timeout" ||
     fields.durationMs >= slowRequestThresholdMs
   ) {
     logger?.warn(fields, message);
     return;
   }
-  logger?.debug(fields, message);
+  logger?.info(fields, message);
+}
+
+export function providerUsageSummary(
+  logger: ProviderUsageLogger | undefined,
+  fields: ProviderUsageLogFields & {
+    attempts: ProviderUsageAttempt[];
+    status?: string;
+  },
+  slowRequestThresholdMs = PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS,
+): void {
+  if (
+    (fields.result === "success" || fields.result === "not_configured")
+    && fields.durationMs < slowRequestThresholdMs
+  ) {
+    logger?.info(fields, "Provider usage summary");
+    return;
+  }
+  logger?.warn(fields, "Provider usage summary");
+}
+
+export interface ProviderUsageDeadline {
+  signal: AbortSignal;
+  scheduledAbortAtMs: number;
+  cancel(): void;
+}
+
+export function createProviderUsageDeadline(
+  logger: ProviderUsageLogger | undefined,
+  fields: {
+    provider: ProviderUsageProvider;
+    endpoint: string;
+    timeoutMs: number;
+    scope: "provider" | "candidate";
+  },
+): ProviderUsageDeadline {
+  const controller = new AbortController();
+  const scheduledAbortAtMs = Date.now() + fields.timeoutMs;
+  const timer = setTimeout(() => {
+    const actualAbortAtMs = Date.now();
+    logger?.warn(
+      {
+        provider: fields.provider,
+        endpoint: fields.endpoint,
+        durationMs: Math.max(0, actualAbortAtMs - (scheduledAbortAtMs - fields.timeoutMs)),
+        result: "timeout_fired",
+        timeoutScope: fields.scope,
+        timeoutMs: fields.timeoutMs,
+        scheduledAbortAtMs,
+        actualAbortAtMs,
+        abortDelayMs: Math.max(0, actualAbortAtMs - scheduledAbortAtMs),
+      },
+      "Provider usage timeout fired",
+    );
+    controller.abort(new DOMException("Provider usage request timed out", "TimeoutError"));
+  }, fields.timeoutMs);
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    scheduledAbortAtMs,
+    cancel: () => clearTimeout(timer),
+  };
 }
 
 export function providerUsageFailureResult(signal: AbortSignal, error: unknown): "timeout" | "error" {
