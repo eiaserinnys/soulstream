@@ -443,6 +443,7 @@ def test_oneof_covers_all_wire_messages() -> None:
     oneof_refs = {entry["$ref"].rsplit("/", 1)[-1] for entry in schema["oneOf"]}
     wire_types = {
         "NodeRegister",
+        "NodeRegisterAck",
         "AppHeartbeatPing",
         "AppHeartbeatPong",
         "SessionCreated",
@@ -450,6 +451,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "EventAppendBatch",
         "EventAppendAck",
         "SessionsUpdate",
+        "RunnerInventory",
         "HealthStatus",
         "SessionUpdated",
         "SessionDeleted",
@@ -477,6 +479,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "RealtimeEvent",
         "RealtimeResolveToolApproval",
         "ListSessions",
+        "ListRunnerInventory",
         "UploadAttachment",
         "UploadAttachmentStart",
         "UploadAttachmentChunk",
