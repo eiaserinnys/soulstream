@@ -189,17 +189,48 @@ describe("runner process registry", () => {
     })).resolves.toEqual(["session-live", "session-pre"]);
   });
 
+  it("skips a registration directory collected during the inventory scan and logs it", async () => {
+    const stateDirectory = await temporaryDirectory("inventory-gc-race");
+    const collectedDirectory = join(stateDirectory, "collected");
+    await mkdir(collectedDirectory);
+    const logger = { debug: vi.fn() };
+
+    await expect(listLiveRunnerSessionIds({
+      stateDirectory,
+      leaseTimeoutMs: 120_000,
+      now: () => NOW,
+      scan: async () => {
+        await rm(collectedDirectory, { recursive: true });
+        return {
+          registrations: [registration({ sessionId: "session-live" })],
+          errors: [{
+            directory: collectedDirectory,
+            error: Object.assign(new Error("registration disappeared"), { code: "ENOENT" }),
+          }],
+        };
+      },
+      logger,
+    })).resolves.toEqual(["session-live"]);
+    expect(logger.debug).toHaveBeenCalledWith(
+      { count: 1, directories: [collectedDirectory] },
+      "skipped runner inventory entries removed during scan",
+    );
+  });
+
   it("includes a recovered damaged neighbor identity in the conservative inventory", async () => {
+    const stateDirectory = await temporaryDirectory("damaged-neighbor");
+    const damagedDirectory = join(stateDirectory, "session-unknown");
+    await mkdir(damagedDirectory);
     const failure = new Error("runner registration unreadable");
     const onScanError = vi.fn();
     await expect(listLiveRunnerSessionIds({
-      stateDirectory: "/runner",
+      stateDirectory,
       leaseTimeoutMs: 120_000,
       now: () => NOW,
       scan: async () => ({
         registrations: [registration({ sessionId: "session-live" })],
         errors: [{
-          directory: "/runner/session-unknown",
+          directory: damagedDirectory,
           error: failure,
           sessionId: "session-unknown",
         }],
@@ -210,6 +241,9 @@ describe("runner process registry", () => {
   });
 
   it("skips a busy SQLite scan cycle and retries the live runner on the next cycle", async () => {
+    const stateDirectory = await temporaryDirectory("busy-inventory");
+    const busyDirectory = join(stateDirectory, "session-busy");
+    await mkdir(busyDirectory);
     const busy = Object.assign(new Error("database is locked"), {
       code: "ERR_SQLITE_ERROR",
       errcode: 5,
@@ -218,7 +252,7 @@ describe("runner process registry", () => {
       .mockResolvedValueOnce({
         registrations: [],
         errors: [{
-          directory: "/runner/session-busy",
+          directory: busyDirectory,
           error: busy,
           sessionId: "session-busy",
         }],
@@ -229,13 +263,13 @@ describe("runner process registry", () => {
       });
 
     await expect(listLiveRunnerSessionIds({
-      stateDirectory: "/runner",
+      stateDirectory,
       leaseTimeoutMs: 120_000,
       now: () => NOW,
       scan,
     })).resolves.toEqual(["session-busy"]);
     await expect(listLiveRunnerSessionIds({
-      stateDirectory: "/runner",
+      stateDirectory,
       leaseTimeoutMs: 120_000,
       now: () => NOW,
       scan,
@@ -244,16 +278,21 @@ describe("runner process registry", () => {
   });
 
   it("refuses partial inventory when a damaged directory has no recoverable identity", async () => {
+    const stateDirectory = await temporaryDirectory("damaged-inventory");
+    const damagedDirectory = join(stateDirectory, "unidentified");
+    await mkdir(damagedDirectory);
     const failure = new Error("runner identity cannot be recovered");
     await expect(listLiveRunnerSessionIds({
-      stateDirectory: "/runner",
+      stateDirectory,
       leaseTimeoutMs: 120_000,
       now: () => NOW,
       scan: async () => ({
         registrations: [registration({ sessionId: "session-live" })],
-        errors: [{ directory: "/runner/unidentified", error: failure }],
+        errors: [{ directory: damagedDirectory, error: failure }],
       }),
-    })).rejects.toThrow("runner inventory incomplete: identity unavailable for /runner/unidentified");
+    })).rejects.toThrow(
+      `runner inventory incomplete: identity unavailable for ${damagedDirectory}`,
+    );
   });
 
   it("reads only the lifecycle row and never opens the event outbox", async () => {

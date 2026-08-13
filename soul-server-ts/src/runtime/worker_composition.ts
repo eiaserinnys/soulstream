@@ -435,7 +435,12 @@ export async function composeWorkerRuntime(
         deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
         modelCatalog,
         eventOutboxPump: eventOutboxPumpMux,
-        ...composeRunnerReconciliationReporter(env, runnerProcess?.runtimeFactory, runnerRecoveryCoordinator),
+        ...composeRunnerReconciliationReporter(
+          env,
+          runnerProcess?.runtimeFactory,
+          runnerRecoveryCoordinator,
+          logger,
+        ),
         ...(agentProfileSource ? { agentProfileSource } : {}),
       },
     );
