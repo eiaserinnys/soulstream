@@ -8,6 +8,11 @@ import {
 import { join } from "node:path";
 
 import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import {
+  appendEventOutboxQuarantine,
+  type EventOutboxQuarantineInput,
+  type EventOutboxQuarantineResult,
+} from "./event_outbox_quarantine.js";
 
 export const EVENT_OUTBOX_MAX_BATCH_EVENTS = 64;
 export const EVENT_OUTBOX_MAX_BATCH_BYTES = 256 * 1024;
@@ -152,15 +157,16 @@ export class EventOutbox {
     });
   }
 
-  async readBatch(): Promise<EventOutboxBatch | null> {
+  async readBatch(maxEvents = EVENT_OUTBOX_MAX_BATCH_EVENTS): Promise<EventOutboxBatch | null> {
     return await this.exclusive(async () => {
+      assertBatchEventLimit(maxEvents);
       const pending = (await this.readRecords()).filter(
         (record) => record.source_seq > this.metadata.acked_seq,
       );
       if (pending.length === 0) return null;
       const selected: EventOutboxRecord[] = [];
       for (const record of pending) {
-        if (selected.length >= EVENT_OUTBOX_MAX_BATCH_EVENTS) break;
+        if (selected.length >= maxEvents) break;
         const candidateArray = [...selected, record];
         const candidate: [EventOutboxRecord, ...EventOutboxRecord[]] = [
           candidateArray[0]!,
@@ -204,6 +210,31 @@ export class EventOutbox {
       this.metadata = { ...this.metadata, acked_seq: ackedThrough };
       await this.persistMetadata();
       await this.compactIfNeeded();
+    });
+  }
+
+  async quarantineHead(
+    input: EventOutboxQuarantineInput,
+  ): Promise<EventOutboxQuarantineResult> {
+    return await this.exclusive(async () => {
+      if (input.record.stream_id !== this.metadata.stream_id) {
+        throw new Error("event outbox quarantine stream_id mismatch");
+      }
+      const expectedHead = this.metadata.acked_seq + 1;
+      if (input.record.source_seq !== expectedHead) {
+        throw new Error("event outbox quarantine target is not the durable head");
+      }
+      const durable = (await this.readRecords()).find(
+        (record) => record.source_seq === expectedHead,
+      );
+      if (!durable || durable.payload_hash !== input.record.payload_hash) {
+        throw new Error("event outbox quarantine target differs from durable head");
+      }
+      const result = await appendEventOutboxQuarantine(this.directory, input);
+      this.metadata = { ...this.metadata, acked_seq: expectedHead };
+      await this.persistMetadata();
+      await this.compactIfNeeded();
+      return result;
     });
   }
 
@@ -322,6 +353,12 @@ export class EventOutbox {
     const result = this.operationTail.then(operation);
     this.operationTail = result.then(() => undefined, () => undefined);
     return await result;
+  }
+}
+
+function assertBatchEventLimit(value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > EVENT_OUTBOX_MAX_BATCH_EVENTS) {
+    throw new Error(`event outbox batch event limit must be 1-${EVENT_OUTBOX_MAX_BATCH_EVENTS}`);
   }
 }
 

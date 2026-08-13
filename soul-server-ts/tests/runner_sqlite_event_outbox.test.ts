@@ -1,7 +1,7 @@
-import { access, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1488,6 +1488,45 @@ describe("RunnerSqliteEventOutbox", () => {
       first_seq: event.source_seq,
       events: [{ stream_id: event.stream_id, source_seq: event.source_seq }],
     });
+    outbox.close();
+  });
+
+  it("quarantines one rejected SQLite head beside the runner DB and preserves the suffix", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    const bootstrap = await outbox.initializeBootstrap({
+      ...bootstrapInput(),
+      session_id: "7eb9d6ef-dead-4bad-8bad-000000000001",
+    });
+    const first = await outbox.append({
+      ...eventInput("poison"),
+      session_id: "7eb9d6ef-dead-4bad-8bad-000000000001",
+    });
+    const second = await outbox.append({
+      ...eventInput("survivor"),
+      session_id: "7eb9d6ef-dead-4bad-8bad-000000000001",
+    });
+
+    const quarantined = await outbox.quarantineHead({
+      record: first,
+      rejection: {
+        code: "EVENT_INGRESS_PROTOCOL_CONFLICT",
+        reason: "ingress receipt conflict",
+      },
+      attempts: 3,
+      quarantinedAt: "2026-08-13T00:00:00.000Z",
+    });
+
+    expect(outbox.ackedSeq).toBe(first.source_seq);
+    expect((await outbox.readBatch())?.events.map((event) => event.source_seq))
+      .toEqual([second.source_seq]);
+    expect(quarantined.path).toBe(join(
+      dirname(path),
+      "quarantine-20260813-7eb9.jsonl",
+    ));
+    expect(JSON.parse((await readFile(quarantined.path, "utf8")).trim()))
+      .toMatchObject({ event: first, rejection: { attempts: 3 } });
+    expect(bootstrap.stream_id).toBe(outbox.streamId);
     outbox.close();
   });
 

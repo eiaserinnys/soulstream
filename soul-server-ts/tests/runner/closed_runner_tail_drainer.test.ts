@@ -28,7 +28,7 @@ describe("ClosedRunnerTailDrainer", () => {
     const register = vi.fn();
     const drainer = new ClosedRunnerTailDrainer({
       pumpMux: { register },
-      logger: { error: vi.fn(), info: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
       openOutbox: vi.fn().mockResolvedValue(outbox),
     });
 
@@ -60,7 +60,7 @@ describe("ClosedRunnerTailDrainer", () => {
     });
     const drainer = new ClosedRunnerTailDrainer({
       pumpMux: { register },
-      logger: { error: vi.fn(), info: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
       openOutbox: vi.fn().mockResolvedValue(outbox),
     });
 
@@ -120,7 +120,7 @@ describe("ClosedRunnerTailDrainer", () => {
     });
     const options = {
       pumpMux: { register },
-      logger: { error: vi.fn(), info: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     };
 
     await new ClosedRunnerTailDrainer(options).drain(registration(databasePath));

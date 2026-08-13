@@ -200,6 +200,22 @@ export function registerNodeWsRoute(
         }
         emitEvents(options.eventSink, eventsFromControllerResult(result));
 
+        if (result.type === "registered") {
+          try {
+            socket.send(JSON.stringify({
+              type: "node_register_ack",
+              node_id: result.nodeId,
+            }));
+          } catch {
+            closeAndFinalize(
+              INTERNAL_ERROR_CLOSE_CODE,
+              "websocket send failed",
+              "websocket_send_error",
+            );
+            return;
+          }
+        }
+
         if (result.type === "message" && result.outboundFrames !== undefined) {
           try {
             for (const frame of result.outboundFrames) {

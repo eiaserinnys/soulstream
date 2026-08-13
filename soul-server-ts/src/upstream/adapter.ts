@@ -1,25 +1,24 @@
 import { WebSocket } from "ws";
 import type { Logger } from "pino";
 
-import type { AgentConfigService } from "../agent_config_service.js";
-import type { AgentRegistry } from "../agent_registry.js";
-import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
-import type { SessionDB } from "../db/session_db.js";
-import type { McpRuntime } from "../mcp/runtime.js";
-import type { ModelCatalog } from "../model_catalog.js";
-import type { RealtimeBroker } from "../realtime/realtime_broker.js";
-import type { TaskExecutor } from "../task/task_executor.js";
-import type { TaskManager } from "../task/task_manager.js";
-import type { AttachmentStore } from "../attachments/file_manager.js";
-import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js";
-
 import { CommandDispatcher } from "./dispatcher.js";
 import { CommandTransportObserver } from "./command_transport_observer.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
-import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
-import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
+import { isConnectionError } from "./adapter_connection_error.js";
+import type {
+  ReconnectPolicyBoundary,
+  UpstreamConfig,
+  UpstreamDependencies,
+} from "./adapter_types.js";
+
+export type {
+  ReconnectPolicyBoundary,
+  UpstreamConfig,
+  UpstreamDependencies,
+} from "./adapter_types.js";
+export { isConnectionError } from "./adapter_connection_error.js";
 
 const APP_HEARTBEAT_PING = "app_heartbeat_ping";
 const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
@@ -28,41 +27,6 @@ const APP_HEARTBEAT_MAX_MISSED = 2;
 const APP_HEARTBEAT_CLOSE_CODE = 1011;
 const INITIAL_SESSION_REPORT_MAX_ATTEMPTS = 5;
 const INITIAL_SESSION_REPORT_BASE_DELAY_MS = 100;
-
-export interface UpstreamConfig {
-  url: string;
-  nodeId: string;
-  host: string;
-  port: number;
-  authBearerToken: string;
-  userName: string;
-  userPortraitPath: string;
-  isProduction: boolean;
-  runnerProcessEnabled?: boolean;
-  runnerLeaseTimeoutMs?: number;
-  heartbeatIntervalMs?: number;
-  heartbeatMaxMissed?: number;
-}
-
-export interface UpstreamDependencies {
-  agentRegistry: AgentRegistry;
-  taskManager: TaskManager;
-  taskExecutor: TaskExecutor;
-  attachmentStore?: AttachmentStore;
-  claudeAuth?: ClaudeAuthCommandHandler;
-  /** Phase B: list_sessions 핸들러 의존성. main.ts에서 주입. */
-  sessionDb?: SessionDB;
-  realtimeBroker?: RealtimeBroker;
-  agentConfigService?: AgentConfigService;
-  reflectionRuntime?: McpRuntime;
-  scheduleCommands?: ClaudeRuntimeScheduleCommands;
-  deliveryV2Enabled?: boolean;
-  modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
-  eventOutboxPump?: EventOutboxPumpTransport;
-  agentProfileSource?: NewSessionAgentProfileSource;
-  listLiveRunnerSessionIds?: () => Promise<string[]>;
-  waitForRunnerReconciliation?: () => Promise<void>;
-}
 
 /**
  * orch에 역방향 WebSocket 연결.
@@ -77,7 +41,7 @@ export interface UpstreamDependencies {
 export class UpstreamAdapter {
   private ws: WebSocket | null = null;
   private running = false;
-  private readonly reconnect = new ReconnectPolicy();
+  private readonly reconnect: ReconnectPolicyBoundary;
   private readonly dispatcher: CommandDispatcher;
   private readonly commandTransportObserver: CommandTransportObserver;
   private authWarned = false;
@@ -90,6 +54,7 @@ export class UpstreamAdapter {
     private readonly logger: Logger,
     private readonly deps: UpstreamDependencies,
   ) {
+    this.reconnect = deps.reconnectPolicy ?? new ReconnectPolicy();
     this.commandTransportObserver = new CommandTransportObserver(logger);
     this.dispatcher = new CommandDispatcher(
       (data) => this.send(data),
@@ -238,14 +203,19 @@ export class UpstreamAdapter {
       ws.once("error", onError);
     });
 
-    this.reconnect.reset();
-    this.authWarned = false;
-    this.logger.info({ nodeId: this.config.nodeId }, "Connected to upstream");
+    this.logger.info({ nodeId: this.config.nodeId }, "Upstream WebSocket opened");
 
     // 명령 수신 루프 — node_register 직후 orch heartbeat가 와도 놓치지 않도록
     // registration 발행 전에 listener를 먼저 설치한다.
+    let registrationAccepted = false;
+    let resolveRegistration!: () => void;
+    const registrationPromise = new Promise<void>((resolve) => {
+      resolveRegistration = resolve;
+    });
+    const activeHandlers = new Set<Promise<void>>();
     const servePromise = new Promise<void>((resolve) => {
-      const onMessage = async (raw: Buffer | ArrayBuffer | Buffer[]) => {
+      let settled = false;
+      const handleMessage = async (raw: Buffer | ArrayBuffer | Buffer[]) => {
         let cmd: unknown;
         try {
           const text = Array.isArray(raw)
@@ -261,11 +231,22 @@ export class UpstreamAdapter {
           return;
         }
         try {
+          if (isNodeRegisterAck(cmd, this.config.nodeId)) {
+            if (!registrationAccepted) {
+              registrationAccepted = true;
+              resolveRegistration();
+            }
+            return;
+          }
           if (await this.handleAppHeartbeatMessage(cmd)) {
             return;
           }
           if (this.deps.eventOutboxPump?.isAck(cmd)) {
             await this.deps.eventOutboxPump.handleAck(cmd);
+            return;
+          }
+          if (this.deps.eventOutboxPump?.isRejection(cmd)) {
+            await this.deps.eventOutboxPump.handleRejection(cmd);
             return;
           }
           await this.commandTransportObserver.observe(
@@ -277,21 +258,38 @@ export class UpstreamAdapter {
           this.logger.error({ err }, "Dispatcher threw");
         }
       };
-      const onClose = (code: number, reason: Buffer) => {
-        ws.off("message", onMessage);
-        ws.off("error", onError);
-        this.stopAppHeartbeat();
-        this.deps.eventOutboxPump?.disconnect();
-        this.logger.info({ code, reason: reason.toString("utf-8") }, "Upstream connection closed");
-        resolve();
+      const onMessage = (raw: Buffer | ArrayBuffer | Buffer[]) => {
+        const active = handleMessage(raw);
+        activeHandlers.add(active);
+        void active.finally(() => activeHandlers.delete(active));
       };
-      const onError = (err: Error) => {
+      const settle = async (
+        kind: "close" | "error",
+        detail: { code: number; reason: Buffer } | { err: Error },
+      ) => {
+        if (settled) return;
+        settled = true;
         ws.off("message", onMessage);
         ws.off("close", onClose);
+        ws.off("error", onError);
+        await Promise.allSettled([...activeHandlers]);
         this.stopAppHeartbeat();
         this.deps.eventOutboxPump?.disconnect();
-        this.logger.warn({ err }, "WebSocket error during serve");
+        if (kind === "close" && "code" in detail) {
+          this.logger.info(
+            { code: detail.code, reason: detail.reason.toString("utf-8") },
+            "Upstream connection closed",
+          );
+        } else if ("err" in detail) {
+          this.logger.warn({ err: detail.err }, "WebSocket error during serve");
+        }
         resolve();
+      };
+      const onClose = (code: number, reason: Buffer) => {
+        void settle("close", { code, reason });
+      };
+      const onError = (err: Error) => {
+        void settle("error", { err });
       };
       ws.on("message", onMessage);
       ws.once("close", onClose);
@@ -314,15 +312,27 @@ export class UpstreamAdapter {
           logger: this.logger,
         }),
       );
-      this.deps.eventOutboxPump?.connect(async (batch) => {
-        await this.sendOnSocket(ws, batch);
-      });
+      await this.deps.waitForRunnerReconciliation?.();
+      const catchUpReady = this.deps.eventOutboxPump
+        ? Promise.resolve(this.deps.eventOutboxPump.connect(async (batch) => {
+            await this.sendOnSocket(ws, batch);
+          })).then((ready) => ready !== false)
+        : Promise.resolve(true);
       // orch-server-ts는 heartbeat ping을 먼저 보내지 않으므로, 허브 ping을 기다리지 않고
       // 등록 직후 노드 쪽에서 능동 시작해야 half-open 연결(원격 서버 리셋 등)을 감지할 수 있다.
       // 양쪽 orch(Python/TS) 모두 노드발 ping에 pong으로 응답한다.
       this.startAppHeartbeat(ws);
       await this.sendInitialSessions(ws);
-      await servePromise;
+      const established = await Promise.race([
+        Promise.all([registrationPromise, catchUpReady]).then(([, ready]) => ready),
+        servePromise.then(() => false),
+      ]);
+      if (established) {
+        this.reconnect.reset();
+        this.authWarned = false;
+        this.logger.info({ nodeId: this.config.nodeId }, "Registered with upstream");
+        await servePromise;
+      }
     } finally {
       this.deps.eventOutboxPump?.disconnect();
       if (this.ws === ws) {
@@ -420,7 +430,7 @@ export class UpstreamAdapter {
       if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
       try {
         const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
-        const runningSessionIds = await this.listRunningSessionIds();
+        const runningSessionIds = await this.listRunningSessionIds(false);
         const report = await commands.listSessions({ requestId: "", runningSessionIds });
         if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
         await this.sendOnSocket(ws, report);
@@ -444,8 +454,8 @@ export class UpstreamAdapter {
     }
   }
 
-  private async listRunningSessionIds(): Promise<string[]> {
-    await this.deps.waitForRunnerReconciliation?.();
+  private async listRunningSessionIds(waitForReconciliation = true): Promise<string[]> {
+    if (waitForReconciliation) await this.deps.waitForRunnerReconciliation?.();
     const inMemorySessionIds = this.deps.taskManager.listTasks()
       .filter((task) => task.status === "running")
       .map((task) => task.agentSessionId);
@@ -471,28 +481,8 @@ export class UpstreamAdapter {
   }
 }
 
-/**
- * Node.js 연결 오류 + WS handshake 오류 판별. Python `adapter.py` L122-132의
- * `(WSServerHandshakeError, ClientConnectorError, ClientError, ConnectionError, OSError)` 등가.
- */
-export function isConnectionError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as NodeJS.ErrnoException).code;
-  if (
-    code === "ECONNREFUSED" ||
-    code === "ETIMEDOUT" ||
-    code === "ENOTFOUND" ||
-    code === "ECONNRESET" ||
-    code === "EHOSTUNREACH" ||
-    code === "ENETUNREACH"
-  ) {
-    return true;
-  }
-  // ws 라이브러리의 handshake 실패는 message에 status 또는 "Unexpected server response" 포함
-  const msg = err.message;
-  return (
-    msg.includes("Unexpected server response") ||
-    msg.includes("WebSocket") ||
-    msg.includes("handshake")
-  );
+function isNodeRegisterAck(value: unknown, nodeId: string): boolean {
+  return Boolean(value && typeof value === "object"
+    && (value as Record<string, unknown>).type === "node_register_ack"
+    && (value as Record<string, unknown>).node_id === nodeId);
 }
