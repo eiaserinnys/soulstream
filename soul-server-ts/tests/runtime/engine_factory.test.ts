@@ -10,6 +10,8 @@ import type { AgentProfile } from "../../src/agent_registry.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
 import { createEngineFactory } from "../../src/runtime/engine_factory.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const logger = pino({ level: "silent" });
 const sessionStore: SessionStore = {
   async append() {},
@@ -26,7 +28,7 @@ const factoryEnv = {
 
 describe("createEngineFactory", () => {
   it("creates different agent engines in one shared workspace without an ownership marker", () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "shared-agent-workspace-"));
+    const workspaceDir = makeTempDirSync("shared-agent-workspace-");
     const factory = createEngineFactory({
       env: factoryEnv,
       logger,
@@ -66,7 +68,7 @@ describe("createEngineFactory", () => {
   });
 
   it("uses a preset backend override without mutating the agent profile", () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "preset-backend-workspace-"));
+    const workspaceDir = makeTempDirSync("preset-backend-workspace-");
     const factory = createEngineFactory({
       env: factoryEnv,
       logger,
@@ -95,7 +97,7 @@ describe("createEngineFactory", () => {
   });
 
   it("fails explicitly when a Codex MCP profile is used with the legacy SDK adapter", () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "codex-mcp-profile-"));
+    const workspaceDir = makeTempDirSync("codex-mcp-profile-");
     writeFileSync(
       join(workspaceDir, "mcp-profiles.yaml"),
       ["profiles:", "  - id: full", ""].join("\n"),

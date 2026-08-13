@@ -19,6 +19,8 @@ import {
 import { stagingDatabaseUrl } from "../../scripts/staging-soak/database.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 
+import { makeTempDir } from "../helpers/temp_dir.js";
+
 const REPOSITORY_ROOT = "/srv/soulstream";
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
@@ -171,7 +173,7 @@ describe("runner staging soak evidence", () => {
   });
 
   it("exports the runner event ledger and payload-free IPC journal", async () => {
-    const root = await mkdtemp(join(tmpdir(), "runner-soak-evidence-"));
+    const root = await makeTempDir("runner-soak-evidence-");
     const sessionId = "session-soak-1";
     const slug = createHash("sha256").update(sessionId).digest("hex").slice(0, 24);
     const sessionDirectory = join(root, "runtime", "runner-state", slug);

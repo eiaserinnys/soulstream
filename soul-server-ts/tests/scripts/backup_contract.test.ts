@@ -9,6 +9,8 @@ import {
   recoverPreviousReleaseData,
   verifyBackup,
 } from "../../../packages/db-schema/scripts/backup.mjs";
+
+import { makeTempDirSync } from "../helpers/temp_dir.js";
 import { assertPostgresBackupPrerequisites } from
   "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
 import { assertRollbackUnsafeApplyGates, preflightPendingMigrations } from
@@ -33,7 +35,7 @@ function backupEnvironment(directory: string) {
 
 describe("pending destructive backup contract", () => {
   it("skips dump and restore tooling when the actual plan is previous-release safe", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-backup-skip-"));
+    const directory = makeTempDirSync("soul-backup-skip-");
     tempDirs.push(directory);
     const spawn = vi.fn();
     const planRead = vi.fn(async () => ({ state: "current", pending: [] }));

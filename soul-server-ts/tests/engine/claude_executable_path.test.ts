@@ -6,9 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { configureClaudeExecutablePath } from "../../src/engine/claude_executable_path.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 describe("Claude executable startup preflight", () => {
   it("accepts the explicit host executable capability", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-explicit-path-"));
+    const dir = makeTempDirSync("claude-explicit-path-");
     try {
       const executable = join(dir, "claude");
       writeFileSync(executable, "", { mode: 0o755 });
@@ -23,7 +25,7 @@ describe("Claude executable startup preflight", () => {
   });
 
   it("canonicalizes a Windows PATH resolution into the child environment capability", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-configured-path-"));
+    const dir = makeTempDirSync("claude-configured-path-");
     try {
       const executable = join(dir, "claude.cmd");
       writeFileSync(executable, "", { mode: 0o755 });
@@ -40,7 +42,7 @@ describe("Claude executable startup preflight", () => {
   });
 
   it("fails startup with every searched Windows candidate in the diagnosis", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-missing-path-"));
+    const dir = makeTempDirSync("claude-missing-path-");
     try {
       const first = join(dir, "npm-a");
       const second = join(dir, "npm-b");
@@ -63,7 +65,7 @@ describe("Claude executable startup preflight", () => {
   });
 
   it("falls back to PATH when the explicit executable hint is stale", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-stale-explicit-"));
+    const dir = makeTempDirSync("claude-stale-explicit-");
     try {
       const executable = join(dir, "claude");
       writeFileSync(executable, "", { mode: 0o755 });
@@ -80,7 +82,7 @@ describe("Claude executable startup preflight", () => {
   });
 
   it("logs an error before falling back from a stale explicit executable hint", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-stale-explicit-log-"));
+    const dir = makeTempDirSync("claude-stale-explicit-log-");
     try {
       const executable = join(dir, "claude");
       const stale = join(dir, "deleted-python-release", "claude");

@@ -8,6 +8,8 @@ import { z } from "zod";
 
 import { ConfigStore } from "../src/config_store.js";
 
+import { makeTempDirSync } from "./helpers/temp_dir.js";
+
 const TestConfigSchema = z.object({
   agents: z.array(z.object({
     id: z.string().min(1),
@@ -37,7 +39,7 @@ describe("ConfigStore", () => {
   let snapshotRoot: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "config-store-"));
+    tempDir = makeTempDirSync("config-store-");
     configPath = path.join(tempDir, "agents.yaml");
     snapshotRoot = path.join(tempDir, ".local", "config-snapshots");
     fs.writeFileSync(

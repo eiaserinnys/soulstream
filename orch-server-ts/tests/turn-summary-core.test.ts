@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildCodexExecInvocation,
@@ -36,6 +36,22 @@ import {
   findBlockedChildProcessEnvKeys,
   sanitizeChildProcessEnv,
 } from "../src/runtime/child_process_env.js";
+
+// mkdtempSync 결과를 회수하지 않으면 실행마다 /tmp에 디렉토리가 쌓인다.
+const trackedTempDirs: string[] = [];
+
+function trackTempDir(prefix: string): string {
+  const directory = mkdtempSync(prefix);
+  trackedTempDirs.push(directory);
+  return directory;
+}
+
+afterAll(() => {
+  for (const directory of trackedTempDirs.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 
 const CONFIG: TurnSummaryConfig = {
   enabled: true,
@@ -225,7 +241,7 @@ describe("TurnSummaryConfigService", () => {
   });
 
   it("shallow merges a partial local overlay over the repository config", () => {
-    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-config-"));
     tempDirs.push(dir);
     const path = join(dir, "turn-summary.yaml");
     const service = new TurnSummaryConfigService(path, {
@@ -250,7 +266,7 @@ describe("TurnSummaryConfigService", () => {
   });
 
   it("accepts a local story model override without changing the turn summary model", () => {
-    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-config-"));
     tempDirs.push(dir);
     const path = join(dir, "turn-summary.yaml");
     const service = new TurnSummaryConfigService(path, {
@@ -271,7 +287,7 @@ describe("TurnSummaryConfigService", () => {
   });
 
   it("keeps the last good merged config after an invalid local overlay", () => {
-    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-config-"));
     tempDirs.push(dir);
     const path = join(dir, "turn-summary.yaml");
     const localPath = join(dir, "turn-summary.local.yaml");
@@ -290,7 +306,7 @@ describe("TurnSummaryConfigService", () => {
   });
 
   it("hot reloads valid config and keeps the last good value after an invalid update", () => {
-    const dir = mkdtempSync(join(tmpdir(), "turn-summary-config-"));
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-config-"));
     tempDirs.push(dir);
     const path = join(dir, "turn-summary.yaml");
     const warnings: unknown[] = [];
@@ -339,7 +355,7 @@ describe("turn summary child process env", () => {
 
 describe("Codex turn summary provider", () => {
   it("resolves the process-manager-safe HOME install when PATH is narrow", () => {
-    const home = mkdtempSync(join(tmpdir(), "turn-summary-codex-home-"));
+    const home = trackTempDir(join(tmpdir(), "turn-summary-codex-home-"));
     tempDirs.push(home);
     const bin = join(home, ".local", "bin");
     mkdirSync(bin, { recursive: true });

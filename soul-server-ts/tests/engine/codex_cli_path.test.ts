@@ -6,10 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveCodexCliPath } from "../../src/engine/codex_cli_path.js";
 
+import { makeTempDir, makeTempDirSync } from "../helpers/temp_dir.js";
+
 const tempDirs: string[] = [];
 
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "codex-cli-path-"));
+  const dir = makeTempDirSync("codex-cli-path-");
   tempDirs.push(dir);
   return dir;
 }

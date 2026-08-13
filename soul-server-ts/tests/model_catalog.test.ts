@@ -11,8 +11,10 @@ import {
   ModelCatalogSchema,
 } from "../src/model_catalog.js";
 
+import { makeTempDirSync } from "./helpers/temp_dir.js";
+
 function withTempCatalog<T>(content: string, fn: (catalogPath: string) => T): T {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "model-catalog-"));
+  const directory = makeTempDirSync("model-catalog-");
   const catalogPath = path.join(directory, "model-catalog.yaml");
   fs.writeFileSync(catalogPath, content, "utf-8");
   try {
@@ -118,7 +120,7 @@ presets:
   });
 
   it("degrades a missing catalog file to an empty additive catalog", () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "model-catalog-missing-"));
+    const directory = makeTempDirSync("model-catalog-missing-");
     try {
       const catalogPath = path.join(directory, "model-catalog.yaml");
       const warn = vi.fn();

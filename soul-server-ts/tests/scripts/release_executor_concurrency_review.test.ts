@@ -18,6 +18,8 @@ import {
   releaseDatabaseReleaseLease,
 } from "../../../packages/db-schema/scripts/database-release-lock.mjs";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const JOURNAL_MODULE = pathToFileURL(fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/database-release-journal.mjs",
   import.meta.url,
@@ -47,7 +49,7 @@ afterEach(() => {
 });
 
 function directory(prefix: string) {
-  const value = mkdtempSync(join(tmpdir(), prefix));
+  const value = makeTempDirSync(prefix);
   directories.push(value);
   return value;
 }

@@ -30,6 +30,8 @@ import {
   runnerControlResponseFrame,
 } from "../../src/runner/frame_protocol.js";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient", () => {
@@ -559,7 +561,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("resolves claude.cmd from a Windows PATH using PATHEXT", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-windows-path-"));
+    const dir = makeTempDirSync("claude-windows-path-");
     try {
       const shimDir = join(dir, "npm");
       mkdirSync(shimDir, { recursive: true });
@@ -580,7 +582,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("keeps non-Windows Claude Code PATH resolution unchanged", () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-posix-path-"));
+    const dir = makeTempDirSync("claude-posix-path-");
     try {
       const binDir = join(dir, "bin");
       mkdirSync(binDir, { recursive: true });
@@ -657,7 +659,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("initial image attachments are embedded as Claude image content blocks", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-image-"));
+    const dir = makeTempDirSync("claude-image-");
     try {
       const imagePath = join(dir, "sample.png");
       const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -1222,7 +1224,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("loads workspace mcp_config.json unless useMcp is false", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-"));
+    const workspaceDir = makeTempDirSync("claude-mcp-");
     try {
       writeFileSync(
         join(workspaceDir, "mcp_config.json"),
@@ -1265,7 +1267,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("uses only resolved profile MCP servers in strict mode", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-profile-"));
+    const workspaceDir = makeTempDirSync("claude-mcp-profile-");
     try {
       writeFileSync(
         join(workspaceDir, ".mcp.json"),
@@ -1345,7 +1347,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("loads workspace .mcp.json and adds current agent session id header to soulstream MCP servers only", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-json-session-"));
+    const workspaceDir = makeTempDirSync("claude-mcp-json-session-");
     try {
       writeFileSync(
         join(workspaceDir, ".mcp.json"),
@@ -1406,7 +1408,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("adds current agent session id header to legacy soulstream HTTP MCP servers", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-session-"));
+    const workspaceDir = makeTempDirSync("claude-mcp-session-");
     try {
       writeFileSync(
         join(workspaceDir, "mcp_config.json"),
@@ -2690,7 +2692,7 @@ describe("ClaudeSdkClient", () => {
   });
 
   it("keeps image attachment input open during the turn and closes it after result", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "claude-query-image-"));
+    const dir = makeTempDirSync("claude-query-image-");
     try {
       const imagePath = join(dir, "sample.webp");
       const bytes = Buffer.from([0x52, 0x49, 0x46, 0x46]);

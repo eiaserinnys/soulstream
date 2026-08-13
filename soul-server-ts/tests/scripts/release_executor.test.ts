@@ -23,6 +23,8 @@ import {
   runDatabaseRelease,
 } from "../../../packages/db-schema/scripts/release-executor.mjs";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 const directories: string[] = [];
 const databaseLeases: TestDatabaseLease[] = [];
 const itWithDatabase = hasTestDatabaseResource()
@@ -155,7 +157,7 @@ describe("database release executor", () => {
   });
 
   it("returns the Haniel probe identity without creating a live journal", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-probe-"));
+    const directory = makeTempDirSync("soul-release-probe-");
     directories.push(directory);
     const env = {
       ...environment(directory, "fresh_install"),
@@ -183,7 +185,7 @@ describe("database release executor", () => {
   });
 
   it("writes an identity-bound atomic journal during preflight", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-journal-"));
+    const directory = makeTempDirSync("soul-release-journal-");
     directories.push(directory);
     const env = environment(directory);
     const report = await preflight(env);
@@ -212,7 +214,7 @@ describe("database release executor", () => {
   });
 
   it("rejects backup before a matching quiescence receipt", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-quiescence-"));
+    const directory = makeTempDirSync("soul-release-quiescence-");
     directories.push(directory);
     const env = environment(directory);
     const backupCreate = vi.fn();
@@ -227,7 +229,7 @@ describe("database release executor", () => {
     ["create", "BACKUP_CREATE_FAILED"],
     ["verify", "BACKUP_VERIFY_FAILED"],
   ])("keeps apply at zero when backup %s fails", async (failure, code) => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-backup-"));
+    const directory = makeTempDirSync("soul-release-backup-");
     directories.push(directory);
     const env = await writeReceipt(environment(directory));
     const migrationRun = vi.fn();
@@ -258,7 +260,7 @@ describe("database release executor", () => {
   });
 
   it("does not require dump or restore for an empty fresh_install", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-fresh-"));
+    const directory = makeTempDirSync("soul-release-fresh-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const all = [migration("001_initial.sql", 1)];
@@ -287,7 +289,7 @@ describe("database release executor", () => {
   });
 
   it("reconciles a commit that completed before the journal update", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-reconcile-"));
+    const directory = makeTempDirSync("soul-release-reconcile-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const all = [migration("001_initial.sql", 1)];
@@ -318,7 +320,7 @@ describe("database release executor", () => {
   });
 
   it("does not downgrade a committed release when the deepest caller reports late failure", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-late-error-"));
+    const directory = makeTempDirSync("soul-release-late-error-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const pending = [migration("001_initial.sql", 1)];
@@ -341,7 +343,7 @@ describe("database release executor", () => {
   });
 
   it("keeps completed journal retries idempotent after the pending plan becomes empty", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-applied-retry-"));
+    const directory = makeTempDirSync("soul-release-applied-retry-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const pending = [migration("001_initial.sql", 1)];
@@ -374,7 +376,7 @@ describe("database release executor", () => {
     const sql = postgres(testDatabaseUrl, { max: 1, idle_timeout: 1 });
     expect(await inspectUserObjectInventory(sql)).toMatchObject(emptyInventory());
     await sql.end({ timeout: 5 });
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-db-crash-"));
+    const directory = makeTempDirSync("soul-release-db-crash-");
     directories.push(directory);
     const env = {
       ...environment(directory, "fresh_install"),
@@ -399,7 +401,7 @@ describe("database release executor", () => {
   }, 90_000);
 
   it("fails closed on a partial or foreign-release ledger", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-ambiguous-"));
+    const directory = makeTempDirSync("soul-release-ambiguous-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const all = [migration("001_initial.sql", 1), migration("002_more.sql", 2)];
@@ -420,7 +422,7 @@ describe("database release executor", () => {
   });
 
   it("permits recovery only after a verified upgrade reaches apply", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-recovery-"));
+    const directory = makeTempDirSync("soul-release-recovery-");
     directories.push(directory);
     const env = await writeReceipt(environment(directory));
     const recoveryEnv = {
@@ -455,7 +457,7 @@ describe("database release executor", () => {
   });
 
   it("refuses the deepest writer without an apply_started journal", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-gate-"));
+    const directory = makeTempDirSync("soul-release-gate-");
     directories.push(directory);
     const env = environment(directory);
     const pending = [migration("061_contract.sql", 61)];
@@ -472,7 +474,7 @@ describe("database release executor", () => {
     })).rejects.toThrow("JOURNAL_GATE_FAILED");
   });
   it("persists only bounded structured journal data", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "soul-release-bounded-"));
+    const directory = makeTempDirSync("soul-release-bounded-");
     directories.push(directory);
     const env = environment(directory);
     await preflight(env, []);

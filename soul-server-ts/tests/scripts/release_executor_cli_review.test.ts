@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+
 import { runDatabaseReleaseCli } from
   "../../../packages/db-schema/scripts/database-release-cli.mjs";
 
@@ -42,7 +44,7 @@ afterEach(() => {
 });
 
 function tempDirectory(prefix: string) {
-  const directory = mkdtempSync(join(tmpdir(), prefix));
+  const directory = makeTempDirSync(prefix);
   directories.push(directory);
   return directory;
 }

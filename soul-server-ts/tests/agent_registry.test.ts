@@ -11,8 +11,10 @@ import {
   loadAgentRegistry,
 } from "../src/agent_registry.js";
 
+import { makeTempDirSync } from "./helpers/temp_dir.js";
+
 function withTempYaml<T>(content: string, fn: (p: string) => T): T {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentreg-"));
+  const dir = makeTempDirSync("agentreg-");
   const file = path.join(dir, "agents.yaml");
   fs.writeFileSync(file, content, "utf-8");
   try {

@@ -11,6 +11,8 @@ import {
   McpConfigService,
 } from "../src/mcp_config_service.js";
 
+import { makeTempDirSync } from "./helpers/temp_dir.js";
+
 describe("McpConfigService", () => {
   let tempDir: string;
   let agentsConfigPath: string;
@@ -18,7 +20,7 @@ describe("McpConfigService", () => {
   let profilesPath: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-config-service-"));
+    tempDir = makeTempDirSync("mcp-config-service-");
     agentsConfigPath = path.join(tempDir, "agents.yaml");
     registryPath = path.join(tempDir, "mcp-registry.yaml");
     profilesPath = path.join(tempDir, "mcp-profiles.yaml");

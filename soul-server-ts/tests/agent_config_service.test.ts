@@ -8,6 +8,8 @@ import { AgentRegistry } from "../src/agent_registry.js";
 import { AgentConfigService } from "../src/agent_config_service.js";
 import { McpConfigService } from "../src/mcp_config_service.js";
 
+import { makeTempDirSync } from "./helpers/temp_dir.js";
+
 describe("AgentConfigService", () => {
   let tempDir: string;
   let configPath: string;
@@ -16,7 +18,7 @@ describe("AgentConfigService", () => {
   let service: AgentConfigService;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-config-service-"));
+    tempDir = makeTempDirSync("agent-config-service-");
     configPath = path.join(tempDir, "agents.yaml");
     snapshotRoot = path.join(tempDir, ".local", "config-snapshots");
     fs.writeFileSync(
