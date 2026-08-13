@@ -1669,12 +1669,21 @@ describe("send_message_to_session", () => {
       });
 
       expect(result.isError).not.toBe(true);
+      // The relay carries the owning node's verdict through orch. This capture
+      // answers without one, so the caller must see "unknown" — never a
+      // fabricated `delivered: false`, which would make it re-send an
+      // intervention the agent may already have consumed.
       expect(result.structuredContent).toEqual({
         ok: true,
         detail: {
           relayed: true,
           target_session_id: "target-sess-2",
           local_error: "Task not found: target-sess-2",
+          delivered: null,
+          outcome: null,
+          reason: "orch returned no intervene verdict",
+          consume_when: null,
+          queue_position: null,
         },
       });
       expect(capture.requests).toHaveLength(1);
