@@ -7,7 +7,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -558,27 +558,22 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.pathToClaudeCodeExecutable).toBe("/usr/local/bin/claude");
   });
 
-  it("resolves only native Claude Code exe candidates on Windows PATH", () => {
+  it("resolves claude.cmd from a Windows PATH using PATHEXT", () => {
     const dir = mkdtempSync(join(tmpdir(), "claude-windows-path-"));
     try {
       const shimDir = join(dir, "npm");
-      const nativeDir = join(dir, "local-bin");
       mkdirSync(shimDir, { recursive: true });
-      mkdirSync(nativeDir, { recursive: true });
-      writeFileSync(join(shimDir, "claude"), "", { mode: 0o755 });
       writeFileSync(join(shimDir, "claude.cmd"), "", { mode: 0o755 });
-      writeFileSync(join(shimDir, "claude.ps1"), "", { mode: 0o755 });
-      writeFileSync(join(nativeDir, "claude.exe"), "", { mode: 0o755 });
 
       expect(
         resolveClaudeExecutableFromPath(
           {
-            PATH: [shimDir, nativeDir].join(delimiter),
-            PATHEXT: ".COM;.EXE;.CMD;.PS1",
+            PATH: shimDir,
+            PATHEXT: ".EXE;.CMD;.PS1",
           },
           "win32",
         ),
-      ).toBe(join(nativeDir, "claude.exe"));
+      ).toBe(join(shimDir, "claude.cmd"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

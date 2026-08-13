@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { loadAgentRegistry } from "./agent_registry.js";
 import { AgentProfileSource } from "./agent_profile_source.js";
 import { parseEnv } from "./config.js";
+import { configureClaudeExecutablePath } from "./engine/claude_executable_path.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
@@ -126,6 +127,17 @@ async function main(): Promise<void> {
       "TS Claude auth storage must be explicit; Python .env and ~/.claude are not shared.",
     );
     process.exit(1);
+  }
+  if (hasClaudeBackend) {
+    const claudeExecutablePath = configureClaudeExecutablePath(
+      process.env,
+      process.platform,
+      logger,
+    );
+    logger.info(
+      { path: claudeExecutablePath },
+      "Claude Code executable path resolved",
+    );
   }
   const codexCliPath = resolveCodexCliPath(process.env);
   if (hasCodexBackend) {
