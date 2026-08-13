@@ -129,7 +129,7 @@ describe("apply-schema.mjs", () => {
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 64,
+        migration_count: 65,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -590,6 +590,11 @@ describe("apply-schema.mjs", () => {
           {
             migration_id: "063_session_rotate_claude_id.sql",
             ordinal: 64,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "064_event_ingress_receipt_effect_encoding.sql",
+            ordinal: 65,
             applied_kind: "migration",
           },
         ]);

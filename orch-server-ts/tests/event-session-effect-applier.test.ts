@@ -81,11 +81,11 @@ describe("applyEventSessionEffect", () => {
   });
 
   it("returns the canonical terminal row when running receipt CAS is rejected", async () => {
-    const sql = (async () => [canonicalRow(false, {
+    const sql = Object.assign(async () => [canonicalRow(false, {
       status: "completed",
       termination_reason: "completed_ok",
       termination_event_id: 41,
-    })]) as EventIngressQuerySql;
+    })], { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
     const running = {
       ...effect("running_transition"),
       expected_terminal_event_id: 999,

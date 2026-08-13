@@ -220,6 +220,166 @@ describe("EventIngressRepository", () => {
     expect(effect).toHaveBeenCalledOnce();
   });
 
+  it("writes effect_application as a JSONB parameter instead of a pre-serialised string", async () => {
+    const canonicalSession = {
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "needs_review",
+      last_assistant_text: "done",
+      termination_event_id: 41,
+      updated_at: "2026-08-06T00:00:00.000Z",
+      last_event_id: 41,
+    };
+    let receiptStatement = "";
+    let receiptValues: unknown[] = [];
+    const sql = fakeSql(async (text, values) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        return [{ session_id: "session-a" }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO event_ingress_receipts")) {
+        receiptStatement = text;
+        receiptValues = values;
+        return [];
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      async () => ({ applied: true, canonicalSession }),
+    );
+
+    await repository.commitBatch("node-a", batch({
+      session_effect: {
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        review_state: "needs_review",
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    }, 2));
+
+    // A JS string bound to a JSONB parameter is stored as a JSON *string*, so the
+    // value must reach the driver as an object routed through json().
+    expect(sql.json).toHaveBeenCalledWith({
+      applied: true,
+      canonical_session: canonicalSession,
+    });
+    expect(receiptValues.at(-1)).toEqual({
+      __jsonParameter: { applied: true, canonical_session: canonicalSession },
+    });
+    expect(typeof receiptValues.at(-1)).not.toBe("string");
+    expect(receiptStatement).toContain("::jsonb");
+  });
+
+  it("keeps a null effect_application a SQL NULL so canonical lookups skip the row", async () => {
+    let receiptValues: unknown[] = [];
+    const sql = fakeSql(async (text, values) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        return [{ session_id: "session-a" }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO event_ingress_receipts")) {
+        receiptValues = values;
+        return [];
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      async () => ({ applied: true, canonicalSession: null }),
+    );
+
+    await repository.commitBatch("node-a", batch({
+      session_effect: {
+        kind: "last_message",
+        last_message: {
+          type: "assistant_message",
+          preview: "done",
+          timestamp: "2026-08-06T00:00:00.000Z",
+        },
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    }, 2));
+
+    // json(null) would emit a JSON null, which passes `IS NOT NULL` and then fails
+    // to parse as a record -- exactly the shape that poisons the stream.
+    expect(sql.json).not.toHaveBeenCalled();
+    expect(receiptValues.at(-1)).toBeNull();
+  });
+
+  it("raises a protocol conflict when a replayed transition has no canonical effect", async () => {
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        return [{ session_id: "session-a" }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) {
+        return [{ event_id: 41 }];
+      }
+      // The canonical lookup finds nothing readable.
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+
+    // Retrying re-reads the same durable rows, so this must be reported as a
+    // permanent conflict the node can quarantine -- not a transient failure that
+    // reconnects and replays the identical head forever.
+    await expect(repository.commitBatch("node-a", batch({
+      session_effect: {
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        review_state: "needs_review",
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    }, 2))).rejects.toBeInstanceOf(EventIngressProtocolConflict);
+  });
+
+  it("raises a protocol conflict when the canonical row is double-encoded", async () => {
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+        return [{ session_id: "session-a" }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) {
+        return [{ event_id: 41 }];
+      }
+      if (text.includes("FROM event_ingress_receipts")) {
+        // What the pre-fix writer actually stored: JSONB holding a JSON string.
+        // It satisfies `IS NOT NULL` yet never parses back into a record.
+        return [{
+          effect_application: JSON.stringify({
+            applied: true,
+            canonical_session: { status: "completed" },
+          }),
+        }];
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+
+    await expect(repository.commitBatch("node-a", batch({
+      session_effect: {
+        kind: "running_transition",
+        review_state: "needs_review",
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    }, 2))).rejects.toBeInstanceOf(EventIngressProtocolConflict);
+  });
+
   it("dead-letters exactly two deleted-session head events without calling event_append", async () => {
     const directory = await mkdtemp(join(tmpdir(), "event-ingress-dead-letter-"));
     try {
@@ -337,10 +497,21 @@ function batch(
 
 function fakeSql(
   execute: (text: string, values: unknown[]) => Promise<readonly Record<string, unknown>[]>,
-): EventIngressSql & { begin: ReturnType<typeof vi.fn> } {
+): EventIngressSql & {
+  begin: ReturnType<typeof vi.fn>;
+  json: ReturnType<typeof vi.fn>;
+} {
+  // Stands in for postgres.js sql.json(): the driver wraps the value in a
+  // JSONB-typed parameter rather than pre-serialising it. Returning a distinct
+  // wrapper lets a test prove the receipt travelled this path and was not
+  // JSON.stringify()'d into a plain string first.
+  const json = vi.fn((value: unknown) => ({ __jsonParameter: value }));
   const query = (async (strings: TemplateStringsArray, ...values: unknown[]) =>
     await execute(strings.join("?"), values)) as EventIngressQuerySql;
   const begin = vi.fn(async <T>(callback: (sql: EventIngressQuerySql) => Promise<T>) =>
-    await callback(query));
-  return Object.assign(query, { begin }) as EventIngressSql & { begin: ReturnType<typeof vi.fn> };
+    await callback(Object.assign(query, { json }) as EventIngressQuerySql));
+  return Object.assign(query, { begin, json }) as EventIngressSql & {
+    begin: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+  };
 }
