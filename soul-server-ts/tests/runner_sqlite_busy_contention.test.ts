@@ -198,7 +198,7 @@ describe("runner SQLite contention", () => {
     expect(events.every((event) => event.attemptElapsedMs >= 0)).toBe(true);
   });
 
-  it("keeps a WAL lifecycle reader and critical writer alive across a process lock", async () => {
+  it("fails a child lifecycle write quickly instead of masking a second writer", async () => {
     const databasePath = await createDatabase();
     const lifecycle = RunnerSqliteLifecycle.open(databasePath);
     lifecycle.begin({

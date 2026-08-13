@@ -1,3 +1,8 @@
+/**
+ * Runner child turn state machine. This file intentionally keeps command,
+ * drain, persistence, and terminal sequencing in one control path; splitting
+ * those transitions would make the ordering contract implicit.
+ */
 import type { Logger } from "pino";
 
 import { shouldPersistEvent } from "../db/event_persistence.js";
@@ -36,6 +41,10 @@ import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import {
+  readRunnerHostAcknowledgedThrough,
+  runnerHostStatePath,
+} from "./runner_host_state_store.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
 
@@ -155,6 +164,20 @@ export class RunnerChildRuntime {
       throw new Error("Runner child received an event frame from host");
     }
     if (frame.kind === "host_frame_applied") {
+      const bootstrap = await this.outbox.readBootstrap();
+      if (bootstrap) {
+        const hostAcknowledgedThrough = readRunnerHostAcknowledgedThrough(
+          runnerHostStatePath(this.config.paths.databasePath),
+          bootstrap.stream_id,
+          bootstrap.session_id,
+        );
+        if (
+          hostAcknowledgedThrough !== null
+          && hostAcknowledgedThrough > this.outbox.ackedSeq
+        ) {
+          await this.outbox.acknowledge(bootstrap.stream_id, hostAcknowledgedThrough);
+        }
+      }
       await this.outbox.acknowledgeHostFrame(frame.frameSeq);
       this.recordProgress();
       return;

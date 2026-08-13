@@ -47,6 +47,8 @@ describe("TaskEngineFailureRecovery", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toBe("engine boom");
+    expect(task.pendingTerminationHint).toBe("error_aborted");
+    expect(task.pendingTerminationDetail).toBe("engine boom");
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
@@ -115,6 +117,8 @@ describe("TaskEngineFailureRecovery", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toBe("prepare boom");
+    expect(task.pendingTerminationHint).toBe("error_aborted");
+    expect(task.pendingTerminationDetail).toBe("prepare boom");
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).toHaveBeenCalledWith("sess-1", {
       type: "error",

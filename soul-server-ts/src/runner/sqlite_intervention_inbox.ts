@@ -137,7 +137,6 @@ export async function stageRunnerIntervention(
 
 export async function readPendingRunnerInterventions(
   database: SqliteDatabase,
-  transaction: Transaction,
 ): Promise<PendingRunnerIntervention[]> {
   const lifecycle = database.prepare(`
     SELECT execution_command_id, execution_state FROM runner_event_outbox
@@ -150,39 +149,24 @@ export async function readPendingRunnerInterventions(
     execution_command_id: string;
     execution_state: string;
   } | undefined;
-  await transaction(() => {
-    if (lifecycle?.execution_state === "completed") {
-      // v8 could commit completed and crash before deleting the claim. The
-      // terminal lifecycle is the durable apply receipt; replay would duplicate
-      // the user turn and any tool side effects.
-      database.prepare(`
-        DELETE FROM runner_intervention_inbox
-        WHERE application_state = 'claimed'
-          AND claimed_execution_command_id = ?
-      `).run(lifecycle.execution_command_id);
-    }
-
-    // A claim that is not the currently executing command has no proof that
-    // backend side effects were absent. Preserve it as a loud ambiguity rather
-    // than silently changing an at-least-once delivery into duplicate execution.
-    if (lifecycle?.execution_state === "running") {
-      database.prepare(`
-        UPDATE runner_intervention_inbox SET application_state = 'ambiguous'
-        WHERE application_state = 'claimed'
-          AND claimed_execution_command_id <> ?
-      `).run(lifecycle.execution_command_id);
-    } else {
-      database.prepare(`
-        UPDATE runner_intervention_inbox SET application_state = 'ambiguous'
-        WHERE application_state = 'claimed'
-      `).run();
-    }
-  });
-  const ambiguous = database.prepare(`
-    SELECT intervention_id FROM runner_intervention_inbox
-    WHERE application_state = 'ambiguous'
+  const unresolved = database.prepare(`
+    SELECT intervention_id, application_state, claimed_execution_command_id
+    FROM runner_intervention_inbox
+    WHERE application_state IN ('claimed', 'ambiguous')
     ORDER BY queued_at, rowid
-  `).all() as Array<{ intervention_id: string }>;
+  `).all() as Array<{
+    intervention_id: string;
+    application_state: "claimed" | "ambiguous";
+    claimed_execution_command_id: string | null;
+  }>;
+  const ambiguous = unresolved.filter((row) => {
+    if (row.application_state === "ambiguous") return true;
+    if (row.claimed_execution_command_id !== lifecycle?.execution_command_id) return true;
+    // A completed lifecycle is the durable apply receipt. A running lifecycle
+    // still owns the claim. Neither needs a parent-side cleanup write.
+    return lifecycle.execution_state !== "completed"
+      && lifecycle.execution_state !== "running";
+  });
   if (ambiguous.length > 0) {
     throw new Error(
       `runner intervention application outcome is ambiguous: ${ambiguous
@@ -264,17 +248,17 @@ export async function resolveRunnerInterventionAmbiguity(
     const result = resolution === "applied"
       ? database.prepare(`
           DELETE FROM runner_intervention_inbox
-          WHERE intervention_id = ? AND application_state = 'ambiguous'
+          WHERE intervention_id = ? AND application_state IN ('claimed', 'ambiguous')
         `).run(interventionId)
       : database.prepare(`
           UPDATE runner_intervention_inbox
           SET application_state = 'pending',
               claimed_execution_command_id = NULL,
               claimed_at = NULL
-          WHERE intervention_id = ? AND application_state = 'ambiguous'
+          WHERE intervention_id = ? AND application_state IN ('claimed', 'ambiguous')
         `).run(interventionId);
     if (Number(result.changes) !== 1) {
-      throw new Error(`runner intervention is not ambiguous: ${interventionId}`);
+      throw new Error(`runner intervention is not resolvable: ${interventionId}`);
     }
   });
 }

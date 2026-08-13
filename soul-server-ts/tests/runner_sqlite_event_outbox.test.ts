@@ -342,7 +342,7 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
-  it("never replays a completed execution whose legacy inbox cleanup was interrupted", async () => {
+  it("never replays a completed claim without a parent-side cleanup write", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "completed-but-retained",
@@ -367,10 +367,15 @@ describe("RunnerSqliteEventOutbox", () => {
     );
 
     await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
     const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(
-      "SELECT COUNT(*) AS count FROM runner_intervention_inbox",
-    ).get()).toEqual({ count: 0 });
+    expect(database.prepare(`
+      SELECT application_state, claimed_execution_command_id
+      FROM runner_intervention_inbox
+    `).get()).toEqual({
+      application_state: "claimed",
+      claimed_execution_command_id: "execute-completed",
+    });
     database.close();
     lifecycle.close();
     outbox.close();
@@ -400,6 +405,12 @@ describe("RunnerSqliteEventOutbox", () => {
     await expect(outbox.readPendingInterventions()).rejects.toThrow(
       "runner intervention application outcome is ambiguous: claimed-before-lifecycle",
     );
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT application_state FROM runner_intervention_inbox
+      WHERE intervention_id = 'claimed-before-lifecycle'
+    `).get()).toEqual({ application_state: "claimed" });
+    database.close();
     lifecycle.close();
     outbox.close();
   });
@@ -531,7 +542,7 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
-  it("exposes final-ACK evidence across outbox and IPC journal for release GC", async () => {
+  it("exposes final-ACK evidence without treating applied legacy receipts as pending", async () => {
     const outbox = await RunnerSqliteEventOutbox.create(await temporaryDatabasePath());
     const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
     expect(await outbox.hasPendingDurableWork()).toBe(false);
@@ -547,7 +558,7 @@ describe("RunnerSqliteEventOutbox", () => {
       operation: "append",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
-    expect(await outbox.hasPendingDurableWork()).toBe(true);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
     await outbox.acknowledgeHostCall("host-call-a");
     expect(await outbox.hasPendingDurableWork()).toBe(false);
     outbox.close();
@@ -1662,7 +1673,7 @@ describe("RunnerSqliteEventOutbox", () => {
     secondHost.close();
   });
 
-  it("compacts orphaned applied host-call receipts only during terminal recovery", async () => {
+  it("can compact legacy applied receipts without treating them as pending work", async () => {
     const outbox = await createOutbox();
     await outbox.recordHostCallApplied({
       correlationId: "host:orphaned",
@@ -1670,7 +1681,7 @@ describe("RunnerSqliteEventOutbox", () => {
       operation: "persistRunState",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
-    expect(await outbox.hasPendingDurableWork()).toBe(true);
+    expect(await outbox.hasPendingDurableWork()).toBe(false);
 
     await outbox.compactAppliedHostCallsForTerminalRecovery();
 

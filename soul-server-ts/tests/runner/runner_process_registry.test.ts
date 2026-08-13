@@ -503,7 +503,7 @@ describe("runner process registry", () => {
       .resolves.toEqual(["session-sqlite"]);
   });
 
-  it("drops orphaned host-call receipts while inspecting a dead terminal runner", async () => {
+  it("ignores applied legacy host-call receipts without writing during inspection", async () => {
     const stateDirectory = await temporaryDirectory("terminal-host-call");
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -544,7 +544,9 @@ describe("runner process registry", () => {
       registration: { lifecycle: { execution_state: "completed" } },
     });
     const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
-    await expect(recovered.readHostCallApplied("host:orphaned")).resolves.toBeNull();
+    await expect(recovered.readHostCallApplied("host:orphaned")).resolves.toMatchObject({
+      correlationId: "host:orphaned",
+    });
     recovered.close();
   });
 });

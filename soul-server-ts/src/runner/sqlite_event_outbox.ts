@@ -72,6 +72,8 @@ import {
 import {
   ensureRunnerSqliteWal,
   openRunnerSqliteDatabase,
+  openRunnerSqliteReadOnlyDatabase,
+  requireRunnerSqliteWal,
   withRunnerSqliteBusyRetry,
   withRunnerSqliteTransaction,
   type RunnerSqliteTransactionOptions,
@@ -125,6 +127,34 @@ export class RunnerSqliteEventOutbox {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     return await RunnerSqliteEventOutbox.openDatabase(databasePath, options);
+  }
+
+  static async openReadOnly(
+    databasePath: string,
+    options: RunnerSqliteEventOutboxOptions = {},
+  ): Promise<RunnerSqliteEventOutbox> {
+    await assertExistingRunnerDatabase(databasePath);
+    const database = openRunnerSqliteReadOnlyDatabase(databasePath);
+    try {
+      requireRunnerSqliteWal(database);
+      const version = readUserVersion(database);
+      if (version !== RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
+        throw new Error(
+          `runner event outbox schema version ${version} requires writer migration`,
+        );
+      }
+      const recovered = recover(database);
+      return new RunnerSqliteEventOutbox(
+        database,
+        databasePath,
+        recovered.bootstrap,
+        recovered.ackedThrough,
+        options,
+      );
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
 
   private static async openDatabase(
@@ -309,10 +339,7 @@ export class RunnerSqliteEventOutbox {
     message: Record<string, unknown>;
   }>> {
     this.requireOpen();
-    return await readPendingRunnerInterventions(
-      this.database,
-      (operation) => this.transaction("read_pending_interventions", operation),
-    );
+    return await readPendingRunnerInterventions(this.database);
   }
 
   async claimIntervention(interventionId: string, commandId: string): Promise<boolean> {
@@ -572,16 +599,27 @@ export class RunnerSqliteEventOutbox {
 
   async readBatch(maxEvents = EVENT_OUTBOX_MAX_BATCH_EVENTS): Promise<EventOutboxBatch | null> {
     this.requireOpen();
-    assertBatchEventLimit(maxEvents);
     const bootstrap = this.refreshBootstrap();
     if (!bootstrap) return null;
     this.acknowledgedThrough = readAcknowledgedThrough(this.database);
+    return this.readBatchAfter(this.acknowledgedThrough, maxEvents);
+  }
+
+  async readBatchAfter(
+    acknowledgedThrough: number,
+    maxEvents = EVENT_OUTBOX_MAX_BATCH_EVENTS,
+  ): Promise<EventOutboxBatch | null> {
+    this.requireOpen();
+    assertAcknowledgedThrough(acknowledgedThrough);
+    assertBatchEventLimit(maxEvents);
+    const bootstrap = this.refreshBootstrap();
+    if (!bootstrap) return null;
     const rows = this.database.prepare(`
       SELECT * FROM runner_event_outbox
       WHERE record_kind = 'event' AND source_seq > ?
       ORDER BY source_seq
       LIMIT ?
-    `).all(this.acknowledgedThrough, maxEvents) as unknown as RunnerEventOutboxRow[];
+    `).all(acknowledgedThrough, maxEvents) as unknown as RunnerEventOutboxRow[];
     const pending = rows.map(runnerRowToRecord);
     if (pending.length === 0) return null;
 
@@ -625,13 +663,27 @@ export class RunnerSqliteEventOutbox {
     const bootstrap = this.refreshBootstrap();
     if (!bootstrap) return null;
     this.acknowledgedThrough = readAcknowledgedThrough(this.database);
+    return this.readLatestPendingRecordAfter(this.acknowledgedThrough);
+  }
+
+  async readLatestPendingRecordAfter(
+    acknowledgedThrough: number,
+  ): Promise<EventOutboxRecord | null> {
+    this.requireOpen();
+    assertAcknowledgedThrough(acknowledgedThrough);
+    if (!this.refreshBootstrap()) return null;
     const row = this.database.prepare(`
       SELECT * FROM runner_event_outbox
       WHERE record_kind = 'event' AND source_seq > ?
       ORDER BY source_seq DESC
       LIMIT 1
-    `).get(this.acknowledgedThrough) as unknown as RunnerEventOutboxRow | undefined;
+    `).get(acknowledgedThrough) as unknown as RunnerEventOutboxRow | undefined;
     return row ? runnerRowToRecord(row) : null;
+  }
+
+  latestDurableSourceSeq(): number {
+    this.requireOpen();
+    return latestSequence(this.database);
   }
 
   async acknowledge(streamId: string, ackedThrough: number): Promise<void> {
@@ -712,11 +764,13 @@ export class RunnerSqliteEventOutbox {
   }
 
   /** Final-ACK evidence used by release GC; true is fail-safe retention. */
-  async hasPendingDurableWork(): Promise<boolean> {
+  async hasPendingDurableWork(
+    acknowledgedThrough = readAcknowledgedThrough(this.database),
+  ): Promise<boolean> {
     this.requireOpen();
+    assertAcknowledgedThrough(acknowledgedThrough);
     const bootstrap = this.refreshBootstrap();
     if (!bootstrap) return true;
-    const acknowledgedThrough = readAcknowledgedThrough(this.database);
     const pendingEvent = this.database.prepare(`
       SELECT 1 FROM runner_event_outbox
       WHERE record_kind = 'event' AND source_seq > ?
@@ -724,11 +778,24 @@ export class RunnerSqliteEventOutbox {
     `).get(acknowledgedThrough);
     if (pendingEvent) return true;
     const pendingIpc = this.database.prepare(`
-      SELECT 1 FROM runner_ipc_journal LIMIT 1
+      SELECT 1 FROM runner_ipc_journal WHERE host_acked = 0 LIMIT 1
     `).get();
     if (pendingIpc !== undefined) return true;
     return this.database.prepare(`
-      SELECT 1 FROM runner_intervention_inbox LIMIT 1
+      SELECT 1 FROM runner_intervention_inbox AS inbox
+      WHERE inbox.application_state <> 'claimed'
+         OR NOT EXISTS (
+           SELECT 1 FROM runner_event_outbox AS lifecycle
+           WHERE lifecycle.record_kind = 'bootstrap'
+             AND lifecycle.execution_state = 'completed'
+             AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
+           UNION ALL
+           SELECT 1 FROM runner_prebootstrap_lifecycle AS lifecycle
+           WHERE lifecycle.singleton = 1
+             AND lifecycle.execution_state = 'completed'
+             AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
+         )
+      LIMIT 1
     `).get() !== undefined;
   }
 
@@ -828,6 +895,12 @@ export class RunnerSqliteEventOutbox {
 
   private requireOpen(): void {
     if (this.closed) throw new Error("runner event outbox is closed");
+  }
+}
+
+function assertAcknowledgedThrough(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error("runner event outbox acknowledged_through is invalid");
   }
 }
 

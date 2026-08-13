@@ -13,6 +13,10 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+import {
+  readRunnerHostAcknowledgedThrough,
+  runnerHostStatePath,
+} from "../../src/runner/runner_host_state_store.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerSocketEndpoint } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
@@ -50,6 +54,19 @@ describe("RunnerProcessDispatcher", () => {
     });
     let endpoint!: RunnerSocketEndpoint;
     endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel === "control" && frame.kind === "host_frame_applied") {
+        const durableBootstrap = await writer.readBootstrap();
+        const hostAck = readRunnerHostAcknowledgedThrough(
+          runnerHostStatePath(paths.databasePath),
+          durableBootstrap!.stream_id,
+          durableBootstrap!.session_id,
+        );
+        if (hostAck !== null && hostAck > writer.ackedSeq) {
+          await writer.acknowledge(durableBootstrap!.stream_id, hostAck);
+        }
+        await writer.acknowledgeHostFrame(frame.frameSeq);
+        return;
+      }
       if (frame.channel !== "command") return;
       await endpoint.currentConnection!.send(
         runnerCommandResultFrame(frame.commandId, { status: "ok" }),
@@ -128,10 +145,7 @@ describe("RunnerProcessDispatcher", () => {
       operation: "command:execute",
     });
     expect(finishRunnerOperation).toHaveBeenCalledTimes(2);
-    expect(sqliteTransactionObserver).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: "session-a",
-      transactionLabel: "event_outbox.acknowledge_host_frame",
-    }));
+    expect(sqliteTransactionObserver).not.toHaveBeenCalled();
     await expect(dispatcher.waitForSessionAck()).resolves.toBe(9000);
     await vi.waitFor(async () => {
       const observer = await RunnerSqliteEventOutbox.create(paths.databasePath);

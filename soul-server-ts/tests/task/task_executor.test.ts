@@ -906,7 +906,8 @@ describe("TaskExecutor.startExecution", () => {
       expect.objectContaining({
         kind: "terminal_transition",
         status: "error",
-        termination_reason: "unknown",
+        termination_reason: "error_aborted",
+        termination_detail: "engine boom",
       }),
     );
   });
@@ -1499,7 +1500,8 @@ describe("TaskExecutor.startExecution", () => {
       expect.objectContaining({
         kind: "terminal_transition",
         status: "error",
-        termination_reason: "unknown",
+        termination_reason: "error_aborted",
+        termination_detail: "prepare boom",
       }),
     );
     const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(

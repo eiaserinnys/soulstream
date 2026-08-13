@@ -1,15 +1,17 @@
+import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
-import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { RunnerParentOutbox } from "./runner_parent_outbox.js";
+import { runnerHostStatePath } from "./runner_host_state_store.js";
 import {
   readAuthoritativeRunnerLifecycle,
   type AuthoritativeRunnerLifecycleOptions,
 } from "./runner_lifecycle_reader.js";
-import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
-  RunnerSqliteLifecycle,
+  readRunnerSqliteLifecycle,
+  type RunnerLifecycleRecord,
 } from "./sqlite_runner_lifecycle.js";
 import {
   readRunnerChildConfig,
@@ -34,6 +36,10 @@ export interface RunnerRegistration {
   pidStartIdentity?: string | null;
   databaseMtimeMs?: number;
   databaseSize?: number;
+  hostDatabaseMtimeMs?: number;
+  hostDatabaseSize?: number;
+  hostDatabaseWalMtimeMs?: number;
+  hostDatabaseWalSize?: number;
 }
 
 export interface RunnerRegistrationScan {
@@ -235,6 +241,9 @@ export async function readRunnerRegistrationSummary(
     }
     const configStat = await stat(configPath);
     const databaseStat = await stat(config.paths.databasePath);
+    const hostDatabasePath = runnerHostStatePath(config.paths.databasePath);
+    const hostDatabaseStat = await statIfExists(hostDatabasePath);
+    const hostDatabaseWalStat = await statIfExists(`${hostDatabasePath}-wal`);
     const identity = await readRunnerRegistrationIdentity(directory);
     if (
       identity
@@ -275,6 +284,10 @@ export async function readRunnerRegistrationSummary(
       pidStartIdentity: identity?.startIdentity ?? null,
       databaseMtimeMs: databaseStat.mtimeMs,
       databaseSize: databaseStat.size,
+      hostDatabaseMtimeMs: hostDatabaseStat?.mtimeMs,
+      hostDatabaseSize: hostDatabaseStat?.size,
+      hostDatabaseWalMtimeMs: hostDatabaseWalStat?.mtimeMs,
+      hostDatabaseWalSize: hostDatabaseWalStat?.size,
     };
   } catch (error) {
     throw await annotateRegistrationError(
@@ -304,6 +317,10 @@ export function runnerReleaseGcCandidateFingerprint(scan: RunnerRegistrationScan
       pidAlive: registration.pidAlive,
       databaseMtimeMs: registration.databaseMtimeMs ?? null,
       databaseSize: registration.databaseSize ?? null,
+      hostDatabaseMtimeMs: registration.hostDatabaseMtimeMs ?? null,
+      hostDatabaseSize: registration.hostDatabaseSize ?? null,
+      hostDatabaseWalMtimeMs: registration.hostDatabaseWalMtimeMs ?? null,
+      hostDatabaseWalSize: registration.hostDatabaseWalSize ?? null,
       lifecycleState: registration.lifecycle?.execution_state ?? null,
       lifecycleProgressSeq: registration.lifecycle?.progress_seq ?? null,
       lifecycleProgressAt: registration.lifecycle?.progress_at ?? null,
@@ -329,50 +346,32 @@ function isReleaseGcCandidate(registration: RunnerRegistration): boolean {
 export async function hydrateRunnerRegistration(
   registration: RunnerRegistration,
 ): Promise<RunnerRegistration> {
-  const outbox = await RunnerSqliteEventOutbox.open(registration.config.paths.databasePath);
+  const outbox = await RunnerParentOutbox.open(
+    registration.config.paths.databasePath,
+    registration.config.sessionId,
+  );
   let bootstrap: RunnerBootstrapRecord | null;
   try {
     bootstrap = await outbox.readBootstrap();
   } finally {
     outbox.close();
   }
-  const lifecycleStore = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
-  let lifecycle: RunnerLifecycleRecord | null;
-  try {
-    lifecycle = lifecycleStore.read();
-  } finally {
-    lifecycleStore.close();
-  }
+  const lifecycle = readRunnerSqliteLifecycle(registration.config.paths.databasePath);
   return { ...registration, bootstrap, lifecycle };
 }
 
 export async function inspectRunnerDurableState(
   registration: RunnerRegistration,
 ): Promise<RunnerDurableInspection> {
-  const outbox = await RunnerSqliteEventOutbox.open(registration.config.paths.databasePath);
-  let lifecycle: RunnerLifecycleRecord | null;
-  try {
-    const lifecycleStore = RunnerSqliteLifecycle.open(registration.config.paths.databasePath);
-    try {
-      lifecycle = lifecycleStore.read();
-    } finally {
-      lifecycleStore.close();
-    }
-  } catch (error) {
-    outbox.close();
-    throw error;
-  }
+  const outbox = await RunnerParentOutbox.open(
+    registration.config.paths.databasePath,
+    registration.config.sessionId,
+  );
+  const lifecycle = readRunnerSqliteLifecycle(registration.config.paths.databasePath);
   let bootstrap: RunnerBootstrapRecord | null;
   let incompleteDurableWork: boolean;
   try {
     bootstrap = await outbox.readBootstrap();
-    if (
-      !registration.pidAlive
-      && lifecycle !== null
-      && lifecycle.execution_state !== "running"
-    ) {
-      await outbox.compactAppliedHostCallsForTerminalRecovery();
-    }
     incompleteDurableWork = await outbox.hasPendingDurableWork();
   } finally {
     outbox.close();
@@ -389,6 +388,15 @@ function isPidAlive(pid: number): boolean {
     return true;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function statIfExists(path: string): Promise<Stats | null> {
+  try {
+    return await stat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
   }
 }
 
