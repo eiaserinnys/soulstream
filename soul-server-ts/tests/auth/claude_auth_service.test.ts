@@ -128,7 +128,7 @@ describe("ClaudeAuthService token storage", () => {
     });
   });
 
-  it("buildProcessEnv는 상속된 Python env token과 실행파일 경로를 제거하고 PKCE store token을 env에 주입하지 않는다", async () => {
+  it("buildProcessEnv는 OAuth token만 제거하고 host가 해석한 실행파일 경로를 자식에 보존한다", async () => {
     await withTempStore(async (tokenPath) => {
       const svc = makeService(tokenPath);
       const inherited = {
@@ -137,7 +137,11 @@ describe("ClaudeAuthService token storage", () => {
         CLAUDE_CODE_EXECPATH: "/python-release/.venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude",
       };
 
-      expect(svc.buildProcessEnv(inherited)).toEqual({ KEEP_ME: "1" });
+      expect(svc.buildProcessEnv(inherited)).toEqual({
+        KEEP_ME: "1",
+        CLAUDE_CODE_EXECPATH:
+          "/python-release/.venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude",
+      });
 
       svc.setToken(
         { type: "claude_auth_set_token", token: VALID_TOKEN },
@@ -147,6 +151,8 @@ describe("ClaudeAuthService token storage", () => {
 
       expect(svc.buildProcessEnv(inherited)).toEqual({
         KEEP_ME: "1",
+        CLAUDE_CODE_EXECPATH:
+          "/python-release/.venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude",
       });
     });
   });
