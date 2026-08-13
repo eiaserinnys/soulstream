@@ -767,6 +767,9 @@ describe("UpstreamAdapter", () => {
       session_id: "sess-1",
       last_event_id: 3,
     });
+    expect(orch.receivedMessages.some(
+      (msg) => (msg as Record<string, unknown>).type === "runner_inventory",
+    )).toBe(false);
     expect(reconciliationOrder).toEqual(["drained", "scanned"]);
 
     await adapter.shutdown();

@@ -131,6 +131,12 @@ export type NodeSessionsUpdateEvent = {
   data: Record<string, unknown>;
 };
 
+export type NodeRunnerInventoryEvent = {
+  type: "node_runner_inventory";
+  nodeId: string;
+  data: Record<string, unknown>;
+};
+
 export type NodeCommandAckEvent = {
   type: "command_ack";
   nodeId: string;
@@ -168,6 +174,7 @@ export type NodeRegistryEvent =
   | NodeSessionUpdatedEvent
   | NodeSessionDeletedEvent
   | NodeSessionsUpdateEvent
+  | NodeRunnerInventoryEvent
   | NodeCommandAckEvent
   | NodeCommandErrorEvent
   | NodeHeartbeatPongEvent

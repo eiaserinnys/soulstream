@@ -9,6 +9,18 @@ export function supportsAppHeartbeat(capabilities: unknown): boolean {
   return isRecord(capabilities) && capabilities.app_heartbeat_v1 === true;
 }
 
+export function supportsRunnerInventory(capabilities: unknown): boolean {
+  return isRecord(capabilities) && capabilities.runner_inventory_v1 === true;
+}
+
+export function runnerInventoryCommandType(
+  capabilities: unknown,
+): "list_runner_inventory" | "list_sessions" {
+  return supportsRunnerInventory(capabilities)
+    ? "list_runner_inventory"
+    : "list_sessions";
+}
+
 export function snapshotNode(
   node: MutableNodeConnection,
 ): NodeConnectionSnapshot {

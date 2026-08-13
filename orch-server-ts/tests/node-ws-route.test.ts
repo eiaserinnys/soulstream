@@ -129,6 +129,7 @@ describe("Node WS Fastify route harness", () => {
     await expect(registrationAck).resolves.toBe(JSON.stringify({
       type: "node_register_ack",
       node_id: "fake-node",
+      capabilities: { runner_inventory_v1: true },
     }));
     expect(registry.getConnectedNode("fake-node")).toMatchObject({
       nodeId: "fake-node",

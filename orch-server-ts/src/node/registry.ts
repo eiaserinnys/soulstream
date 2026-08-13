@@ -352,7 +352,7 @@ export class InMemoryNodeRegistry {
             nowMs,
           });
         }
-        return [
+        const events: NodeRegistryEvent[] = [
           {
             type: "command_ack",
             nodeId,
@@ -360,6 +360,10 @@ export class InMemoryNodeRegistry {
             commandType: settlement.commandType,
           },
         ];
+        if (message.type === "runner_inventory") {
+          events.push({ type: "node_runner_inventory", nodeId, data: message });
+        }
+        return events;
       }
       if (settlement.status === "rejected") {
         return [
@@ -372,7 +376,7 @@ export class InMemoryNodeRegistry {
           },
         ];
       }
-      return [];
+      if (message.type !== "runner_inventory") return [];
     }
 
     const directSessionEvents = collectDirectNodeSessionEvents({
@@ -402,6 +406,10 @@ export class InMemoryNodeRegistry {
         nowMs,
       });
       return [{ type: "node_session_sessions_update", nodeId, data: message }];
+    }
+
+    if (message.type === "runner_inventory") {
+      return [{ type: "node_runner_inventory", nodeId, data: message }];
     }
 
     return [];

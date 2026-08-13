@@ -302,6 +302,53 @@ export class PerNodeSessionCache {
     return stored.map(copySession);
   }
 
+  seedNodeSessions(params: {
+    nodeId: string;
+    connectionId: string;
+    sessions: unknown[];
+    snapshotStartedAtMs: number;
+    nowMs: number;
+  }): CachedNodeSession[] {
+    const snapshotIds = new Set<string>();
+    const stored: CachedNodeSession[] = [];
+
+    for (const rawSession of params.sessions) {
+      if (!isRecord(rawSession)) continue;
+      const agentSessionId = sessionIdFromPayload(rawSession);
+      if (agentSessionId === undefined) continue;
+      snapshotIds.add(agentSessionId);
+      const current = this.sessionsByNode.get(params.nodeId)?.get(agentSessionId);
+      if (current !== undefined && current.updatedAtMs >= params.snapshotStartedAtMs) {
+        stored.push(copySession(current));
+        continue;
+      }
+      stored.push(this.storeSession({
+        nodeId: params.nodeId,
+        connectionId: params.connectionId,
+        agentSessionId,
+        status: sessionStatusFromPayload(rawSession),
+        lastEventId: lastEventIdFromPayload(rawSession),
+        fresh: true,
+        payload: projectSessionPayload(rawSession),
+        updatedAtMs: params.nowMs,
+      }));
+    }
+
+    const currentSessions = this.sessionsByNode.get(params.nodeId);
+    if (currentSessions !== undefined) {
+      for (const [agentSessionId, current] of [...currentSessions]) {
+        if (
+          !snapshotIds.has(agentSessionId)
+          && current.updatedAtMs < params.snapshotStartedAtMs
+        ) {
+          this.deleteSession(agentSessionId);
+        }
+      }
+    }
+
+    return stored;
+  }
+
   markNodeDisconnected(nodeId: string, nowMs: number): void {
     const sessions = this.sessionsByNode.get(nodeId);
     if (sessions === undefined) return;
