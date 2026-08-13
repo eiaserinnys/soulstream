@@ -1,7 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { RUNNER_IPC_JOURNAL_DDL } from "./sqlite_event_outbox_schema.js";
-import { withRunnerSqliteTransaction } from "./runner_sqlite_connection.js";
+import {
+  withRunnerSqliteTransaction,
+  withRunnerSqliteTransactionSync,
+  type RunnerSqliteTransactionOptions,
+} from "./runner_sqlite_connection.js";
 
 export interface RunnerHostCallAppliedInput {
   correlationId: string;
@@ -18,7 +22,7 @@ export interface RunnerHostCallApplied {
 
 export function ensureRunnerIpcJournalV4(database: DatabaseSync): void {
   if (tableHasColumn(database, "runner_ipc_journal", "correlation_id")) return;
-  transaction(database, () => {
+  withRunnerSqliteTransactionSync(database, () => {
     // SQLite cannot relax a STRICT table CHECK in place. This physical table
     // rebuild preserves every v3 frame_seq and meaning, then adds nullable
     // host-call receipt columns without copying domain payload.
@@ -35,18 +39,19 @@ export function ensureRunnerIpcJournalV4(database: DatabaseSync): void {
       ORDER BY frame_seq
     `);
     database.exec("DROP TABLE runner_ipc_journal_v3");
-  });
+  }, { transactionLabel: "ipc_journal.migrate_v4" });
 }
 
 export function recordRunnerHostCallApplied(
   database: DatabaseSync,
   input: RunnerHostCallAppliedInput,
-): void {
+  options: RunnerSqliteTransactionOptions = {},
+): Promise<void> {
   assertNonEmpty(input.correlationId, "runner host-call correlation id");
   assertNonEmpty(input.service, "runner host-call service");
   assertNonEmpty(input.operation, "runner host-call operation");
   assertNonEmpty(input.createdAt, "runner host-call created_at");
-  transaction(database, () => {
+  return transaction(database, "record_host_call_applied", () => {
     const existing = readRow(database, input.correlationId);
     if (existing) {
       if (existing.service !== input.service || existing.operation !== input.operation) {
@@ -60,7 +65,7 @@ export function recordRunnerHostCallApplied(
         service, operation, created_at
       ) VALUES (NULL, ?, 'host_call', 1, ?, ?, ?)
     `).run(input.correlationId, input.service, input.operation, input.createdAt);
-  });
+  }, options);
 }
 
 export function readRunnerHostCallApplied(
@@ -79,14 +84,15 @@ export function readRunnerHostCallApplied(
 export function acknowledgeRunnerHostCall(
   database: DatabaseSync,
   correlationId: string,
-): void {
+  options: RunnerSqliteTransactionOptions = {},
+): Promise<void> {
   assertNonEmpty(correlationId, "runner host-call correlation id");
-  transaction(database, () => {
+  return transaction(database, "acknowledge_host_call", () => {
     database.prepare(`
       DELETE FROM runner_ipc_journal
       WHERE frame_kind = 'host_call' AND correlation_id = ?
     `).run(correlationId);
-  });
+  }, options);
 }
 
 function readRow(
@@ -105,8 +111,16 @@ function readRow(
   return row ?? null;
 }
 
-function transaction(database: DatabaseSync, operation: () => void): void {
-  withRunnerSqliteTransaction(database, operation);
+function transaction(
+  database: DatabaseSync,
+  transactionLabel: string,
+  operation: () => void,
+  options: RunnerSqliteTransactionOptions,
+): Promise<void> {
+  return withRunnerSqliteTransaction(database, operation, {
+    ...options,
+    transactionLabel: options.transactionLabel ?? transactionLabel,
+  });
 }
 
 function tableHasColumn(database: DatabaseSync, table: string, column: string): boolean {

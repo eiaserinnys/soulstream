@@ -12,10 +12,10 @@ import {
   stringifyRunnerJson,
   validateRunnerAppendInput,
 } from "./sqlite_event_outbox_records.js";
-import { withRunnerSqliteTransaction } from "./runner_sqlite_connection.js";
+import { withRunnerSqliteTransactionSync } from "./runner_sqlite_connection.js";
 
 type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
-type Transaction = <T>(operation: () => T) => T;
+type Transaction = <T>(operation: () => T) => Promise<T>;
 
 export interface PendingRunnerIntervention {
   interventionId: string;
@@ -29,7 +29,7 @@ export function migrateRunnerInterventionInboxV9(
   previousVersion: number,
 ): void {
   if (previousVersion >= 9) return;
-  withRunnerSqliteTransaction(database, () => {
+  withRunnerSqliteTransactionSync(database, () => {
     const columns = database.prepare(
       "PRAGMA table_info(runner_intervention_inbox)",
     ).all() as Array<{ name: string }>;
@@ -49,10 +49,10 @@ export function migrateRunnerInterventionInboxV9(
         AND claimed_execution_command_id IS NOT NULL
     `).run();
     database.exec("PRAGMA user_version = 9");
-  });
+  }, { transactionLabel: "intervention_inbox.migrate_v9" });
 }
 
-export function stageRunnerIntervention(
+export async function stageRunnerIntervention(
   database: SqliteDatabase,
   transaction: Transaction,
   bootstrap: RunnerBootstrapRecord,
@@ -63,7 +63,7 @@ export function stageRunnerIntervention(
     queued: boolean;
     queuedAt: string;
   },
-): { eventSourceSeq: number | null; queuePosition: number } {
+): Promise<{ eventSourceSeq: number | null; queuePosition: number }> {
   if (!input.interventionId) throw new Error("runner intervention id is required");
   if (!input.queued && !input.event) {
     throw new Error("runner intervention stage requires an event or queued input");
@@ -99,7 +99,7 @@ export function stageRunnerIntervention(
 
   let eventSourceSeq: number | null = null;
   let queuePosition = 0;
-  transaction(() => {
+  await transaction(() => {
     if (input.event) {
       const sourceSeq = latestRunnerSequence(database) + 1;
       const unsigned = {
@@ -135,10 +135,10 @@ export function stageRunnerIntervention(
   return { eventSourceSeq, queuePosition };
 }
 
-export function readPendingRunnerInterventions(
+export async function readPendingRunnerInterventions(
   database: SqliteDatabase,
   transaction: Transaction,
-): PendingRunnerIntervention[] {
+): Promise<PendingRunnerIntervention[]> {
   const lifecycle = database.prepare(`
     SELECT execution_command_id, execution_state FROM runner_event_outbox
     WHERE record_kind = 'bootstrap'
@@ -150,7 +150,7 @@ export function readPendingRunnerInterventions(
     execution_command_id: string;
     execution_state: string;
   } | undefined;
-  transaction(() => {
+  await transaction(() => {
     if (lifecycle?.execution_state === "completed") {
       // v8 could commit completed and crash before deleting the claim. The
       // terminal lifecycle is the durable apply receipt; replay would duplicate
@@ -203,13 +203,13 @@ export function readPendingRunnerInterventions(
   }));
 }
 
-export function claimRunnerIntervention(
+export async function claimRunnerIntervention(
   database: SqliteDatabase,
   transaction: Transaction,
   interventionId: string,
   commandId: string,
-): boolean {
-  return transaction(() => {
+): Promise<boolean> {
+  return await transaction(() => {
     const current = database.prepare(`
       SELECT claimed_execution_command_id, application_state
       FROM runner_intervention_inbox
@@ -234,13 +234,13 @@ export function claimRunnerIntervention(
   });
 }
 
-export function markRunnerInterventionAmbiguous(
+export async function markRunnerInterventionAmbiguous(
   database: SqliteDatabase,
   transaction: Transaction,
   interventionId: string,
   commandId: string,
-): void {
-  transaction(() => {
+): Promise<void> {
+  await transaction(() => {
     const result = database.prepare(`
       UPDATE runner_intervention_inbox
       SET application_state = 'ambiguous'
@@ -253,14 +253,14 @@ export function markRunnerInterventionAmbiguous(
   });
 }
 
-export function resolveRunnerInterventionAmbiguity(
+export async function resolveRunnerInterventionAmbiguity(
   database: SqliteDatabase,
   transaction: Transaction,
   interventionId: string,
   resolution: RunnerInterventionResolution,
-): void {
+): Promise<void> {
   if (!interventionId) throw new Error("runner intervention id is required");
-  transaction(() => {
+  await transaction(() => {
     const result = resolution === "applied"
       ? database.prepare(`
           DELETE FROM runner_intervention_inbox
@@ -279,7 +279,7 @@ export function resolveRunnerInterventionAmbiguity(
   });
 }
 
-export function finishRunnerExecutionAndIntervention(
+export async function finishRunnerExecutionAndIntervention(
   database: SqliteDatabase,
   transaction: Transaction,
   input: {
@@ -289,7 +289,7 @@ export function finishRunnerExecutionAndIntervention(
     progressedAt: string;
     terminalError: { code: string; message: string } | null;
   },
-): void {
+): Promise<void> {
   if (!input.commandId) throw new Error("runner execution command id required");
   if (!Number.isFinite(Date.parse(input.progressedAt))) {
     throw new Error("runner progress timestamp invalid");
@@ -303,7 +303,7 @@ export function finishRunnerExecutionAndIntervention(
   const terminalError = input.terminalError === null
     ? null
     : stringifyRunnerJson(input.terminalError, "terminal runner error");
-  transaction(() => {
+  await transaction(() => {
     const assignments = `
       execution_state = ?, progress_seq = progress_seq + 1,
       progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',

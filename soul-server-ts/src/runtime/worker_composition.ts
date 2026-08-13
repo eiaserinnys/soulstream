@@ -253,6 +253,7 @@ export async function composeWorkerRuntime(
   });
   const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
     env, logger, mcpConfigService, codexCliPath,
+    ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
     observeClaudeRuntime: claudeRuntime.backgroundLifecycle

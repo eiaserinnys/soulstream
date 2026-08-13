@@ -25,6 +25,7 @@ import type { UpstreamAdapter } from "../upstream/adapter.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { ClaudeRuntimeStartupRecovery } from "./claude_runtime_startup_recovery.js";
 import type { TaskRuntimeComposition } from "./task_runtime_composition.js";
+import type { NodeStallMonitor } from "./node_stall_monitor.js";
 
 export interface WorkerCompositionParams {
   env: Env;
@@ -34,6 +35,10 @@ export interface WorkerCompositionParams {
   codexCliPath?: CodexCliPathResolution;
   modelCatalog?: ModelCatalog;
   agentProfileSource?: NewSessionAgentProfileSource;
+  nodeStallMonitor?: Pick<
+    NodeStallMonitor,
+    "beginRunnerOperation" | "sqliteTransactionObserver"
+  >;
 }
 
 export interface WorkerComposition extends TaskRuntimeComposition {

@@ -78,6 +78,9 @@ describe("RunnerProcessDispatcher", () => {
     const mux = new EventOutboxPumpMux(primary);
     const batches: EventOutboxBatch[] = [];
     mux.connect(async (batch) => { batches.push(batch); });
+    const finishRunnerOperation = vi.fn();
+    const beginRunnerOperation = vi.fn(() => finishRunnerOperation);
+    const sqliteTransactionObserver = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
       spawner: { spawn: async () => ({
@@ -88,6 +91,7 @@ describe("RunnerProcessDispatcher", () => {
       }) },
       pumpMux: mux,
       logger: pino({ level: "silent" }),
+      nodeStallMonitor: { beginRunnerOperation, sqliteTransactionObserver },
       handleHostCall: async () => null,
     });
 
@@ -113,6 +117,21 @@ describe("RunnerProcessDispatcher", () => {
       kind: "engine_event",
       payload: { type: "assistant_message", content: "durable" },
     })]);
+    expect(beginRunnerOperation).toHaveBeenCalledWith({
+      sessionId: "session-a",
+      commandId: expect.stringMatching(/^execute:/),
+      operation: "execution:execute",
+    });
+    expect(beginRunnerOperation).toHaveBeenCalledWith({
+      sessionId: "session-a",
+      commandId: expect.stringMatching(/^execute:/),
+      operation: "command:execute",
+    });
+    expect(finishRunnerOperation).toHaveBeenCalledTimes(2);
+    expect(sqliteTransactionObserver).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-a",
+      transactionLabel: "event_outbox.acknowledge_host_frame",
+    }));
     await expect(dispatcher.waitForSessionAck()).resolves.toBe(9000);
     await vi.waitFor(async () => {
       const observer = await RunnerSqliteEventOutbox.create(paths.databasePath);

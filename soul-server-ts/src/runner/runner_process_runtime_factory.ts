@@ -33,6 +33,7 @@ import { RunnerProcessEngineProxy } from "./runner_process_engine_proxy.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type { RunnerChildConfig, SpawnRunnerProcessInput } from "./runner_process_spawn.js";
 import type { RunnerReleasePool } from "./runner_release_pool.js";
+import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -57,6 +58,10 @@ export interface RunnerProcessRuntimeFactoryOptions {
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
+  nodeStallMonitor?: Pick<
+    NodeStallMonitor,
+    "beginRunnerOperation" | "sqliteTransactionObserver"
+  >;
   buildChildProcessEnv(): NodeJS.ProcessEnv;
   observeClaudeRuntime?(
     sessionId: string,
@@ -92,6 +97,7 @@ export function createRunnerProcessRuntimeFactory(
       spawner,
       pumpMux: options.pumpMux,
       logger: options.logger,
+      ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
       handleHostCall: async (call) => await applyRunnerHostCall(
         call,
         task.agentSessionId,

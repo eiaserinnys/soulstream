@@ -10,6 +10,7 @@ import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
+import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
 import { startInternalMcpServer, startServer } from "./server.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
   });
 
   const logger = createLogger(env.LOG_LEVEL);
+  const nodeStallMonitor = startNodeStallMonitor({ logger });
   let modelCatalog: ReturnType<typeof loadModelCatalog>;
   try {
     modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH, logger);
@@ -161,6 +163,7 @@ async function main(): Promise<void> {
     codexCliPath,
     modelCatalog,
     agentProfileSource,
+    nodeStallMonitor,
   });
   if (runtime.server.internalMcpServer) {
     await startInternalMcpServer(runtime.server.internalMcpServer, env.MCP_INTERNAL_PORT);
@@ -238,6 +241,7 @@ async function main(): Promise<void> {
     }
     await runtime.server.close();
     await runtime.runnerStateHostOwnership?.release();
+    await nodeStallMonitor.stop();
     process.exit(0);
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));

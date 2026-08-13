@@ -74,12 +74,19 @@ import {
   openRunnerSqliteDatabase,
   withRunnerSqliteBusyRetry,
   withRunnerSqliteTransaction,
+  type RunnerSqliteTransactionOptions,
+  type RunnerSqliteTransactionObserver,
 } from "./runner_sqlite_connection.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
   from "./sqlite_event_outbox_schema.js";
 
 type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
+
+export interface RunnerSqliteEventOutboxOptions {
+  sessionId?: string;
+  transactionObserver?: RunnerSqliteTransactionObserver;
+}
 
 export class RunnerSqliteEventOutbox {
   private readonly appendListeners = new Set<() => void>();
@@ -90,14 +97,21 @@ export class RunnerSqliteEventOutbox {
     readonly databasePath: string,
     private bootstrap: RunnerBootstrapRecord | null,
     private acknowledgedThrough: number,
+    private readonly options: RunnerSqliteEventOutboxOptions,
   ) {}
 
-  static async open(databasePath: string): Promise<RunnerSqliteEventOutbox> {
+  static async open(
+    databasePath: string,
+    options: RunnerSqliteEventOutboxOptions = {},
+  ): Promise<RunnerSqliteEventOutbox> {
     await assertExistingRunnerDatabase(databasePath);
-    return await RunnerSqliteEventOutbox.openDatabase(databasePath);
+    return await RunnerSqliteEventOutbox.openDatabase(databasePath, options);
   }
 
-  static async create(databasePath: string): Promise<RunnerSqliteEventOutbox> {
+  static async create(
+    databasePath: string,
+    options: RunnerSqliteEventOutboxOptions = {},
+  ): Promise<RunnerSqliteEventOutbox> {
     if (!databasePath || databasePath === ":memory:") {
       throw new Error("runner event outbox requires a file-backed SQLite path");
     }
@@ -110,14 +124,17 @@ export class RunnerSqliteEventOutbox {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    return await RunnerSqliteEventOutbox.openDatabase(databasePath);
+    return await RunnerSqliteEventOutbox.openDatabase(databasePath, options);
   }
 
-  private static async openDatabase(databasePath: string): Promise<RunnerSqliteEventOutbox> {
+  private static async openDatabase(
+    databasePath: string,
+    options: RunnerSqliteEventOutboxOptions,
+  ): Promise<RunnerSqliteEventOutbox> {
     const database = openRunnerSqliteDatabase(databasePath);
     try {
       await chmod(databasePath, 0o600);
-      const recovered = withRunnerSqliteBusyRetry(() => {
+      const recovered = await withRunnerSqliteBusyRetry(() => {
         ensureRunnerSqliteWal(database);
         database.exec("PRAGMA synchronous = FULL");
         database.exec("PRAGMA foreign_keys = ON");
@@ -153,6 +170,7 @@ export class RunnerSqliteEventOutbox {
         databasePath,
         recovered.bootstrap,
         recovered.ackedThrough,
+        options,
       );
     } catch (error) {
       database.close();
@@ -205,7 +223,7 @@ export class RunnerSqliteEventOutbox {
       payload_hash: computeEventOutboxPayloadHash(unsigned),
     };
 
-    const durable = this.transaction(() => {
+    const durable = await this.transaction("initialize_bootstrap", () => {
       const existingRow = this.database.prepare(`
         SELECT * FROM runner_event_outbox
         WHERE record_kind = 'bootstrap'
@@ -250,7 +268,7 @@ export class RunnerSqliteEventOutbox {
     }
 
     let record!: EventOutboxRecord;
-    this.transaction(() => {
+    await this.transaction("append_event", () => {
       const sourceSeq = latestSequence(this.database) + 1;
       const unsigned = {
         stream_id: bootstrap.stream_id,
@@ -276,9 +294,9 @@ export class RunnerSqliteEventOutbox {
     queuedAt: string;
   }): Promise<{ eventSourceSeq: number | null; queuePosition: number }> {
     const bootstrap = this.requireBootstrap();
-    const staged = stageRunnerIntervention(
+    const staged = await stageRunnerIntervention(
       this.database,
-      (operation) => this.transaction(operation),
+      (operation) => this.transaction("stage_intervention", operation),
       bootstrap,
       input,
     );
@@ -291,17 +309,17 @@ export class RunnerSqliteEventOutbox {
     message: Record<string, unknown>;
   }>> {
     this.requireOpen();
-    return readPendingRunnerInterventions(
+    return await readPendingRunnerInterventions(
       this.database,
-      (operation) => this.transaction(operation),
+      (operation) => this.transaction("read_pending_interventions", operation),
     );
   }
 
   async claimIntervention(interventionId: string, commandId: string): Promise<boolean> {
     this.requireOpen();
-    return claimRunnerIntervention(
+    return await claimRunnerIntervention(
       this.database,
-      (operation) => this.transaction(operation),
+      (operation) => this.transaction("claim_intervention", operation),
       interventionId,
       commandId,
     );
@@ -309,9 +327,9 @@ export class RunnerSqliteEventOutbox {
 
   async markInterventionAmbiguous(interventionId: string, commandId: string): Promise<void> {
     this.requireOpen();
-    markRunnerInterventionAmbiguous(
+    await markRunnerInterventionAmbiguous(
       this.database,
-      (operation) => this.transaction(operation),
+      (operation) => this.transaction("mark_intervention_ambiguous", operation),
       interventionId,
       commandId,
     );
@@ -322,9 +340,9 @@ export class RunnerSqliteEventOutbox {
     resolution: RunnerInterventionResolution,
   ): Promise<void> {
     this.requireOpen();
-    resolveRunnerInterventionAmbiguity(
+    await resolveRunnerInterventionAmbiguity(
       this.database,
-      (operation) => this.transaction(operation),
+      (operation) => this.transaction("resolve_intervention_ambiguity", operation),
       interventionId,
       resolution,
     );
@@ -338,9 +356,9 @@ export class RunnerSqliteEventOutbox {
     terminalError: { code: string; message: string } | null;
   }): Promise<void> {
     this.requireOpen();
-    finishRunnerExecutionAndIntervention(
+    await finishRunnerExecutionAndIntervention(
       this.database,
-      (operation) => this.transaction(operation),
+      (operation) => this.transaction("finish_execution", operation),
       input,
     );
   }
@@ -387,7 +405,7 @@ export class RunnerSqliteEventOutbox {
     let record!: EventOutboxRecord;
     let frameSeq!: number;
     let rotatedBootstrap: RunnerBootstrapRecord | undefined;
-    this.transaction(() => {
+    await this.transaction("append_engine_frame", () => {
       if (backendSessionRotation) {
         if (
           !backendSessionRotation.expectedBackendSessionId
@@ -510,14 +528,14 @@ export class RunnerSqliteEventOutbox {
     if (!Number.isSafeInteger(frameSeq) || frameSeq <= 0) {
       throw new Error("runner IPC host ACK cursor must be a positive integer");
     }
-    this.transaction(() => {
+    await this.transaction("acknowledge_host_frame", () => {
       this.database.prepare(`
         UPDATE runner_ipc_journal SET host_acked = 1
         WHERE frame_seq = ?
       `).run(frameSeq);
     });
-    this.compactJournal();
-    this.compactIfNeeded();
+    await this.compactJournal();
+    await this.compactIfNeeded();
   }
 
   async recordHostCallApplied(input: {
@@ -527,7 +545,11 @@ export class RunnerSqliteEventOutbox {
     createdAt: string;
   }): Promise<void> {
     this.requireOpen();
-    recordRunnerHostCallApplied(this.database, input);
+    await recordRunnerHostCallApplied(
+      this.database,
+      input,
+      this.transactionOptions("record_host_call_applied"),
+    );
   }
 
   async readHostCallApplied(correlationId: string): Promise<{
@@ -541,7 +563,11 @@ export class RunnerSqliteEventOutbox {
 
   async acknowledgeHostCall(correlationId: string): Promise<void> {
     this.requireOpen();
-    acknowledgeRunnerHostCall(this.database, correlationId);
+    await acknowledgeRunnerHostCall(
+      this.database,
+      correlationId,
+      this.transactionOptions("acknowledge_host_call"),
+    );
   }
 
   async readBatch(maxEvents = EVENT_OUTBOX_MAX_BATCH_EVENTS): Promise<EventOutboxBatch | null> {
@@ -617,7 +643,7 @@ export class RunnerSqliteEventOutbox {
       throw new Error("event outbox ACK cursor must be a positive integer");
     }
     const previousCursor = this.acknowledgedThrough;
-    const durableCursor = this.transaction(() => {
+    const durableCursor = await this.transaction("acknowledge_event_batch", () => {
       const checkpoint = this.database.prepare(`
         SELECT stream_id, session_id, acked_through, ack_checkpoint_hash
         FROM runner_event_outbox WHERE record_kind = 'bootstrap'
@@ -659,8 +685,8 @@ export class RunnerSqliteEventOutbox {
     });
     this.acknowledgedThrough = Math.max(previousCursor, durableCursor);
     if (this.acknowledgedThrough > previousCursor) {
-      this.compactJournal();
-      this.compactIfNeeded();
+      await this.compactJournal();
+      await this.compactIfNeeded();
     }
   }
 
@@ -708,7 +734,7 @@ export class RunnerSqliteEventOutbox {
 
   async compactAppliedHostCallsForTerminalRecovery(): Promise<void> {
     this.requireOpen();
-    this.transaction(() => {
+    await this.transaction("compact_applied_host_calls", () => {
       this.database.prepare(`
         DELETE FROM runner_ipc_journal
         WHERE frame_kind = 'host_call'
@@ -725,7 +751,7 @@ export class RunnerSqliteEventOutbox {
     this.database.close();
   }
 
-  private compactIfNeeded(): void {
+  private async compactIfNeeded(): Promise<void> {
     const rows = this.database.prepare(`
       SELECT * FROM runner_event_outbox
       WHERE record_kind = 'event' AND source_seq <= ?
@@ -739,7 +765,7 @@ export class RunnerSqliteEventOutbox {
     if (records.length < EVENT_OUTBOX_COMPACT_ROWS && bytes < EVENT_OUTBOX_COMPACT_BYTES) {
       return;
     }
-    this.transaction(() => {
+    await this.transaction("compact_event_outbox", () => {
       this.database.prepare(`
         DELETE FROM runner_event_outbox
         WHERE record_kind = 'event' AND source_seq <= ?
@@ -755,8 +781,8 @@ export class RunnerSqliteEventOutbox {
     });
   }
 
-  private compactJournal(): void {
-    this.transaction(() => {
+  private async compactJournal(): Promise<void> {
+    await this.transaction("compact_ipc_journal", () => {
       this.database.prepare(`
         DELETE FROM runner_ipc_journal
         WHERE host_acked = 1 AND outbox_source_seq <= ?
@@ -764,9 +790,23 @@ export class RunnerSqliteEventOutbox {
     });
   }
 
-  private transaction<T>(operation: () => T): T {
+  private async transaction<T>(transactionLabel: string, operation: () => T): Promise<T> {
     this.requireOpen();
-    return withRunnerSqliteTransaction(this.database, operation);
+    return await withRunnerSqliteTransaction(
+      this.database,
+      operation,
+      this.transactionOptions(transactionLabel),
+    );
+  }
+
+  private transactionOptions(transactionLabel: string): RunnerSqliteTransactionOptions {
+    return {
+      transactionLabel: `event_outbox.${transactionLabel}`,
+      ...(this.options.sessionId ? { sessionId: this.options.sessionId } : {}),
+      ...(this.options.transactionObserver
+        ? { observer: this.options.transactionObserver }
+        : {}),
+    };
   }
 
   private requireBootstrap(): RunnerBootstrapRecord {
