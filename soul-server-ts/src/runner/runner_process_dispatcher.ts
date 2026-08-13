@@ -8,6 +8,7 @@ import type {
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
+import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 import {
   closeCommandFrame,
   executeCommandFrame,
@@ -73,6 +74,10 @@ export interface RunnerProcessDispatcherOptions {
   offlineExisting?: boolean;
   pumpMux: EventOutboxPumpMux;
   logger: Logger;
+  nodeStallMonitor?: Pick<
+    NodeStallMonitor,
+    "beginRunnerOperation" | "sqliteTransactionObserver"
+  >;
   handleHostCall(call: RunnerHostCall): Promise<unknown>;
 }
 
@@ -93,6 +98,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private readonly requestLifetimes = new Map<string, RequestLifetime>();
   private readonly recentHostResponses = new Map<string, RunnerControlFrame>();
   private hostCallIdempotency!: RunnerHostCallIdempotency;
+  private finishActiveRunnerObservation: (() => void) | undefined;
   private closed = false;
 
   constructor(private readonly options: RunnerProcessDispatcherOptions) {
@@ -102,12 +108,21 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   async dispatch(frame: unknown): Promise<RunnerCommandResultFrame> {
     await this.ready;
     const command = frame as RunnerCommandFrame;
-    const connection = await this.ensureConnection();
-    const response = await connection.request(command, { timeoutMs: COMMAND_TIMEOUT_MS });
-    if (response.kind !== "command_result") {
-      throw new Error("Runner command received a non-command result");
+    const finishObservation = this.options.nodeStallMonitor?.beginRunnerOperation({
+      sessionId: this.spawnInput.sessionId,
+      commandId: command.commandId,
+      operation: `command:${command.kind}`,
+    });
+    try {
+      const connection = await this.ensureConnection();
+      const response = await connection.request(command, { timeoutMs: COMMAND_TIMEOUT_MS });
+      if (response.kind !== "command_result") {
+        throw new Error("Runner command received a non-command result");
+      }
+      return response;
+    } finally {
+      finishObservation?.();
     }
-    return response;
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
@@ -243,7 +258,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         this.spawnInput.sessionId,
       );
       this.socketPath = paths.socketPath;
-      this.outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+      this.outbox = await RunnerSqliteEventOutbox.open(
+        paths.databasePath,
+        this.outboxOptions(),
+      );
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
       this.lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
       return;
@@ -253,7 +271,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       ? await this.adoptExisting(spawner)
       : await spawner.spawn(this.spawnInput);
     this.socketPath = spawned.paths.socketPath;
-    this.outbox = await RunnerSqliteEventOutbox.open(spawned.paths.databasePath);
+    this.outbox = await RunnerSqliteEventOutbox.open(
+      spawned.paths.databasePath,
+      this.outboxOptions(),
+    );
     this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
     this.lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
     await this.connect(spawned.paths.socketPath);
@@ -286,6 +307,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         ));
         this.activeExecuteCommandId = commandId;
       }
+      this.observeActiveExecution(commandId, "recover");
       const lifecycle = this.lifecycle.read();
       if (lifecycle && lifecycle.execution_command_id !== commandId) {
         throw new Error(`runner recovery command unavailable: ${commandId}`);
@@ -313,6 +335,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     stream: ProcessFrameStream,
   ): Promise<void> {
     try {
+      await this.ready;
+      this.observeActiveExecution(commandId, "execute");
       assertCommandAccepted(await this.dispatch(executeCommandFrame(commandId, params)));
       await this.replayPendingFrames();
     } catch (error) {
@@ -518,6 +542,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   private clearActiveExecution(commandId: string): void {
     if (this.activeExecuteCommandId !== commandId) return;
+    this.finishActiveRunnerObservation?.();
+    this.finishActiveRunnerObservation = undefined;
     this.activeExecuteCommandId = undefined;
     this.activeStream = undefined;
     this.abortRequestLifetimes(new Error("Runner execution ended"));
@@ -532,12 +558,32 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private releaseHostResources(): void {
+    this.finishActiveRunnerObservation?.();
+    this.finishActiveRunnerObservation = undefined;
     this.connection?.close();
     this.connection = undefined;
     this.unregisterPump?.();
     this.unregisterPump = undefined;
     this.lifecycle?.close();
     this.outbox?.close();
+  }
+
+  private observeActiveExecution(commandId: string, operation: "execute" | "recover"): void {
+    this.finishActiveRunnerObservation?.();
+    this.finishActiveRunnerObservation = this.options.nodeStallMonitor?.beginRunnerOperation({
+      sessionId: this.spawnInput.sessionId,
+      commandId,
+      operation: `execution:${operation}`,
+    });
+  }
+
+  private outboxOptions(): Parameters<typeof RunnerSqliteEventOutbox.open>[1] {
+    return {
+      sessionId: this.spawnInput.sessionId,
+      ...(this.options.nodeStallMonitor
+        ? { transactionObserver: this.options.nodeStallMonitor.sqliteTransactionObserver }
+        : {}),
+    };
   }
 }
 

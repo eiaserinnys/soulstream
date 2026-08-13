@@ -10,8 +10,7 @@ import {
   openRunnerSqliteDatabase,
   openRunnerSqliteReadOnlyDatabase,
   requireRunnerSqliteWal,
-  withRunnerSqliteBusyRetry,
-  withRunnerSqliteTransaction,
+  withRunnerSqliteTransactionSync,
 } from "./runner_sqlite_connection.js";
 import type { RunnerExecutionState } from "./sqlite_event_outbox_schema.js";
 import { stringifyRunnerJson } from "./sqlite_event_outbox_records.js";
@@ -125,31 +124,29 @@ export class RunnerSqliteLifecycle {
         throw new Error("runner session id required before bootstrap lifecycle");
       }
       const sessionId = this.sessionId;
-      withRunnerSqliteBusyRetry(() => {
-        this.database.prepare(`
-          INSERT INTO runner_prebootstrap_lifecycle (
-            singleton, session_id, runner_pid, execution_command_id,
-            execution_state, progress_seq, progress_at, liveness_at,
-            in_flight_tools_json, terminal_error_json
-          ) VALUES (1, ?, ?, ?, 'running', 1, ?, ?, '[]', NULL)
-          ON CONFLICT(singleton) DO UPDATE SET
-            session_id = excluded.session_id,
-            runner_pid = excluded.runner_pid,
-            execution_command_id = excluded.execution_command_id,
-            execution_state = 'running',
-            progress_seq = runner_prebootstrap_lifecycle.progress_seq + 1,
-            progress_at = excluded.progress_at,
-            liveness_at = excluded.liveness_at,
-            in_flight_tools_json = '[]',
-            terminal_error_json = NULL
-        `).run(
-          sessionId,
-          input.pid,
-          input.commandId,
-          input.progressedAt,
-          input.progressedAt,
-        );
-      });
+      this.database.prepare(`
+        INSERT INTO runner_prebootstrap_lifecycle (
+          singleton, session_id, runner_pid, execution_command_id,
+          execution_state, progress_seq, progress_at, liveness_at,
+          in_flight_tools_json, terminal_error_json
+        ) VALUES (1, ?, ?, ?, 'running', 1, ?, ?, '[]', NULL)
+        ON CONFLICT(singleton) DO UPDATE SET
+          session_id = excluded.session_id,
+          runner_pid = excluded.runner_pid,
+          execution_command_id = excluded.execution_command_id,
+          execution_state = 'running',
+          progress_seq = runner_prebootstrap_lifecycle.progress_seq + 1,
+          progress_at = excluded.progress_at,
+          liveness_at = excluded.liveness_at,
+          in_flight_tools_json = '[]',
+          terminal_error_json = NULL
+      `).run(
+        sessionId,
+        input.pid,
+        input.commandId,
+        input.progressedAt,
+        input.progressedAt,
+      );
       return this.persistSummary(this.requireLifecycle());
     }
 
@@ -159,7 +156,7 @@ export class RunnerSqliteLifecycle {
              terminal_error_json
       FROM runner_prebootstrap_lifecycle WHERE singleton = 1
     `).get() as LifecycleRow | undefined;
-    withRunnerSqliteTransaction(this.database, () => {
+    withRunnerSqliteTransactionSync(this.database, () => {
       if (pending?.execution_command_id === input.commandId) {
         this.database.prepare(`
           UPDATE runner_event_outbox SET
@@ -187,7 +184,7 @@ export class RunnerSqliteLifecycle {
       this.database.prepare(
         "DELETE FROM runner_prebootstrap_lifecycle WHERE singleton = 1",
       ).run();
-    });
+    }, { transactionLabel: "lifecycle.begin" });
     return this.persistSummary(this.requireLifecycle());
   }
 
@@ -264,21 +261,19 @@ export class RunnerSqliteLifecycle {
 
   private updateActive(commandId: string, assignments: string, args: SqlParameter[]): void {
     if (!commandId) throw new Error("runner execution command id required");
-    withRunnerSqliteBusyRetry(() => {
-      let result = this.database.prepare(`
-        UPDATE runner_event_outbox SET ${assignments}
-        WHERE record_kind = 'bootstrap' AND execution_command_id = ?
+    let result = this.database.prepare(`
+      UPDATE runner_event_outbox SET ${assignments}
+      WHERE record_kind = 'bootstrap' AND execution_command_id = ?
+    `).run(...args, commandId);
+    if (result.changes === 0) {
+      result = this.database.prepare(`
+        UPDATE runner_prebootstrap_lifecycle SET ${assignments}
+        WHERE singleton = 1 AND execution_command_id = ?
       `).run(...args, commandId);
-      if (result.changes === 0) {
-        result = this.database.prepare(`
-          UPDATE runner_prebootstrap_lifecycle SET ${assignments}
-          WHERE singleton = 1 AND execution_command_id = ?
-        `).run(...args, commandId);
-      }
-      if (result.changes !== 1) {
-        throw new Error(`runner lifecycle command mismatch: ${commandId}`);
-      }
-    });
+    }
+    if (result.changes !== 1) {
+      throw new Error(`runner lifecycle command mismatch: ${commandId}`);
+    }
   }
 
   private updateToolLease(
@@ -319,15 +314,13 @@ export class RunnerSqliteLifecycle {
 
   private updateBootstrap(assignments: string, args: SqlParameter[]): void {
     this.requireOpen();
-    withRunnerSqliteBusyRetry(() => {
-      const result = this.database.prepare(`
-        UPDATE runner_event_outbox SET ${assignments}
-        WHERE record_kind = 'bootstrap'
-      `).run(...args);
-      if (result.changes !== 1) {
-        throw new Error("runner bootstrap required before lifecycle update");
-      }
-    });
+    const result = this.database.prepare(`
+      UPDATE runner_event_outbox SET ${assignments}
+      WHERE record_kind = 'bootstrap'
+    `).run(...args);
+    if (result.changes !== 1) {
+      throw new Error("runner bootstrap required before lifecycle update");
+    }
   }
 
   private requireLifecycle(): RunnerLifecycleRecord {
@@ -437,9 +430,7 @@ export function ensureRunnerLifecycleColumns(database: DatabaseSync): void {
     ).all() as Array<{ name: string }>).map((column) => column.name));
     for (const [name, declaration] of LIFECYCLE_COLUMNS) {
       if (!existing.has(name)) {
-        withRunnerSqliteBusyRetry(() => {
-          database.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${declaration}`);
-        });
+        database.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${declaration}`);
       }
     }
   }
