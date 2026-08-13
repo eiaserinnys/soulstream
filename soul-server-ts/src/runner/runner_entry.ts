@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import pino from "pino";
 
+import { installProcessErrorHandlers } from "../runtime/process_error_handlers.js";
 import { RunnerChildRuntime } from "./runner_child_runtime.js";
 import { parseRunnerChildConfig } from "./runner_process_spawn.js";
 import { startRunnerLogRotation } from "./runner_log_rotation.js";
@@ -13,6 +14,7 @@ const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
   base: { component: "session-runner", sessionId: config.sessionId },
 });
+installProcessErrorHandlers({ component: "session-runner", logger });
 const stopLogRotation = startRunnerLogRotation(
   process.stdout.fd,
   config.paths.logPath,

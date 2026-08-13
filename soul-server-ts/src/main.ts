@@ -11,6 +11,7 @@ import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
+import { installProcessErrorHandlers } from "./runtime/process_error_handlers.js";
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
 import { startInternalMcpServer, startServer } from "./server.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   });
 
   const logger = createLogger(env.LOG_LEVEL);
+  installProcessErrorHandlers({ component: "soul-server", logger });
   const nodeStallMonitor = startNodeStallMonitor({ logger });
   let modelCatalog: ReturnType<typeof loadModelCatalog>;
   try {
