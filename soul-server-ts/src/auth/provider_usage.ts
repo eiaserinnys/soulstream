@@ -86,6 +86,7 @@ export interface ProviderUsageServiceConfig {
   logger?: ProviderUsageLogger;
   requestTimeoutMs?: number;
   slowRequestThresholdMs?: number;
+  codexRuntimeLimitsImpl?: (homeDir: string) => ProviderLimits;
 }
 
 const CODEX_USAGE_URLS = [
@@ -106,6 +107,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   private readonly fetchImpl: typeof fetch;
   private readonly requestTimeoutMs: number;
   private readonly slowRequestThresholdMs: number;
+  private readonly codexRuntimeLimitsImpl: (homeDir: string) => ProviderLimits;
 
   constructor(private readonly config: ProviderUsageServiceConfig = {}) {
     this.homeDir = config.homeDir ?? homedir();
@@ -113,6 +115,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     this.requestTimeoutMs = config.requestTimeoutMs ?? PROVIDER_USAGE_REQUEST_TIMEOUT_MS;
     this.slowRequestThresholdMs =
       config.slowRequestThresholdMs ?? PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS;
+    this.codexRuntimeLimitsImpl = config.codexRuntimeLimitsImpl ?? codexRuntimeLimits;
   }
 
   async fetchUsage(
@@ -230,8 +233,8 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   private async fetchCodexLimits(signal: AbortSignal): Promise<ProviderLimits> {
     const auth = readJson(join(this.homeDir, ".codex", "auth.json"));
     if (!isRecord(auth)) {
-      this.logCodexFallback("oauth_not_configured");
-      return codexRuntimeLimits(this.homeDir);
+      this.logCodexFallback("oauth_not_configured", false);
+      return this.codexRuntimeLimitsImpl(this.homeDir);
     }
 
     const tokens = oauthTokens(auth);
@@ -258,8 +261,11 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       }
     }
 
-    this.logCodexFallback("remote_usage_unavailable");
-    const fallback = codexRuntimeLimits(this.homeDir);
+    this.logCodexFallback("remote_usage_unavailable", signal.aborted);
+    if (signal.aborted) {
+      throw signal.reason ?? new Error("Codex provider usage request aborted");
+    }
+    const fallback = this.codexRuntimeLimitsImpl(this.homeDir);
     if (fallback.status !== "not_configured") {
       return {
         ...fallback,
@@ -473,16 +479,20 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     }
   }
 
-  private logCodexFallback(reason: "oauth_not_configured" | "remote_usage_unavailable"): void {
+  private logCodexFallback(
+    reason: "oauth_not_configured" | "remote_usage_unavailable",
+    aborted: boolean,
+  ): void {
     this.config.logger?.warn(
       {
         provider: "codex",
         endpoint: "filesystem/.codex/sessions",
         durationMs: 0,
-        result: "fallback",
+        result: aborted ? "fallback_skipped" : "fallback",
         reason,
+        aborted,
       },
-      "Provider usage entered local rollout fallback",
+      "Provider usage local rollout fallback decision",
     );
   }
 }

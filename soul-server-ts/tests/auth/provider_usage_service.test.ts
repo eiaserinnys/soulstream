@@ -136,6 +136,47 @@ describe("ProviderUsageService", () => {
     }
   });
 
+  it("does not start an orphaned Codex rollout scan after the provider signal aborts", async () => {
+    const home = await mkdtemp(join(tmpdir(), "provider-usage-aborted-fallback-"));
+    try {
+      await mkdir(join(home, ".codex"), { recursive: true });
+      await writeFile(
+        join(home, ".codex", "auth.json"),
+        JSON.stringify({ tokens: { access_token: "codex-access-secret" } }),
+      );
+      const { logger, entries } = captureLogger();
+      const codexRuntimeLimitsImpl = vi.fn(() => {
+        throw new Error("orphaned rollout scan was invoked");
+      });
+      const service = new ProviderUsageService({
+        homeDir: home,
+        fetchImpl: hangingFetch(),
+        logger,
+        requestTimeoutMs: 25,
+        codexRuntimeLimitsImpl,
+      });
+
+      const result = await service.fetchUsage("req-aborted-fallback", "provider_usage_get", "codex");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(result).toMatchObject({ success: true, data: { status: "error" } });
+      expect(codexRuntimeLimitsImpl).not.toHaveBeenCalled();
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          level: "warn",
+          fields: expect.objectContaining({
+            provider: "codex",
+            result: "fallback_skipped",
+            reason: "remote_usage_unavailable",
+            aborted: true,
+          }),
+        }),
+      );
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("bounds a provider implementation even when it ignores the AbortSignal", async () => {
     const { logger, entries } = captureLogger();
     const claudeAuth = {
@@ -246,6 +287,7 @@ describe("ProviderUsageService", () => {
             durationMs: 0,
             result: "fallback",
             reason: "oauth_not_configured",
+            aborted: false,
           }),
         }),
       );
