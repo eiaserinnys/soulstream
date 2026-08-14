@@ -90,6 +90,7 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
       onResume: () => {
         counts.wake += 1;
       },
+      releaseRetainedRunner: async () => undefined,
       logger: pino({ level: "silent" }),
       sleep: async () => undefined,
       deliveryV2Enabled: true,

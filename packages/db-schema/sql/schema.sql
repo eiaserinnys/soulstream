@@ -1628,7 +1628,6 @@ BEGIN
                superseded_terminal_revision = p_expected_terminal_event_id::text,
                lease_owner = NULL,
                lease_expires_at = NULL,
-               last_error = 'source_terminal_revision_superseded',
                updated_at = p_updated_at
          WHERE source_session_id = p_session_id
            AND intent = 'completion_notification'

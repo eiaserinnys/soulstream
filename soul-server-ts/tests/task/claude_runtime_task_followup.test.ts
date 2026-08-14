@@ -36,17 +36,19 @@ function makeController(
   const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
   const onResume = vi.fn();
   const sleep = vi.fn(async () => undefined);
+  const releaseRetainedRunner = vi.fn(async () => undefined);
   const controller = new ClaudeRuntimeTaskFollowupController({
     taskManager: { addIntervention },
     onResume,
     logger: silentLogger,
     sleep,
+    releaseRetainedRunner,
     deliveryV2Enabled,
     inlineConsumptionRecorder: recordInlineConsumed
       ? { recordInlineConsumed }
       : undefined,
   });
-  return { controller, addIntervention, onResume, sleep };
+  return { controller, addIntervention, onResume, sleep, releaseRetainedRunner };
 }
 
 describe("ClaudeRuntimeTaskFollowupController", () => {
@@ -155,7 +157,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       summary: "already reflected inline",
     };
     const recordInlineConsumed = vi.fn().mockResolvedValue(true);
-    const { controller, addIntervention, onResume } =
+    const { controller, addIntervention, onResume, releaseRetainedRunner } =
       makeController(true, recordInlineConsumed);
     const event = {
       type: "claude_runtime_task_notification",
@@ -180,6 +182,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
     expect(addIntervention).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();
+    expect(releaseRetainedRunner).toHaveBeenCalledOnce();
+    expect(releaseRetainedRunner).toHaveBeenCalledWith(task);
   });
 
   it("foreground Result 뒤 detached 완료는 terminal caller에 정확히 한 번 전달한다", async () => {
@@ -419,6 +423,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
     });
 
@@ -660,6 +665,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
       sleep,
     });
@@ -691,6 +697,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
       sleep,
     });
@@ -730,6 +737,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
       sleep,
     });

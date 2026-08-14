@@ -136,6 +136,8 @@ describe("runner cutover all-flags-on integration", () => {
         }),
       },
       onResume: (resumedTask) => executor.startExecution(resumedTask, agent),
+      releaseRetainedRunner: async (retainedTask) =>
+        await executor.releaseRetainedClaudeRunner(retainedTask),
       logger,
       deliveryV2Enabled: true,
     });

@@ -81,6 +81,18 @@ describe("RunnerProcessEngineProxy", () => {
     });
   });
 
+  it.each([
+    ["not_supported", { status: "not_supported" }],
+    ["undefined", undefined],
+  ])("normalizes pre-contract detached runtime activity %s to null", async (_label, result) => {
+    const dispatcher = {
+      invoke: vi.fn().mockResolvedValue(result),
+    };
+    const proxy = new RunnerProcessEngineProxy("claude", "/workspace/a", dispatcher as never);
+
+    await expect(proxy.detachedClaudeRuntimeActivity()).resolves.toBeNull();
+  });
+
   it("does not claim detached Claude semantics for other backends", () => {
     const proxy = new RunnerProcessEngineProxy("codex", "/workspace/a", {} as never);
     expect(proxy.detachedClaudeRuntime).toBeUndefined();

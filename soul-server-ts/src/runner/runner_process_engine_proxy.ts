@@ -68,7 +68,7 @@ export class RunnerProcessEngineProxy implements EnginePort {
   }
   async detachedClaudeRuntimeActivity(): Promise<DetachedClaudeRuntimeActivity | null> {
     const result = await this.dispatcher.invoke("detachedClaudeRuntimeActivity", []);
-    if (result === null) return null;
+    if (isUnavailableDetachedClaudeRuntimeActivity(result)) return null;
     if (!isDetachedClaudeRuntimeActivity(result)) {
       throw new Error("Runner child returned invalid detached Claude runtime activity");
     }
@@ -80,6 +80,13 @@ export class RunnerProcessEngineProxy implements EnginePort {
       [taskId],
     ) as ClaudeBackgroundTaskControlResult;
   }
+}
+
+function isUnavailableDetachedClaudeRuntimeActivity(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return typeof value === "object"
+    && !Array.isArray(value)
+    && (value as Record<string, unknown>).status === "not_supported";
 }
 
 function isDetachedClaudeRuntimeActivity(

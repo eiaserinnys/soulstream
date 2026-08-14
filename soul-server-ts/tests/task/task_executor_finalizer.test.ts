@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
+import { RunnerProcessEngineProxy } from
+  "../../src/runner/runner_process_engine_proxy.js";
 import {
   createInProcessTaskRunnerRuntime,
   createTaskRunnerRuntime,
@@ -98,6 +100,73 @@ describe("TaskExecutorFinalizer.finalize", () => {
     });
 
     await finalizer.finalize(task);
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+  });
+
+  it.each([
+    ["not_supported", { status: "not_supported" }],
+    ["undefined", undefined],
+  ])("closes a pre-contract Claude runner whose activity is %s", async (_label, result) => {
+    const close = vi.fn(async () => undefined);
+    const childDispatcher = {
+      invoke: vi.fn().mockResolvedValue(result),
+      close,
+    };
+    const engine = new RunnerProcessEngineProxy(
+      "claude",
+      "/workspace/a",
+      childDispatcher as never,
+    );
+    const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: true,
+          terminalTransitionApplied: true,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+  });
+
+  it("releases a retained runner after its detached runtime becomes idle", async () => {
+    const close = vi.fn(async () => undefined);
+    const engine = {
+      ...makeEngine(close),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity: vi.fn(async () => ({
+        foregroundPhase: "post_result_drain",
+        queryLifecycle: "open",
+        backgroundTaskCount: 0,
+        pendingInputRequestCount: 0,
+        pendingRuntimeSignalCount: 0,
+      })),
+    } as EnginePort;
+    const task = makeTask({
+      runner: createInProcessTaskRunnerRuntime(engine),
+      runnerRetainedForClaudeBackground: true,
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: false,
+          terminalTransitionApplied: false,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.releaseRetainedClaudeRunner(task);
 
     expect(close).toHaveBeenCalledOnce();
     expect(task.runner).toBeUndefined();

@@ -254,6 +254,10 @@ export class TaskExecutor {
     this.startExecutionWithRunner(task, agent, runner);
   }
 
+  async releaseRetainedClaudeRunner(task: Task): Promise<void> {
+    await this.executorFinalizer.releaseRetainedClaudeRunner(task);
+  }
+
   startExecutionWithRunner(
     task: Task,
     agent: AgentProfile,

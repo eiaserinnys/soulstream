@@ -64,6 +64,7 @@ export interface ClaudeRuntimeScheduledFallback {
 export interface ClaudeRuntimeTaskFollowupDeps {
   taskManager: Pick<TaskManager, "addIntervention">;
   onResume: StartExecutionCallback;
+  releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
   sleep?: (ms: number) => Promise<void>;
   deliveryV2Enabled?: boolean;
@@ -167,6 +168,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     this.collect(task, event);
     if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     await this.flushPending(task);
+    await this.deps.releaseRetainedRunner(task);
   }
 
   private async flushPending(task: Task): Promise<void> {

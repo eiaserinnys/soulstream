@@ -137,6 +137,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       "caller-old",
       "worker-before-resume",
     );
+    await harness.sql`
+      UPDATE session_deliveries
+      SET last_error = 'transient dispatch failure before resume'
+      WHERE delivery_id = 'delivery-resume-race'
+    `;
 
     const resumed = await harness.sql<Array<{ applied: boolean }>>`
       SELECT * FROM session_apply_running_transition(
@@ -155,6 +160,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       superseded_terminal_revision: "42",
       lease_owner: null,
       lease_expires_at: null,
+      last_error: "transient dispatch failure before resume",
     });
     await expect(repository.beginDispatch(
       "delivery-resume-race",
