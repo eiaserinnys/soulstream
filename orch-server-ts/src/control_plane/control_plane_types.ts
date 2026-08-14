@@ -13,6 +13,7 @@ export type DeliveryState =
   | "queued"
   | "delivered"
   | "consumed"
+  | "superseded"
   | "uncertain";
 
 export interface SessionDeliveryRow {
@@ -43,6 +44,8 @@ export interface SessionDeliveryRow {
   queued_at: Date | null;
   delivered_at: Date | null;
   consumed_at: Date | null;
+  superseded_at: Date | null;
+  superseded_terminal_revision: string | null;
 }
 
 export interface RegisterSessionDeliveryParams {

@@ -152,6 +152,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
     });
     const engine: EnginePort = {
@@ -215,6 +216,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         }),
       },
       onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
     });
     const prompts: string[] = [];
@@ -302,6 +304,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           }),
         },
         onResume: vi.fn(),
+        releaseRetainedRunner: async () => undefined,
         logger: silentLogger,
       });
       const prompts: string[] = [];

@@ -310,6 +310,7 @@ function makeDeliveryPath(sql: SqlClient): {
           route.addIntervention(params, callback),
       },
       onResume,
+      releaseRetainedRunner: async () => undefined,
       logger: pino({ level: "silent" }),
       deliveryV2Enabled: true,
     }),

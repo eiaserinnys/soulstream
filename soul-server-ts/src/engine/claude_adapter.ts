@@ -363,6 +363,11 @@ export class ClaudeEngineAdapter
     return await client.backgroundClaudeRuntimeTasks(toolUseId);
   }
 
+  async detachedClaudeRuntimeActivity(): Promise<ClaudePersistentRuntimeActivity | null> {
+    const client = this.activeClient ?? this.client;
+    return client.persistentRuntimeActivity?.() ?? null;
+  }
+
   async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
     const client = this.activeClient ?? this.client;
     if (!client.stopClaudeRuntimeTask) {

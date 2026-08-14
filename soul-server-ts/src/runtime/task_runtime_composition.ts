@@ -126,6 +126,8 @@ export function composeTaskRuntime(
   const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
     taskManager,
     onResume,
+    releaseRetainedRunner: async (task) =>
+      await taskExecutor.releaseRetainedClaudeRunner(task),
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     inlineConsumptionRecorder: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED

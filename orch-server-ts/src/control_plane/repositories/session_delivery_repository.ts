@@ -134,6 +134,19 @@ export class SessionDeliveryRepository {
           delivery.lease_expires_at IS NULL
           OR delivery.lease_expires_at > NOW()
         )
+        AND (
+          delivery.intent <> 'completion_notification'
+          OR delivery.source <> 'completion_notifier'
+          OR EXISTS (
+            SELECT 1
+            FROM sessions AS source_session
+            WHERE source_session.session_id = delivery.source_session_id
+              AND source_session.status IN ('completed', 'error', 'interrupted')
+              AND source_session.termination_event_id IS NOT NULL
+              AND source_session.termination_event_id::text
+                = delivery.producer_terminal_revision
+          )
+        )
       RETURNING delivery.*
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
@@ -352,7 +365,8 @@ export class SessionDeliveryRepository {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
       SET state = 'uncertain', updated_at = NOW()
-      WHERE delivery_id = ${deliveryId} AND state <> 'consumed'
+      WHERE delivery_id = ${deliveryId}
+        AND state NOT IN ('consumed', 'superseded')
       RETURNING *
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;

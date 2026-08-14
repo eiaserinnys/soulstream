@@ -70,6 +70,37 @@ function makeClient(events: ClaudeClientEvent[], captured: ClaudeRunOptions[]): 
 }
 
 describe("ClaudeEngineAdapter options parity", () => {
+  it("persistent Claude client의 detached runtime activity를 그대로 노출한다", async () => {
+    const activity = {
+      foregroundPhase: "completed" as const,
+      queryLifecycle: "background_active" as const,
+      backgroundTaskCount: 2,
+      pendingInputRequestCount: 0,
+      pendingRuntimeSignalCount: 1,
+    };
+    const client: ClaudeClient = {
+      ...makeClient([], []),
+      persistentRuntimeActivity: () => activity,
+    };
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client,
+        processEnv: {},
+        persistentSessionRegistry: {
+          acquire: () => client,
+          close: async () => true,
+          release: () => undefined,
+          reserve: () => undefined,
+        },
+      },
+      silentLogger,
+    );
+
+    expect(engine.detachedClaudeRuntime).toBe(true);
+    expect(await engine.detachedClaudeRuntimeActivity()).toEqual(activity);
+  });
+
   it("model이 undefined/null/빈 문자열이면 client options에서 model을 생략한다", async () => {
     expect(normalizeClaudeModel(undefined)).toBeUndefined();
     expect(normalizeClaudeModel(null)).toBeUndefined();

@@ -340,7 +340,7 @@ export class RunnerRecoveryCoordinator {
   private async recoverRegistered(
     registration: RunnerRegistration,
     task: Task,
-    mode: "adopt" | "offline",
+    mode: "adopt" | "replay" | "offline",
     prepareRegistrationAfterTaskGuard?: (
       registration: RunnerRegistration,
     ) => Promise<RunnerRegistration>,
@@ -364,7 +364,7 @@ export class RunnerRecoveryCoordinator {
       void completion.catch((error) => {
         this.options.logger.error(
           { err: error, sessionId: registration.config.sessionId },
-          "adopted runner host consumption failed",
+          "live runner host consumption failed",
         );
       });
     }
@@ -469,6 +469,12 @@ export class RunnerRecoveryCoordinator {
   ): Promise<Task> {
     if (disposition !== "replay_terminal") {
       return await this.recoverRegistered(registration, task, "adopt");
+    }
+    if (
+      registration.pidAlive
+      && registration.lifecycle?.execution_state === "completed"
+    ) {
+      return await this.recoverRegistered(registration, task, "replay");
     }
     return await this.recoverRegistered(
       registration,

@@ -26,6 +26,7 @@ import {
   buildTaskKey,
   type PendingRuntimeTaskFollowup,
 } from "./claude_runtime_task_followup_prompt.js";
+import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 
 export { buildClaudeRuntimeTaskFollowupPrompt } from
   "./claude_runtime_task_followup_prompt.js";
@@ -63,6 +64,7 @@ export interface ClaudeRuntimeScheduledFallback {
 export interface ClaudeRuntimeTaskFollowupDeps {
   taskManager: Pick<TaskManager, "addIntervention">;
   onResume: StartExecutionCallback;
+  releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
   sleep?: (ms: number) => Promise<void>;
   deliveryV2Enabled?: boolean;
@@ -164,7 +166,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
   async collectDetached(task: Task, event: SSEEventPayload): Promise<void> {
     this.collect(task, event);
+    if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     await this.flushPending(task);
+    await this.deps.releaseRetainedRunner(task);
   }
 
   private async flushPending(task: Task): Promise<void> {

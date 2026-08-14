@@ -14,6 +14,15 @@ describe("RunnerProcessEngineProxy", () => {
         }
         if (capability === "deliverInputResponse") return { status: "delivered" };
         if (capability === "deliverToolApproval") return { status: "already_resolved" };
+        if (capability === "detachedClaudeRuntimeActivity") {
+          return {
+            foregroundPhase: "post_result_drain",
+            queryLifecycle: "open",
+            backgroundTaskCount: 1,
+            pendingInputRequestCount: 0,
+            pendingRuntimeSignalCount: 0,
+          };
+        }
         return undefined;
       }),
     };
@@ -29,6 +38,9 @@ describe("RunnerProcessEngineProxy", () => {
     });
     await expect(proxy.deliverToolApproval("approval-1", "approved")).resolves.toEqual({
       status: "already_resolved",
+    });
+    await expect(proxy.detachedClaudeRuntimeActivity()).resolves.toMatchObject({
+      backgroundTaskCount: 1,
     });
     await proxy.close();
 
@@ -48,6 +60,11 @@ describe("RunnerProcessEngineProxy", () => {
       "deliverToolApproval",
       ["approval-1", "approved", {}],
     );
+    expect(dispatcher.invoke).toHaveBeenNthCalledWith(
+      4,
+      "detachedClaudeRuntimeActivity",
+      [],
+    );
   });
 
   it("normalizes a pre-contract child response during a rolling restart", async () => {
@@ -62,6 +79,18 @@ describe("RunnerProcessEngineProxy", () => {
       reason: "not_supported",
       message: "Runner child does not expose the intervention operation",
     });
+  });
+
+  it.each([
+    ["not_supported", { status: "not_supported" }],
+    ["undefined", undefined],
+  ])("normalizes pre-contract detached runtime activity %s to null", async (_label, result) => {
+    const dispatcher = {
+      invoke: vi.fn().mockResolvedValue(result),
+    };
+    const proxy = new RunnerProcessEngineProxy("claude", "/workspace/a", dispatcher as never);
+
+    await expect(proxy.detachedClaudeRuntimeActivity()).resolves.toBeNull();
   });
 
   it("does not claim detached Claude semantics for other backends", () => {

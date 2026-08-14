@@ -225,6 +225,15 @@ export interface SupportsCompact {
  */
 export interface SupportsDetachedClaudeRuntime {
   readonly detachedClaudeRuntime: true;
+  detachedClaudeRuntimeActivity(): Promise<DetachedClaudeRuntimeActivity | null>;
+}
+
+export interface DetachedClaudeRuntimeActivity {
+  foregroundPhase: string;
+  queryLifecycle: string;
+  backgroundTaskCount: number;
+  pendingInputRequestCount: number;
+  pendingRuntimeSignalCount?: number;
 }
 
 /**

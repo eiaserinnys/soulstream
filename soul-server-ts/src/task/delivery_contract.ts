@@ -18,6 +18,7 @@ export const DELIVERY_STATES = [
   "queued",
   "delivered",
   "consumed",
+  "superseded",
   "uncertain",
 ] as const;
 
