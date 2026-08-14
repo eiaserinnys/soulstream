@@ -115,6 +115,7 @@ export class AutoResumeTransition {
 
   private async closeStaleEngine(task: Task): Promise<void> {
     if (!task.runner) return;
+    if (task.runnerRetainedForClaudeBackground === true) return;
     const runner = task.runner;
     task.runner = undefined;
     try {

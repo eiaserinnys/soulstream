@@ -355,6 +355,8 @@ CREATE TABLE IF NOT EXISTS session_deliveries (
     queued_at                  TIMESTAMPTZ,
     delivered_at               TIMESTAMPTZ,
     consumed_at                TIMESTAMPTZ,
+    superseded_at              TIMESTAMPTZ,
+    superseded_terminal_revision TEXT,
     CONSTRAINT session_deliveries_relation_unique
         UNIQUE (relation_key),
     CONSTRAINT session_deliveries_intent_check
@@ -372,6 +374,7 @@ CREATE TABLE IF NOT EXISTS session_deliveries (
             'queued',
             'delivered',
             'consumed',
+            'superseded',
             'uncertain'
     ))
 );
@@ -391,7 +394,9 @@ ALTER TABLE session_deliveries
     ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ADD COLUMN IF NOT EXISTS last_error TEXT;
+    ADD COLUMN IF NOT EXISTS last_error TEXT,
+    ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS superseded_terminal_revision TEXT;
 ALTER TABLE session_deliveries
     DROP CONSTRAINT IF EXISTS session_deliveries_state_check;
 ALTER TABLE session_deliveries
@@ -403,6 +408,7 @@ ALTER TABLE session_deliveries
         'queued',
         'delivered',
         'consumed',
+        'superseded',
         'uncertain'
     ));
 
@@ -413,6 +419,10 @@ CREATE INDEX IF NOT EXISTS idx_session_deliveries_recovery
 CREATE INDEX IF NOT EXISTS idx_session_deliveries_completion
     ON session_deliveries(completion_id)
     WHERE completion_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_session_deliveries_source_terminal_revision
+    ON session_deliveries(source_session_id, producer_terminal_revision, state)
+    WHERE intent = 'completion_notification'
+      AND source = 'completion_notifier';
 
 -- Semantic completion consumption is intentionally independent from the
 -- delivery row. A caller can consume an inline child result before the
@@ -1610,6 +1620,23 @@ BEGIN
            AND session.status NOT IN ('completed', 'error');
     END IF;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
+
+    IF p_terminal_resume AND v_row_count = 1 THEN
+        UPDATE session_deliveries
+           SET state = 'superseded',
+               superseded_at = p_updated_at,
+               superseded_terminal_revision = p_expected_terminal_event_id::text,
+               lease_owner = NULL,
+               lease_expires_at = NULL,
+               last_error = 'source_terminal_revision_superseded',
+               updated_at = p_updated_at
+         WHERE source_session_id = p_session_id
+           AND intent = 'completion_notification'
+           AND source = 'completion_notifier'
+           AND producer_kind = 'child_session'
+           AND producer_terminal_revision = p_expected_terminal_event_id::text
+           AND state IN ('pending', 'claimed', 'dispatching');
+    END IF;
 
     RETURN QUERY
     SELECT v_row_count = 1,

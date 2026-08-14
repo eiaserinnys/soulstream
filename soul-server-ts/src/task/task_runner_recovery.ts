@@ -33,6 +33,7 @@ export class TaskRunnerRecovery {
     onResume: StartExecutionCallback,
   ): Promise<void> {
     task.runner = undefined;
+    task.runnerRetainedForClaudeBackground = undefined;
     task.executionPromise = undefined;
     task.status = "error";
     task.error = message;

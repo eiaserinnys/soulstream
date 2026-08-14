@@ -215,6 +215,85 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
   });
 
+  it("복수 background task는 마지막 terminal까지 runner follow-up을 보류한다", async () => {
+    const task = makeTask();
+    task.status = "completed";
+    task.claudeRuntime!.tasks["task-first"] = {
+      taskId: "task-first",
+      status: "completed",
+      updatedAt: 78,
+      isBackgrounded: true,
+    };
+    task.claudeRuntime!.tasks["task-last"] = {
+      taskId: "task-last",
+      status: "running",
+      updatedAt: 79,
+      isBackgrounded: true,
+    };
+    const { controller, addIntervention } = makeController(true);
+
+    await controller.collectDetached(task, markPostResultDrainEvent({
+      type: "claude_runtime_task_notification",
+      task_id: "task-first",
+      status: "completed",
+      _event_id: 78,
+    } as SSEEventPayload));
+
+    expect(addIntervention).not.toHaveBeenCalled();
+
+    task.claudeRuntime!.tasks["task-last"]!.status = "completed";
+    await controller.collectDetached(task, markPostResultDrainEvent({
+      type: "claude_runtime_task_notification",
+      task_id: "task-last",
+      status: "completed",
+      _event_id: 80,
+    } as SSEEventPayload));
+
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(addIntervention.mock.calls[0]![0].followupTaskIds).toEqual([
+      "task-first",
+      "task-last",
+    ]);
+  });
+
+  it.each(["failed", "stopped", "killed"] as const)(
+    "마지막 background %s terminal도 보류된 task를 함께 flush한다",
+    async (terminalStatus) => {
+      const task = makeTask();
+      task.status = "completed";
+      task.claudeRuntime!.tasks["task-first"] = {
+        taskId: "task-first",
+        status: "completed",
+        updatedAt: 78,
+        isBackgrounded: true,
+      };
+      task.claudeRuntime!.tasks["task-last"] = {
+        taskId: "task-last",
+        status: "running",
+        updatedAt: 79,
+        isBackgrounded: true,
+      };
+      const { controller, addIntervention } = makeController(true);
+
+      await controller.collectDetached(task, markPostResultDrainEvent({
+        type: "claude_runtime_task_notification",
+        task_id: "task-first",
+        status: "completed",
+        _event_id: 78,
+      } as SSEEventPayload));
+      task.claudeRuntime!.tasks["task-last"]!.status = terminalStatus;
+      await controller.collectDetached(task, markPostResultDrainEvent({
+        type: "claude_runtime_task_notification",
+        task_id: "task-last",
+        status: terminalStatus,
+        _event_id: 80,
+      } as SSEEventPayload));
+
+      expect(addIntervention).toHaveBeenCalledTimes(1);
+      expect(addIntervention.mock.calls[0]![0].text).toContain(`status=${terminalStatus}`);
+    },
+  );
+
   it("interrupt 중에는 follow-up을 보류하고 다음 running turn까지 pending을 보존한다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["task-interrupted"] = {

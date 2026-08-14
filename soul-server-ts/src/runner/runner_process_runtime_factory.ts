@@ -88,11 +88,11 @@ export function createRunnerProcessRuntimeFactory(
     backend: import("../engine/protocol.js").BackendId,
     snapshots: RunnerSnapshotPersistence,
     spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
-    recoveryMode?: "adopt" | "offline",
+    recoveryMode?: "adopt" | "replay" | "offline",
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn,
-      adoptExisting: recoveryMode === "adopt",
+      adoptExisting: recoveryMode === "adopt" || recoveryMode === "replay",
       offlineExisting: recoveryMode === "offline",
       spawner,
       pumpMux: options.pumpMux,
@@ -143,8 +143,8 @@ export function createRunnerProcessRuntimeFactory(
       })),
     );
   }) as RunnerProcessRuntimeFactory;
-  // Adoption and offline replay attach to the existing child without spawning
-  // or rewriting its config, so they must retain that child's MCP settings.
+  // Adoption, live terminal replay, and offline replay reuse the registered
+  // child/config rather than resolving current profile MCP settings.
   factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
     task,
     config.agent,

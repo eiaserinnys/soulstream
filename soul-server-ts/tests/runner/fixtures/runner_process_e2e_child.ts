@@ -16,6 +16,8 @@ import {
   type RunnerEventFrame,
 } from "../../../src/runner/frame_protocol.js";
 import { RunnerChildRuntime } from "../../../src/runner/runner_child_runtime.js";
+import type { RunnerHostRequestClient } from
+  "../../../src/runner/runner_host_request_client.js";
 import { parseRunnerChildConfig } from "../../../src/runner/runner_process_spawn.js";
 
 const configPath = argument("--config");
@@ -23,16 +25,55 @@ const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
 class ControlledEngine implements EnginePort {
   readonly backendId = config.backend;
+  readonly detachedClaudeRuntime = config.backend === "claude" ? true : undefined;
   private executionCount = 0;
+  private backgroundTaskCount = 0;
 
   constructor(
     private readonly controlDirectory: string,
     readonly workspaceDir: string,
+    private readonly host: RunnerHostRequestClient,
   ) {}
 
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
   async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    if (process.env.RUNNER_E2E_BACKGROUND_SCENARIO === "multi-terminal") {
+      this.executionCount += 1;
+      if (this.executionCount === 1) {
+        this.backgroundTaskCount = 2;
+        yield engineEventFrame({ type: "session", session_id: "backend-session-background" });
+        for (const taskId of ["background-1", "background-2"]) {
+          yield engineEventFrame({
+            type: "claude_runtime_task_updated",
+            task_id: taskId,
+            patch: { status: "running", is_backgrounded: true },
+          });
+        }
+        void this.emitBackgroundTerminals().catch(async (error: unknown) => {
+          await writeFile(
+            `${this.controlDirectory}/child-error`,
+            error instanceof Error ? error.stack ?? error.message : String(error),
+          );
+        });
+        yield engineEventFrame({ type: "complete", result: "foreground complete" });
+        return;
+      }
+      if (this.executionCount !== 2) {
+        throw new Error(`background follow-up executed ${this.executionCount} times`);
+      }
+      await writeFile(
+        `${this.controlDirectory}/followup-executed`,
+        `${process.pid}\n`,
+      );
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: "background follow-up complete",
+        timestamp: 3,
+      });
+      yield engineEventFrame({ type: "complete", result: "background follow-up complete" });
+      return;
+    }
     const rolloverScenario = process.env.RUNNER_E2E_ROLLOVER_SCENARIO;
     if (rolloverScenario) {
       this.executionCount += 1;
@@ -171,6 +212,47 @@ class ControlledEngine implements EnginePort {
   }
 
   async close(): Promise<void> {}
+
+  async detachedClaudeRuntimeActivity() {
+    return {
+      foregroundPhase: "drain",
+      queryLifecycle: "open",
+      backgroundTaskCount: this.backgroundTaskCount,
+      pendingInputRequestCount: 0,
+      pendingRuntimeSignalCount: 0,
+    };
+  }
+
+  private async emitBackgroundTerminals(): Promise<void> {
+    for (const [index, taskId] of ["background-1", "background-2"].entries()) {
+      await waitForFile(`${this.controlDirectory}/release-${taskId}`);
+      const event = {
+        type: "claude_runtime_task_notification" as const,
+        taskId,
+        status: "completed" as const,
+        summary: `${taskId} done`,
+        timestamp: index + 10,
+      };
+      const metadata = {
+        claudePostResultDrain: true,
+        claudeBackgroundProvenance: "sdk_membership",
+      };
+      await this.host.call(
+        "claude_runtime",
+        "observe",
+        [config.sessionId, event, metadata],
+        { timeoutMs: 20_000 },
+      );
+      this.backgroundTaskCount -= 1;
+      await this.host.call(
+        "detached_event",
+        "publish",
+        [config.sessionId, event, metadata],
+        { timeoutMs: 20_000 },
+      );
+      await writeFile(`${this.controlDirectory}/published-${taskId}`, "ready\n");
+    }
+  }
 }
 
 function preBootstrapHook(label: string, blob?: string): RunnerEventFrame {
@@ -218,7 +300,8 @@ async function exerciseInternalMcp(): Promise<void> {
 }
 
 const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {
-  createEngine: () => new ControlledEngine(controlDirectory, config.agent.workspace_dir),
+  createEngine: (_config, host) =>
+    new ControlledEngine(controlDirectory, config.agent.workspace_dir, host),
 });
 process.once("SIGTERM", () => { void runtime.shutdown(); });
 process.once("SIGINT", () => { void runtime.shutdown(); });

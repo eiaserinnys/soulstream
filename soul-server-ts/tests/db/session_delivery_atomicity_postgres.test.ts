@@ -38,6 +38,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         ('caller-new', 'claude', 'completed', 'ariella'),
         ('child-session', 'claude', 'completed', 'worker')
     `;
+    await harness.sql`
+      UPDATE sessions
+      SET termination_event_id = 42, last_assistant_text = 'revision 42'
+      WHERE session_id = 'child-session'
+    `;
   });
 
   afterAll(async () => {
@@ -123,6 +128,117 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
     await expect(blockedQueuedConsume).resolves.toBeNull();
     expect((await repository.get("delivery-queued-first"))?.state).toBe("queued");
+  });
+
+  it("atomically supersedes a claimed completion when its source auto-resumes", async () => {
+    await register("delivery-resume-race", "relation-resume-race");
+    await repository.claimForTarget(
+      "delivery-resume-race",
+      "caller-old",
+      "worker-before-resume",
+    );
+
+    const resumed = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_apply_running_transition(
+        'child-session',
+        'not_required',
+        42,
+        TRUE,
+        NOW()
+      )
+    `;
+
+    expect(resumed).toMatchObject([{ applied: true }]);
+    await expect(repository.get("delivery-resume-race")).resolves.toMatchObject({
+      state: "superseded",
+      superseded_at: expect.any(Date),
+      superseded_terminal_revision: "42",
+      lease_owner: null,
+      lease_expires_at: null,
+    });
+    await expect(repository.beginDispatch(
+      "delivery-resume-race",
+      "worker-before-resume",
+    )).resolves.toBeNull();
+    await expect(repository.markUncertain("delivery-resume-race")).resolves.toBeNull();
+    await expect(repository.get("delivery-resume-race")).resolves.toMatchObject({
+      state: "superseded",
+      superseded_terminal_revision: "42",
+    });
+  });
+
+  it("recovers only the latest terminal revision and rechecks it at dispatch", async () => {
+    await register("delivery-revision-42", "relation-revision-42");
+    await harness.sql`
+      SELECT * FROM session_apply_running_transition(
+        'child-session', 'not_required', 42, TRUE, NOW()
+      )
+    `;
+    await harness.sql`
+      SELECT * FROM session_apply_terminal_transition(
+        'child-session',
+        'completed',
+        'completed_ok',
+        NULL,
+        'not_required',
+        'revision 43',
+        43,
+        NOW()
+      )
+    `;
+    await repository.register({
+      deliveryId: "delivery-revision-43",
+      targetSessionId: "caller-old",
+      sourceSessionId: "child-session",
+      relationKey: "relation-revision-43",
+      completionId: "completion-revision-43",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "43",
+      payloadHash: "hash-revision-43",
+      payload: { text: "revision 43" },
+    });
+
+    const recovered = await repository.claimRecoverableCompletionDeliveries(
+      "recovery-worker",
+      10,
+    );
+    expect(recovered.map((row) => row.delivery_id)).toEqual(["delivery-revision-43"]);
+    await expect(repository.beginDispatch(
+      "delivery-revision-43",
+      "recovery-worker",
+    )).resolves.toMatchObject({ state: "dispatching" });
+
+    await harness.sql`
+      UPDATE sessions
+      SET termination_event_id = 44
+      WHERE session_id = 'child-session'
+    `;
+    await repository.register({
+      deliveryId: "delivery-stale-at-dispatch",
+      targetSessionId: "caller-old",
+      sourceSessionId: "child-session",
+      relationKey: "relation-stale-at-dispatch",
+      completionId: "completion-stale-at-dispatch",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "43",
+      payloadHash: "hash-stale-at-dispatch",
+      payload: { text: "stale" },
+    });
+    await repository.claimForTarget(
+      "delivery-stale-at-dispatch",
+      "caller-old",
+      "stale-worker",
+    );
+    await expect(repository.beginDispatch(
+      "delivery-stale-at-dispatch",
+      "stale-worker",
+    )).resolves.toBeNull();
   });
 
   it("suppresses an already-consumed PostgreSQL row before queue, resume, wake, or publish", async () => {
@@ -283,10 +399,14 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await repository.register({
       deliveryId,
       targetSessionId: "caller-old",
+      sourceSessionId: "child-session",
       relationKey,
       completionId: `completion-${relationKey}`,
       intent: "completion_notification",
       source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "42",
       payloadHash: `hash-${relationKey}`,
       payload: { text: "done" },
     });

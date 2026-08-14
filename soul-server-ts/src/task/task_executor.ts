@@ -100,7 +100,7 @@ export interface RunnerProcessRuntimeFactory {
     task: Task,
     config: RunnerChildConfig,
     snapshots: RunnerSnapshotPersistence,
-    mode?: "adopt" | "offline",
+    mode?: "adopt" | "replay" | "offline",
   ): TaskRunnerRuntime;
   restart?(
     task: Task,
@@ -206,7 +206,10 @@ export class TaskExecutor {
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
   startExecution(task: Task, agent: AgentProfile): void {
-    if (task.runner) {
+    const retainedRunner = task.runnerRetainedForClaudeBackground === true
+      ? task.runner
+      : undefined;
+    if (task.runner && !retainedRunner) {
       throw new Error(
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
       );
@@ -224,7 +227,7 @@ export class TaskExecutor {
       );
     }
     const backend = effectiveTaskBackend(task, agent);
-    const runner = this.runnerProcessFactory
+    const runner = retainedRunner ?? (this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, {
           persistRunState: async (snapshot, idempotencyKey) =>
             await this.agentsSnapshotPersistence.persistRunStateSnapshot(
@@ -243,7 +246,11 @@ export class TaskExecutor {
           task.modelPresetBackend
             ? this.engineFactory(agent, backend)
             : this.engineFactory(agent),
-        );
+        ));
+    if (retainedRunner) {
+      task.runner = undefined;
+      task.runnerRetainedForClaudeBackground = undefined;
+    }
     this.startExecutionWithRunner(task, agent, runner);
   }
 
@@ -280,7 +287,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     commandId?: string,
-    mode: "adopt" | "offline" = "adopt",
+    mode: "adopt" | "replay" | "offline" = "adopt",
   ): Promise<void> {
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
@@ -319,7 +326,7 @@ export class TaskExecutor {
     task: Task,
     config: RunnerChildConfig,
     commandId: string | undefined,
-    mode: "adopt" | "offline",
+    mode: "adopt" | "replay" | "offline",
   ): Promise<void> {
     const runner = this.runnerProcessFactory?.recover?.(
       task,

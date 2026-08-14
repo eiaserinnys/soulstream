@@ -36,6 +36,8 @@ function deliveryRow(
     queued_at: null,
     delivered_at: null,
     consumed_at: null,
+    superseded_at: null,
+    superseded_terminal_revision: null,
     ...overrides,
   };
 }
@@ -104,6 +106,20 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[2].query).toContain("state = 'uncertain'");
   });
 
+  it("preserves a superseded audit row when a conflicting retry arrives", async () => {
+    const superseded = deliveryRow({
+      payload_hash: "other-hash",
+      state: "superseded",
+      superseded_terminal_revision: "42",
+    });
+    const { sql, calls } = createMockSql([[], [superseded], []]);
+
+    const result = await new SessionDeliveryRepository(sql).register(registration);
+
+    expect(result).toEqual({ row: superseded, inserted: false, conflict: true });
+    expect(calls[2].query).toContain("state NOT IN ('consumed', 'superseded')");
+  });
+
   it("defers retargeting until the atomic claim boundary", async () => {
     const original = deliveryRow({ target_session_id: "caller-original" });
     const { sql, calls } = createMockSql([[], [original]]);
@@ -145,6 +161,8 @@ describe("SessionDeliveryRepository", () => {
 
     expect(calls[0].query).toContain("state = 'dispatching'");
     expect(calls[0].query).toContain("state = 'claimed'");
+    expect(calls[0].query).toContain("termination_event_id::text");
+    expect(calls[0].query).toContain("producer_terminal_revision");
   });
 
   it("keeps the original target once a semantic completion has already been queued", async () => {
@@ -241,6 +259,13 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const terminalRevisionMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/065_completion_terminal_revision_fence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
@@ -256,6 +281,7 @@ describe("session_deliveries migration safety", () => {
       "047_session_delivery_relation_consumptions.sql",
     );
     expect(manifest).toContain("053_retire_supervisor.sql");
+    expect(manifest).toContain("065_completion_terminal_revision_fence.sql");
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(deliveryMigration).toContain("ON DELETE SET NULL");
@@ -296,5 +322,12 @@ describe("session_deliveries migration safety", () => {
     expect(schema).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
     expect(schema).not.toContain("supervisor_");
+    for (const sql of [terminalRevisionMigration, schema]) {
+      expect(sql).toContain("'superseded'");
+      expect(sql).toContain("superseded_at TIMESTAMPTZ");
+      expect(sql).toContain("superseded_terminal_revision TEXT");
+      expect(sql).toContain("producer_terminal_revision = p_expected_terminal_event_id::text");
+      expect(sql).toContain("state IN ('pending', 'claimed', 'dispatching')");
+    }
   });
 });

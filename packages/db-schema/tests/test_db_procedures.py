@@ -178,6 +178,21 @@ async def test_terminal_receipt_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_completion_terminal_revision_fence_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("065_completion_terminal_revision_fence.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "superseded_at TIMESTAMPTZ",
+        "superseded_terminal_revision TEXT",
+        "'superseded'",
+        "producer_terminal_revision = p_expected_terminal_event_id::text",
+        "state IN ('pending', 'claimed', 'dispatching')",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
 async def test_notification_outbox_hardening_is_mirrored_in_schema_sql():
     migration_sql = _migration_sql("062_notification_outbox_hardening.sql")
     schema_sql = _schema_sql()

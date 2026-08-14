@@ -40,6 +40,7 @@ describe("TaskRunnerRecovery", () => {
     const order: string[] = [];
     const task = makeTask({
       runner: { dispatcher: {} as never },
+      runnerRetainedForClaudeBackground: true,
       executionPromise: Promise.resolve(),
       callerInfo: { source: "agent", display_name: "서소영" },
       attachmentPaths: ["/tmp/reference.png"],
@@ -49,6 +50,7 @@ describe("TaskRunnerRecovery", () => {
       order.push("persist-error");
       expect(persistedTask).toMatchObject({ status: "error", error: "runner lease expired" });
       expect(persistedTask.runner).toBeUndefined();
+      expect(persistedTask.runnerRetainedForClaudeBackground).toBeUndefined();
       expect(persistedTask.executionPromise).toBeUndefined();
     });
     const onResume = vi.fn();

@@ -14,6 +14,15 @@ describe("RunnerProcessEngineProxy", () => {
         }
         if (capability === "deliverInputResponse") return { status: "delivered" };
         if (capability === "deliverToolApproval") return { status: "already_resolved" };
+        if (capability === "detachedClaudeRuntimeActivity") {
+          return {
+            foregroundPhase: "post_result_drain",
+            queryLifecycle: "open",
+            backgroundTaskCount: 1,
+            pendingInputRequestCount: 0,
+            pendingRuntimeSignalCount: 0,
+          };
+        }
         return undefined;
       }),
     };
@@ -29,6 +38,9 @@ describe("RunnerProcessEngineProxy", () => {
     });
     await expect(proxy.deliverToolApproval("approval-1", "approved")).resolves.toEqual({
       status: "already_resolved",
+    });
+    await expect(proxy.detachedClaudeRuntimeActivity()).resolves.toMatchObject({
+      backgroundTaskCount: 1,
     });
     await proxy.close();
 
@@ -47,6 +59,11 @@ describe("RunnerProcessEngineProxy", () => {
       3,
       "deliverToolApproval",
       ["approval-1", "approved", {}],
+    );
+    expect(dispatcher.invoke).toHaveBeenNthCalledWith(
+      4,
+      "detachedClaudeRuntimeActivity",
+      [],
     );
   });
 

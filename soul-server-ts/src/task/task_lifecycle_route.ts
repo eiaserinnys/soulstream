@@ -87,6 +87,7 @@ export class TaskLifecycleRoute {
       if (task.runner?.eventPersistence === "runner") {
         await task.runner.dispatcher.detachHost();
         task.runner = undefined;
+        task.runnerRetainedForClaudeBackground = undefined;
         task.executionPromise = undefined;
         continue;
       }

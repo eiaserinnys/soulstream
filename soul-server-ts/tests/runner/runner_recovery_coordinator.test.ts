@@ -99,6 +99,46 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
 
+  it("reattaches a live completed runner so detached Claude background work survives replay", async () => {
+    const subject = makeSubject([registration({ lifecycleState: "completed" })]);
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "replay",
+    );
+    expect(subject.terminate).not.toHaveBeenCalled();
+  });
+
+  it("does not block recovery scans while a live completed runner waits for background terminals", async () => {
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const recoverRegisteredRunner = vi.fn(() => recovery);
+    const subject = makeSubject([registration({ lifecycleState: "completed" })], Date.now(), [], {
+      taskExecutor: {
+        recoverRegisteredRunner,
+        restartRegisteredRunner: vi.fn(),
+      },
+    });
+
+    await expect(Promise.race([
+      subject.coordinator.scanOnce().then(() => "scanned"),
+      new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
+    ])).resolves.toBe("scanned");
+    expect(recoverRegisteredRunner).toHaveBeenCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "replay",
+    );
+
+    finishRecovery();
+    await subject.coordinator.stop();
+  });
+
   it("does not terminate a live terminal registration already owned by this host", async () => {
     const subject = makeSubject([registration({ lifecycleState: "completed" })]);
     subject.task.runner = {} as NonNullable<Task["runner"]>;
@@ -249,7 +289,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("replays offline when reap verification discovers a live terminal runner", async () => {
+  it("reattaches when reap verification discovers a live completed runner", async () => {
     const scanned = registration({
       progressedAt: "2026-08-11T00:00:00.000Z",
     });
@@ -264,15 +304,12 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.scanOnce();
     await vi.waitFor(() => expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce());
 
-    expect(subject.terminate).toHaveBeenCalledWith(
-      expect.anything(),
-      { pid: 4123, startIdentity: "start-4123" },
-    );
+    expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
       "execute-a",
-      "offline",
+      "replay",
     );
     expect(subject.markReaped).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();

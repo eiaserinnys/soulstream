@@ -12,6 +12,7 @@ import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import { parseEnv } from "../../src/config.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
 import { getCurrentMcpCallerSessionId } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
@@ -19,9 +20,18 @@ import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatc
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { readRunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { composeRunnerProcessRuntime } from "../../src/runtime/runner_process_composition.js";
 import { buildServer } from "../../src/server.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
+import { ClaudeRuntimeTaskFollowupController } from
+  "../../src/task/claude_runtime_task_followup.js";
+import { AutoResumeTransition } from
+  "../../src/task/task_auto_resume_transition.js";
+import { TaskEngineEventPublisher } from
+  "../../src/task/task_engine_event_publisher.js";
+import { createDetachedClaudeEventBridge } from
+  "../../src/runtime/detached_claude_event_bridge.js";
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
@@ -61,6 +71,195 @@ afterEach(async () => {
 });
 
 describe("runner cutover all-flags-on integration", () => {
+  it("retains the real Claude runner through delayed background terminals and reclaims it after follow-up", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-background-lifecycle-"));
+    temporaryRoots.push(root);
+    const stateDirectory = join(root, "state");
+    const artifactDirectory = join(root, "artifacts");
+    const releasesDirectory = join(root, "runner-releases");
+    const controlDirectory = join(root, "control");
+    await mkdir(artifactDirectory, { recursive: true });
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(artifactDirectory, "package.json"), '{"type":"module"}\n');
+    await writeFile(
+      join(artifactDirectory, "runner_entry.js"),
+      `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
+    );
+    const agentsConfigPath = join(root, "agents.yaml");
+    const registryPath = join(root, "mcp-registry.yaml");
+    const profilesPath = join(root, "mcp-profiles.yaml");
+    await writeFile(agentsConfigPath, "agents: []\n");
+    await writeFile(registryPath, "servers: []\n");
+    await writeFile(
+      profilesPath,
+      "profiles:\n  - id: cutover-internal\n    mcp_servers: []\n",
+    );
+    const mcpConfigService = new McpConfigService({
+      agentsConfigPath,
+      registryPath,
+      profilesPath,
+    });
+    const env = parseEnv({
+      SOULSTREAM_NODE_ID: "background-lifecycle-test-node",
+      SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:1/ws/node",
+      EVENT_OUTBOX_DIR: join(root, "legacy-outbox"),
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+      SOUL_RUNNER_STATE_DIR: stateDirectory,
+      SOUL_RUNNER_ARTIFACT_DIR: artifactDirectory,
+      SOUL_RUNNER_RELEASES_DIR: releasesDirectory,
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
+      MCP_ENABLED: "false",
+    });
+    const task = makeTask("session-background-lifecycle");
+    const agent = makeAgent(controlDirectory);
+    const logger = pino({ level: "silent" });
+    const { mux } = mockOrchIngress();
+    const persistenceDouble = makeEventPersistenceTestDouble(async (_sessionId, event, liveTask) => {
+      if (event.type === "assistant_message" && typeof event.content === "string") {
+        liveTask.lastAssistantText = event.content;
+      }
+    });
+    const broadcaster = {
+      emitEventEnvelope: vi.fn(async () => undefined),
+      emitSessionUpdated: vi.fn(async () => undefined),
+    } as unknown as SessionBroadcaster;
+    const autoResume = new AutoResumeTransition({
+      logger,
+      persistence: persistenceDouble.persistence,
+    });
+    let executor!: TaskExecutor;
+    const followup = new ClaudeRuntimeTaskFollowupController({
+      taskManager: {
+        addIntervention: vi.fn(async (message, onResume) => {
+          await autoResume.resume(task, message, onResume, { publishUserMessage: false });
+          return { queued: true, queuePosition: 1 };
+        }),
+      },
+      onResume: (resumedTask) => executor.startExecution(resumedTask, agent),
+      logger,
+      deliveryV2Enabled: true,
+    });
+    const detachedPublisher = new TaskEngineEventPublisher({
+      broadcaster,
+      logger,
+      persistence: persistenceDouble.persistence,
+    });
+    const observedAndPublished: string[] = [];
+    const publishDetached = createDetachedClaudeEventBridge({
+      logger,
+      findTask: (sessionId) => sessionId === task.agentSessionId ? task : undefined,
+      getPublisher: () => detachedPublisher,
+      collectDetached: async (liveTask, payload) => {
+        observedAndPublished.push(`publish:${String((payload as Record<string, unknown>).task_id)}`);
+        await followup.collectDetached(liveTask, payload);
+      },
+    });
+    const composition = await composeRunnerProcessRuntime(true, {
+      env,
+      logger,
+      pumpMux: mux,
+      sessionStore: {
+        appendIdempotent: vi.fn(async () => undefined),
+        deleteIdempotent: vi.fn(async () => undefined),
+      } as never,
+      mcpConfigService,
+      observeClaudeRuntime: async (_sessionId, event: ClaudeClientEvent) => {
+        observedAndPublished.push(`observe:${"taskId" in event ? event.taskId : event.type}`);
+        return { durableFollowupRegistered: true };
+      },
+      publishDetachedClaudeEvent: publishDetached,
+      buildChildProcessEnv: () => ({
+        ...process.env,
+        NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
+        RUNNER_E2E_CONTROL_DIR: controlDirectory,
+        RUNNER_E2E_BACKGROUND_SCENARIO: "multi-terminal",
+      }),
+    });
+    if (!composition) throw new Error("runner background composition unexpectedly disabled");
+    const releaseEntries = await import("node:fs/promises")
+      .then(({ readdir }) => readdir(releasesDirectory));
+    const releaseId = releaseEntries.find((entry) => entry.startsWith("sha256-"));
+    if (!releaseId) throw new Error("runner background release was not prewarmed");
+    readOnlyReleases.push(join(releasesDirectory, releaseId));
+    const db = {
+      updateSession: vi.fn(async () => undefined),
+      setClaudeSessionId: vi.fn(async () => undefined),
+    } as unknown as SessionDB;
+    const createExecutor = () => new TaskExecutor(
+      () => { throw new Error("in-process engine must not be selected"); },
+      db,
+      persistenceDouble.persistence,
+      broadcaster,
+      logger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+      undefined,
+      undefined,
+      composition.runtimeFactory,
+    );
+    executor = createExecutor();
+
+    executor.startExecution(task, agent);
+    const paths = runnerProcessPaths(stateDirectory, task.agentSessionId);
+    await waitFor(async () => await pathExists(paths.pidPath));
+    const pid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
+    childPids.add(pid);
+    await task.executionPromise;
+
+    expect(task.status).toBe("completed");
+    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+    expect(isPidAlive(pid)).toBe(true);
+
+    await task.runner!.dispatcher.detachHost();
+    task.runner = undefined;
+    task.runnerRetainedForClaudeBackground = undefined;
+    task.executionPromise = undefined;
+    const config = parseRunnerChildConfig(JSON.parse(await readFile(paths.configPath, "utf8")));
+    const lifecycle = readRunnerSqliteLifecycle(paths.databasePath);
+    if (!lifecycle) throw new Error("completed runner lifecycle is unavailable");
+    executor = createExecutor();
+    await executor.recoverRegisteredRunner(
+      task,
+      config,
+      lifecycle.execution_command_id,
+      "replay",
+    );
+
+    expect(task.status).toBe("completed");
+    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+    expect(isPidAlive(pid)).toBe(true);
+
+    await writeFile(join(controlDirectory, "release-background-1"), "go\n");
+    await waitFor(async () => await pathExists(join(controlDirectory, "published-background-1")));
+    expect(isPidAlive(pid)).toBe(true);
+    expect(await pathExists(join(controlDirectory, "followup-executed"))).toBe(false);
+
+    await writeFile(join(controlDirectory, "release-background-2"), "go\n");
+    await waitFor(async () => await pathExists(join(controlDirectory, "followup-executed")));
+    expect(Number.parseInt(
+      (await readFile(join(controlDirectory, "followup-executed"), "utf8")).trim(),
+      10,
+    )).toBe(pid);
+    const followupExecution = task.executionPromise;
+    if (!followupExecution) throw new Error("runtime follow-up execution was not started");
+    await followupExecution;
+
+    expect(observedAndPublished).toEqual([
+      "observe:background-1",
+      "publish:background-1",
+      "observe:background-2",
+      "publish:background-2",
+    ]);
+    expect(task.lastAssistantText).toBe("background follow-up complete");
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+    await waitFor(async () => !isPidAlive(pid));
+    childPids.delete(pid);
+    await composition.hostOwnership.release();
+  }, 45_000);
+
   it("creates a snapshot-backed session, pumps SQLite events, survives host restart, replays, and completes", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-cutover-smoke-"));
     temporaryRoots.push(root);

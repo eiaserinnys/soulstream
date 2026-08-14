@@ -26,6 +26,7 @@ import {
   buildTaskKey,
   type PendingRuntimeTaskFollowup,
 } from "./claude_runtime_task_followup_prompt.js";
+import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 
 export { buildClaudeRuntimeTaskFollowupPrompt } from
   "./claude_runtime_task_followup_prompt.js";
@@ -164,6 +165,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
   async collectDetached(task: Task, event: SSEEventPayload): Promise<void> {
     this.collect(task, event);
+    if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     await this.flushPending(task);
   }
 

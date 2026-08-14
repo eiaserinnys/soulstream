@@ -369,6 +369,9 @@ export interface Task {
   /** 진행 중 runner의 단일 정본. 엔진 capability와 command dispatcher는 원자적으로 구성된다. */
   runner?: TaskRunnerRuntime;
 
+  /** foreground Result 뒤 Claude background runtime을 소유하여 다음 turn까지 보존된 runner. */
+  runnerRetainedForClaudeBackground?: boolean;
+
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 

@@ -91,11 +91,11 @@ export async function registerSessionDelivery(
       UPDATE session_deliveries
       SET state = 'uncertain', updated_at = NOW()
       WHERE delivery_id = ${existing.delivery_id}
-        AND state <> 'consumed'
+        AND state NOT IN ('consumed', 'superseded')
       RETURNING *
     `;
     return {
-      row: uncertainRows[0] ?? { ...existing, state: "uncertain" },
+      row: uncertainRows[0] ?? existing,
       inserted: false,
       conflict: true,
     };

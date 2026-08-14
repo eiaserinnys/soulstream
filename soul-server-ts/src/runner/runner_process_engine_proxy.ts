@@ -1,6 +1,7 @@
 import type {
   BackendId,
   ClaudeBackgroundTaskControlResult,
+  DetachedClaudeRuntimeActivity,
   EngineExecuteParams,
   EngineInterventionResult,
   EnginePort,
@@ -65,10 +66,35 @@ export class RunnerProcessEngineProxy implements EnginePort {
       [toolUseId],
     ) as ClaudeBackgroundTaskControlResult;
   }
+  async detachedClaudeRuntimeActivity(): Promise<DetachedClaudeRuntimeActivity | null> {
+    const result = await this.dispatcher.invoke("detachedClaudeRuntimeActivity", []);
+    if (result === null) return null;
+    if (!isDetachedClaudeRuntimeActivity(result)) {
+      throw new Error("Runner child returned invalid detached Claude runtime activity");
+    }
+    return result;
+  }
   async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
     return await this.dispatcher.invoke(
       "stopClaudeRuntimeTask",
       [taskId],
     ) as ClaudeBackgroundTaskControlResult;
   }
+}
+
+function isDetachedClaudeRuntimeActivity(
+  value: unknown,
+): value is DetachedClaudeRuntimeActivity {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const activity = value as Record<string, unknown>;
+  return typeof activity.foregroundPhase === "string"
+    && typeof activity.queryLifecycle === "string"
+    && isCount(activity.backgroundTaskCount)
+    && isCount(activity.pendingInputRequestCount)
+    && (activity.pendingRuntimeSignalCount === undefined
+      || isCount(activity.pendingRuntimeSignalCount));
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }

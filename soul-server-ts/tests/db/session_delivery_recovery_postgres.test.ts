@@ -47,6 +47,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         ('caller-session', 'node-test', 'claude', 'completed', 'caller'),
         ('child-session', 'node-test', 'claude', 'completed', 'worker')
     `;
+    await harness.sql`
+      UPDATE sessions
+      SET termination_event_id = 42, last_assistant_text = 'revision 42'
+      WHERE session_id = 'child-session'
+    `;
   });
 
   afterAll(async () => {
@@ -729,7 +734,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       source: "completion_notifier",
       producerKind: "child_session",
       producerId: "child-session",
-      producerTerminalRevision: relationKey,
+      producerTerminalRevision: "42",
       payloadHash: `hash-${relationKey}`,
       payload: { text: "done", user: "agent" },
     });

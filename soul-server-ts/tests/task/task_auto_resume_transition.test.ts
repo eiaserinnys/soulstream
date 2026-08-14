@@ -341,6 +341,37 @@ describe("AutoResumeTransition", () => {
     ]);
   });
 
+  it("preserves a runner retained for Claude background work across auto-resume", async () => {
+    const close = vi.fn(async () => undefined);
+    const engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-work",
+      execute: vi.fn(),
+      interrupt: vi.fn(),
+      close,
+    } as unknown as EnginePort;
+    const runner = createInProcessTaskRunnerRuntime(engine);
+    const task = makeTerminalTask({
+      runner,
+      runnerRetainedForClaudeBackground: true,
+      executionPromise: Promise.resolve(),
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+    const onResume = vi.fn((resumedTask: Task) => {
+      expect(resumedTask.runner).toBe(runner);
+      expect(resumedTask.runnerRetainedForClaudeBackground).toBe(true);
+      expect(resumedTask.executionPromise).toBeUndefined();
+    });
+
+    await transition.resume(task, { text: "runtime result", user: "system" }, onResume);
+
+    expect(close).not.toHaveBeenCalled();
+    expect(onResume).toHaveBeenCalledWith(task);
+  });
+
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {
     const task = makeTerminalTask({
       reviewRequired: true,
