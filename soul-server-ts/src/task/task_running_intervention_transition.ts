@@ -29,13 +29,13 @@ export type RunningInterventionResult =
       queued: true;
       queuePosition: number;
       consumeWhen: "next_turn";
-      reason: EngineInterventionFailureReason | "queue_only_policy";
+      reason: EngineInterventionFailureReason | "queue_only_policy" | "verdict_unknown";
     }
   | {
       delivered: false;
       deferred: true;
       retryWhen: "engine_available";
-      reason: EngineInterventionFailureReason;
+      reason: EngineInterventionFailureReason | "verdict_unknown";
     };
 
 export interface RunningInterventionTransitionDeps {
@@ -72,11 +72,23 @@ export class RunningInterventionTransition {
         try {
           await this.publishAcceptance(task, deliveryMessage);
         } catch (error) {
-          return this.unknownVerdict(task, {
+          const unknown = {
             status: "unknown",
             reason: "verdict_unknown",
             message: error instanceof Error ? error.message : String(error),
-          });
+          } as const;
+          if (options.queueIfUndelivered === false) {
+            try {
+              await this.discardDurableIntervention(task, deliveryMessage);
+              return this.deferredUnknown(task, unknown);
+            } catch (discardError) {
+              return await this.queueUnknownReceipt(task, deliveryMessage, {
+                ...unknown,
+                message: formatRecoveryFailure(unknown.message, discardError),
+              });
+            }
+          }
+          return await this.queueUnknownReceipt(task, deliveryMessage, unknown);
         }
       }
     }
@@ -88,52 +100,56 @@ export class RunningInterventionTransition {
       }
       return { delivered: true };
     }
-    if (initialResult.status === "unknown") {
-      return this.unknownVerdict(task, initialResult);
-    }
-
-    const retryResult = await this.retryTransientBoundary(
-      task,
-      deliveryMessage,
-      initialResult,
-    );
+    const retryResult = initialResult.status === "unknown"
+      ? null
+      : await this.retryTransientBoundary(
+          task,
+          deliveryMessage,
+          initialResult,
+        );
     if (retryResult?.status === "delivered") {
       if (!publishBeforeDelivery && !durableRunnerInbox) {
         await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
     }
-    if (retryResult?.status === "unknown") {
-      return this.unknownVerdict(task, retryResult);
-    }
     const finalResult = retryResult ?? initialResult;
+
+    // A runner apply timeout leaves an ambiguous replay fence. Preserve the
+    // non-runner contract by staging the same message for the next turn:
+    // duplicate delivery is recoverable, silently losing the intervention is not.
 
     if (options.queueIfUndelivered === false) {
       if (durableRunnerInbox) {
-        const dispatcher = task.runner?.dispatcher;
         try {
-          if (!dispatcher?.discardIntervention) {
-            throw new Error("runner intervention discard operation is unavailable");
-          }
-          await dispatcher.discardIntervention(
-            requireRunnerInterventionId(deliveryMessage),
-          );
+          await this.discardDurableIntervention(task, deliveryMessage);
         } catch (error) {
-          // Delivery missed, but the durable fence's final state is unknown.
-          // Returning deferred would invite a duplicate retry while that fence
-          // may still be ambiguous in the runner inbox.
-          return this.unknownVerdict(task, {
+          // The caller asked not to queue, but an unconfirmed discard cannot be
+          // allowed to leave a replay fence that permanently blocks the session.
+          // This exceptional path reports the durable fallback explicitly.
+          const unknown = {
             status: "unknown",
             reason: "verdict_unknown",
             message: error instanceof Error ? error.message : String(error),
-          });
+          } as const;
+          const queuePosition = await this.queueUndelivered(task, deliveryMessage);
+          this.logQueued(task, unknown, queuePosition);
+          return {
+            delivered: false,
+            queued: true,
+            queuePosition,
+            consumeWhen: "next_turn",
+            reason: "verdict_unknown",
+          };
         }
       }
       this.deps.logger.info(
         {
           sessionId: task.agentSessionId,
           delivered: false,
-          mechanism: finalResult.mechanism,
+          ...(finalResult.status === "not_delivered"
+            ? { mechanism: finalResult.mechanism }
+            : {}),
           reason: finalResult.reason,
           retryWhen: "engine_available",
         },
@@ -254,25 +270,84 @@ export class RunningInterventionTransition {
     }
   }
 
-  private unknownVerdict(
+  private deferredUnknown(
     task: Task,
     result: Extract<EngineInterventionResult, { status: "unknown" }>,
   ): RunningInterventionResult {
-    this.deps.logger.warn(
+    this.deps.logger.info(
       {
         sessionId: task.agentSessionId,
-        delivered: null,
+        delivered: false,
         reason: result.reason,
         detail: result.message,
-        consumeWhen: null,
+        retryWhen: "engine_available",
       },
-      "running intervention delivery verdict is unknown",
+      "running intervention deferred by durable caller policy",
     );
     return {
-      delivered: null,
+      delivered: false,
+      deferred: true,
+      retryWhen: "engine_available",
       reason: "verdict_unknown",
-      consumeWhen: null,
     };
+  }
+
+  private async queueUnknownReceipt(
+    task: Task,
+    message: InterventionMessage,
+    result: Extract<EngineInterventionResult, { status: "unknown" }>,
+  ): Promise<RunningInterventionResult> {
+    try {
+      // The first receipt command or its host ACK may have succeeded. Reusing
+      // the intervention id makes this a durable create-or-release operation.
+      const queuePosition = await this.stageRunnerQueue(task, message, true);
+      enqueueInterventionOnce(task, message);
+      this.logQueued(task, result, queuePosition);
+      return {
+        delivered: false,
+        queued: true,
+        queuePosition,
+        consumeWhen: "next_turn",
+        reason: "verdict_unknown",
+      };
+    } catch (error) {
+      // The durable create-or-release result is still unknown. Drop its durable
+      // id so the next execute does not require a row that may not exist, then
+      // preserve the intervention at the same in-memory level as non-runner mode.
+      const memoryMessage = { ...message };
+      delete memoryMessage.runnerInterventionId;
+      const queuePosition = enqueueInterventionOnce(task, memoryMessage);
+      this.deps.logger.warn(
+        {
+          err: error,
+          sessionId: task.agentSessionId,
+          interventionId: message.runnerInterventionId,
+          reason: result.reason,
+          detail: result.message,
+          queuePosition,
+          durability: "memory_only",
+        },
+        "runner intervention durable queue recovery failed; queued in memory",
+      );
+      return {
+        delivered: false,
+        queued: true,
+        queuePosition,
+        consumeWhen: "next_turn",
+        reason: "verdict_unknown",
+      };
+    }
+  }
+
+  private async discardDurableIntervention(
+    task: Task,
+    message: InterventionMessage,
+  ): Promise<void> {
+    const dispatcher = task.runner?.dispatcher;
+    if (!dispatcher?.discardIntervention) {
+      throw new Error("runner intervention discard operation is unavailable");
+    }
+    await dispatcher.discardIntervention(requireRunnerInterventionId(message));
   }
 
   private async stageRunnerReceipt(
@@ -336,14 +411,14 @@ export class RunningInterventionTransition {
 
   private logQueued(
     task: Task,
-    result: Extract<EngineInterventionResult, { status: "not_delivered" }>,
+    result: Exclude<EngineInterventionResult, { status: "delivered" }>,
     queuePosition: number,
   ): void {
     this.deps.logger.info(
       {
         sessionId: task.agentSessionId,
         delivered: false,
-        mechanism: result.mechanism,
+        ...(result.status === "not_delivered" ? { mechanism: result.mechanism } : {}),
         reason: result.reason,
         detail: result.message,
         queuePosition,
@@ -406,6 +481,16 @@ function isTransientInterventionBoundary(
 ): result is Extract<EngineInterventionResult, { status: "not_delivered" }> {
   return result.status === "not_delivered"
     && (result.reason === "no_active_turn" || result.reason === "not_accepting_input");
+}
+
+function formatRecoveryFailure(
+  primary: string | undefined,
+  recoveryError: unknown,
+): string {
+  const recovery = recoveryError instanceof Error
+    ? recoveryError.message
+    : String(recoveryError);
+  return primary ? `${primary}; recovery failed: ${recovery}` : recovery;
 }
 
 function sleep(ms: number): Promise<void> {

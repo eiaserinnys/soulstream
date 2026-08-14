@@ -237,7 +237,38 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
-  it("stops an ambiguous intervention after engine failure instead of automatic retry", async () => {
+  it("heals a legacy ambiguous receipt to the restart-safe pending queue on writer open", async () => {
+    const outbox = await createOutbox();
+    await outbox.stageIntervention({
+      interventionId: "legacy-ambiguous",
+      message: { text: "recover after upgrade", user: "soak" },
+      event: eventInput("recover after upgrade"),
+      queued: false,
+      queuedAt: "2026-08-11T00:00:02.000Z",
+    });
+    const path = outbox.databasePath;
+    outbox.close();
+
+    const recovered = await RunnerSqliteEventOutbox.open(path);
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([{
+      interventionId: "legacy-ambiguous",
+      message: { text: "recover after upgrade", user: "soak" },
+    }]);
+    const database = new DatabaseSync(path);
+    expect(database.prepare(`
+      SELECT application_state, claimed_execution_command_id, claimed_at
+      FROM runner_intervention_inbox
+      WHERE intervention_id = 'legacy-ambiguous'
+    `).get()).toEqual({
+      application_state: "pending",
+      claimed_execution_command_id: null,
+      claimed_at: null,
+    });
+    database.close();
+    recovered.close();
+  });
+
+  it("reads past a failed claimed intervention without replaying it", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "retry-after-failure",
@@ -263,9 +294,18 @@ describe("RunnerSqliteEventOutbox", () => {
       progressedAt: "2026-08-11T00:00:04.000Z",
       terminalError: { code: "execution_failed", message: "boom" },
     });
-    await expect(outbox.readPendingInterventions()).rejects.toThrow(
-      "runner intervention application outcome is ambiguous: retry-after-failure",
-    );
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT application_state, claimed_execution_command_id, claimed_at
+      FROM runner_intervention_inbox
+      WHERE intervention_id = 'retry-after-failure'
+    `).get()).toEqual({
+      application_state: "ambiguous",
+      claimed_execution_command_id: "execute-failed",
+      claimed_at: expect.any(String),
+    });
+    database.close();
     expect(lifecycle.read()).toMatchObject({
       execution_command_id: "execute-failed",
       execution_state: "failed",
@@ -274,7 +314,7 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
-  it("fences an in-flight live intervention as ambiguous before engine application", async () => {
+  it("reads past a provisional live receipt without treating it as pending", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "live-timeout",
@@ -283,9 +323,7 @@ describe("RunnerSqliteEventOutbox", () => {
       queued: false,
       queuedAt: "2026-08-11T00:00:02.000Z",
     });
-    await expect(outbox.readPendingInterventions()).rejects.toThrow(
-      "runner intervention application outcome is ambiguous: live-timeout",
-    );
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
 
     const apply = vi.fn(async () => await new Promise<never>(() => {}));
     const application = handleRunnerInterventionCommand(
@@ -301,9 +339,7 @@ describe("RunnerSqliteEventOutbox", () => {
     void application;
 
     await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
-    await expect(outbox.readPendingInterventions()).rejects.toThrow(
-      "runner intervention application outcome is ambiguous: live-timeout",
-    );
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
     const database = new DatabaseSync(outbox.databasePath);
     expect(database.prepare(`
       SELECT application_state FROM runner_intervention_inbox
@@ -317,7 +353,6 @@ describe("RunnerSqliteEventOutbox", () => {
     {
       label: "delivered",
       verdict: { status: "delivered", mechanism: "active_turn" },
-      pending: [],
     },
     {
       label: "explicitly not delivered",
@@ -326,9 +361,19 @@ describe("RunnerSqliteEventOutbox", () => {
         mechanism: "interrupt_then_next_turn",
         reason: "next_turn_required",
       },
-      pending: null,
     },
-  ])("resolves a live intervention that is $label", async ({ label, verdict, pending }) => {
+    {
+      label: "unknown",
+      verdict: {
+        status: "unknown",
+        reason: "verdict_unknown",
+        message: "engine verdict timed out",
+      },
+    },
+  ])("carries a $label live intervention through its durable outcome", async ({
+    label,
+    verdict,
+  }) => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "live-definitive",
@@ -352,14 +397,8 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(result?.result).toMatchObject({
       result: { status: "ok", data: verdict },
     });
-    if (pending === null) {
-      await expect(outbox.readPendingInterventions()).rejects.toThrow(
-        "runner intervention application outcome is ambiguous: live-definitive",
-      );
-    } else {
-      await expect(outbox.readPendingInterventions()).resolves.toEqual(pending);
-    }
-    if (label === "explicitly not delivered") {
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+    if (label !== "delivered") {
       await expect(outbox.stageIntervention({
         interventionId: "live-definitive",
         message: { text: "definitive outcome", user: "operator" },
@@ -370,6 +409,43 @@ describe("RunnerSqliteEventOutbox", () => {
         interventionId: "live-definitive",
         message: { text: "definitive outcome", user: "operator" },
       }]);
+    }
+    if (label === "unknown") {
+      const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+      lifecycle.begin({
+        pid: process.pid,
+        commandId: "execute-replayed-unknown",
+        progressedAt: "2026-08-11T00:00:04.000Z",
+      });
+      await expect(outbox.claimIntervention(
+        "live-definitive",
+        "execute-replayed-unknown",
+      )).resolves.toBe(true);
+      const claimed = new DatabaseSync(outbox.databasePath);
+      expect(claimed.prepare(`
+        SELECT application_state, claimed_execution_command_id
+        FROM runner_intervention_inbox
+        WHERE intervention_id = 'live-definitive'
+      `).get()).toEqual({
+        application_state: "claimed",
+        claimed_execution_command_id: "execute-replayed-unknown",
+      });
+      claimed.close();
+      await outbox.finishExecution({
+        commandId: "execute-replayed-unknown",
+        interventionId: "live-definitive",
+        state: "completed",
+        progressedAt: "2026-08-11T00:00:05.000Z",
+        terminalError: null,
+      });
+      await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
+      const completed = new DatabaseSync(outbox.databasePath);
+      expect(completed.prepare(`
+        SELECT COUNT(*) AS count FROM runner_intervention_inbox
+        WHERE intervention_id = 'live-definitive'
+      `).get()).toEqual({ count: 0 });
+      completed.close();
+      lifecycle.close();
     }
     outbox.close();
   });
@@ -517,7 +593,7 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(database.prepare(`
       SELECT application_state FROM runner_intervention_inbox
       WHERE intervention_id = 'resolve-live-runner'
-    `).get()).toEqual({ application_state: "ambiguous" });
+    `).get()).toEqual({ application_state: "pending" });
     database.close();
     recovered.close();
   });
@@ -561,7 +637,7 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
-  it("stops a claimed intervention that has no matching running lifecycle", async () => {
+  it("reads past a claimed intervention that has no matching running lifecycle", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "claimed-before-lifecycle",
@@ -582,9 +658,7 @@ describe("RunnerSqliteEventOutbox", () => {
     );
     await outbox.claimIntervention("claimed-before-lifecycle", "uncertain-execution");
 
-    await expect(outbox.readPendingInterventions()).rejects.toThrow(
-      "runner intervention application outcome is ambiguous: claimed-before-lifecycle",
-    );
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
     const database = new DatabaseSync(outbox.databasePath);
     expect(database.prepare(`
       SELECT application_state FROM runner_intervention_inbox

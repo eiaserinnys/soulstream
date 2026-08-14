@@ -74,6 +74,15 @@ class ControlledEngine implements EnginePort {
       yield engineEventFrame({ type: "complete", result: "background follow-up complete" });
       return;
     }
+    if (process.env.RUNNER_E2E_INTERVENTION_RECOVERY === "1") {
+      await writeFile(
+        `${this.controlDirectory}/recovered-intervention-execution.json`,
+        JSON.stringify(params),
+      );
+      yield engineEventFrame({ type: "session", session_id: "backend-session-e2e" });
+      await waitForFile(`${this.controlDirectory}/finish-recovered-intervention`);
+      return;
+    }
     const rolloverScenario = process.env.RUNNER_E2E_ROLLOVER_SCENARIO;
     if (rolloverScenario) {
       this.executionCount += 1;
