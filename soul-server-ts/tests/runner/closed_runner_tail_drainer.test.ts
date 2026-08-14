@@ -34,16 +34,29 @@ describe("ClosedRunnerTailDrainer", () => {
   it("is a no-op when the closed runner has no unacknowledged event tail", async () => {
     const outbox = fakeOutbox(null);
     const register = vi.fn();
+    const info = vi.fn();
+    const monotonicNow = vi.fn()
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(14.25);
     const drainer = new ClosedRunnerTailDrainer({
       pumpMux: { register },
-      logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      logger: { error: vi.fn(), info, warn: vi.fn() },
       openOutbox: vi.fn().mockResolvedValue(outbox),
+      monotonicNow,
     });
 
     await drainer.drain(registration());
 
     expect(register).not.toHaveBeenCalled();
     expect(outbox.close).toHaveBeenCalledOnce();
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        durationMs: 4.25,
+        outcome: "fully_acknowledged",
+      }),
+      "closed runner tail drain completed",
+    );
   });
 
   it("treats a terminal pre-bootstrap runner with zero outbox rows as an empty stream", async () => {

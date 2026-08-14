@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { EVENT_OUTBOX_COMPACT_ROWS } from "../../src/upstream/event_outbox.js";
 import {
   classifyRunnerRegistration,
   inspectRunnerDurableState,
@@ -326,6 +327,98 @@ describe("runner process registry", () => {
       lifecycle: { execution_state: "running" },
     });
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("derives a closed tail fingerprint from the durable head and host ACK", async () => {
+    const { stateDirectory, paths, outbox, host } = await closedRunnerState("tail-state");
+    const event = await outbox.append({
+      session_id: "session-tail-state",
+      event_type: "session_ended",
+      payload: { type: "session_ended", status: "completed" },
+      searchable_text: null,
+      created_at: "2026-08-11T00:00:01.000Z",
+      semantic_dedupe_key: "terminal:session-tail-state",
+      session_effect: null,
+    });
+    host.acknowledgeEvent({
+      streamId: outbox.streamId,
+      sessionId: "session-tail-state",
+      acknowledgedThrough: event.source_seq,
+      latestDurableSourceSeq: event.source_seq,
+    });
+    outbox.close();
+    host.close();
+
+    const first = await scanRunnerRegistrations(stateDirectory);
+
+    expect(first.errors).toEqual([]);
+    expect(first.registrations[0]?.closedTailState).toEqual({
+      status: "fully_acknowledged",
+      streamId: expect.any(String),
+      sessionId: "session-tail-state",
+      latestDurableSourceSeq: event.source_seq,
+      acknowledgedThrough: event.source_seq,
+    });
+
+    const writer = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    const later = await writer.append({
+      session_id: "session-tail-state",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "late durable tail" },
+      searchable_text: "late durable tail",
+      created_at: "2026-08-11T00:00:02.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    });
+    writer.close();
+
+    const second = await scanRunnerRegistrations(stateDirectory);
+
+    expect(second.errors).toEqual([]);
+    expect(second.registrations[0]?.closedTailState).toEqual({
+      status: "requires_drain",
+      streamId: expect.any(String),
+      sessionId: "session-tail-state",
+      latestDurableSourceSeq: later.source_seq,
+      acknowledgedThrough: event.source_seq,
+    });
+  });
+
+  it("uses sqlite_sequence as the durable head after acknowledged-prefix compaction", async () => {
+    const { stateDirectory, outbox, host } = await closedRunnerState("compacted-tail");
+    let latestSourceSeq = 1;
+    for (let index = 0; index < EVENT_OUTBOX_COMPACT_ROWS; index += 1) {
+      const event = await outbox.append({
+        session_id: "session-compacted-tail",
+        event_type: "assistant_message",
+        payload: { type: "assistant_message", content: String(index) },
+        searchable_text: null,
+        created_at: "2026-08-11T00:00:01.000Z",
+        semantic_dedupe_key: null,
+        session_effect: null,
+      });
+      latestSourceSeq = event.source_seq;
+    }
+    await outbox.acknowledge(outbox.streamId, latestSourceSeq);
+    host.acknowledgeEvent({
+      streamId: outbox.streamId,
+      sessionId: "session-compacted-tail",
+      acknowledgedThrough: latestSourceSeq,
+      latestDurableSourceSeq: latestSourceSeq,
+    });
+    outbox.close();
+    host.close();
+
+    const scan = await scanRunnerRegistrations(stateDirectory);
+
+    expect(scan.errors).toEqual([]);
+    expect(scan.registrations[0]?.closedTailState).toEqual({
+      status: "fully_acknowledged",
+      streamId: expect.any(String),
+      sessionId: "session-compacted-tail",
+      latestDurableSourceSeq: latestSourceSeq,
+      acknowledgedThrough: latestSourceSeq,
+    });
   });
 
   it.each(["missing", "stale", "invalid"] as const)(
@@ -681,6 +774,54 @@ describe("runner process registry", () => {
     expect(await readFile(hostPath)).toEqual(hostBefore);
   });
 });
+
+async function closedRunnerState(label: string) {
+  const sessionId = `session-${label}`;
+  const stateDirectory = await temporaryDirectory(label);
+  const paths = runnerProcessPaths(stateDirectory, sessionId);
+  const current = registration({ sessionId, pidAlive: false });
+  current.config = { ...current.config, paths };
+  await mkdir(paths.sessionDirectory, { recursive: true });
+  await writeFile(paths.configPath, JSON.stringify(current.config));
+
+  const initial = await RunnerSqliteEventOutbox.create(paths.databasePath);
+  const bootstrap = await initial.initializeBootstrap({
+    session_id: sessionId,
+    created_at: "2026-08-11T00:00:00.000Z",
+    resume: {
+      schema_version: 1,
+      backend_session_id: `backend-${label}`,
+      cwd: "/workspace/a",
+      codex_home: "/home/test/.codex",
+      rollout_root: "/home/test/.codex/sessions",
+      code_sha: current.config.codeSha,
+      snapshot_path: current.config.snapshotPath,
+    },
+  });
+  initial.close();
+
+  const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath, sessionId);
+  lifecycle.begin({
+    pid: 4123,
+    commandId: `execute-${label}`,
+    progressedAt: "2026-08-11T00:00:00.000Z",
+  });
+  lifecycle.finish(
+    `execute-${label}`,
+    "closed",
+    "2026-08-11T00:00:03.000Z",
+  );
+  lifecycle.close();
+
+  const host = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
+  host.initializeEventCheckpoint({
+    streamId: bootstrap.stream_id,
+    sessionId,
+    acknowledgedThrough: 1,
+  });
+  const outbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+  return { stateDirectory, paths, outbox, host };
+}
 
 function registration(options: {
   sessionId?: string;

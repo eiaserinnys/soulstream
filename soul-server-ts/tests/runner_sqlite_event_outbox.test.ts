@@ -1706,6 +1706,45 @@ describe("RunnerSqliteEventOutbox", () => {
       .rejects.toThrow(`event outbox payload hash mismatch at source_seq ${event.source_seq}`);
   });
 
+  it("does not revalidate an acknowledged prefix when opening only the closed tail", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const acknowledged = await outbox.append(eventInput("acknowledged"));
+    const pending = await outbox.append(eventInput("pending"));
+    await outbox.acknowledge(outbox.streamId, acknowledged.source_seq);
+    outbox.close();
+
+    const database = new DatabaseSync(path);
+    database.prepare(
+      "UPDATE runner_event_outbox SET payload_json = ? WHERE source_seq = ?",
+    ).run(JSON.stringify({ type: "assistant_message", content: "tampered prefix" }), acknowledged.source_seq);
+    database.close();
+
+    await expect(RunnerSqliteEventOutbox.openReadOnly(path))
+      .rejects.toThrow(`event outbox payload hash mismatch at source_seq ${acknowledged.source_seq}`);
+    const tail = await RunnerSqliteEventOutbox.openReadOnlyTail(path);
+    await expect(tail.readBatch()).resolves.toMatchObject({ events: [pending] });
+    tail.close();
+  });
+
+  it("still validates every unacknowledged row when opening only the closed tail", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.initializeBootstrap(bootstrapInput());
+    const pending = await outbox.append(eventInput("pending"));
+    outbox.close();
+
+    const database = new DatabaseSync(path);
+    database.prepare(
+      "UPDATE runner_event_outbox SET payload_json = ? WHERE source_seq = ?",
+    ).run(JSON.stringify({ type: "assistant_message", content: "tampered tail" }), pending.source_seq);
+    database.close();
+
+    await expect(RunnerSqliteEventOutbox.openReadOnlyTail(path))
+      .rejects.toThrow(`event outbox payload hash mismatch at source_seq ${pending.source_seq}`);
+  });
+
   it("feeds the existing pump without repackaging stream_id or source_seq", async () => {
     const outbox = await createOutbox();
     const event = await outbox.append(eventInput("one"));
