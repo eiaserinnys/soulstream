@@ -1,5 +1,5 @@
+import { performance } from "node:perf_hooks";
 import type { Logger } from "pino";
-
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { Task } from "../task/task_models.js";
@@ -11,9 +11,7 @@ import {
   type RunnerRegistration,
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
-import {
-  unreadableRegistrationFingerprint,
-} from "./runner_recovery_fingerprint.js";
+import { unreadableRegistrationFingerprint } from "./runner_recovery_fingerprint.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
@@ -29,9 +27,11 @@ import {
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
-
+import {
+  closedRunnerTailRequiresDrain,
+  logRunnerRecoveryScan,
+} from "./runner_recovery_scan_observer.js";
 const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
-
 export interface RunnerRecoveryCoordinatorOptions {
   stateDirectory: string;
   leaseTimeoutMs: number;
@@ -50,6 +50,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   scan?: typeof scanRunnerRegistrations;
   hydrate?: typeof hydrateRunnerRegistration;
   now?: () => number;
+  monotonicNow?: () => number;
   markReaped?: (
     registration: RunnerRegistration,
     progressedAt: string,
@@ -61,7 +62,6 @@ export interface RunnerRecoveryCoordinatorOptions {
   hydrationDeadlineMs?: number;
   hydrationConcurrency?: number;
 }
-
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
@@ -74,7 +74,6 @@ export class RunnerRecoveryCoordinator {
   private nextSessionGarbageCollectionAtMs = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
-
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
     this.recoveryLogger = new RunnerRecoveryLogger({
       logger: options.logger,
@@ -91,7 +90,6 @@ export class RunnerRecoveryCoordinator {
         : { concurrency: options.hydrationConcurrency }),
     });
   }
-
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopped = false;
@@ -104,7 +102,6 @@ export class RunnerRecoveryCoordinator {
     }, this.options.scanIntervalMs);
     this.timer.unref?.();
   }
-
   async scanOnce(): Promise<void> {
     if (this.stopped) return;
     this.scanInFlight ??= this.performScan().finally(() => {
@@ -112,8 +109,9 @@ export class RunnerRecoveryCoordinator {
     });
     await this.scanInFlight;
   }
-
   private async performScan(): Promise<void> {
+    const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
+    const startedAt = monotonicNow();
     if (this.sessionGarbageCollectionInFlight) {
       await this.sessionGarbageCollectionInFlight;
     }
@@ -191,8 +189,13 @@ export class RunnerRecoveryCoordinator {
         (registration) => !this.active.has(registration.config.sessionId),
       ),
     });
+    logRunnerRecoveryScan(
+      this.options.logger,
+      admitted.map(({ registration }) => registration),
+      startedAt,
+      monotonicNow(),
+    );
   }
-
   private async handleUnreadableRegistrations(
     failures: Array<{ directory: string; error: Error; sessionId?: string; codeSha?: string }>,
   ): Promise<void> {
@@ -241,7 +244,6 @@ export class RunnerRecoveryCoordinator {
       }
     }
   }
-
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
@@ -250,7 +252,6 @@ export class RunnerRecoveryCoordinator {
     await this.sessionGarbageCollectionInFlight;
     this.active.clear();
   }
-
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
   async waitForSettled(): Promise<void> {
     while (this.scanInFlight || this.active.size > 0) {
@@ -260,7 +261,6 @@ export class RunnerRecoveryCoordinator {
       ]);
     }
   }
-
   private async handle(
     registration: RunnerRegistration,
     disposition: RunnerRecoveryDisposition,
@@ -288,6 +288,7 @@ export class RunnerRecoveryCoordinator {
     }
     if (disposition === "closed") {
       if (registration.pidAlive) await this.terminateRegistration(registration);
+      if (!closedRunnerTailRequiresDrain(registration)) return;
       await this.options.closedTailDrainer.drain({ ...registration, pidAlive: false });
       return;
     }

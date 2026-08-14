@@ -5,6 +5,10 @@ import { resolve } from "node:path";
 import type { Logger } from "pino";
 
 import {
+  readClosedRunnerTailState,
+  type ClosedRunnerTailState,
+} from "./closed_runner_tail_state.js";
+import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapRecord,
 } from "./sqlite_event_outbox.js";
@@ -48,6 +52,7 @@ export interface RunnerRegistration {
   hostDatabaseSize?: number;
   hostDatabaseWalMtimeMs?: number;
   hostDatabaseWalSize?: number;
+  closedTailState?: ClosedRunnerTailState;
 }
 
 export interface RunnerRegistrationScan {
@@ -318,6 +323,9 @@ export async function readRunnerRegistrationSummary(
       hostDatabaseSize: hostDatabaseStat?.size,
       hostDatabaseWalMtimeMs: hostDatabaseWalStat?.mtimeMs,
       hostDatabaseWalSize: hostDatabaseWalStat?.size,
+      ...(lifecycle?.execution_state === "closed"
+        ? { closedTailState: readClosedRunnerTailState(config.paths.databasePath, config.sessionId) }
+        : {}),
     };
   } catch (error) {
     throw await annotateRegistrationError(
