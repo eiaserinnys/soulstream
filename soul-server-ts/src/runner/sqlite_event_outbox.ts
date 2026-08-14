@@ -49,6 +49,7 @@ import {
   readRunnerAcknowledgedThrough as readAcknowledgedThrough,
   readRunnerSchemaVersion as readUserVersion,
   recoverRunnerOutbox as recover,
+  recoverRunnerOutboxTail as recoverTail,
   runnerRowCount as rowCount,
   runnerTableHasColumn as hasColumn,
 } from "./sqlite_event_outbox_database.js";
@@ -150,6 +151,34 @@ export class RunnerSqliteEventOutbox {
         );
       }
       const recovered = recover(database);
+      return new RunnerSqliteEventOutbox(
+        database,
+        databasePath,
+        recovered.bootstrap,
+        recovered.ackedThrough,
+        options,
+      );
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  }
+
+  static async openReadOnlyTail(
+    databasePath: string,
+    options: RunnerSqliteEventOutboxOptions = {},
+  ): Promise<RunnerSqliteEventOutbox> {
+    await assertExistingRunnerDatabase(databasePath);
+    const database = openRunnerSqliteReadOnlyDatabase(databasePath);
+    try {
+      requireRunnerSqliteWal(database);
+      const version = readUserVersion(database);
+      if (version !== RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
+        throw new Error(
+          `runner event outbox schema version ${version} requires writer migration`,
+        );
+      }
+      const recovered = recoverTail(database);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,

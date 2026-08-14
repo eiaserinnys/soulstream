@@ -301,7 +301,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
 
-  it("does not re-finalize the same closed registration across two process restarts", async () => {
+  it("conservatively drains a closed registration across restarts when tail state is missing", async () => {
     const closed = registration({
       pidAlive: false,
       lifecycleState: "closed",
@@ -335,6 +335,107 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(sessionEnded).not.toHaveBeenCalled();
     expect(delivery).not.toHaveBeenCalled();
     expect(callerNotification).not.toHaveBeenCalled();
+  });
+
+  it("does not open a fully acknowledged closed registration across repeated scans", async () => {
+    const closed = registration({ pidAlive: false, lifecycleState: "closed" });
+    closed.closedTailState = {
+      status: "fully_acknowledged",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 2,
+      acknowledgedThrough: 2,
+    };
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const subject = makeSubject([closed], Date.now(), [], { closedTailDrainer });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
+
+    expect(closedTailDrainer.drain).not.toHaveBeenCalled();
+  });
+
+  it("never skips a closed registration with an unacknowledged durable tail", async () => {
+    const closed = registration({ pidAlive: false, lifecycleState: "closed" });
+    closed.closedTailState = {
+      status: "requires_drain",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 3,
+      acknowledgedThrough: 2,
+    };
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const subject = makeSubject([closed], Date.now(), [], { closedTailDrainer });
+
+    await subject.coordinator.scanOnce();
+
+    expect(closedTailDrainer.drain).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks a closed registration when a new event advances its durable head", async () => {
+    const closed = registration({ pidAlive: false, lifecycleState: "closed" });
+    closed.closedTailState = {
+      status: "fully_acknowledged",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 2,
+      acknowledgedThrough: 2,
+    };
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const subject = makeSubject([closed], Date.now(), [], { closedTailDrainer });
+
+    await subject.coordinator.scanOnce();
+    closed.closedTailState = {
+      status: "requires_drain",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 3,
+      acknowledgedThrough: 2,
+    };
+    await subject.coordinator.scanOnce();
+
+    expect(closedTailDrainer.drain).toHaveBeenCalledOnce();
+  });
+
+  it("conservatively drains when the closed-tail fingerprint cannot be trusted", async () => {
+    const closed = registration({ pidAlive: false, lifecycleState: "closed" });
+    closed.closedTailState = {
+      status: "unknown",
+      reason: "runner host checkpoint hash mismatch",
+    };
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const subject = makeSubject([closed], Date.now(), [], { closedTailDrainer });
+
+    await subject.coordinator.scanOnce();
+
+    expect(closedTailDrainer.drain).toHaveBeenCalledOnce();
+  });
+
+  it("logs recovery scan duration and closed-tail decisions at info", async () => {
+    const closed = registration({ pidAlive: false, lifecycleState: "closed" });
+    closed.closedTailState = {
+      status: "fully_acknowledged",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 2,
+      acknowledgedThrough: 2,
+    };
+    const monotonicNow = vi.fn()
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(112.5);
+    const subject = makeSubject([closed], Date.now(), [], { monotonicNow });
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        durationMs: 12.5,
+        closedRegistrations: 1,
+        closedTailDrains: 0,
+        closedTailSkips: 1,
+      }),
+      "runner recovery scan completed",
+    );
   });
 
   it("coalesces overlapping scan requests into one filesystem scan", async () => {

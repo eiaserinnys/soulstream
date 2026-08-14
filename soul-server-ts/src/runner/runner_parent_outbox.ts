@@ -51,6 +51,33 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     }
   }
 
+  static async openClosedTail(
+    runnerDatabasePath: string,
+    sessionId: string,
+    options: {
+      onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
+    } = {},
+  ): Promise<RunnerParentOutbox> {
+    const runner = await RunnerSqliteEventOutbox.openReadOnlyTail(
+      runnerDatabasePath,
+      { sessionId },
+    );
+    try {
+      const host = RunnerHostStateStore.open(runnerHostStatePath(runnerDatabasePath));
+      const outbox = new RunnerParentOutbox(
+        runner,
+        host,
+        sessionId,
+        options.onCheckpointAdvanced,
+      );
+      await outbox.readBootstrap();
+      return outbox;
+    } catch (error) {
+      runner.close();
+      throw error;
+    }
+  }
+
   get streamId(): string {
     return this.runner.streamId;
   }

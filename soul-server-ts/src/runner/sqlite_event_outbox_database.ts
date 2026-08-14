@@ -45,6 +45,54 @@ export function recoverRunnerOutbox(
   }
 }
 
+/** Validates bootstrap plus the unacknowledged suffix without reading the compactable prefix. */
+export function recoverRunnerOutboxTail(database: DatabaseSync): {
+  bootstrap: RunnerBootstrapRecord | null;
+  ackedThrough: number;
+} {
+  database.exec("BEGIN");
+  try {
+    const bootstrapRow = database.prepare(`
+      SELECT * FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+    `).get() as unknown as RunnerEventOutboxRow | undefined;
+    const latest = latestRunnerSequence(database);
+    if (!bootstrapRow) {
+      if (latest !== 0) throw new Error("runner bootstrap is missing before durable records");
+      database.exec("COMMIT");
+      return { bootstrap: null, ackedThrough: 0 };
+    }
+    if (bootstrapRow.source_seq !== 1) {
+      throw new Error("runner bootstrap record must be source_seq 1");
+    }
+    assertRunnerAckCheckpoint(bootstrapRow);
+    const bootstrap = runnerRowToBootstrap(bootstrapRow);
+    const ackedThrough = bootstrapRow.acked_through!;
+    if (ackedThrough > latest) throw new Error("event outbox ACK exceeds durable append cursor");
+    const rows = database.prepare(`
+      SELECT * FROM runner_event_outbox WHERE source_seq > ? ORDER BY source_seq
+    `).all(ackedThrough) as unknown as RunnerEventOutboxRow[];
+    let previous = ackedThrough;
+    for (const row of rows) {
+      if (row.record_kind !== "event") throw new Error("runner event outbox record kind is invalid");
+      if (row.stream_id !== bootstrap.stream_id) throw new Error("event outbox record stream mismatch");
+      if (row.session_id !== bootstrap.session_id) throw new Error("event outbox record session mismatch");
+      runnerRowToRecord(row);
+      previous = advanceUnacknowledgedSourceSequence(row.source_seq, ackedThrough, previous);
+    }
+    if (latest > ackedThrough && previous < latest) {
+      throw new Error(
+        `event outbox durable unacknowledged suffix has a gap: expected through ${latest}, `
+        + `found through ${previous}, acked_through ${ackedThrough}`,
+      );
+    }
+    database.exec("COMMIT");
+    return { bootstrap, ackedThrough };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function recoverSnapshot(
   database: DatabaseSync,
   options: { migrateLegacyAckCheckpoint?: boolean },
