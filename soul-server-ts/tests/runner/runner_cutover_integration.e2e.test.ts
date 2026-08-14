@@ -49,6 +49,7 @@ const testDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(testDirectory, "../..");
 const childFixturePath = join(testDirectory, "fixtures/runner_process_e2e_child.ts");
 const requireFromTest = createRequire(import.meta.url);
+const { DatabaseSync } = requireFromTest("node:sqlite") as typeof import("node:sqlite");
 const temporaryRoots: string[] = [];
 const readOnlyReleases: string[] = [];
 const childPids = new Set<number>();
@@ -506,6 +507,205 @@ describe("runner cutover all-flags-on integration", () => {
       secondTask.agentSessionId,
     ]);
     await secondComposition.hostOwnership.release();
+  }, 45_000);
+
+  it("heals a legacy ambiguous inbox row and carries it through the replacement child", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-intervention-recovery-"));
+    temporaryRoots.push(root);
+    const stateDirectory = join(root, "state");
+    const artifactDirectory = join(root, "artifacts");
+    const releasesDirectory = join(root, "runner-releases");
+    const controlDirectory = join(root, "control");
+    await mkdir(artifactDirectory, { recursive: true });
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(artifactDirectory, "package.json"), '{"type":"module"}\n');
+    await writeFile(
+      join(artifactDirectory, "runner_entry.js"),
+      `try {\n  await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n}`
+        + ` catch (error) {\n  const { writeFile } = await import("node:fs/promises");\n`
+        + `  await writeFile(process.env.RUNNER_E2E_CONTROL_DIR + "/child-error", String(error?.stack ?? error));\n`
+        + `  throw error;\n}\n`,
+    );
+    const agentsConfigPath = join(root, "agents.yaml");
+    const registryPath = join(root, "mcp-registry.yaml");
+    const profilesPath = join(root, "mcp-profiles.yaml");
+    await writeFile(agentsConfigPath, "agents: []\n");
+    await writeFile(registryPath, "servers: []\n");
+    await writeFile(
+      profilesPath,
+      "profiles:\n  - id: cutover-internal\n    mcp_servers: []\n",
+    );
+    const env = parseEnv({
+      SOULSTREAM_NODE_ID: "intervention-recovery-node",
+      SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:1/ws/node",
+      EVENT_OUTBOX_DIR: join(root, "legacy-outbox"),
+      SOUL_RUNNER_PROCESS_ENABLED: "true",
+      SOUL_RUNNER_STATE_DIR: stateDirectory,
+      SOUL_RUNNER_ARTIFACT_DIR: artifactDirectory,
+      SOUL_RUNNER_RELEASES_DIR: releasesDirectory,
+      SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
+      MCP_ENABLED: "false",
+    });
+    const mcpConfigService = new McpConfigService({
+      agentsConfigPath,
+      registryPath,
+      profilesPath,
+    });
+    const { mux } = mockOrchIngress();
+    const composition = await composeRunnerProcessRuntime(true, {
+      env,
+      logger: pino({ level: "silent" }),
+      pumpMux: mux,
+      sessionStore: {
+        appendIdempotent: vi.fn(async () => undefined),
+        deleteIdempotent: vi.fn(async () => undefined),
+      } as never,
+      mcpConfigService,
+      buildChildProcessEnv: () => ({
+        ...process.env,
+        NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
+        RUNNER_E2E_CONTROL_DIR: controlDirectory,
+      }),
+    });
+    if (!composition) throw new Error("runner composition unexpectedly disabled");
+    const releaseEntries = await import("node:fs/promises")
+      .then(({ readdir }) => readdir(releasesDirectory));
+    const releaseId = releaseEntries.find((entry) => entry.startsWith("sha256-"));
+    if (!releaseId) throw new Error("runner release was not prewarmed");
+    readOnlyReleases.push(join(releasesDirectory, releaseId));
+
+    const task = makeTask("session-intervention-recovery");
+    const host = taskExecutor(composition.runtimeFactory);
+    const paths = runnerProcessPaths(stateDirectory, task.agentSessionId);
+    host.executor.startExecution(task, makeAgent(controlDirectory));
+    await waitFor(async () => await pathExists(paths.pidPath));
+    const firstPid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
+    childPids.add(firstPid);
+    await waitFor(async () => await pathExists(join(controlDirectory, "execute-started")));
+    const dispatcher = task.runner?.dispatcher;
+    if (!dispatcher?.stageIntervention) {
+      throw new Error("runner intervention staging unavailable");
+    }
+    await dispatcher.stageIntervention({
+      interventionId: "legacy-ambiguous-e2e",
+      message: {
+        text: "recover this intervention",
+        user: "soak",
+        runnerInterventionId: "legacy-ambiguous-e2e",
+      },
+      event: {
+        type: "intervention_sent",
+        text: "recover this intervention",
+        user: "soak",
+      },
+      queued: false,
+    });
+    await dispatcher.waitForSessionAck();
+    await writeExecutionControls(controlDirectory);
+    await task.executionPromise;
+    expect(task.status).toBe("completed");
+    await waitFor(async () => !isPidAlive(firstPid));
+    childPids.delete(firstPid);
+
+    const config = parseRunnerChildConfig(JSON.parse(await readFile(paths.configPath, "utf8")));
+    const legacy = new DatabaseSync(paths.databasePath, { readOnly: true });
+    legacy.exec("PRAGMA query_only = ON");
+    expect(legacy.prepare(`
+      SELECT application_state FROM runner_intervention_inbox
+      WHERE intervention_id = 'legacy-ambiguous-e2e'
+    `).get()).toEqual({ application_state: "ambiguous" });
+    legacy.close();
+
+    task.runner = undefined;
+    task.executionPromise = undefined;
+    task.status = "running";
+    task.completedAt = undefined;
+    task.error = undefined;
+    const previousNodeOptions = process.env.NODE_OPTIONS;
+    const previousControlDirectory = process.env.RUNNER_E2E_CONTROL_DIR;
+    const previousRecoveryScenario = process.env.RUNNER_E2E_INTERVENTION_RECOVERY;
+    process.env.NODE_OPTIONS = `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`;
+    process.env.RUNNER_E2E_CONTROL_DIR = controlDirectory;
+    process.env.RUNNER_E2E_INTERVENTION_RECOVERY = "1";
+    try {
+      host.executor.restartRegisteredRunner(task, config);
+      const executionPromise = task.executionPromise;
+      if (!executionPromise) throw new Error("replacement execution promise missing");
+      await waitFor(async () => {
+        if (!await pathExists(paths.pidPath)) return false;
+        const pid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
+        return pid !== firstPid && isPidAlive(pid);
+      });
+      const replacementPid = Number.parseInt(
+        (await readFile(paths.pidPath, "utf8")).trim(),
+        10,
+      );
+      childPids.add(replacementPid);
+      await waitFor(async () =>
+        await pathExists(join(controlDirectory, "recovered-intervention-execution.json"))
+        || await pathExists(join(controlDirectory, "child-error"))
+        || task.status === "error");
+      if (await pathExists(join(controlDirectory, "child-error"))) {
+        throw new Error(await readFile(join(controlDirectory, "child-error"), "utf8"));
+      }
+      if (task.status === "error") {
+        throw new Error(task.error ?? "replacement runner failed");
+      }
+      expect(JSON.parse(await readFile(
+        join(controlDirectory, "recovered-intervention-execution.json"),
+        "utf8",
+      ))).toMatchObject({
+        runnerInterventionId: "legacy-ambiguous-e2e",
+        prompt: "recover this intervention",
+      });
+      const claimed = new DatabaseSync(paths.databasePath, { readOnly: true });
+      claimed.exec("PRAGMA query_only = ON");
+      const claim = claimed.prepare(`
+        SELECT inbox.application_state,
+               inbox.claimed_execution_command_id,
+               bootstrap.execution_command_id,
+               bootstrap.execution_state
+        FROM runner_intervention_inbox AS inbox
+        JOIN runner_event_outbox AS bootstrap ON bootstrap.record_kind = 'bootstrap'
+        WHERE inbox.intervention_id = 'legacy-ambiguous-e2e'
+      `).get() as {
+        application_state: string;
+        claimed_execution_command_id: string;
+        execution_command_id: string;
+        execution_state: string;
+      };
+      expect(claim).toEqual({
+        application_state: "claimed",
+        claimed_execution_command_id: claim.execution_command_id,
+        execution_command_id: claim.execution_command_id,
+        execution_state: "running",
+      });
+      claimed.close();
+
+      await writeFile(join(controlDirectory, "finish-recovered-intervention"), "go\n");
+      await executionPromise;
+      expect(task.status).toBe("completed");
+      const completed = new DatabaseSync(paths.databasePath, { readOnly: true });
+      completed.exec("PRAGMA query_only = ON");
+      expect(completed.prepare(`
+        SELECT COUNT(*) AS count FROM runner_intervention_inbox
+        WHERE intervention_id = 'legacy-ambiguous-e2e'
+      `).get()).toEqual({ count: 0 });
+      completed.close();
+      await waitFor(async () => !isPidAlive(replacementPid));
+      childPids.delete(replacementPid);
+    } finally {
+      if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
+      else process.env.NODE_OPTIONS = previousNodeOptions;
+      if (previousControlDirectory === undefined) delete process.env.RUNNER_E2E_CONTROL_DIR;
+      else process.env.RUNNER_E2E_CONTROL_DIR = previousControlDirectory;
+      if (previousRecoveryScenario === undefined) {
+        delete process.env.RUNNER_E2E_INTERVENTION_RECOVERY;
+      } else {
+        process.env.RUNNER_E2E_INTERVENTION_RECOVERY = previousRecoveryScenario;
+      }
+    }
+    await composition.hostOwnership.release();
   }, 45_000);
 
   it.each(["success", "refail"] as const)(

@@ -108,7 +108,7 @@ export type InterveneAck =
       delivered: false;
       queuePosition: number;
       consumeWhen: "next_turn";
-      reason: EngineInterventionFailureReason | "queue_only_policy";
+      reason: EngineInterventionFailureReason | "queue_only_policy" | "verdict_unknown";
     }
   | {
       type: "intervene_ack";
@@ -126,7 +126,7 @@ export type InterveneAck =
       agentSessionId: string;
       delivered: false;
       retryWhen: "engine_available" | "terminal_state";
-      reason: EngineInterventionFailureReason | "terminal_only_policy";
+      reason: EngineInterventionFailureReason | "terminal_only_policy" | "verdict_unknown";
     }
   | {
       type: "intervene_ack";

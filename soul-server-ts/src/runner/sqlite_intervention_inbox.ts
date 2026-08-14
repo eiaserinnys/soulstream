@@ -29,7 +29,6 @@ export function migrateRunnerInterventionInboxV9(
   database: SqliteDatabase,
   previousVersion: number,
 ): void {
-  if (previousVersion >= 9) return;
   withRunnerSqliteTransactionSync(database, () => {
     const columns = database.prepare(
       "PRAGMA table_info(runner_intervention_inbox)",
@@ -42,14 +41,26 @@ export function migrateRunnerInterventionInboxV9(
         )
       `);
     }
-    // Always repair the intermediate state left by the former split migration:
-    // ALTER may already exist while backfill and user_version are still v8.
+    if (previousVersion < 9) {
+      // Always repair the intermediate state left by the former split migration:
+      // ALTER may already exist while backfill and user_version are still v8.
+      database.prepare(`
+        UPDATE runner_intervention_inbox SET application_state = 'claimed'
+        WHERE application_state = 'pending'
+          AND claimed_execution_command_id IS NOT NULL
+      `).run();
+    }
+    // Versions that wrote an ambiguous replay fence made the session
+    // permanently unreadable. The non-runner contract keeps undelivered input
+    // queued, so writer open repairs that legacy state to the same contract.
     database.prepare(`
-      UPDATE runner_intervention_inbox SET application_state = 'claimed'
-      WHERE application_state = 'pending'
-        AND claimed_execution_command_id IS NOT NULL
+      UPDATE runner_intervention_inbox
+      SET application_state = 'pending',
+          claimed_execution_command_id = NULL,
+          claimed_at = NULL
+      WHERE application_state = 'ambiguous'
     `).run();
-    database.exec("PRAGMA user_version = 9");
+    if (previousVersion < 9) database.exec("PRAGMA user_version = 9");
   }, { transactionLabel: "intervention_inbox.migrate_v9" });
 }
 
@@ -203,42 +214,6 @@ function runnerInterventionQueuePosition(
 export async function readPendingRunnerInterventions(
   database: SqliteDatabase,
 ): Promise<PendingRunnerIntervention[]> {
-  const lifecycle = database.prepare(`
-    SELECT execution_command_id, execution_state FROM runner_event_outbox
-    WHERE record_kind = 'bootstrap'
-    UNION ALL
-    SELECT execution_command_id, execution_state FROM runner_prebootstrap_lifecycle
-    WHERE singleton = 1
-    LIMIT 1
-  `).get() as {
-    execution_command_id: string;
-    execution_state: string;
-  } | undefined;
-  const unresolved = database.prepare(`
-    SELECT intervention_id, application_state, claimed_execution_command_id
-    FROM runner_intervention_inbox
-    WHERE application_state IN ('claimed', 'ambiguous')
-    ORDER BY queued_at, rowid
-  `).all() as Array<{
-    intervention_id: string;
-    application_state: "claimed" | "ambiguous";
-    claimed_execution_command_id: string | null;
-  }>;
-  const ambiguous = unresolved.filter((row) => {
-    if (row.application_state === "ambiguous") return true;
-    if (row.claimed_execution_command_id !== lifecycle?.execution_command_id) return true;
-    // A completed lifecycle is the durable apply receipt. A running lifecycle
-    // still owns the claim. Neither needs a parent-side cleanup write.
-    return lifecycle.execution_state !== "completed"
-      && lifecycle.execution_state !== "running";
-  });
-  if (ambiguous.length > 0) {
-    throw new Error(
-      `runner intervention application outcome is ambiguous: ${ambiguous
-        .map((row) => row.intervention_id)
-        .join(", ")}`,
-    );
-  }
   const rows = database.prepare(`
     SELECT intervention_id, payload_json
     FROM runner_intervention_inbox
@@ -310,17 +285,21 @@ export async function resolveRunnerInterventionAmbiguity(
 ): Promise<void> {
   if (!interventionId) throw new Error("runner intervention id is required");
   await transaction(() => {
+    // Writer open heals legacy ambiguous rows before the stopped-runner
+    // resolution API runs, so an explicitly selected row may already be pending.
     const result = resolution === "applied" || resolution === "discarded"
       ? database.prepare(`
           DELETE FROM runner_intervention_inbox
-          WHERE intervention_id = ? AND application_state IN ('claimed', 'ambiguous')
+          WHERE intervention_id = ?
+            AND application_state IN ('pending', 'claimed', 'ambiguous')
         `).run(interventionId)
       : database.prepare(`
           UPDATE runner_intervention_inbox
           SET application_state = 'pending',
               claimed_execution_command_id = NULL,
               claimed_at = NULL
-          WHERE intervention_id = ? AND application_state IN ('claimed', 'ambiguous')
+          WHERE intervention_id = ?
+            AND application_state IN ('pending', 'claimed', 'ambiguous')
         `).run(interventionId);
     if (Number(result.changes) !== 1) {
       throw new Error(`runner intervention is not resolvable: ${interventionId}`);

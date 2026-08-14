@@ -131,8 +131,8 @@ CREATE TABLE IF NOT EXISTS runner_prebootstrap_lifecycle (
 -- Host-to-runner next-turn input inbox. A queued intervention and its optional
 -- timeline receipt are committed in one SQLite transaction before the current
 -- turn can be interrupted. claimed_execution_command_id fences exactly one
--- follow-up execute command across host restarts; application_state preserves
--- an unknowable backend outcome as a loud stop instead of replaying user input.
+-- follow-up execute command across host restarts. The ambiguous value remains
+-- accepted for rolling compatibility; writer open heals legacy rows to pending.
 CREATE TABLE IF NOT EXISTS runner_intervention_inbox (
   intervention_id TEXT PRIMARY KEY,
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),

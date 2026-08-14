@@ -35,6 +35,8 @@ function makeBroadcaster(
 
 describe("RunningInterventionTransition", () => {
   it.each([
+    // Live backend behavior is measured separately; atom card
+    // 6723db5e-b9c8-4095-9563-e819664991ca is the canonical evidence.
     {
       backendId: "claude" as const,
       engineResult: {
@@ -145,6 +147,78 @@ describe("RunningInterventionTransition", () => {
       }
     },
   );
+
+  it("keeps queueIfUndelivered=false equivalent across in-process and runner paths", async () => {
+    const verdict = {
+      status: "not_delivered" as const,
+      mechanism: "unsupported" as const,
+      reason: "not_supported" as const,
+    };
+    const intervene = vi.fn().mockResolvedValue(verdict);
+    const adapter = {
+      backendId: "codex" as const,
+      workspaceDir: "/tmp/codex",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+      intervene,
+    } as unknown as EnginePort;
+    const stageIntervention = vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
+      eventSourceSeq: input.event ? 42 : null,
+      queuePosition: input.queued ? 1 : 0,
+    }));
+    const discardIntervention = vi.fn().mockResolvedValue(undefined);
+    const dispatcher = {
+      stageIntervention,
+      applyIntervention: vi.fn().mockResolvedValue(verdict),
+      discardIntervention,
+      waitForSessionAck: vi.fn().mockResolvedValue(142),
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      prepareSession: vi.fn(),
+      interrupt: vi.fn(),
+      close: vi.fn(),
+      detachHost: vi.fn(),
+      sendControlFrame: vi.fn(),
+      requestContext: vi.fn(),
+    };
+    const inProcessTask = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime(adapter),
+    });
+    const runnerTask = makeRunningTask({
+      runner: createTaskRunnerRuntime(
+        new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+        dispatcher as never,
+        "runner",
+      ),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+    const expected = {
+      delivered: false,
+      deferred: true,
+      retryWhen: "engine_available",
+      reason: "not_supported",
+    };
+
+    await expect(transition.deliver(
+      inProcessTask,
+      { text: "do not queue", user: "scheduler" },
+      { queueIfUndelivered: false },
+    )).resolves.toEqual(expected);
+    await expect(transition.deliver(
+      runnerTask,
+      { text: "do not queue", user: "scheduler" },
+      { queueIfUndelivered: false },
+    )).resolves.toEqual(expected);
+    expect(inProcessTask.interventionQueue).toEqual([]);
+    expect(runnerTask.interventionQueue).toEqual([]);
+    expect(stageIntervention).toHaveBeenCalledOnce();
+    expect(discardIntervention).toHaveBeenCalledOnce();
+  });
 
   it("attempts runner delivery before durably queueing an undelivered intervention", async () => {
     const stageIntervention = vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
@@ -720,11 +794,12 @@ describe("RunningInterventionTransition", () => {
       label: "unknown",
       verdict: { status: "unknown", reason: "verdict_unknown" } as const,
       expected: {
-        delivered: null,
+        delivered: false,
+        deferred: true,
+        retryWhen: "engine_available",
         reason: "verdict_unknown",
-        consumeWhen: null,
       } as const,
-      discardCalls: 0,
+      discardCalls: 1,
     },
   ])(
     "process runner with queueIfUndelivered=false reaches the engine and resolves $label",
@@ -784,12 +859,12 @@ describe("RunningInterventionTransition", () => {
     },
   );
 
-  it("returns unknown when a confirmed miss cannot discard its durable fence", async () => {
+  it("queues an unknown verdict when durable discard cannot confirm the caller policy", async () => {
     const dispatcher = {
-      stageIntervention: vi.fn().mockResolvedValue({
-        eventSourceSeq: 42,
-        queuePosition: 0,
-      }),
+      stageIntervention: vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
+        eventSourceSeq: input.event ? 42 : null,
+        queuePosition: input.queued ? 1 : 0,
+      })),
       waitForSessionAck: vi.fn().mockResolvedValue(142),
       applyIntervention: vi.fn().mockResolvedValue({
         status: "not_delivered",
@@ -826,17 +901,25 @@ describe("RunningInterventionTransition", () => {
       { text: "scheduled while running", user: "scheduler" },
       { queueIfUndelivered: false },
     )).resolves.toEqual({
-      delivered: null,
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
       reason: "verdict_unknown",
-      consumeWhen: null,
     });
-    expect(task.interventionQueue).toEqual([]);
+    expect(dispatcher.stageIntervention).toHaveBeenCalledTimes(2);
+    expect(dispatcher.stageIntervention).toHaveBeenLastCalledWith(expect.objectContaining({
+      queued: true,
+    }));
+    expect(task.interventionQueue).toHaveLength(1);
   });
 
-  it("returns an unknown delivery verdict immediately when runner intervention IPC times out", async () => {
+  it("queues an unknown runner verdict so the durable fence reaches the next turn", async () => {
     const timeout = new Error("Runner IPC request timed out after 30000ms");
-    const stageIntervention = vi.fn()
-      .mockResolvedValueOnce({ eventSourceSeq: 42, queuePosition: 0 });
+    const stageIntervention = vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
+      eventSourceSeq: input.event ? 42 : null,
+      queuePosition: input.queued ? 1 : 0,
+    }));
     const waitForSessionAck = vi.fn().mockResolvedValue(142);
     const applyIntervention = vi.fn().mockRejectedValue(timeout);
     const dispatcher = {
@@ -872,35 +955,39 @@ describe("RunningInterventionTransition", () => {
         50,
       )),
     ])).resolves.toEqual({
-      delivered: null,
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
       reason: "verdict_unknown",
-      consumeWhen: null,
     });
 
-    expect(stageIntervention).toHaveBeenCalledTimes(1);
+    expect(stageIntervention).toHaveBeenCalledTimes(2);
+    expect(stageIntervention).toHaveBeenLastCalledWith(expect.objectContaining({
+      queued: true,
+    }));
     expect(applyIntervention).toHaveBeenCalledTimes(1);
-    expect(task.interventionQueue).toEqual([]);
+    expect(task.interventionQueue).toHaveLength(1);
   });
 
   it.each([
     {
       boundary: "receipt command",
-      stageIntervention: vi.fn().mockRejectedValue(
-        new Error("Runner IPC request timed out after 30000ms"),
-      ),
-      waitForSessionAck: vi.fn(),
+      stageIntervention: vi.fn()
+        .mockRejectedValueOnce(new Error("Runner IPC request timed out after 30000ms"))
+        .mockResolvedValueOnce({ eventSourceSeq: 43, queuePosition: 1 }),
+      waitForSessionAck: vi.fn().mockResolvedValue(143),
     },
     {
       boundary: "receipt host ACK",
-      stageIntervention: vi.fn().mockResolvedValue({
-        eventSourceSeq: 42,
-        queuePosition: 0,
-      }),
-      waitForSessionAck: vi.fn().mockRejectedValue(
-        new Error("Runner receipt ACK timed out"),
-      ),
+      stageIntervention: vi.fn()
+        .mockResolvedValueOnce({ eventSourceSeq: 42, queuePosition: 0 })
+        .mockResolvedValueOnce({ eventSourceSeq: 42, queuePosition: 1 }),
+      waitForSessionAck: vi.fn()
+        .mockRejectedValueOnce(new Error("Runner receipt ACK timed out"))
+        .mockResolvedValueOnce(143),
     },
-  ])("returns an unknown verdict when the durable $boundary times out", async ({
+  ])("recovers a durable $boundary timeout into the next-turn queue", async ({
     stageIntervention,
     waitForSessionAck,
   }) => {
@@ -935,11 +1022,121 @@ describe("RunningInterventionTransition", () => {
       task,
       { text: "receipt verdict unknown", user: "alice" },
     )).resolves.toEqual({
-      delivered: null,
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
       reason: "verdict_unknown",
-      consumeWhen: null,
     });
+    expect(stageIntervention).toHaveBeenCalledTimes(2);
+    expect(stageIntervention).toHaveBeenLastCalledWith(expect.objectContaining({
+      queued: true,
+      event: expect.objectContaining({ type: "intervention_sent" }),
+    }));
     expect(applyIntervention).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toHaveLength(1);
+  });
+
+  it("keeps the no-queue policy when an unknown receipt can be discarded", async () => {
+    const dispatcher = {
+      stageIntervention: vi.fn().mockResolvedValue({
+        eventSourceSeq: 42,
+        queuePosition: 0,
+      }),
+      waitForSessionAck: vi.fn().mockRejectedValue(new Error("receipt ACK timed out")),
+      applyIntervention: vi.fn(),
+      discardIntervention: vi.fn().mockResolvedValue(undefined),
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      prepareSession: vi.fn(),
+      interrupt: vi.fn(),
+      close: vi.fn(),
+      detachHost: vi.fn(),
+      sendControlFrame: vi.fn(),
+      requestContext: vi.fn(),
+    };
+    const task = makeRunningTask({
+      runner: createTaskRunnerRuntime(
+        new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+        dispatcher as never,
+        "runner",
+      ),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(
+      task,
+      { text: "scheduler owns retry", user: "scheduler" },
+      { queueIfUndelivered: false },
+    )).resolves.toEqual({
+      delivered: false,
+      deferred: true,
+      retryWhen: "engine_available",
+      reason: "verdict_unknown",
+    });
+    expect(dispatcher.applyIntervention).not.toHaveBeenCalled();
+    expect(dispatcher.discardIntervention).toHaveBeenCalledOnce();
     expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("falls back to a claim-free memory queue when receipt recovery also fails", async () => {
+    const stageIntervention = vi.fn()
+      .mockRejectedValueOnce(new Error("receipt command timed out"))
+      .mockRejectedValueOnce(new Error("receipt recovery timed out"));
+    const dispatcher = {
+      stageIntervention,
+      applyIntervention: vi.fn(),
+      waitForSessionAck: vi.fn(),
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      prepareSession: vi.fn(),
+      interrupt: vi.fn(),
+      close: vi.fn(),
+      detachHost: vi.fn(),
+      sendControlFrame: vi.fn(),
+      requestContext: vi.fn(),
+    };
+    const task = makeRunningTask({
+      runner: createTaskRunnerRuntime(
+        new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+        dispatcher as never,
+        "runner",
+      ),
+    });
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+    } as unknown as typeof silentLogger;
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(
+      task,
+      { text: "keep this in memory", user: "alice" },
+    )).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "verdict_unknown",
+    });
+    expect(task.interventionQueue).toEqual([expect.objectContaining({
+      text: "keep this in memory",
+    })]);
+    expect(task.interventionQueue[0]).not.toHaveProperty("runnerInterventionId");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interventionId: expect.any(String),
+        durability: "memory_only",
+      }),
+      "runner intervention durable queue recovery failed; queued in memory",
+    );
   });
 });

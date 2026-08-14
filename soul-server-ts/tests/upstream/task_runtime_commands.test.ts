@@ -564,6 +564,30 @@ describe("TaskRuntimeCommands ACK builders", () => {
 
     expect(
       buildInterveneAck({
+        requestId: "req-queued-unknown",
+        agentSessionId: "sess-1",
+        result: {
+          delivered: false,
+          queued: true,
+          queuePosition: 1,
+          consumeWhen: "next_turn",
+          reason: "verdict_unknown",
+        },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-queued-unknown",
+      status: "ok",
+      outcome: "queued",
+      agentSessionId: "sess-1",
+      delivered: false,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "verdict_unknown",
+    });
+
+    expect(
+      buildInterveneAck({
         requestId: "req-resumed",
         agentSessionId: "sess-1",
         result: { autoResumed: true },
