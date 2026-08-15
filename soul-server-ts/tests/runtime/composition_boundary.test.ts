@@ -12,6 +12,8 @@ import { parseEnv } from "../../src/config.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
+import { TransientEventLogAggregator } from
+  "../../src/task/transient_event_log_aggregator.js";
 
 const sourceRoot = fileURLToPath(new URL("../../src/", import.meta.url));
 
@@ -121,6 +123,9 @@ describe("worker composition boundary", () => {
         baseUrl: "http://localhost:5200",
         headers: {},
       },
+      transientEventLogAggregator: new TransientEventLogAggregator(
+        pino({ level: "silent" }),
+      ),
     });
 
     try {

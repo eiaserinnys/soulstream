@@ -24,6 +24,8 @@ import { ClaudeRuntimeTaskFollowupController } from
 import type { QueuedDeliveryTranscriptRecovery } from
   "../task/queued_delivery_transcript_recovery.js";
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
+import type { TransientEventLogAggregator } from
+  "../task/transient_event_log_aggregator.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
@@ -44,6 +46,7 @@ export interface TaskRuntimeCompositionParams {
   orchProxyConfig: OrchProxyConfig;
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
+  transientEventLogAggregator: TransientEventLogAggregator;
 }
 
 export interface TaskRuntimeComposition {
@@ -77,6 +80,7 @@ export function composeTaskRuntime(
     scheduleService,
     orchProxyConfig,
     queuedDeliveryRecovery,
+    transientEventLogAggregator,
   } = params;
   let taskExecutor: TaskExecutor;
   const onResume: StartExecutionCallback = (task) => {
@@ -150,6 +154,7 @@ export function composeTaskRuntime(
       : undefined,
     modelCatalog,
     runnerProcessFactory,
+    transientEventLogAggregator,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

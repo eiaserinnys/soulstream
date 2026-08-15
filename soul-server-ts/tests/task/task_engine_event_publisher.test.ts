@@ -7,6 +7,8 @@ import { attachClaudeBackgroundProvenance } from
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskEngineEventPublisher } from "../../src/task/task_engine_event_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
+import { TransientEventLogAggregator } from
+  "../../src/task/transient_event_log_aggregator.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -161,6 +163,47 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
   });
 
+  it("aggregates transient broadcast activity into one periodic info log", async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makePublisherDeps();
+      const transientEventLogAggregator = new TransientEventLogAggregator(deps.logger);
+      const publishers = [
+        new TaskEngineEventPublisher({ ...deps, transientEventLogAggregator }),
+        new TaskEngineEventPublisher({ ...deps, transientEventLogAggregator }),
+      ];
+      const tasks = [makeTask(), makeTask(), makeTask({ agentSessionId: "sess-2" })];
+
+      for (const [index, task] of tasks.entries()) {
+        await publishers[index % publishers.length]!.publishEngineEvent(task, {
+          type: "text_delta",
+          text: `chunk-${index}`,
+          timestamp: index,
+          _live_only: true,
+        } as unknown as SSEEventPayload);
+      }
+
+      expect(deps.logger.info).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(deps.logger.info).toHaveBeenCalledTimes(1);
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        {
+          windowMs: 30_000,
+          dispatched: 3,
+          completed: 3,
+          failed: 0,
+          sessionCount: 2,
+        },
+        "emitEventEnvelope activity summary",
+      );
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("propagates durable enqueue failure without broadcasting or side effects", async () => {
     const deps = makePublisherDeps();
     deps.enqueueEvent.mockRejectedValueOnce(new Error("events db down"));
@@ -218,27 +261,47 @@ describe("TaskEngineEventPublisher", () => {
   });
 
   it("isolates broadcast failure and still runs side effects", async () => {
-    const deps = makePublisherDeps();
-    deps.emitEventEnvelope.mockRejectedValueOnce(new Error("upstream down"));
-    const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask();
-    const event = {
-      type: "text_delta",
-      text: "hello",
-      timestamp: 1,
-    } as SSEEventPayload;
+    vi.useFakeTimers();
+    try {
+      const deps = makePublisherDeps();
+      deps.emitEventEnvelope.mockRejectedValueOnce(new Error("upstream down"));
+      const publisher = new TaskEngineEventPublisher(deps);
+      const task = makeTask();
+      const event = {
+        type: "text_delta",
+        text: "hello",
+        timestamp: 1,
+      } as SSEEventPayload;
 
-    await publisher.publishEngineEvent(task, event);
+      await publisher.publishEngineEvent(task, event);
 
-    expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
-    expect(deps.logger.warn).toHaveBeenCalledWith(
-      {
-        err: expect.any(Error),
-        sessionId: "sess-1",
-        eventType: "text_delta",
-      },
-      "emitEventEnvelope failed",
-    );
+      expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        {
+          err: expect.any(Error),
+          sessionId: "sess-1",
+          eventType: "text_delta",
+        },
+        "emitEventEnvelope failed",
+      );
+      expect(deps.logger.info).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        {
+          windowMs: 30_000,
+          dispatched: 1,
+          completed: 0,
+          failed: 1,
+          sessionCount: 1,
+        },
+        "emitEventEnvelope activity summary",
+      );
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("isolates side-effect failure", async () => {

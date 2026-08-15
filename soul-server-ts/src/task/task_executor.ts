@@ -42,6 +42,7 @@ import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
+import type { TransientEventLogAggregator } from "./transient_event_log_aggregator.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { applyCanonicalSessionProjection } from
@@ -157,6 +158,7 @@ export class TaskExecutor {
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
+    transientEventLogAggregator?: TransientEventLogAggregator,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -171,6 +173,7 @@ export class TaskExecutor {
       broadcaster,
       logger: this.logger,
       persistence,
+      ...(transientEventLogAggregator ? { transientEventLogAggregator } : {}),
     });
     this.engineFailureRecovery = new TaskEngineFailureRecovery({
       broadcaster,

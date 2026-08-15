@@ -12,11 +12,13 @@ import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
 import { recordTerminationHint } from "./task_termination.js";
+import { TransientEventLogAggregator } from "./transient_event_log_aggregator.js";
 
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence: EventPersistence;
+  transientEventLogAggregator?: TransientEventLogAggregator;
 }
 
 /**
@@ -26,7 +28,12 @@ export interface TaskEngineEventPublisherDeps {
  * have separate publishers. This class only handles events yielded by EnginePort.
  */
 export class TaskEngineEventPublisher {
-  constructor(private readonly deps: TaskEngineEventPublisherDeps) {}
+  private readonly transientEventLogAggregator: TransientEventLogAggregator;
+
+  constructor(private readonly deps: TaskEngineEventPublisherDeps) {
+    this.transientEventLogAggregator = deps.transientEventLogAggregator ??
+      new TransientEventLogAggregator(deps.logger);
+  }
 
   async publishEngineEvent(
     task: Task,
@@ -151,19 +158,15 @@ export class TaskEngineEventPublisher {
     event: SSEEventPayload,
     eventType: string,
   ): Promise<void> {
-    // Keep dispatch/completed info logs: production LOG_LEVEL=info uses them to
-    // distinguish "emit not called" from silent upstream failure.
-    this.deps.logger.info(
-      { sessionId: task.agentSessionId, eventType },
-      "emitEventEnvelope dispatch",
-    );
+    // Production LOG_LEVEL=info still exposes dispatch/completion health, but a
+    // process-wide window prevents streaming deltas from writing two log lines
+    // per event.
+    this.transientEventLogAggregator.recordDispatch(task.agentSessionId);
     try {
       await this.deps.broadcaster.emitEventEnvelope(task.agentSessionId, event);
-      this.deps.logger.info(
-        { sessionId: task.agentSessionId, eventType },
-        "emitEventEnvelope completed",
-      );
+      this.transientEventLogAggregator.recordCompleted(task.agentSessionId);
     } catch (err) {
+      this.transientEventLogAggregator.recordFailed(task.agentSessionId);
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
         "emitEventEnvelope failed",
