@@ -40,6 +40,8 @@ import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { buildServer } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
+import { TransientEventLogAggregator } from
+  "../task/transient_event_log_aggregator.js";
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
@@ -117,6 +119,7 @@ export async function composeWorkerRuntime(
     eventOutbox,
     eventOutboxPump,
   );
+  const transientEventLogAggregator = new TransientEventLogAggregator(logger);
   const realtimeBroker = new RealtimeBroker({
     agentRegistry,
     db,
@@ -198,6 +201,7 @@ export async function composeWorkerRuntime(
         broadcaster,
         logger,
         persistence,
+        transientEventLogAggregator,
       })
     : undefined;
   let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;
@@ -274,6 +278,7 @@ export async function composeWorkerRuntime(
     scheduleService,
     orchProxyConfig,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
+    transientEventLogAggregator,
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
   });
   const runnerRecoveryCoordinator = await startRunnerRecoveryCoordinator({
