@@ -181,12 +181,16 @@ function parseInterveneVerdict(body: unknown): RelayedInterventionVerdict {
     queue_position: null,
   };
   if (!isRecord(body)) return unknownVerdict;
-  if (typeof body.delivered !== "boolean") return unknownVerdict;
+  if (body.delivered !== null && typeof body.delivered !== "boolean") {
+    return unknownVerdict;
+  }
 
   return {
     delivered: body.delivered,
     outcome: stringOrNull(body.outcome),
-    reason: stringOrNull(body.reason),
+    reason: stringOrNull(body.reason) ?? (
+      body.delivered === null ? unknownVerdict.reason : null
+    ),
     consume_when: stringOrNull(body.consumeWhen ?? body.consume_when),
     queue_position: typeof body.queuePosition === "number"
       ? body.queuePosition

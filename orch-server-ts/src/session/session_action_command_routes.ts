@@ -4,6 +4,7 @@ import {
   badRequest,
   sendActionCommand,
   sendGenericStatusError,
+  sendInterveneCommand,
   sendInterruptAckError,
   sendReviewAcknowledgeCommand,
   sendRealtimeAckError,
@@ -72,7 +73,7 @@ export function registerSessionActionCommandRoutes(
         );
       }
 
-      return sendActionCommand(reply, options, payload.value, sendGenericStatusError);
+      return sendInterveneCommand(reply, options, payload.value);
     },
   );
 

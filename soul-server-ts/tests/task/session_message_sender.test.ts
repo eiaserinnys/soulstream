@@ -115,6 +115,33 @@ describe("sendMessageToSession relay verdict", () => {
     expect(verdictWarnings(deps.warnings)).toHaveLength(1);
   });
 
+  it("preserves an explicit unknown verdict from the orchestrator", async () => {
+    const deps = relayingDeps(() => jsonResponse({
+      type: "intervene_ack",
+      status: "ok",
+      outcome: "unknown",
+      delivered: null,
+      consumeWhen: null,
+      reason: "verdict_unknown",
+    }));
+
+    const result = await sendMessageToSession(deps, {
+      targetSessionId: "session-1",
+      message: "steer",
+    });
+
+    expect(result).toMatchObject({
+      detail: {
+        relayed: true,
+        delivered: null,
+        outcome: "unknown",
+        reason: "verdict_unknown",
+        consume_when: null,
+      },
+    });
+    expect(verdictWarnings(deps.warnings)).toHaveLength(1);
+  });
+
   it("treats an unreadable body as unknown, not as a relay failure", async () => {
     const deps = relayingDeps(() => new Response("not json", { status: 200 }));
 
