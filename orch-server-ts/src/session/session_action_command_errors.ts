@@ -13,7 +13,10 @@ import {
   NodeCommandTransportError,
   type SessionCommandTransportBridge,
 } from "./session_command_transport.js";
-import type { ExistingSessionActionPayload } from "./session_action_command_payloads.js";
+import type {
+  ExistingSessionActionPayload,
+  InterveneNodeCommandPayload,
+} from "./session_action_command_payloads.js";
 import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
 
 export type SessionActionCommandDispatchOptions = {
@@ -38,6 +41,37 @@ export async function sendActionCommand<
     );
   } catch (error) {
     return sendMappedActionError(reply, error, ackErrorMapper);
+  }
+}
+
+export async function sendInterveneCommand(
+  reply: FastifyReply,
+  options: SessionActionCommandDispatchOptions,
+  payload: InterveneNodeCommandPayload,
+): Promise<FastifyReply | NodeCommandResponse> {
+  try {
+    return mapActionCommandResponse(
+      reply,
+      await dispatchActionCommand(options, payload),
+      sendGenericStatusError,
+    );
+  } catch (error) {
+    if (
+      error instanceof PendingNodeCommandTimeoutError &&
+      error.commandType === "intervene"
+    ) {
+      return reply.code(200).send({
+        type: "intervene_ack",
+        requestId: error.requestId,
+        status: "ok",
+        outcome: "unknown",
+        agentSessionId: payload.agentSessionId,
+        delivered: null,
+        consumeWhen: null,
+        reason: "verdict_unknown",
+      });
+    }
+    return sendMappedActionError(reply, error, sendGenericStatusError);
   }
 }
 

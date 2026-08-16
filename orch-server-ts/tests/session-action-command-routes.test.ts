@@ -157,6 +157,62 @@ describe("session action command HTTP route harness", () => {
     await app.close();
   });
 
+  it("returns an unknown verdict without retrying when intervene exceeds the node deadline", async () => {
+    const sendPendingCommand = vi.fn(async () => {
+      throw new PendingNodeCommandTimeoutError({
+        commandType: "intervene",
+        requestId: "intervene-timeout-1",
+        timeoutMs: 30_000,
+      });
+    });
+    const { app } = createActionHarness({
+      bridgeOverride: { sendPendingCommand },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-contract/intervene",
+      payload: { text: "do not duplicate" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      type: "intervene_ack",
+      requestId: "intervene-timeout-1",
+      status: "ok",
+      outcome: "unknown",
+      agentSessionId: "sess-contract",
+      delivered: null,
+      consumeWhen: null,
+      reason: "verdict_unknown",
+    });
+    expect(sendPendingCommand).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("preserves the owning node's delivered intervention verdict", async () => {
+    const { app } = createActionHarness({
+      ackFor: (message) => message.type === "intervene"
+        ? { delivered: true, outcome: "delivered" }
+        : {},
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-contract/intervene",
+      payload: { text: "steer once" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      type: "intervene_ack",
+      status: "ok",
+      outcome: "delivered",
+      delivered: true,
+    });
+    await app.close();
+  });
+
   it("resolves caller_info per intervention across user → relay → user", async () => {
     const browserCaller = {
       source: "browser",
