@@ -125,7 +125,7 @@ describe("completion delivery verdict", () => {
     ],
     [
       { delivered: true },
-      { kind: "accepted", disposition: "delivered" },
+      { kind: "unknown", reason: "verdict_missing" },
     ],
   ] as const)("classifies cross-node ack %#", (ack, expected) => {
     expect(classifyCompletionDeliveryAck(ack)).toEqual(expected);

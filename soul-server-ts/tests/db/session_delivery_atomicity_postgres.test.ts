@@ -175,6 +175,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
   });
 
   it("stages an expired same-owner dispatch and rejects the replaced owner", async () => {
+    await harness.sql`
+      UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
+    `;
     await register("delivery-expired-stage", "relation-expired-stage");
     await repository.claimForTarget(
       "delivery-expired-stage",
@@ -205,6 +208,19 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         caller_info: null,
       },
     })).resolves.toMatchObject({ state: "queued" });
+    await expect(harness.sql<Array<{ lease_is_fresh: boolean }>>`
+      SELECT lease_expires_at > NOW() AS lease_is_fresh
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'delivery-expired-stage'
+    `).resolves.toEqual([{ lease_is_fresh: true }]);
+    await expect(repository.notifications.releaseExpiredLeases(
+      4,
+      new Date(0),
+    )).resolves.toBe(0);
+    await expect(repository.notifications.claimDue(
+      "node-a",
+      "notification-recovery",
+    )).resolves.toEqual([]);
 
     await register("delivery-replaced-owner", "relation-replaced-owner");
     await repository.claimForTarget(

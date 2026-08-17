@@ -62,10 +62,6 @@ export function classifyCompletionDeliveryAck(body: unknown): CompletionDelivery
   if (outcome === "unknown" || body.delivered === null) {
     return { kind: "unknown", reason: stringValue(body.reason) ?? "verdict_unknown" };
   }
-  // Backward compatibility for the only legacy response that proves delivery.
-  if (outcome === undefined && body.delivered === true) {
-    return { kind: "accepted", disposition: "delivered" };
-  }
   return { kind: "unknown", reason: "verdict_missing" };
 }
 

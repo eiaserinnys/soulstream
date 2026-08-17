@@ -5,6 +5,8 @@ import type {
 } from "../control_plane_types.js";
 import { asPostgresJsonValue } from "../repository_helpers.js";
 
+const DEFAULT_NOTIFICATION_LEASE_MS = 15_000;
+
 export class SessionDeliveryNotificationRepository {
   constructor(private readonly sql: SqlClient) {}
 
@@ -14,7 +16,7 @@ export class SessionDeliveryNotificationRepository {
     targetSessionId: string;
     disposition: "queued" | "auto_resume";
     payload: Record<string, unknown>;
-  }): Promise<SessionDeliveryRow | null> {
+  }, leaseMs = DEFAULT_NOTIFICATION_LEASE_MS): Promise<SessionDeliveryRow | null> {
     const payload = validateNotificationPayload(params);
     return await this.sql.begin(async (transaction) => {
       const advanced = await transaction<SessionDeliveryRow[]>`
@@ -46,7 +48,7 @@ export class SessionDeliveryNotificationRepository {
           ${params.disposition},
           'claimed',
           ${params.leaseOwner},
-          ${row.lease_expires_at ?? new Date()},
+          NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
           NOW(),
           NOW(),
           NOW()
@@ -61,7 +63,7 @@ export class SessionDeliveryNotificationRepository {
     targetNodeId: string,
     leaseOwner: string,
     limit = 100,
-    leaseMs = 15_000,
+    leaseMs = DEFAULT_NOTIFICATION_LEASE_MS,
   ): Promise<SessionDeliveryNotificationOutboxRow[]> {
     return await this.sql.begin(async (transaction) => {
       await transaction`
