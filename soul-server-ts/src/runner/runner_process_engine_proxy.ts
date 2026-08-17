@@ -24,8 +24,12 @@ export class RunnerProcessEngineProxy implements EnginePort {
     readonly backendId: BackendId,
     readonly workspaceDir: string,
     private readonly dispatcher: RunnerProcessDispatcher,
+    options: { retainDetachedRuntime?: boolean } = {},
   ) {
-    this.detachedClaudeRuntime = backendId === "claude" ? true : undefined;
+    this.detachedClaudeRuntime = backendId === "claude"
+      && options.retainDetachedRuntime !== false
+      ? true
+      : undefined;
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {

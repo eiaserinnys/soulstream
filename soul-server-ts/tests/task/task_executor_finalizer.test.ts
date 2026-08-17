@@ -210,6 +210,26 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(notify).toHaveBeenCalledWith(task);
   });
 
+  it("releases the runner even when final-state persistence fails", async () => {
+    const close = vi.fn(async () => undefined);
+    const notify = vi.fn();
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockRejectedValue(new Error("persist boom")),
+      },
+      logger: makeLogger(),
+      completionNotifier: { notify },
+    });
+    const task = makeTask({ callerSessionId: "parent-sess-1" });
+    task.runner = createInProcessTaskRunnerRuntime(makeEngine(close));
+
+    await expect(finalizer.finalize(task)).rejects.toThrow("persist boom");
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it("does not notify completion when persistence observes an existing terminal transition", async () => {
     const notify = vi.fn();
     const finalizer = new TaskExecutorFinalizer({

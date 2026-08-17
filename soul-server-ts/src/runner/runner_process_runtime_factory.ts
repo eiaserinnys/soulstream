@@ -105,7 +105,14 @@ export function createRunnerProcessRuntimeFactory(
         options,
       ),
     });
-    const engine = new RunnerProcessEngineProxy(backend, agent.workspace_dir, dispatcher);
+    const engine = new RunnerProcessEngineProxy(
+      backend,
+      agent.workspace_dir,
+      dispatcher,
+      // Offline recovery owns stopped durable files, never a detached child
+      // runtime. Advertising retention here strands the host writer lock.
+      { retainDetachedRuntime: recoveryMode !== "offline" },
+    );
     return createTaskRunnerRuntime(engine, dispatcher, "runner");
   };
 

@@ -16,8 +16,14 @@ export class TaskExecutorFinalizer {
   constructor(private readonly deps: TaskExecutorFinalizerDeps) {}
 
   async finalize(task: Task): Promise<void> {
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
-    await this.closeEngine(task);
+    let persistence;
+    try {
+      persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+    } finally {
+      // Runner ownership is independent from terminal projection. A control-plane
+      // failure must not strand a child connection or offline writer lock.
+      await this.closeEngine(task);
+    }
     if (persistence.newlyFinalized && persistence.terminalTransitionApplied) {
       await this.notifyCompletion(task);
     }

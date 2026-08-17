@@ -97,4 +97,15 @@ describe("RunnerProcessEngineProxy", () => {
     const proxy = new RunnerProcessEngineProxy("codex", "/workspace/a", {} as never);
     expect(proxy.detachedClaudeRuntime).toBeUndefined();
   });
+
+  it("does not claim detached runtime retention for an offline Claude replay", () => {
+    const proxy = new RunnerProcessEngineProxy(
+      "claude",
+      "/workspace/a",
+      {} as never,
+      { retainDetachedRuntime: false },
+    );
+
+    expect(proxy.detachedClaudeRuntime).toBeUndefined();
+  });
 });

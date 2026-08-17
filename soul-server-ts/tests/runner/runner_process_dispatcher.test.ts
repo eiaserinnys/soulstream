@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +38,41 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("releases an offline writer lock even when an earlier cleanup step throws", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    writer.close();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      offlineExisting: true,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+    await dispatcher.recoverPendingInterventions();
+    (dispatcher as unknown as { finishActiveRunnerObservation: () => void })
+      .finishActiveRunnerObservation = () => { throw new Error("observer close boom"); };
+
+    await expect(dispatcher.close()).rejects.toThrow("runner host resource cleanup failed");
+
+    await expect(access(paths.lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("persists a failed child stage in runner-host.sqlite and flushes it before apply", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

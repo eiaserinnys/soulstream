@@ -46,6 +46,7 @@ import {
   runnerInterventionDiscardCommandId,
 } from "./runner_intervention_identity.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
+import { releaseRunnerHostResources } from "./runner_host_resource_cleanup.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
 import {
   type RunnerIpcConnection,
@@ -381,10 +382,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
         );
       } catch (error) {
-        this.stoppedRunnerWriter?.close();
-        this.stoppedRunnerWriter = undefined;
-        await this.stoppedRunnerWriterLock.release();
-        this.stoppedRunnerWriterLock = undefined;
+        try {
+          await this.releaseHostResources();
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [asError(error), asError(cleanupError)],
+            "offline runner initialization and cleanup failed",
+          );
+        }
         throw error;
       }
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
@@ -867,17 +872,26 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async releaseHostResources(): Promise<void> {
-    this.finishActiveRunnerObservation?.();
+    const finishActiveRunnerObservation = this.finishActiveRunnerObservation;
     this.finishActiveRunnerObservation = undefined;
-    this.connection?.close();
+    const connection = this.connection;
     this.connection = undefined;
-    this.unregisterPump?.();
+    const unregisterPump = this.unregisterPump;
     this.unregisterPump = undefined;
-    this.outbox?.close();
-    this.stoppedRunnerWriter?.close();
+    const outbox = this.outbox;
+    this.outbox = undefined as never;
+    const stoppedRunnerWriter = this.stoppedRunnerWriter;
     this.stoppedRunnerWriter = undefined;
-    await this.stoppedRunnerWriterLock?.release();
+    const stoppedRunnerWriterLock = this.stoppedRunnerWriterLock;
     this.stoppedRunnerWriterLock = undefined;
+    await releaseRunnerHostResources([
+      { name: "runner observation", run: () => finishActiveRunnerObservation?.() },
+      { name: "IPC connection", run: () => connection?.close() },
+      { name: "event pump registration", run: () => unregisterPump?.() },
+      { name: "parent outbox", run: () => outbox?.close() },
+      { name: "offline writer", run: () => stoppedRunnerWriter?.close() },
+      { name: "offline writer lock", run: async () => await stoppedRunnerWriterLock?.release() },
+    ]);
   }
 
   private observeActiveExecution(commandId: string, operation: "execute" | "recover"): void {
