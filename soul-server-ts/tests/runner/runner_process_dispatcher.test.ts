@@ -13,8 +13,11 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+import { buildDurableRunnerEvent } from
+  "../../src/runner/runner_child_runtime_helpers.js";
 import {
   readRunnerHostAcknowledgedThrough,
+  RunnerHostStateStore,
   runnerHostStatePath,
 } from "../../src/runner/runner_host_state_store.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
@@ -34,6 +37,127 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("persists a failed child stage in runner-host.sqlite and flushes it before apply", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    const bootstrap = await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    let rejectFirstStage = true;
+    const commandKinds: string[] = [];
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      commandKinds.push(frame.kind === "invoke" ? String(frame.capability) : frame.kind);
+      if (frame.kind === "stage_intervention") {
+        if (rejectFirstStage) {
+          rejectFirstStage = false;
+          await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+            status: "error",
+            error: { code: "stage_intervention_failed", message: "sqlite busy" },
+          }));
+          return;
+        }
+        const staged = await writer.stageIntervention({
+          interventionId: frame.interventionId,
+          message: frame.message,
+          ...(frame.event
+            ? { event: buildDurableRunnerEvent("session-a", frame.event as never).appendInput }
+            : {}),
+          queued: frame.queued,
+          queuedAt: "2026-08-17T00:00:01.000Z",
+        });
+        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+          status: "ok",
+          data: staged,
+        }));
+        return;
+      }
+      if (frame.kind === "invoke" && frame.capability === "runner.apply_intervention") {
+        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+          status: "ok",
+          data: { status: "delivered", mechanism: "active_turn" },
+        }));
+        return;
+      }
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+    }, vi.fn());
+    await endpoint.listen();
+    const primary = new EventOutboxPump(emptyStore("node-stream"), vi.fn());
+    const mux = new EventOutboxPumpMux(primary);
+    const batches: EventOutboxBatch[] = [];
+    mux.connect(async (batch) => { batches.push(batch); });
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      spawner: { spawn: async () => ({
+        pid: 1001, paths, config: {} as never, adopted: false,
+      }) },
+      pumpMux: mux,
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    await expect(dispatcher.stageIntervention({
+      interventionId: "intervention-a",
+      message: { text: "stop now", user: "alice" },
+      event: { type: "user_message", content: "stop now", timestamp: 1 },
+      queued: false,
+    })).resolves.toEqual({
+      eventSourceSeq: null,
+      queuePosition: 0,
+      durability: "host_fallback",
+    });
+    expect(await dispatcher.recoverPendingInterventions()).toEqual([{
+      interventionId: "intervention-a",
+      message: { text: "stop now", user: "alice" },
+    }]);
+
+    const applying = dispatcher.applyIntervention({
+      interventionId: "intervention-a",
+      input: { prompt: "stop now" },
+    });
+    await vi.waitFor(() => expect(batches.some(
+      (batch) => batch.stream_id === bootstrap.stream_id,
+    )).toBe(true));
+    const batch = batches.find((candidate) => candidate.stream_id === bootstrap.stream_id)!;
+    await mux.handleAck({
+      type: "event_append_ack",
+      stream_id: batch.stream_id,
+      acked_through: batch.events.at(-1)!.source_seq,
+      events: batch.events.map((event, index) => ({
+        source_seq: event.source_seq,
+        event_id: 9100 + index,
+      })),
+    });
+    await expect(applying).resolves.toMatchObject({ status: "delivered" });
+
+    expect(commandKinds).toEqual([
+      "stage_intervention",
+      "stage_intervention",
+      "runner.apply_intervention",
+    ]);
+    const host = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
+    expect(host.readInterventionFallback("session-a", "intervention-a")).toBeNull();
+    host.close();
+    await dispatcher.close();
+    writer.close();
+    await endpoint.close();
+  });
+
   it("replays a durable child frame, preserves source lineage, and compacts after both ACKs", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

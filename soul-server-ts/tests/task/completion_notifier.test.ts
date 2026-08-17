@@ -797,6 +797,25 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("3b. 자기 자신을 caller로 가리키는 완료 통지는 재개하지 않는다", async () => {
+    const tm = makeTaskManagerStub();
+    const fetchImpl = vi.fn();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+    );
+
+    await notifier.notify(makeChild({ callerSessionId: "child-sess-1" }));
+
+    expect(tm.addIntervention).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("4b. interrupted 완료 — `⚠️ 에이전트 세션 중단` 메시지 형식 (code-reviewer P1)", async () => {
     // TS는 cancelTask가 task.status='interrupted'만 박고 task.error는 채우지 않는다
     // (task_manager.ts:240). Python lifecycle과 비대칭 — interrupted 분기 의무.

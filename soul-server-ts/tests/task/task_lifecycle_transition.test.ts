@@ -61,11 +61,11 @@ function makeMocks() {
 }
 
 describe("TaskLifecycleTransition.cancelRunningTask", () => {
-  it("marks running tasks interrupted before the interrupt command ACK", async () => {
+  it("marks a running task interrupted only after a positive interrupt ACK", async () => {
     const { transition } = makeMocks();
     const task = makeTask();
     const interrupt = vi.fn(async () => {
-      expect(task.status).toBe("interrupted");
+      expect(task.status).toBe("running");
       return true;
     });
     const engine = { interrupt } as unknown as EnginePort;
@@ -81,6 +81,25 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       commandId: expect.any(String),
     }));
     expect(interrupt).toHaveBeenCalledOnce();
+    expect(task.status).toBe("interrupted");
+  });
+
+  it.each([
+    { label: "negative ACK", interrupt: async () => false },
+    { label: "transport failure", interrupt: async () => { throw new Error("ipc down"); } },
+  ])("keeps status running after $label", async ({ interrupt }) => {
+    const { transition } = makeMocks();
+    const task = makeTask();
+    const engine = { interrupt: vi.fn(interrupt) } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
+
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
+
+    expect(task.status).toBe("running");
+    expect(task.pendingTerminationHint).toBeUndefined();
   });
 
   it("returns false without mutation when task is missing, terminal, or has no engine", async () => {

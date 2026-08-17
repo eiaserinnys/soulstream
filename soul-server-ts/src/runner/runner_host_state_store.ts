@@ -10,7 +10,7 @@ import {
   withRunnerSqliteTransactionSync,
 } from "./runner_sqlite_connection.js";
 
-const RUNNER_HOST_STATE_SCHEMA_VERSION = 1;
+const RUNNER_HOST_STATE_SCHEMA_VERSION = 2;
 
 const RUNNER_HOST_STATE_DDL = `
 CREATE TABLE IF NOT EXISTS runner_event_ack_checkpoint (
@@ -30,12 +30,30 @@ CREATE TABLE IF NOT EXISTS runner_host_call_receipt (
   created_at TEXT NOT NULL,
   PRIMARY KEY (session_id, correlation_id)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS runner_host_intervention_fallback (
+  session_id TEXT NOT NULL,
+  intervention_id TEXT NOT NULL,
+  message_json TEXT NOT NULL,
+  event_json TEXT,
+  queued INTEGER NOT NULL CHECK (queued IN (0, 1)),
+  staged_at TEXT NOT NULL,
+  queued_at TEXT,
+  PRIMARY KEY (session_id, intervention_id)
+) STRICT;
 `;
 
 export interface RunnerHostCallAppliedReceipt {
   correlationId: string;
   service: string;
   operation: string;
+}
+
+export interface RunnerHostInterventionFallback {
+  interventionId: string;
+  message: Record<string, unknown>;
+  event?: Record<string, unknown>;
+  queued: boolean;
 }
 
 export function runnerHostStatePath(runnerDatabasePath: string): string {
@@ -202,6 +220,95 @@ export class RunnerHostStateStore {
     });
   }
 
+  stageInterventionFallback(input: {
+    sessionId: string;
+    interventionId: string;
+    message: Record<string, unknown>;
+    event?: Record<string, unknown>;
+    queued: boolean;
+    stagedAt: string;
+  }): { queuePosition: number } {
+    validateIdentity(input.sessionId, "runner host intervention session id");
+    validateIdentity(input.interventionId, "runner host intervention id");
+    if (!Number.isFinite(Date.parse(input.stagedAt))) {
+      throw new Error("runner host intervention staged_at is invalid");
+    }
+    const messageJson = JSON.stringify(input.message);
+    const eventJson = input.event === undefined ? null : JSON.stringify(input.event);
+    return this.transaction(() => {
+      const current = this.readInterventionFallbackRow(
+        input.sessionId,
+        input.interventionId,
+      );
+      if (current) {
+        if (current.message_json !== messageJson || current.event_json !== eventJson) {
+          throw new Error("runner host intervention id was reused with different content");
+        }
+        if (input.queued && current.queued === 0) {
+          this.database.prepare(`
+            UPDATE runner_host_intervention_fallback
+            SET queued = 1, queued_at = ?
+            WHERE session_id = ? AND intervention_id = ? AND queued = 0
+          `).run(input.stagedAt, input.sessionId, input.interventionId);
+        }
+      } else {
+        this.database.prepare(`
+          INSERT INTO runner_host_intervention_fallback (
+            session_id, intervention_id, message_json, event_json,
+            queued, staged_at, queued_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          input.sessionId,
+          input.interventionId,
+          messageJson,
+          eventJson,
+          input.queued ? 1 : 0,
+          input.stagedAt,
+          input.queued ? input.stagedAt : null,
+        );
+      }
+      return {
+        queuePosition: input.queued
+          ? this.fallbackQueuePosition(input.sessionId, input.interventionId)
+          : 0,
+      };
+    });
+  }
+
+  readInterventionFallback(
+    sessionId: string,
+    interventionId: string,
+  ): RunnerHostInterventionFallback | null {
+    validateIdentity(sessionId, "runner host intervention session id");
+    validateIdentity(interventionId, "runner host intervention id");
+    const row = this.readInterventionFallbackRow(sessionId, interventionId);
+    return row ? normalizeInterventionFallback(row) : null;
+  }
+
+  readPendingInterventionFallbacks(
+    sessionId: string,
+  ): RunnerHostInterventionFallback[] {
+    validateIdentity(sessionId, "runner host intervention session id");
+    const rows = this.database.prepare(`
+      SELECT intervention_id, message_json, event_json, queued
+      FROM runner_host_intervention_fallback
+      WHERE session_id = ?
+      ORDER BY COALESCE(queued_at, staged_at), intervention_id
+    `).all(sessionId) as InterventionFallbackRow[];
+    return rows.map(normalizeInterventionFallback);
+  }
+
+  removeInterventionFallback(sessionId: string, interventionId: string): void {
+    validateIdentity(sessionId, "runner host intervention session id");
+    validateIdentity(interventionId, "runner host intervention id");
+    this.transaction(() => {
+      this.database.prepare(`
+        DELETE FROM runner_host_intervention_fallback
+        WHERE session_id = ? AND intervention_id = ?
+      `).run(sessionId, interventionId);
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -247,6 +354,46 @@ export class RunnerHostStateStore {
     }
   }
 
+  private readInterventionFallbackRow(
+    sessionId: string,
+    interventionId: string,
+  ): InterventionFallbackRow | null {
+    return (this.database.prepare(`
+      SELECT intervention_id, message_json, event_json, queued
+      FROM runner_host_intervention_fallback
+      WHERE session_id = ? AND intervention_id = ?
+    `).get(sessionId, interventionId) as InterventionFallbackRow | undefined) ?? null;
+  }
+
+  private fallbackQueuePosition(sessionId: string, interventionId: string): number {
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS position
+      FROM runner_host_intervention_fallback AS candidate
+      WHERE candidate.session_id = ? AND candidate.queued = 1
+        AND (
+          candidate.queued_at < (
+            SELECT queued_at FROM runner_host_intervention_fallback
+            WHERE session_id = ? AND intervention_id = ?
+          )
+          OR (
+            candidate.queued_at = (
+              SELECT queued_at FROM runner_host_intervention_fallback
+              WHERE session_id = ? AND intervention_id = ?
+            )
+            AND candidate.intervention_id <= ?
+          )
+        )
+    `).get(
+      sessionId,
+      sessionId,
+      interventionId,
+      sessionId,
+      interventionId,
+      interventionId,
+    ) as { position: number };
+    return Number(row.position);
+  }
+
   private transaction<T>(operation: () => T): T {
     if (this.closed) throw new Error("runner host state store is closed");
     return withRunnerSqliteTransactionSync(this.database, operation);
@@ -282,6 +429,26 @@ type CheckpointRow = {
   acknowledged_through: number;
   checkpoint_hash: string;
 };
+
+type InterventionFallbackRow = {
+  intervention_id: string;
+  message_json: string;
+  event_json: string | null;
+  queued: number;
+};
+
+function normalizeInterventionFallback(
+  row: InterventionFallbackRow,
+): RunnerHostInterventionFallback {
+  return {
+    interventionId: row.intervention_id,
+    message: JSON.parse(row.message_json) as Record<string, unknown>,
+    ...(row.event_json === null
+      ? {}
+      : { event: JSON.parse(row.event_json) as Record<string, unknown> }),
+    queued: row.queued === 1,
+  };
+}
 
 function readUserVersion(database: DatabaseSync): number {
   const row = database.prepare("PRAGMA user_version").get() as { user_version: number };

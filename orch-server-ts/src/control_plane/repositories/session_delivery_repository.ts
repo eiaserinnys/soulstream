@@ -361,12 +361,25 @@ export class SessionDeliveryRepository {
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
-  async markUncertain(deliveryId: string): Promise<SessionDeliveryRow | null> {
+  async markUncertain(
+    deliveryId: string,
+    leaseOwner?: string,
+    error?: string,
+  ): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
-      SET state = 'uncertain', updated_at = NOW()
+      SET
+        state = 'uncertain',
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        last_error = COALESCE(${error ?? null}, last_error),
+        updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
         AND state NOT IN ('consumed', 'superseded')
+        AND (
+          ${leaseOwner ?? null}::text IS NULL
+          OR (lease_owner = ${leaseOwner ?? null} AND state IN ('claimed', 'dispatching'))
+        )
       RETURNING *
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;

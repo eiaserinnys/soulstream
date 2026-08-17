@@ -319,8 +319,16 @@ export class SessionDeliveryHostClient {
   markConsumedByRelation(relationKey: string, completionId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_consumed_by_relation", [relationKey, completionId, callerTurnId]);
   }
-  markUncertain(deliveryId: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_uncertain", [deliveryId]);
+  markUncertain(
+    deliveryId: string,
+    leaseOwner?: string,
+    error?: string,
+  ): Promise<SessionDeliveryRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "mark_uncertain",
+      [deliveryId, leaseOwner, error],
+    );
   }
 }
 
