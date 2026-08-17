@@ -211,7 +211,18 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     this.lastRunOptions = options;
-    if (!this.persistentSession) {
+    let persistentSession = this.persistentSession;
+    if (
+      persistentSession
+      && persistentSession.snapshot().queryLifecycle !== "open"
+    ) {
+      if (this.persistentSession === persistentSession) {
+        this.persistentSession = null;
+        this.activeQuery = null;
+      }
+      persistentSession = null;
+    }
+    if (!persistentSession) {
       this.clearPerRunState();
       const hookOutput = createEventQueue<ClaudeClientEvent>();
       const abortController = new AbortController();
@@ -221,7 +232,8 @@ export class ClaudeSdkClient implements ClaudeClient {
         abortController,
         hookOutput,
       );
-      this.persistentSession = new ClaudeSdkPersistentSession({
+      let createdSession!: ClaudeSdkPersistentSession;
+      createdSession = new ClaudeSdkPersistentSession({
         createQuery: (input) => {
           let query: ClaudeSdkQuery;
           try {
@@ -244,14 +256,18 @@ export class ClaudeSdkClient implements ClaudeClient {
         turnTimeoutMs: this.persistentTurnTimeoutMs,
         runtimeFollowupNoOutputTimeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
         onClosed: () => {
-          this.activeQuery = null;
-          this.persistentSession = null;
+          if (this.persistentSession === createdSession) {
+            this.activeQuery = null;
+            this.persistentSession = null;
+          }
         },
       });
+      this.persistentSession = createdSession;
+      persistentSession = createdSession;
     }
 
     try {
-      for await (const event of this.persistentSession.runTurn(options, signal)) {
+      for await (const event of persistentSession.runTurn(options, signal)) {
         yield event;
       }
     } catch (err) {

@@ -62,6 +62,53 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(first.payloadHash).not.toBe(second.payloadHash);
   });
 
+  it("routes an exact runtime replay through repository admission coalescing", async () => {
+    const deliveryId = "91919191-9191-4919-8919-919191919191";
+    const register = vi.fn().mockResolvedValue({
+      row: {
+        ...row(deliveryId, "consumed"),
+        relation_key: "runtime-relation-1",
+        completion_id: "runtime-completion-1",
+        intent: "runtime_followup",
+      },
+      inserted: false,
+      conflict: false,
+    });
+    const get = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register,
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get,
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await expect(gate.admit({
+      agentSessionId: "caller-1",
+      text: "runtime replay",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: "runtime-completion-1",
+      relationKey: "runtime-relation-1",
+      source: "claude_runtime_task_followup",
+      followupKey: "caller-1:task-1",
+      followupAttempt: 3,
+    })).resolves.toEqual({
+      kind: "suppressed",
+      deliveryId,
+      reason: "delivery_consumed",
+    });
+
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it("records an inline completion against its semantic relation and caller turn", async () => {
     const deliveryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const pending = row(deliveryId, "pending");
@@ -154,6 +201,82 @@ describe("TaskDeliveryLedgerGate", () => {
       consumedTurnId: "event:93",
     });
     expect(markConsumed).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when exact runtime consumption CAS misses unless the row is already consumed", async () => {
+    const deliveryId = "bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc";
+    const get = vi.fn()
+      .mockResolvedValueOnce(row(deliveryId, "pending"))
+      .mockResolvedValueOnce(row(deliveryId, "consumed"));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get,
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn().mockResolvedValue(null),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+    const message = {
+      text: "runtime followup",
+      user: "system",
+      source: "claude_runtime_task_followup",
+      deliveryId,
+      deliveryIntent: "runtime_followup" as const,
+    };
+    const task = {
+      agentSessionId: "caller-1",
+      prompt: "run",
+      status: "running" as const,
+      createdAt: new Date(),
+      lastEventId: 94,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+
+    await expect(gate.recordConsumed(message, task)).rejects.toThrow(
+      `Exact delivery consumption did not reach consumed state: ${deliveryId}`,
+    );
+    await expect(gate.recordConsumed(message, task)).resolves.toBeUndefined();
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates a completion-notification consumption repository error", async () => {
+    const deliveryId = "bdbdbdbd-bdbd-4bdb-8bdb-bdbdbdbdbdbd";
+    const repositoryError = new Error("delivery consume write failed");
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn().mockRejectedValue(repositoryError),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await expect(gate.recordConsumed({
+      text: "completion notification",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+      completionId: "completion-notification-1",
+      relationKey: "completion-notification-relation-1",
+      source: "completion_notifier",
+    }, {
+      agentSessionId: "caller-1",
+      prompt: "run",
+      status: "running",
+      createdAt: new Date(),
+      lastEventId: 95,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    })).rejects.toBe(repositoryError);
   });
 
   it("suppresses an admitted completion when consumed wins the dispatch CAS", async () => {

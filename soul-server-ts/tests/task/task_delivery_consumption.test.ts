@@ -62,7 +62,7 @@ describe("TaskDeliveryConsumption", () => {
     expect(recorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("isolates ordinary receipt failures but fails closed for child consumption", async () => {
+  it("isolates advisory receipt failures but fails closed for controlled consumption", async () => {
     const warn = vi.fn();
     const subject = new TaskDeliveryConsumption(
       {
@@ -73,7 +73,8 @@ describe("TaskDeliveryConsumption", () => {
     );
 
     await expect(subject.recordTurnStarted(makeTask(), makeMessage())).resolves.toBe(false);
-    await expect(subject.recordConsumed(makeTask(), makeMessage())).resolves.toBeUndefined();
+    await expect(subject.recordConsumed(makeTask(), makeMessage()))
+      .rejects.toThrow("db unavailable");
     await expect(subject.recordConsumed(makeTask(), {
       ...makeMessage(),
       completionId: "completion-child",

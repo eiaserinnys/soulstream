@@ -277,7 +277,18 @@ export class TaskDeliveryLedgerGate {
       });
     }
     if (message.deliveryId) {
-      await repository.markConsumed(message.deliveryId, consumedTurnId);
+      const consumed = await repository.markConsumed(
+        message.deliveryId,
+        consumedTurnId,
+      );
+      if (!consumed && requiresExactDeliveryConsumption(message)) {
+        const existing = await repository.get(message.deliveryId);
+        if (existing?.state !== "consumed") {
+          throw new Error(
+            `Exact delivery consumption did not reach consumed state: ${message.deliveryId}`,
+          );
+        }
+      }
     }
   }
 
@@ -314,6 +325,11 @@ export class TaskDeliveryLedgerGate {
   }
 }
 
+function requiresExactDeliveryConsumption(message: InterventionMessage): boolean {
+  return isControlledMessage(message)
+    || message.source === "claude_runtime_task_followup";
+}
+
 type ControlledRegistrationParams = AddInterventionParams & {
   deliveryId: string;
   relationKey: string;
@@ -336,6 +352,15 @@ async function loadOrRegister(
   repository: LedgerRepository,
   params: ControlledRegistrationParams,
 ): Promise<LoadOrRegisterResult> {
+  // Runtime follow-up registration is also the serialized coalescing gate.
+  // Exact replays must enter it even when their delivery row already exists,
+  // otherwise pending siblings survive recovery/admission replay.
+  if (params.deliveryIntent === "runtime_followup") {
+    return {
+      kind: "registered",
+      ...await repository.register(buildRegistration(params)),
+    };
+  }
   const existing = await repository.get(params.deliveryId);
   if (existing) {
     if (!matchesImmutableIdentity(existing, params)) {

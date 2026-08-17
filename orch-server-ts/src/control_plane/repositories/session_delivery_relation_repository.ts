@@ -134,9 +134,10 @@ async function registerRuntimeFollowupDelivery(
     SELECT * FROM session_deliveries WHERE delivery_id = ${params.deliveryId}
   `;
   const exact = exactRows[0];
+  let resolvedExact: RegisterSessionDeliveryResult | undefined;
   if (exact) {
-    const resolved = await resolveRegistrationConflict(transaction, params, exact);
-    if (resolved.conflict || resolved.row.state !== "pending") return resolved;
+    resolvedExact = await resolveRegistrationConflict(transaction, params, exact);
+    if (resolvedExact.conflict) return resolvedExact;
   }
 
   const pendingRows = await transaction<SessionDeliveryRow[]>`
@@ -159,6 +160,18 @@ async function registerRuntimeFollowupDelivery(
   const newestPending = pendingRows[0]
     ? runtimeFollowupCandidateFromRow(pendingRows[0])
     : undefined;
+  if (exact && resolvedExact && resolvedExact.row.state !== "pending") {
+    if (pendingRows[0]) {
+      await supersedePendingRuntimeFollowupSiblings(
+        transaction,
+        params,
+        targetSessionId,
+        candidate.followupKey,
+        pendingRows[0].delivery_id,
+      );
+    }
+    return resolvedExact;
+  }
   const candidateForOrder = exact
     ? runtimeFollowupCandidateFromRow(exact)
     : candidate;
@@ -171,6 +184,7 @@ async function registerRuntimeFollowupDelivery(
         params,
         targetSessionId,
         candidate.followupKey,
+        params.deliveryId,
       );
       return { row: exact, inserted: false, conflict: false };
     }
@@ -240,6 +254,7 @@ async function registerRuntimeFollowupDelivery(
       params,
       targetSessionId,
       candidate.followupKey,
+      params.deliveryId,
     );
   }
   return { row: inserted, inserted: true, conflict: false };
@@ -250,6 +265,7 @@ async function supersedePendingRuntimeFollowupSiblings(
   params: RegisterSessionDeliveryParams,
   targetSessionId: string | null,
   followupKey: string,
+  retainedDeliveryId: string,
 ): Promise<void> {
   await transaction`
     UPDATE session_deliveries
@@ -260,7 +276,7 @@ async function supersedePendingRuntimeFollowupSiblings(
       updated_at = NOW()
     WHERE intent = 'runtime_followup'
       AND state = 'pending'
-      AND delivery_id <> ${params.deliveryId}
+      AND delivery_id <> ${retainedDeliveryId}
       AND target_session_id IS NOT DISTINCT FROM ${targetSessionId}
       AND payload->>'followup_key' = ${followupKey}
   `;

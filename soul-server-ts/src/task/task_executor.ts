@@ -513,10 +513,14 @@ export class TaskExecutor {
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
-        if (turnReceipt) await turnReceipt.consume(task);
+        try {
+          await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
+        } finally {
+          if (turnReceipt) await turnReceipt.consume(task);
+        }
         break;
       }
+      try {
       const lastAcknowledgedEventId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
@@ -569,7 +573,6 @@ export class TaskExecutor {
             turnInput,
             previousSessionId,
           );
-          if (turnReceipt) await turnReceipt.consume(task);
           continue;
         }
         await this.engineEventPublisher.publishEngineEvent(
@@ -578,7 +581,6 @@ export class TaskExecutor {
         );
         const fatalEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
         if (fatalEventId !== null) task.lastEventId = fatalEventId;
-        if (turnReceipt) await turnReceipt.consume(task);
         break;
       }
       if (
@@ -606,7 +608,6 @@ export class TaskExecutor {
         currentTurnIntervention,
         previousAssistantText,
       );
-      if (turnReceipt) await turnReceipt.consume(task);
       await task.interruptRequest;
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
@@ -619,6 +620,9 @@ export class TaskExecutor {
         agent,
         transition.intervention,
       );
+      } finally {
+        if (turnReceipt) await turnReceipt.consume(task);
+      }
     }
   }
 

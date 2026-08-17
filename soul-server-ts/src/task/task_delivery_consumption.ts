@@ -1,10 +1,8 @@
 import type { Logger } from "pino";
 
+import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
 import type { InterventionMessage, Task } from "./task_models.js";
-import {
-  isInlineChildCompletion,
-  type TaskDeliveryLedgerGate,
-} from "./task_delivery_ledger_gate.js";
+import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
@@ -59,7 +57,6 @@ export class TaskDeliveryConsumption {
 function requiresExactConsumption(
   intervention: InterventionMessage,
 ): boolean {
-  return isInlineChildCompletion(intervention)
-    || intervention.deliveryIntent === "runtime_followup"
+  return isLedgerControlledDeliveryIntent(intervention.deliveryIntent)
     || intervention.source === "claude_runtime_task_followup";
 }

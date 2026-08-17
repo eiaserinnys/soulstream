@@ -869,7 +869,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
         followupAttempt: 2,
         followupKey: "sess-1:task-1",
       }),
-      "user_message",
+      "browser",
     );
   });
 

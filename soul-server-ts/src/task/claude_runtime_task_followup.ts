@@ -358,7 +358,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       await scheduled.reservation;
       await this.deps.pendingSupersessionRecorder?.recordPendingSuperseded(
         scheduled.fallbackMessage,
-        supersedingMessage.source ?? "user_message",
+        supersedingMessage.source?.trim()
+          || supersedingMessage.callerInfo?.source?.trim()
+          || "unknown",
       );
     }));
     const failures = supersessionResults.filter((result) => result.status === "rejected");

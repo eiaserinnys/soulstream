@@ -383,6 +383,44 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
   });
 
+  it("iterator 성공 뒤 ACK barrier 실패도 delivery를 정확히 한 번 consume한다", async () => {
+    const mocks = makeMocks();
+    mocks.waitForSessionAck.mockRejectedValueOnce(new Error("post-iterator ACK failed"));
+    const message: InterventionMessage = {
+      text: "completion result",
+      user: "agent",
+      deliveryId: "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+      deliveryIntent: "completion_notification",
+      source: "completion_notifier",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "observed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+  });
+
   it("turn-start receipt 일시 실패 뒤 성공한 turn 종료에서 receipt를 재기록한다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {

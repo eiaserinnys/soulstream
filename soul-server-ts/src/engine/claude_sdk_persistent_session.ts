@@ -91,9 +91,10 @@ export class ClaudeSdkPersistentSession {
       close: async (uuid) => {
         const active = this.activeForeground;
         if (!active || active.uuid !== uuid) return;
-        active.output.close();
-        this.clearForegroundTimers(active);
-        if (this.activeForeground === active) this.activeForeground = null;
+        // Close the runtime lifecycle before releasing the foreground caller.
+        // The caller can start its next turn as soon as this output closes, so
+        // publishing the no-op first would let it reuse a Query that is only
+        // beginning to close.
         await this.close("followup_no_output");
       },
     });
@@ -414,6 +415,9 @@ export class ClaudeSdkPersistentSession {
     message: Record<string, unknown>,
   ): string | null {
     if (phase !== "interrupting" || !active) return null;
+    if (asString(asRecord(message.origin)?.kind) === "task-notification") {
+      return null;
+    }
     this.logger.info(
       { activeForegroundUuid: active.uuid, resultUuid: asString(message.uuid) },
       "Correlating Claude Result without user_message_uuid to the interrupted turn",

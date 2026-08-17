@@ -15,13 +15,17 @@ import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js"
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 
 export function makeHarness(
-  options: { receipt?: SDKControlInterruptResponse } = {},
+  options: {
+    receipt?: SDKControlInterruptResponse;
+    deferQueryClose?: boolean;
+  } = {},
 ) {
   const captured: ClaudeSdkQueryParams[] = [];
   let input: AsyncIterable<SDKUserMessage> | null = null;
   let activeOutput = createEventQueue<SDKMessage>();
   const interrupt = vi.fn(async () => options.receipt);
   const close = vi.fn();
+  const deferredClosedOutputs: Array<ReturnType<typeof createEventQueue<SDKMessage>>> = [];
   const queryFn: ClaudeSdkQueryFn = (params) => {
     captured.push(params);
     input = params.prompt as AsyncIterable<SDKUserMessage>;
@@ -31,7 +35,11 @@ export function makeHarness(
       interrupt,
       close: () => {
         close();
-        output.close();
+        if (options.deferQueryClose) {
+          deferredClosedOutputs.push(output);
+        } else {
+          output.close();
+        }
       },
       backgroundTasks: vi.fn(async () => false),
       stopTask: vi.fn(async () => undefined),
@@ -46,6 +54,9 @@ export function makeHarness(
     interrupt,
     push: (message: SDKMessage) => activeOutput.push(message),
     queryFn,
+    releaseClosedQueries(): void {
+      for (const output of deferredClosedOutputs.splice(0)) output.close();
+    },
     async nextInput(): Promise<SDKUserMessage> {
       await vi.waitFor(() => expect(input).not.toBeNull());
       const next = await input![Symbol.asyncIterator]().next();
