@@ -45,9 +45,11 @@ export class RunnerIpcConnection {
   private readonly pending = new Map<string, PendingRequest>();
   private frameHandler: (frame: RunnerFrame) => Promise<void> = async () => {};
   private failureHandler: (error: Error) => void = () => {};
-  // Receipt/apply/discard share one priority FIFO. Every other frame keeps the
-  // original socket order so a later execute cannot overtake durable ACK work.
-  private priorityHandling = Promise.resolve();
+  // Lifecycle and durable intervention operations use independent FIFOs. A
+  // slow engine apply must not starve a receipt stage or an explicit interrupt.
+  private stageHandling = Promise.resolve();
+  private interventionHandling = Promise.resolve();
+  private lifecycleHandling = Promise.resolve();
   private orderedHandling = Promise.resolve();
   private closed = false;
   private droppedFrameCount = 0;
@@ -185,10 +187,18 @@ export class RunnerIpcConnection {
         return;
       }
       if (frame.channel === "control" && this.resolvePending(frame)) continue;
-      if (isPriorityInterventionCommand(frame)) {
-        this.priorityHandling = this.enqueueFrame(this.priorityHandling, frame);
-      } else {
-        this.orderedHandling = this.enqueueFrame(this.orderedHandling, frame);
+      switch (priorityLane(frame)) {
+        case "stage":
+          this.stageHandling = this.enqueueFrame(this.stageHandling, frame);
+          break;
+        case "intervention":
+          this.interventionHandling = this.enqueueFrame(this.interventionHandling, frame);
+          break;
+        case "lifecycle":
+          this.lifecycleHandling = this.enqueueFrame(this.lifecycleHandling, frame);
+          break;
+        default:
+          this.orderedHandling = this.enqueueFrame(this.orderedHandling, frame);
       }
     }
   }
@@ -227,14 +237,19 @@ export class RunnerIpcConnection {
   }
 }
 
-function isPriorityInterventionCommand(frame: RunnerFrame): boolean {
-  if (frame.channel !== "command") return false;
-  if (frame.kind === "stage_intervention") return true;
+function priorityLane(
+  frame: RunnerFrame,
+): "stage" | "intervention" | "lifecycle" | undefined {
+  if (frame.channel !== "command") return undefined;
+  if (frame.kind === "stage_intervention") return "stage";
+  if (frame.kind === "interrupt") return "lifecycle";
   return frame.kind === "invoke"
     && (
       frame.capability === "runner.apply_intervention"
       || frame.capability === "runner.discard_intervention"
-    );
+    )
+    ? "intervention"
+    : undefined;
 }
 
 function requestKey(frame: RunnerCommandFrame | Extract<RunnerEventFrame, { kind: "request" }>): string {

@@ -229,6 +229,36 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   async stageIntervention(
     input: RunnerInterventionStageInput,
   ): Promise<RunnerInterventionStageResult> {
+    try {
+      const staged = await this.stageInterventionInChild(input);
+      // queued=true is independently replayable from runner.sqlite. A receipt
+      // fence (queued=false) must remain host-durable until apply is accepted.
+      if (input.queued) this.outbox.removeInterventionFallback(input.interventionId);
+      return { ...staged, durability: "runner" };
+    } catch (error) {
+      await this.ready;
+      const fallback = this.outbox.stageInterventionFallback(input);
+      this.options.logger.info(
+        {
+          err: error,
+          sessionId: this.spawnInput.sessionId,
+          interventionId: input.interventionId,
+          queued: input.queued,
+          durability: "host_sqlite",
+        },
+        "Runner intervention staged in durable host fallback after child IPC failure",
+      );
+      return {
+        eventSourceSeq: null,
+        queuePosition: fallback.queuePosition,
+        durability: "host_fallback",
+      };
+    }
+  }
+
+  private async stageInterventionInChild(
+    input: RunnerInterventionStageInput,
+  ): Promise<RunnerInterventionStageResult> {
     const response = await this.dispatch(stageInterventionCommandFrame({
       commandId: `stage-intervention:${input.interventionId}`,
       ...input,
@@ -256,15 +286,22 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   async applyIntervention(
     input: RunnerInterventionApplyInput,
   ): Promise<EngineInterventionResult> {
+    const flushedFallback = await this.flushInterventionFallback(
+      input.interventionId,
+    );
     const response = await this.dispatch(applyInterventionCommandFrame({
       commandId: runnerInterventionApplyCommandId(input.interventionId),
       interventionId: input.interventionId,
       interventionInput: input.input,
     }));
     assertCommandAccepted(response);
-    return normalizeRunnerInterventionResult(
+    const normalized = normalizeRunnerInterventionResult(
       response.result.status === "ok" ? response.result.data : undefined,
     );
+    if (flushedFallback && normalized.status === "delivered") {
+      this.outbox.removeInterventionFallback(input.interventionId);
+    }
+    return normalized;
   }
 
   async discardIntervention(interventionId: string): Promise<void> {
@@ -274,10 +311,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }));
     assertCommandAccepted(response);
     const data = response.result.status === "ok" ? response.result.data : undefined;
-    if (isRecord(data) && data.status === "not_supported") return;
+    if (isRecord(data) && data.status === "not_supported") {
+      this.outbox.removeInterventionFallback(interventionId);
+      return;
+    }
     if (!isRecord(data) || data.status !== "discarded") {
       throw new Error("Runner child returned an invalid intervention discard result");
     }
+    this.outbox.removeInterventionFallback(interventionId);
   }
 
   async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
@@ -395,13 +436,53 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ): Promise<void> {
     try {
       await this.ready;
+      let flushedFallback = false;
+      if (params.runnerInterventionId) {
+        flushedFallback = await this.flushInterventionFallback(
+          params.runnerInterventionId,
+          true,
+        );
+      }
       this.observeActiveExecution(commandId, "execute");
       assertCommandAccepted(await this.dispatch(executeCommandFrame(commandId, params)));
+      if (flushedFallback && params.runnerInterventionId) {
+        this.outbox.removeInterventionFallback(params.runnerInterventionId);
+      }
       await this.replayPendingFrames();
     } catch (error) {
       stream.fail(asError(error));
       this.clearActiveExecution(commandId);
     }
+  }
+
+  private async flushInterventionFallback(
+    interventionId: string,
+    queuedOverride?: boolean,
+  ): Promise<boolean> {
+    await this.ready;
+    const fallback = this.outbox.readInterventionFallback(interventionId);
+    if (!fallback) return false;
+    const staged = await this.stageInterventionInChild({
+      interventionId: fallback.interventionId,
+      message: fallback.message,
+      ...(fallback.event ? { event: fallback.event } : {}),
+      queued: queuedOverride ?? fallback.queued,
+    });
+    if (fallback.event) {
+      const eventId = await this.waitForSessionAck();
+      if (staged.eventSourceSeq === null || eventId === null) {
+        throw new Error("host fallback intervention event did not reach durable ACK boundary");
+      }
+    }
+    this.options.logger.info(
+      {
+        sessionId: this.spawnInput.sessionId,
+        interventionId,
+        durability: "runner_sqlite",
+      },
+      "Runner intervention host fallback flushed to child inbox",
+    );
+    return true;
   }
 
   private async connect(socketPath: string): Promise<RunnerIpcConnection> {

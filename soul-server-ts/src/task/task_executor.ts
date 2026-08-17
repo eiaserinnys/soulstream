@@ -595,6 +595,7 @@ export class TaskExecutor {
         previousAssistantText,
       );
       if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
+      await task.interruptRequest;
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
@@ -725,6 +726,7 @@ export class TaskExecutor {
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
       await this.restoreDurableRunnerInterventions(task, runner);
+      await task.interruptRequest;
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);

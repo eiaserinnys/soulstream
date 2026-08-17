@@ -66,6 +66,8 @@ export interface RunnerInterventionStageInput {
 export interface RunnerInterventionStageResult {
   eventSourceSeq: number | null;
   queuePosition: number;
+  /** Undefined is legacy/in-process and is treated as child-runner durability. */
+  durability?: "runner" | "host_fallback";
 }
 
 export interface RunnerInterventionApplyInput {

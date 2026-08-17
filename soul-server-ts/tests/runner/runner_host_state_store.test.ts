@@ -83,6 +83,64 @@ describe("RunnerHostStateStore", () => {
     second.close();
   });
 
+  it("keeps a runner intervention fallback across parent restarts until explicit removal", async () => {
+    const directory = await tempDirectory();
+    const path = runnerHostStatePath(join(directory, "runner.sqlite"));
+    const first = RunnerHostStateStore.open(path);
+
+    expect(first.stageInterventionFallback({
+      sessionId: "session-a",
+      interventionId: "intervention-a",
+      message: { text: "stop now" },
+      event: { type: "intervention_sent", text: "stop now" },
+      queued: false,
+      stagedAt: "2026-08-17T00:00:00.000Z",
+    })).toEqual({ queuePosition: 0 });
+    expect(first.stageInterventionFallback({
+      sessionId: "session-a",
+      interventionId: "intervention-a",
+      message: { text: "stop now" },
+      event: { type: "intervention_sent", text: "stop now" },
+      queued: true,
+      stagedAt: "2026-08-17T00:00:01.000Z",
+    })).toEqual({ queuePosition: 1 });
+    first.stageInterventionFallback({
+      sessionId: "session-a",
+      interventionId: "intervention-staged-only",
+      message: { text: "race before apply" },
+      queued: false,
+      stagedAt: "2026-08-17T00:00:02.000Z",
+    });
+    first.close();
+
+    const second = RunnerHostStateStore.open(path);
+    expect(second.readInterventionFallback(
+      "session-a",
+      "intervention-a",
+    )).toEqual({
+      interventionId: "intervention-a",
+      message: { text: "stop now" },
+      event: { type: "intervention_sent", text: "stop now" },
+      queued: true,
+    });
+    expect(second.readPendingInterventionFallbacks("session-a")).toEqual([
+      {
+        interventionId: "intervention-a",
+        message: { text: "stop now" },
+        event: { type: "intervention_sent", text: "stop now" },
+        queued: true,
+      },
+      {
+        interventionId: "intervention-staged-only",
+        message: { text: "race before apply" },
+        queued: false,
+      },
+    ]);
+    second.removeInterventionFallback("session-a", "intervention-a");
+    expect(second.readInterventionFallback("session-a", "intervention-a")).toBeNull();
+    second.close();
+  });
+
   it("advances the parent checkpoint without writing the active child database", async () => {
     const directory = await tempDirectory();
     const runnerDatabasePath = join(directory, "runner.sqlite");

@@ -365,6 +365,7 @@ export class RunningInterventionTransition {
       event: buildInterventionSentEvent(message),
       queued: false,
     });
+    if (staged.durability === "host_fallback") return;
     const eventId = await dispatcher.waitForSessionAck();
     if (eventId === null || staged.eventSourceSeq === null) {
       throw new Error("runner intervention receipt did not reach its durable ACK boundary");
@@ -387,7 +388,7 @@ export class RunningInterventionTransition {
       ...(publishEvent ? { event: buildInterventionSentEvent(message) } : {}),
       queued: true,
     });
-    if (publishEvent) {
+    if (publishEvent && staged.durability !== "host_fallback") {
       const eventId = await dispatcher.waitForSessionAck();
       if (eventId === null || staged.eventSourceSeq === null) {
         throw new Error("runner intervention receipt did not reach its durable ACK boundary");

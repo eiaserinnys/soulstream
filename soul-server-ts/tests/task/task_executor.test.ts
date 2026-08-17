@@ -1417,15 +1417,23 @@ describe("TaskExecutor.startExecution", () => {
     expect(() => executor.startExecution(task, agent)).toThrow(/already has a runner/);
   });
 
-  it("interrupt 경로: cancelTask가 status='interrupted' 박은 뒤 정상 drain → completed로 안 덮임 (code-reviewer P1)", async () => {
+  it("정상 turn 종료가 진행 중인 interrupt ACK를 기다려 completed로 덮지 않는다", async () => {
     const mocks = makeMocks();
-    // engine.execute가 *정상* 종료하는 fake (interrupt가 발생해 adapter가 yield 없이 return하는 시나리오 등가)
-    const events: SSEEventPayload[] = [
-      { type: "session", session_id: "thr-1" } as SSEEventPayload,
-      { type: "text_delta", text: "partial", timestamp: 1 } as SSEEventPayload,
-    ];
+    const turnStarted = deferred<void>();
+    const finishTurn = deferred<void>();
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute() {
+        turnStarted.resolve();
+        yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
+        await finishTurn.promise;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
     const executor = new TaskExecutor(
-      () => makeFakeEngine(events),
+      () => engine,
       mocks.db,
       mocks.persistence,
       mocks.broadcaster,
@@ -1433,12 +1441,21 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     executor.startExecution(task, agent);
-    // task_executor가 yield 처리 *전* 외부에서 status="interrupted" 박힘 (cancelTask 시뮬)
-    // 단, executionPromise가 이미 진행 중이라 micro-task 대기 후 status 설정
-    await Promise.resolve();
-    task.status = "interrupted";
+    await turnStarted.promise;
+    const interrupt = deferred<boolean>();
+    task.interruptRequest = interrupt.promise.then((accepted) => {
+      if (accepted) task.status = "interrupted";
+      return accepted;
+    });
+    finishTurn.resolve();
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(task.status).toBe("running");
+    expect(task.executionPromise).toBeDefined();
+
+    interrupt.resolve(true);
     await task.executionPromise;
-    // 정상 종료 분기의 `if (status === "running") status = "completed"`가 발동 안 함
+
     expect(task.status).toBe("interrupted");
     expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",

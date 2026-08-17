@@ -375,6 +375,9 @@ export interface Task {
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
+  /** Runtime-only explicit cancel request serialized against turn finalization. */
+  interruptRequest?: Promise<boolean>;
+
   /** DB에서 복원된 task인지 여부. 실행 중 메모리 task와 구분할 때 사용. */
   hydratedFromDb?: boolean;
 

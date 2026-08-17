@@ -35,10 +35,41 @@ export class TaskLifecycleTransition {
     if (!task) return false;
     if (task.status !== "running") return false;
     if (!task.runner) return false;
+    if (task.interruptRequest) return await task.interruptRequest;
 
-    task.status = "interrupted";
-    recordTerminationHint(task, "killed", "cancelled");
-    return await task.runner.dispatcher.interrupt();
+    let request!: Promise<boolean>;
+    request = (async (): Promise<boolean> => {
+      try {
+        const interrupted = await task.runner!.dispatcher.interrupt();
+        if (!interrupted) {
+          this.deps.logger.info(
+            { sessionId: task.agentSessionId },
+            "Runner rejected explicit interrupt; task remains running",
+          );
+          return false;
+        }
+        if (task.status !== "running") {
+          this.deps.logger.info(
+            { sessionId: task.agentSessionId, status: task.status },
+            "Runner interrupt ACK arrived after task reached a terminal state",
+          );
+          return false;
+        }
+        task.status = "interrupted";
+        recordTerminationHint(task, "killed", "cancelled");
+        return true;
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "Runner interrupt delivery failed; task remains running",
+        );
+        return false;
+      } finally {
+        if (task.interruptRequest === request) task.interruptRequest = undefined;
+      }
+    })();
+    task.interruptRequest = request;
+    return await request;
   }
 
   async interruptAndDrain(task: Task): Promise<void> {
