@@ -130,6 +130,10 @@ describe("TaskEngineTurnRunner", () => {
         imageAttachmentPaths: ["/tmp/a.png"],
         systemPrompt: "system prompt",
         inputUuid: "22222222-2222-5222-8222-222222222222",
+        turnOrigin: {
+          kind: "runtime_followup",
+          id: "delivery-runtime-1",
+        },
       },
     }));
 
@@ -150,6 +154,10 @@ describe("TaskEngineTurnRunner", () => {
       claudePermissionMode: "default",
       maxTurns: 25,
       inputUuid: "22222222-2222-5222-8222-222222222222",
+      turnOrigin: {
+        kind: "runtime_followup",
+        id: "delivery-runtime-1",
+      },
       extraEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token" },
     });
     expect(captured?.onIntervention).toBeUndefined();

@@ -141,6 +141,33 @@ describe("RunnerHostStateStore", () => {
     second.close();
   });
 
+  it("uses the shared priority comparator for host fallback position and recovery", async () => {
+    const directory = await tempDirectory();
+    const store = RunnerHostStateStore.open(
+      runnerHostStatePath(join(directory, "runner.sqlite")),
+    );
+
+    store.stageInterventionFallback({
+      sessionId: "session-a",
+      interventionId: "low",
+      message: { text: "runtime", deliveryIntent: "runtime_followup" },
+      queued: true,
+      stagedAt: "2026-08-18T00:00:00.000Z",
+    });
+    expect(store.stageInterventionFallback({
+      sessionId: "session-a",
+      interventionId: "high",
+      message: { text: "human" },
+      queued: true,
+      stagedAt: "2026-08-18T00:00:01.000Z",
+    })).toEqual({ queuePosition: 1 });
+
+    expect(store.readPendingInterventionFallbacks("session-a").map(
+      (entry) => entry.interventionId,
+    )).toEqual(["high", "low"]);
+    store.close();
+  });
+
   it("advances the parent checkpoint without writing the active child database", async () => {
     const directory = await tempDirectory();
     const runnerDatabasePath = join(directory, "runner.sqlite");

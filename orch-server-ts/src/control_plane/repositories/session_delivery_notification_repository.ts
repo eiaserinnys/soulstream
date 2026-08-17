@@ -289,6 +289,8 @@ const NOTIFICATION_PAYLOAD_KEYS = new Set([
   "delivery_intent",
   "completion_id",
   "relation_key",
+  "followup_key",
+  "followup_attempt",
   "disposition",
 ]);
 
@@ -322,6 +324,32 @@ function validateNotificationPayload(params: {
   ) {
     throw new Error(
       `Notification outbox payload has unsupported delivery_intent ${String(payload.delivery_intent)}`,
+    );
+  }
+  if (
+    payload.followup_key !== undefined &&
+    payload.followup_key !== null &&
+    (typeof payload.followup_key !== "string" || payload.followup_key.length === 0)
+  ) {
+    throw new Error("Notification outbox payload followup_key must be a string or null");
+  }
+  if (
+    payload.followup_attempt !== undefined &&
+    payload.followup_attempt !== null &&
+    (typeof payload.followup_attempt !== "number" ||
+      !Number.isInteger(payload.followup_attempt) ||
+      payload.followup_attempt < 1)
+  ) {
+    throw new Error(
+      "Notification outbox payload followup_attempt must be a positive integer or null",
+    );
+  }
+  if (
+    (payload.followup_key !== undefined && payload.followup_key !== null) !==
+      (payload.followup_attempt !== undefined && payload.followup_attempt !== null)
+  ) {
+    throw new Error(
+      "Notification outbox payload followup_key and followup_attempt must be provided together",
     );
   }
   if (payload.delivery_id !== params.deliveryId) {

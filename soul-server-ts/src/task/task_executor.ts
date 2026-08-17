@@ -454,7 +454,7 @@ export class TaskExecutor {
       const contextRecovery = createClaudeContextRecoveryObservation();
       let currentTurnIntervention = turnInput.intervention;
       if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
-        this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
+        await this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
           task,
           currentTurnIntervention,
         );
@@ -493,6 +493,9 @@ export class TaskExecutor {
             ...(turnInput.runnerInterventionId !== undefined
               ? { runnerInterventionId: turnInput.runnerInterventionId }
               : {}),
+            ...(turnInput.turnOrigin !== undefined
+              ? { turnOrigin: turnInput.turnOrigin }
+              : {}),
             imageAttachmentPaths: turnInput.imageAttachmentPaths,
             ...(turnInput.systemPrompt !== undefined
               ? { systemPrompt: turnInput.systemPrompt }
@@ -510,9 +513,14 @@ export class TaskExecutor {
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
+        try {
+          await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
+        } finally {
+          if (turnReceipt) await turnReceipt.consume(task);
+        }
         break;
       }
+      try {
       const lastAcknowledgedEventId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
@@ -595,12 +603,11 @@ export class TaskExecutor {
         await this.compactClaudeContextIfNeeded(task, agent, runner);
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
-      const followupStalled = await this.handleClaudeRuntimeFollowupStall(
+      await this.handleClaudeRuntimeFollowupStall(
         task,
         currentTurnIntervention,
         previousAssistantText,
       );
-      if (!followupStalled && turnReceipt) await turnReceipt.consume(task);
       await task.interruptRequest;
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
@@ -613,6 +620,9 @@ export class TaskExecutor {
         agent,
         transition.intervention,
       );
+      } finally {
+        if (turnReceipt) await turnReceipt.consume(task);
+      }
     }
   }
 
@@ -852,7 +862,8 @@ export class TaskExecutor {
           intervention,
           reason,
         );
-        void scheduledFallback.catch((err: unknown) => {
+        await scheduledFallback.reserved;
+        void scheduledFallback.completed.catch((err: unknown) => {
           void this.handleScheduledClaudeRuntimeFollowupFailure(task, intervention, reason, err);
         });
         return true;

@@ -193,13 +193,13 @@ describe("worker composition boundary", () => {
       "if (turnReceipt) await turnReceipt.observe(task, event);",
     );
     expect(taskExecutor).toContain(
-      "if (!followupStalled && turnReceipt) await turnReceipt.consume(task);",
+      "if (turnReceipt) await turnReceipt.consume(task);",
     );
     expect(taskExecutor).not.toMatch(
       /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
     );
     expect(taskExecutor).not.toMatch(
-      /(?<!if \(!followupStalled && turnReceipt\) )await turnReceipt\.consume\(/,
+      /(?<!if \(turnReceipt\) )await turnReceipt\.consume\(/,
     );
   });
 

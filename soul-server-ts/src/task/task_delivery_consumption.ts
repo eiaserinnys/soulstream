@@ -1,10 +1,8 @@
 import type { Logger } from "pino";
 
+import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
 import type { InterventionMessage, Task } from "./task_models.js";
-import {
-  isInlineChildCompletion,
-  type TaskDeliveryLedgerGate,
-} from "./task_delivery_ledger_gate.js";
+import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
@@ -29,7 +27,7 @@ export class TaskDeliveryConsumption {
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger consume update failed",
       );
-      if (isInlineChildCompletion(intervention)) {
+      if (requiresExactConsumption(intervention)) {
         // Child result consumption is an exactly-once boundary. Returning
         // success without its relation tombstone lets a later notifier wake
         // and display the already-observed completion again.
@@ -54,4 +52,11 @@ export class TaskDeliveryConsumption {
       return false;
     }
   }
+}
+
+function requiresExactConsumption(
+  intervention: InterventionMessage,
+): boolean {
+  return isLedgerControlledDeliveryIntent(intervention.deliveryIntent)
+    || intervention.source === "claude_runtime_task_followup";
 }

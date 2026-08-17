@@ -11,6 +11,8 @@ export interface CanonicalDeliveryPayloadInput {
   attachmentPaths?: ReadonlyArray<string> | null;
   context?: unknown;
   callerInfo?: unknown;
+  followupKey?: string;
+  followupAttempt?: number;
   followupTaskIds?: ReadonlyArray<string> | null;
 }
 
@@ -25,6 +27,8 @@ export interface CanonicalDeliveryMessage {
   attachmentPaths?: string[];
   context?: ContextItem[];
   callerInfo?: CallerInfo;
+  followupKey?: string;
+  followupAttempt?: number;
   followupTaskIds?: string[];
 }
 
@@ -43,6 +47,8 @@ export function buildCanonicalDeliveryPayload(
     attachment_paths: arrayOrNull(input.attachmentPaths),
     context: input.context ?? null,
     caller_info: input.callerInfo ?? null,
+    followup_key: input.followupKey ?? null,
+    followup_attempt: input.followupAttempt ?? null,
     followup_task_ids: arrayOrNull(input.followupTaskIds),
   };
   return {
@@ -66,6 +72,8 @@ export function readCanonicalDeliveryPayload(
     attachmentPaths: stringArray(payload.attachment_paths),
     context: contextItems(payload.context),
     callerInfo: callerInfo(payload.caller_info),
+    followupKey: optionalString(payload.followup_key),
+    followupAttempt: optionalPositiveInteger(payload.followup_attempt),
     followupTaskIds: stringArray(payload.followup_task_ids),
   };
 }
@@ -81,6 +89,16 @@ function requiredString(value: unknown, field: string): string {
     throw new Error(`Stored delivery payload is missing ${field}`);
   }
   return value;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function optionalPositiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 function stringArray(value: unknown): string[] | undefined {

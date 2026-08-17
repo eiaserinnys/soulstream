@@ -10,6 +10,7 @@ import type { InterventionMessage, Task } from "./task_models.js";
  */
 export class TaskDeliveryTurnReceipt {
   private recorded = false;
+  private consumed = false;
 
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
@@ -29,6 +30,7 @@ export class TaskDeliveryTurnReceipt {
   }
 
   async consume(task: Task): Promise<void> {
+    if (this.consumed) return;
     // A transient turn-start receipt failure must not strand a successfully
     // completed delivery in `queued`. Retry the durable receipt at the turn
     // boundary before marking it consumed.
@@ -36,7 +38,11 @@ export class TaskDeliveryTurnReceipt {
       this.recorded =
         await this.consumption.recordTurnStarted(task, this.intervention);
     }
-    if (!this.recorded) return;
+    // Iterator exhaustion is direct evidence that this foreground input ran.
+    // Even when the advisory turn-start receipt remains unavailable, attempt
+    // the canonical consume boundary instead of leaving the parent delivery
+    // as an accidental retry token.
     await this.consumption.recordConsumed(task, this.intervention);
+    this.consumed = true;
   }
 }

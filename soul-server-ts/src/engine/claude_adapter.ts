@@ -30,6 +30,7 @@ import type {
   InputResponseDeliveryResult,
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
+  TurnOrigin,
   LiveTurnSteerResult,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,
@@ -62,6 +63,7 @@ export interface ClaudeRunOptions {
   agentSessionId?: string;
   prompt: string;
   inputUuid?: string;
+  turnOrigin?: TurnOrigin;
   workspaceDir: string;
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;
@@ -441,6 +443,7 @@ export class ClaudeEngineAdapter
     return {
       prompt: params.prompt,
       ...(params.inputUuid ? { inputUuid: params.inputUuid } : {}),
+      ...(params.turnOrigin ? { turnOrigin: params.turnOrigin } : {}),
       ...(params.agentSessionId ? { agentSessionId: params.agentSessionId } : {}),
       workspaceDir: this.workspaceDir,
       ...(params.imageAttachmentPaths !== undefined

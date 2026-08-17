@@ -148,6 +148,42 @@ describe("SessionDeliveryNotificationRecovery", () => {
     expect(repository.markPublished).toHaveBeenCalledOnce();
   });
 
+  it("round-trips runtime follow-up key and attempt through recovery", async () => {
+    const runtimeFollowup = row("delivery-runtime", "target");
+    runtimeFollowup.payload = {
+      ...runtimeFollowup.payload,
+      delivery_intent: "runtime_followup",
+      followup_key: "target:task-1",
+      followup_attempt: 3,
+    };
+    const repository = {
+      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      claimDue: vi.fn().mockResolvedValue([runtimeFollowup]),
+      markPublished: vi.fn().mockResolvedValue(runtimeFollowup),
+      retry: vi.fn(),
+      deadLetter: vi.fn(),
+    };
+    const publish = vi.fn().mockResolvedValue(true);
+    const recovery = new SessionDeliveryNotificationRecovery({
+      repository,
+      targetNodeId: "node-test",
+      resolveTask: vi.fn().mockResolvedValue(task("target")),
+      publish,
+      logger: { warn: vi.fn() },
+    });
+
+    await recovery.recover("notification-worker");
+
+    expect(publish).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        followupKey: "target:task-1",
+        followupAttempt: 3,
+      }),
+      "queued",
+    );
+  });
+
   it("dead-letters an invalid decoded payload immediately without retry", async () => {
     const invalid = row("delivery-invalid", "target");
     invalid.payload = { ...invalid.payload, delivery_intent: "unknown" };

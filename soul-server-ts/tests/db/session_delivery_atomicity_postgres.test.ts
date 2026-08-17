@@ -401,6 +401,131 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("uses the monotonic enqueue sequence for concurrent equal-time runtime admission and exact replay", async () => {
+    const createdAt = new Date("2026-08-18T00:00:00.000Z");
+    const followupKey = "caller-old:task-equal-time";
+    const registrations = ["a", "b"].map((suffix) => ({
+      deliveryId: `runtime-equal-${suffix}`,
+      targetSessionId: "caller-old",
+      relationKey: `runtime-equal-relation-${suffix}`,
+      completionId: `runtime-equal-completion-${suffix}`,
+      intent: "runtime_followup" as const,
+      source: "claude_runtime_task_followup",
+      payloadHash: `runtime-equal-hash-${suffix}`,
+      payload: {
+        text: `equal ${suffix}`,
+        user: "system",
+        source: "claude_runtime_task_followup",
+        followup_key: followupKey,
+        followup_attempt: 2,
+      },
+      createdAt,
+    }));
+    const peerRepository = new SessionDeliveryRepository(harness.createPeer());
+
+    await Promise.all([
+      repository.register(registrations[0]!),
+      peerRepository.register(registrations[1]!),
+    ]);
+
+    const rows = await harness.sql<Array<{
+      delivery_id: string;
+      state: string;
+      enqueue_sequence: string;
+    }>>`
+      SELECT delivery_id, state, enqueue_sequence
+      FROM session_deliveries
+      WHERE payload->>'followup_key' = ${followupKey}
+      ORDER BY enqueue_sequence
+    `;
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.state).toBe("superseded");
+    expect(rows[1]?.state).toBe("pending");
+    expect(BigInt(rows[1]!.enqueue_sequence)).toBeGreaterThan(
+      BigInt(rows[0]!.enqueue_sequence),
+    );
+
+    await harness.sql`
+      INSERT INTO session_deliveries (
+        delivery_id, target_session_id, relation_key, completion_id,
+        intent, source, payload_hash, payload, state, created_at, updated_at
+      ) VALUES (
+        'runtime-exact-stale', 'caller-old', 'runtime-exact-stale-relation',
+        'runtime-exact-stale-completion', 'runtime_followup',
+        'claude_runtime_task_followup', 'runtime-exact-stale-hash',
+        ${harness.sql.json({
+          text: "stale attempt",
+          user: "system",
+          source: "claude_runtime_task_followup",
+          followup_key: followupKey,
+          followup_attempt: 1,
+        })},
+        'pending', ${createdAt}, ${createdAt}
+      )
+    `;
+    const latest = registrations.find(
+      (registration) => registration.deliveryId === rows[1]!.delivery_id,
+    )!;
+    await expect(repository.register(latest)).resolves.toMatchObject({
+      inserted: false,
+      conflict: false,
+      row: { delivery_id: latest.deliveryId, state: "pending" },
+    });
+    await expect(repository.get("runtime-exact-stale")).resolves.toMatchObject({
+      state: "superseded",
+    });
+
+    await repository.markConsumed(latest.deliveryId, "event:equal-time");
+    for (const [suffix, attempt] of [["older", 2], ["latest", 3]] as const) {
+      await harness.sql`
+        INSERT INTO session_deliveries (
+          delivery_id, target_session_id, relation_key, completion_id,
+          intent, source, payload_hash, payload, state, created_at, updated_at
+        ) VALUES (
+          ${`runtime-terminal-replay-${suffix}`}, 'caller-old',
+          ${`runtime-terminal-replay-relation-${suffix}`},
+          ${`runtime-terminal-replay-completion-${suffix}`},
+          'runtime_followup', 'claude_runtime_task_followup',
+          ${`runtime-terminal-replay-hash-${suffix}`},
+          ${harness.sql.json({
+            text: suffix,
+            user: "system",
+            source: "claude_runtime_task_followup",
+            followup_key: followupKey,
+            followup_attempt: attempt,
+          })},
+          'pending', ${createdAt}, ${createdAt}
+        )
+      `;
+    }
+    const exact = await repository.get(latest.deliveryId);
+    expect(exact).toBeDefined();
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    await expect(gate.admit({
+      agentSessionId: "caller-old",
+      text: String(exact!.payload.text),
+      user: "system",
+      deliveryId: exact!.delivery_id,
+      deliveryIntent: "runtime_followup",
+      completionId: exact!.completion_id!,
+      relationKey: exact!.relation_key,
+      source: exact!.source,
+      followupKey,
+      followupAttempt: 2,
+      storedDeliveryPayload: exact!.payload,
+      storedDeliveryPayloadHash: exact!.payload_hash,
+      deliveryCreatedAt: exact!.created_at.toISOString(),
+    })).resolves.toEqual({
+      kind: "suppressed",
+      deliveryId: exact!.delivery_id,
+      reason: "delivery_consumed",
+    });
+    await expect(repository.get("runtime-terminal-replay-older"))
+      .resolves.toMatchObject({ state: "superseded" });
+    await expect(repository.get("runtime-terminal-replay-latest"))
+      .resolves.toMatchObject({ state: "pending" });
+  });
+
   async function register(deliveryId: string, relationKey: string): Promise<void> {
     await repository.register({
       deliveryId,

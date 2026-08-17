@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
+import { compareRuntimeFollowupCandidates } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_relation_repository.js";
 import type {
   SessionDeliveryRow,
   SqlClient,
@@ -73,6 +74,63 @@ const registration = {
 };
 
 describe("SessionDeliveryRepository", () => {
+  it("orders runtime follow-ups by attempt, createdAt, then enqueue sequence", () => {
+    expect(compareRuntimeFollowupCandidates(
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T00:00:00Z"), enqueueSequence: 1n },
+      { followupAttempt: 1, createdAt: new Date("2026-08-18T01:00:00Z"), enqueueSequence: 2n },
+    )).toBeGreaterThan(0);
+    expect(compareRuntimeFollowupCandidates(
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 1n },
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T01:00:00Z"), enqueueSequence: 2n },
+    )).toBeGreaterThan(0);
+    expect(compareRuntimeFollowupCandidates(
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 3n },
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 2n },
+    )).toBeGreaterThan(0);
+  });
+
+  it("atomically supersedes only older pending runtime follow-ups", async () => {
+    const createdAt = new Date("2026-08-18T02:00:00Z");
+    const candidate = deliveryRow({
+      delivery_id: "00000000-0000-5000-8000-000000000020",
+      relation_key: "runtime:fallback:2",
+      completion_id: "runtime:fallback:2",
+      intent: "runtime_followup",
+      source: "claude_runtime_task_followup",
+      payload_hash: "runtime-hash-2",
+      payload: { followup_key: "session:task", followup_attempt: 2 },
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+    const older = deliveryRow({
+      delivery_id: "00000000-0000-5000-8000-000000000010",
+      relation_key: "runtime:fallback:1",
+      completion_id: "runtime:fallback:1",
+      intent: "runtime_followup",
+      source: "claude_runtime_task_followup",
+      payload: { followup_key: "session:task", followup_attempt: 1 },
+      created_at: new Date("2026-08-18T01:00:00Z"),
+    });
+    const { sql, calls } = createMockSql([[], [], [older], [candidate], []]);
+
+    await expect(new SessionDeliveryRepository(sql).register({
+      deliveryId: candidate.delivery_id,
+      targetSessionId: "caller-1",
+      relationKey: candidate.relation_key,
+      completionId: candidate.completion_id,
+      intent: "runtime_followup",
+      source: candidate.source,
+      payloadHash: candidate.payload_hash,
+      payload: candidate.payload,
+      createdAt,
+    })).resolves.toEqual({ row: candidate, inserted: true, conflict: false });
+
+    expect(calls[0].query).toContain("pg_advisory_xact_lock");
+    expect(calls[2].query).toContain("state = 'pending'");
+    expect(calls[2].query).toContain("followup_attempt");
+    expect(calls[4].query).toContain("state = 'superseded'");
+    expect(calls[4].query).toContain("state = 'pending'");
+  });
   it("registers a new delivery with an atomic conflict boundary", async () => {
     const row = deliveryRow();
     const { sql, calls } = createMockSql([[row]]);
@@ -223,6 +281,21 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).not.toContain("'queued'");
     expect(calls[0].query).not.toContain("'delivered'");
   });
+
+  it("supersedes only a pending delivery", async () => {
+    const superseded = deliveryRow({ state: "superseded" });
+    const { sql, calls } = createMockSql([[superseded]]);
+    const repository = new SessionDeliveryRepository(sql);
+
+    await expect(repository.markPendingSuperseded(
+      superseded.delivery_id,
+      "user_message",
+    )).resolves.toEqual(superseded);
+
+    expect(calls[0].query).toContain("state = 'superseded'");
+    expect(calls[0].query).toContain("state = 'pending'");
+    expect(calls[0].values).toContain("user_message");
+  });
 });
 
 describe("session_deliveries migration safety", () => {
@@ -266,6 +339,13 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const enqueueSequenceMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/066_session_delivery_enqueue_sequence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
@@ -282,6 +362,7 @@ describe("session_deliveries migration safety", () => {
     );
     expect(manifest).toContain("053_retire_supervisor.sql");
     expect(manifest).toContain("065_completion_terminal_revision_fence.sql");
+    expect(manifest).toContain("066_session_delivery_enqueue_sequence.sql");
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(deliveryMigration).toContain("ON DELETE SET NULL");
@@ -314,6 +395,14 @@ describe("session_deliveries migration safety", () => {
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    for (const sql of [enqueueSequenceMigration, schema]) {
+      expect(sql).toContain(
+        "enqueue_sequence BIGINT GENERATED ALWAYS AS IDENTITY",
+      );
+      expect(sql).toContain(
+        "idx_session_deliveries_runtime_followup_latest",
+      );
+    }
     expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
     );

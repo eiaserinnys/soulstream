@@ -304,6 +304,9 @@ export class SessionDeliveryHostClient {
   retryLeasedDelivery(deliveryId: string, leaseOwner: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "retry_leased_delivery", [deliveryId, leaseOwner, error, nextAttemptAt]);
   }
+  markPendingSuperseded(deliveryId: string, supersededTerminalRevision: string): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "mark_pending_superseded", [deliveryId, supersededTerminalRevision]);
+  }
   releaseExpiredDeliveryLeases(): Promise<number> {
     return this.transport.request("session-deliveries", "release_expired_delivery_leases", []);
   }

@@ -137,6 +137,9 @@ export function composeTaskRuntime(
     inlineConsumptionRecorder: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
       ? taskManager.getDeliveryConsumptionRecorder()
       : undefined,
+    pendingSupersessionRecorder: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
+      ? taskManager.getDeliveryConsumptionRecorder()
+      : undefined,
   });
 
   taskExecutor = new TaskExecutor(

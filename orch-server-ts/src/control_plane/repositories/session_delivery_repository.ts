@@ -158,6 +158,39 @@ export class SessionDeliveryRepository {
     leaseMs = 15_000,
   ): Promise<SessionDeliveryRow[]> {
     return await this.sql.begin(async (transaction) => {
+      // Recovery is another admission boundary. Collapse only pending siblings
+      // before any row is claimed; already-claimed work remains immutable.
+      await transaction`
+        WITH ranked AS (
+          SELECT
+            delivery_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY target_session_id, payload->>'followup_key'
+              ORDER BY
+                CASE
+                  WHEN jsonb_typeof(payload->'followup_attempt') = 'number'
+                    THEN (payload->>'followup_attempt')::integer
+                  ELSE 1
+                END DESC,
+                created_at DESC,
+                enqueue_sequence DESC
+            ) AS followup_rank
+          FROM session_deliveries
+          WHERE intent = 'runtime_followup'
+            AND source = 'claude_runtime_task_followup'
+            AND state = 'pending'
+            AND payload->>'followup_key' IS NOT NULL
+        )
+        UPDATE session_deliveries AS delivery
+        SET
+          state = 'superseded',
+          superseded_at = NOW(),
+          updated_at = NOW()
+        FROM ranked
+        WHERE delivery.delivery_id = ranked.delivery_id
+          AND ranked.followup_rank > 1
+          AND delivery.state = 'pending'
+      `;
       const due = await transaction<SessionDeliveryRow[]>`
         SELECT delivery.*
         FROM session_deliveries AS delivery
@@ -173,7 +206,10 @@ export class SessionDeliveryRepository {
           )
           AND delivery.state = 'pending'
           AND delivery.next_attempt_at <= NOW()
-        ORDER BY delivery.next_attempt_at, delivery.created_at, delivery.delivery_id
+        ORDER BY
+          delivery.next_attempt_at,
+          delivery.created_at,
+          delivery.enqueue_sequence
         FOR UPDATE OF delivery SKIP LOCKED
         LIMIT ${limit}
       `;
@@ -262,6 +298,24 @@ export class SessionDeliveryRepository {
       WHERE delivery_id = ${deliveryId}
         AND lease_owner = ${leaseOwner}
         AND state IN ('claimed', 'dispatching')
+      RETURNING *
+    `;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+  }
+
+  async markPendingSuperseded(
+    deliveryId: string,
+    supersededTerminalRevision: string,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET
+        state = 'superseded',
+        superseded_at = NOW(),
+        superseded_terminal_revision = ${supersededTerminalRevision},
+        updated_at = NOW()
+      WHERE delivery_id = ${deliveryId}
+        AND state = 'pending'
       RETURNING *
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;

@@ -41,7 +41,6 @@ import type {
 } from "./protocol.js";
 
 export { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
-
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
 /**
@@ -68,7 +67,6 @@ export type ClaudeSdkQueryParams = {
 };
 
 export type ClaudeSdkQueryFn = (params: ClaudeSdkQueryParams) => ClaudeSdkQuery;
-
 export interface ClaudeSdkClientConfig {
   query?: ClaudeSdkQueryFn;
   inputRequestTimeoutMs?: number;
@@ -91,6 +89,7 @@ export interface ClaudeSdkClientConfig {
    * without forwarding Query-global SDK maxTurns.
    */
   persistentTurnTimeoutMs?: number;
+  runtimeFollowupNoOutputTimeoutMs?: number;
 }
 
 export class ClaudeSdkClient implements ClaudeClient {
@@ -106,7 +105,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly detachedEventSink: ClaudeDetachedEventSink;
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly persistentTurnTimeoutMs: number;
-
+  private readonly runtimeFollowupNoOutputTimeoutMs: number;
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: EventQueue<SDKUserMessage> | null = null;
   private lastWorkspaceDir: string | null = null;
@@ -144,6 +143,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.runtimeEventSink = config.runtimeEventSink;
     this.persistentTurnTimeoutMs =
       config.persistentTurnTimeoutMs ?? 1_800_000;
+    this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs ?? 30_000;
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -211,7 +211,18 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     this.lastRunOptions = options;
-    if (!this.persistentSession) {
+    let persistentSession = this.persistentSession;
+    if (
+      persistentSession
+      && persistentSession.snapshot().queryLifecycle !== "open"
+    ) {
+      if (this.persistentSession === persistentSession) {
+        this.persistentSession = null;
+        this.activeQuery = null;
+      }
+      persistentSession = null;
+    }
+    if (!persistentSession) {
       this.clearPerRunState();
       const hookOutput = createEventQueue<ClaudeClientEvent>();
       const abortController = new AbortController();
@@ -221,7 +232,8 @@ export class ClaudeSdkClient implements ClaudeClient {
         abortController,
         hookOutput,
       );
-      this.persistentSession = new ClaudeSdkPersistentSession({
+      let createdSession!: ClaudeSdkPersistentSession;
+      createdSession = new ClaudeSdkPersistentSession({
         createQuery: (input) => {
           let query: ClaudeSdkQuery;
           try {
@@ -242,15 +254,20 @@ export class ClaudeSdkClient implements ClaudeClient {
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,
         turnTimeoutMs: this.persistentTurnTimeoutMs,
+        runtimeFollowupNoOutputTimeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
         onClosed: () => {
-          this.activeQuery = null;
-          this.persistentSession = null;
+          if (this.persistentSession === createdSession) {
+            this.activeQuery = null;
+            this.persistentSession = null;
+          }
         },
       });
+      this.persistentSession = createdSession;
+      persistentSession = createdSession;
     }
 
     try {
-      for await (const event of this.persistentSession.runTurn(options, signal)) {
+      for await (const event of persistentSession.runTurn(options, signal)) {
         yield event;
       }
     } catch (err) {

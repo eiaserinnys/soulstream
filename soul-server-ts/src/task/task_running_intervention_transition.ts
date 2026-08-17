@@ -27,6 +27,7 @@ export type RunningInterventionResult =
   | {
       delivered: false;
       queued: true;
+      /** 1-based position after the shared high/low priority comparator, FIFO within a lane. */
       queuePosition: number;
       consumeWhen: "next_turn";
       reason: EngineInterventionFailureReason | "queue_only_policy" | "verdict_unknown";

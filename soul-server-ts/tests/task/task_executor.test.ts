@@ -348,7 +348,7 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("queued delivery turn 실패는 이미 성공한 delivery 상태를 되돌리지 않는다", async () => {
+  it("queued delivery turn 실패도 iterator 종료 경계에서 정확히 한 번 consume한다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -378,8 +378,47 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+  });
+
+  it("iterator 성공 뒤 ACK barrier 실패도 delivery를 정확히 한 번 consume한다", async () => {
+    const mocks = makeMocks();
+    mocks.waitForSessionAck.mockRejectedValueOnce(new Error("post-iterator ACK failed"));
+    const message: InterventionMessage = {
+      text: "completion result",
+      user: "agent",
+      deliveryId: "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+      deliveryIntent: "completion_notification",
+      source: "completion_notifier",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "observed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
   });
 
   it("turn-start receipt 일시 실패 뒤 성공한 turn 종료에서 receipt를 재기록한다", async () => {
@@ -400,6 +439,44 @@ describe("TaskExecutor.startExecution", () => {
       () => makeFakeEngine([
         { type: "error", error: "recoverable diagnostic" },
         { type: "assistant_message", content: "consumed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+  });
+
+  it("turn-start receipt가 재실패해도 iterator 종료에서 consume을 직접 시도한다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "runtime result",
+      user: "system",
+      deliveryId: "acacacac-acac-4cac-8cac-acacacacacac",
+      deliveryIntent: "runtime_followup",
+      source: "claude_runtime_task_followup",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "observed", timestamp: 1 },
       ] as SSEEventPayload[]),
       mocks.db,
       mocks.persistence,

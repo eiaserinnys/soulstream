@@ -34,6 +34,14 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     await harness.sql.unsafe(pendingMigration);
     await harness.sql.unsafe(pendingMigration);
+    const terminalFenceMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/065_completion_terminal_revision_fence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    await harness.sql.unsafe(terminalFenceMigration);
     repository = new SessionDeliveryRepository(harness.sql);
   }, 45_000);
 
@@ -131,6 +139,54 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ]);
   });
 
+  it("coalesces pending runtime siblings before recovery claim and preserves claimed work", async () => {
+    const createdAt = new Date("2026-08-18T00:00:00.000Z");
+    for (const [deliveryId, relationKey, state] of [
+      ["runtime-claimed", "runtime-claimed-relation", "claimed"],
+      ["runtime-pending-old", "runtime-pending-old-relation", "pending"],
+      ["runtime-pending-latest", "runtime-pending-latest-relation", "pending"],
+    ] as const) {
+      await harness.sql`
+        INSERT INTO session_deliveries (
+          delivery_id, target_session_id, relation_key, intent, source,
+          payload_hash, payload, state, created_at, updated_at,
+          lease_owner, lease_expires_at
+        ) VALUES (
+          ${deliveryId}, 'caller-session', ${relationKey},
+          'runtime_followup', 'claude_runtime_task_followup',
+          ${`hash-${deliveryId}`},
+          ${harness.sql.json({
+            text: deliveryId,
+            user: "system",
+            source: "claude_runtime_task_followup",
+            followup_key: "caller-session:task-1",
+            followup_attempt: 2,
+          })},
+          ${state}, ${createdAt}, ${createdAt},
+          ${state === "claimed" ? "existing-worker" : null},
+          ${state === "claimed" ? new Date("2099-01-01T00:00:00Z") : null}
+        )
+      `;
+    }
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "recovery-worker",
+      10,
+    )).resolves.toMatchObject([{
+      delivery_id: "runtime-pending-latest",
+      state: "claimed",
+      lease_owner: "recovery-worker",
+    }]);
+    await expect(repository.get("runtime-pending-old")).resolves.toMatchObject({
+      state: "superseded",
+      superseded_at: expect.any(Date),
+    });
+    await expect(repository.get("runtime-claimed")).resolves.toMatchObject({
+      state: "claimed",
+      lease_owner: "existing-worker",
+    });
+  });
+
   it("upgrades the pre-manifest delivery ledger to the recovery schema idempotently", async () => {
     const upgradeSchema =
       `delivery_upgrade_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -149,6 +205,13 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       ),
       "utf8",
     );
+    const sequenceMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/066_session_delivery_enqueue_sequence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
 
     try {
       await upgradeSql.unsafe(`CREATE SCHEMA ${upgradeSchema}`);
@@ -157,16 +220,21 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       await upgradeSql.unsafe(legacyMigration);
       await upgradeSql.unsafe(currentMigration);
       await upgradeSql.unsafe(currentMigration);
+      await upgradeSql.unsafe(sequenceMigration);
+      await upgradeSql.unsafe(sequenceMigration);
 
       const columns = await upgradeSql<Array<{ column_name: string }>>`
         SELECT column_name
         FROM information_schema.columns
         WHERE table_schema = ${upgradeSchema}
           AND table_name = 'session_deliveries'
-          AND column_name = 'dispatching_at'
+          AND column_name IN ('dispatching_at', 'enqueue_sequence')
         ORDER BY column_name
       `;
-      expect(columns.map((row) => row.column_name)).toEqual(["dispatching_at"]);
+      expect(columns.map((row) => row.column_name)).toEqual([
+        "dispatching_at",
+        "enqueue_sequence",
+      ]);
 
       await upgradeSql`
         INSERT INTO sessions (session_id) VALUES ('upgrade-target')

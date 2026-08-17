@@ -53,6 +53,8 @@ export interface AddInterventionParams {
   callerTurnId?: string;
   deliveryCreatedAt?: string;
   deliveryLeaseOwner?: string;
+  /** Durable delayed retry due time. Internal ledger scheduling metadata. */
+  deliveryNextAttemptAt?: string;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -159,7 +161,11 @@ export class TaskInterventionRoute {
           reason: "terminal_only_policy",
         } as const;
         if (this.deps.deliveryLedgerGate) {
-          await this.deps.deliveryLedgerGate.recordResult(admission, result);
+          await this.deps.deliveryLedgerGate.recordResult(
+            admission,
+            result,
+            params.deliveryNextAttemptAt,
+          );
         }
         return result;
       }
@@ -225,7 +231,11 @@ export class TaskInterventionRoute {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
       }
       if (this.deps.deliveryLedgerGate) {
-        await this.deps.deliveryLedgerGate.recordResult(admission, result);
+        await this.deps.deliveryLedgerGate.recordResult(
+          admission,
+          result,
+          params.deliveryNextAttemptAt,
+        );
         ledgerResultRecorded = true;
       }
       if (notificationDisposition && this.deps.sessionNotificationPublisher) {
@@ -285,6 +295,8 @@ function hydrateStoredDeliveryMessage(
     callerInfo: canonical.callerInfo,
     attachmentPaths: canonical.attachmentPaths,
     context: canonical.context,
+    followupKey: canonical.followupKey,
+    followupAttempt: canonical.followupAttempt,
     followupTaskIds: canonical.followupTaskIds,
     source: row.source,
     deliveryId: row.delivery_id,

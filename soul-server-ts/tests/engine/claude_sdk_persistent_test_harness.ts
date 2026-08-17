@@ -15,33 +15,48 @@ import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js"
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 
 export function makeHarness(
-  options: { receipt?: SDKControlInterruptResponse } = {},
+  options: {
+    receipt?: SDKControlInterruptResponse;
+    deferQueryClose?: boolean;
+  } = {},
 ) {
-  const output = createEventQueue<SDKMessage>();
   const captured: ClaudeSdkQueryParams[] = [];
   let input: AsyncIterable<SDKUserMessage> | null = null;
+  let activeOutput = createEventQueue<SDKMessage>();
   const interrupt = vi.fn(async () => options.receipt);
-  const close = vi.fn(() => output.close());
-  const query = {
-    interrupt,
-    close,
-    backgroundTasks: vi.fn(async () => false),
-    stopTask: vi.fn(async () => undefined),
-    [Symbol.asyncIterator]: () => output,
-  } as unknown as ClaudeSdkQuery;
+  const close = vi.fn();
+  const deferredClosedOutputs: Array<ReturnType<typeof createEventQueue<SDKMessage>>> = [];
   const queryFn: ClaudeSdkQueryFn = (params) => {
     captured.push(params);
     input = params.prompt as AsyncIterable<SDKUserMessage>;
-    return query;
+    const output = createEventQueue<SDKMessage>();
+    activeOutput = output;
+    return {
+      interrupt,
+      close: () => {
+        close();
+        if (options.deferQueryClose) {
+          deferredClosedOutputs.push(output);
+        } else {
+          output.close();
+        }
+      },
+      backgroundTasks: vi.fn(async () => false),
+      stopTask: vi.fn(async () => undefined),
+      [Symbol.asyncIterator]: () => output,
+    } as unknown as ClaudeSdkQuery;
   };
   return {
     captured,
     close,
     detached: vi.fn(async (_event: ClaudeClientEvent) => undefined),
-    fail: (error: Error) => output.fail(error),
+    fail: (error: Error) => activeOutput.fail(error),
     interrupt,
-    push: (message: SDKMessage) => output.push(message),
+    push: (message: SDKMessage) => activeOutput.push(message),
     queryFn,
+    releaseClosedQueries(): void {
+      for (const output of deferredClosedOutputs.splice(0)) output.close();
+    },
     async nextInput(): Promise<SDKUserMessage> {
       await vi.waitFor(() => expect(input).not.toBeNull());
       const next = await input![Symbol.asyncIterator]().next();

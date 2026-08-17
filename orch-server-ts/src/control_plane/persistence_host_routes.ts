@@ -29,6 +29,7 @@ const deliveryOperations = {
   claim_recoverable_completion_deliveries: ["deliveries", null, "claimRecoverableCompletionDeliveries"],
   defer_pending: ["deliveries", null, "deferPending"],
   retry_leased_delivery: ["deliveries", null, "retryLeasedDelivery"],
+  mark_pending_superseded: ["deliveries", null, "markPendingSuperseded"],
   release_expired_delivery_leases: ["deliveries", null, "releaseExpiredDeliveryLeases"],
   mark_queued: ["deliveries", null, "markQueued"],
   mark_delivered: ["deliveries", null, "markDelivered"],

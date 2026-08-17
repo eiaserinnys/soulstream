@@ -13,10 +13,13 @@ import { formatContextItems } from "../context/prompt_assembler.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import { dequeueIntervention } from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
+import type { TurnOrigin } from "../engine/protocol.js";
+import { interventionTurnOrigin } from "./turn_origin.js";
 
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
@@ -32,6 +35,7 @@ export interface TaskTurnInput {
   systemPrompt?: string;
   inputUuid?: string;
   runnerInterventionId?: string;
+  turnOrigin?: TurnOrigin;
   intervention?: InterventionMessage;
   backendSessionRolloverFrom?: string;
 }
@@ -51,7 +55,7 @@ export class TaskTurnInputBuilder {
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
     if (task.interventionQueue.length > 0) {
-      const intervention = task.interventionQueue.shift()!;
+      const intervention = dequeueIntervention(task)!;
       return this.prepareFollowupTurnInput(task, agent, intervention);
     }
 
@@ -92,16 +96,18 @@ export class TaskTurnInputBuilder {
       effectiveTaskBackend(task, agent) === "claude" && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
+    const inputUuid = intervention.deliveryId
+      ? buildDeliveryInputUuid(intervention.deliveryId)
+      : undefined;
     return {
       prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-      ...(intervention.deliveryId
-        ? { inputUuid: buildDeliveryInputUuid(intervention.deliveryId) }
-        : {}),
+      ...(inputUuid ? { inputUuid } : {}),
       ...(intervention.runnerInterventionId
         ? { runnerInterventionId: intervention.runnerInterventionId }
         : {}),
+      turnOrigin: interventionTurnOrigin(intervention, inputUuid),
       intervention,
     };
   }
@@ -143,6 +149,12 @@ export class TaskTurnInputBuilder {
           }
         : {}),
       ...(failedInput.inputUuid !== undefined ? { inputUuid: failedInput.inputUuid } : {}),
+      ...(failedInput.runnerInterventionId !== undefined
+        ? { runnerInterventionId: failedInput.runnerInterventionId }
+        : {}),
+      ...(failedInput.turnOrigin !== undefined
+        ? { turnOrigin: failedInput.turnOrigin }
+        : {}),
       ...(failedInput.intervention !== undefined
         ? { intervention: failedInput.intervention }
         : {}),
@@ -205,6 +217,7 @@ export class TaskTurnInputBuilder {
       return {
         prompt: task.prompt,
         imageAttachmentPaths,
+        turnOrigin: { kind: "initial_prompt" },
       };
     }
 
@@ -219,15 +232,17 @@ export class TaskTurnInputBuilder {
         ...(ctx.effectiveSystemPrompt !== undefined
           ? { systemPrompt: ctx.effectiveSystemPrompt }
           : {}),
+        turnOrigin: { kind: "initial_prompt" },
       };
     }
 
     return {
       prompt: composeFirstTurnPrompt({
         ...ctx,
-        assembledPrompt: task.prompt,
+      assembledPrompt: task.prompt,
       }),
       imageAttachmentPaths,
+      turnOrigin: { kind: "initial_prompt" },
     };
   }
 
