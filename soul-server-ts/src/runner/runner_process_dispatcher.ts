@@ -263,6 +263,40 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       return { ...staged, durability: "runner" };
     } catch (error) {
       await this.ready;
+      if (input.queued) {
+        const reconciliation = await this.reconcilePendingInterventions();
+        const childQueueIndex = reconciliation.childInterventionIds
+          .indexOf(input.interventionId);
+        if (childQueueIndex >= 0) {
+          this.logRegeneratedInterventionSuppressed(
+            input.interventionId,
+            "runner_sqlite",
+            error,
+          );
+          return {
+            eventSourceSeq: null,
+            queuePosition: childQueueIndex + 1,
+            durability: "runner",
+          };
+        }
+        const existingFallback = this.outbox.readInterventionFallback(input.interventionId);
+        if (existingFallback) {
+          const retained = this.outbox.stageInterventionFallback({
+            ...existingFallback,
+            queued: true,
+          });
+          this.logRegeneratedInterventionSuppressed(
+            input.interventionId,
+            "host_sqlite",
+            error,
+          );
+          return {
+            eventSourceSeq: null,
+            queuePosition: retained.queuePosition,
+            durability: "host_fallback",
+          };
+        }
+      }
       const fallback = this.outbox.stageInterventionFallback(input);
       this.options.logger.info(
         {
@@ -519,6 +553,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   private async reconcilePendingInterventions(): Promise<{
     interventions: RunnerPendingIntervention[];
+    childInterventionIds: string[];
     shadowedFallbackIds: string[];
   }> {
     const inspection = await this.outbox.inspectPendingInterventions();
@@ -544,6 +579,22 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
     }
     return inspection;
+  }
+
+  private logRegeneratedInterventionSuppressed(
+    interventionId: string,
+    durableOwner: "runner_sqlite" | "host_sqlite",
+    error: unknown,
+  ): void {
+    this.options.logger.info(
+      {
+        err: error,
+        sessionId: this.spawnInput.sessionId,
+        interventionId,
+        durableOwner,
+      },
+      "Regenerated runner intervention suppressed in favor of first durable payload",
+    );
   }
 
   private async connect(socketPath: string): Promise<RunnerIpcConnection> {

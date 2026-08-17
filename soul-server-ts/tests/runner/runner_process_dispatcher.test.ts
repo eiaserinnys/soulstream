@@ -83,6 +83,31 @@ describe("RunnerProcessDispatcher", () => {
       handleHostCall: async () => null,
     } as never);
 
+    vi.spyOn(
+      dispatcher as unknown as {
+        stageInterventionInChild(input: unknown): Promise<unknown>;
+      },
+      "stageInterventionInChild",
+    ).mockRejectedValue(new Error("runner intervention id conflicts with durable payload"));
+
+    await expect(dispatcher.stageIntervention({
+      interventionId: "delivery-a",
+      message: { text: "third regenerated prompt", user: "system" },
+      queued: true,
+    })).resolves.toEqual({
+      eventSourceSeq: null,
+      queuePosition: 1,
+      durability: "runner",
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        interventionId: "delivery-a",
+        durableOwner: "runner_sqlite",
+      }),
+      "Regenerated runner intervention suppressed in favor of first durable payload",
+    );
+
     await expect(dispatcher.recoverPendingInterventions()).resolves.toEqual([{
       interventionId: "delivery-a",
       message: { text: "first durable prompt", user: "system" },

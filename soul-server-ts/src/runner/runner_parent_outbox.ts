@@ -173,6 +173,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
       interventionId: string;
       message: Record<string, unknown>;
     }>;
+    childInterventionIds: string[];
     shadowedFallbackIds: string[];
   }> {
     const child = await this.runner.readPendingInterventions();
@@ -191,7 +192,11 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
         message: fallback.message,
       });
     }
-    return { interventions: [...merged.values()], shadowedFallbackIds };
+    return {
+      interventions: [...merged.values()],
+      childInterventionIds: child.map((entry) => entry.interventionId),
+      shadowedFallbackIds,
+    };
   }
 
   stageInterventionFallback(input: {
