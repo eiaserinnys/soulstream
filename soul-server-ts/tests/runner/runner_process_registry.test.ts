@@ -40,8 +40,72 @@ afterEach(async () => {
 describe("runner process registry", () => {
   it("uses lifecycle pid evidence when the pid sidecar is missing", () => {
     expect(resolveRegisteredRunnerPid(null, 4123, 4123, "session-a")).toBe(4123);
-    expect(() => resolveRegisteredRunnerPid(null, 4123, 4999, "session-a"))
+    expect(resolveRegisteredRunnerPid(
+      null,
+      4123,
+      4999,
+      "session-a",
+      () => false,
+    )).toBe(4999);
+    expect(() => resolveRegisteredRunnerPid(
+      null,
+      4123,
+      4999,
+      "session-a",
+      (pid) => pid === 4123,
+    ))
       .toThrow("runner pid evidence disagrees: session-a");
+  });
+
+  it("classifies mismatched all-dead pid evidence as a dead registration", async () => {
+    const stateDirectory = await temporaryDirectory("all-dead-pid-evidence");
+    const paths = runnerProcessPaths(stateDirectory, "session-all-dead");
+    const current = registration({ sessionId: "session-all-dead" });
+    current.config = { ...current.config, paths };
+    const lifecyclePid = 2_147_483_601;
+    const identityPid = 2_147_483_602;
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(current.config));
+    await writeFile(paths.pidPath, `${identityPid}\n`);
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      pid: identityPid,
+      startIdentity: `dead-${identityPid}`,
+    });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: current.config.sessionId,
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-all-dead",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: current.config.codeSha,
+        snapshot_path: current.config.snapshotPath,
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: lifecyclePid,
+      commandId: "execute-all-dead",
+      progressedAt: "2026-08-11T00:00:29.000Z",
+    });
+    lifecycle.close();
+
+    const result = await scanRunnerRegistrations(stateDirectory);
+
+    expect(result.errors).toEqual([]);
+    expect(result.registrations).toHaveLength(1);
+    expect(result.registrations[0]).toMatchObject({
+      pid: identityPid,
+      pidAlive: false,
+      lifecycle: { runner_pid: lifecyclePid, execution_state: "running" },
+    });
+    expect(classifyRunnerRegistration(result.registrations[0]!, NOW, 120_000))
+      .toBe("reap_dead");
   });
   it("classifies bootstrap grace, live prebootstrap, and durable terminal state", () => {
     const pending = {

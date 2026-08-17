@@ -135,6 +135,62 @@ describe("RunnerProcessSpawner", () => {
     expect(signals).toEqual(["SIGTERM"]);
   });
 
+  it("replaces mismatched pid evidence after proving every candidate dead", async () => {
+    const params = await input();
+    await writeDisagreedRegistration(params, 5201, 5202);
+    const spawnProcess = vi.fn(() => ({ pid: 5203, unref: vi.fn() }));
+    const signalPid = vi.fn();
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => pid === 5203
+        ? { alive: true, startIdentity: "start-5203" }
+        : { alive: false, startIdentity: null },
+      isPidAlive: (pid) => pid === 5203,
+      signalPid,
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(spawner.spawn(params)).resolves.toMatchObject({
+      pid: 5203,
+      adopted: false,
+    });
+
+    expect(signalPid).not.toHaveBeenCalled();
+    expect(spawnProcess).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed before cleanup when mismatched pid evidence has a live candidate", async () => {
+    const params = await input();
+    const paths = await writeDisagreedRegistration(params, 5211, 5212);
+    const spawnProcess = vi.fn(() => ({ pid: 5213, unref: vi.fn() }));
+    const signalPid = vi.fn();
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess,
+      registerPid: async () => {},
+      inspectProcess: async (pid) => pid === 5211
+        ? { alive: true, startIdentity: "live-5211" }
+        : { alive: false, startIdentity: null },
+      isPidAlive: (pid) => pid === 5211,
+      signalPid,
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(spawner.spawn(params)).rejects.toThrow(
+      "runner pid evidence disagrees",
+    );
+
+    expect(signalPid).not.toHaveBeenCalled();
+    expect(spawnProcess).not.toHaveBeenCalled();
+    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5212\n");
+  });
+
   it("waits a fresh grace window after SIGKILL before declaring termination failure", async () => {
     let now = 0;
     let alive = true;
@@ -458,4 +514,50 @@ async function input() {
 async function prepareDatabase(path: string): Promise<void> {
   const outbox = await RunnerSqliteEventOutbox.create(path);
   outbox.close();
+}
+
+async function writeDisagreedRegistration(
+  params: Awaited<ReturnType<typeof input>>,
+  lifecyclePid: number,
+  identityPid: number,
+) {
+  const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+  await mkdir(paths.sessionDirectory, { recursive: true });
+  await writeFile(paths.configPath, JSON.stringify({
+    schemaVersion: 1,
+    ...params,
+    paths,
+  }));
+  const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+  await outbox.initializeBootstrap({
+    session_id: params.sessionId,
+    created_at: "2026-08-17T00:00:00.000Z",
+    resume: {
+      schema_version: 1,
+      backend_session_id: "backend-stale-pid",
+      cwd: params.agent.workspace_dir,
+      codex_home: params.codexHome,
+      rollout_root: params.rolloutRoot,
+      code_sha: params.codeSha,
+      snapshot_path: params.snapshotPath,
+    },
+  });
+  outbox.close();
+  const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+  lifecycle.begin({
+    pid: lifecyclePid,
+    commandId: "execute-stale-pid",
+    progressedAt: "2026-08-17T00:00:01.000Z",
+  });
+  lifecycle.close();
+  await writeFile(paths.pidPath, `${identityPid}\n`, { mode: 0o600 });
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    schemaVersion: 1,
+    registrationId: "registration-stale-pid",
+    sessionId: params.sessionId,
+    codeSha: params.codeSha,
+    pid: identityPid,
+    startIdentity: `dead-${identityPid}`,
+  });
+  return paths;
 }
