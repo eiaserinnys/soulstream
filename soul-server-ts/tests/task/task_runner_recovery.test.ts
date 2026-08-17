@@ -79,4 +79,61 @@ describe("TaskRunnerRecovery", () => {
     expect(order).toEqual(["persist-error", "resume"]);
     expect(onResume).toHaveBeenCalledWith(task);
   });
+
+  it("terminalizes a replacement start that throws after the running transition", async () => {
+    const task = makeTask();
+    const persistExecutorFinalState = vi.fn(async () => ({
+      newlyFinalized: true,
+      terminalTransitionApplied: true,
+    }));
+    const resume = vi.fn(async (resumedTask: Task, _message, callback) => {
+      resumedTask.status = "running";
+      callback(resumedTask);
+      return { autoResumed: true as const };
+    });
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: { persistExecutorFinalState } as never,
+      autoResumeTransition: { resume } as never,
+    });
+
+    await expect(recovery.markFailureAndResume(
+      task,
+      "runner exited",
+      () => { throw new Error("snapshot missing"); },
+    )).rejects.toThrow("snapshot missing");
+
+    expect(persistExecutorFinalState).toHaveBeenCalledTimes(2);
+    expect(task).toMatchObject({
+      status: "error",
+      error: "runner replacement start failed: snapshot missing",
+      runner: undefined,
+      executionPromise: undefined,
+    });
+    expect(task.completedAt).toBeInstanceOf(Date);
+  });
+
+  it("does not terminalize a running-transition rejection before the replacement callback", async () => {
+    const task = makeTask();
+    const persistExecutorFinalState = vi.fn(async () => ({
+      newlyFinalized: true,
+      terminalTransitionApplied: true,
+    }));
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: { persistExecutorFinalState } as never,
+      autoResumeTransition: {
+        resume: vi.fn().mockRejectedValue(new Error("running transition rejected")),
+      } as never,
+    });
+
+    await expect(recovery.markFailureAndResume(task, "runner exited", vi.fn()))
+      .rejects.toThrow("running transition rejected");
+
+    expect(persistExecutorFinalState).toHaveBeenCalledOnce();
+  });
 });

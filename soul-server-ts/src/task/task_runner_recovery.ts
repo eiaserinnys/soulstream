@@ -39,13 +39,37 @@ export class TaskRunnerRecovery {
     task.error = message;
     task.completedAt = new Date();
     await this.deps.lifecycleTransition.persistExecutorFinalState(task);
-    await this.deps.autoResumeTransition.resume(task, {
-      text: task.prompt,
-      user: task.clientId ?? "runner-recovery",
-      ...(task.callerInfo ? { callerInfo: task.callerInfo } : {}),
-      ...(task.attachmentPaths ? { attachmentPaths: task.attachmentPaths } : {}),
-      ...(task.contextItems ? { context: task.contextItems } : {}),
-      source: "runner-recovery",
-    }, onResume, { publishUserMessage: false });
+    let replacementCallbackStarted = false;
+    try {
+      await this.deps.autoResumeTransition.resume(task, {
+        text: task.prompt,
+        user: task.clientId ?? "runner-recovery",
+        ...(task.callerInfo ? { callerInfo: task.callerInfo } : {}),
+        ...(task.attachmentPaths ? { attachmentPaths: task.attachmentPaths } : {}),
+        ...(task.contextItems ? { context: task.contextItems } : {}),
+        source: "runner-recovery",
+      }, (resumedTask) => {
+        replacementCallbackStarted = true;
+        onResume(resumedTask);
+      }, { publishUserMessage: false });
+    } catch (error) {
+      // Do not compensate a rejected running CAS: its canonical running owner
+      // may be another execution. Only a callback that failed before creating
+      // local ownership proves this transition has no executor behind it.
+      if (
+        !replacementCallbackStarted
+        || task.runner !== undefined
+        || task.executionPromise !== undefined
+      ) throw error;
+      task.status = "error";
+      task.error = `runner replacement start failed: ${errorMessage(error)}`;
+      task.completedAt = new Date();
+      await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+      throw error;
+    }
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
