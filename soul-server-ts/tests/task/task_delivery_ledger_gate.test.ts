@@ -279,13 +279,22 @@ describe("TaskDeliveryLedgerGate", () => {
     })).rejects.toBe(repositoryError);
   });
 
-  it("suppresses an admitted completion when consumed wins the dispatch CAS", async () => {
-    const deliveryId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  it.each([
+    "pending",
+    "claimed",
+    "dispatching",
+    "queued",
+    "delivered",
+    "consumed",
+    "superseded",
+    "uncertain",
+  ] as const)("reports the actual %s state when dispatch CAS loses", async (state) => {
+    const deliveryId = `dispatch-cas-${state}`;
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
       beginDispatch: vi.fn().mockResolvedValue(null),
-      get: vi.fn().mockResolvedValue(row(deliveryId, "consumed")),
+      get: vi.fn().mockResolvedValue(row(deliveryId, state)),
       markQueued: vi.fn(),
       markDelivered: vi.fn(),
       markUncertain: vi.fn(),
@@ -301,7 +310,33 @@ describe("TaskDeliveryLedgerGate", () => {
     })).resolves.toEqual({
       kind: "suppressed",
       deliveryId,
-      reason: "delivery_consumed_before_dispatch",
+      reason: `delivery_${state}_before_dispatch`,
+    });
+  });
+
+  it("reports a missing row when dispatch CAS loses without durable evidence", async () => {
+    const deliveryId = "dispatch-cas-missing";
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn().mockResolvedValue(null),
+      get: vi.fn().mockResolvedValue(null),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await expect(gate.beginDispatch({
+      kind: "admitted",
+      deliveryId,
+      row: row(deliveryId, "claimed"),
+    })).resolves.toEqual({
+      kind: "suppressed",
+      deliveryId,
+      reason: "delivery_missing_before_dispatch",
     });
   });
 
@@ -341,6 +376,44 @@ describe("TaskDeliveryLedgerGate", () => {
       "route-1",
       "scheduled_runtime_followup_retry",
       new Date(dueAt),
+    );
+  });
+
+  it("fences an uncertain result to the active dispatch lease", async () => {
+    const deliveryId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const markUncertain = vi.fn().mockResolvedValue(row(deliveryId, "uncertain"));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain,
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+    });
+
+    await gate.recordResult({
+      kind: "admitted",
+      deliveryId,
+      row: {
+        ...row(deliveryId, "dispatching"),
+        lease_owner: "route-uncertain",
+      },
+    }, {
+      delivered: null,
+      reason: "verdict_unknown",
+      consumeWhen: null,
+    });
+
+    expect(markUncertain).toHaveBeenCalledWith(
+      deliveryId,
+      "route-uncertain",
+      "delivery_result_not_accepted",
     );
   });
 

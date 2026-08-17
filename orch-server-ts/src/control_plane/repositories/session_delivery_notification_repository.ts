@@ -23,7 +23,6 @@ export class SessionDeliveryNotificationRepository {
         WHERE delivery_id = ${params.deliveryId}
           AND state = 'dispatching'
           AND lease_owner = ${params.leaseOwner}
-          AND lease_expires_at > NOW()
         RETURNING *
       `;
       const row = advanced[0];

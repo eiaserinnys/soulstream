@@ -11,8 +11,7 @@ import type {
   AddInterventionParams,
   AddInterventionResult,
 } from "./task_intervention_route.js";
-import type { Task } from "./task_models.js";
-import type { InterventionMessage } from "./task_models.js";
+import type { InterventionMessage, Task } from "./task_models.js";
 import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
@@ -20,6 +19,8 @@ import {
   notificationOldestAllowedCreatedAt,
   notificationRetryAt,
 } from "./session_delivery_notification_policy.js";
+import { buildNotificationOutboxPayload, isNotificationDeliveryIntent } from
+  "./session_delivery_notification_payload.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -128,10 +129,13 @@ export class TaskDeliveryLedgerGate {
       admission.row.lease_owner ?? undefined,
     );
     if (!dispatching) {
+      const current = await this.requireRepository().get(admission.deliveryId);
       return {
         kind: "suppressed",
         deliveryId: admission.deliveryId,
-        reason: "delivery_consumed_before_dispatch",
+        reason: current
+          ? `delivery_${current.state}_before_dispatch`
+          : "delivery_missing_before_dispatch",
       };
     }
     return { ...admission, row: dispatching };
@@ -200,7 +204,7 @@ export class TaskDeliveryLedgerGate {
       if (!leaseOwner || !targetSessionId) {
         throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
       }
-      if (isNotificationIntent(admission.row.intent)) {
+      if (isNotificationDeliveryIntent(admission.row.intent)) {
         const staged = await repository.notifications.stageWithQueuedDelivery({
           deliveryId: admission.deliveryId,
           leaseOwner,
@@ -219,7 +223,18 @@ export class TaskDeliveryLedgerGate {
       }
       return;
     }
-    await repository.markUncertain(admission.deliveryId);
+    const leaseOwner = admission.row.lease_owner;
+    if (!leaseOwner) {
+      throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
+    }
+    const uncertain = await repository.markUncertain(
+      admission.deliveryId,
+      leaseOwner,
+      "delivery_result_not_accepted",
+    );
+    if (!uncertain) {
+      throw new Error(`Delivery ${admission.deliveryId} lost uncertain-state CAS`);
+    }
   }
 
   async recordFailure(admission: DeliveryLedgerAdmission): Promise<void> {
@@ -231,9 +246,8 @@ export class TaskDeliveryLedgerGate {
   async recordNotificationPublished(
     admission: DeliveryLedgerAdmission,
   ): Promise<void> {
-    if (admission.kind !== "admitted" || !isNotificationIntent(admission.row.intent)) {
-      return;
-    }
+    if (admission.kind !== "admitted") return;
+    if (!isNotificationDeliveryIntent(admission.row.intent)) return;
     const leaseOwner = admission.row.lease_owner;
     if (!leaseOwner) return;
     await this.requireRepository().notifications.markPublished(
@@ -246,9 +260,8 @@ export class TaskDeliveryLedgerGate {
     admission: DeliveryLedgerAdmission,
     error: string,
   ): Promise<void> {
-    if (admission.kind !== "admitted" || !isNotificationIntent(admission.row.intent)) {
-      return;
-    }
+    if (admission.kind !== "admitted") return;
+    if (!isNotificationDeliveryIntent(admission.row.intent)) return;
     const leaseOwner = admission.row.lease_owner;
     if (!leaseOwner) return;
     await this.requireRepository().notifications.retry(
@@ -479,29 +492,4 @@ export function isInlineChildCompletion(
     typeof message.relationKey === "string" &&
     message.relationKey.startsWith("child_session:")
   );
-}
-
-function isNotificationIntent(
-  intent: SessionDeliveryRow["intent"],
-): intent is "completion_notification" | "runtime_followup" {
-  return intent === "completion_notification" || intent === "runtime_followup";
-}
-
-function buildNotificationOutboxPayload(
-  row: SessionDeliveryRow,
-  disposition: "queued" | "auto_resume",
-): Record<string, unknown> {
-  return {
-    text: row.payload.text,
-    user: row.payload.user,
-    caller_info: row.payload.caller_info ?? null,
-    source: row.source,
-    delivery_id: row.delivery_id,
-    delivery_intent: row.intent,
-    completion_id: row.completion_id,
-    relation_key: row.relation_key,
-    followup_key: row.payload.followup_key,
-    followup_attempt: row.payload.followup_attempt,
-    disposition,
-  };
 }

@@ -518,6 +518,123 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(gate.recordFailure).toHaveBeenCalledTimes(1);
   });
 
+  it("starts an already-resumed terminal task exactly once when ledger staging fails", async () => {
+    const deliveryId = "89898989-8989-4898-8989-898989898989";
+    const stageError = new Error("notification staging lease expired");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockRejectedValue(stageError),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition, sessionNotificationPublisher } =
+      makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(
+      async (resumedTask, _message, callback) => {
+        callback(resumedTask);
+        return { autoResumed: true };
+      },
+    );
+    const onResume = vi.fn();
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "runtime result",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: "completion-stage-failure",
+      relationKey: "runtime_task:stage-failure",
+      source: "claude_runtime_task_followup",
+    }, onResume)).rejects.toBe(stageError);
+
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onResume).toHaveBeenCalledWith(task);
+    expect(gate.recordFailure).toHaveBeenCalledTimes(1);
+    expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
+  });
+
+  it("starts an already-resumed terminal task exactly once when publishing throws", async () => {
+    const deliveryId = "90909090-9090-4909-8909-909090909090";
+    const publishError = new Error("notification publish unavailable");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition, sessionNotificationPublisher } =
+      makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(
+      async (resumedTask, _message, callback) => {
+        callback(resumedTask);
+        return { autoResumed: true };
+      },
+    );
+    vi.mocked(sessionNotificationPublisher.publish).mockRejectedValueOnce(publishError);
+    const onResume = vi.fn();
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "child completed",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+      completionId: "completion-publish-failure",
+      relationKey: "child_session:publish-failure:1",
+      source: "completion_notifier",
+    }, onResume)).rejects.toBe(publishError);
+
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(gate.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it("does not retry the executor callback when the callback itself throws", async () => {
+    const deliveryId = "91919191-9191-4919-8919-919191919191";
+    const callbackError = new Error("executor already owns a runner");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition } = makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(
+      async (resumedTask, _message, callback) => {
+        callback(resumedTask);
+        return { autoResumed: true };
+      },
+    );
+    const onResume = vi.fn(() => {
+      throw callbackError;
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "runtime result",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: "completion-callback-failure",
+      relationKey: "runtime_task:callback-failure",
+      source: "claude_runtime_task_followup",
+    }, onResume)).rejects.toBe(callbackError);
+
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
   it("durable_next_turn은 notification으로 오인하지 않고 queue-only user delivery를 유지한다", async () => {
     const deliveryId = "66666666-6666-4666-8666-666666666666";
     const gate = {
