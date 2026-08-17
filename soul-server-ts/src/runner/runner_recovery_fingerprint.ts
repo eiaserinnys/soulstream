@@ -94,7 +94,7 @@ export function unreadableRegistrationFingerprint(failure: {
 
 export function recoveryFailureFingerprint(
   registration: RunnerRegistration,
-  disposition: RunnerRecoveryDisposition,
+  disposition: RunnerRecoveryDisposition | "classification",
   failure: unknown,
 ): string {
   const error = failure instanceof Error ? failure : new Error(String(failure));

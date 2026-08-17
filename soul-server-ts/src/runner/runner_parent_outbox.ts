@@ -165,15 +165,38 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     interventionId: string;
     message: Record<string, unknown>;
   }>> {
+    return (await this.inspectPendingInterventions()).interventions;
+  }
+
+  async inspectPendingInterventions(): Promise<{
+    interventions: Array<{
+      interventionId: string;
+      message: Record<string, unknown>;
+    }>;
+    childInterventionIds: string[];
+    shadowedFallbackIds: string[];
+  }> {
     const child = await this.runner.readPendingInterventions();
     const merged = new Map(child.map((entry) => [entry.interventionId, entry]));
+    const shadowedFallbackIds: string[] = [];
     for (const fallback of this.host.readPendingInterventionFallbacks(this.sessionId)) {
+      // runner.sqlite is the first durable owner. A later host fallback with the
+      // same deterministic identity is a recovery copy, not a second payload
+      // authority, even if regenerated prose differs.
+      if (merged.has(fallback.interventionId)) {
+        shadowedFallbackIds.push(fallback.interventionId);
+        continue;
+      }
       merged.set(fallback.interventionId, {
         interventionId: fallback.interventionId,
         message: fallback.message,
       });
     }
-    return [...merged.values()];
+    return {
+      interventions: [...merged.values()],
+      childInterventionIds: child.map((entry) => entry.interventionId),
+      shadowedFallbackIds,
+    };
   }
 
   stageInterventionFallback(input: {

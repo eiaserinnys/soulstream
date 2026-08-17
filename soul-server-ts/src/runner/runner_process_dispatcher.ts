@@ -46,6 +46,7 @@ import {
   runnerInterventionDiscardCommandId,
 } from "./runner_intervention_identity.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
+import { releaseRunnerHostResources } from "./runner_host_resource_cleanup.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
 import {
   type RunnerIpcConnection,
@@ -262,6 +263,40 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       return { ...staged, durability: "runner" };
     } catch (error) {
       await this.ready;
+      if (input.queued) {
+        const reconciliation = await this.reconcilePendingInterventions();
+        const childQueueIndex = reconciliation.childInterventionIds
+          .indexOf(input.interventionId);
+        if (childQueueIndex >= 0) {
+          this.logRegeneratedInterventionSuppressed(
+            input.interventionId,
+            "runner_sqlite",
+            error,
+          );
+          return {
+            eventSourceSeq: null,
+            queuePosition: childQueueIndex + 1,
+            durability: "runner",
+          };
+        }
+        const existingFallback = this.outbox.readInterventionFallback(input.interventionId);
+        if (existingFallback) {
+          const retained = this.outbox.stageInterventionFallback({
+            ...existingFallback,
+            queued: true,
+          });
+          this.logRegeneratedInterventionSuppressed(
+            input.interventionId,
+            "host_sqlite",
+            error,
+          );
+          return {
+            eventSourceSeq: null,
+            queuePosition: retained.queuePosition,
+            durability: "host_fallback",
+          };
+        }
+      }
       const fallback = this.outbox.stageInterventionFallback(input);
       this.options.logger.info(
         {
@@ -348,7 +383,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
     await this.ready;
-    return await this.outbox.readPendingInterventions();
+    return (await this.reconcilePendingInterventions()).interventions;
   }
 
   async invoke(capability: string, args: unknown[]): Promise<unknown> {
@@ -381,10 +416,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
         );
       } catch (error) {
-        this.stoppedRunnerWriter?.close();
-        this.stoppedRunnerWriter = undefined;
-        await this.stoppedRunnerWriterLock.release();
-        this.stoppedRunnerWriterLock = undefined;
+        try {
+          await this.releaseHostResources();
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [asError(error), asError(cleanupError)],
+            "offline runner initialization and cleanup failed",
+          );
+        }
         throw error;
       }
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
@@ -485,6 +524,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     queuedOverride?: boolean,
   ): Promise<boolean> {
     await this.ready;
+    const reconciliation = await this.reconcilePendingInterventions();
+    if (reconciliation.shadowedFallbackIds.includes(interventionId)) return false;
     const fallback = this.outbox.readInterventionFallback(interventionId);
     if (!fallback) return false;
     const staged = await this.stageInterventionInChild({
@@ -508,6 +549,52 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       "Runner intervention host fallback flushed to child inbox",
     );
     return true;
+  }
+
+  private async reconcilePendingInterventions(): Promise<{
+    interventions: RunnerPendingIntervention[];
+    childInterventionIds: string[];
+    shadowedFallbackIds: string[];
+  }> {
+    const inspection = await this.outbox.inspectPendingInterventions();
+    for (const interventionId of inspection.shadowedFallbackIds) {
+      let fallbackRemoved = false;
+      try {
+        this.outbox.removeInterventionFallback(interventionId);
+        fallbackRemoved = true;
+      } catch (error) {
+        this.options.logger.warn(
+          { err: error, sessionId: this.spawnInput.sessionId, interventionId },
+          "Duplicate host intervention fallback cleanup deferred",
+        );
+      }
+      this.options.logger.info(
+        {
+          sessionId: this.spawnInput.sessionId,
+          interventionId,
+          fallbackRemoved,
+          durableOwner: "runner_sqlite",
+        },
+        "Duplicate host intervention fallback suppressed in favor of runner inbox",
+      );
+    }
+    return inspection;
+  }
+
+  private logRegeneratedInterventionSuppressed(
+    interventionId: string,
+    durableOwner: "runner_sqlite" | "host_sqlite",
+    error: unknown,
+  ): void {
+    this.options.logger.info(
+      {
+        err: error,
+        sessionId: this.spawnInput.sessionId,
+        interventionId,
+        durableOwner,
+      },
+      "Regenerated runner intervention suppressed in favor of first durable payload",
+    );
   }
 
   private async connect(socketPath: string): Promise<RunnerIpcConnection> {
@@ -867,17 +954,26 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async releaseHostResources(): Promise<void> {
-    this.finishActiveRunnerObservation?.();
+    const finishActiveRunnerObservation = this.finishActiveRunnerObservation;
     this.finishActiveRunnerObservation = undefined;
-    this.connection?.close();
+    const connection = this.connection;
     this.connection = undefined;
-    this.unregisterPump?.();
+    const unregisterPump = this.unregisterPump;
     this.unregisterPump = undefined;
-    this.outbox?.close();
-    this.stoppedRunnerWriter?.close();
+    const outbox = this.outbox;
+    this.outbox = undefined as never;
+    const stoppedRunnerWriter = this.stoppedRunnerWriter;
     this.stoppedRunnerWriter = undefined;
-    await this.stoppedRunnerWriterLock?.release();
+    const stoppedRunnerWriterLock = this.stoppedRunnerWriterLock;
     this.stoppedRunnerWriterLock = undefined;
+    await releaseRunnerHostResources([
+      { name: "runner observation", run: () => finishActiveRunnerObservation?.() },
+      { name: "IPC connection", run: () => connection?.close() },
+      { name: "event pump registration", run: () => unregisterPump?.() },
+      { name: "parent outbox", run: () => outbox?.close() },
+      { name: "offline writer", run: () => stoppedRunnerWriter?.close() },
+      { name: "offline writer lock", run: async () => await stoppedRunnerWriterLock?.release() },
+    ]);
   }
 
   private observeActiveExecution(commandId: string, operation: "execute" | "recover"): void {

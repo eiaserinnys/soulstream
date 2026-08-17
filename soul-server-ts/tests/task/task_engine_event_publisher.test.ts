@@ -224,13 +224,14 @@ describe("TaskEngineEventPublisher", () => {
   });
 
 
-  it("records credential_alert as a pending limit_hit termination hint only", async () => {
+  it("records a rejected credential_alert as a pending limit_hit termination hint only", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask();
 
     await publisher.publishEngineEvent(task, {
       type: "credential_alert",
+      status: "rejected",
       message: "rate limit",
       timestamp: 2,
     } as unknown as SSEEventPayload);
@@ -238,6 +239,23 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.status).toBe("running");
     expect(task.pendingTerminationHint).toBe("limit_hit");
     expect(task.pendingTerminationDetail).toBe("rate limit");
+    expect(task.terminationReason).toBeUndefined();
+  });
+
+  it("keeps an allowed credential warning observational", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "credential_alert",
+      status: "allowed_warning",
+      utilization: 0.94,
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(task.status).toBe("running");
+    expect(task.pendingTerminationHint).toBeUndefined();
     expect(task.terminationReason).toBeUndefined();
   });
 

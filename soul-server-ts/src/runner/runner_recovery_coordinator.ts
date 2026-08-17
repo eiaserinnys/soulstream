@@ -11,6 +11,7 @@ import {
 import { unreadableRegistrationFingerprint } from "./runner_recovery_fingerprint.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
+import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
 import {
   markRegistrationReaped,
   prepareRecoveredTask,
@@ -134,11 +135,13 @@ export class RunnerRecoveryCoordinator {
         this.active.has(sessionId)
         || this.adoptionFailureRecovery.has(sessionId)
       ) continue;
-      const disposition = classifyRunnerRegistration(
+      const disposition = classifyRunnerRegistrationSafely(
         registration,
         (this.options.now ?? Date.now)(),
         this.options.leaseTimeoutMs,
+        (error) => this.recoveryLogger.classification(registration, error),
       );
+      if (!disposition) continue;
       if (
         disposition === "wait_for_bootstrap"
       ) {
@@ -309,7 +312,6 @@ export class RunnerRecoveryCoordinator {
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
   }
-
   private scheduleSessionGarbageCollection(
     scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>,
   ): void {
@@ -334,7 +336,6 @@ export class RunnerRecoveryCoordinator {
       });
     this.sessionGarbageCollectionInFlight = collection;
   }
-
   private async handleWithFailureTracking(
     registration: RunnerRegistration,
     disposition: RunnerRecoveryDisposition,

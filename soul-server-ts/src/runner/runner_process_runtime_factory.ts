@@ -80,7 +80,7 @@ export function createRunnerProcessRuntimeFactory(
   options: RunnerProcessRuntimeFactoryOptions,
 ): RunnerProcessRuntimeFactory {
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
-  const spawner = options.spawner ?? new RunnerProcessSpawner();
+  const spawner = options.spawner ?? new RunnerProcessSpawner(undefined, options.logger);
 
   const createRuntime = (
     task: Task,
@@ -105,7 +105,14 @@ export function createRunnerProcessRuntimeFactory(
         options,
       ),
     });
-    const engine = new RunnerProcessEngineProxy(backend, agent.workspace_dir, dispatcher);
+    const engine = new RunnerProcessEngineProxy(
+      backend,
+      agent.workspace_dir,
+      dispatcher,
+      // Offline recovery owns stopped durable files, never a detached child
+      // runtime. Advertising retention here strands the host writer lock.
+      { retainDetachedRuntime: recoveryMode !== "offline" },
+    );
     return createTaskRunnerRuntime(engine, dispatcher, "runner");
   };
 

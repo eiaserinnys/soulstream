@@ -3,6 +3,7 @@ import { access, chmod, mkdir, open, readFile, unlink, writeFile } from "node:fs
 import { join } from "node:path";
 
 import { z } from "zod";
+import type { Logger } from "pino";
 
 import {
   AgentBackendSchema,
@@ -24,6 +25,7 @@ import {
   readRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "./runner_registration_identity.js";
+import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 
@@ -116,7 +118,10 @@ interface SpawnDependencies {
 }
 
 export class RunnerProcessSpawner {
-  constructor(private readonly deps: SpawnDependencies = defaultDependencies()) {}
+  constructor(
+    private readonly deps: SpawnDependencies = defaultDependencies(),
+    private readonly logger?: Pick<Logger, "info">,
+  ) {}
 
   async spawn(input: SpawnRunnerProcessInput): Promise<SpawnedRunnerProcess> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
@@ -137,6 +142,20 @@ export class RunnerProcessSpawner {
     // point leaves a discoverable SQLite identity instead of an orphan child.
     await this.deps.prepareDatabase(paths.databasePath);
     await this.stopExistingRunner(paths);
+    // stopExistingRunner proves any registered child dead (or identity-fenced)
+    // before a current-host orphan is reclaimed. Active host/child owners remain
+    // fail-closed, so this cannot open a split-brain spawn window.
+    const reclaimedHostLock = await prepareRunnerWriterLockForSpawn(paths.lockPath);
+    if (reclaimedHostLock) {
+      this.logger?.info(
+        {
+          sessionId: input.sessionId,
+          runnerDirectory: paths.sessionDirectory,
+          lockPath: paths.lockPath,
+        },
+        "Orphaned runner writer lock reclaimed before replacement spawn",
+      );
+    }
     const registrationIdentity = pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha);
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
 

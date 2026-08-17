@@ -14,7 +14,10 @@ import {
   RUNNER_SOCKET_RETRYABLE_ERROR_CODES,
   RunnerSocketEndpoint,
 } from "../../src/runner/runner_socket_endpoint.js";
-import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
+import {
+  prepareRunnerWriterLockForSpawn,
+  RunnerWriterLock,
+} from "../../src/runner/runner_writer_lock.js";
 import type { ProcessOwnershipLockDependencies } from "../../src/runner/runner_process_lock.js";
 
 const directories: string[] = [];
@@ -95,14 +98,52 @@ describe("runner socket ownership", () => {
     );
     await replacement.release();
   });
+
+  it("reclaims a current-host lock file only when no active lock object owns it", async () => {
+    const orphanPath = await temporaryPath("orphan-host-runner.lock");
+    const deps = ownershipDependencies(true, {
+      pid: 2002,
+      startIdentity: "replacement",
+    });
+    await writeFile(orphanPath, `${JSON.stringify({
+      pid: 2002,
+      startIdentity: "replacement",
+    })}\n`);
+
+    await expect(prepareRunnerWriterLockForSpawn(orphanPath, deps)).resolves.toBe(true);
+
+    const replacement = await RunnerWriterLock.acquire(orphanPath, deps);
+    await expect(prepareRunnerWriterLockForSpawn(orphanPath, deps))
+      .rejects.toThrow("writer lock already held");
+    await replacement.release();
+  });
+
+  it("keeps a live child writer lock fail-closed", async () => {
+    const lockPath = await temporaryPath("live-child-runner.lock");
+    await writeFile(lockPath, `${JSON.stringify({
+      pid: 3003,
+      startIdentity: "live-child",
+    })}\n`);
+    const deps = ownershipDependencies(true, {
+      pid: 2002,
+      startIdentity: "host",
+    }, "live-child");
+
+    await expect(prepareRunnerWriterLockForSpawn(lockPath, deps))
+      .rejects.toThrow("writer lock already held");
+  });
 });
 
-function ownershipDependencies(alive: boolean): ProcessOwnershipLockDependencies {
+function ownershipDependencies(
+  alive: boolean,
+  currentOwner = { pid: 2002, startIdentity: "replacement" },
+  observedStartIdentity = "unknown-live",
+): ProcessOwnershipLockDependencies {
   return {
     now: () => 0,
     delay: async () => {},
-    currentOwner: async () => ({ pid: 2002, startIdentity: "replacement" }),
-    inspectProcess: async () => ({ alive, startIdentity: alive ? "unknown-live" : null }),
+    currentOwner: async () => currentOwner,
+    inspectProcess: async () => ({ alive, startIdentity: alive ? observedStartIdentity : null }),
   };
 }
 
