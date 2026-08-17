@@ -252,6 +252,7 @@ export class RunnerProcessSpawner {
       lifecycle?.runner_pid ?? null,
       identity?.pid ?? null,
       paths.sessionDirectory,
+      this.deps.isPidAlive,
     );
     if (pid === null || !this.deps.isPidAlive(pid)) return null;
     if (identity) {
@@ -307,6 +308,7 @@ export class RunnerProcessSpawner {
       lifecycle?.runner_pid ?? null,
       identity?.pid ?? null,
       paths.sessionDirectory,
+      this.deps.isPidAlive,
     );
     if (pid !== null && this.deps.isPidAlive(pid)) {
       const owner = expected ?? (identity?.pid === pid && identity.startIdentity
@@ -370,14 +372,7 @@ function defaultDependencies(): SpawnDependencies {
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
     registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
     inspectProcess: inspectProcessIdentity,
-    isPidAlive: (pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "EPERM";
-      }
-    },
+    isPidAlive: isProcessAlive,
     signalPid: (pid, signal) => process.kill(pid, signal),
     now: Date.now,
     delay: async (ms) => await new Promise((resolve) => setTimeout(resolve, ms)),
@@ -423,13 +418,29 @@ export function resolveRegisteredRunnerPid(
   lifecyclePid: number | null,
   identityPid: number | null,
   label: string,
+  candidateIsAlive: (pid: number) => boolean = isProcessAlive,
 ): number | null {
   const candidates = [pidFilePid, lifecyclePid, identityPid]
     .filter((pid): pid is number => pid !== null);
-  if (new Set(candidates).size > 1) {
+  const uniqueCandidates = [...new Set(candidates)];
+  if (
+    uniqueCandidates.length > 1
+    && uniqueCandidates.filter(candidateIsAlive).length > 0
+  ) {
     throw new Error(`runner pid evidence disagrees: ${label}`);
   }
-  return candidates[0] ?? null;
+  // Mismatched dead evidence is stale registration residue, not split brain.
+  // Prefer the identity owner so later identity checks remain authoritative.
+  return identityPid ?? pidFilePid ?? lifecyclePid ?? null;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 async function unlinkIfPresent(path: string): Promise<void> {

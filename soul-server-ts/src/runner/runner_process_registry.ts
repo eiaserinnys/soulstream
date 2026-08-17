@@ -304,6 +304,7 @@ export async function readRunnerRegistrationSummary(
       lifecycle?.runner_pid ?? null,
       identity?.pid ?? null,
       directory,
+      isPidAlive,
     );
     if (identity && identity.pid !== null && identity.pid !== pid) {
       throw new Error(`runner pid identity does not match registration: ${directory}`);
