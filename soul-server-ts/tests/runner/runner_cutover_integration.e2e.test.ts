@@ -240,7 +240,11 @@ describe("runner cutover all-flags-on integration", () => {
     expect(await pathExists(join(controlDirectory, "followup-executed"))).toBe(false);
 
     await writeFile(join(controlDirectory, "release-background-2"), "go\n");
-    await waitFor(async () => await pathExists(join(controlDirectory, "followup-executed")));
+    await waitFor(async () => {
+      const path = join(controlDirectory, "followup-executed");
+      if (!(await pathExists(path))) return false;
+      return Number.parseInt((await readFile(path, "utf8")).trim(), 10) === pid;
+    });
     expect(Number.parseInt(
       (await readFile(join(controlDirectory, "followup-executed"), "utf8")).trim(),
       10,
@@ -641,8 +645,12 @@ describe("runner cutover all-flags-on integration", () => {
         10,
       );
       childPids.add(replacementPid);
+      const recoveredExecutionPath = join(
+        controlDirectory,
+        "recovered-intervention-execution.json",
+      );
       await waitFor(async () =>
-        await pathExists(join(controlDirectory, "recovered-intervention-execution.json"))
+        await hasCompleteJson(recoveredExecutionPath)
         || await pathExists(join(controlDirectory, "child-error"))
         || task.status === "error");
       if (await pathExists(join(controlDirectory, "child-error"))) {
@@ -652,7 +660,7 @@ describe("runner cutover all-flags-on integration", () => {
         throw new Error(task.error ?? "replacement runner failed");
       }
       expect(JSON.parse(await readFile(
-        join(controlDirectory, "recovered-intervention-execution.json"),
+        recoveredExecutionPath,
         "utf8",
       ))).toMatchObject({
         runnerInterventionId: "legacy-ambiguous-e2e",
@@ -1030,6 +1038,17 @@ async function pathExists(path: string): Promise<boolean> {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function hasCompleteJson(path: string): Promise<boolean> {
+  if (!(await pathExists(path))) return false;
+  try {
+    JSON.parse(await readFile(path, "utf8"));
+    return true;
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
     throw error;
   }
 }

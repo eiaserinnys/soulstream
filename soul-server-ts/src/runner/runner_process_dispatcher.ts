@@ -275,16 +275,20 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           );
           return {
             eventSourceSeq: null,
-            queuePosition: childQueueIndex + 1,
+            queuePosition: mergedQueuePosition(
+              reconciliation.interventions,
+              input.interventionId,
+            ),
             durability: "runner",
           };
         }
         const existingFallback = this.outbox.readInterventionFallback(input.interventionId);
         if (existingFallback) {
-          const retained = this.outbox.stageInterventionFallback({
+          this.outbox.stageInterventionFallback({
             ...existingFallback,
             queued: true,
           });
+          const merged = await this.reconcilePendingInterventions();
           this.logRegeneratedInterventionSuppressed(
             input.interventionId,
             "host_sqlite",
@@ -292,12 +296,21 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           );
           return {
             eventSourceSeq: null,
-            queuePosition: retained.queuePosition,
+            queuePosition: mergedQueuePosition(
+              merged.interventions,
+              input.interventionId,
+            ),
             durability: "host_fallback",
           };
         }
       }
       const fallback = this.outbox.stageInterventionFallback(input);
+      const queuePosition = input.queued
+        ? mergedQueuePosition(
+            (await this.reconcilePendingInterventions()).interventions,
+            input.interventionId,
+          )
+        : fallback.queuePosition;
       this.options.logger.info(
         {
           err: error,
@@ -310,7 +323,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
       return {
         eventSourceSeq: null,
-        queuePosition: fallback.queuePosition,
+        queuePosition,
         durability: "host_fallback",
       };
     }
@@ -992,6 +1005,19 @@ function assertCommandAccepted(frame: RunnerCommandResultFrame): RunnerCommandRe
   throw new Error(
     `Runner command ${frame.commandId} failed (${frame.result.error.code}): ${frame.result.error.message}`,
   );
+}
+
+function mergedQueuePosition(
+  interventions: RunnerPendingIntervention[],
+  interventionId: string,
+): number {
+  const index = interventions.findIndex(
+    (intervention) => intervention.interventionId === interventionId,
+  );
+  if (index < 0) {
+    throw new Error(`staged runner intervention is absent from merged queue: ${interventionId}`);
+  }
+  return index + 1;
 }
 
 function readActiveExecutionCommandId(frame: RunnerCommandResultFrame): string {

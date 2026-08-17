@@ -29,7 +29,7 @@ export class TaskDeliveryConsumption {
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger consume update failed",
       );
-      if (isInlineChildCompletion(intervention)) {
+      if (requiresExactConsumption(intervention)) {
         // Child result consumption is an exactly-once boundary. Returning
         // success without its relation tombstone lets a later notifier wake
         // and display the already-observed completion again.
@@ -54,4 +54,12 @@ export class TaskDeliveryConsumption {
       return false;
     }
   }
+}
+
+function requiresExactConsumption(
+  intervention: InterventionMessage,
+): boolean {
+  return isInlineChildCompletion(intervention)
+    || intervention.deliveryIntent === "runtime_followup"
+    || intervention.source === "claude_runtime_task_followup";
 }

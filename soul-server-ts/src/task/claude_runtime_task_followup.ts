@@ -34,6 +34,7 @@ import {
   runtimeString as asString,
   sleepWithoutHoldingProcess as sleep,
 } from "./claude_runtime_followup_utils.js";
+import { interventionPriorityLane } from "./task_intervention_queue.js";
 
 export { buildClaudeRuntimeTaskFollowupPrompt } from
   "./claude_runtime_task_followup_prompt.js";
@@ -342,7 +343,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     task: Task,
     supersedingMessage: InterventionMessage,
   ): Promise<void> {
-    if (supersedingMessage.source === CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
+    if (interventionPriorityLane(supersedingMessage) !== "high") return;
 
     const cancelled: ScheduledRuntimeTaskFallback[] = [];
     for (const [followupKey, scheduled] of this.scheduledFallbacks) {
@@ -357,7 +358,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       await scheduled.reservation;
       await this.deps.pendingSupersessionRecorder?.recordPendingSuperseded(
         scheduled.fallbackMessage,
-        "user_message",
+        supersedingMessage.source ?? "user_message",
       );
     }));
     const failures = supersessionResults.filter((result) => result.status === "rejected");

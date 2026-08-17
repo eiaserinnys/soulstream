@@ -38,7 +38,10 @@ export class TaskDeliveryTurnReceipt {
       this.recorded =
         await this.consumption.recordTurnStarted(task, this.intervention);
     }
-    if (!this.recorded) return;
+    // Iterator exhaustion is direct evidence that this foreground input ran.
+    // Even when the advisory turn-start receipt remains unavailable, attempt
+    // the canonical consume boundary instead of leaving the parent delivery
+    // as an accidental retry token.
     await this.consumption.recordConsumed(task, this.intervention);
     this.consumed = true;
   }

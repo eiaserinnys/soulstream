@@ -114,6 +114,8 @@ interface RuntimeFollowupCandidate {
   followupKey: string;
   followupAttempt: number;
   createdAt: Date;
+  /** null denotes the candidate currently entering the serialized admission gate. */
+  enqueueSequence: bigint | null;
 }
 
 async function registerRuntimeFollowupDelivery(
@@ -131,8 +133,10 @@ async function registerRuntimeFollowupDelivery(
   const exactRows = await transaction<SessionDeliveryRow[]>`
     SELECT * FROM session_deliveries WHERE delivery_id = ${params.deliveryId}
   `;
-  if (exactRows[0]) {
-    return await resolveRegistrationConflict(transaction, params, exactRows[0]);
+  const exact = exactRows[0];
+  if (exact) {
+    const resolved = await resolveRegistrationConflict(transaction, params, exact);
+    if (resolved.conflict || resolved.row.state !== "pending") return resolved;
   }
 
   const pendingRows = await transaction<SessionDeliveryRow[]>`
@@ -149,14 +153,44 @@ async function registerRuntimeFollowupDelivery(
         ELSE 1
       END DESC,
       created_at DESC,
-      delivery_id DESC
+      enqueue_sequence DESC
     FOR UPDATE
   `;
   const newestPending = pendingRows[0]
     ? runtimeFollowupCandidateFromRow(pendingRows[0])
     : undefined;
+  const candidateForOrder = exact
+    ? runtimeFollowupCandidateFromRow(exact)
+    : candidate;
   const candidateIsLatest = !newestPending
-    || compareRuntimeFollowupCandidates(candidate, newestPending) >= 0;
+    || compareRuntimeFollowupCandidates(candidateForOrder, newestPending) >= 0;
+  if (exact) {
+    if (candidateIsLatest) {
+      await supersedePendingRuntimeFollowupSiblings(
+        transaction,
+        params,
+        targetSessionId,
+        candidate.followupKey,
+      );
+      return { row: exact, inserted: false, conflict: false };
+    }
+    const supersededRows = await transaction<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET
+        state = 'superseded',
+        superseded_at = NOW(),
+        superseded_terminal_revision = ${params.producerTerminalRevision ?? null},
+        updated_at = NOW()
+      WHERE delivery_id = ${params.deliveryId}
+        AND state = 'pending'
+      RETURNING *
+    `;
+    return {
+      row: supersededRows[0] ?? exact,
+      inserted: false,
+      conflict: false,
+    };
+  }
   const initialState = candidateIsLatest ? "pending" : "superseded";
   const createdAt = candidate.createdAt;
   const insertedRows = await transaction<SessionDeliveryRow[]>`
@@ -201,21 +235,35 @@ async function registerRuntimeFollowupDelivery(
     return await resolveRegistrationConflict(transaction, params, conflict);
   }
   if (candidateIsLatest) {
-    await transaction`
-      UPDATE session_deliveries
-      SET
-        state = 'superseded',
-        superseded_at = NOW(),
-        superseded_terminal_revision = ${params.producerTerminalRevision ?? null},
-        updated_at = NOW()
-      WHERE intent = 'runtime_followup'
-        AND state = 'pending'
-        AND delivery_id <> ${params.deliveryId}
-        AND target_session_id IS NOT DISTINCT FROM ${targetSessionId}
-        AND payload->>'followup_key' = ${candidate.followupKey}
-    `;
+    await supersedePendingRuntimeFollowupSiblings(
+      transaction,
+      params,
+      targetSessionId,
+      candidate.followupKey,
+    );
   }
   return { row: inserted, inserted: true, conflict: false };
+}
+
+async function supersedePendingRuntimeFollowupSiblings(
+  transaction: SqlClient,
+  params: RegisterSessionDeliveryParams,
+  targetSessionId: string | null,
+  followupKey: string,
+): Promise<void> {
+  await transaction`
+    UPDATE session_deliveries
+    SET
+      state = 'superseded',
+      superseded_at = NOW(),
+      superseded_terminal_revision = ${params.producerTerminalRevision ?? null},
+      updated_at = NOW()
+    WHERE intent = 'runtime_followup'
+      AND state = 'pending'
+      AND delivery_id <> ${params.deliveryId}
+      AND target_session_id IS NOT DISTINCT FROM ${targetSessionId}
+      AND payload->>'followup_key' = ${followupKey}
+  `;
 }
 
 async function resolveRegistrationConflict(
@@ -265,6 +313,7 @@ function readRuntimeFollowupCandidate(
     followupKey,
     followupAttempt,
     createdAt: params.createdAt ?? new Date(),
+    enqueueSequence: null,
   };
 }
 
@@ -279,15 +328,30 @@ function runtimeFollowupCandidateFromRow(
         ? attempt
         : 1,
     createdAt: row.created_at,
+    enqueueSequence: BigInt(row.enqueue_sequence ?? 0),
   };
 }
 
 export function compareRuntimeFollowupCandidates(
-  left: Pick<RuntimeFollowupCandidate, "followupAttempt" | "createdAt">,
-  right: Pick<RuntimeFollowupCandidate, "followupAttempt" | "createdAt">,
+  left: Pick<
+    RuntimeFollowupCandidate,
+    "followupAttempt" | "createdAt" | "enqueueSequence"
+  >,
+  right: Pick<
+    RuntimeFollowupCandidate,
+    "followupAttempt" | "createdAt" | "enqueueSequence"
+  >,
 ): number {
   return left.followupAttempt - right.followupAttempt
-    || left.createdAt.getTime() - right.createdAt.getTime();
+    || left.createdAt.getTime() - right.createdAt.getTime()
+    || compareEnqueueSequence(left.enqueueSequence, right.enqueueSequence);
+}
+
+function compareEnqueueSequence(left: bigint | null, right: bigint | null): number {
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left > right ? 1 : -1;
 }
 export async function getSessionDeliveryRelationConsumption(
   sql: SqlClient,

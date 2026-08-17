@@ -7,6 +7,8 @@ import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
   ClaudeRuntimeTaskFollowupController,
 } from "../../src/task/claude_runtime_task_followup.js";
+import { buildRuntimeFollowupFallback } from
+  "../../src/task/claude_runtime_followup_fallback.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -692,6 +694,48 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
   });
 
+  it("attempt 2와 3 retry는 부모 relation·delivery identity를 재사용하지 않는다", () => {
+    const task = makeTask();
+    const parent = {
+      text: "initial runtime followup",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      followupAttempt: 1,
+      followupKey: "sess-1:task-1",
+      followupTaskIds: ["task-1"],
+      deliveryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      deliveryIntent: "runtime_followup" as const,
+      relationKey: "claude_runtime:sess-1:unknown:task-1@1",
+      producerTerminalRevision: "task-1@1",
+    };
+
+    const attempt2 = buildRuntimeFollowupFallback(
+      task,
+      parent,
+      "empty_response",
+      true,
+    ).fallbackMessage;
+    const attempt3 = buildRuntimeFollowupFallback(
+      task,
+      attempt2,
+      "repeated_response",
+      true,
+    ).fallbackMessage;
+
+    expect(attempt2.followupAttempt).toBe(2);
+    expect(attempt3.followupAttempt).toBe(3);
+    expect(new Set([
+      parent.relationKey,
+      attempt2.relationKey,
+      attempt3.relationKey,
+    ]).size).toBe(3);
+    expect(new Set([
+      parent.deliveryId,
+      attempt2.deliveryId,
+      attempt3.deliveryId,
+    ]).size).toBe(3);
+  });
+
   it("같은 followupKey의 지연 fallback은 하나만 유지한다", async () => {
     let releaseSleep!: () => void;
     const sleep = vi.fn(() => new Promise<void>((resolve) => {
@@ -801,6 +845,14 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     }, "empty_response");
     await scheduled.reserved;
     await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+
+    await controller.cancelScheduledFallback(task, {
+      text: "another child completed",
+      user: "agent",
+      source: "completion_notifier",
+      deliveryIntent: "completion_notification",
+    });
+    expect(recordPendingSuperseded).not.toHaveBeenCalled();
 
     await controller.cancelScheduledFallback(task, {
       text: "user wins",

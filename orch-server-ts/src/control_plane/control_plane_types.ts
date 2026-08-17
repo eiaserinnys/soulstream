@@ -18,6 +18,7 @@ export type DeliveryState =
 
 export interface SessionDeliveryRow {
   delivery_id: string;
+  enqueue_sequence?: string | number;
   target_session_id: string | null;
   source_session_id: string | null;
   relation_key: string;

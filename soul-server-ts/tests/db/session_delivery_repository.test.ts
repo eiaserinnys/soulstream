@@ -74,14 +74,18 @@ const registration = {
 };
 
 describe("SessionDeliveryRepository", () => {
-  it("orders runtime follow-ups by attempt then createdAt", () => {
+  it("orders runtime follow-ups by attempt, createdAt, then enqueue sequence", () => {
     expect(compareRuntimeFollowupCandidates(
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T00:00:00Z") },
-      { followupAttempt: 1, createdAt: new Date("2026-08-18T01:00:00Z") },
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T00:00:00Z"), enqueueSequence: 1n },
+      { followupAttempt: 1, createdAt: new Date("2026-08-18T01:00:00Z"), enqueueSequence: 2n },
     )).toBeGreaterThan(0);
     expect(compareRuntimeFollowupCandidates(
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z") },
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T01:00:00Z") },
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 1n },
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T01:00:00Z"), enqueueSequence: 2n },
+    )).toBeGreaterThan(0);
+    expect(compareRuntimeFollowupCandidates(
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 3n },
+      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 2n },
     )).toBeGreaterThan(0);
   });
 
@@ -335,6 +339,13 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const enqueueSequenceMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/066_session_delivery_enqueue_sequence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
@@ -351,6 +362,7 @@ describe("session_deliveries migration safety", () => {
     );
     expect(manifest).toContain("053_retire_supervisor.sql");
     expect(manifest).toContain("065_completion_terminal_revision_fence.sql");
+    expect(manifest).toContain("066_session_delivery_enqueue_sequence.sql");
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(deliveryMigration).toContain("ON DELETE SET NULL");
@@ -383,6 +395,14 @@ describe("session_deliveries migration safety", () => {
       "CREATE TABLE IF NOT EXISTS claude_background_tasks",
     );
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
+    for (const sql of [enqueueSequenceMigration, schema]) {
+      expect(sql).toContain(
+        "enqueue_sequence BIGINT GENERATED ALWAYS AS IDENTITY",
+      );
+      expect(sql).toContain(
+        "idx_session_deliveries_runtime_followup_latest",
+      );
+    }
     expect(schema).toContain(
       "CREATE TABLE IF NOT EXISTS session_delivery_relation_consumptions",
     );

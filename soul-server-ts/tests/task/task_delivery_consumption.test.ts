@@ -79,6 +79,19 @@ describe("TaskDeliveryConsumption", () => {
       completionId: "completion-child",
       relationKey: "child_session:child-1:42",
     })).rejects.toThrow("db unavailable");
-    expect(warn).toHaveBeenCalledTimes(3);
+    const runtimeFollowup = {
+      ...makeMessage(),
+      deliveryIntent: "runtime_followup" as const,
+      source: "claude_runtime_task_followup",
+    };
+    await expect(subject.recordTurnStarted(
+      makeTask(),
+      runtimeFollowup,
+    )).resolves.toBe(false);
+    await expect(subject.recordConsumed(
+      makeTask(),
+      runtimeFollowup,
+    )).rejects.toThrow("db unavailable");
+    expect(warn).toHaveBeenCalledTimes(5);
   });
 });

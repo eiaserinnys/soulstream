@@ -329,6 +329,7 @@ ALTER TABLE session_digests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT 
 -- Existing installations receive this table through versioned migration 045.
 CREATE TABLE IF NOT EXISTS session_deliveries (
     delivery_id                TEXT PRIMARY KEY,
+    enqueue_sequence           BIGINT GENERATED ALWAYS AS IDENTITY,
     target_session_id          TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     source_session_id          TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     relation_key               TEXT NOT NULL,
@@ -389,6 +390,7 @@ ALTER TABLE session_deliveries
     REFERENCES sessions(session_id)
     ON DELETE SET NULL;
 ALTER TABLE session_deliveries
+    ADD COLUMN IF NOT EXISTS enqueue_sequence BIGINT GENERATED ALWAYS AS IDENTITY,
     ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS lease_owner TEXT,
     ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
@@ -423,6 +425,15 @@ CREATE INDEX IF NOT EXISTS idx_session_deliveries_source_terminal_revision
     ON session_deliveries(source_session_id, producer_terminal_revision, state)
     WHERE intent = 'completion_notification'
       AND source = 'completion_notifier';
+CREATE INDEX IF NOT EXISTS idx_session_deliveries_runtime_followup_latest
+    ON session_deliveries (
+        target_session_id,
+        (payload->>'followup_key'),
+        created_at,
+        enqueue_sequence
+    )
+    WHERE intent = 'runtime_followup'
+      AND source = 'claude_runtime_task_followup';
 
 -- Semantic completion consumption is intentionally independent from the
 -- delivery row. A caller can consume an inline child result before the

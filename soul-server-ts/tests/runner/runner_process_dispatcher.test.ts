@@ -128,6 +128,76 @@ describe("RunnerProcessDispatcher", () => {
     await dispatcher.close();
   });
 
+  it("reports ACK-loss fallback positions from the merged priority queue", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    await writer.stageIntervention({
+      interventionId: "followup-low",
+      message: {
+        text: "background followup",
+        user: "system",
+        source: "claude_runtime_task_followup",
+      },
+      queued: true,
+      queuedAt: "2026-08-17T00:00:01.000Z",
+    });
+    writer.close();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      offlineExisting: true,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    } as never);
+    vi.spyOn(
+      dispatcher as unknown as {
+        stageInterventionInChild(input: unknown): Promise<unknown>;
+      },
+      "stageInterventionInChild",
+    ).mockRejectedValue(new Error("runner ACK lost"));
+
+    await expect(dispatcher.stageIntervention({
+      interventionId: "user-high",
+      message: { text: "real user message", user: "alice", source: "user_message" },
+      queued: true,
+    })).resolves.toMatchObject({
+      queuePosition: 1,
+      durability: "host_fallback",
+    });
+    await expect(dispatcher.stageIntervention({
+      interventionId: "followup-low",
+      message: {
+        text: "regenerated background followup",
+        user: "system",
+        source: "claude_runtime_task_followup",
+      },
+      queued: true,
+    })).resolves.toMatchObject({
+      queuePosition: 2,
+      durability: "runner",
+    });
+    await expect(dispatcher.recoverPendingInterventions()).resolves.toEqual([
+      expect.objectContaining({ interventionId: "user-high" }),
+      expect.objectContaining({ interventionId: "followup-low" }),
+    ]);
+    await dispatcher.close();
+  });
+
   it("releases an offline writer lock even when an earlier cleanup step throws", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

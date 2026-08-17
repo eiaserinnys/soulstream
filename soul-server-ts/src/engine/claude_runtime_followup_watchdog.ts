@@ -123,8 +123,7 @@ export class ClaudeRuntimeFollowupWatchdog {
 }
 
 function isForegroundResponseProgress(event: ClaudeClientEvent): boolean {
-  return event.type === "progress"
-    || event.type === "text"
+  return event.type === "text"
     || event.type === "thinking"
     || event.type === "tool_start"
     || event.type === "tool_result";
