@@ -1739,6 +1739,37 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("propagates an adopted runner transport failure after finalizing the failed execution", async () => {
+    const mocks = makeMocks();
+    const socketError = new Error("Runner socket unavailable after 10000ms deadline", {
+      cause: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
+    });
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    dispatcher.recoverFrames.mockReturnValue((async function* () {
+      throw socketError;
+    })());
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    await expect(executor.recoverRunnerExecution(
+      task,
+      agent,
+      runner,
+      "execute-old",
+      "adopt",
+    )).rejects.toBe(socketError);
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("Runner socket unavailable after 10000ms deadline");
+    expect(dispatcher.close).toHaveBeenCalledOnce();
+  });
+
   it.each([
     {
       label: "success",

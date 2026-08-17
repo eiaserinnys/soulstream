@@ -45,6 +45,159 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.terminate).not.toHaveBeenCalled();
   });
 
+  it("reaps and restarts when adoption loses a runner before its socket becomes available", async () => {
+    const socketError = runnerSocketMissingError();
+    const failedRunner = failedRecoveryRunner();
+    const restartRegisteredRunner = vi.fn();
+    const recoverRegisteredRunner = vi.fn((recovered: Task, _config, _commandId, mode) => {
+      if (mode === "offline") return Promise.resolve();
+      const failure = Promise.reject(socketError);
+      recovered.runner = failedRunner.runner;
+      recovered.executionPromise = failure;
+      return failure;
+    });
+    const current = registration({ lifecycleState: "running" });
+    const refreshRegistration = vi.fn(async () => ({ ...current, pidAlive: false }));
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: {
+        recoverRegisteredRunner,
+        restartRegisteredRunner,
+      },
+      refreshRegistration,
+    });
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(refreshRegistration).toHaveBeenCalledOnce());
+    expect(subject.logger.error.mock.calls).toEqual([]);
+    await vi.waitFor(() => expect(subject.markReaped).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(recoverRegisteredRunner).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(restartRegisteredRunner).toHaveBeenCalledOnce());
+
+    expect(refreshRegistration).toHaveBeenCalledOnce();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(recoverRegisteredRunner).toHaveBeenNthCalledWith(
+      2,
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "offline",
+    );
+    expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
+      recoverRegisteredRunner.mock.invocationCallOrder[1]!,
+    );
+    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
+  });
+
+  it("identity-fences a live running registration whose socket disappeared before restart", async () => {
+    const socketError = runnerSocketMissingError();
+    const failedRunner = failedRecoveryRunner();
+    const restartRegisteredRunner = vi.fn();
+    const recoverRegisteredRunner = vi.fn((recovered: Task, _config, _commandId, mode) => {
+      if (mode === "offline") return Promise.resolve();
+      const failure = Promise.reject(socketError);
+      recovered.runner = failedRunner.runner;
+      recovered.executionPromise = failure;
+      return failure;
+    });
+    const current = registration({ lifecycleState: "running" });
+    const refreshRegistration = vi.fn(async () => current);
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: {
+        recoverRegisteredRunner,
+        restartRegisteredRunner,
+      },
+      refreshRegistration,
+    });
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(refreshRegistration).toHaveBeenCalledOnce());
+    expect(subject.logger.error.mock.calls).toEqual([]);
+    await vi.waitFor(() => expect(subject.markReaped).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(recoverRegisteredRunner).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(restartRegisteredRunner).toHaveBeenCalledOnce());
+
+    expect(subject.terminate).toHaveBeenCalledWith(
+      expect.anything(),
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
+      subject.markReaped.mock.invocationCallOrder[0]!,
+    );
+    expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
+      recoverRegisteredRunner.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("does not kill a live prebootstrap runner for a transient missing socket", async () => {
+    const socketError = runnerSocketMissingError();
+    const failedRunner = failedRecoveryRunner();
+    const restartRegisteredRunner = vi.fn();
+    const recoverRegisteredRunner = vi.fn((recovered: Task) => {
+      const failure = Promise.reject(socketError);
+      recovered.runner = failedRunner.runner;
+      recovered.executionPromise = failure;
+      return failure;
+    });
+    const pending = {
+      ...registration(),
+      bootstrap: null,
+      lifecycle: null,
+    };
+    const refreshRegistration = vi.fn(async () => pending);
+    const subject = makeSubject([pending], RECOVERY_NOW_MS, [], {
+      taskExecutor: {
+        recoverRegisteredRunner,
+        restartRegisteredRunner,
+      },
+      refreshRegistration,
+    });
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(refreshRegistration).toHaveBeenCalledOnce());
+
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.markReaped).not.toHaveBeenCalled();
+    expect(restartRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a runner after a newer execution takes task ownership", async () => {
+    const failedRunner = failedRecoveryRunner();
+    const newerRunner = failedRecoveryRunner();
+    let rejectAdoption!: (error: unknown) => void;
+    const adoptionFailure = new Promise<void>((_resolve, reject) => {
+      rejectAdoption = reject;
+    });
+    const recoverRegisteredRunner = vi.fn((recovered: Task) => {
+      recovered.runner = failedRunner.runner;
+      recovered.executionPromise = adoptionFailure;
+      return adoptionFailure;
+    });
+    const current = registration({ lifecycleState: "running" });
+    const refreshRegistration = vi.fn(async () => current);
+    const restartRegisteredRunner = vi.fn();
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
+      refreshRegistration,
+    });
+
+    await subject.coordinator.scanOnce();
+    const newerExecution = Promise.resolve();
+    subject.task.runner = newerRunner.runner;
+    subject.task.executionPromise = newerExecution;
+    rejectAdoption(runnerSocketMissingError());
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.task.runner).toBe(newerRunner.runner);
+    expect(subject.task.executionPromise).toBe(newerExecution);
+    expect(refreshRegistration).not.toHaveBeenCalled();
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.markReaped).not.toHaveBeenCalled();
+    expect(restartRegisteredRunner).not.toHaveBeenCalled();
+  });
+
   it("runner death while the server lives drains offline, marks error, and auto-resumes", async () => {
     const subject = makeSubject([registration({ pidAlive: false })]);
 
@@ -1045,6 +1198,27 @@ function failureContext(message: string) {
     sessionId: "session-a",
     err: expect.objectContaining({ message }),
   });
+}
+
+function runnerSocketMissingError(): Error {
+  return new Error("Runner socket unavailable after 10000ms deadline", {
+    cause: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
+  });
+}
+
+function failedRecoveryRunner(): {
+  runner: NonNullable<Task["runner"]>;
+  detachHost: ReturnType<typeof vi.fn>;
+} {
+  const detachHost = vi.fn(async () => {});
+  return {
+    runner: {
+      dispatcher: { detachHost } as NonNullable<Task["runner"]>["dispatcher"],
+      engine: {} as NonNullable<Task["runner"]>["engine"],
+      eventPersistence: "runner",
+    },
+    detachHost,
+  };
 }
 
 function registration(options: {

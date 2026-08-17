@@ -323,7 +323,13 @@ export class TaskExecutor {
           );
         }
       }
-      await this.consumeRecoveredRunnerFrames(task, agent, runner, frames);
+      await this.consumeRecoveredRunnerFrames(
+        task,
+        agent,
+        runner,
+        frames,
+        mode === "adopt",
+      );
     })();
     task.executionPromise = promise;
     return promise;
@@ -684,8 +690,11 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     frames: AsyncIterable<import("../runner/frame_protocol.js").RunnerEventFrame>,
+    propagateFailure: boolean,
   ): Promise<void> {
     const contextRecovery = createClaudeContextRecoveryObservation();
+    let recoveryFailed = false;
+    let recoveryFailure: unknown;
     try {
       for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
         observeClaudeContextRecoveryEvent(contextRecovery, event);
@@ -740,6 +749,8 @@ export class TaskExecutor {
       }
     } catch (error) {
       await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
+      recoveryFailed = true;
+      recoveryFailure = error;
     } finally {
       try {
         const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
@@ -753,6 +764,11 @@ export class TaskExecutor {
       task.completedAt = new Date();
       await this._finalize(task);
     }
+    // Startup adoption owns a live child. Its caller must be able to re-check
+    // that ownership and replace a dead/unreachable registration. Offline
+    // terminal replay intentionally keeps the historical swallow-and-finalize
+    // contract because the durable terminal error is the replay result.
+    if (recoveryFailed && propagateFailure) throw recoveryFailure;
   }
 
   private async restoreDurableRunnerInterventions(
