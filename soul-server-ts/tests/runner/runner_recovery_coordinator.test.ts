@@ -12,6 +12,33 @@ import type { Task } from "../../src/task/task_models.js";
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+  it("isolates a malformed registration classification and recovers later sessions", async () => {
+    const malformed = registration({
+      sessionId: "session-malformed",
+      lifecycleState: "running",
+      progressedAt: "not-a-timestamp",
+    });
+    const healthy = registration({ sessionId: "session-healthy", lifecycleState: "running" });
+    const subject = makeSubject([malformed, healthy]);
+
+    await expect(subject.coordinator.scanOnce()).resolves.toBeUndefined();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-healthy" }),
+      expect.anything(),
+      "execute-a",
+      "adopt",
+    );
+    expect(subject.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.objectContaining({ message: expect.stringContaining("timestamp invalid") }),
+        sessionId: "session-malformed",
+      }),
+      "runner recovery classification failed",
+    );
+  });
+
   it("adopts a live registered runner before its first durable bootstrap event", async () => {
     const pending = {
       ...registration(),

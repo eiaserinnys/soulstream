@@ -40,6 +40,16 @@ export class RunnerRecoveryLogger {
     );
   }
 
+  classification(registration: RunnerRegistration, error: unknown): void {
+    const sessionId = registration.config.sessionId;
+    const logContext = this.record(registration, "classification", error);
+    if (!logContext) return;
+    this.options.logger.error(
+      { err: error, sessionId, ...logContext },
+      "runner recovery classification failed",
+    );
+  }
+
   hydration(outcome: RunnerRecoveryHydrationOutcome): void {
     const { registration, disposition } = outcome;
     const sessionId = registration.config.sessionId;
@@ -66,7 +76,7 @@ export class RunnerRecoveryLogger {
 
   private record(
     registration: RunnerRegistration,
-    disposition: RunnerRecoveryDisposition,
+    disposition: RunnerRecoveryDisposition | "classification",
     error: unknown,
   ) {
     return this.failures.record(

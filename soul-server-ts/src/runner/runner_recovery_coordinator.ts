@@ -134,11 +134,17 @@ export class RunnerRecoveryCoordinator {
         this.active.has(sessionId)
         || this.adoptionFailureRecovery.has(sessionId)
       ) continue;
-      const disposition = classifyRunnerRegistration(
-        registration,
-        (this.options.now ?? Date.now)(),
-        this.options.leaseTimeoutMs,
-      );
+      let disposition: RunnerRecoveryDisposition;
+      try {
+        disposition = classifyRunnerRegistration(
+          registration,
+          (this.options.now ?? Date.now)(),
+          this.options.leaseTimeoutMs,
+        );
+      } catch (error) {
+        this.recoveryLogger.classification(registration, error);
+        continue;
+      }
       if (
         disposition === "wait_for_bootstrap"
       ) {
