@@ -81,8 +81,11 @@ export class TaskEngineEventPublisher {
     eventType: string,
   ): void {
     if (eventType === "credential_alert") {
-      const detail = (event as { message?: unknown; detail?: unknown }).message ??
-        (event as { detail?: unknown }).detail;
+      const alert = event as { status?: unknown; message?: unknown; detail?: unknown };
+      // allowed_warning is observability only. A hard limit is terminalized by
+      // the existing rejected + StopFailure fatal-error contract.
+      if (alert.status !== "rejected") return;
+      const detail = alert.message ?? alert.detail;
       recordTerminationHint(
         task,
         "limit_hit",
