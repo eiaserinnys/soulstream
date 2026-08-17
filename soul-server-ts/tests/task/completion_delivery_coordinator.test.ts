@@ -7,6 +7,76 @@ import { DELIVERY_NOTIFICATION_MAX_ATTEMPTS } from
   "../../src/task/session_delivery_notification_policy.js";
 
 describe("CompletionDeliveryCoordinator", () => {
+  it("recovers a runtime follow-up with canonical key and attempt intact", async () => {
+    const createdAt = new Date("2026-08-18T04:10:00.000Z");
+    const claimed = {
+      delivery_id: "delivery-runtime-recovery",
+      target_session_id: "caller-session",
+      source_session_id: null,
+      relation_key: "claude_runtime_fallback:caller-session:parent:3:hash",
+      completion_id: "completion-runtime-recovery",
+      intent: "runtime_followup",
+      source: "claude_runtime_task_followup",
+      producer_kind: null,
+      producer_id: null,
+      producer_terminal_revision: "task-1@8:fallback-3",
+      parent_delivery_id: "parent-delivery",
+      caller_turn_id: null,
+      payload_hash: "hash-runtime",
+      payload: {
+        text: "read the completed task",
+        user: "system",
+        caller_info: { source: "system" },
+        followup_key: "caller-session:task-1",
+        followup_attempt: 3,
+        followup_task_ids: ["task-1"],
+      },
+      state: "claimed",
+      attempt_count: 2,
+      next_attempt_at: createdAt,
+      last_error: null,
+      lease_owner: "completion:test-worker",
+      lease_expires_at: new Date("2026-08-18T04:11:00.000Z"),
+      created_at: createdAt,
+      updated_at: createdAt,
+      claimed_at: createdAt,
+      dispatching_at: null,
+      queued_at: null,
+      delivered_at: null,
+      consumed_at: null,
+      superseded_at: null,
+      superseded_terminal_revision: null,
+    };
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+    const repository = {
+      register: vi.fn(),
+      get: vi.fn(),
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([claimed]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+      markUncertain: vi.fn(),
+    };
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch,
+      logger: pino({ level: "silent" }),
+    }, "completion:test-worker");
+
+    await coordinator.recoverPending();
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryId: "delivery-runtime-recovery",
+      deliveryIntent: "runtime_followup",
+      followupKey: "caller-session:task-1",
+      followupAttempt: 3,
+      followupTaskIds: ["task-1"],
+      storedDeliveryPayload: claimed.payload,
+      storedDeliveryPayloadHash: "hash-runtime",
+    }));
+  });
+
   it("terminalizes a stale durable self completion during recovery without dispatching it", async () => {
     const createdAt = new Date("2026-08-17T00:00:00.000Z");
     const claimed = {

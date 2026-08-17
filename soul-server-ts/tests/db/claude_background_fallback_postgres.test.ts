@@ -96,7 +96,9 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
       deliveryV2Enabled: true,
     });
 
-    await controller.queueFallback(task, parent, "empty_response");
+    const attempt2Schedule = controller.queueFallback(task, parent, "empty_response");
+    await attempt2Schedule.reserved;
+    await attempt2Schedule.completed;
     expect(dispatched).toHaveLength(2);
     const attempt2 = dispatched[1]!;
     expect(attempt2.deliveryId).not.toBe(parent.deliveryId);
@@ -104,7 +106,9 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     expect(attempt2.followupAttempt).toBe(2);
     await ledger.recordTurnStarted(attempt2, task);
 
-    await controller.queueFallback(task, attempt2, "repeated_response");
+    const attempt3Schedule = controller.queueFallback(task, attempt2, "repeated_response");
+    await attempt3Schedule.reserved;
+    await attempt3Schedule.completed;
     expect(dispatched).toHaveLength(3);
     const attempt3 = dispatched[2]!;
     expect(attempt3.deliveryId).not.toBe(attempt2.deliveryId);
@@ -249,6 +253,8 @@ async function registerOriginal(
     completionId: identity.completionId,
     relationKey,
     callerInfo: { source: "system", display_name: "Soulstream" },
+    followupKey: "caller-session:task-1",
+    followupAttempt: 1,
     followupTaskIds: ["task-1"],
   });
   await repository.register({

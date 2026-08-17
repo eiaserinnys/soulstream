@@ -143,6 +143,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(input).toEqual({
       prompt: "사용자 요청",
       imageAttachmentPaths: ["/tmp/incoming/sess/a.jpg"],
+      turnOrigin: { kind: "initial_prompt" },
     });
     expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, undefined);
     expect(logger.warn).toHaveBeenCalledWith(
@@ -357,6 +358,36 @@ describe("TaskTurnInputBuilder", () => {
 
     expect(first.inputUuid).toBe(buildDeliveryInputUuid(deliveryId));
     expect(replay.inputUuid).toBe(first.inputUuid);
+    expect(first.turnOrigin).toEqual({
+      kind: "completion_notification",
+      id: deliveryId,
+    });
+    expect(replay.turnOrigin).toEqual(first.turnOrigin);
+  });
+
+  it("rollover replay는 원래 turn origin과 UUID를 그대로 보존한다", async () => {
+    const task = makeTask();
+    const { builder } = makeSubject();
+    const failedInput = {
+      prompt: "runtime follow-up",
+      inputUuid: "input-1",
+      turnOrigin: { kind: "runtime_followup" as const, id: "delivery-1" },
+      intervention: {
+        text: "runtime follow-up",
+        user: "system",
+        source: "claude_runtime_task_followup",
+      },
+    };
+
+    const replay = await builder.prepareBackendRolloverTurnInput(
+      task,
+      claudeAgent,
+      failedInput,
+      "claude-exhausted",
+    );
+
+    expect(replay.inputUuid).toBe("input-1");
+    expect(replay.turnOrigin).toEqual(failedInput.turnOrigin);
   });
 
   it("passes caller_info delta to follow-up context and records the injected caller", async () => {

@@ -53,6 +53,18 @@ export interface EngineUserInput {
   imageAttachmentPaths?: string[];
 }
 
+export type TurnOriginKind =
+  | "initial_prompt"
+  | "user_message"
+  | "durable_next_turn"
+  | "completion_notification"
+  | "runtime_followup";
+
+export interface TurnOrigin {
+  kind: TurnOriginKind;
+  id?: string;
+}
+
 export interface ScheduleToolUseRequest {
   agentSessionId: string;
   toolUseId: string;
@@ -85,6 +97,8 @@ export interface EngineExecuteParams {
   inputUuid?: string;
   /** Durable runner inbox entry consumed by this turn. Runner boundary only. */
   runnerInterventionId?: string;
+  /** Durable producer of this turn, propagated unchanged across the runner boundary. */
+  turnOrigin?: TurnOrigin;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;

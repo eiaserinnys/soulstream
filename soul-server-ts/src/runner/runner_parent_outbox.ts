@@ -1,5 +1,6 @@
 import { dirname } from "node:path";
 
+import { compareInterventionPriority } from "../task/task_intervention_queue.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import type { EventOutboxPumpStore } from "../upstream/event_outbox_pump.js";
 import {
@@ -193,7 +194,8 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
       });
     }
     return {
-      interventions: [...merged.values()],
+      interventions: [...merged.values()].sort((left, right) =>
+        compareInterventionPriority(left.message, right.message)),
       childInterventionIds: child.map((entry) => entry.interventionId),
       shadowedFallbackIds,
     };

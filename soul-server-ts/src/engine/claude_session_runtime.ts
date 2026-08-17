@@ -15,6 +15,7 @@ export type ClaudeRuntimeCloseReason =
   | "shutdown"
   | "worker_restart"
   | "backend_rollover"
+  | "followup_no_output"
   | "fatal";
 
 export type ClaudeInputState =

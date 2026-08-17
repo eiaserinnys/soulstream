@@ -3,6 +3,7 @@ import {
   type EventOutboxAppendInput,
   type EventOutboxRecord,
 } from "../upstream/event_outbox.js";
+import { compareInterventionPriority } from "../task/task_intervention_queue.js";
 
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox_schema.js";
 import { insertRunnerRecord, latestRunnerSequence } from
@@ -192,28 +193,21 @@ function runnerInterventionQueuePosition(
   database: SqliteDatabase,
   interventionId: string,
 ): number {
-  const result = database.prepare(`
-    SELECT COUNT(*) AS position
-    FROM runner_intervention_inbox AS queued
-    WHERE queued.application_state = 'pending'
-      AND queued.claimed_execution_command_id IS NULL
-      AND EXISTS (
-        SELECT 1 FROM runner_intervention_inbox AS target
-        WHERE target.intervention_id = ?
-          AND target.application_state = 'pending'
-          AND target.claimed_execution_command_id IS NULL
-          AND (
-            queued.queued_at < target.queued_at
-            OR (queued.queued_at = target.queued_at AND queued.rowid <= target.rowid)
-          )
-      )
-  `).get(interventionId) as { position: number };
-  return Number(result.position);
+  const position = readPendingRunnerInterventionsSync(database).findIndex(
+    (entry) => entry.interventionId === interventionId,
+  );
+  return position < 0 ? 0 : position + 1;
 }
 
 export async function readPendingRunnerInterventions(
   database: SqliteDatabase,
 ): Promise<PendingRunnerIntervention[]> {
+  return readPendingRunnerInterventionsSync(database);
+}
+
+function readPendingRunnerInterventionsSync(
+  database: SqliteDatabase,
+): PendingRunnerIntervention[] {
   const rows = database.prepare(`
     SELECT intervention_id, payload_json
     FROM runner_intervention_inbox
@@ -224,7 +218,10 @@ export async function readPendingRunnerInterventions(
   return rows.map((row) => ({
     interventionId: row.intervention_id,
     message: JSON.parse(row.payload_json) as Record<string, unknown>,
-  }));
+  })).sort((left, right) => compareInterventionPriority(
+    left.message,
+    right.message,
+  ));
 }
 
 export async function claimRunnerIntervention(

@@ -6,6 +6,7 @@ import type {
   EngineSessionItemsSnapshot,
   ScheduleToolUseHandler,
   SSEEventPayload,
+  TurnOrigin,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
@@ -27,6 +28,7 @@ export interface TaskEngineTurnInput {
   prompt: string;
   inputUuid?: string;
   runnerInterventionId?: string;
+  turnOrigin?: TurnOrigin;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
   backendSessionRolloverFrom?: string;
@@ -107,6 +109,7 @@ export class TaskEngineTurnRunner {
       ...(input.runnerInterventionId
         ? { runnerInterventionId: input.runnerInterventionId }
         : {}),
+      ...(input.turnOrigin ? { turnOrigin: input.turnOrigin } : {}),
       ...(input.imageAttachmentPaths !== undefined
         ? { imageAttachmentPaths: input.imageAttachmentPaths }
         : {}),

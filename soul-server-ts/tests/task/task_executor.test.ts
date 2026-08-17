@@ -348,7 +348,7 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("queued delivery turn 실패는 이미 성공한 delivery 상태를 되돌리지 않는다", async () => {
+  it("queued delivery turn 실패도 iterator 종료 경계에서 정확히 한 번 consume한다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -378,8 +378,9 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
   });
 
   it("turn-start receipt 일시 실패 뒤 성공한 turn 종료에서 receipt를 재기록한다", async () => {

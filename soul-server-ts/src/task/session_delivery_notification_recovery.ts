@@ -119,6 +119,10 @@ function notificationMessageFromOutbox(
     deliveryIntent: intent,
     completionId: optionalString(payload.completion_id),
     relationKey: optionalString(payload.relation_key),
+    followupKey: optionalString(payload.followup_key ?? payload.followupKey),
+    followupAttempt: optionalPositiveInteger(
+      payload.followup_attempt ?? payload.followupAttempt,
+    ),
   };
 }
 
@@ -129,6 +133,12 @@ function requiredString(value: unknown, name: string): string {
     );
   }
   return value;
+}
+
+function optionalPositiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 class NonRetryableNotificationError extends Error {}

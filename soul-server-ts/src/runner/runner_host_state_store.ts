@@ -3,6 +3,8 @@ import { chmodSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
+import { compareInterventionPriority } from "../task/task_intervention_queue.js";
+
 import {
   ensureRunnerSqliteWal,
   openRunnerSqliteDatabase,
@@ -295,7 +297,8 @@ export class RunnerHostStateStore {
       WHERE session_id = ?
       ORDER BY COALESCE(queued_at, staged_at), intervention_id
     `).all(sessionId) as InterventionFallbackRow[];
-    return rows.map(normalizeInterventionFallback);
+    return rows.map(normalizeInterventionFallback).sort((left, right) =>
+      compareInterventionPriority(left.message, right.message));
   }
 
   removeInterventionFallback(sessionId: string, interventionId: string): void {
@@ -366,32 +369,10 @@ export class RunnerHostStateStore {
   }
 
   private fallbackQueuePosition(sessionId: string, interventionId: string): number {
-    const row = this.database.prepare(`
-      SELECT COUNT(*) AS position
-      FROM runner_host_intervention_fallback AS candidate
-      WHERE candidate.session_id = ? AND candidate.queued = 1
-        AND (
-          candidate.queued_at < (
-            SELECT queued_at FROM runner_host_intervention_fallback
-            WHERE session_id = ? AND intervention_id = ?
-          )
-          OR (
-            candidate.queued_at = (
-              SELECT queued_at FROM runner_host_intervention_fallback
-              WHERE session_id = ? AND intervention_id = ?
-            )
-            AND candidate.intervention_id <= ?
-          )
-        )
-    `).get(
-      sessionId,
-      sessionId,
-      interventionId,
-      sessionId,
-      interventionId,
-      interventionId,
-    ) as { position: number };
-    return Number(row.position);
+    const position = this.readPendingInterventionFallbacks(sessionId)
+      .filter((entry) => entry.queued)
+      .findIndex((entry) => entry.interventionId === interventionId);
+    return position < 0 ? 0 : position + 1;
   }
 
   private transaction<T>(operation: () => T): T {

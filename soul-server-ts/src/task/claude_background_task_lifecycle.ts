@@ -21,6 +21,7 @@ import {
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
   buildClaudeRuntimeTaskFollowupPrompt,
+  buildFollowupKey,
   type PendingRuntimeTaskFollowup,
 } from "./claude_runtime_task_followup_prompt.js";
 import { CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE } from "./claude_runtime_task_followup.js";
@@ -264,6 +265,8 @@ function buildDelivery(input: {
     completionId: identity.completionId,
     relationKey,
     callerInfo: { source: "system", display_name: "Soulstream" },
+    followupKey: buildFollowupKey(input.sessionId, [item]),
+    followupAttempt: 1,
     followupTaskIds: [input.taskId],
   });
   return {

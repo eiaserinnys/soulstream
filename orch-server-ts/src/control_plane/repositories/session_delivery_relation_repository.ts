@@ -17,6 +17,14 @@ export async function registerSessionDelivery(
   params: RegisterSessionDeliveryParams,
 ): Promise<RegisterSessionDeliveryResult> {
   return await withTransaction(sql, async (transaction) => {
+    const runtimeFollowup = readRuntimeFollowupCandidate(params);
+    if (runtimeFollowup) {
+      return await registerRuntimeFollowupDelivery(
+        transaction,
+        params,
+        runtimeFollowup,
+      );
+    }
     let consumption: SessionDeliveryRelationConsumptionRow | undefined;
     if (isChildCompletionRelation(params)) {
       await lockRelation(transaction, params.relationKey);
@@ -100,6 +108,186 @@ export async function registerSessionDelivery(
       conflict: true,
     };
   });
+}
+
+interface RuntimeFollowupCandidate {
+  followupKey: string;
+  followupAttempt: number;
+  createdAt: Date;
+}
+
+async function registerRuntimeFollowupDelivery(
+  transaction: SqlClient,
+  params: RegisterSessionDeliveryParams,
+  candidate: RuntimeFollowupCandidate,
+): Promise<RegisterSessionDeliveryResult> {
+  const targetSessionId = params.targetSessionId ?? null;
+  await transaction`
+    SELECT pg_advisory_xact_lock(
+      hashtextextended(${`runtime_followup:${targetSessionId ?? "unresolved"}:${candidate.followupKey}`}, 0)
+    )
+  `;
+
+  const exactRows = await transaction<SessionDeliveryRow[]>`
+    SELECT * FROM session_deliveries WHERE delivery_id = ${params.deliveryId}
+  `;
+  if (exactRows[0]) {
+    return await resolveRegistrationConflict(transaction, params, exactRows[0]);
+  }
+
+  const pendingRows = await transaction<SessionDeliveryRow[]>`
+    SELECT *
+    FROM session_deliveries
+    WHERE intent = 'runtime_followup'
+      AND state = 'pending'
+      AND target_session_id IS NOT DISTINCT FROM ${targetSessionId}
+      AND payload->>'followup_key' = ${candidate.followupKey}
+    ORDER BY
+      CASE
+        WHEN jsonb_typeof(payload->'followup_attempt') = 'number'
+          THEN (payload->>'followup_attempt')::integer
+        ELSE 1
+      END DESC,
+      created_at DESC,
+      delivery_id DESC
+    FOR UPDATE
+  `;
+  const newestPending = pendingRows[0]
+    ? runtimeFollowupCandidateFromRow(pendingRows[0])
+    : undefined;
+  const candidateIsLatest = !newestPending
+    || compareRuntimeFollowupCandidates(candidate, newestPending) >= 0;
+  const initialState = candidateIsLatest ? "pending" : "superseded";
+  const createdAt = candidate.createdAt;
+  const insertedRows = await transaction<SessionDeliveryRow[]>`
+    INSERT INTO session_deliveries (
+      delivery_id, target_session_id, source_session_id, relation_key,
+      completion_id, intent, source, producer_kind, producer_id,
+      producer_terminal_revision, parent_delivery_id, caller_turn_id,
+      payload_hash, payload, state, created_at, updated_at,
+      superseded_at, superseded_terminal_revision
+    ) VALUES (
+      ${params.deliveryId}, ${targetSessionId},
+      ${params.sourceSessionId ?? null}, ${params.relationKey},
+      ${params.completionId ?? null}, ${params.intent}, ${params.source},
+      ${params.producerKind ?? null}, ${params.producerId ?? null},
+      ${params.producerTerminalRevision ?? null},
+      ${params.parentDeliveryId ?? null}, ${params.callerTurnId ?? null},
+      ${params.payloadHash},
+      ${transaction.json(asPostgresJsonValue(params.payload))},
+      ${initialState}, ${createdAt}, ${createdAt},
+      ${candidateIsLatest ? null : createdAt},
+      ${candidateIsLatest ? null : params.producerTerminalRevision ?? null}
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING *
+  `;
+  const inserted = insertedRows[0];
+  if (!inserted) {
+    const conflictRows = await transaction<SessionDeliveryRow[]>`
+      SELECT *
+      FROM session_deliveries
+      WHERE delivery_id = ${params.deliveryId}
+         OR relation_key = ${params.relationKey}
+      ORDER BY CASE WHEN delivery_id = ${params.deliveryId} THEN 0 ELSE 1 END
+      LIMIT 1
+    `;
+    const conflict = conflictRows[0];
+    if (!conflict) {
+      throw new Error(
+        `Delivery disappeared after registration conflict: ${params.deliveryId}`,
+      );
+    }
+    return await resolveRegistrationConflict(transaction, params, conflict);
+  }
+  if (candidateIsLatest) {
+    await transaction`
+      UPDATE session_deliveries
+      SET
+        state = 'superseded',
+        superseded_at = NOW(),
+        superseded_terminal_revision = ${params.producerTerminalRevision ?? null},
+        updated_at = NOW()
+      WHERE intent = 'runtime_followup'
+        AND state = 'pending'
+        AND delivery_id <> ${params.deliveryId}
+        AND target_session_id IS NOT DISTINCT FROM ${targetSessionId}
+        AND payload->>'followup_key' = ${candidate.followupKey}
+    `;
+  }
+  return { row: inserted, inserted: true, conflict: false };
+}
+
+async function resolveRegistrationConflict(
+  transaction: SqlClient,
+  params: RegisterSessionDeliveryParams,
+  existing: SessionDeliveryRow,
+): Promise<RegisterSessionDeliveryResult> {
+  const conflict =
+    existing.delivery_id !== params.deliveryId
+    || existing.relation_key !== params.relationKey
+    || existing.payload_hash !== params.payloadHash
+    || existing.intent !== params.intent
+    || existing.completion_id !== (params.completionId ?? null);
+  if (!conflict) {
+    return { row: existing, inserted: false, conflict: false };
+  }
+  const uncertainRows = await transaction<SessionDeliveryRow[]>`
+    UPDATE session_deliveries
+    SET state = 'uncertain', updated_at = NOW()
+    WHERE delivery_id = ${existing.delivery_id}
+      AND state NOT IN ('consumed', 'superseded')
+    RETURNING *
+  `;
+  return {
+    row: uncertainRows[0] ?? existing,
+    inserted: false,
+    conflict: true,
+  };
+}
+
+function readRuntimeFollowupCandidate(
+  params: RegisterSessionDeliveryParams,
+): RuntimeFollowupCandidate | undefined {
+  if (params.intent !== "runtime_followup") return undefined;
+  const followupKey = params.payload.followup_key;
+  const followupAttempt = params.payload.followup_attempt;
+  if (
+    typeof followupKey !== "string"
+    || followupKey.length === 0
+    || typeof followupAttempt !== "number"
+    || !Number.isInteger(followupAttempt)
+    || followupAttempt < 1
+  ) {
+    return undefined;
+  }
+  return {
+    followupKey,
+    followupAttempt,
+    createdAt: params.createdAt ?? new Date(),
+  };
+}
+
+function runtimeFollowupCandidateFromRow(
+  row: SessionDeliveryRow,
+): RuntimeFollowupCandidate {
+  const attempt = row.payload.followup_attempt;
+  return {
+    followupKey: String(row.payload.followup_key),
+    followupAttempt:
+      typeof attempt === "number" && Number.isInteger(attempt) && attempt > 0
+        ? attempt
+        : 1,
+    createdAt: row.created_at,
+  };
+}
+
+export function compareRuntimeFollowupCandidates(
+  left: Pick<RuntimeFollowupCandidate, "followupAttempt" | "createdAt">,
+  right: Pick<RuntimeFollowupCandidate, "followupAttempt" | "createdAt">,
+): number {
+  return left.followupAttempt - right.followupAttempt
+    || left.createdAt.getTime() - right.createdAt.getTime();
 }
 export async function getSessionDeliveryRelationConsumption(
   sql: SqlClient,

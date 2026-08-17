@@ -237,6 +237,58 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
+  it("persists priority queue positions and stable FIFO inside each lane", async () => {
+    const outbox = await createOutbox();
+
+    await outbox.stageIntervention({
+      interventionId: "low-1",
+      message: {
+        text: "completion",
+        user: "agent",
+        deliveryIntent: "completion_notification",
+      },
+      queued: true,
+      queuedAt: "2026-08-18T00:00:00.000Z",
+    });
+    await expect(outbox.stageIntervention({
+      interventionId: "high-1",
+      message: { text: "human", user: "human" },
+      queued: true,
+      queuedAt: "2026-08-18T00:00:01.000Z",
+    })).resolves.toMatchObject({ queuePosition: 1 });
+    await expect(outbox.stageIntervention({
+      interventionId: "low-2",
+      message: {
+        text: "legacy runtime",
+        user: "system",
+        source: "claude_runtime_task_followup",
+      },
+      queued: true,
+      queuedAt: "2026-08-18T00:00:02.000Z",
+    })).resolves.toMatchObject({ queuePosition: 3 });
+
+    await expect(outbox.readPendingInterventions()).resolves.toEqual([
+      { interventionId: "high-1", message: { text: "human", user: "human" } },
+      {
+        interventionId: "low-1",
+        message: {
+          text: "completion",
+          user: "agent",
+          deliveryIntent: "completion_notification",
+        },
+      },
+      {
+        interventionId: "low-2",
+        message: {
+          text: "legacy runtime",
+          user: "system",
+          source: "claude_runtime_task_followup",
+        },
+      },
+    ]);
+    outbox.close();
+  });
+
   it("heals a legacy ambiguous receipt to the restart-safe pending queue on writer open", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({

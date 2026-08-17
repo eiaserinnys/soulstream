@@ -25,6 +25,7 @@ const frames: RunnerFrame[] = [
     params: {
       agentSessionId: "session-1",
       prompt: "hello",
+      turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-1" },
       backendSessionRolloverFrom: "backend-session-old",
       sessionItems: [{ role: "user", content: "hello" }],
     },

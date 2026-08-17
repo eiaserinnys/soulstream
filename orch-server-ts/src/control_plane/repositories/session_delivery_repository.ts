@@ -267,6 +267,24 @@ export class SessionDeliveryRepository {
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
+  async markPendingSuperseded(
+    deliveryId: string,
+    supersededTerminalRevision: string,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET
+        state = 'superseded',
+        superseded_at = NOW(),
+        superseded_terminal_revision = ${supersededTerminalRevision},
+        updated_at = NOW()
+      WHERE delivery_id = ${deliveryId}
+        AND state = 'pending'
+      RETURNING *
+    `;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+  }
+
   async releaseExpiredDeliveryLeases(): Promise<number> {
     const rows = await this.sql<Array<{ delivery_id: string }>>`
       UPDATE session_deliveries

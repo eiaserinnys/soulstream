@@ -182,4 +182,73 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
+  it("reserves a terminal-only retry as pending at its due time", async () => {
+    const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+      retryLeasedDelivery,
+      markPendingSuperseded: vi.fn(),
+    });
+    const dueAt = "2026-08-18T04:00:05.000Z";
+
+    await gate.recordResult({
+      kind: "admitted",
+      deliveryId,
+      row: {
+        ...row(deliveryId, "claimed"),
+        lease_owner: "route-1",
+      },
+    }, {
+      deferred: true,
+      reason: "terminal_only_policy",
+    }, dueAt);
+
+    expect(retryLeasedDelivery).toHaveBeenCalledWith(
+      deliveryId,
+      "route-1",
+      "scheduled_runtime_followup_retry",
+      new Date(dueAt),
+    );
+  });
+
+  it("supersedes only the pending durable retry selected by id", async () => {
+    const deliveryId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const markPendingSuperseded = vi.fn().mockResolvedValue(
+      row(deliveryId, "superseded"),
+    );
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      markPendingSuperseded,
+    });
+
+    await expect(gate.recordPendingSuperseded({
+      text: "retry",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+    }, "user_message")).resolves.toBe(true);
+
+    expect(markPendingSuperseded).toHaveBeenCalledWith(deliveryId, "user_message");
+  });
+
 });

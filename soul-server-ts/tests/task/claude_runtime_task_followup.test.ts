@@ -260,6 +260,36 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     ]);
   });
 
+  it("foreground flush도 background runtime task가 남아 있으면 follow-up을 시작하지 않는다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["task-complete"] = {
+      taskId: "task-complete",
+      status: "completed",
+      updatedAt: 78,
+      isBackgrounded: true,
+    };
+    task.claudeRuntime!.tasks["task-running"] = {
+      taskId: "task-running",
+      status: "running",
+      updatedAt: 79,
+      isBackgrounded: true,
+    };
+    const { controller, addIntervention } = makeController(true);
+
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "task-complete",
+      status: "completed",
+      _event_id: 78,
+    } as SSEEventPayload);
+    await controller.flush(task);
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    task.claudeRuntime!.tasks["task-running"]!.status = "completed";
+    await controller.flush(task);
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["failed", "stopped", "killed"] as const)(
     "마지막 background %s terminal도 보류된 task를 함께 flush한다",
     async (terminalStatus) => {
@@ -568,7 +598,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     task.executionPromise = Promise.resolve();
     const { controller, addIntervention, onResume, sleep } = makeController();
 
-    await controller.queueFallback(
+    const scheduled = controller.queueFallback(
       task,
       {
         text: "original background task status prompt",
@@ -579,6 +609,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       },
       "empty_response",
     );
+    await scheduled.reserved;
+    await scheduled.completed;
 
     expect(addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -611,7 +643,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     };
     const { controller, addIntervention } = makeController();
 
-    await controller.queueFallback(
+    const scheduled = controller.queueFallback(
       task,
       {
         text: "stale prompt without an output path",
@@ -623,6 +655,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       },
       "empty_response",
     );
+    await scheduled.reserved;
+    await scheduled.completed;
 
     const params = addIntervention.mock.calls[0]![0];
     expect(params.followupTaskIds).toEqual(["agent-task"]);
@@ -637,7 +671,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     task.executionPromise = Promise.resolve();
     const { controller, addIntervention, sleep } = makeController();
 
-    await controller.queueFallback(
+    const scheduled = controller.queueFallback(
       task,
       {
         text: "retry attempt 2",
@@ -648,6 +682,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       },
       "repeated_response",
     );
+    await scheduled.reserved;
+    await scheduled.completed;
 
     expect(sleep).toHaveBeenCalledWith(30_000);
     expect(addIntervention).toHaveBeenCalledWith(
@@ -681,9 +717,10 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
 
     const first = controller.queueFallback(task, message, "empty_response");
     const duplicate = controller.queueFallback(task, message, "empty_response");
+    expect(duplicate.completed).toBe(first.completed);
     await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
     releaseSleep();
-    await Promise.all([first, duplicate]);
+    await Promise.all([first.completed, duplicate.completed]);
 
     expect(addIntervention).toHaveBeenCalledTimes(1);
   });
@@ -716,16 +753,72 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
     await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
 
-    controller.cancelScheduledFallback(task, {
+    await controller.cancelScheduledFallback(task, {
       text: "?",
       user: "alice",
       callerInfo: { source: "soul-app", display_name: "Alice" },
     });
     releaseSleep();
-    await scheduled;
+    await scheduled.completed;
 
     expect(addIntervention).not.toHaveBeenCalled();
     expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);
+  });
+
+  it("v2 사용자 supersession은 예약된 retry delivery를 pending에서만 닫는다", async () => {
+    let releaseSleep!: () => void;
+    const sleep = vi.fn(() => new Promise<void>((resolve) => {
+      releaseSleep = resolve;
+    }));
+    const addIntervention = vi.fn(async () => ({
+      deferred: true as const,
+      reason: "terminal_only_policy" as const,
+    }));
+    const recordPendingSuperseded = vi.fn().mockResolvedValue(true);
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      releaseRetainedRunner: async () => undefined,
+      logger: silentLogger,
+      sleep,
+      deliveryV2Enabled: true,
+      pendingSupersessionRecorder: { recordPendingSuperseded },
+    });
+    const task = makeTask();
+    task.executionPromise = Promise.resolve();
+    const scheduled = controller.queueFallback(task, {
+      text: "delayed durable retry",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      followupAttempt: 1,
+      followupKey: "sess-1:task-1",
+      followupTaskIds: ["task-1"],
+      deliveryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      deliveryIntent: "runtime_followup",
+      completionId: "completion-1",
+      relationKey: "claude_runtime:sess-1:unknown:task-1@1",
+      producerTerminalRevision: "task-1@1",
+    }, "empty_response");
+    await scheduled.reserved;
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+
+    await controller.cancelScheduledFallback(task, {
+      text: "user wins",
+      user: "alice",
+      callerInfo: { source: "browser", display_name: "Alice" },
+    });
+    releaseSleep();
+    await scheduled.completed;
+
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(recordPendingSuperseded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryIntent: "runtime_followup",
+        followupAttempt: 2,
+        followupKey: "sess-1:task-1",
+      }),
+      "user_message",
+    );
   });
 
   it("graceful shutdown은 인메모리 예약을 회수해 명시 실패로 넘긴다", async () => {
@@ -757,7 +850,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       { task, message, reason: "empty_response" },
     ]);
     releaseSleep();
-    await scheduled;
+    await scheduled.completed;
 
     expect(addIntervention).not.toHaveBeenCalled();
     expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);

@@ -283,6 +283,8 @@ function toInterventionParams(
     producerTerminalRevision: row.producer_terminal_revision ?? undefined,
     parentDeliveryId: row.parent_delivery_id ?? undefined,
     callerTurnId: row.caller_turn_id ?? undefined,
+    followupKey: message.followupKey,
+    followupAttempt: message.followupAttempt,
     followupTaskIds: message.followupTaskIds,
     deliveryCreatedAt: row.created_at.toISOString(),
     deliveryLeaseOwner: leaseOwner,

@@ -32,6 +32,7 @@ type LedgerRepository = Pick<
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
   | "recordRelationConsumed"
+  | "retryLeasedDelivery" | "markPendingSuperseded"
 > & {
   notifications: Pick<
     SessionDeliveryRepository["notifications"],
@@ -163,9 +164,35 @@ export class TaskDeliveryLedgerGate {
   async recordResult(
     admission: DeliveryLedgerAdmission,
     result: AddInterventionResult,
+    deliveryNextAttemptAt?: string,
   ): Promise<void> {
     if (admission.kind !== "admitted") return;
     const repository = this.requireRepository();
+    if (
+      "deferred" in result
+      && result.deferred
+      && result.reason === "terminal_only_policy"
+      && deliveryNextAttemptAt
+    ) {
+      const leaseOwner = admission.row.lease_owner;
+      if (!leaseOwner) {
+        throw new Error(`Delivery ${admission.deliveryId} lost its retry reservation lease`);
+      }
+      const nextAttemptAt = new Date(deliveryNextAttemptAt);
+      if (Number.isNaN(nextAttemptAt.getTime())) {
+        throw new Error(`Delivery ${admission.deliveryId} has an invalid retry due time`);
+      }
+      const reserved = await repository.retryLeasedDelivery(
+        admission.deliveryId,
+        leaseOwner,
+        "scheduled_runtime_followup_retry",
+        nextAttemptAt,
+      );
+      if (!reserved) {
+        throw new Error(`Delivery ${admission.deliveryId} lost retry reservation CAS`);
+      }
+      return;
+    }
     if ("queued" in result || "autoResumed" in result) {
       const disposition = "queued" in result ? "queued" : "auto_resume";
       const leaseOwner = admission.row.lease_owner;
@@ -252,6 +279,20 @@ export class TaskDeliveryLedgerGate {
     if (message.deliveryId) {
       await repository.markConsumed(message.deliveryId, consumedTurnId);
     }
+  }
+
+  async recordPendingSuperseded(
+    message: InterventionMessage,
+    reason: string,
+  ): Promise<boolean> {
+    if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) {
+      return false;
+    }
+    const superseded = await this.requireRepository().markPendingSuperseded(
+      message.deliveryId,
+      reason,
+    );
+    return superseded?.state === "superseded";
   }
 
   async recordTurnStarted(
@@ -341,6 +382,8 @@ function buildRegistration(
       attachmentPaths: params.attachmentPaths,
       context: params.context,
       callerInfo: params.callerInfo,
+      followupKey: params.followupKey,
+      followupAttempt: params.followupAttempt,
       followupTaskIds: params.followupTaskIds,
     });
   return {
@@ -432,6 +475,8 @@ function buildNotificationOutboxPayload(
     delivery_intent: row.intent,
     completion_id: row.completion_id,
     relation_key: row.relation_key,
+    followup_key: row.payload.followup_key,
+    followup_attempt: row.payload.followup_attempt,
     disposition,
   };
 }

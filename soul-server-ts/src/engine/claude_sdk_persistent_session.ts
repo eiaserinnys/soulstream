@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type {
   Query as ClaudeSdkQuery,
@@ -20,6 +20,17 @@ import { asRecord, asString } from "./claude_sdk_helpers.js";
 import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
+import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdog.js";
+import {
+  type ActiveForeground,
+  type ClaudeDetachedEventSink,
+  type ClaudeRuntimeEventSink,
+  type ClaudeSdkPersistentSessionConfig,
+  describeResultProvenance,
+  hashSdkUserMessage,
+  isExpectedInterruptDiagnostic,
+  turnTimeoutError,
+} from "./claude_sdk_persistent_session_support.js";
 import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
@@ -27,31 +38,11 @@ import {
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
 
-export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
-export type ClaudeRuntimeEventSink = (
-  event: ClaudeClientEvent,
-) => Promise<boolean | void>;
-
-export interface ClaudeSdkPersistentSessionConfig {
-  createQuery(input: AsyncIterable<SDKUserMessage>): ClaudeSdkQuery;
-  eventMapper: ClaudeSdkEventMapper;
-  hookOutput: EventQueue<ClaudeClientEvent>;
-  detachedEventSink: ClaudeDetachedEventSink;
-  runtimeEventSink?: ClaudeRuntimeEventSink;
-  logger: Logger;
-  postResultDrainMs: number;
-  turnTimeoutMs: number;
-  onClosed?(): void;
-}
-
-type ActiveForeground = {
-  uuid: string;
-  output: EventQueue<ClaudeClientEvent>;
-  deadlineTimer: ReturnType<typeof setTimeout>;
-  interruptResultTimer: ReturnType<typeof setTimeout> | null;
-  timedOut: boolean;
-  rateLimitTerminationState: rateLimit.RateLimitTerminationState;
-};
+export type {
+  ClaudeDetachedEventSink,
+  ClaudeRuntimeEventSink,
+  ClaudeSdkPersistentSessionConfig,
+} from "./claude_sdk_persistent_session_support.js";
 
 /**
  * One long-lived SDK Query for one Soulstream session.
@@ -69,8 +60,10 @@ export class ClaudeSdkPersistentSession {
   private readonly logger: Logger;
   private readonly postResultDrainMs: number;
   private readonly turnTimeoutMs: number;
+  private readonly runtimeFollowupNoOutputTimeoutMs: number;
   private readonly pump: Promise<void>;
   private readonly hookPump: Promise<void>;
+  private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private activeForeground: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -82,7 +75,28 @@ export class ClaudeSdkPersistentSession {
     this.logger = config.logger;
     this.postResultDrainMs = config.postResultDrainMs;
     this.turnTimeoutMs = config.turnTimeoutMs;
+    this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs;
     this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
+    this.followupWatchdog = new ClaudeRuntimeFollowupWatchdog({
+      timeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
+      resultWaitMs: this.postResultDrainMs,
+      logger: this.logger,
+      interrupt: async (uuid) => {
+        const active = this.activeForeground;
+        if (!active || active.uuid !== uuid) return {};
+        return this.runtime.snapshot().foregroundPhase === "generating"
+          ? await this.runtime.interruptForeground()
+          : {};
+      },
+      close: async (uuid) => {
+        const active = this.activeForeground;
+        if (!active || active.uuid !== uuid) return;
+        active.output.close();
+        this.clearForegroundTimers(active);
+        if (this.activeForeground === active) this.activeForeground = null;
+        await this.close("followup_no_output");
+      },
+    });
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
   }
@@ -119,15 +133,27 @@ export class ClaudeSdkPersistentSession {
       void this.handleTurnTimeout(uuid);
     }, this.turnTimeoutMs);
     deadlineTimer.unref?.();
+    const origin = {
+      kind: options.turnOrigin?.kind ?? "initial_prompt",
+      id: options.turnOrigin?.id ?? uuid,
+    };
     this.activeForeground = {
       uuid,
       output,
       deadlineTimer,
       interruptResultTimer: null,
       timedOut: false,
+      origin,
       rateLimitTerminationState: "none",
     };
+    if (origin.kind === "runtime_followup") {
+      this.followupWatchdog.arm(uuid, origin);
+    }
     this.runtime.beginForegroundTurn(uuid);
+    this.logger.info(
+      { uuid, turnOriginKind: origin.kind, turnOriginId: origin.id },
+      "Persistent Claude foreground turn started",
+    );
     return output;
   }
 
@@ -277,11 +303,23 @@ export class ClaudeSdkPersistentSession {
       userMessageUuid: explicitUserMessageUuid,
       interrupted: phase === "interrupting",
     });
+    const followupNoOutput = active
+      ? this.followupWatchdog.resultArrived(active.uuid)
+      : false;
     this.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
     this.armDrainTimer();
 
-    if (active?.timedOut) {
+    if (active && followupNoOutput) {
+      this.logger.info(
+        {
+          uuid: active.uuid,
+          turnOriginKind: active.origin.kind,
+          turnOriginId: active.origin.id,
+        },
+        "Runtime follow-up ended as a non-fatal no-op after watchdog interrupt",
+      );
+    } else if (active?.timedOut) {
       active.output.push(turnTimeoutError(this.turnTimeoutMs));
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
@@ -308,6 +346,7 @@ export class ClaudeSdkPersistentSession {
       return;
     }
     const active = this.activeForeground;
+    if (active) this.followupWatchdog.observeProgress(active.uuid, event);
     if (active) {
       active.rateLimitTerminationState =
         rateLimit.observeTerminationSignal(active.rateLimitTerminationState, event);
@@ -363,31 +402,11 @@ export class ClaudeSdkPersistentSession {
   /**
    * Names the turn that owns a Result arriving without `user_message_uuid`.
    *
-   * A bare Result is a normal event, not a defect. `SDKResultSuccess` declares
-   * that field and `SDKResultError` does not, and the Query also runs turns
-   * this session never enqueued: a finished background task makes the harness
-   * run its own notification turn. Measured against SDK 0.3.218, that turn
-   * returns `subtype: "success"` with `origin: { kind: "task-notification" }`
-   * and no correlation.
-   *
-   * An outstanding foreground turn does not make such a Result ours. A turn is
-   * marked generating when its input is enqueued, not when the SDK starts
-   * running it, so an outstanding turn can still be queued while the Query
-   * finishes another turn. Owning the Result then would end a live turn with a
-   * stranger's terminal payload.
-   *
-   * The interrupt window is the one place ownership is provable. This session
-   * asked the SDK to abort the in-flight turn, and 0.3.218 returns that
-   * terminal Result (`error_during_execution` / `aborted_streaming`) with the
-   * correlation stripped. There is exactly one outstanding foreground turn and
-   * this session caused the abort, so the Result belongs to it: correlating
-   * preserves identity rather than guessing, and the interrupted turn finishes
-   * through its normal terminal path instead of surfacing a recovery error the
-   * user never caused.
-   *
-   * Outside that window nothing local owns the Result, and the caller routes it
-   * detached. A foreground turn that never receives its own Result stays
-   * bounded by the turn deadline.
+   * Bare Results also terminate SDK-owned background notification turns, so an
+   * outstanding local input is not enough to claim one. Ownership is provable
+   * only while this session is interrupting its sole foreground turn: SDK
+   * 0.3.218 strips correlation from that abort Result. All other bare Results
+   * stay detached; the normal deadline bounds a genuinely missing local Result.
    */
   private provableTurnResultOwner(
     phase: ClaudeForegroundPhase,
@@ -406,6 +425,15 @@ export class ClaudeSdkPersistentSession {
     const active = this.activeForeground;
     if (!active || active.uuid !== uuid || active.timedOut) return;
     active.timedOut = true;
+    this.logger.warn(
+      {
+        uuid,
+        turnOriginKind: active.origin.kind,
+        turnOriginId: active.origin.id,
+        timeoutMs: this.turnTimeoutMs,
+      },
+      "Persistent Claude foreground turn timed out",
+    );
     try {
       if (this.runtime.snapshot().foregroundPhase === "generating") {
         await this.runtime.interruptForeground();
@@ -437,6 +465,7 @@ export class ClaudeSdkPersistentSession {
   private clearForegroundTimers(active: ActiveForeground | null): void {
     if (!active) return;
     clearTimeout(active.deadlineTimer);
+    this.followupWatchdog.clear(active.uuid);
     if (active.interruptResultTimer) {
       clearTimeout(active.interruptResultTimer);
       active.interruptResultTimer = null;
@@ -464,36 +493,3 @@ export class ClaudeSdkPersistentSession {
  * successful one. Neither is load-bearing for ownership: `origin` is absent on
  * `SDKResultError`, so absence is not evidence of anything.
  */
-function describeResultProvenance(
-  message: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
-    resultUuid: asString(message.uuid),
-    subtype: asString(message.subtype),
-    isError: message.is_error === true,
-    terminalReason: asString(message.terminal_reason) ?? null,
-    originKind: asString(asRecord(message.origin)?.kind) ?? null,
-    numTurns: message.num_turns ?? null,
-  };
-}
-
-function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {
-  return (
-    event.type === "error" &&
-    event.fatal === false &&
-    event.errorCode === "error_during_execution"
-  );
-}
-
-function hashSdkUserMessage(message: SDKUserMessage): string {
-  return createHash("sha256").update(JSON.stringify(message)).digest("hex");
-}
-
-function turnTimeoutError(timeoutMs: number): ClaudeClientEvent {
-  return {
-    type: "error",
-    fatal: true,
-    errorCode: "claude_persistent_turn_timeout",
-    message: `Claude foreground turn exceeded ${timeoutMs}ms and was interrupted.`,
-  };
-}
