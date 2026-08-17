@@ -80,7 +80,7 @@ export function createRunnerProcessRuntimeFactory(
   options: RunnerProcessRuntimeFactoryOptions,
 ): RunnerProcessRuntimeFactory {
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
-  const spawner = options.spawner ?? new RunnerProcessSpawner();
+  const spawner = options.spawner ?? new RunnerProcessSpawner(undefined, options.logger);
 
   const createRuntime = (
     task: Task,

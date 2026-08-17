@@ -8,6 +8,8 @@ import { z } from "zod";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import { readAuthoritativeRunnerLifecycle } from "../../src/runner/runner_lifecycle_reader.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import { defaultProcessOwnershipLockDependencies } from
+  "../../src/runner/runner_process_lock.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
@@ -262,7 +264,7 @@ describe("RunnerProcessSpawner", () => {
     expect(signalPid).toHaveBeenCalledWith(6201, "SIGTERM");
   });
 
-  it("never removes writer-lock ownership evidence while preparing a replacement", async () => {
+  it("keeps unreadable writer-lock ownership fail-closed while preparing a replacement", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -279,10 +281,42 @@ describe("RunnerProcessSpawner", () => {
       delay: async () => {},
     });
 
-    await spawner.spawn(params);
+    await expect(spawner.spawn(params)).rejects.toThrow("runner writer lock already held");
 
     await expect(readFile(paths.lockPath, "utf8"))
       .resolves.toBe("prior-runner-ownership\n");
+  });
+
+  it("reclaims an orphaned current-host writer lock after proving the registered child dead", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const hostOwner = await defaultProcessOwnershipLockDependencies().currentOwner();
+    await writeFile(paths.lockPath, `${JSON.stringify(hostOwner)}\n`);
+    const spawnProcess = vi.fn(() => ({ pid: 5006, unref: vi.fn() }));
+    const logger = { info: vi.fn() };
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    }, logger as never);
+
+    await expect(spawner.spawn(params)).resolves.toMatchObject({ pid: 5006 });
+    expect(spawnProcess).toHaveBeenCalledOnce();
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        sessionId: params.sessionId,
+        runnerDirectory: paths.sessionDirectory,
+        lockPath: paths.lockPath,
+      },
+      "Orphaned runner writer lock reclaimed before replacement spawn",
+    );
   });
 
   it("adopts a live registered runner without spawning or replacing it", async () => {
