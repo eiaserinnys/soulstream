@@ -113,6 +113,13 @@ export class TaskCompletionNotifier implements CompletionNotifier {
 
     const callerSessionId = task.callerSessionId;
     if (!callerSessionId) return;
+    if (callerSessionId === task.agentSessionId) {
+      this.logger.info(
+        { childId: task.agentSessionId, callerSessionId },
+        "Self completion notification suppressed to preserve terminal session state",
+      );
+      return;
+    }
     const callerInfo = this._buildCallerInfo(task);
     const text = this._buildNotifyText(task);
     const childId = task.agentSessionId;

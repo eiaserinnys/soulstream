@@ -13,6 +13,10 @@ import {
 import type { CallerInfo } from "./task_models.js";
 import type { QueuedDeliveryTranscriptRecovery } from
   "./queued_delivery_transcript_recovery.js";
+import {
+  DELIVERY_NOTIFICATION_MAX_AGE_MS,
+  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
+} from "./session_delivery_notification_policy.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -37,6 +41,7 @@ type CompletionDeliveryRepository = Pick<
   | "deferPending"
   | "retryLeasedDelivery"
   | "releaseExpiredDeliveryLeases"
+  | "markUncertain"
 >;
 
 export interface CompletionDeliveryCoordinatorDeps {
@@ -150,10 +155,28 @@ export class CompletionDeliveryCoordinator {
     try {
       await this.deps.dispatch(toInterventionParams(row, leaseOwner));
     } catch (err) {
+      const failure = errorText(err);
+      if (isRetryExhausted(row)) {
+        const terminal = await this.deps.repository.markUncertain(
+          row.delivery_id,
+          leaseOwner,
+          failure,
+        );
+        this.deps.logger.warn(
+          {
+            err,
+            deliveryId: row.delivery_id,
+            attemptCount: row.attempt_count + 1,
+            terminalized: terminal !== null,
+          },
+          "Completion delivery retry budget exhausted; delivery terminalized as uncertain",
+        );
+        return;
+      }
       await this.deps.repository.retryLeasedDelivery(
         row.delivery_id,
         leaseOwner,
-        errorText(err),
+        failure,
         nextAttemptAt(row.attempt_count),
       );
       this.deps.logger.warn(
@@ -162,6 +185,11 @@ export class CompletionDeliveryCoordinator {
       );
     }
   }
+}
+
+function isRetryExhausted(row: SessionDeliveryRow, nowMs = Date.now()): boolean {
+  return row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
+    || nowMs - row.created_at.getTime() >= DELIVERY_NOTIFICATION_MAX_AGE_MS;
 }
 
 function buildCompletionRegistration(
