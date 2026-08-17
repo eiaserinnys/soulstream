@@ -69,6 +69,19 @@ const COMMAND_TIMEOUT_MS = 30_000;
 const RECENT_HOST_RESPONSE_LIMIT = 128;
 const RUNNER_SOCKET_CONNECT_DEADLINE_MS = 10_000;
 const RUNNER_SOCKET_CONNECT_RETRY_MS = 50;
+const DEFAULT_RECONNECT_POLICY: RunnerIpcReconnectPolicy = {
+  initialDelayMs: 250,
+  maxDelayMs: 4_000,
+  maxAttempts: 6,
+  stableConnectionMs: 30_000,
+};
+
+interface RunnerIpcReconnectPolicy {
+  initialDelayMs: number;
+  maxDelayMs: number;
+  maxAttempts: number;
+  stableConnectionMs: number;
+}
 
 interface RequestLifetime {
   controller: AbortController;
@@ -90,6 +103,9 @@ export interface RunnerProcessDispatcherOptions {
   offlineExisting?: boolean;
   pumpMux: EventOutboxPumpMux;
   logger: Logger;
+  reconnectPolicy?: RunnerIpcReconnectPolicy;
+  reconnectSleep?(delayMs: number): Promise<void>;
+  now?: () => number;
   nodeStallMonitor?: Pick<
     NodeStallMonitor,
     "beginRunnerOperation" | "sqliteTransactionObserver"
@@ -111,6 +127,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private pumpInitialization: Promise<void> | undefined;
   private unregisterPump: (() => void) | undefined;
   private connecting: Promise<RunnerIpcConnection> | undefined;
+  private reconnectInFlight: Promise<void> | undefined;
+  private reconnectRequested = false;
+  private reconnectAttempts = 0;
+  private reconnectCause: Error | undefined;
+  private reconnectExhaustedError: Error | undefined;
   private activeExecuteCommandId: string | undefined;
   private activeStream: ProcessFrameStream | undefined;
   private latestPendingRecord: EventOutboxRecord | undefined;
@@ -120,8 +141,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private hostCallIdempotency!: RunnerHostCallIdempotency;
   private finishActiveRunnerObservation: (() => void) | undefined;
   private closed = false;
+  private readonly reconnectPolicy: RunnerIpcReconnectPolicy;
 
   constructor(private readonly options: RunnerProcessDispatcherOptions) {
+    this.reconnectPolicy = validateReconnectPolicy(
+      options.reconnectPolicy ?? DEFAULT_RECONNECT_POLICY,
+    );
     this.ready = this.initialize();
   }
 
@@ -507,12 +532,19 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private attachConnection(connection: RunnerIpcConnection, socketPath: string): void {
     this.connection?.close();
     this.connection = connection;
+    const connectedAtMs = (this.options.now ?? Date.now)();
     connection.onFrame(async (frame) => await this.handleFrame(frame));
     connection.onFailure((error) => {
       if (this.connection !== connection || this.closed) return;
       this.connection = undefined;
-      this.options.logger.warn({ err: error }, "Runner IPC disconnected; reconnecting");
-      void this.reconnect(socketPath);
+      const connectedForMs = Math.max(
+        0,
+        (this.options.now ?? Date.now)() - connectedAtMs,
+      );
+      if (connectedForMs >= this.reconnectPolicy.stableConnectionMs) {
+        this.reconnectAttempts = 0;
+      }
+      this.requestReconnect(socketPath, error, connectedForMs);
     });
     void this.replayPendingFrames().catch((error) => {
       this.options.logger.error({ err: error }, "Runner IPC replay failed");
@@ -520,16 +552,112 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     });
   }
 
-  private async reconnect(socketPath: string): Promise<void> {
-    try {
-      await this.connect(socketPath);
-    } catch (error) {
-      this.activeStream?.fail(asError(error));
+  private requestReconnect(
+    socketPath: string,
+    error: Error,
+    connectedForMs: number,
+  ): void {
+    if (this.closed || this.reconnectExhaustedError) return;
+    this.reconnectRequested = true;
+    this.reconnectCause = error;
+    if (this.reconnectInFlight) return;
+    const reconnect = this.runReconnectLoop(socketPath, connectedForMs).finally(() => {
+      if (this.reconnectInFlight === reconnect) this.reconnectInFlight = undefined;
+      if (this.reconnectRequested && !this.closed && !this.reconnectExhaustedError) {
+        this.requestReconnect(
+          socketPath,
+          this.reconnectCause ?? error,
+          0,
+        );
+      }
+    });
+    this.reconnectInFlight = reconnect;
+  }
+
+  private async runReconnectLoop(
+    socketPath: string,
+    firstConnectedForMs: number,
+  ): Promise<void> {
+    let connectedForMs = firstConnectedForMs;
+    while (this.reconnectRequested && !this.closed && !this.reconnectExhaustedError) {
+      this.reconnectRequested = false;
+      const reconnectAttempt = this.reconnectAttempts + 1;
+      if (reconnectAttempt > this.reconnectPolicy.maxAttempts) {
+        this.exhaustReconnectBudget(socketPath);
+        return;
+      }
+      this.reconnectAttempts = reconnectAttempt;
+      const reconnectDelayMs = Math.min(
+        this.reconnectPolicy.maxDelayMs,
+        this.reconnectPolicy.initialDelayMs * 2 ** (reconnectAttempt - 1),
+      );
+      this.options.logger.warn(
+        {
+          err: this.reconnectCause,
+          ...this.runnerIdentityContext(socketPath),
+          connectedForMs,
+          reconnectAttempt,
+          reconnectDelayMs,
+          reconnectMaxAttempts: this.reconnectPolicy.maxAttempts,
+        },
+        "Runner IPC disconnected; reconnecting",
+      );
+      await (this.options.reconnectSleep ?? sleep)(reconnectDelayMs);
+      if (this.closed || this.reconnectExhaustedError) return;
+      try {
+        await this.connect(socketPath);
+      } catch (error) {
+        if (this.closed) return;
+        this.reconnectCause = asError(error);
+        this.reconnectRequested = true;
+        connectedForMs = 0;
+      }
     }
+  }
+
+  private exhaustReconnectBudget(socketPath: string): void {
+    const error = new Error(
+      `Runner IPC reconnect budget exhausted after ${this.reconnectPolicy.maxAttempts} attempts`,
+      { cause: this.reconnectCause },
+    );
+    this.reconnectExhaustedError = error;
+    this.abortRequestLifetimes(error);
+    this.options.logger.error(
+      {
+        err: this.reconnectCause,
+        ...this.runnerIdentityContext(socketPath),
+        reconnectAttempts: this.reconnectAttempts,
+      },
+      "Runner IPC reconnect budget exhausted; runner execution will be terminalized",
+    );
+    // The active stream is the single terminal bridge into TaskExecutor; its
+    // rejection persists the runner failure before finalizer cleanup.
+    this.activeStream?.fail(error);
+  }
+
+  private runnerIdentityContext(socketPath: string): {
+    sessionId: string;
+    runnerDirectory: string;
+    socketPath: string;
+  } {
+    return {
+      sessionId: this.spawnInput.sessionId,
+      runnerDirectory: runnerProcessPaths(
+        this.spawnInput.stateDirectory,
+        this.spawnInput.sessionId,
+      ).sessionDirectory,
+      socketPath,
+    };
   }
 
   private async ensureConnection(): Promise<RunnerIpcConnection> {
     if (this.connection) return this.connection;
+    if (this.reconnectExhaustedError) throw this.reconnectExhaustedError;
+    if (this.reconnectInFlight) {
+      await this.reconnectInFlight;
+      if (this.connection) return this.connection;
+      if (this.reconnectExhaustedError) throw this.reconnectExhaustedError;
+    }
     if (!this.connecting) {
       this.connecting = this.ready.then(async () => {
         if (this.connection) return this.connection;
@@ -788,4 +916,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function validateReconnectPolicy(policy: RunnerIpcReconnectPolicy): RunnerIpcReconnectPolicy {
+  for (const [name, value] of Object.entries(policy)) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(`runner reconnect ${name} must be a positive integer`);
+    }
+  }
+  if (policy.initialDelayMs > policy.maxDelayMs) {
+    throw new Error("runner reconnect initialDelayMs cannot exceed maxDelayMs");
+  }
+  return { ...policy };
+}
+
+async function sleep(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref?.();
+  });
 }

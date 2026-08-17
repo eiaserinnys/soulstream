@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -332,6 +333,117 @@ describe("RunnerProcessDispatcher", () => {
 
     await dispatcher.close();
     await endpoint.close();
+  });
+
+  it("bounds rapid disconnect reconnects and terminalizes the active recovery with identity logs", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 1001,
+      commandId: "execute-old",
+      progressedAt: "2026-08-17T00:00:00.000Z",
+    });
+    lifecycle.close();
+
+    let connectionCount = 0;
+    let serverClosed = false;
+    const server = createServer((socket) => {
+      connectionCount += 1;
+      socket.destroy();
+      if (connectionCount === 20) {
+        serverClosed = true;
+        server.close();
+      }
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(paths.socketPath, () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    const logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      spawner: { spawn: async () => ({
+        pid: 1001, paths, config: {} as never, adopted: false,
+      }) },
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger,
+      handleHostCall: async () => null,
+      reconnectPolicy: {
+        initialDelayMs: 1,
+        maxDelayMs: 2,
+        maxAttempts: 3,
+        stableConnectionMs: 1_000,
+      },
+    } as never);
+
+    const recovery = collect(dispatcher.recoverFrames("execute-old")).then(
+      () => ({ status: "resolved" as const }),
+      (error: unknown) => ({
+        status: "rejected" as const,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    const outcome = await Promise.race([
+      recovery,
+      new Promise<{ status: "timeout" }>((resolve) => {
+        setTimeout(() => resolve({ status: "timeout" }), 500);
+      }),
+    ]);
+
+    expect(outcome).toEqual({
+      status: "rejected",
+      message: "Runner IPC reconnect budget exhausted after 3 attempts",
+    });
+    expect(connectionCount).toBe(4);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        runnerDirectory: paths.sessionDirectory,
+        socketPath: paths.socketPath,
+        reconnectAttempt: 1,
+        reconnectDelayMs: 1,
+      }),
+      "Runner IPC disconnected; reconnecting",
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        runnerDirectory: paths.sessionDirectory,
+        socketPath: paths.socketPath,
+        reconnectAttempts: 3,
+      }),
+      "Runner IPC reconnect budget exhausted; runner execution will be terminalized",
+    );
+
+    await dispatcher.detachHost();
+    if (!serverClosed) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("adopts a live runner and finishes replay from its durable terminal state", async () => {
