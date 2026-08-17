@@ -47,7 +47,7 @@ type CompletionDeliveryRepository = Pick<
 export interface CompletionDeliveryCoordinatorDeps {
   repository: CompletionDeliveryRepository;
   dispatch(params: AddInterventionParams): Promise<void>;
-  logger: Pick<Logger, "error" | "warn">;
+  logger: Pick<Logger, "error" | "warn" | "info">;
   sourceNode?: string;
   queuedDeliveryRecovery?: Pick<
     QueuedDeliveryTranscriptRecovery,
@@ -152,6 +152,33 @@ export class CompletionDeliveryCoordinator {
 
   private async dispatchClaimed(row: SessionDeliveryRow): Promise<void> {
     const leaseOwner = requiredLeaseOwner(row);
+    const targetSessionId = requiredTarget(row);
+    // TaskCompletionNotifier.notify() is the canonical admission guard. This
+    // recovery fence only drains stale durable rows created before that guard.
+    if (isStaleSelfCompletionDelivery(row, targetSessionId)) {
+      try {
+        const terminal = await this.deps.repository.markUncertain(
+          row.delivery_id,
+          leaseOwner,
+          "stale_self_completion_delivery",
+        );
+        this.deps.logger.info(
+          {
+            deliveryId: row.delivery_id,
+            sourceSessionId: row.source_session_id,
+            targetSessionId,
+            terminalized: terminal !== null,
+          },
+          "Stale self completion delivery suppressed during durable recovery",
+        );
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, deliveryId: row.delivery_id, sourceSessionId: row.source_session_id },
+          "Stale self completion delivery suppression could not be terminalized; recovery will retry",
+        );
+      }
+      return;
+    }
     try {
       await this.deps.dispatch(toInterventionParams(row, leaseOwner));
     } catch (err) {
@@ -185,6 +212,15 @@ export class CompletionDeliveryCoordinator {
       );
     }
   }
+}
+
+function isStaleSelfCompletionDelivery(
+  row: SessionDeliveryRow,
+  targetSessionId: string,
+): boolean {
+  return row.intent === "completion_notification"
+    && row.source_session_id !== null
+    && row.source_session_id === targetSessionId;
 }
 
 function isRetryExhausted(row: SessionDeliveryRow, nowMs = Date.now()): boolean {

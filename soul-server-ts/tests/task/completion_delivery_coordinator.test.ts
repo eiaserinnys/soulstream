@@ -7,6 +7,76 @@ import { DELIVERY_NOTIFICATION_MAX_ATTEMPTS } from
   "../../src/task/session_delivery_notification_policy.js";
 
 describe("CompletionDeliveryCoordinator", () => {
+  it("terminalizes a stale durable self completion during recovery without dispatching it", async () => {
+    const createdAt = new Date("2026-08-17T00:00:00.000Z");
+    const claimed = {
+      delivery_id: "delivery-stale-self",
+      target_session_id: "self-session",
+      source_session_id: "self-session",
+      relation_key: "child_session:self-session:8",
+      completion_id: "completion-stale-self",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producer_kind: "child_session",
+      producer_id: "self-session",
+      producer_terminal_revision: "8",
+      parent_delivery_id: null,
+      caller_turn_id: null,
+      payload_hash: "hash",
+      payload: {
+        text: "done",
+        user: "agent",
+        caller_info: { source: "agent" },
+      },
+      state: "claimed",
+      attempt_count: 1,
+      next_attempt_at: createdAt,
+      last_error: null,
+      lease_owner: "completion:test-worker",
+      lease_expires_at: new Date("2026-08-17T00:01:00.000Z"),
+      created_at: createdAt,
+      updated_at: createdAt,
+      claimed_at: createdAt,
+      dispatching_at: null,
+      queued_at: null,
+      delivered_at: null,
+      consumed_at: null,
+      superseded_at: null,
+      superseded_terminal_revision: null,
+    };
+    const dispatch = vi.fn();
+    const markUncertain = vi.fn().mockResolvedValue({
+      ...claimed,
+      state: "uncertain",
+      lease_owner: null,
+    });
+    const repository = {
+      register: vi.fn(),
+      get: vi.fn(),
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([claimed]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+      markUncertain,
+    };
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch,
+      logger: pino({ level: "silent" }),
+    }, "completion:test-worker");
+
+    await coordinator.recoverPending();
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(markUncertain).toHaveBeenCalledWith(
+      "delivery-stale-self",
+      "completion:test-worker",
+      "stale_self_completion_delivery",
+    );
+    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
+  });
+
   it("terminalizes an exhausted base delivery instead of scheduling an unbounded retry", async () => {
     const createdAt = new Date("2026-08-17T00:00:00.000Z");
     const row = {
