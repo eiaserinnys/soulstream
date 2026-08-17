@@ -80,6 +80,15 @@ export type RunnerRecoveryDisposition =
   | "already_reaped"
   | "closed";
 
+export function isTerminalRunnerExecutionState(
+  state: RunnerLifecycleRecord["execution_state"],
+): boolean {
+  return state === "completed"
+    || state === "failed"
+    || state === "reaped"
+    || state === "closed";
+}
+
 export interface LiveRunnerSessionIdsOptions {
   stateDirectory: string;
   leaseTimeoutMs: number;
@@ -147,7 +156,7 @@ export function classifyRunnerRegistration(
     }
     return registration.pidAlive ? "reap_stalled" : "reap_dead";
   }
-  if (lifecycle.execution_state !== "running") return "replay_terminal";
+  if (isTerminalRunnerExecutionState(lifecycle.execution_state)) return "replay_terminal";
   if (!registration.pidAlive) return "reap_dead";
   const progressedAt = Date.parse(lifecycle.progress_at);
   if (!Number.isFinite(progressedAt)) {

@@ -160,7 +160,6 @@ export class RunnerRecoveryCoordinator {
       if (
         disposition === "adopt_prebootstrap"
         || disposition === "adopt_running"
-        || (disposition === "replay_terminal" && registration.pidAlive)
       ) {
         await this.handleWithFailureTracking(registration, disposition, task);
         continue;
@@ -469,12 +468,6 @@ export class RunnerRecoveryCoordinator {
   ): Promise<Task> {
     if (disposition !== "replay_terminal") {
       return await this.recoverRegistered(registration, task, "adopt");
-    }
-    if (
-      registration.pidAlive
-      && registration.lifecycle?.execution_state === "completed"
-    ) {
-      return await this.recoverRegistered(registration, task, "replay");
     }
     return await this.recoverRegistered(
       registration,
