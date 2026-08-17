@@ -349,7 +349,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
     await this.ready;
-    return await this.outbox.readPendingInterventions();
+    return (await this.reconcilePendingInterventions()).interventions;
   }
 
   async invoke(capability: string, args: unknown[]): Promise<unknown> {
@@ -490,6 +490,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     queuedOverride?: boolean,
   ): Promise<boolean> {
     await this.ready;
+    const reconciliation = await this.reconcilePendingInterventions();
+    if (reconciliation.shadowedFallbackIds.includes(interventionId)) return false;
     const fallback = this.outbox.readInterventionFallback(interventionId);
     if (!fallback) return false;
     const staged = await this.stageInterventionInChild({
@@ -513,6 +515,35 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       "Runner intervention host fallback flushed to child inbox",
     );
     return true;
+  }
+
+  private async reconcilePendingInterventions(): Promise<{
+    interventions: RunnerPendingIntervention[];
+    shadowedFallbackIds: string[];
+  }> {
+    const inspection = await this.outbox.inspectPendingInterventions();
+    for (const interventionId of inspection.shadowedFallbackIds) {
+      let fallbackRemoved = false;
+      try {
+        this.outbox.removeInterventionFallback(interventionId);
+        fallbackRemoved = true;
+      } catch (error) {
+        this.options.logger.warn(
+          { err: error, sessionId: this.spawnInput.sessionId, interventionId },
+          "Duplicate host intervention fallback cleanup deferred",
+        );
+      }
+      this.options.logger.info(
+        {
+          sessionId: this.spawnInput.sessionId,
+          interventionId,
+          fallbackRemoved,
+          durableOwner: "runner_sqlite",
+        },
+        "Duplicate host intervention fallback suppressed in favor of runner inbox",
+      );
+    }
+    return inspection;
   }
 
   private async connect(socketPath: string): Promise<RunnerIpcConnection> {
