@@ -27,6 +27,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
   }, 45_000);
 
   beforeEach(async () => {
+    await harness.sql`DELETE FROM session_delivery_notification_outbox`;
     await harness.sql`DELETE FROM session_delivery_relation_consumptions`;
     await harness.sql`DELETE FROM session_deliveries`;
     await harness.sql`DELETE FROM sessions`;
@@ -171,6 +172,85 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       state: "superseded",
       superseded_terminal_revision: "42",
     });
+  });
+
+  it("stages an expired same-owner dispatch and rejects the replaced owner", async () => {
+    await harness.sql`
+      UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
+    `;
+    await register("delivery-expired-stage", "relation-expired-stage");
+    await repository.claimForTarget(
+      "delivery-expired-stage",
+      "caller-old",
+      "worker-original",
+    );
+    await repository.beginDispatch("delivery-expired-stage", "worker-original");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      WHERE delivery_id = 'delivery-expired-stage'
+    `;
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId: "delivery-expired-stage",
+      leaseOwner: "worker-original",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: "delivery-expired-stage",
+        delivery_intent: "completion_notification",
+        completion_id: "completion-relation-expired-stage",
+        relation_key: "relation-expired-stage",
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    })).resolves.toMatchObject({ state: "queued" });
+    await expect(harness.sql<Array<{ lease_is_fresh: boolean }>>`
+      SELECT lease_expires_at > NOW() AS lease_is_fresh
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'delivery-expired-stage'
+    `).resolves.toEqual([{ lease_is_fresh: true }]);
+    await expect(repository.notifications.releaseExpiredLeases(
+      4,
+      new Date(0),
+    )).resolves.toBe(0);
+    await expect(repository.notifications.claimDue(
+      "node-a",
+      "notification-recovery",
+    )).resolves.toEqual([]);
+
+    await register("delivery-replaced-owner", "relation-replaced-owner");
+    await repository.claimForTarget(
+      "delivery-replaced-owner",
+      "caller-old",
+      "worker-old",
+    );
+    await repository.beginDispatch("delivery-replaced-owner", "worker-old");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET lease_owner = 'worker-new'
+      WHERE delivery_id = 'delivery-replaced-owner'
+    `;
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId: "delivery-replaced-owner",
+      leaseOwner: "worker-old",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: "delivery-replaced-owner",
+        delivery_intent: "completion_notification",
+        completion_id: "completion-relation-replaced-owner",
+        relation_key: "relation-replaced-owner",
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    })).resolves.toBeNull();
   });
 
   it("recovers only the latest terminal revision and rechecks it at dispatch", async () => {

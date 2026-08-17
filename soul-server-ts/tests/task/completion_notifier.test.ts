@@ -580,7 +580,10 @@ describe("TaskCompletionNotifier.notify", () => {
     await notifier.recoverPending();
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(markUncertain).toHaveBeenCalledTimes(1);
+    expect(markUncertain).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+    );
     expect(stored).toMatchObject({ state: "uncertain" });
     expect(claimRecoverableCompletionDeliveries).toHaveBeenCalledTimes(1);
     expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();

@@ -225,4 +225,67 @@ describe("CompletionDeliveryCoordinator", () => {
     );
     expect(retryLeasedDelivery).not.toHaveBeenCalled();
   });
+
+  it("does not report a retry as scheduled after losing the delivery lease", async () => {
+    const createdAt = new Date();
+    const claimed = {
+      delivery_id: "delivery-lease-lost",
+      target_session_id: "caller-session",
+      source_session_id: "child-session",
+      relation_key: "child_session:child-session:9",
+      completion_id: "completion-lease-lost",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producer_kind: "child_session",
+      producer_id: "child-session",
+      producer_terminal_revision: "9",
+      parent_delivery_id: null,
+      caller_turn_id: null,
+      payload_hash: "hash",
+      payload: { text: "done", user: "agent" },
+      state: "claimed",
+      attempt_count: 0,
+      next_attempt_at: createdAt,
+      last_error: null,
+      lease_owner: "completion:test-worker",
+      lease_expires_at: new Date(createdAt.getTime() + 60_000),
+      created_at: createdAt,
+      updated_at: createdAt,
+      claimed_at: createdAt,
+      dispatching_at: null,
+      queued_at: null,
+      delivered_at: null,
+      consumed_at: null,
+      superseded_at: null,
+      superseded_terminal_revision: null,
+    };
+    const warn = vi.fn();
+    const repository = {
+      register: vi.fn(),
+      get: vi.fn(),
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([claimed]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn().mockResolvedValue(null),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+      markUncertain: vi.fn(),
+    };
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch: vi.fn().mockRejectedValue(new Error("dispatch failed")),
+      logger: { error: vi.fn(), warn, info: vi.fn() } as never,
+    }, "completion:test-worker");
+
+    await coordinator.recoverPending();
+
+    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId: "delivery-lease-lost" }),
+      "Completion delivery retry not scheduled because the dispatch lease was lost",
+    );
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "Completion delivery dispatch failed; durable retry scheduled",
+    );
+  });
 });

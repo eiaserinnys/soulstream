@@ -151,6 +151,14 @@ export class TaskInterventionRoute {
     let task: Task | undefined;
     let ledgerResultRecorded = false;
     let deferredResumeTask: Task | undefined;
+    let deferredResumeStarted = false;
+    const startDeferredResumeOnce = (): void => {
+      if (deferredResumeStarted || !deferredResumeTask) return;
+      deferredResumeStarted = true;
+      const resumedTask = deferredResumeTask;
+      deferredResumeTask = undefined;
+      onResume(resumedTask);
+    };
     try {
       task = await this.resolveTask(params.agentSessionId);
       if (params.onlyIfTerminal === true && task.status === "running") {
@@ -258,13 +266,24 @@ export class TaskInterventionRoute {
       // A terminal delivery must exist durably in `queued` before the executor
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
-      if (deferredResumeTask) {
-        onResume(deferredResumeTask);
-      }
+      startDeferredResumeOnce();
       return result;
     } catch (err) {
+      let recoveryError: unknown;
+      try {
+        startDeferredResumeOnce();
+      } catch (resumeError) {
+        recoveryError = resumeError;
+      }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
-        await this.deps.deliveryLedgerGate.recordFailure(admission);
+        try {
+          await this.deps.deliveryLedgerGate.recordFailure(admission);
+        } catch (recordFailureError) {
+          recoveryError ??= recordFailureError;
+        }
+      }
+      if (recoveryError && err instanceof Error && err.cause === undefined) {
+        err.cause = recoveryError;
       }
       throw err;
     }

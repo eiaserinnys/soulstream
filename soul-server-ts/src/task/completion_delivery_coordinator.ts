@@ -200,12 +200,19 @@ export class CompletionDeliveryCoordinator {
         );
         return;
       }
-      await this.deps.repository.retryLeasedDelivery(
+      const retried = await this.deps.repository.retryLeasedDelivery(
         row.delivery_id,
         leaseOwner,
         failure,
         nextAttemptAt(row.attempt_count),
       );
+      if (!retried) {
+        this.deps.logger.warn(
+          { err, deliveryId: row.delivery_id },
+          "Completion delivery retry not scheduled because the dispatch lease was lost",
+        );
+        return;
+      }
       this.deps.logger.warn(
         { err, deliveryId: row.delivery_id },
         "Completion delivery dispatch failed; durable retry scheduled",

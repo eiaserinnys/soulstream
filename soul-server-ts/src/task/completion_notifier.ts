@@ -28,6 +28,11 @@ import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 import { CompletionDeliveryCoordinator } from "./completion_delivery_coordinator.js";
+import {
+  classifyCompletionDeliveryAck,
+  classifyCompletionDeliveryResult,
+  type CompletionDeliveryVerdict,
+} from "./completion_delivery_verdict.js";
 import type {
   AddInterventionParams,
   StartExecutionCallback,
@@ -45,8 +50,6 @@ export interface CompletionNotifier {
   notify(task: Task): Promise<void>;
   recoverPending?(): Promise<void>;
 }
-
-type CompletionDeliveryAttempt = "accepted" | "unknown" | "failed";
 
 export class TaskCompletionNotifier implements CompletionNotifier {
   private readonly fetchImpl: typeof fetch;
@@ -80,17 +83,28 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       this.durableCoordinator = new CompletionDeliveryCoordinator({
         repository: deliveryRepository,
         dispatch: async (params) => {
-          const attempt = await this._deliver(params, params.agentSessionId);
-          if (attempt === "failed") {
+          const verdict = await this._deliver(params);
+          if (verdict.kind === "failed") {
             throw new Error("Completion delivery exhausted local and cross-node routes");
           }
-          if (attempt === "unknown") {
-            if (!params.deliveryId) {
-              throw new Error("Unknown completion verdict requires a durable delivery id");
+          if (verdict.kind === "unknown") {
+            if (!params.deliveryId || !params.deliveryLeaseOwner) {
+              throw new Error(
+                "Unknown completion verdict requires a durable delivery id and lease owner",
+              );
             }
-            await deliveryRepository.markUncertain(params.deliveryId);
+            const uncertain = await deliveryRepository.markUncertain(
+              params.deliveryId,
+              params.deliveryLeaseOwner,
+            );
+            const current = uncertain ?? await deliveryRepository.get(params.deliveryId);
             this.logger.warn(
-              { targetSessionId: params.agentSessionId, deliveryId: params.deliveryId },
+              {
+                targetSessionId: params.agentSessionId,
+                deliveryId: params.deliveryId,
+                durableState: current?.state,
+                uncertainRecorded: uncertain !== null,
+              },
               "Completion delivery verdict is unknown; durable retry suppressed",
             );
           }
@@ -155,28 +169,56 @@ export class TaskCompletionNotifier implements CompletionNotifier {
 
   private async _deliver(
     params: AddInterventionParams,
-    childId: string,
-  ): Promise<CompletionDeliveryAttempt> {
+    sourceSessionId?: string,
+  ): Promise<CompletionDeliveryVerdict> {
     const callerSessionId = params.agentSessionId;
     // Gate OFF is the pre-v2 local-first contract: no ownership DB scheduling point.
     if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
       try {
         const result = await this.taskManager.addIntervention(params, this.onResume);
-        if ("delivered" in result && result.delivered === null) {
-          this.logger.warn(
-            { childId, callerSessionId, deliveryId: params.deliveryId },
-            "Local completion notification delivery verdict is unknown",
+        const verdict = classifyCompletionDeliveryResult(result);
+        if (verdict.kind === "accepted") {
+          this.logger.info(
+            {
+              ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+              callerSessionId,
+              deliveryId: params.deliveryId,
+              disposition: verdict.disposition,
+            },
+            "Completion notification accepted locally",
           );
-          return "unknown";
+        } else if (verdict.kind === "settled") {
+          this.logger.info(
+            {
+              ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+              callerSessionId,
+              deliveryId: params.deliveryId,
+              disposition: verdict.disposition,
+            },
+            "Completion notification was already settled locally",
+          );
+        } else {
+          this.logger.warn(
+            {
+              ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+              callerSessionId,
+              deliveryId: params.deliveryId,
+              reason: verdict.reason,
+            },
+            verdict.kind === "unknown"
+              ? "Local completion notification delivery verdict is unknown"
+              : "Local completion notification was not accepted",
+          );
         }
-        this.logger.info(
-          { childId, callerSessionId, deliveryId: params.deliveryId },
-          "Completion notification delivered locally",
-        );
-        return "accepted";
+        return verdict;
       } catch (err) {
         this.logger.warn(
-          { err, childId, callerSessionId, deliveryId: params.deliveryId },
+          {
+            err,
+            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+            callerSessionId,
+            deliveryId: params.deliveryId,
+          },
           "Local completion notification failed — trying cross-node relay",
         );
       }
@@ -184,12 +226,12 @@ export class TaskCompletionNotifier implements CompletionNotifier {
 
     if (!this.orch) {
       this.logger.warn(
-        { childId, callerSessionId },
+        { ...(sourceSessionId ? { childId: sourceSessionId } : {}), callerSessionId },
         "orch fallback unavailable (single-node config) — notification dropped",
       );
-      return "failed";
+      return { kind: "failed", reason: "orch_fallback_unavailable" };
     }
-    return await this._relayCrossNode(params, childId);
+    return await this._relayCrossNode(params, sourceSessionId);
   }
 
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
@@ -269,9 +311,11 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    */
   private async _relayCrossNode(
     params: AddInterventionParams,
-    childId: string,
-  ): Promise<CompletionDeliveryAttempt> {
-    if (!this.orch) return "failed";
+    sourceSessionId?: string,
+  ): Promise<CompletionDeliveryVerdict> {
+    if (!this.orch) {
+      return { kind: "failed", reason: "orch_fallback_unavailable" };
+    }
     const callerSessionId = params.agentSessionId;
     const url = `${this.orch.baseUrl}/api/sessions/${callerSessionId}/intervene`;
     const headers: Record<string, string> = {
@@ -306,49 +350,74 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       if (!resp.ok) {
         const bodyText = await safeReadText(resp);
         this.logger.error(
-          { childId, callerSessionId, status: resp.status, body: bodyText },
+          {
+            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+            callerSessionId,
+            status: resp.status,
+            body: bodyText,
+          },
           "Cross-node completion notification: orch returned non-2xx",
         );
-        return "failed";
+        return { kind: "failed", reason: `orch_http_${resp.status}` };
       }
       const verdict = await readInterventionVerdict(resp);
-      if (verdict === "unknown") {
-        this.logger.warn(
-          { childId, callerSessionId, deliveryId: params.deliveryId },
-          "Cross-node completion notification delivery verdict is unknown",
+      if (verdict.kind === "accepted") {
+        this.logger.info(
+          {
+            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+            callerSessionId,
+            deliveryId: params.deliveryId,
+            disposition: verdict.disposition,
+          },
+          "Completion notification accepted via cross-node relay",
         );
-        return "unknown";
+      } else if (verdict.kind === "settled") {
+        this.logger.info(
+          {
+            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+            callerSessionId,
+            deliveryId: params.deliveryId,
+            disposition: verdict.disposition,
+          },
+          "Completion notification was already settled via cross-node relay",
+        );
+      } else {
+        this.logger.warn(
+          {
+            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+            callerSessionId,
+            deliveryId: params.deliveryId,
+            reason: verdict.reason,
+          },
+          verdict.kind === "unknown"
+            ? "Cross-node completion notification delivery verdict is unknown"
+            : "Cross-node completion notification was not accepted",
+        );
       }
-      this.logger.info(
-        { childId, callerSessionId },
-        "Completion notification delivered via cross-node relay",
-      );
-      return "accepted";
+      return verdict;
     } catch (err) {
       this.logger.error(
-        { err, childId, callerSessionId },
+        {
+          err,
+          ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+          callerSessionId,
+        },
         "Cross-node completion notification failed",
       );
-      return "failed";
+      return { kind: "failed", reason: "cross_node_relay_failed" };
     }
   }
 }
 
 async function readInterventionVerdict(
   response: Response,
-): Promise<"known" | "unknown"> {
+): Promise<CompletionDeliveryVerdict> {
   try {
     const body = await response.json() as unknown;
-    return isRecord(body) && typeof body.delivered === "boolean"
-      ? "known"
-      : "unknown";
+    return classifyCompletionDeliveryAck(body);
   } catch {
-    return "unknown";
+    return { kind: "unknown", reason: "verdict_unreadable" };
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function safeReadText(resp: Response): Promise<string> {

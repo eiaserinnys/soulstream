@@ -34,6 +34,73 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
+  it("mirrors an idle runner notification durably before exposing it in memory", async () => {
+    let task!: Task;
+    const stageIntervention = vi.fn(async () => {
+      expect(task.interventionQueue).toEqual([]);
+      return {
+        durability: "runner" as const,
+        eventSourceSeq: null,
+        queuePosition: 1,
+      };
+    });
+    const dispatcher = {
+      stageIntervention,
+      waitForSessionAck: vi.fn(),
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      prepareSession: vi.fn(),
+      interrupt: vi.fn(),
+      close: vi.fn(),
+      detachHost: vi.fn(),
+      sendControlFrame: vi.fn(),
+      requestContext: vi.fn(),
+    };
+    task = makeRunningTask({
+      runner: createTaskRunnerRuntime(
+        new RunnerProcessEngineProxy("claude", "/tmp/claude", dispatcher as never),
+        dispatcher as never,
+        "runner",
+      ),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.queueOnly(task, {
+      text: "child completed",
+      user: "agent",
+      deliveryId: "idle-runner-completion",
+      deliveryIntent: "completion_notification",
+      completionId: "completion-idle-runner",
+      relationKey: "child_session:idle-runner:1",
+      source: "completion_notifier",
+    }, { publishEvent: false })).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
+
+    expect(stageIntervention).toHaveBeenCalledWith(expect.objectContaining({
+      queued: true,
+      message: expect.objectContaining({
+        deliveryId: "idle-runner-completion",
+        deliveryIntent: "completion_notification",
+      }),
+    }));
+    expect(stageIntervention.mock.calls[0]?.[0]).not.toHaveProperty("event");
+    expect(task.interventionQueue).toEqual([
+      expect.objectContaining({
+        deliveryId: "idle-runner-completion",
+        runnerInterventionId: expect.any(String),
+      }),
+    ]);
+  });
+
   it.each([
     // Live backend behavior is measured separately; atom card
     // 6723db5e-b9c8-4095-9563-e819664991ca is the canonical evidence.
