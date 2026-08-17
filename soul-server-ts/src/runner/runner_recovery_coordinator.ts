@@ -1,7 +1,4 @@
 import { performance } from "node:perf_hooks";
-import type { Logger } from "pino";
-import type { TaskExecutor } from "../task/task_executor.js";
-import type { TaskManager } from "../task/task_manager.js";
 import type { Task } from "../task/task_models.js";
 import {
   classifyRunnerRegistration,
@@ -31,37 +28,15 @@ import {
   closedRunnerTailRequiresDrain,
   logRunnerRecoveryScan,
 } from "./runner_recovery_scan_observer.js";
+import {
+  RunnerAdoptionFailureRecovery,
+  type RunnerAdoptionDisposition,
+} from "./runner_adoption_failure_recovery.js";
+import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+
+export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+
 const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
-export interface RunnerRecoveryCoordinatorOptions {
-  stateDirectory: string;
-  leaseTimeoutMs: number;
-  scanIntervalMs: number;
-  taskManager: Pick<
-    TaskManager,
-    "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume"
-  >;
-  taskExecutor: Pick<
-    TaskExecutor,
-    "recoverRegisteredRunner" | "restartRegisteredRunner"
-  >;
-  closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
-  logger: Pick<Logger, "error" | "info" | "warn">;
-  spawner?: Pick<RunnerProcessSpawner, "terminate">;
-  scan?: typeof scanRunnerRegistrations;
-  hydrate?: typeof hydrateRunnerRegistration;
-  now?: () => number;
-  monotonicNow?: () => number;
-  markReaped?: (
-    registration: RunnerRegistration,
-    progressedAt: string,
-    error: { code: string; message: string },
-  ) => Promise<void>;
-  releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
-  sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
-  quarantineFailure?: typeof quarantineUnreadableRunnerRegistration;
-  hydrationDeadlineMs?: number;
-  hydrationConcurrency?: number;
-}
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
@@ -70,6 +45,7 @@ export class RunnerRecoveryCoordinator {
   private readonly unreadableRegistrationFingerprints = new Map<string, string>();
   private readonly recoveryLogger: RunnerRecoveryLogger;
   private readonly hydrationPhase: RunnerRecoveryHydrationPhase;
+  private readonly adoptionFailureRecovery: RunnerAdoptionFailureRecovery;
   private sessionGarbageCollectionInFlight: Promise<void> | undefined;
   private nextSessionGarbageCollectionAtMs = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -88,6 +64,34 @@ export class RunnerRecoveryCoordinator {
       ...(options.hydrationConcurrency === undefined
         ? {}
         : { concurrency: options.hydrationConcurrency }),
+    });
+    this.adoptionFailureRecovery = new RunnerAdoptionFailureRecovery({
+      leaseTimeoutMs: options.leaseTimeoutMs,
+      logger: options.logger,
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.refreshRegistration
+        ? { refreshRegistration: options.refreshRegistration }
+        : {}),
+      ...(options.hydrate ? { hydrateRegistration: options.hydrate } : {}),
+      terminateRegistration: async (registration) =>
+        await this.terminateRegistration(registration),
+      markReaped: async (registration, progressedAt, error) => {
+        if (options.markReaped) {
+          await options.markReaped(registration, progressedAt, error);
+        } else {
+          await markRegistrationReaped(registration, progressedAt, error, options.logger);
+        }
+      },
+      recoverOffline: async (registration, task) =>
+        await this.recoverRegistered(registration, task, "offline"),
+      resumeReplacement: async (task, message, config) =>
+        await options.taskManager.markRunnerFailureAndResume(
+          task,
+          message,
+          (resumedTask) => options.taskExecutor.restartRegisteredRunner(resumedTask, config),
+        ),
+      onFailure: (registration, disposition, error) =>
+        this.recoveryLogger.failure(registration, disposition, error),
     });
   }
   async start(): Promise<void> {
@@ -126,7 +130,10 @@ export class RunnerRecoveryCoordinator {
     }> = [];
     for (const registration of scan.registrations) {
       const sessionId = registration.config.sessionId;
-      if (this.active.has(sessionId)) continue;
+      if (
+        this.active.has(sessionId)
+        || this.adoptionFailureRecovery.has(sessionId)
+      ) continue;
       const disposition = classifyRunnerRegistration(
         registration,
         (this.options.now ?? Date.now)(),
@@ -253,10 +260,15 @@ export class RunnerRecoveryCoordinator {
   }
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
   async waitForSettled(): Promise<void> {
-    while (this.scanInFlight || this.active.size > 0) {
+    while (
+      this.scanInFlight
+      || this.active.size > 0
+      || this.adoptionFailureRecovery.pending().length > 0
+    ) {
       await Promise.allSettled([
         ...(this.scanInFlight ? [this.scanInFlight] : []),
         ...this.active.values(),
+        ...this.adoptionFailureRecovery.pending(),
       ]);
     }
   }
@@ -343,6 +355,7 @@ export class RunnerRecoveryCoordinator {
     prepareRegistrationAfterTaskGuard?: (
       registration: RunnerRegistration,
     ) => Promise<RunnerRegistration>,
+    adoptionDisposition?: RunnerAdoptionDisposition,
   ): Promise<Task> {
     if (task.runner || task.executionPromise) return task;
     if (prepareRegistrationAfterTaskGuard) {
@@ -357,8 +370,20 @@ export class RunnerRecoveryCoordinator {
       lifecycle?.execution_command_id,
       mode,
     );
+    const ownedRunner = task.runner;
     if (mode === "offline") {
       await completion;
+    } else if (mode === "adopt" && adoptionDisposition) {
+      void completion.catch((error: unknown) => {
+        this.adoptionFailureRecovery.schedule({
+          registration,
+          disposition: adoptionDisposition,
+          task,
+          completion,
+          ownedRunner,
+          error,
+        });
+      });
     } else {
       void completion.catch((error) => {
         this.options.logger.error(
@@ -391,7 +416,6 @@ export class RunnerRecoveryCoordinator {
       }
       return;
     }
-    registration = hydrated;
     const message = disposition === "reap_stalled"
       ? "runner progress lease expired"
       : "runner process exited before execution completed";
@@ -399,41 +423,11 @@ export class RunnerRecoveryCoordinator {
       code: disposition === "reap_stalled" ? "lease_expired" : "runner_exited",
       message,
     };
-    if (registration.pidAlive) {
-      await this.terminateRegistration(registration);
-      registration = { ...registration, pidAlive: false };
-    }
-    if (registration.lifecycle) {
-      const progressedAt = new Date((this.options.now ?? Date.now)()).toISOString();
-      if (this.options.markReaped) {
-        await this.options.markReaped(registration, progressedAt, error);
-      } else {
-        await markRegistrationReaped(registration, progressedAt, error, this.options.logger);
-      }
-    }
-    const recoveredTask = registration.lifecycle
-      ? await this.recoverRegistered({
-          ...registration,
-          pidAlive: false,
-          lifecycle: {
-            ...registration.lifecycle,
-            execution_state: "reaped",
-            terminal_error: error,
-          },
-        }, task, "offline")
-      : task;
-    prepareRecoveredTask(recoveredTask, registration);
-    await this.options.taskManager.markRunnerFailureAndResume(
-      recoveredTask,
-      message,
-      (resumedTask) => this.options.taskExecutor.restartRegisteredRunner(
-        resumedTask,
-        registration.config,
-      ),
-    );
-    this.options.logger.info(
-      { sessionId: registration.config.sessionId, disposition },
-      "runner failure drained and auto-resumed",
+    await this.adoptionFailureRecovery.terminalize(
+      hydrated,
+      task,
+      error,
+      disposition,
     );
   }
 
@@ -467,7 +461,13 @@ export class RunnerRecoveryCoordinator {
     task: Task,
   ): Promise<Task> {
     if (disposition !== "replay_terminal") {
-      return await this.recoverRegistered(registration, task, "adopt");
+      return await this.recoverRegistered(
+        registration,
+        task,
+        "adopt",
+        undefined,
+        disposition,
+      );
     }
     return await this.recoverRegistered(
       registration,
