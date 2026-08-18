@@ -693,6 +693,8 @@ describe("runner cutover all-flags-on integration", () => {
       await writeFile(join(controlDirectory, "finish-recovered-intervention"), "go\n");
       await executionPromise;
       expect(task.status).toBe("completed");
+      await waitFor(async () => !isPidAlive(replacementPid));
+      childPids.delete(replacementPid);
       const completed = new DatabaseSync(paths.databasePath, { readOnly: true });
       completed.exec("PRAGMA query_only = ON");
       expect(completed.prepare(`
@@ -700,8 +702,6 @@ describe("runner cutover all-flags-on integration", () => {
         WHERE intervention_id = 'legacy-ambiguous-e2e'
       `).get()).toEqual({ count: 0 });
       completed.close();
-      await waitFor(async () => !isPidAlive(replacementPid));
-      childPids.delete(replacementPid);
     } finally {
       if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
       else process.env.NODE_OPTIONS = previousNodeOptions;

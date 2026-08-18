@@ -96,7 +96,7 @@ describe("TaskCreation", () => {
     expect(task).toMatchObject({
       agentSessionId: "sess-1",
       prompt: "hello",
-      status: "running",
+      status: "initializing",
       reviewRequired: true,
       reviewState: "not_required",
       profileId: "codex-default",
@@ -125,7 +125,7 @@ describe("TaskCreation", () => {
         claudeSessionId: null,
         sessionType: "llm",
         prompt: "hello",
-        status: "running",
+        status: "initializing",
         callerSessionId: null,
         reviewRequired: true,
         reviewState: "not_required",

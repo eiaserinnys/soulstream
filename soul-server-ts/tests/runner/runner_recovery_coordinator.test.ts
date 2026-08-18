@@ -524,6 +524,15 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "lease expired before restart",
       expect.any(Function),
     );
+    expect(subject.task).toMatchObject({
+      runnerTerminalFact: "reaped",
+      recoveredExecutionOwnership: {
+        manifestId: "sha-a",
+        registrationId: "registration-a",
+        pid: 4123,
+        startIdentity: "start-4123",
+      },
+    });
     expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
 
@@ -1287,6 +1296,7 @@ function registration(options: {
       rolloutRoot: "/home/test/.codex/sessions",
     },
     pid: 4123,
+    registrationId: "registration-a",
     pidStartIdentity: "start-4123",
     pidAlive: options.pidAlive ?? true,
     registeredAtMs: Date.parse("2026-08-11T00:00:00.000Z"),

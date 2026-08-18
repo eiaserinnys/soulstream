@@ -321,9 +321,28 @@ function isCanonicalTransitionEffect(
   effect: EventSessionEffect | null,
 ): effect is Extract<
   EventSessionEffect,
-  { kind: "running_transition" | "terminal_transition" }
+  {
+    kind:
+      | "running_transition"
+      | "terminal_transition"
+      | "execution_reserve"
+      | "execution_prove"
+      | "execution_adopt_reserve"
+      | "execution_activate"
+      | "execution_fail"
+      | "runner_terminal_fact"
+      | "recovered_runner_terminal_fact";
+  }
 > {
-  return effect?.kind === "running_transition" || effect?.kind === "terminal_transition";
+  return effect?.kind === "running_transition"
+    || effect?.kind === "terminal_transition"
+    || effect?.kind === "execution_reserve"
+    || effect?.kind === "execution_prove"
+    || effect?.kind === "execution_adopt_reserve"
+    || effect?.kind === "execution_activate"
+    || effect?.kind === "execution_fail"
+    || effect?.kind === "runner_terminal_fact"
+    || effect?.kind === "recovered_runner_terminal_fact";
 }
 
 function toReceiptEffectApplication(

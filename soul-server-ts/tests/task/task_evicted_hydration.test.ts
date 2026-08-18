@@ -69,17 +69,20 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     },
   );
 
-  it("hydrates running status without completedAt", () => {
+  it.each(["initializing", "running"] as const)(
+    "hydrates active status %s without completedAt",
+    (status) => {
     const updatedAt = new Date("2026-05-23T02:30:00.000Z");
 
     const task = hydrateEvictedTaskFromSessionRow(
-      makeRow({ status: "running", updated_at: updatedAt }),
+      makeRow({ status, updated_at: updatedAt }),
       makeLogger(),
     );
 
-    expect(task?.status).toBe("running");
+    expect(task?.status).toBe(status);
     expect(task?.completedAt).toBeUndefined();
-  });
+    },
+  );
 
   it("restores terminal evidence and exact assistant text from the durable row", () => {
     const task = hydrateEvictedTaskFromSessionRow(

@@ -128,22 +128,64 @@ function makeAppliedTransitionAcknowledgement(
   record: EventOutboxRecord,
 ): EventAppendAcknowledgement {
   const effect = record.session_effect;
-  if (effect?.kind !== "running_transition" && effect?.kind !== "terminal_transition") {
+  if (!effect || ![
+    "running_transition",
+    "terminal_transition",
+    "execution_reserve",
+    "execution_prove",
+    "execution_adopt_reserve",
+    "execution_activate",
+    "execution_fail",
+    "runner_terminal_fact",
+    "recovered_runner_terminal_fact",
+  ].includes(effect.kind)) {
     throw new Error("transition acknowledgement requires a transition effect");
   }
   const terminal = effect.kind === "terminal_transition";
+  const activated = effect.kind === "running_transition"
+    || effect.kind === "execution_activate";
+  const failed = effect.kind === "execution_fail";
+  const runnerFact = "runner_fact" in effect ? effect.runner_fact : undefined;
+  const runnerTerminalStatus = runnerFact === "completed"
+    ? "completed"
+    : runnerFact === "closed"
+      ? "interrupted"
+      : "error";
+  const reviewState = "review_state" in effect
+    ? effect.review_state
+    : "not_required";
   return {
     source_seq: record.source_seq,
     event_id: record.source_seq,
     effect_application: {
       applied: true,
       canonical_session: {
-        status: terminal ? effect.status : "running",
-        termination_reason: terminal ? effect.termination_reason : null,
-        termination_detail: terminal ? effect.termination_detail : null,
-        review_state: effect.review_state,
-        last_assistant_text: terminal ? effect.last_assistant_text ?? null : null,
-        termination_event_id: terminal ? record.source_seq : null,
+        status: terminal
+          ? effect.status
+          : runnerFact
+            ? runnerTerminalStatus
+            : activated
+              ? "running"
+              : failed
+                ? "error"
+                : "initializing",
+        termination_reason: terminal
+          ? effect.termination_reason
+          : runnerFact === "completed"
+            ? "completed_ok"
+            : runnerFact === "closed"
+              ? "killed"
+              : runnerFact
+                ? "error_aborted"
+                : null,
+        termination_detail: "termination_detail" in effect
+          ? effect.termination_detail
+          : null,
+        review_state: reviewState,
+        last_assistant_text: "last_assistant_text" in effect
+          ? effect.last_assistant_text ?? null
+          : null,
+        termination_event_id: terminal || runnerFact ? record.source_seq : null,
         updated_at: effect.updated_at,
         last_event_id: record.source_seq,
       },

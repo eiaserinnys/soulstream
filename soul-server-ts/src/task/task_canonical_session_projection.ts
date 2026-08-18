@@ -7,8 +7,10 @@ import type {
   TaskStatus,
   TerminationReason,
 } from "./task_models.js";
+import { isTerminalTaskStatus } from "./task_models.js";
 
 const TASK_STATUSES = new Set<TaskStatus>([
+  "initializing",
   "running",
   "completed",
   "error",
@@ -62,5 +64,7 @@ export function applyCanonicalSessionProjection(
   task.terminationDetail = session.termination_reason === null
     ? undefined
     : session.termination_detail;
-  task.completedAt = session.status === "running" ? undefined : updatedAt;
+  task.completedAt = isTerminalTaskStatus(session.status as TaskStatus)
+    ? updatedAt
+    : undefined;
 }

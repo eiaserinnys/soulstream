@@ -12,6 +12,7 @@ import type {
   EngineInterventionResult,
 } from "../engine/protocol.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
+import type { ExecutionIdentityProof } from "../task/execution_ownership.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
@@ -64,6 +65,7 @@ import { ProcessFrameStream } from "./runner_process_frame_stream.js";
 import { connectRunnerSocket } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import { readRunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
 
 const COMMAND_TIMEOUT_MS = 30_000;
@@ -134,6 +136,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private reconnectCause: Error | undefined;
   private reconnectExhaustedError: Error | undefined;
   private activeExecuteCommandId: string | undefined;
+  private preparedExecuteCommandId: string | undefined;
+  private spawnedProcess: import("./runner_process_spawn.js").SpawnedRunnerProcess | undefined;
   private activeStream: ProcessFrameStream | undefined;
   private latestPendingRecord: EventOutboxRecord | undefined;
   private latestConsumedFrameSeq: number | undefined;
@@ -172,7 +176,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
-    const commandId = `execute:${randomUUID()}`;
+    const commandId = this.preparedExecuteCommandId ?? `execute:${randomUUID()}`;
+    this.preparedExecuteCommandId = undefined;
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
     });
@@ -196,6 +201,28 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     assertCommandAccepted(await this.dispatch(
       prepareSessionCommandFrame(`prepare:${agentSessionId}`, agentSessionId),
     ));
+  }
+
+  async prepareExecutionIdentity(commandId?: string): Promise<ExecutionIdentityProof> {
+    await this.ready;
+    const spawned = this.spawnedProcess;
+    if (!spawned) throw new Error("runner process identity unavailable");
+    const identity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
+    if (
+      !identity
+      || identity.pid !== spawned.pid
+      || identity.startIdentity === null
+    ) {
+      throw new Error(`runner registration identity incomplete: ${this.spawnInput.sessionId}`);
+    }
+    const executionCommandId = commandId ?? `execute:${randomUUID()}`;
+    this.preparedExecuteCommandId = executionCommandId;
+    return {
+      registrationId: identity.registrationId,
+      pid: identity.pid,
+      startIdentity: identity.startIdentity,
+      executionCommandId,
+    };
   }
 
   async interrupt(): Promise<boolean> {
@@ -446,6 +473,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const spawned = this.options.adoptExisting
       ? await this.adoptExisting(spawner)
       : await spawner.spawn(this.spawnInput);
+    this.spawnedProcess = spawned;
     this.socketPath = spawned.paths.socketPath;
     this.runnerDatabasePath = spawned.paths.databasePath;
     this.outbox = await RunnerParentOutbox.open(

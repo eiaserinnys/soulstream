@@ -26,6 +26,65 @@ export type EventSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_reserve";
+      ownership_generation: number;
+      owner_kind: "runner_process" | "adopted_runner" | "in_process";
+      manifest_id: string;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_prove";
+      ownership_generation: number;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_adopt_reserve";
+      ownership_generation: number;
+      manifest_id: string;
+      previous_registration_id: string;
+      pid: number;
+      start_identity: string;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_activate";
+      ownership_generation: number;
+      review_state: string;
+      expected_terminal_event_id?: number | null;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_fail";
+      ownership_generation: number;
+      failure_reason: string;
+      updated_at: string;
+    }
+  | {
+      kind: "runner_terminal_fact";
+      ownership_generation: number;
+      runner_fact: "completed" | "failed" | "reaped" | "closed";
+      termination_detail: string | null;
+      review_state: string;
+      last_assistant_text?: string | null;
+      updated_at: string;
+    }
+  | {
+      kind: "recovered_runner_terminal_fact";
+      manifest_id: string;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      runner_fact: "completed" | "failed" | "reaped" | "closed";
+      termination_detail: string | null;
+      review_state: string;
+      last_assistant_text?: string | null;
+      updated_at: string;
+    }
+  | {
       kind: "terminal_transition";
       status: string;
       termination_reason: string;
@@ -282,6 +341,147 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
                   `${field}.expected_terminal_event_id`,
                 ),
           }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_reserve") {
+    assertExactKeys(
+      value,
+      ["kind", "ownership_generation", "owner_kind", "manifest_id", "updated_at"],
+      field,
+    );
+    const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
+    if (!["runner_process", "adopted_runner", "in_process"].includes(ownerKind)) {
+      throw new EventIngressValidationError(`${field}.owner_kind is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      owner_kind: ownerKind as "runner_process" | "adopted_runner" | "in_process",
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_prove") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "registration_id", "pid",
+        "start_identity", "execution_command_id", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(value.execution_command_id, `${field}.execution_command_id`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_adopt_reserve") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "manifest_id",
+        "previous_registration_id", "pid", "start_identity", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      previous_registration_id: nonEmptyString(
+        value.previous_registration_id,
+        `${field}.previous_registration_id`,
+      ),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_activate") {
+    assertExactKeys(
+      value,
+      ["kind", "ownership_generation", "review_state", "expected_terminal_event_id", "updated_at"],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.expected_terminal_event_id === undefined
+        ? {}
+        : {
+            expected_terminal_event_id: value.expected_terminal_event_id === null
+              ? null
+              : positiveInteger(value.expected_terminal_event_id, `${field}.expected_terminal_event_id`),
+          }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_fail") {
+    assertExactKeys(
+      value,
+      ["kind", "ownership_generation", "failure_reason", "updated_at"],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      failure_reason: nonEmptyString(value.failure_reason, `${field}.failure_reason`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "runner_terminal_fact") {
+    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
+    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
+      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
+      termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.last_assistant_text === undefined
+        ? {}
+        : { last_assistant_text: nullableString(value.last_assistant_text, `${field}.last_assistant_text`) }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "recovered_runner_terminal_fact") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "manifest_id", "registration_id", "pid", "start_identity",
+        "runner_fact", "termination_detail", "review_state",
+        "last_assistant_text", "updated_at",
+      ],
+      field,
+    );
+    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
+    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
+      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
+    }
+    return {
+      kind: value.kind,
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
+      termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.last_assistant_text === undefined
+        ? {}
+        : { last_assistant_text: nullableString(value.last_assistant_text, `${field}.last_assistant_text`) }),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }

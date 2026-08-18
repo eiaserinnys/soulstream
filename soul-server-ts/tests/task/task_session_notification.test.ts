@@ -78,7 +78,10 @@ describe("SessionNotificationPublisher", () => {
       makeTask(),
       makeMessage(),
       "auto_resume",
-    )).resolves.toBe(true);
+    )).resolves.toEqual({
+      published: true,
+      targetReceiptId: "event:1041",
+    });
 
     expect(persistence.enqueueEventAndWaitForSessionAck).toHaveBeenCalledTimes(1);
     expect(persistence.handleSideEffects).toHaveBeenCalledTimes(1);
@@ -103,7 +106,7 @@ describe("SessionNotificationPublisher", () => {
 
     await expect(
       publisher.publish(makeTask(), makeMessage(), "queued"),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ published: false });
 
     expect(broadcaster.emitEventEnvelope).not.toHaveBeenCalled();
   });

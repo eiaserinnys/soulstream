@@ -140,7 +140,7 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     });
     expect(rows.find((row) => row.delivery_id === attempt3.deliveryId)).toMatchObject({
       parent_delivery_id: attempt2.deliveryId,
-      state: "queued",
+      state: "delivered",
       payload_hash: attempt3.storedDeliveryPayloadHash,
     });
     await expect(harness.sql`
@@ -347,7 +347,7 @@ function makeRoute(
     sessionNotificationPublisher: {
       publish: async () => {
         counts.notification += 1;
-        return true;
+        return { published: true, targetReceiptId: "event:notification-test" };
       },
     },
   });

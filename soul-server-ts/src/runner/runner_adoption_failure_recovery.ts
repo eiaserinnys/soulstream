@@ -94,6 +94,7 @@ export class RunnerAdoptionFailureRecovery {
         }, task)
       : task;
     prepareRecoveredTask(recoveredTask, registration);
+    recoveredTask.runnerTerminalFact = "reaped";
     await this.deps.resumeReplacement(recoveredTask, error.message, registration.config);
     this.deps.logger.info(
       { sessionId: registration.config.sessionId, disposition },

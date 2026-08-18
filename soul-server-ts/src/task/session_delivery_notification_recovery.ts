@@ -18,7 +18,7 @@ export interface SessionDeliveryNotificationRecoveryDeps {
     task: Task,
     message: InterventionMessage,
     disposition: "queued" | "auto_resume",
-  ): Promise<boolean>;
+  ): Promise<{ published: true; targetReceiptId: string } | { published: false }>;
   resolveTask(sessionId: string): Promise<Task | null>;
   targetNodeId: string;
   logger: Pick<Logger, "warn">;
@@ -62,10 +62,14 @@ export class SessionDeliveryNotificationRecovery {
         notificationMessageFromOutbox(row),
         row.disposition,
       );
-      if (!published) {
+      if (!published.published) {
         throw new Error("session_notification persistence failed");
       }
-      await this.deps.repository.markPublished(row.delivery_id, leaseOwner);
+      await this.deps.repository.markPublished(
+        row.delivery_id,
+        leaseOwner,
+        published.targetReceiptId,
+      );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       if (err instanceof NonRetryableNotificationError) {

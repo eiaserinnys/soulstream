@@ -93,7 +93,7 @@ export function composeTaskRuntime(
         `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,
       );
     }
-    taskExecutor.startExecution(task, agent);
+    return taskExecutor.startExecution(task, agent);
   };
 
   const completionDeliveryRepository = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED

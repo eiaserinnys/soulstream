@@ -1757,6 +1757,197 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.status).toBe("completed");
   });
 
+  it.each([
+    { entryPath: "initial" as const, expectedTerminalEventId: undefined },
+    { entryPath: "auto_resume" as const, expectedTerminalEventId: 77 },
+  ])(
+    "$entryPath ownership은 reserve → identity proof → activation 뒤 실행한다",
+    async ({ entryPath, expectedTerminalEventId }) => {
+      const mocks = makeMocks();
+      const transition = (status: "initializing" | "running" | "completed") => ({
+        eventId: status === "initializing" ? 10 : status === "running" ? 11 : 12,
+        applied: true,
+        canonicalSession: {
+          status,
+          termination_reason: status === "completed" ? "completed_ok" : null,
+          termination_detail: null,
+          review_state: "not_required",
+          last_assistant_text: null,
+          termination_event_id: status === "completed" ? 12 : null,
+          updated_at: "2026-08-18T00:00:00.000Z",
+          last_event_id: status === "completed" ? 12 : null,
+        },
+      });
+      const reserve = vi.fn(async () => transition("initializing"));
+      const prove = vi.fn(async () => transition("initializing"));
+      const activate = vi.fn(async () => transition("running"));
+      const fail = vi.fn(async () => transition("initializing"));
+      const terminal = vi.fn(async () => transition("completed"));
+      Object.assign(mocks.persistence, {
+        reserveExecutionOwnershipAndWaitForApplication: reserve,
+        proveExecutionOwnershipAndWaitForApplication: prove,
+        activateExecutionOwnershipAndWaitForApplication: activate,
+        failExecutionOwnershipAndWaitForApplication: fail,
+        enqueueRunnerTerminalFactAndWaitForApplication: terminal,
+      });
+      const { runner, dispatcher } = makeRunnerProcessRuntime([
+        { type: "complete", result: "done", timestamp: 1 },
+      ]);
+      const proof = {
+        registrationId: "registration-1",
+        pid: 321,
+        startIdentity: "start-1",
+        executionCommandId: "execute-1",
+      };
+      dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
+      const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+      processFactory.describe = vi.fn(async () => ({
+        ownerKind: "runner_process",
+        manifestId: "release-1",
+      }));
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        processFactory,
+      );
+      const task = makeTask();
+      task.status = "initializing";
+      task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
+
+      await executor.startExecution(task, agent);
+
+      expect(reserve).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+        ownerKind: "runner_process",
+        manifestId: "release-1",
+      }));
+      expect(prove).toHaveBeenCalledWith(
+        task.agentSessionId,
+        expect.any(Number),
+        proof,
+      );
+      expect(activate).toHaveBeenCalledWith(task.agentSessionId, {
+        ownershipGeneration: expect.any(Number),
+        reviewState: "not_required",
+        ...(expectedTerminalEventId === undefined
+          ? {}
+          : { expectedTerminalEventId }),
+      });
+      expect(reserve.mock.invocationCallOrder[0]).toBeLessThan(
+        dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]!,
+      );
+      expect(dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]).toBeLessThan(
+        prove.mock.invocationCallOrder[0]!,
+      );
+      expect(prove.mock.invocationCallOrder[0]).toBeLessThan(
+        activate.mock.invocationCallOrder[0]!,
+      );
+      expect(activate.mock.invocationCallOrder[0]).toBeLessThan(
+        dispatcher.executeFrames.mock.invocationCallOrder[0]!,
+      );
+      expect(task.executionOwnership).toMatchObject({
+        ...proof,
+        ownerKind: "runner_process",
+        manifestId: "release-1",
+      });
+      expect(task.executionOwnershipReservation).toBeUndefined();
+      expect(task.pendingExecutionExpectedTerminalEventId).toBeUndefined();
+      expect(fail).not.toHaveBeenCalled();
+      expect(entryPath).toBe(
+        expectedTerminalEventId === undefined ? "initial" : "auto_resume",
+      );
+    },
+  );
+
+  it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {
+    const mocks = makeMocks();
+    const transition = (status: "initializing" | "running" | "completed") => ({
+      eventId: status === "initializing" ? 20 : status === "running" ? 21 : 22,
+      applied: true,
+      canonicalSession: {
+        status,
+        termination_reason: status === "completed" ? "completed_ok" : null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: status === "completed" ? 22 : null,
+        updated_at: "2026-08-18T00:00:00.000Z",
+        last_event_id: status === "completed" ? 22 : null,
+      },
+    });
+    const adoptReserve = vi.fn(async () => transition("initializing"));
+    const prove = vi.fn(async () => transition("initializing"));
+    const activate = vi.fn(async () => transition("running"));
+    const fail = vi.fn(async () => transition("initializing"));
+    const terminal = vi.fn(async () => transition("completed"));
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+      reserveExecutionAdoptionAndWaitForApplication: adoptReserve,
+      proveExecutionOwnershipAndWaitForApplication: prove,
+      activateExecutionOwnershipAndWaitForApplication: activate,
+      failExecutionOwnershipAndWaitForApplication: fail,
+      enqueueRunnerTerminalFactAndWaitForApplication: terminal,
+    });
+    const { runner, dispatcher } = makeRunnerProcessRuntime([
+      { type: "complete", result: "adopted", timestamp: 1 },
+    ]);
+    const proof = {
+      registrationId: "old-registration",
+      pid: 654,
+      startIdentity: "old-start",
+      executionCommandId: "execute-old",
+    };
+    dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+
+    await executor.recoverRunnerExecution(
+      task,
+      agent,
+      runner,
+      proof.executionCommandId,
+      "adopt",
+      "release-old",
+    );
+
+    expect(adoptReserve).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+      manifestId: "release-old",
+      previousRegistrationId: proof.registrationId,
+      pid: proof.pid,
+      startIdentity: proof.startIdentity,
+    }));
+    expect(adoptReserve.mock.invocationCallOrder[0]).toBeLessThan(
+      prove.mock.invocationCallOrder[0]!,
+    );
+    expect(prove.mock.invocationCallOrder[0]).toBeLessThan(
+      activate.mock.invocationCallOrder[0]!,
+    );
+    expect(activate.mock.invocationCallOrder[0]).toBeLessThan(
+      dispatcher.recoverFrames.mock.invocationCallOrder[0]!,
+    );
+    expect(task.executionOwnership).toMatchObject({
+      ...proof,
+      ownerKind: "adopted_runner",
+      manifestId: "release-old",
+    });
+    expect(task.executionOwnershipReservation).toBeUndefined();
+    expect(fail).not.toHaveBeenCalled();
+  });
+
   it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
     const mocks = makeMocks();
     let releaseRunningTransition!: () => void;

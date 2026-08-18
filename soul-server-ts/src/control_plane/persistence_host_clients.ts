@@ -169,8 +169,8 @@ export class SessionDeliveryNotificationHostClient {
     );
   }
 
-  markPublished(deliveryId: string, leaseOwner: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner]);
+  markPublished(deliveryId: string, leaseOwner: string, targetReceiptId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner, targetReceiptId]);
   }
 
   retry(

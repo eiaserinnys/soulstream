@@ -25,9 +25,24 @@ import type {
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
+import type {
+  ExecutionEntryPath,
+  ExecutionOwnershipToken,
+  ExecutionOwnerKind,
+  RecoveredExecutionOwnershipIdentity,
+  RunnerTerminalFact,
+} from "./execution_ownership.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
-export type TaskStatus = "running" | "completed" | "error" | "interrupted";
+export type TaskStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
+
+export function isTerminalTaskStatus(status: TaskStatus): boolean {
+  return status === "completed" || status === "error" || status === "interrupted";
+}
+
+export function isActiveTaskStatus(status: TaskStatus): boolean {
+  return status === "initializing" || status === "running";
+}
 
 export type ReviewState = "not_required" | "needs_review" | "acknowledged";
 
@@ -368,6 +383,19 @@ export interface Task {
 
   /** 진행 중 runner의 단일 정본. 엔진 capability와 command dispatcher는 원자적으로 구성된다. */
   runner?: TaskRunnerRuntime;
+
+  /** Durable generation fence for the materialized runner that may project terminal state. */
+  executionOwnership?: ExecutionOwnershipToken;
+  executionOwnershipReservation?: {
+    ownerKind: ExecutionOwnerKind;
+    manifestId: string;
+    ownershipGeneration: number;
+    entryPath: ExecutionEntryPath;
+  };
+  runnerTerminalFact?: RunnerTerminalFact;
+  /** Identity proof restored from runner storage before its generation token is known. */
+  recoveredExecutionOwnership?: RecoveredExecutionOwnershipIdentity;
+  pendingExecutionExpectedTerminalEventId?: number | null;
 
   /** foreground Result 뒤 Claude background runtime을 소유하여 다음 turn까지 보존된 runner. */
   runnerRetainedForClaudeBackground?: boolean;

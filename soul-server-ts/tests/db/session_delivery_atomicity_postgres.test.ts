@@ -174,6 +174,69 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("discards an unpublished notification projection when its aggregate is consumed", async () => {
+    await register("delivery-projection-discard", "relation-projection-discard");
+    await repository.claimForTarget(
+      "delivery-projection-discard",
+      "caller-old",
+      "projection-worker",
+    );
+    await repository.beginDispatch(
+      "delivery-projection-discard",
+      "projection-worker",
+    );
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId: "delivery-projection-discard",
+      leaseOwner: "projection-worker",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: "delivery-projection-discard",
+        delivery_intent: "completion_notification",
+        completion_id: "completion-relation-projection-discard",
+        relation_key: "relation-projection-discard",
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    });
+
+    await harness.sql`
+      SELECT * FROM session_apply_running_transition(
+        'child-session', 'not_required', 42, TRUE, NOW()
+      )
+    `;
+
+    await expect(repository.get("delivery-projection-discard")).resolves.toMatchObject({
+      state: "superseded",
+      aggregate_state: "consumed",
+    });
+    await expect(harness.sql<Array<{
+      state: string;
+      projection_state: string;
+      lease_owner: string | null;
+    }>>`
+      SELECT state, projection_state, lease_owner
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'delivery-projection-discard'
+    `).resolves.toEqual([{
+      state: "dead_letter",
+      projection_state: "discarded",
+      lease_owner: null,
+    }]);
+    await expect(repository.notifications.listDeadLetters()).resolves.toEqual([]);
+    await expect(repository.notifications.requeueDeadLetter(
+      "delivery-projection-discard",
+    )).resolves.toBeNull();
+    await expect(harness.sql<Array<{ outcome: string }>>`
+      SELECT outcome FROM session_delivery_attempts
+      WHERE delivery_id = 'delivery-projection-discard'
+      ORDER BY attempt_number
+    `).resolves.toEqual([{ outcome: "accepted" }]);
+  });
+
   it("stages an expired same-owner dispatch and rejects the replaced owner", async () => {
     await harness.sql`
       UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
@@ -555,7 +618,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       state: "superseded",
     });
 
-    await repository.markConsumed(latest.deliveryId, "event:equal-time");
+    await repository.markConsumedByRelation(
+      latest.relationKey,
+      latest.completionId!,
+      "event:equal-time",
+    );
     for (const [suffix, attempt] of [["older", 2], ["latest", 3]] as const) {
       await harness.sql`
         INSERT INTO session_deliveries (
@@ -604,6 +671,58 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       .resolves.toMatchObject({ state: "superseded" });
     await expect(repository.get("runtime-terminal-replay-latest"))
       .resolves.toMatchObject({ state: "pending" });
+  });
+
+  it("keeps attempt verdicts, aggregate state, and target receipts on separate layers", async () => {
+    await register("delivery-accepted", "relation-accepted");
+    await repository.claimForTarget("delivery-accepted", "caller-old", "worker-a");
+    await repository.beginDispatch("delivery-accepted", "worker-a");
+    await expect(repository.markQueued("delivery-accepted", "worker-a"))
+      .resolves.toMatchObject({ aggregate_state: "pending" });
+    await expect(repository.markDelivered("delivery-accepted", "event:501"))
+      .resolves.toMatchObject({
+        aggregate_state: "delivered",
+        target_receipt_id: "event:501",
+      });
+    await expect(repository.markConsumed("delivery-accepted", "event:wrong"))
+      .resolves.toBeNull();
+    await expect(repository.markConsumed("delivery-accepted", "event:501"))
+      .resolves.toMatchObject({ aggregate_state: "consumed" });
+
+    await register("delivery-retryable", "relation-retryable");
+    await repository.claimForTarget("delivery-retryable", "caller-old", "worker-b");
+    await repository.beginDispatch("delivery-retryable", "worker-b");
+    await expect(repository.retryLeasedDelivery(
+      "delivery-retryable",
+      "worker-b",
+      "target busy",
+      new Date(Date.now() + 1_000),
+    )).resolves.toMatchObject({ aggregate_state: "pending" });
+
+    await register("delivery-rejected", "relation-rejected");
+    await repository.claimForTarget("delivery-rejected", "caller-old", "worker-c");
+    await repository.beginDispatch("delivery-rejected", "worker-c");
+    await expect(repository.markUncertain(
+      "delivery-rejected",
+      "worker-c",
+      "invalid target acknowledgement",
+    )).resolves.toMatchObject({ aggregate_state: "dead_letter" });
+
+    await expect(harness.sql<Array<{
+      delivery_id: string;
+      outcome: string;
+    }>>`
+      SELECT delivery_id, outcome
+      FROM session_delivery_attempts
+      WHERE delivery_id IN (
+        'delivery-accepted', 'delivery-retryable', 'delivery-rejected'
+      )
+      ORDER BY delivery_id
+    `).resolves.toEqual([
+      { delivery_id: "delivery-accepted", outcome: "accepted" },
+      { delivery_id: "delivery-rejected", outcome: "rejected" },
+      { delivery_id: "delivery-retryable", outcome: "retryable" },
+    ]);
   });
 
   async function register(deliveryId: string, relationKey: string): Promise<void> {

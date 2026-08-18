@@ -54,7 +54,10 @@ function makeSubject(
     resume: vi.fn().mockResolvedValue({ autoResumed: true }),
   } as unknown as Pick<AutoResumeTransition, "resume">;
   const sessionNotificationPublisher = {
-    publish: vi.fn().mockResolvedValue(undefined),
+    publish: vi.fn().mockResolvedValue({
+      published: true,
+      targetReceiptId: "event:notification",
+    }),
   } as unknown as Pick<SessionNotificationPublisher, "publish">;
   const route = new TaskInterventionRoute({
     getTask: (sessionId) => tasks.get(sessionId),
@@ -185,8 +188,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, onResume);
   });
 
-  it("terminal-only delivery never enters the running intervention path", async () => {
-    const task = makeTask({ status: "running" });
+  it.each(["initializing", "running"] as const)(
+    "terminal-only delivery never enters the %s intervention path",
+    async (status) => {
+    const task = makeTask({ status });
     const { route, runningInterventionTransition, autoResumeTransition } = makeSubject([task]);
 
     await expect(route.addIntervention({
@@ -204,7 +209,8 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
-  });
+    },
+  );
 
   it("loads and remembers evicted terminal tasks before auto-resume route selection", async () => {
     const hydrated = makeTask({

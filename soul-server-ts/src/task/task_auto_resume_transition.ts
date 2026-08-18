@@ -16,7 +16,7 @@ import {
   persistUserMessageEvent,
 } from "./task_user_message_events.js";
 
-export type AutoResumeCallback = (task: Task) => void;
+export type AutoResumeCallback = (task: Task) => void | Promise<void>;
 
 export interface AutoResumeTransitionDeps {
   logger: Logger;
@@ -69,17 +69,24 @@ export class AutoResumeTransition {
     if (!this.deps.persistence) {
       throw new Error("running transition durable event persistence is required");
     }
-    const application = await this.deps.persistence
-      .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
-      reviewState: resumedReviewState,
-      transitionId: `resume:${transitionRevision}`,
-      expectedTerminalEventId: task.terminalEventId ?? null,
-    });
-    applyCanonicalSessionProjection(task, application.canonicalSession);
-    if (!application.applied) {
-      throw new Error(
-        `auto-resume running transition rejected for ${task.agentSessionId}`,
-      );
+    const ownershipPersistence = this.deps.persistence as EventPersistence & {
+      reserveExecutionOwnershipAndWaitForApplication?: unknown;
+    };
+    if (typeof ownershipPersistence.reserveExecutionOwnershipAndWaitForApplication !== "function") {
+      const application = await this.deps.persistence
+        .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+        reviewState: resumedReviewState,
+        transitionId: `resume:${transitionRevision}`,
+        expectedTerminalEventId: task.terminalEventId ?? null,
+      });
+      applyCanonicalSessionProjection(task, application.canonicalSession);
+      if (!application.applied) {
+        throw new Error(
+          `auto-resume running transition rejected for ${task.agentSessionId}`,
+        );
+      }
+    } else {
+      task.pendingExecutionExpectedTerminalEventId = task.terminalEventId ?? null;
     }
     transitionTaskToRunning(task, message);
     if (userMessageEvent) {

@@ -127,7 +127,11 @@ export function createRunnerProcessRuntimeFactory(
       agent,
       backend,
       snapshots,
-      options.releasePool.resolveCurrentRelease().then((release) => ({
+      (task.executionOwnershipReservation
+        ? Promise.resolve(options.releasePool.describe(
+            task.executionOwnershipReservation.manifestId,
+          ))
+        : options.releasePool.resolveCurrentRelease()).then((release) => ({
         stateDirectory,
         sessionId: task.agentSessionId,
         backend,
@@ -150,6 +154,10 @@ export function createRunnerProcessRuntimeFactory(
       })),
     );
   }) as RunnerProcessRuntimeFactory;
+  factory.describe = async () => ({
+    ownerKind: "runner_process",
+    manifestId: (await options.releasePool.resolveCurrentRelease()).releaseId,
+  });
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
   factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(

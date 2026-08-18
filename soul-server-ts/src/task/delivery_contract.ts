@@ -24,6 +24,21 @@ export const DELIVERY_STATES = [
 
 export type DeliveryState = (typeof DELIVERY_STATES)[number];
 
+export const DELIVERY_ATTEMPT_OUTCOMES = [
+  "accepted",
+  "retryable",
+  "rejected",
+] as const;
+export type DeliveryAttemptOutcome = (typeof DELIVERY_ATTEMPT_OUTCOMES)[number];
+
+export const DELIVERY_AGGREGATE_STATES = [
+  "pending",
+  "delivered",
+  "consumed",
+  "dead_letter",
+] as const;
+export type DeliveryAggregateState = (typeof DELIVERY_AGGREGATE_STATES)[number];
+
 /**
  * Optional additive metadata carried across every intervention boundary.
  *

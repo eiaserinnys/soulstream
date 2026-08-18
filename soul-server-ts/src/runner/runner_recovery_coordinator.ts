@@ -36,7 +36,6 @@ import {
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
-
 const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
@@ -440,6 +439,7 @@ export class RunnerRecoveryCoordinator {
     if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
     await this.recoverRegistered({ ...hydrated, pidAlive: false }, task, "offline");
     prepareRecoveredTask(task, hydrated);
+    task.runnerTerminalFact = "reaped";
     const message = hydrated.lifecycle?.terminal_error?.message
       ?? "runner was reaped before recovery completed";
     await this.options.taskManager.markRunnerFailureAndResume(

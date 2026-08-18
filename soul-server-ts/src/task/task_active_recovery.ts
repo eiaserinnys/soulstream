@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { Task } from "./task_models.js";
+import { isActiveTaskStatus, type Task } from "./task_models.js";
 
 type ActiveTaskRecoveryLogger = Pick<Logger, "warn">;
 
@@ -20,7 +20,7 @@ export type InterventionTaskRoute = "running" | "auto-resume";
  * can create a user_message and start the next turn.
  */
 export function classifyInterventionTaskActivity(task: Task): InterventionTaskActivity {
-  if (task.status !== "running") {
+  if (!isActiveTaskStatus(task.status)) {
     return "terminal";
   }
 

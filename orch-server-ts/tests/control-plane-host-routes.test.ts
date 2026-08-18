@@ -354,6 +354,9 @@ describe("control-plane host routes", () => {
           return [{ lease_expires_at: leaseExpiresAt }];
         }
         if (statement.includes("INSERT INTO session_delivery_notification_outbox")) {
+          return [{ delivery_id: "delivery-1" }];
+        }
+        if (statement.includes("INSERT INTO session_delivery_attempts")) {
           return [];
         }
         throw new Error(`unexpected SQL: ${statement}`);

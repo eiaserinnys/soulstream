@@ -19,7 +19,7 @@ export class SessionNotificationPublisher {
     task: Task,
     message: InterventionMessage,
     disposition: "queued" | "auto_resume",
-  ): Promise<boolean> {
+  ): Promise<{ published: true; targetReceiptId: string } | { published: false }> {
     if (!message.deliveryId || !message.deliveryIntent) {
       throw new Error("session_notification requires delivery identity and intent");
     }
@@ -49,20 +49,22 @@ export class SessionNotificationPublisher {
         { sessionId: task.agentSessionId, deliveryId: message.deliveryId },
         "session_notification durable event persistence is unavailable",
       );
-      return false;
+      return { published: false };
     }
+    let targetReceiptId: string;
     try {
       const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
         task.agentSessionId,
         event,
       );
       task.lastEventId = eventId;
+      targetReceiptId = `event:${eventId}`;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, deliveryId: message.deliveryId },
         "session_notification persistence failed after delivery; ledger state retained",
       );
-      return false;
+      return { published: false };
     }
     try {
       await this.deps.persistence.handleSideEffects(
@@ -76,6 +78,6 @@ export class SessionNotificationPublisher {
         "session_notification handleSideEffects failed after durable enqueue",
       );
     }
-    return true;
+    return { published: true, targetReceiptId };
   }
 }

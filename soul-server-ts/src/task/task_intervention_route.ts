@@ -2,7 +2,12 @@ import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resum
 import type { ActiveTaskRecovery } from "./task_active_recovery.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
-import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
+import {
+  isTerminalTaskStatus,
+  type CallerInfo,
+  type InterventionMessage,
+  type Task,
+} from "./task_models.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type {
   RunningInterventionResult,
@@ -161,7 +166,7 @@ export class TaskInterventionRoute {
     };
     try {
       task = await this.resolveTask(params.agentSessionId);
-      if (params.onlyIfTerminal === true && task.status === "running") {
+      if (params.onlyIfTerminal === true && !isTerminalTaskStatus(task.status)) {
         const result = {
           delivered: false,
           deferred: true,
@@ -253,8 +258,11 @@ export class TaskInterventionRoute {
           notificationDisposition,
         );
         if (this.deps.deliveryLedgerGate) {
-          if (published !== false) {
-            await this.deps.deliveryLedgerGate.recordNotificationPublished?.(admission);
+          if (published.published) {
+            await this.deps.deliveryLedgerGate.recordNotificationPublished?.(
+              admission,
+              published.targetReceiptId,
+            );
           } else {
             await this.deps.deliveryLedgerGate.recordNotificationFailure?.(
               admission,

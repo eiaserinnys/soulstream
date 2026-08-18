@@ -292,7 +292,7 @@ function makeDeliveryPath(sql: SqlClient): {
     sessionNotificationPublisher: {
       publish: async () => {
         counts.notification += 1;
-        return true;
+        return { published: true, targetReceiptId: "event:notification-test" };
       },
     },
   });
@@ -346,7 +346,7 @@ async function expectExactlyOnceDelivery(
       AND producer_id = ${taskId}
     GROUP BY state, payload_hash
   `).resolves.toMatchObject([{
-    state: "queued",
+    state: "delivered",
     payload_hash: storedHash,
     count: 1,
   }]);

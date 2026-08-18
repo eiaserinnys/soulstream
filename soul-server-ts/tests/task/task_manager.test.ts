@@ -365,7 +365,7 @@ describe("TaskManager.createTask", () => {
     });
 
     expect(task.agentSessionId).toBe("sess-1");
-    expect(task.status).toBe("running");
+    expect(task.status).toBe("initializing");
     expect(task.profileId).toBe("codex-default");
     expect(task.createdAt).toBeInstanceOf(Date);
 
@@ -375,7 +375,7 @@ describe("TaskManager.createTask", () => {
     expect(regArg.nodeId).toBe("eias-shopping-ts");
     expect(regArg.agentId).toBe("codex-default");
     expect(regArg.sessionType).toBe("claude");
-    expect(regArg.status).toBe("running");
+    expect(regArg.status).toBe("initializing");
     expect(appendMetadata).toHaveBeenCalledWith(
       "sess-1",
       {
@@ -522,6 +522,7 @@ describe("TaskManager.deliverToolApproval", () => {
       prompt: "dangerous tool",
       profileId: "agent-openai",
     });
+    task.status = "running";
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "openai-agents",
@@ -569,6 +570,7 @@ describe("TaskManager.deliverToolApproval", () => {
       prompt: "dangerous tool",
       profileId: "codex-default",
     });
+    task.status = "running";
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
@@ -832,6 +834,7 @@ describe("TaskManager.deliverInputResponse", () => {
       prompt: "p",
       profileId: "claude-roselin",
     });
+    task.status = "running";
     const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
@@ -875,6 +878,7 @@ describe("TaskManager.deliverInputResponse", () => {
     } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "sess-ask", prompt: "p", profileId: "claude-roselin" });
+    task.status = "running";
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude",
@@ -929,6 +933,7 @@ describe("TaskManager.deliverInputResponse", () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "sess-codex", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
@@ -1139,7 +1144,7 @@ describe("TaskManager.cancelTask", () => {
       { interrupt } as unknown as EnginePort,
     );
 
-    expect(task.status).toBe("running");
+    expect(task.status).toBe("initializing");
     const result = await tm.cancelTask("s1");
     expect(result).toBe(true);
     expect(task.status).toBe("interrupted");  // code-reviewer P1 정정
@@ -1202,11 +1207,12 @@ describe("TaskManager.deleteTask", () => {
 });
 
 describe("TaskManager.shutdown", () => {
-  it("모든 running task를 interrupted로 기록한 뒤 interrupt + drain", async () => {
+  it("모든 active task를 interrupted로 기록한 뒤 interrupt + drain", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const t1 = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const t2 = await tm.createTask({ agentSessionId: "s2", prompt: "y", profileId: "p" });
+    t1.status = "running";
     const int1 = vi.fn().mockResolvedValue(true);
     const int2 = vi.fn().mockResolvedValue(true);
     t1.runner = createInProcessTaskRunnerRuntime(
@@ -1242,6 +1248,7 @@ describe("TaskManager.shutdown", () => {
     mocks.updateSession.mockRejectedValueOnce(new Error("db down"));
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
+    task.status = "running";
     const interrupt = vi.fn().mockResolvedValue(true);
     task.runner = createInProcessTaskRunnerRuntime(
       { interrupt } as unknown as EnginePort,
@@ -1353,6 +1360,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     expect(task.status).toBe("running");
     expect(task.interventionQueue).toEqual([]);
 
@@ -1816,6 +1824,7 @@ describe("TaskManager.addIntervention — running fallback without live surface 
 
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     expect(task.status).toBe("running");
 
     await tm.addIntervention(
@@ -1887,6 +1896,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     expect(task.status).toBe("running");
 
     await tm.addIntervention(

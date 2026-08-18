@@ -67,6 +67,7 @@
     { "id": "063_session_rotate_claude_id.sql", "sha256": "c519b3f24f6c84a1340902780ac0e3ed6ce054014aa5e46747488f03597497cd", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "064_event_ingress_receipt_effect_encoding.sql", "sha256": "47b017870ee54cef92f9d782daef196ea8f25ac7c82c8d1c7e8087a81cda046d", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "065_completion_terminal_revision_fence.sql", "sha256": "2c907764281d6258369a35865427b61786c919be1a995e3c42a962393f90f181", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "066_session_delivery_enqueue_sequence.sql", "sha256": "276ea0bf8aa838725902d093d5e754b61640fa3f24669a00f45528eb1c2bd683", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "066_session_delivery_enqueue_sequence.sql", "sha256": "276ea0bf8aa838725902d093d5e754b61640fa3f24669a00f45528eb1c2bd683", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "067_execution_ownership_delivery_convergence.sql", "sha256": "221a43b5a0736483931ce46ff074c6c3c6a2a5f2490be4764bdaa0c40a65f17f", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }

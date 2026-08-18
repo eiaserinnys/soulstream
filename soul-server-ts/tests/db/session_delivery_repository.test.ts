@@ -245,6 +245,7 @@ describe("SessionDeliveryRepository", () => {
       [{ ...row, state: "claimed" }],
       [{ ...row, state: "dispatching" }],
       [{ ...row, state: "queued" }],
+      [],
       [{ ...row, state: "delivered", caller_turn_id: "turn-9" }],
       [{ ...row, state: "consumed", caller_turn_id: "turn-9" }],
     ]);
@@ -259,8 +260,10 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("state = 'pending'");
     expect(calls[1].query).toContain("state = 'claimed'");
     expect(calls[2].query).toContain("'dispatching'");
-    expect(calls[3].query).toContain("'dispatching'");
-    expect(calls[4].query).toContain("'consumed'");
+    expect(calls[3].query).toContain("session_delivery_attempts");
+    expect(calls[3].values).toContain("accepted");
+    expect(calls[4].query).toContain("aggregate_state = 'delivered'");
+    expect(calls[5].query).toContain("'consumed'");
   });
 
   it("marks consumed by relation and completion identity", async () => {
@@ -279,7 +282,7 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[0].query).toContain("state = 'consumed'");
     expect(calls[0].query).toContain("'pending', 'claimed'");
     expect(calls[0].query).not.toContain("'queued'");
-    expect(calls[0].query).not.toContain("'delivered'");
+    expect(calls[0].query).toContain("aggregate_state IN ('pending', 'delivered')");
   });
 
   it("supersedes only a pending delivery", async () => {
@@ -346,6 +349,13 @@ describe("session_deliveries migration safety", () => {
       ),
       "utf8",
     );
+    const convergenceMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/067_execution_ownership_delivery_convergence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
@@ -363,6 +373,7 @@ describe("session_deliveries migration safety", () => {
     expect(manifest).toContain("053_retire_supervisor.sql");
     expect(manifest).toContain("065_completion_terminal_revision_fence.sql");
     expect(manifest).toContain("066_session_delivery_enqueue_sequence.sql");
+    expect(manifest).toContain("067_execution_ownership_delivery_convergence.sql");
     expect(existsSync(removedEpochMigration)).toBe(false);
     expect(deliveryMigration).toContain("CREATE TABLE IF NOT EXISTS session_deliveries");
     expect(deliveryMigration).toContain("ON DELETE SET NULL");
@@ -416,7 +427,12 @@ describe("session_deliveries migration safety", () => {
       expect(sql).toContain("superseded_at TIMESTAMPTZ");
       expect(sql).toContain("superseded_terminal_revision TEXT");
       expect(sql).toContain("producer_terminal_revision = p_expected_terminal_event_id::text");
-      expect(sql).toContain("state IN ('pending', 'claimed', 'dispatching')");
+    }
+    expect(terminalRevisionMigration).toContain(
+      "state IN ('pending', 'claimed', 'dispatching')",
+    );
+    for (const sql of [convergenceMigration, schema]) {
+      expect(sql).toContain("state IN ('pending', 'claimed', 'dispatching', 'queued')");
     }
   });
 });

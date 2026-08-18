@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-  RegisterSessionDeliveryParams,
-  RegisterSessionDeliveryResult,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
@@ -13,7 +11,7 @@ import type {
 } from "./task_intervention_route.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
-import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
+import { loadOrRegisterDelivery } from "./task_delivery_registration.js";
 import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
   notificationOldestAllowedCreatedAt,
@@ -63,7 +61,7 @@ export class TaskDeliveryLedgerGate {
       relationKey: params.relationKey,
       completionId: params.completionId,
     };
-    const registered = await loadOrRegister(repository, registrationParams);
+    const registered = await loadOrRegisterDelivery(repository, registrationParams);
     if (registered.kind === "identity_mismatch") {
       return {
         kind: "suppressed",
@@ -76,6 +74,20 @@ export class TaskDeliveryLedgerGate {
         kind: "suppressed",
         deliveryId: registered.row.delivery_id,
         reason: "identity_conflict_uncertain",
+      };
+    }
+    if (registered.row.aggregate_state === "consumed") {
+      return {
+        kind: "suppressed",
+        deliveryId: registered.row.delivery_id,
+        reason: "delivery_consumed",
+      };
+    }
+    if (registered.row.aggregate_state === "dead_letter") {
+      return {
+        kind: "suppressed",
+        deliveryId: registered.row.delivery_id,
+        reason: "delivery_dead_letter",
       };
     }
     if (registered.row.state === "claimed") {
@@ -154,7 +166,7 @@ export class TaskDeliveryLedgerGate {
       relationKey: params.relationKey,
       completionId: params.completionId,
     };
-    const registered = await loadOrRegister(repository, registrationParams);
+    const registered = await loadOrRegisterDelivery(repository, registrationParams);
     if (registered.kind === "identity_mismatch") return false;
     if (registered.conflict) return false;
     const consumed = await repository.markConsumedByRelation(
@@ -245,6 +257,7 @@ export class TaskDeliveryLedgerGate {
 
   async recordNotificationPublished(
     admission: DeliveryLedgerAdmission,
+    targetReceiptId: string,
   ): Promise<void> {
     if (admission.kind !== "admitted") return;
     if (!isNotificationDeliveryIntent(admission.row.intent)) return;
@@ -253,6 +266,7 @@ export class TaskDeliveryLedgerGate {
     await this.requireRepository().notifications.markPublished(
       admission.deliveryId,
       leaseOwner,
+      targetReceiptId,
     );
   }
 
@@ -343,130 +357,12 @@ function requiresExactDeliveryConsumption(message: InterventionMessage): boolean
     || message.source === "claude_runtime_task_followup";
 }
 
-type ControlledRegistrationParams = AddInterventionParams & {
-  deliveryId: string;
-  relationKey: string;
-  completionId: string;
-  deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
-};
-
-type LoadOrRegisterResult =
-  | ({ kind: "registered" } & RegisterSessionDeliveryResult)
-  | { kind: "identity_mismatch"; row: SessionDeliveryRow };
-
-/**
- * A durable delivery id owns one immutable payload.
- *
- * Existing ids are read back before registration, so retries cannot re-hash
- * display text or mutate a settled row to `uncertain`. Repository conflict
- * detection still owns the absent-id race and relation uniqueness.
- */
-async function loadOrRegister(
-  repository: LedgerRepository,
-  params: ControlledRegistrationParams,
-): Promise<LoadOrRegisterResult> {
-  // Runtime follow-up registration is also the serialized coalescing gate.
-  // Exact replays must enter it even when their delivery row already exists,
-  // otherwise pending siblings survive recovery/admission replay.
-  if (params.deliveryIntent === "runtime_followup") {
-    return {
-      kind: "registered",
-      ...await repository.register(buildRegistration(params)),
-    };
-  }
-  const existing = await repository.get(params.deliveryId);
-  if (existing) {
-    if (!matchesImmutableIdentity(existing, params)) {
-      return { kind: "identity_mismatch", row: existing };
-    }
-    return {
-      kind: "registered",
-      row: existing,
-      inserted: false,
-      conflict: false,
-    };
-  }
-  return {
-    kind: "registered",
-    ...await repository.register(buildRegistration(params)),
-  };
-}
-
-function matchesImmutableIdentity(
-  row: SessionDeliveryRow,
-  params: Pick<
-    ControlledRegistrationParams,
-    "relationKey" | "completionId" | "deliveryIntent"
-  >,
-): boolean {
-  return (
-    row.relation_key === params.relationKey &&
-    row.completion_id === params.completionId &&
-    row.intent === params.deliveryIntent
-  );
-}
-
-function buildRegistration(
-  params: ControlledRegistrationParams,
-): RegisterSessionDeliveryParams {
-  const source = params.source ?? "unknown";
-  const canonical = storedCanonicalPayload(params) ??
-    buildCanonicalDeliveryPayload({
-      text: params.text,
-      user: params.user,
-      source,
-      completionId: params.completionId,
-      relationKey: params.relationKey,
-      attachmentPaths: params.attachmentPaths,
-      context: params.context,
-      callerInfo: params.callerInfo,
-      followupKey: params.followupKey,
-      followupAttempt: params.followupAttempt,
-      followupTaskIds: params.followupTaskIds,
-    });
-  return {
-    deliveryId: params.deliveryId,
-    targetSessionId: params.agentSessionId,
-    relationKey: params.relationKey,
-    completionId: params.completionId,
-    intent: params.deliveryIntent,
-    source,
-    producerTerminalRevision: params.producerTerminalRevision,
-    parentDeliveryId: params.parentDeliveryId,
-    callerTurnId: params.callerTurnId,
-    payloadHash: canonical.payloadHash,
-    payload: canonical.payload,
-    createdAt: parseCreatedAt(params.deliveryCreatedAt),
-  };
-}
-
-function storedCanonicalPayload(
-  params: Pick<
-    AddInterventionParams,
-    "storedDeliveryPayload" | "storedDeliveryPayloadHash"
-  >,
-): { payload: Record<string, unknown>; payloadHash: string } | undefined {
-  const payload = params.storedDeliveryPayload;
-  const payloadHash = params.storedDeliveryPayloadHash;
-  if (payload === undefined && payloadHash === undefined) return undefined;
-  if (payload === undefined || !payloadHash) {
-    throw new Error("Stored delivery payload and hash must be provided together");
-  }
-  return { payload, payloadHash };
-}
-
 export function isLedgerControlled(
   params: Pick<AddInterventionParams, "deliveryIntent">,
 ): params is Pick<AddInterventionParams, "deliveryIntent"> & {
   deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
 } {
   return isLedgerControlledDeliveryIntent(params.deliveryIntent);
-}
-
-function parseCreatedAt(value: string | undefined): Date | undefined {
-  if (!value) return undefined;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 function isControlledMessage(

@@ -64,17 +64,20 @@ describe("TaskDeliveryLedgerGate", () => {
 
   it("routes an exact runtime replay through repository admission coalescing", async () => {
     const deliveryId = "91919191-9191-4919-8919-919191919191";
+    const existing = {
+      ...row(deliveryId, "consumed"),
+      relation_key: "runtime-relation-1",
+      completion_id: "runtime-completion-1",
+      intent: "runtime_followup" as const,
+      payload_hash: "stored-runtime-hash",
+      payload: { text: "stored runtime payload" },
+    };
     const register = vi.fn().mockResolvedValue({
-      row: {
-        ...row(deliveryId, "consumed"),
-        relation_key: "runtime-relation-1",
-        completion_id: "runtime-completion-1",
-        intent: "runtime_followup",
-      },
+      row: existing,
       inserted: false,
       conflict: false,
     });
-    const get = vi.fn();
+    const get = vi.fn().mockResolvedValue(existing);
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget: vi.fn(),
@@ -106,7 +109,11 @@ describe("TaskDeliveryLedgerGate", () => {
     });
 
     expect(register).toHaveBeenCalledTimes(1);
-    expect(get).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledWith(deliveryId);
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({
+      payloadHash: "stored-runtime-hash",
+      payload: { text: "stored runtime payload" },
+    }));
   });
 
   it("records an inline completion against its semantic relation and caller turn", async () => {
