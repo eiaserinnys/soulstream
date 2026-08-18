@@ -16,6 +16,8 @@ import {
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
+import { RunnerOrphanedSpawnError } from
+  "../../src/runner/runner_process_dispatcher.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import {
   TaskExecutor,
@@ -1883,6 +1885,75 @@ describe("TaskExecutor runner process boundary", () => {
       );
     },
   );
+
+  it("keeps an unkillable post-spawn child recoverable instead of finalizing the session", async () => {
+    const mocks = makeMocks();
+    const transition = {
+      eventId: 10,
+      applied: true,
+      canonicalSession: {
+        status: "initializing",
+        termination_reason: null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: null,
+        updated_at: "2026-08-18T00:00:00.000Z",
+        last_event_id: 10,
+      },
+    };
+    const reserve = vi.fn(async () => transition);
+    const markOrphaned = vi.fn(async () => transition);
+    const fail = vi.fn(async () => transition);
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: reserve,
+      markExecutionOrphanedSpawnAndWaitForApplication: markOrphaned,
+      failExecutionOwnershipAndWaitForApplication: fail,
+    });
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    const proof = {
+      registrationId: "registration-orphan",
+      pid: 7_201,
+      startIdentity: "start-7201",
+      executionCommandId: "execute-orphan",
+    };
+    const orphaned = new RunnerOrphanedSpawnError(proof, new Error("child remained alive"));
+    dispatcher.prepareExecutionIdentity = vi.fn(async () => { throw orphaned; });
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-1",
+    }));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const task = makeTask();
+    task.status = "initializing";
+
+    await executor.startExecution(task, agent);
+
+    await expect(task.executionActivationPromise).rejects.toBe(orphaned);
+    expect(markOrphaned).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.any(Number),
+      proof,
+    );
+    expect(fail).not.toHaveBeenCalled();
+    expect(dispatcher.close).not.toHaveBeenCalled();
+    expect(task.runner).toBeUndefined();
+    expect(task.status).toBe("initializing");
+  });
 
   it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {
     const mocks = makeMocks();

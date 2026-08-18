@@ -12,7 +12,7 @@ import {
   runnerCommandResultFrame,
   runnerRequestFrame,
 } from "../../src/runner/frame_protocol.js";
-import { RunnerProcessDispatcher } from
+import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 import { buildDurableRunnerEvent } from
   "../../src/runner/runner_child_runtime_helpers.js";
@@ -22,6 +22,10 @@ import {
   runnerHostStatePath,
 } from "../../src/runner/runner_host_state_store.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import {
+  pendingRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "../../src/runner/runner_registration_identity.js";
 import { RunnerSocketEndpoint } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
@@ -233,6 +237,69 @@ describe("RunnerProcessDispatcher", () => {
     await expect(access(paths.lockPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each(["outbox", "socket"] as const)(
+    "identity-fenced rollback removes a spawned child after %s parent initialization failure",
+    async (failurePoint) => {
+      const fixture = await spawnedInitializationFixture();
+      const terminate = vi.fn(async () => {});
+      const close = vi.fn();
+      const dispatcher = new RunnerProcessDispatcher({
+        spawn: spawnInput(fixture.stateDirectory),
+        spawner: {
+          spawn: async () => fixture.spawned,
+          terminate,
+        },
+        openParentOutbox: failurePoint === "outbox"
+          ? async () => { throw new Error("outbox open failed"); }
+          : async () => ({ close } as never),
+        connectSocket: async () => { throw new Error("socket connect failed"); },
+        pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+        logger: pino({ level: "silent" }),
+        handleHostCall: async () => null,
+      });
+
+      await expect(dispatcher.prepareExecutionIdentity()).rejects.toThrow(
+        failurePoint === "outbox" ? "outbox open failed" : "socket connect failed",
+      );
+      expect(terminate).toHaveBeenCalledWith(fixture.paths, {
+        pid: 7101,
+        startIdentity: "start-7101",
+      });
+      if (failurePoint === "socket") expect(close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("hands an unkillable spawned child to durable orphaned_spawn recovery", async () => {
+    const fixture = await spawnedInitializationFixture();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(fixture.stateDirectory),
+      spawner: {
+        spawn: async () => fixture.spawned,
+        terminate: async () => { throw new Error("child remained alive"); },
+      },
+      openParentOutbox: async () => { throw new Error("outbox open failed"); },
+      connectSocket: async () => { throw new Error("must not connect"); },
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    const error = await dispatcher.prepareExecutionIdentity().then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(RunnerOrphanedSpawnError);
+    expect(error).toMatchObject({
+      proof: {
+        registrationId: expect.any(String),
+        pid: 7101,
+        startIdentity: "start-7101",
+        executionCommandId: expect.stringMatching(/^execute:/),
+      },
+    });
+  });
+
   it("persists a failed child stage in runner-host.sqlite and flushes it before apply", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
@@ -299,9 +366,7 @@ describe("RunnerProcessDispatcher", () => {
     mux.connect(async (batch) => { batches.push(batch); });
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => ({
-        pid: 1001, paths, config: {} as never, adopted: false,
-      }) },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: mux,
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -420,12 +485,7 @@ describe("RunnerProcessDispatcher", () => {
     const sqliteTransactionObserver = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => ({
-        pid: 1001,
-        paths,
-        config: {} as never,
-        adopted: false,
-      }) },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: mux,
       logger: pino({ level: "silent" }),
       nodeStallMonitor: { beginRunnerOperation, sqliteTransactionObserver },
@@ -505,9 +565,7 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.listen();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => ({
-        pid: 1001, paths, config: {} as never, adopted: false,
-      }) },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -582,9 +640,7 @@ describe("RunnerProcessDispatcher", () => {
     };
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => ({
-        pid: 1001, paths, config: {} as never, adopted: false,
-      }) },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger,
       handleHostCall: async () => null,
@@ -714,6 +770,35 @@ async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "soulstream-runner-dispatcher-"));
   directories.push(directory);
   return directory;
+}
+
+async function spawnedInitializationFixture() {
+  const stateDirectory = await temporaryDirectory();
+  const paths = runnerProcessPaths(stateDirectory, "session-a");
+  await mkdir(paths.sessionDirectory, { recursive: true });
+  const identity = {
+    ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+    pid: 7101,
+    startIdentity: "start-7101",
+  };
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, identity);
+  return {
+    stateDirectory,
+    paths,
+    spawned: { pid: 7101, paths, config: {} as never, adopted: false },
+  };
+}
+
+async function spawnedProcessForTest(
+  paths: ReturnType<typeof runnerProcessPaths>,
+) {
+  const identity = {
+    ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+    pid: 1001,
+    startIdentity: "start-1001",
+  };
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, identity);
+  return { pid: 1001, paths, config: {} as never, adopted: false };
 }
 
 function spawnInput(stateDirectory: string) {

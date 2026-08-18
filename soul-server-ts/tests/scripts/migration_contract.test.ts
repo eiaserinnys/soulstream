@@ -184,10 +184,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(68);
+    expect(migrations).toHaveLength(69);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "067_execution_ownership_delivery_convergence.sql",
+      "068_execution_owner_recovery_singleflight.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -197,10 +197,10 @@ describe("versioned migration contract", () => {
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
     ]);
-    expect(migrations.slice(0, -26).every(
+    expect(migrations.slice(0, -27).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-26).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-27).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
       "previous_release_safe",
@@ -219,6 +219,7 @@ describe("versioned migration contract", () => {
       "previous_release_safe",
       "restore_required",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
@@ -321,6 +322,7 @@ describe("versioned migration contract", () => {
       "065_completion_terminal_revision_fence.sql",
       "066_session_delivery_enqueue_sequence.sql",
       "067_execution_ownership_delivery_convergence.sql",
+      "068_execution_owner_recovery_singleflight.sql",
     ]);
   });
 
@@ -356,6 +358,7 @@ describe("versioned migration contract", () => {
       "065_completion_terminal_revision_fence.sql",
       "066_session_delivery_enqueue_sequence.sql",
       "067_execution_ownership_delivery_convergence.sql",
+      "068_execution_owner_recovery_singleflight.sql",
     ]);
   });
 

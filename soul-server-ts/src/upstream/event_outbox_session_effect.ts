@@ -62,6 +62,15 @@ export type EventOutboxSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_orphaned_spawn";
+      ownership_generation: number;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      updated_at: string;
+    }
+  | {
       kind: "execution_backfill";
       first_manifest_id: string | null;
       first_registration_id: string | null;

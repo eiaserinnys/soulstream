@@ -51,12 +51,25 @@ export type EventCanonicalSessionProjection = {
   last_event_id: number | null;
 };
 
+export type EventCanonicalExecutionOwnershipProjection = {
+  ownership_generation: number;
+  owner_kind: "runner_process" | "adopted_runner" | "in_process";
+  manifest_id: string;
+  registration_id: string | null;
+  pid: number | null;
+  start_identity: string | null;
+  execution_command_id: string | null;
+  phase: "reserved" | "identity_proven" | "active" | "terminal" | "failed";
+  failure_reason: string | null;
+};
+
 export type EventAppendAcknowledgement = {
   source_seq: number;
   event_id: number;
   effect_application?: {
     applied: boolean;
     canonical_session: EventCanonicalSessionProjection;
+    canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
   };
 };
 
@@ -136,6 +149,7 @@ function isValidEffectApplication(
 ): boolean {
   if (value === undefined) return true;
   if (typeof value.applied !== "boolean") return false;
+  if (!isValidCanonicalExecutionOwnership(value.canonical_execution_ownership)) return false;
   const session = value.canonical_session;
   return Boolean(session && typeof session === "object"
     && typeof session.status === "string"
@@ -147,4 +161,24 @@ function isValidEffectApplication(
       || Number.isSafeInteger(session.termination_event_id))
     && typeof session.updated_at === "string"
     && (session.last_event_id === null || Number.isSafeInteger(session.last_event_id)));
+}
+
+function isValidCanonicalExecutionOwnership(
+  value: EventCanonicalExecutionOwnershipProjection | null | undefined,
+): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "object"
+    && Number.isSafeInteger(value.ownership_generation)
+    && value.ownership_generation > 0
+    && ["runner_process", "adopted_runner", "in_process"].includes(value.owner_kind)
+    && typeof value.manifest_id === "string"
+    && value.manifest_id.length > 0
+    && (value.registration_id === null || typeof value.registration_id === "string")
+    && (value.pid === null || (Number.isSafeInteger(value.pid) && value.pid > 0))
+    && (value.start_identity === null || typeof value.start_identity === "string")
+    && (value.execution_command_id === null
+      || typeof value.execution_command_id === "string")
+    && ["reserved", "identity_proven", "active", "terminal", "failed"]
+      .includes(value.phase)
+    && (value.failure_reason === null || typeof value.failure_reason === "string");
 }

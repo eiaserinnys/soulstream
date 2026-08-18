@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,7 @@ import {
 } from "../../src/runner/runner_socket_endpoint.js";
 import {
   prepareRunnerWriterLockForSpawn,
+  runnerWriterBootstrapPath,
   RunnerWriterLock,
 } from "../../src/runner/runner_writer_lock.js";
 import type { ProcessOwnershipLockDependencies } from "../../src/runner/runner_process_lock.js";
@@ -132,15 +133,39 @@ describe("runner socket ownership", () => {
     await expect(prepareRunnerWriterLockForSpawn(lockPath, deps))
       .rejects.toThrow("writer lock already held");
   });
+
+  it("recovers an expired nonce bootstrap and publishes only a complete owner record", async () => {
+    const lockPath = await temporaryPath("bootstrap-crash-runner.lock");
+    const bootstrapPath = runnerWriterBootstrapPath(lockPath);
+    await writeFile(bootstrapPath, `${JSON.stringify({
+      schemaVersion: 1,
+      nonce: "crashed-acquirer",
+      expiresAtMs: 99,
+    })}\n`);
+    const deps = ownershipDependencies(false, {
+      pid: 4004,
+      startIdentity: "replacement-owner",
+    }, "replacement-owner", 100);
+
+    const lock = await RunnerWriterLock.acquire(lockPath, deps);
+
+    await expect(access(bootstrapPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(`${JSON.stringify({
+      pid: 4004,
+      startIdentity: "replacement-owner",
+    })}\n`);
+    await lock.release();
+  });
 });
 
 function ownershipDependencies(
   alive: boolean,
   currentOwner = { pid: 2002, startIdentity: "replacement" },
   observedStartIdentity = "unknown-live",
+  now = 0,
 ): ProcessOwnershipLockDependencies {
   return {
-    now: () => 0,
+    now: () => now,
     delay: async () => {},
     currentOwner: async () => currentOwner,
     inspectProcess: async () => ({ alive, startIdentity: alive ? observedStartIdentity : null }),

@@ -12,6 +12,7 @@ import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js
 
 export interface RunnerSessionGarbageCollectorDependencies {
   now(): number;
+  withMutationLock<T>(sessionDirectory: string, operation: () => Promise<T>): Promise<T>;
   refresh(registration: RunnerRegistration): Promise<RunnerRegistration>;
   inspect(registration: RunnerRegistration): ReturnType<typeof inspectRunnerDurableState>;
   removeDirectory(path: string): Promise<void>;
@@ -47,7 +48,7 @@ export class RunnerSessionGarbageCollector {
         result.retained.push({ sessionId: registration.config.sessionId, reason: candidateReason });
         continue;
       }
-      await withRunnerSessionMutationLock(
+      await this.deps.withMutationLock(
         registration.config.paths.sessionDirectory,
         async () => {
           try {
@@ -228,6 +229,7 @@ function assertOwnedSessionDirectory(stateDirectory: string, sessionDirectory: s
 function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
+    withMutationLock: withRunnerSessionMutationLock,
     refresh: async (registration) => await readRunnerRegistrationForDeletion(
       registration.config.paths.sessionDirectory,
     ),

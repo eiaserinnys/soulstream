@@ -342,6 +342,70 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     ]);
   });
 
+  it("admits exactly one ownership generation under concurrent attach and recovery reserve", async () => {
+    await insertSession("concurrent-owner", "initializing");
+    const recoveryPeer = harness.createPeer();
+
+    const results = await Promise.all([
+      reserve("concurrent-owner", 101, "runner_process", "release-a"),
+      recoveryPeer<Array<{ applied: boolean; status: string }>>`
+        SELECT * FROM session_reserve_execution_ownership(
+          'concurrent-owner', 102, 'adopted_runner', 'release-a', NOW()
+        )
+      `,
+    ]);
+
+    expect(results.flat().filter((result) => result.applied)).toHaveLength(1);
+    await expect(harness.sql<Array<{ generation: string; phase: string }>>`
+      SELECT ownership_generation AS generation, phase
+      FROM session_execution_ownerships
+      WHERE session_id = 'concurrent-owner'
+    `).resolves.toEqual([{
+      generation: expect.stringMatching(/^10[12]$/),
+      phase: "reserved",
+    }]);
+  });
+
+  it("hands an identity-fenced orphaned_spawn reservation to recovery adoption", async () => {
+    await insertSession("orphaned-spawn", "initializing");
+    await reserve("orphaned-spawn", 201, "runner_process", "release-a");
+    await expect(harness.sql<Array<{ applied: boolean }>>`
+      SELECT session_mark_execution_orphaned_spawn(
+        'orphaned-spawn', 201, 'registration-orphan', 7201,
+        'start-7201', 'execute-orphan', NOW()
+      ) AS applied
+    `).resolves.toEqual([{ applied: true }]);
+
+    const adoption = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_adoption(
+        'orphaned-spawn', 202, 'release-a', 'registration-orphan', 7201,
+        'start-7201', 'execute-orphan', NOW()
+      )
+    `;
+    expect(adoption[0]?.applied).toBe(true);
+    await expect(harness.sql<Array<{ applied: boolean }>>`
+      SELECT session_prove_execution_ownership(
+        'orphaned-spawn', 202, 'registration-orphan', 7201,
+        'start-7201', 'execute-orphan', NOW()
+      ) AS applied
+    `).resolves.toEqual([{ applied: true }]);
+    expect((await activate("orphaned-spawn", 202))[0]?.applied).toBe(true);
+
+    await expect(harness.sql<Array<{
+      generation: string;
+      phase: string;
+      failure_reason: string | null;
+    }>>`
+      SELECT ownership_generation AS generation, phase, failure_reason
+      FROM session_execution_ownerships
+      WHERE session_id = 'orphaned-spawn'
+      ORDER BY ownership_generation
+    `).resolves.toEqual([
+      { generation: "201", phase: "terminal", failure_reason: "ownership handed to adopting host" },
+      { generation: "202", phase: "active", failure_reason: null },
+    ]);
+  });
+
   async function insertSession(
     sessionId: string,
     status: string,

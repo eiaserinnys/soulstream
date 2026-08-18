@@ -57,7 +57,13 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${new Date(effect.updated_at)}
       )
     `;
-    return canonicalTransitionApplication(rows, "execution reserve");
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "execution reserve",
+    );
   }
   if (effect.kind === "execution_prove") {
     const rows = await sql<CanonicalTransitionRow[]>`
@@ -79,7 +85,13 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       FROM application
       JOIN sessions AS session ON session.session_id = ${envelope.session_id}
     `;
-    return canonicalTransitionApplication(rows, "execution proof");
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "execution proof",
+    );
   }
   if (effect.kind === "execution_adopt_reserve") {
     const rows = await sql<CanonicalTransitionRow[]>`
@@ -94,7 +106,13 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${new Date(effect.updated_at)}
       )
     `;
-    return canonicalTransitionApplication(rows, "execution adoption reserve");
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "execution adoption reserve",
+    );
   }
   if (effect.kind === "execution_activate") {
     const rows = await sql<CanonicalTransitionRow[]>`
@@ -107,7 +125,13 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${new Date(effect.updated_at)}
       )
     `;
-    return canonicalTransitionApplication(rows, "execution activation");
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "execution activation",
+    );
   }
   if (effect.kind === "execution_fail") {
     const rows = await sql<CanonicalTransitionRow[]>`
@@ -126,7 +150,41 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       FROM application
       JOIN sessions AS session ON session.session_id = ${envelope.session_id}
     `;
-    return canonicalTransitionApplication(rows, "execution failure");
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "execution failure",
+    );
+  }
+  if (effect.kind === "execution_orphaned_spawn") {
+    const rows = await sql<CanonicalTransitionRow[]>`
+      WITH application AS (
+        SELECT session_mark_execution_orphaned_spawn(
+          ${envelope.session_id},
+          ${effect.ownership_generation},
+          ${effect.registration_id},
+          ${effect.pid},
+          ${effect.start_identity},
+          ${effect.execution_command_id},
+          ${new Date(effect.updated_at)}
+        ) AS applied
+      )
+      SELECT application.applied, session.status, session.termination_reason,
+             session.termination_detail, session.review_state,
+             session.last_assistant_text, session.termination_event_id,
+             session.updated_at, session.last_event_id
+      FROM application
+      JOIN sessions AS session ON session.session_id = ${envelope.session_id}
+    `;
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "execution orphaned spawn",
+    );
   }
   if (effect.kind === "execution_backfill") {
     const rows = await sql<CanonicalTransitionRow[]>`
@@ -256,6 +314,56 @@ function canonicalTransitionApplication(
   return {
     applied: row.applied,
     canonicalSession: canonicalProjection(row, transition),
+  };
+}
+
+type CanonicalExecutionOwnershipRow = {
+  ownership_generation: string | number;
+  owner_kind: "runner_process" | "adopted_runner" | "in_process";
+  manifest_id: string;
+  registration_id: string | null;
+  pid: number | null;
+  start_identity: string | null;
+  execution_command_id: string | null;
+  phase: "reserved" | "identity_proven" | "active" | "terminal" | "failed";
+  failure_reason: string | null;
+};
+
+async function canonicalOwnershipTransitionApplication(
+  sql: EventIngressQuerySql,
+  sessionId: string,
+  requestedGeneration: number,
+  rows: CanonicalTransitionRow[],
+  transition: string,
+): Promise<EventSessionEffectApplication> {
+  const application = canonicalTransitionApplication(rows, transition);
+  const ownershipRows = await sql<CanonicalExecutionOwnershipRow[]>`
+    SELECT ownership_generation, owner_kind, manifest_id, registration_id,
+           pid, start_identity, execution_command_id, phase, failure_reason
+    FROM session_execution_ownerships
+    WHERE session_id = ${sessionId}
+    ORDER BY (ownership_generation = ${requestedGeneration}) DESC,
+             CASE phase
+               WHEN 'active' THEN 0
+               WHEN 'identity_proven' THEN 1
+               WHEN 'reserved' THEN 2
+               ELSE 3
+             END,
+             ownership_generation DESC
+    LIMIT 1
+  `;
+  const ownership = ownershipRows[0];
+  if (!ownership) return { ...application, canonicalExecutionOwnership: null };
+  const generation = Number(ownership.ownership_generation);
+  if (!Number.isSafeInteger(generation) || generation <= 0) {
+    throw new Error(`${transition} returned an invalid canonical ownership generation`);
+  }
+  return {
+    ...application,
+    canonicalExecutionOwnership: {
+      ...ownership,
+      ownership_generation: generation,
+    },
   };
 }
 

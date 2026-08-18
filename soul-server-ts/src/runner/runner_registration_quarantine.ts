@@ -13,12 +13,21 @@ import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js
 
 type RegistrationFailure = RunnerRegistrationScan["errors"][number];
 
+export const RUNNER_REGISTRATION_QUARANTINE_STAGES = [
+  "config",
+  "summary",
+  "identity",
+  "sqlite",
+] as const;
+type RunnerRegistrationQuarantineStage =
+  (typeof RUNNER_REGISTRATION_QUARANTINE_STAGES)[number];
+
 export type RunnerRegistrationQuarantineResult =
   | { status: "quarantined"; path: string; pid: number }
   | {
     status: "retained";
     reason:
-      | "not_config_failure"
+      | "unsupported_failure_stage"
       | "registration_recovered"
       | "pid_evidence_missing"
       | "runner_alive";
@@ -34,8 +43,10 @@ export async function quarantineUnreadableRunnerRegistration(
   } = {},
 ): Promise<RunnerRegistrationQuarantineResult> {
   assertDirectChild(stateDirectory, failure.directory);
-  if (registrationFailureStage(failure.error) !== "config") {
-    return { status: "retained", reason: "not_config_failure" };
+  if (!RUNNER_REGISTRATION_QUARANTINE_STAGES.includes(
+    registrationFailureStage(failure.error) as RunnerRegistrationQuarantineStage,
+  )) {
+    return { status: "retained", reason: "unsupported_failure_stage" };
   }
   return await withRunnerSessionMutationLock(failure.directory, async () => {
     if (!await exists(failure.directory)) return { status: "missing" };
@@ -78,8 +89,8 @@ export async function quarantineUnreadableRunnerRegistration(
   });
 }
 
-function registrationFailureStage(error: Error): "config" | "summary" | undefined {
-  return (error as Error & { runnerRegistrationStage?: "config" | "summary" })
+function registrationFailureStage(error: Error): RunnerRegistrationQuarantineStage | undefined {
+  return (error as Error & { runnerRegistrationStage?: RunnerRegistrationQuarantineStage })
     .runnerRegistrationStage;
 }
 

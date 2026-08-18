@@ -4,13 +4,17 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { quarantineUnreadableRunnerRegistration } from "../../src/runner/runner_registration_quarantine.js";
+import {
+  quarantineUnreadableRunnerRegistration,
+  RUNNER_REGISTRATION_QUARANTINE_STAGES,
+} from "../../src/runner/runner_registration_quarantine.js";
 import { scanRunnerRegistrations } from "../../src/runner/runner_process_registry.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import {
   pendingRunnerRegistrationIdentity,
+  runnerRegistrationIdentityPath,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
 
@@ -23,6 +27,15 @@ afterEach(async () => {
 });
 
 describe("runner registration quarantine", () => {
+  it("keeps the corruption inventory exhaustive", () => {
+    expect(RUNNER_REGISTRATION_QUARANTINE_STAGES).toEqual([
+      "config",
+      "summary",
+      "identity",
+      "sqlite",
+    ]);
+  });
+
   it("quarantines nine proven-dead legacy directories without touching a healthy neighbor", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-registration-quarantine-"));
     temporaryDirectories.push(root);
@@ -72,7 +85,7 @@ describe("runner registration quarantine", () => {
     await expect(access(stale.paths.sessionDirectory)).resolves.toBeUndefined();
   });
 
-  it("does not quarantine a proven-dead directory for a non-config read failure", async () => {
+  it("quarantines a proven-dead directory after SQLite damage", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-registration-summary-failure-"));
     temporaryDirectories.push(root);
     const stateDirectory = join(root, "runner-state");
@@ -86,15 +99,66 @@ describe("runner registration quarantine", () => {
       startIdentity: "start-9001",
     });
     const [failure] = (await scanRunnerRegistrations(stateDirectory)).errors;
+    expect(registrationFailureStage(failure!.error)).toBe("sqlite");
 
     await expect(quarantineUnreadableRunnerRegistration(
       stateDirectory,
       failure!,
       { inspectProcess: async () => ({ alive: false, startIdentity: null }) },
-    )).resolves.toEqual({ status: "retained", reason: "not_config_failure" });
-    await expect(access(paths.sessionDirectory)).resolves.toBeUndefined();
+    )).resolves.toMatchObject({ status: "quarantined", pid: 9_001 });
+    await expect(access(paths.sessionDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("quarantines proven-dead summary and identity damage through distinct decisions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-registration-corruption-matrix-"));
+    temporaryDirectories.push(root);
+    const stateDirectory = join(root, "runner-state");
+    await mkdir(stateDirectory, { recursive: true });
+
+    const summaryPaths = runnerProcessPaths(stateDirectory, "session-summary-damaged");
+    await mkdir(summaryPaths.sessionDirectory, { recursive: true });
+    const summaryConfig = childConfig("session-summary-damaged", summaryPaths);
+    await writeFile(summaryPaths.configPath, JSON.stringify({
+      ...summaryConfig,
+      paths: { ...summaryConfig.paths, sessionDirectory: join(stateDirectory, "wrong") },
+    }));
+    await writeFile(summaryPaths.pidPath, "9101\n");
+    await writeRunnerRegistrationIdentity(summaryPaths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity("session-summary-damaged", "release-a"),
+      pid: 9_101,
+      startIdentity: "start-9101",
+    });
+
+    const identity = await writeHealthyRegistration(stateDirectory, "session-identity-damaged");
+    await writeFile(identity.paths.pidPath, "9102\n");
+    await writeFile(
+      runnerRegistrationIdentityPath(identity.paths.sessionDirectory),
+      "{not-json\n",
+    );
+
+    const scan = await scanRunnerRegistrations(stateDirectory);
+    const failures = new Map(scan.errors.map((failure) => [
+      failure.directory,
+      failure,
+    ]));
+    expect(registrationFailureStage(failures.get(summaryPaths.sessionDirectory)!.error))
+      .toBe("summary");
+    expect(registrationFailureStage(failures.get(identity.paths.sessionDirectory)!.error))
+      .toBe("identity");
+
+    for (const failure of failures.values()) {
+      await expect(quarantineUnreadableRunnerRegistration(
+        stateDirectory,
+        failure,
+        { inspectProcess: async () => ({ alive: false, startIdentity: null }) },
+      )).resolves.toMatchObject({ status: "quarantined" });
+    }
   });
 });
+
+function registrationFailureStage(error: Error): string | undefined {
+  return (error as Error & { runnerRegistrationStage?: string }).runnerRegistrationStage;
+}
 
 async function writeHealthyRegistration(stateDirectory: string, sessionId: string) {
   const paths = runnerProcessPaths(stateDirectory, sessionId);

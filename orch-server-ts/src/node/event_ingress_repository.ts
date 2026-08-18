@@ -330,6 +330,7 @@ function isCanonicalTransitionEffect(
       | "execution_adopt_reserve"
       | "execution_activate"
       | "execution_fail"
+      | "execution_orphaned_spawn"
       | "runner_terminal_fact"
       | "recovered_runner_terminal_fact";
   }
@@ -341,6 +342,7 @@ function isCanonicalTransitionEffect(
     || effect?.kind === "execution_adopt_reserve"
     || effect?.kind === "execution_activate"
     || effect?.kind === "execution_fail"
+    || effect?.kind === "execution_orphaned_spawn"
     || effect?.kind === "runner_terminal_fact"
     || effect?.kind === "recovered_runner_terminal_fact";
 }
@@ -352,6 +354,12 @@ function toReceiptEffectApplication(
     ? {
         applied: application.applied,
         canonical_session: application.canonicalSession,
+        ...(application.canonicalExecutionOwnership === undefined
+          ? {}
+          : {
+              canonical_execution_ownership:
+                application.canonicalExecutionOwnership,
+            }),
       }
     : null;
 }
@@ -371,7 +379,40 @@ function parseEffectApplication(
   return {
     applied: value.applied,
     canonicalSession: value.canonical_session,
+    ...(value.canonical_execution_ownership === undefined
+      ? {}
+      : {
+          canonicalExecutionOwnership:
+            parseCanonicalExecutionOwnership(value.canonical_execution_ownership, sourceSeq),
+        }),
   };
+}
+
+function parseCanonicalExecutionOwnership(
+  value: unknown,
+  sourceSeq: number,
+): EventSessionEffectApplicationWire["canonical_execution_ownership"] {
+  if (value === null) return null;
+  if (
+    !isRecord(value)
+    || !Number.isSafeInteger(value.ownership_generation)
+    || Number(value.ownership_generation) <= 0
+    || !["runner_process", "adopted_runner", "in_process"].includes(String(value.owner_kind))
+    || typeof value.manifest_id !== "string"
+    || (value.registration_id !== null && typeof value.registration_id !== "string")
+    || (value.pid !== null && (!Number.isSafeInteger(value.pid) || Number(value.pid) <= 0))
+    || (value.start_identity !== null && typeof value.start_identity !== "string")
+    || (value.execution_command_id !== null && typeof value.execution_command_id !== "string")
+    || !["reserved", "identity_proven", "active", "terminal", "failed"]
+      .includes(String(value.phase))
+    || (value.failure_reason !== null && typeof value.failure_reason !== "string")
+  ) {
+    throw new EventIngressProtocolConflict(
+      `event ingress receipt has invalid canonical ownership at source_seq ${sourceSeq}`,
+      sourceSeq,
+    );
+  }
+  return value as EventSessionEffectApplicationWire["canonical_execution_ownership"];
 }
 
 function isCanonicalSession(

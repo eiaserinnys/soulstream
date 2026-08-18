@@ -227,6 +227,46 @@ describe("runner SQLite contention", () => {
       lifecycle.close();
     }
   });
+
+  it("keeps restart recovery bounded behind a long external writer and succeeds after release", async () => {
+    const databasePath = await createDatabase();
+    const firstHost = RunnerSqliteLifecycle.open(databasePath);
+    firstHost.begin({
+      pid: process.pid,
+      commandId: "execute-restart",
+      progressedAt: "2026-08-13T00:00:00.000Z",
+    });
+    firstHost.close();
+
+    const { child, exited } = await holdWriteLock(databasePath, 350);
+    const restartedHost = RunnerSqliteLifecycle.open(databasePath);
+    const startedAt = Date.now();
+    try {
+      await expect(withRunnerSqliteBusyRetry(
+        () => restartedHost.progress(
+          "execute-restart",
+          "2026-08-13T00:00:01.000Z",
+        ),
+        { retryDelaysMs: [10, 20] },
+      )).rejects.toThrow(/database is locked/i);
+      expect(Date.now() - startedAt).toBeLessThan(500);
+      expect(child.pid).toEqual(expect.any(Number));
+
+      const [exitCode] = await exited;
+      expect(exitCode).toBe(0);
+      expect(restartedHost.progress(
+        "execute-restart",
+        "2026-08-13T00:00:02.000Z",
+      )).toMatchObject({
+        execution_command_id: "execute-restart",
+        execution_state: "running",
+        progress_seq: 2,
+      });
+    } finally {
+      if (child.exitCode === null) child.kill();
+      restartedHost.close();
+    }
+  });
 });
 
 async function createDatabase(): Promise<string> {

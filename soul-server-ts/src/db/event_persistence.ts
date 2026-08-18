@@ -175,6 +175,23 @@ export class EventPersistence extends EventTransitionPublisher {
       eventId: acknowledgement.event_id,
       applied: application.applied,
       canonicalSession: application.canonical_session,
+      ...(application.canonical_execution_ownership
+        ? {
+            canonicalExecutionOwnership: {
+              ownershipGeneration:
+                application.canonical_execution_ownership.ownership_generation,
+              ownerKind: application.canonical_execution_ownership.owner_kind,
+              manifestId: application.canonical_execution_ownership.manifest_id,
+              registrationId: application.canonical_execution_ownership.registration_id,
+              pid: application.canonical_execution_ownership.pid,
+              startIdentity: application.canonical_execution_ownership.start_identity,
+              executionCommandId:
+                application.canonical_execution_ownership.execution_command_id,
+              phase: application.canonical_execution_ownership.phase,
+              failureReason: application.canonical_execution_ownership.failure_reason,
+            },
+          }
+        : { canonicalExecutionOwnership: null }),
     };
   }
 

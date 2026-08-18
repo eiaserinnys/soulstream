@@ -33,6 +33,27 @@ export interface ExecutionOwnershipToken extends ExecutionIdentityProof {
   ownershipGeneration: number;
 }
 
+export const EXECUTION_OWNERSHIP_PHASES = [
+  "reserved",
+  "identity_proven",
+  "active",
+  "terminal",
+  "failed",
+] as const;
+export type ExecutionOwnershipPhase = (typeof EXECUTION_OWNERSHIP_PHASES)[number];
+
+export interface CanonicalExecutionOwnership {
+  ownershipGeneration: number;
+  ownerKind: ExecutionOwnerKind;
+  manifestId: string;
+  registrationId: string | null;
+  pid: number | null;
+  startIdentity: string | null;
+  executionCommandId: string | null;
+  phase: ExecutionOwnershipPhase;
+  failureReason: string | null;
+}
+
 export interface RecoveredExecutionOwnershipIdentity {
   manifestId: string;
   registrationId: string;

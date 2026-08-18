@@ -4,6 +4,21 @@ import type {
   EventIngressEnvelope,
   EventSessionEffect,
 } from "./event_ingress_contract.js";
+import {
+  assertExactKeys,
+  booleanValue,
+  EventIngressValidationError,
+  isRecord,
+  isoTimestamp,
+  nonEmptyString,
+  nullableNonEmptyString,
+  nullablePositiveInteger,
+  nullableString,
+  positiveInteger,
+  recordValue,
+  requiredUuid,
+  stringValue,
+} from "./event_ingress_validation.js";
 
 export type {
   CommittedIngressEvent,
@@ -11,6 +26,7 @@ export type {
   EventAppendAck,
   EventAppendAcknowledgement,
   EventAppendBatch,
+  EventCanonicalExecutionOwnershipProjection,
   EventCanonicalSessionProjection,
   EventIngressEnvelope,
   EventIngressResult,
@@ -19,16 +35,14 @@ export type {
   EventSessionEffectApplicationWire,
 } from "./event_ingress_contract.js";
 export { isEventAppendBatchFrame } from "./event_ingress_contract.js";
+export { EventIngressValidationError } from "./event_ingress_validation.js";
 
 export const EVENT_INGRESS_PROTOCOL_VERSION = 1;
 export const EVENT_INGRESS_MAX_EVENTS = 64;
 export const EVENT_INGRESS_MAX_BATCH_FRAME_BYTES = 256 * 1024;
 export const EVENT_INGRESS_MAX_SINGLE_EVENT_FRAME_BYTES = 2 * 1024 * 1024;
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-
-export class EventIngressValidationError extends Error {}
 
 export function parseEventAppendBatch(
   frame: Record<string, unknown>,
@@ -281,6 +295,31 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_orphaned_spawn") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "registration_id", "pid",
+        "start_identity", "execution_command_id", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "execution_backfill") {
     assertExactKeys(
       value,
@@ -417,83 +456,4 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     };
   }
   throw new EventIngressValidationError(`${field} kind is invalid`);
-}
-
-function recordValue(value: unknown, field: string): Record<string, unknown> {
-  if (!isRecord(value)) throw new EventIngressValidationError(`${field} must be an object`);
-  return value;
-}
-
-function assertExactKeys(
-  value: Record<string, unknown>,
-  expectedKeys: readonly string[],
-  field: string,
-): void {
-  const expected = new Set(expectedKeys);
-  const unexpected = Object.keys(value).filter((key) => !expected.has(key)).sort();
-  if (unexpected.length > 0) {
-    throw new EventIngressValidationError(
-      `${field} has unexpected fields: ${unexpected.join(", ")}`,
-    );
-  }
-}
-
-function isoTimestamp(value: unknown, field: string): string {
-  const text = nonEmptyString(value, field);
-  if (!Number.isFinite(Date.parse(text))) {
-    throw new EventIngressValidationError(`${field} must be ISO-8601`);
-  }
-  return text;
-}
-
-function stringValue(value: unknown, field: string): string {
-  if (typeof value !== "string") throw new EventIngressValidationError(`${field} must be string`);
-  return value;
-}
-
-function requiredUuid(value: unknown, field: string): string {
-  const text = nonEmptyString(value, field);
-  if (!UUID_PATTERN.test(text)) throw new EventIngressValidationError(`${field} must be UUID`);
-  return text;
-}
-
-function positiveInteger(value: unknown, field: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
-    throw new EventIngressValidationError(`${field} must be a positive integer`);
-  }
-  return value as number;
-}
-
-function nullablePositiveInteger(value: unknown, field: string): number | null {
-  if (value === null) return null;
-  return positiveInteger(value, field);
-}
-
-function booleanValue(value: unknown, field: string): boolean {
-  if (typeof value !== "boolean") {
-    throw new EventIngressValidationError(`${field} must be boolean`);
-  }
-  return value;
-}
-
-function nonEmptyString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new EventIngressValidationError(`${field} must be a non-empty string`);
-  }
-  return value;
-}
-
-function nullableString(value: unknown, field: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== "string") throw new EventIngressValidationError(`${field} must be string|null`);
-  return value;
-}
-
-function nullableNonEmptyString(value: unknown, field: string): string | null {
-  if (value === null) return null;
-  return nonEmptyString(value, field);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

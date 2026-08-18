@@ -2676,6 +2676,42 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION session_mark_execution_orphaned_spawn(
+    p_session_id               TEXT,
+    p_ownership_generation     BIGINT,
+    p_registration_id          TEXT,
+    p_pid                      INTEGER,
+    p_start_identity           TEXT,
+    p_execution_command_id     TEXT,
+    p_updated_at               TIMESTAMPTZ
+) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
+DECLARE
+    v_row_count INTEGER;
+BEGIN
+    IF p_registration_id IS NULL OR p_registration_id = ''
+       OR p_pid IS NULL OR p_pid <= 0
+       OR p_start_identity IS NULL OR p_start_identity = ''
+       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
+        RAISE EXCEPTION 'complete orphaned spawn identity required';
+    END IF;
+    UPDATE session_execution_ownerships
+       SET registration_id = p_registration_id,
+           pid = p_pid,
+           start_identity = p_start_identity,
+           execution_command_id = p_execution_command_id,
+           phase = 'identity_proven',
+           identity_proven_at = p_updated_at,
+           reservation_expires_at = p_updated_at + INTERVAL '5 minutes',
+           failure_reason = 'orphaned_spawn'
+     WHERE session_id = p_session_id
+       AND ownership_generation = p_ownership_generation
+       AND phase = 'reserved'
+       AND reservation_expires_at > p_updated_at;
+    GET DIAGNOSTICS v_row_count = ROW_COUNT;
+    RETURN v_row_count = 1;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION session_reserve_execution_adoption(
     p_session_id               TEXT,
     p_ownership_generation     BIGINT,
@@ -2698,6 +2734,7 @@ CREATE OR REPLACE FUNCTION session_reserve_execution_adoption(
 ) LANGUAGE plpgsql AS $$
 DECLARE
     v_row_count INTEGER := 0;
+    v_previous_generation BIGINT;
 BEGIN
     PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
     UPDATE session_execution_ownerships
@@ -2706,19 +2743,30 @@ BEGIN
      WHERE session_id = p_session_id
        AND phase IN ('reserved', 'identity_proven')
        AND reservation_expires_at <= p_updated_at;
-    PERFORM 1
+    SELECT ownership_generation
+      INTO v_previous_generation
       FROM session_execution_ownerships
      WHERE session_id = p_session_id
-       AND phase = 'active'
+       AND (
+           phase = 'active'
+           OR (
+               phase = 'identity_proven'
+               AND failure_reason = 'orphaned_spawn'
+               AND reservation_expires_at > p_updated_at
+           )
+       )
        AND manifest_id = p_manifest_id
        AND registration_id = p_previous_registration_id
        AND pid = p_pid
        AND start_identity = p_start_identity
        AND execution_command_id = p_execution_command_id
+     ORDER BY CASE phase WHEN 'active' THEN 0 ELSE 1 END
+     LIMIT 1
      FOR UPDATE;
     IF FOUND AND NOT EXISTS (
         SELECT 1 FROM session_execution_ownerships
          WHERE session_id = p_session_id
+           AND ownership_generation <> v_previous_generation
            AND phase IN ('reserved', 'identity_proven')
     ) THEN
         INSERT INTO session_execution_ownerships (
@@ -2780,10 +2828,17 @@ BEGIN
     IF FOUND THEN
         IF v_owner_kind = 'adopted_runner' THEN
             PERFORM 1
-              FROM session_execution_ownerships
+             FROM session_execution_ownerships
              WHERE session_id = p_session_id
                AND ownership_generation <> p_ownership_generation
-               AND phase = 'active'
+               AND (
+                   phase = 'active'
+                   OR (
+                       phase = 'identity_proven'
+                       AND failure_reason = 'orphaned_spawn'
+                       AND reservation_expires_at > p_updated_at
+                   )
+               )
                AND manifest_id = v_manifest_id
                AND registration_id = v_registration_id
                AND pid = v_pid
@@ -2823,10 +2878,17 @@ BEGIN
             IF v_owner_kind = 'adopted_runner' THEN
                 UPDATE session_execution_ownerships
                    SET phase = 'terminal', terminal_at = p_updated_at,
+                       reservation_expires_at = NULL,
                        failure_reason = 'ownership handed to adopting host'
                  WHERE session_id = p_session_id
                    AND ownership_generation <> p_ownership_generation
-                   AND phase = 'active'
+                   AND (
+                       phase = 'active'
+                       OR (
+                           phase = 'identity_proven'
+                           AND failure_reason = 'orphaned_spawn'
+                       )
+                   )
                    AND manifest_id = v_manifest_id
                    AND registration_id = v_registration_id
                    AND pid = v_pid
