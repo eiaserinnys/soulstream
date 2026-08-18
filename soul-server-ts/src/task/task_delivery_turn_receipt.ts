@@ -11,7 +11,7 @@ import type { InterventionMessage, Task } from "./task_models.js";
 export class TaskDeliveryTurnReceipt {
   private recorded = false;
   private consumed = false;
-  private targetReceiptId: string | undefined;
+  private consumedTurnId: string | undefined;
 
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
@@ -26,9 +26,9 @@ export class TaskDeliveryTurnReceipt {
     ) {
       return;
     }
-    const targetReceiptId = turnReceiptId(task);
+    const consumedTurnId = turnReceiptId(task);
     this.recorded = await this.consumption.recordTurnStarted(task, this.intervention);
-    if (this.recorded) this.targetReceiptId = targetReceiptId;
+    if (this.recorded) this.consumedTurnId = consumedTurnId;
   }
 
   async consume(task: Task): Promise<void> {
@@ -37,9 +37,9 @@ export class TaskDeliveryTurnReceipt {
     // completed delivery in `queued`. Retry the durable receipt at the turn
     // boundary before marking it consumed.
     if (!this.recorded) {
-      const targetReceiptId = turnReceiptId(task);
+      const consumedTurnId = turnReceiptId(task);
       this.recorded = await this.consumption.recordTurnStarted(task, this.intervention);
-      if (this.recorded) this.targetReceiptId = targetReceiptId;
+      if (this.recorded) this.consumedTurnId = consumedTurnId;
     }
     // Iterator exhaustion is direct evidence that this foreground input ran.
     // Even when the advisory turn-start receipt remains unavailable, attempt
@@ -48,7 +48,7 @@ export class TaskDeliveryTurnReceipt {
     await this.consumption.recordConsumed(
       task,
       this.intervention,
-      this.targetReceiptId,
+      this.consumedTurnId,
     );
     this.consumed = true;
   }

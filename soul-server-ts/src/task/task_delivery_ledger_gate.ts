@@ -312,10 +312,10 @@ export class TaskDeliveryLedgerGate {
   async recordConsumed(
     message: InterventionMessage,
     task: Task,
-    targetReceiptId?: string,
+    consumedTurnId?: string,
   ): Promise<void> {
     if (!this.enabled || !isControlledMessage(message)) return;
-    const consumedTurnId = targetReceiptId
+    const resolvedConsumedTurnId = consumedTurnId
       ?? `event:${task.lastEventId ?? "unknown"}`;
     const repository = this.requireRepository();
     if (isInlineChildCompletion(message)) {
@@ -323,13 +323,13 @@ export class TaskDeliveryLedgerGate {
         relationKey: message.relationKey,
         completionId: message.completionId,
         callerSessionId: task.agentSessionId,
-        consumedTurnId,
+        consumedTurnId: resolvedConsumedTurnId,
       });
     }
     if (message.deliveryId) {
       const consumed = await repository.markConsumed(
         message.deliveryId,
-        consumedTurnId,
+        resolvedConsumedTurnId,
       );
       if (!consumed && requiresExactDeliveryConsumption(message)) {
         const existing = await repository.get(message.deliveryId);

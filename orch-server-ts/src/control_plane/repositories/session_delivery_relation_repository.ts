@@ -273,8 +273,8 @@ async function recordRelationConsumedInTransaction(
       state = 'consumed',
       aggregate_state = 'consumed',
       caller_turn_id = ${params.consumedTurnId},
-      target_receipt_id = ${params.consumedTurnId},
-      target_receipt_at = ${relation.consumed_at},
+      target_receipt_id = COALESCE(target_receipt_id, ${params.consumedTurnId}),
+      target_receipt_at = COALESCE(target_receipt_at, ${relation.consumed_at}),
       consumed_at = ${relation.consumed_at},
       consumed_reason = 'exact relation receipt',
       lease_owner = NULL,
@@ -282,7 +282,7 @@ async function recordRelationConsumedInTransaction(
       updated_at = NOW()
     WHERE relation_key = ${params.relationKey}
       AND completion_id = ${params.completionId}
-      AND state IN ('pending', 'claimed')
+      AND state IN ('pending', 'claimed', 'delivered')
     RETURNING *
   `;
   return {

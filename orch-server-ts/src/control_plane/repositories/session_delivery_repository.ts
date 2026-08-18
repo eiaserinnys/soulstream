@@ -334,19 +334,22 @@ export class SessionDeliveryRepository {
 
   async markConsumed(
     deliveryId: string,
-    callerTurnId?: string,
+    consumedTurnId: string,
   ): Promise<SessionDeliveryRow | null> {
+    // target_receipt_id proves that this delivery reached the target and stays
+    // immutable. caller_turn_id identifies the later foreground turn that
+    // consumed it; lastEventId may advance between those two boundaries.
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries
       SET
         state = 'consumed',
         aggregate_state = 'consumed',
-        caller_turn_id = COALESCE(${callerTurnId ?? null}, caller_turn_id),
+        caller_turn_id = ${consumedTurnId},
         consumed_at = NOW(),
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
         AND aggregate_state = 'delivered'
-        AND target_receipt_id = ${callerTurnId ?? null}
+        AND target_receipt_id IS NOT NULL
         AND state IN ('delivered', 'queued')
       RETURNING *
     `;

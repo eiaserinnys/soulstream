@@ -320,8 +320,8 @@ export class SessionDeliveryHostClient {
   markDelivered(deliveryId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_delivered", [deliveryId, callerTurnId]);
   }
-  markConsumed(deliveryId: string, callerTurnId?: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_consumed", [deliveryId, callerTurnId]);
+  markConsumed(deliveryId: string, consumedTurnId: string): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "mark_consumed", [deliveryId, consumedTurnId]);
   }
   markConsumedByRelation(relationKey: string, completionId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_consumed_by_relation", [relationKey, completionId, callerTurnId]);
