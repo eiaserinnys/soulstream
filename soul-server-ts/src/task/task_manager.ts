@@ -70,6 +70,9 @@ import {
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
 import { resolveModelPresetSelection } from "./task_model_preset.js";
 import { resolveSourceTaskItemProvenance } from "./source_task_item_provenance.js";
+import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
+import { applyCanonicalSessionProjection } from
+  "./task_canonical_session_projection.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {
@@ -109,7 +112,7 @@ export class TaskManager {
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     /** Persistent publisher의 durable outbox ingress. 누락 시 발행 경로가 명시적으로 실패한다. */
-    persistence?: EventPersistence,
+    private readonly persistence?: EventPersistence,
     /**
      * Phase A context 정본 진입점 (atom d7a1ad86 차단):
      * auto-resume transition이 user_message wire에 박을 ContextItem[]을 조립할 때 사용.
@@ -297,6 +300,32 @@ export class TaskManager {
     onResume: StartExecutionCallback,
   ): Promise<void> {
     await this.runnerRecovery.markFailureAndResume(task, message, onResume);
+  }
+
+  async projectClosedRunner(task: Task, detail: string): Promise<boolean> {
+    return await this.runnerRecovery.projectClosed(task, detail);
+  }
+
+  async reconcileExecutionOwnershipObservations(
+    task: Task,
+    input: {
+      first: ExecutionOwnershipObservation;
+      second: ExecutionOwnershipObservation;
+      evidenceHash: string;
+      minimumLeaseIntervalMs: number;
+      probeOnly: boolean;
+    },
+  ): Promise<boolean> {
+    if (!this.persistence) {
+      throw new Error("execution ownership backfill persistence is required");
+    }
+    const application =
+      await this.persistence.backfillExecutionOwnershipAndWaitForApplication(
+        task.agentSessionId,
+        input,
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    return application.applied;
   }
 
   getDeliveryConsumptionRecorder(): Pick<

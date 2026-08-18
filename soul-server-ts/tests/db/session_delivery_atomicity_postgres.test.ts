@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -725,14 +726,165 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     ]);
   });
 
-  async function register(deliveryId: string, relationKey: string): Promise<void> {
+  it("covers every delivery intent across attempt outcomes, aggregate states, and receipts", async () => {
+    const intents = [
+      "durable_next_turn",
+      "completion_notification",
+      "runtime_followup",
+    ] as const;
+    const cases = [
+      { name: "accepted-pending", outcome: "accepted", aggregate: "pending", receipt: null },
+      { name: "accepted-delivered", outcome: "accepted", aggregate: "delivered", receipt: "event:delivered" },
+      { name: "accepted-consumed", outcome: "accepted", aggregate: "consumed", receipt: "event:consumed" },
+      { name: "retryable-pending", outcome: "retryable", aggregate: "pending", receipt: null },
+      { name: "rejected-dead-letter", outcome: "rejected", aggregate: "dead_letter", receipt: null },
+    ] as const;
+
+    for (const intent of intents) {
+      for (const contract of cases) {
+        const deliveryId = `matrix-${intent}-${contract.name}`;
+        await register(deliveryId, `relation-${deliveryId}`, intent);
+        await repository.claimForTarget(deliveryId, "caller-old", `worker-${deliveryId}`);
+        await repository.beginDispatch(deliveryId, `worker-${deliveryId}`);
+        if (contract.name === "accepted-pending") {
+          await repository.markQueued(deliveryId, `worker-${deliveryId}`);
+        } else if (contract.name === "accepted-delivered") {
+          await repository.markQueued(deliveryId, `worker-${deliveryId}`);
+          await repository.markDelivered(deliveryId, contract.receipt);
+        } else if (contract.name === "accepted-consumed") {
+          await repository.markQueued(deliveryId, `worker-${deliveryId}`);
+          await repository.markDelivered(deliveryId, contract.receipt);
+          await repository.markConsumed(deliveryId, contract.receipt);
+        } else if (contract.name === "retryable-pending") {
+          await repository.retryLeasedDelivery(
+            deliveryId,
+            `worker-${deliveryId}`,
+            "retryable",
+            new Date(Date.now() + 1_000),
+          );
+        } else {
+          await repository.markUncertain(
+            deliveryId,
+            `worker-${deliveryId}`,
+            "rejected",
+          );
+        }
+
+        await expect(repository.get(deliveryId)).resolves.toMatchObject({
+          intent,
+          aggregate_state: contract.aggregate,
+          target_receipt_id: contract.receipt,
+        });
+        await expect(harness.sql<Array<{ outcome: string; target_receipt_id: string | null }>>`
+          SELECT outcome, target_receipt_id
+          FROM session_delivery_attempts
+          WHERE delivery_id = ${deliveryId}
+          ORDER BY attempt_number DESC
+          LIMIT 1
+        `).resolves.toEqual([{
+          outcome: contract.outcome,
+          target_receipt_id: null,
+        }]);
+      }
+    }
+  });
+
+  it("backfills legacy delivered rows only when a target receipt exists", async () => {
+    await register("legacy-with-receipt", "relation-legacy-with-receipt");
+    await register("legacy-missing-receipt", "relation-legacy-missing-receipt");
+    await register("legacy-budget-exhausted", "relation-legacy-budget-exhausted");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'delivered'
+      WHERE delivery_id IN ('legacy-with-receipt', 'legacy-missing-receipt')
+    `;
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'uncertain', attempt_count = 15,
+          created_at = NOW() - INTERVAL '25 hours'
+      WHERE delivery_id = 'legacy-budget-exhausted'
+    `;
+    await harness.sql`
+      INSERT INTO session_delivery_notification_outbox (
+        delivery_id, target_session_id, payload, disposition, state,
+        projection_state, target_receipt_id, target_receipt_at
+      ) VALUES
+        ('legacy-with-receipt', 'caller-old', '{}'::jsonb, 'queued', 'published',
+         'published', 'event:legacy', NOW()),
+        ('legacy-missing-receipt', 'caller-old', '{}'::jsonb, 'queued', 'published',
+         'published', NULL, NULL)
+    `;
+
+    const migration = readFileSync(new URL(
+      "../../../packages/db-schema/sql/migrations/067_execution_ownership_delivery_convergence.sql",
+      import.meta.url,
+    ), "utf8");
+    await harness.sql.unsafe(migration);
+
+    await expect(harness.sql<Array<{
+      delivery_id: string;
+      aggregate_state: string;
+      target_receipt_id: string | null;
+    }>>`
+      SELECT delivery_id, aggregate_state, target_receipt_id
+      FROM session_deliveries
+      WHERE delivery_id LIKE 'legacy-%'
+      ORDER BY delivery_id
+    `).resolves.toEqual([
+      {
+        delivery_id: "legacy-budget-exhausted",
+        aggregate_state: "dead_letter",
+        target_receipt_id: null,
+      },
+      {
+        delivery_id: "legacy-missing-receipt",
+        aggregate_state: "pending",
+        target_receipt_id: null,
+      },
+      {
+        delivery_id: "legacy-with-receipt",
+        aggregate_state: "delivered",
+        target_receipt_id: "event:legacy",
+      },
+    ]);
+    await expect(harness.sql<Array<{ delivery_id: string; outcome: string }>>`
+      SELECT delivery_id, outcome
+      FROM session_delivery_attempts
+      WHERE delivery_id LIKE 'legacy-%'
+      ORDER BY delivery_id
+    `).resolves.toEqual([
+      { delivery_id: "legacy-budget-exhausted", outcome: "rejected" },
+      { delivery_id: "legacy-missing-receipt", outcome: "retryable" },
+      { delivery_id: "legacy-with-receipt", outcome: "accepted" },
+    ]);
+    await expect(harness.sql<Array<{
+      delivery_id: string;
+      state: string;
+      projection_state: string;
+    }>>`
+      SELECT delivery_id, state, projection_state
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = 'legacy-missing-receipt'
+    `).resolves.toEqual([{
+      delivery_id: "legacy-missing-receipt",
+      state: "pending",
+      projection_state: "staged",
+    }]);
+  });
+
+  async function register(
+    deliveryId: string,
+    relationKey: string,
+    intent: "durable_next_turn" | "completion_notification" | "runtime_followup" =
+      "completion_notification",
+  ): Promise<void> {
     await repository.register({
       deliveryId,
       targetSessionId: "caller-old",
       sourceSessionId: "child-session",
       relationKey,
       completionId: `completion-${relationKey}`,
-      intent: "completion_notification",
+      intent,
       source: "completion_notifier",
       producerKind: "child_session",
       producerId: "child-session",

@@ -1,5 +1,9 @@
+import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { Task } from "../task/task_models.js";
+import { isTerminalTaskStatus } from "../task/task_models.js";
+import type { ExecutionOwnershipObservation } from
+  "../task/execution_ownership.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
@@ -40,6 +44,10 @@ const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
+  private readonly ownerNullObservations = new Map<
+    string,
+    ExecutionOwnershipObservation
+  >();
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private readonly unreadableRegistrationFingerprints = new Map<string, string>();
@@ -122,6 +130,12 @@ export class RunnerRecoveryCoordinator {
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
+    const scannedSessionIds = new Set(
+      scan.registrations.map((registration) => registration.config.sessionId),
+    );
+    for (const sessionId of this.ownerNullObservations.keys()) {
+      if (!scannedSessionIds.has(sessionId)) this.ownerNullObservations.delete(sessionId);
+    }
     await this.handleUnreadableRegistrations(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
     const admitted: Array<{
@@ -166,6 +180,17 @@ export class RunnerRecoveryCoordinator {
         continue;
       }
       const task = outcome?.status === "ready" ? outcome.task : undefined;
+      if (task) {
+        const ownerNullDisposition = await this.reconcileOwnerNullBeforeRecovery(
+          task,
+          registration,
+        );
+        if (ownerNullDisposition === "wait") continue;
+        if (ownerNullDisposition === "terminal" && disposition !== "closed") {
+          if (registration.pidAlive) await this.terminateRegistration(registration);
+          continue;
+        }
+      }
       if (
         disposition === "adopt_prebootstrap"
         || disposition === "adopt_running"
@@ -300,9 +325,23 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "closed") {
-      if (registration.pidAlive) await this.terminateRegistration(registration);
-      if (!closedRunnerTailRequiresDrain(registration)) return;
-      await this.options.closedTailDrainer.drain({ ...registration, pidAlive: false });
+      const recoveredTask = requireRecoveryTask(task, registration);
+      const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+      if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
+      const closedRegistration = { ...hydrated, pidAlive: false };
+      if (closedRunnerTailRequiresDrain(closedRegistration)) {
+        await this.options.closedTailDrainer.drain(closedRegistration);
+      }
+      prepareRecoveredTask(recoveredTask, closedRegistration);
+      const projectClosedRunner = this.options.taskManager.projectClosedRunner;
+      if (!projectClosedRunner) {
+        throw new Error("closed runner central projection is not configured");
+      }
+      await projectClosedRunner.call(
+        this.options.taskManager,
+        recoveredTask,
+        "runner lifecycle closed during startup recovery",
+      );
       return;
     }
     if (disposition === "already_reaped") {
@@ -493,8 +532,95 @@ export class RunnerRecoveryCoordinator {
       { pid: registration.pid, startIdentity: registration.pidStartIdentity },
     );
   }
+
+  private async reconcileOwnerNullBeforeRecovery(
+    task: Task,
+    registration: RunnerRegistration,
+  ): Promise<"proceed" | "wait" | "terminal"> {
+    if (
+      task.hydratedFromDb !== true
+      || task.status !== "running"
+      || task.executionOwnership !== undefined
+    ) return "proceed";
+
+    const reconcile = this.options.taskManager.reconcileExecutionOwnershipObservations;
+    if (!reconcile) {
+      throw new Error("owner-null execution reconciliation is not configured");
+    }
+    const observedAt = new Date((this.options.now ?? Date.now)());
+    const current = ownershipObservation(registration, observedAt);
+    const minimumLeaseIntervalMs = Math.max(
+      1,
+      Math.min(this.options.scanIntervalMs, this.options.leaseTimeoutMs),
+    );
+    const first = this.ownerNullObservations.get(task.agentSessionId);
+    if (!first) {
+      const applied = await reconcile.call(this.options.taskManager, task, {
+        first: current,
+        second: current,
+        evidenceHash: ownershipEvidenceHash(current, current),
+        minimumLeaseIntervalMs,
+        probeOnly: true,
+      });
+      if (applied) return "proceed";
+      if (isTerminalTaskStatus(task.status)) return "terminal";
+      this.ownerNullObservations.set(task.agentSessionId, current);
+      return "wait";
+    }
+    if (observedAt.getTime() - first.observedAt.getTime() < minimumLeaseIntervalMs) {
+      return "wait";
+    }
+
+    this.ownerNullObservations.delete(task.agentSessionId);
+    const applied = await reconcile.call(this.options.taskManager, task, {
+      first,
+      second: current,
+      evidenceHash: ownershipEvidenceHash(first, current),
+      minimumLeaseIntervalMs,
+      probeOnly: false,
+    });
+    if (applied) return "proceed";
+    return isTerminalTaskStatus(task.status) ? "terminal" : "wait";
+  }
 }
 
 function dispositionRequiresTask(disposition: RunnerRecoveryDisposition): boolean {
-  return disposition !== "wait_for_bootstrap" && disposition !== "closed";
+  return disposition !== "wait_for_bootstrap";
+}
+
+function ownershipObservation(
+  registration: RunnerRegistration,
+  observedAt: Date,
+): ExecutionOwnershipObservation {
+  return {
+    manifestId: registration.config.codeSha || null,
+    registrationId: registration.registrationId || null,
+    pid: registration.pid && registration.pid > 0 ? registration.pid : null,
+    startIdentity: registration.pidStartIdentity || null,
+    executionCommandId: registration.lifecycle?.execution_command_id || null,
+    observedAt,
+  };
+}
+
+function ownershipEvidenceHash(
+  first: ExecutionOwnershipObservation,
+  second: ExecutionOwnershipObservation,
+): string {
+  return createHash("sha256").update(JSON.stringify({
+    first: serializableOwnershipObservation(first),
+    second: serializableOwnershipObservation(second),
+  })).digest("hex");
+}
+
+function serializableOwnershipObservation(
+  observation: ExecutionOwnershipObservation,
+): Record<string, string | number | null> {
+  return {
+    manifest_id: observation.manifestId,
+    registration_id: observation.registrationId,
+    pid: observation.pid,
+    start_identity: observation.startIdentity,
+    execution_command_id: observation.executionCommandId,
+    observed_at: observation.observedAt.toISOString(),
+  };
 }

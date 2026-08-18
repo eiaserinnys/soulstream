@@ -48,6 +48,7 @@ export type EventSessionEffect =
       previous_registration_id: string;
       pid: number;
       start_identity: string;
+      execution_command_id: string;
       updated_at: string;
     }
   | {
@@ -61,6 +62,25 @@ export type EventSessionEffect =
       kind: "execution_fail";
       ownership_generation: number;
       failure_reason: string;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_backfill";
+      first_manifest_id: string | null;
+      first_registration_id: string | null;
+      first_pid: number | null;
+      first_start_identity: string | null;
+      first_execution_command_id: string | null;
+      first_observed_at: string;
+      second_manifest_id: string | null;
+      second_registration_id: string | null;
+      second_pid: number | null;
+      second_start_identity: string | null;
+      second_execution_command_id: string | null;
+      second_observed_at: string;
+      evidence_hash: string;
+      minimum_lease_interval_ms: number;
+      probe_only: boolean;
       updated_at: string;
     }
   | {
@@ -78,6 +98,7 @@ export type EventSessionEffect =
       registration_id: string;
       pid: number;
       start_identity: string;
+      execution_command_id: string;
       runner_fact: "completed" | "failed" | "reaped" | "closed";
       termination_detail: string | null;
       review_state: string;
@@ -389,7 +410,8 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       value,
       [
         "kind", "ownership_generation", "manifest_id",
-        "previous_registration_id", "pid", "start_identity", "updated_at",
+        "previous_registration_id", "pid", "start_identity",
+        "execution_command_id", "updated_at",
       ],
       field,
     );
@@ -403,6 +425,10 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       ),
       pid: positiveInteger(value.pid, `${field}.pid`),
       start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
@@ -439,6 +465,51 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_backfill") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "first_manifest_id", "first_registration_id", "first_pid",
+        "first_start_identity", "first_execution_command_id", "first_observed_at",
+        "second_manifest_id", "second_registration_id", "second_pid",
+        "second_start_identity", "second_execution_command_id", "second_observed_at",
+        "evidence_hash", "minimum_lease_interval_ms", "probe_only", "updated_at",
+      ],
+      field,
+    );
+    const evidenceHash = nonEmptyString(value.evidence_hash, `${field}.evidence_hash`);
+    if (!SHA256_PATTERN.test(evidenceHash)) {
+      throw new EventIngressValidationError(`${field}.evidence_hash must be sha256`);
+    }
+    return {
+      kind: value.kind,
+      first_manifest_id: nullableNonEmptyString(value.first_manifest_id, `${field}.first_manifest_id`),
+      first_registration_id: nullableNonEmptyString(value.first_registration_id, `${field}.first_registration_id`),
+      first_pid: nullablePositiveInteger(value.first_pid, `${field}.first_pid`),
+      first_start_identity: nullableNonEmptyString(value.first_start_identity, `${field}.first_start_identity`),
+      first_execution_command_id: nullableNonEmptyString(
+        value.first_execution_command_id,
+        `${field}.first_execution_command_id`,
+      ),
+      first_observed_at: isoTimestamp(value.first_observed_at, `${field}.first_observed_at`),
+      second_manifest_id: nullableNonEmptyString(value.second_manifest_id, `${field}.second_manifest_id`),
+      second_registration_id: nullableNonEmptyString(value.second_registration_id, `${field}.second_registration_id`),
+      second_pid: nullablePositiveInteger(value.second_pid, `${field}.second_pid`),
+      second_start_identity: nullableNonEmptyString(value.second_start_identity, `${field}.second_start_identity`),
+      second_execution_command_id: nullableNonEmptyString(
+        value.second_execution_command_id,
+        `${field}.second_execution_command_id`,
+      ),
+      second_observed_at: isoTimestamp(value.second_observed_at, `${field}.second_observed_at`),
+      evidence_hash: evidenceHash,
+      minimum_lease_interval_ms: positiveInteger(
+        value.minimum_lease_interval_ms,
+        `${field}.minimum_lease_interval_ms`,
+      ),
+      probe_only: booleanValue(value.probe_only, `${field}.probe_only`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "runner_terminal_fact") {
     const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
     if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
@@ -461,7 +532,7 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       value,
       [
         "kind", "manifest_id", "registration_id", "pid", "start_identity",
-        "runner_fact", "termination_detail", "review_state",
+        "execution_command_id", "runner_fact", "termination_detail", "review_state",
         "last_assistant_text", "updated_at",
       ],
       field,
@@ -476,6 +547,10 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
       pid: positiveInteger(value.pid, `${field}.pid`),
       start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
       runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
       termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
       review_state: nonEmptyString(value.review_state, `${field}.review_state`),
@@ -561,6 +636,18 @@ function positiveInteger(value: unknown, field: string): number {
   return value as number;
 }
 
+function nullablePositiveInteger(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  return positiveInteger(value, field);
+}
+
+function booleanValue(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new EventIngressValidationError(`${field} must be boolean`);
+  }
+  return value;
+}
+
 function nonEmptyString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new EventIngressValidationError(`${field} must be a non-empty string`);
@@ -572,6 +659,11 @@ function nullableString(value: unknown, field: string): string | null {
   if (value === null) return null;
   if (typeof value !== "string") throw new EventIngressValidationError(`${field} must be string|null`);
   return value;
+}
+
+function nullableNonEmptyString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  return nonEmptyString(value, field);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -45,6 +45,7 @@ export type EventOutboxSessionEffect =
       previous_registration_id: string;
       pid: number;
       start_identity: string;
+      execution_command_id: string;
       updated_at: string;
     }
   | {
@@ -58,6 +59,25 @@ export type EventOutboxSessionEffect =
       kind: "execution_fail";
       ownership_generation: number;
       failure_reason: string;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_backfill";
+      first_manifest_id: string | null;
+      first_registration_id: string | null;
+      first_pid: number | null;
+      first_start_identity: string | null;
+      first_execution_command_id: string | null;
+      first_observed_at: string;
+      second_manifest_id: string | null;
+      second_registration_id: string | null;
+      second_pid: number | null;
+      second_start_identity: string | null;
+      second_execution_command_id: string | null;
+      second_observed_at: string;
+      evidence_hash: string;
+      minimum_lease_interval_ms: number;
+      probe_only: boolean;
       updated_at: string;
     }
   | {
@@ -75,6 +95,7 @@ export type EventOutboxSessionEffect =
       registration_id: string;
       pid: number;
       start_identity: string;
+      execution_command_id: string;
       runner_fact: "completed" | "failed" | "reaped" | "closed";
       termination_detail: string | null;
       review_state: string;

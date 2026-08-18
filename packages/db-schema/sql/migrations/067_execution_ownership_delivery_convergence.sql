@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS session_execution_ownerships (
     reserved_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     identity_proven_at         TIMESTAMPTZ,
     activated_at               TIMESTAMPTZ,
+    reservation_expires_at     TIMESTAMPTZ,
     terminal_at                TIMESTAMPTZ,
     failure_reason             TEXT,
     PRIMARY KEY (session_id, ownership_generation),
@@ -36,6 +37,11 @@ CREATE TABLE IF NOT EXISTS session_execution_ownerships (
                 AND execution_command_id IS NOT NULL
                 AND identity_proven_at IS NOT NULL
             )
+        ),
+    CONSTRAINT session_execution_ownership_reservation_lease_check
+        CHECK (
+            (phase IN ('reserved', 'identity_proven') AND reservation_expires_at IS NOT NULL)
+            OR (phase NOT IN ('reserved', 'identity_proven'))
         )
 );
 
@@ -56,13 +62,23 @@ CREATE TABLE IF NOT EXISTS session_execution_ownership_migration_audit (
     registration_id            TEXT,
     pid                        INTEGER,
     start_identity             TEXT,
+    execution_command_id       TEXT,
     first_observed_at          TIMESTAMPTZ,
     second_observed_at         TIMESTAMPTZ,
+    evidence_hash              TEXT,
+    first_observation          JSONB,
+    second_observation         JSONB,
     detail                     TEXT NOT NULL,
     created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT session_execution_ownership_audit_action_check
         CHECK (action IN ('observed', 'backfilled', 'interrupted'))
 );
+
+ALTER TABLE session_execution_ownership_migration_audit
+    ADD COLUMN IF NOT EXISTS execution_command_id TEXT,
+    ADD COLUMN IF NOT EXISTS evidence_hash TEXT,
+    ADD COLUMN IF NOT EXISTS first_observation JSONB,
+    ADD COLUMN IF NOT EXISTS second_observation JSONB;
 
 CREATE OR REPLACE VIEW session_owner_null_running_inventory AS
 SELECT session.session_id, session.node_id, session.updated_at
@@ -110,6 +126,13 @@ BEGIN
         RAISE EXCEPTION 'session not found: %', p_session_id;
     END IF;
 
+    UPDATE session_execution_ownerships
+       SET phase = 'failed', failure_reason = 'reservation lease expired',
+           terminal_at = p_updated_at, reservation_expires_at = NULL
+     WHERE session_id = p_session_id
+       AND phase IN ('reserved', 'identity_proven')
+       AND reservation_expires_at <= p_updated_at;
+
     IF EXISTS (
         SELECT 1 FROM session_execution_ownerships
         WHERE session_id = p_session_id
@@ -122,19 +145,25 @@ BEGIN
                session.last_assistant_text, session.termination_event_id,
                session.updated_at, session.last_event_id
         FROM sessions AS session
-        JOIN session_execution_ownerships AS ownership
-          ON ownership.session_id = session.session_id
-         AND ownership.phase IN ('reserved', 'identity_proven', 'active')
+        JOIN LATERAL (
+            SELECT candidate.ownership_generation
+              FROM session_execution_ownerships AS candidate
+             WHERE candidate.session_id = session.session_id
+               AND candidate.phase IN ('reserved', 'identity_proven', 'active')
+             ORDER BY CASE candidate.phase WHEN 'active' THEN 0 ELSE 1 END,
+                      candidate.ownership_generation DESC
+             LIMIT 1
+        ) AS ownership ON TRUE
         WHERE session.session_id = p_session_id;
         RETURN;
     END IF;
 
     INSERT INTO session_execution_ownerships (
         session_id, ownership_generation, owner_kind, manifest_id,
-        phase, reserved_at
+        phase, reserved_at, reservation_expires_at
     ) VALUES (
         p_session_id, p_ownership_generation, p_owner_kind, p_manifest_id,
-        'reserved', p_updated_at
+        'reserved', p_updated_at, p_updated_at + INTERVAL '5 minutes'
     );
 
     RETURN QUERY
@@ -172,10 +201,12 @@ BEGIN
            start_identity = p_start_identity,
            execution_command_id = p_execution_command_id,
            phase = 'identity_proven',
-           identity_proven_at = p_proven_at
+           identity_proven_at = p_proven_at,
+           reservation_expires_at = p_proven_at + INTERVAL '5 minutes'
      WHERE session_id = p_session_id
        AND ownership_generation = p_ownership_generation
-       AND phase = 'reserved';
+       AND phase = 'reserved'
+       AND reservation_expires_at > p_proven_at;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
     RETURN v_row_count = 1;
 END;
@@ -188,6 +219,7 @@ CREATE OR REPLACE FUNCTION session_reserve_execution_adoption(
     p_previous_registration_id TEXT,
     p_pid                      INTEGER,
     p_start_identity           TEXT,
+    p_execution_command_id     TEXT,
     p_updated_at               TIMESTAMPTZ
 ) RETURNS TABLE (
     applied                    BOOLEAN,
@@ -204,6 +236,12 @@ DECLARE
     v_row_count INTEGER := 0;
 BEGIN
     PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
+    UPDATE session_execution_ownerships
+       SET phase = 'failed', failure_reason = 'reservation lease expired',
+           terminal_at = p_updated_at, reservation_expires_at = NULL
+     WHERE session_id = p_session_id
+       AND phase IN ('reserved', 'identity_proven')
+       AND reservation_expires_at <= p_updated_at;
     PERFORM 1
       FROM session_execution_ownerships
      WHERE session_id = p_session_id
@@ -212,6 +250,7 @@ BEGIN
        AND registration_id = p_previous_registration_id
        AND pid = p_pid
        AND start_identity = p_start_identity
+       AND execution_command_id = p_execution_command_id
      FOR UPDATE;
     IF FOUND AND NOT EXISTS (
         SELECT 1 FROM session_execution_ownerships
@@ -220,10 +259,10 @@ BEGIN
     ) THEN
         INSERT INTO session_execution_ownerships (
             session_id, ownership_generation, owner_kind, manifest_id,
-            phase, reserved_at
+            phase, reserved_at, reservation_expires_at
         ) VALUES (
             p_session_id, p_ownership_generation, 'adopted_runner', p_manifest_id,
-            'reserved', p_updated_at
+            'reserved', p_updated_at, p_updated_at + INTERVAL '5 minutes'
         );
         v_row_count := 1;
     END IF;
@@ -262,13 +301,17 @@ DECLARE
     v_registration_id TEXT;
     v_pid INTEGER;
     v_start_identity TEXT;
+    v_execution_command_id TEXT;
 BEGIN
-    SELECT owner_kind, manifest_id, registration_id, pid, start_identity
-      INTO v_owner_kind, v_manifest_id, v_registration_id, v_pid, v_start_identity
+    SELECT owner_kind, manifest_id, registration_id, pid, start_identity,
+           execution_command_id
+      INTO v_owner_kind, v_manifest_id, v_registration_id, v_pid,
+           v_start_identity, v_execution_command_id
       FROM session_execution_ownerships
      WHERE session_id = p_session_id
        AND ownership_generation = p_ownership_generation
        AND phase = 'identity_proven'
+       AND reservation_expires_at > p_updated_at
      FOR UPDATE;
     IF FOUND THEN
         IF v_owner_kind = 'adopted_runner' THEN
@@ -281,6 +324,7 @@ BEGIN
                AND registration_id = v_registration_id
                AND pid = v_pid
                AND start_identity = v_start_identity
+               AND execution_command_id = v_execution_command_id
              FOR UPDATE;
             IF NOT FOUND THEN
                 RETURN QUERY
@@ -322,10 +366,12 @@ BEGIN
                    AND manifest_id = v_manifest_id
                    AND registration_id = v_registration_id
                    AND pid = v_pid
-                   AND start_identity = v_start_identity;
+                   AND start_identity = v_start_identity
+                   AND execution_command_id = v_execution_command_id;
             END IF;
             UPDATE session_execution_ownerships
-               SET phase = 'active', activated_at = p_updated_at
+               SET phase = 'active', activated_at = p_updated_at,
+                   reservation_expires_at = NULL
              WHERE session_id = p_session_id
                AND ownership_generation = p_ownership_generation
                AND phase = 'identity_proven';
@@ -383,6 +429,7 @@ CREATE OR REPLACE FUNCTION session_project_runner_terminal_fact(
 DECLARE
     v_status TEXT;
     v_reason TEXT;
+    v_existing_status TEXT;
     v_row_count INTEGER := 0;
 BEGIN
     IF p_runner_fact NOT IN ('completed', 'failed', 'reaped', 'closed') THEN
@@ -402,6 +449,11 @@ BEGIN
         ELSE 'error_aborted'
     END;
 
+    SELECT session.status INTO v_existing_status
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id
+     FOR UPDATE;
+
     UPDATE session_execution_ownerships AS ownership
        SET phase = 'terminal', runner_fact = p_runner_fact,
            terminal_at = p_updated_at
@@ -410,7 +462,8 @@ BEGIN
        AND ownership.phase = 'active';
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
-    IF v_row_count = 1 THEN
+    IF v_row_count = 1
+       AND v_existing_status NOT IN ('completed', 'error', 'interrupted') THEN
         UPDATE sessions AS session
            SET status = v_status, termination_reason = v_reason,
                termination_detail = p_termination_detail,
@@ -422,7 +475,9 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    SELECT v_row_count = 1, session.status, session.termination_reason,
+    SELECT v_row_count = 1
+             AND v_existing_status NOT IN ('completed', 'error', 'interrupted'),
+           session.status, session.termination_reason,
            session.termination_detail, session.review_state,
            session.last_assistant_text, session.termination_event_id,
            session.updated_at, session.last_event_id
@@ -437,6 +492,7 @@ CREATE OR REPLACE FUNCTION session_project_recovered_runner_terminal_fact(
     p_registration_id          TEXT,
     p_pid                      INTEGER,
     p_start_identity           TEXT,
+    p_execution_command_id     TEXT,
     p_runner_fact              TEXT,
     p_termination_detail       TEXT,
     p_review_state             TEXT,
@@ -465,6 +521,7 @@ BEGIN
        AND ownership.registration_id = p_registration_id
        AND ownership.pid = p_pid
        AND ownership.start_identity = p_start_identity
+       AND ownership.execution_command_id = p_execution_command_id
        AND ownership.phase = 'active'
      FOR UPDATE;
 
@@ -505,7 +562,7 @@ DECLARE
 BEGIN
     UPDATE session_execution_ownerships
        SET phase = 'failed', failure_reason = p_failure_reason,
-           terminal_at = p_failed_at
+           terminal_at = p_failed_at, reservation_expires_at = NULL
      WHERE session_id = p_session_id
        AND ownership_generation = p_ownership_generation
        AND phase IN ('reserved', 'identity_proven');
@@ -516,18 +573,27 @@ $$;
 
 CREATE OR REPLACE FUNCTION session_backfill_execution_ownership(
     p_session_id               TEXT,
-    p_manifest_id              TEXT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
+    p_first_manifest_id        TEXT,
+    p_first_registration_id    TEXT,
+    p_first_pid                INTEGER,
+    p_first_start_identity     TEXT,
+    p_first_execution_command_id TEXT,
     p_first_observed_at        TIMESTAMPTZ,
+    p_second_manifest_id       TEXT,
+    p_second_registration_id   TEXT,
+    p_second_pid               INTEGER,
+    p_second_start_identity    TEXT,
+    p_second_execution_command_id TEXT,
     p_second_observed_at       TIMESTAMPTZ,
-    p_minimum_lease_interval   INTERVAL
+    p_evidence_hash            TEXT,
+    p_minimum_lease_interval_ms INTEGER,
+    p_probe_only               BOOLEAN
 ) RETURNS TEXT LANGUAGE plpgsql AS $$
 DECLARE
     v_generation BIGINT;
     v_identity_complete BOOLEAN;
+    v_first_observation JSONB;
+    v_second_observation JSONB;
 BEGIN
     PERFORM 1 FROM sessions
      WHERE session_id = p_session_id AND status = 'running'
@@ -538,9 +604,40 @@ BEGIN
         WHERE session_id = p_session_id AND phase = 'active'
     ) THEN RETURN 'already_owned'; END IF;
 
-    v_identity_complete := p_manifest_id <> '' AND p_registration_id <> ''
-      AND p_pid > 0 AND p_start_identity <> '' AND p_execution_command_id <> ''
-      AND p_second_observed_at - p_first_observed_at >= p_minimum_lease_interval;
+    v_first_observation := jsonb_build_object(
+        'manifest_id', p_first_manifest_id,
+        'registration_id', p_first_registration_id,
+        'pid', p_first_pid,
+        'start_identity', p_first_start_identity,
+        'execution_command_id', p_first_execution_command_id
+    );
+    v_second_observation := jsonb_build_object(
+        'manifest_id', p_second_manifest_id,
+        'registration_id', p_second_registration_id,
+        'pid', p_second_pid,
+        'start_identity', p_second_start_identity,
+        'execution_command_id', p_second_execution_command_id
+    );
+    IF p_probe_only THEN RETURN 'observation_required'; END IF;
+
+    v_identity_complete := p_first_manifest_id IS NOT NULL
+      AND p_first_manifest_id <> ''
+      AND p_first_registration_id IS NOT NULL
+      AND p_first_registration_id <> ''
+      AND p_first_pid > 0
+      AND p_first_start_identity IS NOT NULL
+      AND p_first_start_identity <> ''
+      AND p_first_execution_command_id IS NOT NULL
+      AND p_first_execution_command_id <> ''
+      AND p_second_manifest_id IS NOT DISTINCT FROM p_first_manifest_id
+      AND p_second_registration_id IS NOT DISTINCT FROM p_first_registration_id
+      AND p_second_pid IS NOT DISTINCT FROM p_first_pid
+      AND p_second_start_identity IS NOT DISTINCT FROM p_first_start_identity
+      AND p_second_execution_command_id IS NOT DISTINCT FROM p_first_execution_command_id
+      AND p_evidence_hash ~ '^[0-9a-f]{64}$'
+      AND p_minimum_lease_interval_ms > 0
+      AND p_second_observed_at - p_first_observed_at
+          >= p_minimum_lease_interval_ms * INTERVAL '1 millisecond';
     IF v_identity_complete THEN
         SELECT COALESCE(MAX(ownership_generation), 0) + 1 INTO v_generation
           FROM session_execution_ownerships WHERE session_id = p_session_id;
@@ -549,16 +646,21 @@ BEGIN
             registration_id, pid, start_identity, execution_command_id,
             phase, reserved_at, identity_proven_at, activated_at
         ) VALUES (
-            p_session_id, v_generation, 'adopted_runner', p_manifest_id,
-            p_registration_id, p_pid, p_start_identity, p_execution_command_id,
+            p_session_id, v_generation, 'adopted_runner', p_second_manifest_id,
+            p_second_registration_id, p_second_pid, p_second_start_identity,
+            p_second_execution_command_id,
             'active', p_first_observed_at, p_second_observed_at, p_second_observed_at
         );
         INSERT INTO session_execution_ownership_migration_audit (
             session_id, action, manifest_id, registration_id, pid,
-            start_identity, first_observed_at, second_observed_at, detail
+            start_identity, execution_command_id, first_observed_at,
+            second_observed_at, evidence_hash, first_observation,
+            second_observation, detail
         ) VALUES (
-            p_session_id, 'backfilled', p_manifest_id, p_registration_id, p_pid,
-            p_start_identity, p_first_observed_at, p_second_observed_at,
+            p_session_id, 'backfilled', p_second_manifest_id,
+            p_second_registration_id, p_second_pid, p_second_start_identity,
+            p_second_execution_command_id, p_first_observed_at, p_second_observed_at,
+            p_evidence_hash, v_first_observation, v_second_observation,
             'stable identity observed across lease interval'
         );
         RETURN 'backfilled';
@@ -571,12 +673,15 @@ BEGIN
      WHERE session_id = p_session_id AND status = 'running';
     INSERT INTO session_execution_ownership_migration_audit (
         session_id, action, manifest_id, registration_id, pid,
-        start_identity, first_observed_at, second_observed_at, detail
+        start_identity, execution_command_id, first_observed_at,
+        second_observed_at, evidence_hash, first_observation,
+        second_observation, detail
     ) VALUES (
-        p_session_id, 'interrupted', NULLIF(p_manifest_id, ''),
-        NULLIF(p_registration_id, ''), p_pid, NULLIF(p_start_identity, ''),
-        p_first_observed_at, p_second_observed_at,
-        'stable identity proof missing; session converged to interrupted'
+        p_session_id, 'interrupted', p_second_manifest_id,
+        p_second_registration_id, p_second_pid, p_second_start_identity,
+        p_second_execution_command_id, p_first_observed_at, p_second_observed_at,
+        p_evidence_hash, v_first_observation, v_second_observation,
+        'two-scan identity mismatch or incomplete proof; session converged to interrupted'
     );
     RETURN 'interrupted';
 END;
@@ -621,87 +726,159 @@ ALTER TABLE session_delivery_notification_outbox
     CHECK (projection_state IN ('staged', 'publishing', 'published', 'discarded'));
 
 UPDATE session_deliveries
-SET aggregate_state = CASE
-    WHEN state = 'consumed' THEN 'consumed'
-    WHEN state = 'superseded' THEN 'consumed'
-    WHEN state = 'delivered' THEN 'delivered'
-    WHEN state = 'uncertain' AND EXISTS (
-        SELECT 1 FROM session_delivery_notification_outbox AS outbox
-        WHERE outbox.delivery_id = session_deliveries.delivery_id
-          AND outbox.state = 'published'
-    ) THEN 'delivered'
-    WHEN state = 'uncertain'
-      AND attempt_count < 16
-      AND created_at > NOW() - INTERVAL '24 hours' THEN 'pending'
-    WHEN state = 'uncertain' THEN 'dead_letter'
-    ELSE 'pending'
-END,
-consumed_reason = CASE
-    WHEN state = 'superseded' THEN COALESCE(superseded_terminal_revision, 'superseded')
-    ELSE consumed_reason
-END,
-dead_letter_reason = CASE
-    WHEN state = 'uncertain'
-      AND NOT (
-        attempt_count < 16
-        AND created_at > NOW() - INTERVAL '24 hours'
-      ) THEN COALESCE(last_error, 'legacy uncertain retry budget exhausted')
-    ELSE dead_letter_reason
-END,
-dead_lettered_at = CASE
-    WHEN state = 'uncertain'
-      AND NOT (
-        attempt_count < 16
-        AND created_at > NOW() - INTERVAL '24 hours'
-      ) THEN COALESCE(dead_lettered_at, NOW())
-    ELSE dead_lettered_at
-END;
+SET aggregate_state = 'consumed',
+    consumed_reason = CASE
+        WHEN state = 'superseded'
+        THEN COALESCE(superseded_terminal_revision, 'superseded')
+        ELSE consumed_reason
+    END
+WHERE state IN ('consumed', 'superseded');
 
-INSERT INTO session_delivery_attempts (
-    delivery_id, attempt_number, lease_owner, payload_hash, outcome, reason, created_at
+WITH legacy AS MATERIALIZED (
+    SELECT delivery.delivery_id,
+           delivery.state,
+           delivery.attempt_count,
+           delivery.lease_owner,
+           delivery.payload_hash,
+           delivery.last_error,
+           delivery.created_at,
+           delivery.updated_at,
+           delivery.next_attempt_at,
+           delivery.target_receipt_id,
+           delivery.target_receipt_at,
+           receipt.target_receipt_id AS outbox_receipt_id,
+           receipt.target_receipt_at AS outbox_receipt_at
+    FROM session_deliveries AS delivery
+    LEFT JOIN LATERAL (
+        SELECT outbox.target_receipt_id, outbox.target_receipt_at
+        FROM session_delivery_notification_outbox AS outbox
+        WHERE outbox.delivery_id = delivery.delivery_id
+          AND outbox.state = 'published'
+          AND outbox.target_receipt_id IS NOT NULL
+        LIMIT 1
+    ) AS receipt ON TRUE
+    WHERE delivery.state IN ('delivered', 'uncertain')
+), updated AS (
+    UPDATE session_deliveries AS delivery
+    SET aggregate_state = CASE
+            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NOT NULL
+            THEN 'delivered'
+            WHEN legacy.attempt_count + 1 < 16
+              AND legacy.created_at > NOW() - INTERVAL '24 hours'
+            THEN 'pending'
+            ELSE 'dead_letter'
+        END,
+        state = CASE
+            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NOT NULL
+            THEN 'delivered'
+            WHEN legacy.attempt_count + 1 < 16
+              AND legacy.created_at > NOW() - INTERVAL '24 hours'
+            THEN 'pending'
+            ELSE 'uncertain'
+        END,
+        target_receipt_id = COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id),
+        target_receipt_at = COALESCE(legacy.target_receipt_at, legacy.outbox_receipt_at),
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        attempt_count = legacy.attempt_count + 1,
+        next_attempt_at = CASE
+            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
+              AND legacy.attempt_count + 1 < 16
+              AND legacy.created_at > NOW() - INTERVAL '24 hours'
+            THEN LEAST(legacy.next_attempt_at, NOW())
+            ELSE legacy.next_attempt_at
+        END,
+        last_error = CASE
+            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
+            THEN COALESCE(legacy.last_error, 'legacy delivery missing target receipt')
+            ELSE legacy.last_error
+        END,
+        dead_letter_reason = CASE
+            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
+              AND NOT (
+                legacy.attempt_count + 1 < 16
+                AND legacy.created_at > NOW() - INTERVAL '24 hours'
+              )
+            THEN COALESCE(legacy.last_error, 'legacy delivery retry budget exhausted')
+            ELSE NULL
+        END,
+        dead_lettered_at = CASE
+            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
+              AND NOT (
+                legacy.attempt_count + 1 < 16
+                AND legacy.created_at > NOW() - INTERVAL '24 hours'
+              )
+            THEN NOW()
+            ELSE NULL
+        END,
+        updated_at = NOW()
+    FROM legacy
+    WHERE delivery.delivery_id = legacy.delivery_id
+    RETURNING delivery.*
 )
-SELECT delivery_id, attempt_count + 1, lease_owner, payload_hash,
-       CASE WHEN aggregate_state = 'dead_letter' THEN 'rejected' ELSE 'retryable' END,
-       COALESCE(last_error, 'legacy uncertain backfill'), updated_at
-FROM session_deliveries
-WHERE state = 'uncertain'
+INSERT INTO session_delivery_attempts (
+    delivery_id, attempt_number, lease_owner, payload_hash, outcome, reason,
+    target_receipt_id, created_at
+)
+SELECT delivery_id, attempt_count, lease_owner, payload_hash,
+       CASE aggregate_state
+           WHEN 'delivered' THEN 'accepted'
+           WHEN 'dead_letter' THEN 'rejected'
+           ELSE 'retryable'
+       END,
+       COALESCE(last_error, 'legacy delivery receipt backfill'),
+       target_receipt_id,
+       updated_at
+FROM updated
 ON CONFLICT (delivery_id, attempt_number) DO NOTHING;
 
 UPDATE session_delivery_notification_outbox AS outbox
 SET projection_state = CASE
-        WHEN outbox.state = 'published' THEN 'published'
-        WHEN delivery.aggregate_state = 'consumed' THEN 'discarded'
+        WHEN outbox.state = 'published' AND outbox.target_receipt_id IS NOT NULL
+        THEN 'published'
+        WHEN delivery.aggregate_state IN ('consumed', 'dead_letter') THEN 'discarded'
+        WHEN delivery.aggregate_state = 'pending' THEN 'staged'
         WHEN outbox.state = 'claimed' THEN 'publishing'
         ELSE 'staged'
     END,
     state = CASE
-        WHEN delivery.aggregate_state = 'consumed'
-          AND outbox.state <> 'published' THEN 'dead_letter'
+        WHEN delivery.aggregate_state IN ('consumed', 'dead_letter')
+          AND NOT (outbox.state = 'published' AND outbox.target_receipt_id IS NOT NULL)
+        THEN 'dead_letter'
+        WHEN delivery.aggregate_state = 'pending'
+          AND outbox.state = 'published'
+          AND outbox.target_receipt_id IS NULL
+        THEN 'pending'
         ELSE outbox.state
     END,
     lease_owner = CASE
-        WHEN delivery.aggregate_state = 'consumed' THEN NULL
+        WHEN delivery.aggregate_state IN ('pending', 'consumed', 'dead_letter') THEN NULL
         ELSE outbox.lease_owner
     END,
     lease_expires_at = CASE
-        WHEN delivery.aggregate_state = 'consumed' THEN NULL
+        WHEN delivery.aggregate_state IN ('pending', 'consumed', 'dead_letter') THEN NULL
         ELSE outbox.lease_expires_at
     END,
     last_error = CASE
         WHEN delivery.aggregate_state = 'consumed'
-          AND outbox.state <> 'published'
+          AND NOT (outbox.state = 'published' AND outbox.target_receipt_id IS NOT NULL)
         THEN 'delivery aggregate consumed before notification projection'
+        WHEN delivery.aggregate_state = 'pending'
+          AND outbox.state = 'published'
+          AND outbox.target_receipt_id IS NULL
+        THEN 'published notification missing target receipt; retry required'
         ELSE outbox.last_error
     END,
     dead_lettered_at = CASE
-        WHEN delivery.aggregate_state = 'consumed'
-          AND outbox.state <> 'published'
+        WHEN delivery.aggregate_state IN ('consumed', 'dead_letter')
+          AND NOT (outbox.state = 'published' AND outbox.target_receipt_id IS NOT NULL)
         THEN COALESCE(outbox.dead_lettered_at, NOW())
+        WHEN delivery.aggregate_state = 'pending' THEN NULL
         ELSE outbox.dead_lettered_at
     END,
     updated_at = CASE
-        WHEN delivery.aggregate_state = 'consumed'
-          AND outbox.state <> 'published' THEN NOW()
+        WHEN delivery.aggregate_state IN ('pending', 'consumed', 'dead_letter')
+        THEN NOW()
         ELSE outbox.updated_at
     END
 FROM session_deliveries AS delivery

@@ -261,8 +261,18 @@ export class TaskExecutor {
       return task.executionPromise!;
     }
 
-    const promise = this.startOwnedExecution(task, agent, backend, retainedRunner).catch(
+    const activation = deferred<void>();
+    task.executionActivationPromise = activation.promise;
+    void activation.promise.catch(() => undefined);
+    const promise = this.startOwnedExecution(
+      task,
+      agent,
+      backend,
+      retainedRunner,
+      () => activation.resolve(undefined),
+    ).catch(
       async (err: unknown) => {
+        activation.reject(err);
         if (err instanceof ExecutionOwnershipRejectedError) {
           this.logger.warn(
             { err, sessionId: task.agentSessionId },
@@ -284,6 +294,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
+    resolveActivation: () => void,
   ): Promise<void> {
     const entryPath: ExecutionEntryPath =
       task.pendingExecutionExpectedTerminalEventId !== undefined
@@ -364,6 +375,7 @@ export class TaskExecutor {
       task.recoveredExecutionOwnership = undefined;
       task.runnerTerminalFact = undefined;
       task.pendingExecutionExpectedTerminalEventId = undefined;
+      resolveActivation();
       await this.restoreDurableRunnerInterventions(task, runner);
       await this._consumeEventStream(task, runner, agent);
     } catch (error) {
@@ -526,6 +538,7 @@ export class TaskExecutor {
             previousRegistrationId: proof.registrationId,
             pid: proof.pid,
             startIdentity: proof.startIdentity,
+            executionCommandId: proof.executionCommandId,
           });
         applyCanonicalSessionProjection(task, reservation.canonicalSession);
         if (!reservation.applied) {
@@ -1249,6 +1262,20 @@ class ExecutionOwnershipRejectedError extends Error {
   constructor(sessionId: string) {
     super(`Execution ownership reservation rejected: ${sessionId}`);
   }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+  reject(reason?: unknown): void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 function errorMessage(error: unknown): string {

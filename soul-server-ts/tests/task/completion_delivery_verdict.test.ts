@@ -29,7 +29,7 @@ describe("completion delivery verdict", () => {
     ],
     [
       { suppressed: true, deliveryId: "d1", reason: "delivery_uncertain" },
-      { kind: "settled", disposition: "uncertain" },
+      { kind: "unknown", reason: "legacy_delivery_uncertain" },
     ],
     [
       { delivered: null, reason: "verdict_unknown", consumeWhen: null },

@@ -12,6 +12,17 @@ const DEFAULT_NOTIFICATION_LEASE_MS = 15_000;
 export class SessionDeliveryNotificationRepository {
   constructor(private readonly sql: SqlClient) {}
 
+  async get(
+    deliveryId: string,
+  ): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    const rows = await this.sql<SessionDeliveryNotificationOutboxRow[]>`
+      SELECT *
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = ${deliveryId}
+    `;
+    return rows[0] ?? null;
+  }
+
   async stageWithQueuedDelivery(params: {
     deliveryId: string;
     leaseOwner: string;

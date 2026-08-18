@@ -81,7 +81,13 @@ export async function startRunnerRecoveryCoordinator(options: {
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
   sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
   closedTailDrainer?: Pick<ClosedRunnerTailDrainer, "drain">;
-  taskManager: Pick<TaskManager, "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume">;
+  taskManager: Pick<
+    TaskManager,
+    | "hydrateRunnerRecoveryTask"
+    | "markRunnerFailureAndResume"
+    | "projectClosedRunner"
+    | "reconcileExecutionOwnershipObservations"
+  >;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {

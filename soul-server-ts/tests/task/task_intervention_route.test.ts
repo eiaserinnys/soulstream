@@ -188,6 +188,67 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, onResume);
   });
 
+  it("does not return auto-resume success before execution ownership activation", async () => {
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition } = makeSubject([task]);
+    let resolveActivation!: () => void;
+    const activation = new Promise<void>((resolve) => {
+      resolveActivation = resolve;
+    });
+    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
+      resumedTask,
+      _message,
+      onResume,
+    ) => {
+      resumedTask.status = "initializing";
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const onResume = vi.fn((resumedTask: Task) => {
+      resumedTask.executionActivationPromise = activation;
+    });
+
+    let settled = false;
+    const request = route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "resume",
+      user: "alice",
+    }, onResume).finally(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveActivation();
+    await expect(request).resolves.toEqual({ autoResumed: true });
+  });
+
+  it("rejects the auto-resume request when ownership activation fails", async () => {
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition } = makeSubject([task]);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
+      resumedTask,
+      _message,
+      onResume,
+    ) => {
+      resumedTask.status = "initializing";
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const onResume = vi.fn((resumedTask: Task) => {
+      resumedTask.executionActivationPromise = Promise.reject(
+        new Error("execution activation rejected"),
+      );
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "resume",
+      user: "alice",
+    }, onResume)).rejects.toThrow("execution activation rejected");
+  });
+
   it.each(["initializing", "running"] as const)(
     "terminal-only delivery never enters the %s intervention path",
     async (status) => {

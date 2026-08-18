@@ -19,6 +19,7 @@ import {
 } from "./session_delivery_notification_policy.js";
 import { buildNotificationOutboxPayload, isNotificationDeliveryIntent } from
   "./session_delivery_notification_payload.js";
+import { projectNotificationReceipt } from "./notification_receipt_projection.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -35,7 +36,7 @@ type LedgerRepository = Pick<
 > & {
   notifications: Pick<
     SessionDeliveryRepository["notifications"],
-    "stageWithQueuedDelivery" | "markPublished" | "retry"
+    "stageWithQueuedDelivery" | "get" | "markPublished" | "retry"
   >;
 };
 
@@ -239,10 +240,29 @@ export class TaskDeliveryLedgerGate {
     if (!leaseOwner) {
       throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
     }
+    if ("delivered" in result && result.delivered === null) {
+      const retryExhausted =
+        admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
+        || admission.row.created_at <= notificationOldestAllowedCreatedAt();
+      if (!retryExhausted) {
+        const retried = await repository.retryLeasedDelivery(
+          admission.deliveryId,
+          leaseOwner,
+          result.reason,
+          notificationRetryAt(admission.row.attempt_count),
+        );
+        if (!retried) {
+          throw new Error(`Delivery ${admission.deliveryId} lost retryable-state CAS`);
+        }
+        return;
+      }
+    }
     const uncertain = await repository.markUncertain(
       admission.deliveryId,
       leaseOwner,
-      "delivery_result_not_accepted",
+      "delivered" in result && result.delivered === null
+        ? `delivery retry budget exhausted: ${result.reason}`
+        : "delivery_result_not_accepted",
     );
     if (!uncertain) {
       throw new Error(`Delivery ${admission.deliveryId} lost uncertain-state CAS`);
@@ -263,7 +283,8 @@ export class TaskDeliveryLedgerGate {
     if (!isNotificationDeliveryIntent(admission.row.intent)) return;
     const leaseOwner = admission.row.lease_owner;
     if (!leaseOwner) return;
-    await this.requireRepository().notifications.markPublished(
+    await projectNotificationReceipt(
+      this.requireRepository().notifications,
       admission.deliveryId,
       leaseOwner,
       targetReceiptId,

@@ -56,6 +56,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([poison, healthy]),
+      get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(healthy),
       retry: vi.fn().mockResolvedValue(poison),
       deadLetter: vi.fn().mockResolvedValue({ ...poison, state: "dead_letter" }),
@@ -96,6 +97,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([pending]),
+      get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn().mockResolvedValue(pending),
       deadLetter: vi.fn(),
@@ -132,6 +134,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([legacy]),
+      get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(legacy),
       retry: vi.fn(),
       deadLetter: vi.fn(),
@@ -169,6 +172,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([runtimeFollowup]),
+      get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(runtimeFollowup),
       retry: vi.fn(),
       deadLetter: vi.fn(),
@@ -203,6 +207,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([invalid]),
+      get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn(),
       deadLetter: vi.fn().mockResolvedValue({ ...invalid, state: "dead_letter" }),
@@ -229,6 +234,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn(),
       deadLetter: vi.fn(),

@@ -8,11 +8,12 @@ import {
   notificationOldestAllowedCreatedAt,
   notificationRetryAt,
 } from "./session_delivery_notification_policy.js";
+import { projectNotificationReceipt } from "./notification_receipt_projection.js";
 
 export interface SessionDeliveryNotificationRecoveryDeps {
   repository: Pick<
     SessionDeliveryNotificationRepository,
-    "claimDue" | "deadLetter" | "markPublished" | "releaseExpiredLeases" | "retry"
+    "claimDue" | "deadLetter" | "get" | "markPublished" | "releaseExpiredLeases" | "retry"
   >;
   publish(
     task: Task,
@@ -65,7 +66,8 @@ export class SessionDeliveryNotificationRecovery {
       if (!published.published) {
         throw new Error("session_notification persistence failed");
       }
-      await this.deps.repository.markPublished(
+      await projectNotificationReceipt(
+        this.deps.repository,
         row.delivery_id,
         leaseOwner,
         published.targetReceiptId,

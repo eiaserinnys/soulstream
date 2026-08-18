@@ -403,6 +403,9 @@ export interface Task {
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
+  /** Execution ownership activation barrier; auto-resume ACK waits for this promise. */
+  executionActivationPromise?: Promise<void>;
+
   /** Runtime-only explicit cancel request serialized against turn finalization. */
   interruptRequest?: Promise<boolean>;
 

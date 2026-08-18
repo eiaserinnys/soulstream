@@ -68,6 +68,17 @@ export class TaskRunnerRecovery {
       throw error;
     }
   }
+
+  async projectClosed(task: Task, detail: string): Promise<boolean> {
+    task.runner = undefined;
+    task.runnerRetainedForClaudeBackground = undefined;
+    task.executionPromise = undefined;
+    return await this.deps.lifecycleTransition.projectRecoveredRunnerTerminalFact(
+      task,
+      "closed",
+      detail,
+    );
+  }
 }
 
 function errorMessage(error: unknown): string {

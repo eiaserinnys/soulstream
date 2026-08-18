@@ -2,8 +2,15 @@ import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 
-import { isActiveTaskStatus, type Task } from "./task_models.js";
-import type { RunnerTerminalFact } from "./execution_ownership.js";
+import {
+  isActiveTaskStatus,
+  isTerminalTaskStatus,
+  type Task,
+} from "./task_models.js";
+import {
+  runnerFactProjection,
+  type RunnerTerminalFact,
+} from "./execution_ownership.js";
 import { reviewStateAfterTerminal } from "./session_review.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -142,6 +149,54 @@ export class TaskLifecycleTransition {
     return await this.persistFinalState(task);
   }
 
+  async projectRecoveredRunnerTerminalFact(
+    task: Task,
+    runnerFact: RunnerTerminalFact,
+    terminationDetail: string,
+  ): Promise<boolean> {
+    const ownership = task.recoveredExecutionOwnership;
+    if (!ownership) {
+      throw new Error("recovered execution ownership identity required");
+    }
+    if (!this.deps.persistence) {
+      throw new Error("recovered runner terminal persistence is required");
+    }
+
+    if (!isTerminalTaskStatus(task.status)) {
+      const projection = runnerFactProjection(runnerFact);
+      task.status = projection.status;
+      task.completedAt = new Date();
+      task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
+      task.terminationReason = projection.terminationReason;
+      task.terminationDetail = terminationDetail;
+      task.pendingTerminationHint = undefined;
+      task.pendingTerminationDetail = undefined;
+    }
+    task.runnerTerminalFact = runnerFact;
+
+    const completedAt = task.completedAt ?? new Date();
+    const application =
+      await this.deps.persistence.enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
+        task.agentSessionId,
+        buildSessionEndedEvent(task),
+        {
+          kind: "recovered_runner_terminal_fact",
+          manifest_id: ownership.manifestId,
+          registration_id: ownership.registrationId,
+          pid: ownership.pid,
+          start_identity: ownership.startIdentity,
+          execution_command_id: ownership.executionCommandId,
+          runner_fact: runnerFact,
+          termination_detail: terminationDetail,
+          review_state: task.reviewState ?? "not_required",
+          last_assistant_text: task.lastAssistantText ?? null,
+          updated_at: completedAt.toISOString(),
+        },
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    return application.applied;
+  }
+
   private async persistFinalState(task: Task): Promise<TaskFinalStatePersistenceResult> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
@@ -198,6 +253,8 @@ export class TaskLifecycleTransition {
               registration_id: task.recoveredExecutionOwnership.registrationId,
               pid: task.recoveredExecutionOwnership.pid,
               start_identity: task.recoveredExecutionOwnership.startIdentity,
+              execution_command_id:
+                task.recoveredExecutionOwnership.executionCommandId,
               runner_fact: task.runnerTerminalFact ?? runnerFactForTask(task),
               ...common,
             },

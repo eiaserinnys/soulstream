@@ -90,6 +90,7 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${effect.previous_registration_id},
         ${effect.pid},
         ${effect.start_identity},
+        ${effect.execution_command_id},
         ${new Date(effect.updated_at)}
       )
     `;
@@ -127,6 +128,38 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     `;
     return canonicalTransitionApplication(rows, "execution failure");
   }
+  if (effect.kind === "execution_backfill") {
+    const rows = await sql<CanonicalTransitionRow[]>`
+      WITH migration AS (
+        SELECT session_backfill_execution_ownership(
+          ${envelope.session_id},
+          ${effect.first_manifest_id},
+          ${effect.first_registration_id},
+          ${effect.first_pid},
+          ${effect.first_start_identity},
+          ${effect.first_execution_command_id},
+          ${new Date(effect.first_observed_at)},
+          ${effect.second_manifest_id},
+          ${effect.second_registration_id},
+          ${effect.second_pid},
+          ${effect.second_start_identity},
+          ${effect.second_execution_command_id},
+          ${new Date(effect.second_observed_at)},
+          ${effect.evidence_hash},
+          ${effect.minimum_lease_interval_ms},
+          ${effect.probe_only}
+        ) AS action
+      )
+      SELECT migration.action IN ('backfilled', 'already_owned') AS applied,
+             session.status, session.termination_reason,
+             session.termination_detail, session.review_state,
+             session.last_assistant_text, session.termination_event_id,
+             session.updated_at, session.last_event_id
+      FROM migration
+      JOIN sessions AS session ON session.session_id = ${envelope.session_id}
+    `;
+    return canonicalTransitionApplication(rows, "execution backfill");
+  }
   if (effect.kind === "runner_terminal_fact") {
     const rows = await sql<CanonicalTransitionRow[]>`
       SELECT * FROM session_project_runner_terminal_fact(
@@ -150,6 +183,7 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${effect.registration_id},
         ${effect.pid},
         ${effect.start_identity},
+        ${effect.execution_command_id},
         ${effect.runner_fact},
         ${effect.termination_detail},
         ${effect.review_state},

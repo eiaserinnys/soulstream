@@ -93,19 +93,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
                 "Unknown completion verdict requires a durable delivery id and lease owner",
               );
             }
-            const uncertain = await deliveryRepository.markUncertain(
-              params.deliveryId,
-              params.deliveryLeaseOwner,
-            );
-            const current = uncertain ?? await deliveryRepository.get(params.deliveryId);
-            this.logger.warn(
-              {
-                targetSessionId: params.agentSessionId,
-                deliveryId: params.deliveryId,
-                durableState: current?.state,
-                uncertainRecorded: uncertain !== null,
-              },
-              "Completion delivery verdict is unknown; durable retry suppressed",
+            throw new Error(
+              `Completion delivery verdict is unknown and must retry: ${verdict.reason}`,
             );
           }
         },

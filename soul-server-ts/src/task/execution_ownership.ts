@@ -38,6 +38,16 @@ export interface RecoveredExecutionOwnershipIdentity {
   registrationId: string;
   pid: number;
   startIdentity: string;
+  executionCommandId: string;
+}
+
+export interface ExecutionOwnershipObservation {
+  manifestId: string | null;
+  registrationId: string | null;
+  pid: number | null;
+  startIdentity: string | null;
+  executionCommandId: string | null;
+  observedAt: Date;
 }
 
 export function newExecutionOwnershipGeneration(): number {

@@ -146,6 +146,10 @@ function snakeTransitionFields(fields: SessionTransitionFields): Record<string, 
 export class SessionDeliveryNotificationHostClient {
   constructor(private readonly transport: PersistenceHostTransport) {}
 
+  get(deliveryId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request("session-deliveries", "get_notification", [deliveryId]);
+  }
+
   stageWithQueuedDelivery(params: {
     deliveryId: string;
     leaseOwner: string;

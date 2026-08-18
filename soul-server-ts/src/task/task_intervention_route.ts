@@ -275,6 +275,15 @@ export class TaskInterventionRoute {
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
+      if ("autoResumed" in result && task.status === "initializing") {
+        const activation = task.executionActivationPromise;
+        if (!activation) {
+          throw new Error(
+            `auto-resume executor did not expose activation barrier for ${task.agentSessionId}`,
+          );
+        }
+        await activation;
+      }
       return result;
     } catch (err) {
       let recoveryError: unknown;

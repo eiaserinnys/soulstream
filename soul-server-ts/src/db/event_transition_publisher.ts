@@ -1,6 +1,7 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type {
   ExecutionIdentityProof,
+  ExecutionOwnershipObservation,
   ExecutionOwnerKind,
 } from "../task/execution_ownership.js";
 import type {
@@ -109,6 +110,7 @@ export abstract class EventTransitionPublisher {
       previousRegistrationId: string;
       pid: number;
       startIdentity: string;
+      executionCommandId: string;
       updatedAt?: Date;
     },
   ): Promise<EventSessionTransitionApplication> {
@@ -122,6 +124,7 @@ export abstract class EventTransitionPublisher {
         previous_registration_id: input.previousRegistrationId,
         pid: input.pid,
         start_identity: input.startIdentity,
+        execution_command_id: input.executionCommandId,
         updated_at: (input.updatedAt ?? new Date()).toISOString(),
       },
     );
@@ -164,6 +167,43 @@ export abstract class EventTransitionPublisher {
         kind: "execution_fail",
         ownership_generation: ownershipGeneration,
         failure_reason: failureReason,
+        updated_at: updatedAt.toISOString(),
+      },
+    );
+  }
+
+  async backfillExecutionOwnershipAndWaitForApplication(
+    sessionId: string,
+    input: {
+      first: ExecutionOwnershipObservation;
+      second: ExecutionOwnershipObservation;
+      evidenceHash: string;
+      minimumLeaseIntervalMs: number;
+      probeOnly: boolean;
+      updatedAt?: Date;
+    },
+  ): Promise<EventSessionTransitionApplication> {
+    const updatedAt = input.updatedAt ?? new Date();
+    return await this.enqueueExecutionEffectAndWait(
+      sessionId,
+      `backfill:${input.evidenceHash}:${input.probeOnly ? "probe" : "commit"}`,
+      {
+        kind: "execution_backfill",
+        first_manifest_id: input.first.manifestId,
+        first_registration_id: input.first.registrationId,
+        first_pid: input.first.pid,
+        first_start_identity: input.first.startIdentity,
+        first_execution_command_id: input.first.executionCommandId,
+        first_observed_at: input.first.observedAt.toISOString(),
+        second_manifest_id: input.second.manifestId,
+        second_registration_id: input.second.registrationId,
+        second_pid: input.second.pid,
+        second_start_identity: input.second.startIdentity,
+        second_execution_command_id: input.second.executionCommandId,
+        second_observed_at: input.second.observedAt.toISOString(),
+        evidence_hash: input.evidenceHash,
+        minimum_lease_interval_ms: input.minimumLeaseIntervalMs,
+        probe_only: input.probeOnly,
         updated_at: updatedAt.toISOString(),
       },
     );
@@ -212,7 +252,8 @@ export abstract class EventTransitionPublisher {
       | "execution_prove"
       | "execution_adopt_reserve"
       | "execution_activate"
-      | "execution_fail" }>,
+      | "execution_fail"
+      | "execution_backfill" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {
       type: "metadata",

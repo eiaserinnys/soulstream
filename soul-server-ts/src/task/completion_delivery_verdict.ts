@@ -5,7 +5,7 @@ export type CompletionDeliveryVerdict =
       kind: "accepted";
       disposition: "delivered" | "queued" | "auto_resume" | "consumed";
     }
-  | { kind: "settled"; disposition: "superseded" | "uncertain" }
+  | { kind: "settled"; disposition: "superseded" }
   | { kind: "unknown"; reason: string }
   | { kind: "failed"; reason: string };
 
@@ -74,8 +74,11 @@ function classifySuppressedReason(reason: string): CompletionDeliveryVerdict {
   if (state === "consumed") {
     return { kind: "accepted", disposition: "consumed" };
   }
-  if (state === "superseded" || state === "uncertain") {
+  if (state === "superseded") {
     return { kind: "settled", disposition: state };
+  }
+  if (state === "uncertain") {
+    return { kind: "unknown", reason: "legacy_delivery_uncertain" };
   }
   if (
     reason === "delivery_identity_mismatch"

@@ -66,12 +66,14 @@ export function prepareRecoveredTask(
     registration.registrationId
     && registration.pid
     && registration.pidStartIdentity
+    && registration.lifecycle?.execution_command_id
   ) {
     task.recoveredExecutionOwnership = {
       manifestId: registration.config.codeSha,
       registrationId: registration.registrationId,
       pid: registration.pid,
       startIdentity: registration.pidStartIdentity,
+      executionCommandId: registration.lifecycle.execution_command_id,
     };
   }
 }

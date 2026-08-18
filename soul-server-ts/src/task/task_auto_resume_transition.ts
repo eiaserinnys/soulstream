@@ -72,7 +72,9 @@ export class AutoResumeTransition {
     const ownershipPersistence = this.deps.persistence as EventPersistence & {
       reserveExecutionOwnershipAndWaitForApplication?: unknown;
     };
-    if (typeof ownershipPersistence.reserveExecutionOwnershipAndWaitForApplication !== "function") {
+    const ownershipEnabled =
+      typeof ownershipPersistence.reserveExecutionOwnershipAndWaitForApplication === "function";
+    if (!ownershipEnabled) {
       const application = await this.deps.persistence
         .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
         reviewState: resumedReviewState,
@@ -88,7 +90,7 @@ export class AutoResumeTransition {
     } else {
       task.pendingExecutionExpectedTerminalEventId = task.terminalEventId ?? null;
     }
-    transitionTaskToRunning(task, message);
+    prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
     if (userMessageEvent) {
       await finishUserMessageEvent(task, userMessageEvent, this.deps);
     }
@@ -162,7 +164,11 @@ export class AutoResumeTransition {
 
 }
 
-function transitionTaskToRunning(task: Task, message: InterventionMessage): void {
+function prepareTaskForAutoResume(
+  task: Task,
+  message: InterventionMessage,
+  status: "initializing" | "running",
+): void {
   task.prompt = message.text;
   task.clientId = message.user;
   if (message.callerInfo !== undefined) {
@@ -170,7 +176,7 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   }
   task.attachmentPaths = message.attachmentPaths ?? [];
   task.contextItems = message.context ?? [];
-  task.status = "running";
+  task.status = status;
   task.reviewState = reviewStateAfterFollowup(task.reviewState ?? "not_required");
   task.completedAt = undefined;
   task.error = undefined;
@@ -181,5 +187,6 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.pendingTerminationDetail = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
+  task.executionActivationPromise = undefined;
   enqueueInterventionOnce(task, message);
 }

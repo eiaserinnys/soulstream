@@ -15,6 +15,7 @@ describe("applyEventSessionEffect", () => {
     ["execution_adopt_reserve", "session_reserve_execution_adoption"],
     ["execution_activate", "session_activate_execution_ownership"],
     ["execution_fail", "session_fail_execution_ownership"],
+    ["execution_backfill", "session_backfill_execution_ownership"],
     ["runner_terminal_fact", "session_project_runner_terminal_fact"],
     ["recovered_runner_terminal_fact", "session_project_recovered_runner_terminal_fact"],
     ["terminal_transition", "session_apply_terminal_transition"],
@@ -42,7 +43,11 @@ describe("applyEventSessionEffect", () => {
 
     expect(statements).toHaveLength(1);
     expect(statements[0]).toContain(procedure);
-    if (kind !== "execution_prove" && kind !== "execution_fail") {
+    if (
+      kind !== "execution_prove"
+      && kind !== "execution_fail"
+      && kind !== "execution_backfill"
+    ) {
       expect(statements[0]).not.toContain("last_event_id");
     }
   });
@@ -168,6 +173,7 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     previous_registration_id: "registration-1",
     pid: 123,
     start_identity: "start-1",
+    execution_command_id: "execute-1",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_prove") return {
@@ -191,6 +197,25 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     failure_reason: "spawn failed",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
+  if (kind === "execution_backfill") return {
+    kind,
+    first_manifest_id: "release-1",
+    first_registration_id: "registration-1",
+    first_pid: 123,
+    first_start_identity: "start-1",
+    first_execution_command_id: "execute-1",
+    first_observed_at: "2026-08-06T00:00:00.000Z",
+    second_manifest_id: "release-1",
+    second_registration_id: "registration-1",
+    second_pid: 123,
+    second_start_identity: "start-1",
+    second_execution_command_id: "execute-1",
+    second_observed_at: "2026-08-06T00:00:15.000Z",
+    evidence_hash: "a".repeat(64),
+    minimum_lease_interval_ms: 15_000,
+    probe_only: false,
+    updated_at: "2026-08-06T00:00:15.000Z",
+  };
   if (kind === "runner_terminal_fact") return {
     kind,
     ownership_generation: 1,
@@ -206,6 +231,7 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     registration_id: "registration-1",
     pid: 123,
     start_identity: "start-1",
+    execution_command_id: "execute-1",
     runner_fact: "reaped",
     termination_detail: "runner exited",
     review_state: "not_required",

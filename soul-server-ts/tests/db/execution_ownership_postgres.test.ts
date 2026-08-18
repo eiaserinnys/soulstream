@@ -55,7 +55,7 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     const adopted = await harness.sql<Array<{ applied: boolean }>>`
       SELECT * FROM session_reserve_execution_adoption(
         'adopt', 2, 'release-1', 'registration-adopt', 123,
-        'start-registration-adopt', NOW()
+        'start-registration-adopt', 'execute-adopt', NOW()
       )
     `;
     expect(adopted[0]?.applied).toBe(true);
@@ -93,6 +93,50 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     `).resolves.toEqual([{ runner_fact: "completed" }]);
   });
 
+  it("locks the e5d01ad7 closed and c643e966 reaped recovery regressions", async () => {
+    await insertSession("e5d01ad7-regression", "completed", 348);
+    await reserve("e5d01ad7-regression", 1, "runner_process", "release-1");
+    await prove(
+      "e5d01ad7-regression",
+      1,
+      "registration-e5d01ad7",
+      "execute-e5d01ad7",
+    );
+    await harness.sql`
+      UPDATE session_execution_ownerships
+      SET phase = 'active'
+      WHERE session_id = 'e5d01ad7-regression' AND ownership_generation = 1
+    `;
+    await expect(harness.sql<Array<{ applied: boolean; status: string }>>`
+      SELECT * FROM session_project_recovered_runner_terminal_fact(
+        'e5d01ad7-regression', 'release-1', 'registration-e5d01ad7', 123,
+        'start-registration-e5d01ad7', 'execute-e5d01ad7', 'closed', NULL,
+        'not_required', NULL, 349, NOW()
+      )
+    `).resolves.toEqual([
+      expect.objectContaining({ applied: false, status: "completed" }),
+    ]);
+
+    await insertSession("c643e966-regression", "initializing");
+    await reserve("c643e966-regression", 1, "runner_process", "release-1");
+    await prove(
+      "c643e966-regression",
+      1,
+      "registration-c643e966",
+      "execute-c643e966",
+    );
+    await activate("c643e966-regression", 1);
+    await expect(harness.sql<Array<{ applied: boolean; status: string }>>`
+      SELECT * FROM session_project_recovered_runner_terminal_fact(
+        'c643e966-regression', 'release-1', 'registration-c643e966', 123,
+        'start-registration-c643e966', 'execute-c643e966', 'reaped',
+        'runner_exited', 'not_required', NULL, 200, NOW()
+      )
+    `).resolves.toEqual([
+      expect.objectContaining({ applied: true, status: "error" }),
+    ]);
+  });
+
   it("keeps the previous active owner until an adoption is fully activated", async () => {
     await insertSession("adopt-failure", "initializing");
     await reserve("adopt-failure", 1, "runner_process", "release-1");
@@ -102,7 +146,7 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     const reservation = await harness.sql<Array<{ applied: boolean }>>`
       SELECT * FROM session_reserve_execution_adoption(
         'adopt-failure', 2, 'release-1', 'registration-old', 123,
-        'start-registration-old', NOW()
+        'start-registration-old', 'execute-old', NOW()
       )
     `;
     expect(reservation[0]?.applied).toBe(true);
@@ -139,7 +183,7 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     const mismatch = await harness.sql<Array<{ applied: boolean; status: string }>>`
       SELECT * FROM session_project_recovered_runner_terminal_fact(
         'recovered-reaped', 'release-1', 'wrong-registration', 123,
-        'start-registration-recovered', 'reaped', 'runner exited',
+        'start-registration-recovered', 'execute-recovered', 'reaped', 'runner exited',
         'not_required', null, 199, NOW()
       )
     `;
@@ -148,7 +192,7 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     const projected = await harness.sql<Array<{ applied: boolean; status: string }>>`
       SELECT * FROM session_project_recovered_runner_terminal_fact(
         'recovered-reaped', 'release-1', 'registration-recovered', 123,
-        'start-registration-recovered', 'reaped', 'runner exited',
+        'start-registration-recovered', 'execute-recovered', 'reaped', 'runner exited',
         'not_required', null, 200, NOW()
       )
     `;
@@ -164,18 +208,24 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     await insertSession("unknown-owner", "running");
     const first = new Date("2026-08-18T00:00:00.000Z");
     const second = new Date("2026-08-18T00:00:31.000Z");
+    const evidenceHash = "a".repeat(64);
     const stable = await harness.sql<Array<{ result: string }>>`
       SELECT session_backfill_execution_ownership(
         'stable-owner', 'release-1', 'registration-stable', 321,
-        'start-stable', 'execute-stable', ${first}, ${second},
-        INTERVAL '30 seconds'
+        'start-stable', 'execute-stable', ${first},
+        'release-1', 'registration-stable', 321,
+        'start-stable', 'execute-stable', ${second},
+        ${evidenceHash}, 30000, false
       ) AS result
     `;
     expect(stable).toEqual([{ result: "backfilled" }]);
     const unknown = await harness.sql<Array<{ result: string }>>`
       SELECT session_backfill_execution_ownership(
-        'unknown-owner', '', '', 0, '', '', ${first}, ${second},
-        INTERVAL '30 seconds'
+        'unknown-owner', 'release-1', 'registration-a', 321,
+        'start-a', 'execute-a', ${first},
+        'release-1', 'registration-b', 321,
+        'start-a', 'execute-a', ${second},
+        ${"b".repeat(64)}, 30000, false
       ) AS result
     `;
     expect(unknown).toEqual([{ result: "interrupted" }]);
@@ -185,6 +235,76 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     await expect(harness.sql<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count FROM session_owner_null_running_inventory
     `).resolves.toEqual([{ count: 0 }]);
+    await expect(harness.sql<Array<{
+      execution_command_id: string;
+      evidence_hash: string;
+      first_registration_id: string;
+      second_registration_id: string;
+    }>>`
+      SELECT execution_command_id, evidence_hash,
+             first_observation->>'registration_id' AS first_registration_id,
+             second_observation->>'registration_id' AS second_registration_id
+      FROM session_execution_ownership_migration_audit
+      WHERE session_id = 'unknown-owner'
+    `).resolves.toEqual([{
+      execution_command_id: "execute-a",
+      evidence_hash: "b".repeat(64),
+      first_registration_id: "registration-a",
+      second_registration_id: "registration-b",
+    }]);
+  });
+
+  it("expires orphan reservations and returns one active-first conflict row", async () => {
+    await insertSession("lease-recovery", "initializing");
+    await reserve("lease-recovery", 1, "runner_process", "release-1");
+    await harness.sql`
+      UPDATE session_execution_ownerships
+      SET reservation_expires_at = NOW() - INTERVAL '1 second'
+      WHERE session_id = 'lease-recovery' AND ownership_generation = 1
+    `;
+    expect((await reserve("lease-recovery", 2, "runner_process", "release-1"))[0])
+      .toMatchObject({ applied: true, ownership_generation: "2" });
+    await prove("lease-recovery", 2, "registration-active", "execute-active");
+    await activate("lease-recovery", 2);
+
+    const firstAdoption = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_adoption(
+        'lease-recovery', 3, 'release-1', 'registration-active', 123,
+        'start-registration-active', 'execute-active', NOW()
+      )
+    `;
+    expect(firstAdoption).toHaveLength(1);
+    expect(firstAdoption[0]?.applied).toBe(true);
+    const conflict = await harness.sql<Array<{
+      applied: boolean;
+      status: string;
+    }>>`
+      SELECT * FROM session_reserve_execution_ownership(
+        'lease-recovery', 4, 'runner_process', 'release-1', NOW()
+      )
+    `;
+    expect(conflict).toEqual([{
+      applied: false,
+      ownership_generation: "2",
+      status: "running",
+      termination_reason: null,
+      termination_detail: null,
+      review_state: "not_required",
+      last_assistant_text: null,
+      termination_event_id: null,
+      updated_at: expect.any(Date),
+      last_event_id: null,
+    }]);
+    await expect(harness.sql<Array<{ generation: string; phase: string }>>`
+      SELECT ownership_generation AS generation, phase
+      FROM session_execution_ownerships
+      WHERE session_id = 'lease-recovery'
+      ORDER BY ownership_generation
+    `).resolves.toEqual([
+      { generation: "1", phase: "failed" },
+      { generation: "2", phase: "active" },
+      { generation: "3", phase: "reserved" },
+    ]);
   });
 
   async function insertSession(
