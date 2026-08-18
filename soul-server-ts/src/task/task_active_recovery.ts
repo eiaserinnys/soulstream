@@ -6,10 +6,11 @@ type ActiveTaskRecoveryLogger = Pick<Logger, "warn">;
 
 export type InterventionTaskActivity =
   | "active-running"
+  | "activating"
   | "detached-hydrated-running"
   | "terminal";
 
-export type InterventionTaskRoute = "running" | "auto-resume";
+export type InterventionTaskRoute = "running" | "activating" | "auto-resume";
 
 /**
  * Classifies whether addIntervention can treat a task as actively running.
@@ -20,6 +21,9 @@ export type InterventionTaskRoute = "running" | "auto-resume";
  * can create a user_message and start the next turn.
  */
 export function classifyInterventionTaskActivity(task: Task): InterventionTaskActivity {
+  if (task.status === "initializing") {
+    return "activating";
+  }
   if (!isActiveTaskStatus(task.status)) {
     return "terminal";
   }
@@ -38,6 +42,9 @@ export class ActiveTaskRecovery {
     const activity = classifyInterventionTaskActivity(task);
     if (activity === "active-running") {
       return "running";
+    }
+    if (activity === "activating") {
+      return "activating";
     }
 
     if (activity === "detached-hydrated-running") {

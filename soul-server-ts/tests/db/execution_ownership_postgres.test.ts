@@ -67,30 +67,65 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     `).resolves.toEqual([{ ownership_generation: "2" }]);
   });
 
-  it("maps all runner facts write-once and ignores a later same-owner close", async () => {
-    const expected = {
+  it("covers runner fact 4종 × existing central state 4종 and command fencing", async () => {
+    const factStatus = {
       completed: "completed",
       failed: "error",
       reaped: "error",
       closed: "interrupted",
     } as const;
+    const centralStatuses = ["running", "completed", "error", "interrupted"] as const;
     let eventId = 100;
-    for (const [fact, status] of Object.entries(expected)) {
-      const sessionId = `fact-${fact}`;
-      await insertSession(sessionId, "initializing");
-      await reserve(sessionId, 1, "runner_process", "release-1");
-      await prove(sessionId, 1, `registration-${fact}`, `execute-${fact}`);
-      await activate(sessionId, 1);
-      const projected = await projectFact(sessionId, fact, eventId++);
-      expect(projected[0]).toMatchObject({ applied: true, status });
+    for (const [fact, projectedStatus] of Object.entries(factStatus)) {
+      for (const centralStatus of centralStatuses) {
+        const sessionId = `fact-${fact}-${centralStatus}`;
+        const commandId = `execute-${fact}-${centralStatus}`;
+        await insertSession(sessionId, "initializing");
+        await reserve(sessionId, 1, "runner_process", "release-1");
+        await prove(sessionId, 1, `registration-${fact}-${centralStatus}`, commandId);
+        await activate(sessionId, 1);
+        if (centralStatus !== "running") {
+          await harness.sql`
+            UPDATE sessions
+            SET status = ${centralStatus}, termination_event_id = ${eventId + 10_000}
+            WHERE session_id = ${sessionId}
+          `;
+        }
+        const projected = await projectFact(sessionId, commandId, fact, eventId++);
+        expect(projected[0]).toMatchObject({
+          applied: centralStatus === "running",
+          status: centralStatus === "running" ? projectedStatus : centralStatus,
+        });
+        await expect(harness.sql<Array<{ phase: string; runner_fact: string }>>`
+          SELECT phase, runner_fact
+          FROM session_execution_ownerships
+          WHERE session_id = ${sessionId} AND ownership_generation = 1
+        `).resolves.toEqual([{ phase: "terminal", runner_fact: fact }]);
+      }
     }
 
-    const duplicateClose = await projectFact("fact-completed", "closed", eventId);
+    const duplicateClose = await projectFact(
+      "fact-completed-running",
+      "execute-completed-running",
+      "closed",
+      eventId,
+    );
     expect(duplicateClose[0]).toMatchObject({ applied: false, status: "completed" });
-    await expect(harness.sql<Array<{ runner_fact: string }>>`
-      SELECT runner_fact FROM session_execution_ownerships
-      WHERE session_id = 'fact-completed' AND ownership_generation = 1
-    `).resolves.toEqual([{ runner_fact: "completed" }]);
+
+    await insertSession("fact-command-fence", "initializing");
+    await reserve("fact-command-fence", 1, "runner_process", "release-1");
+    await prove("fact-command-fence", 1, "registration-command", "execute-command");
+    await activate("fact-command-fence", 1);
+    await expect(projectFact(
+      "fact-command-fence",
+      "execute-stale",
+      "completed",
+      eventId + 1,
+    )).resolves.toMatchObject([{ applied: false, status: "running" }]);
+    await expect(harness.sql<Array<{ phase: string }>>`
+      SELECT phase FROM session_execution_ownerships
+      WHERE session_id = 'fact-command-fence' AND ownership_generation = 1
+    `).resolves.toEqual([{ phase: "active" }]);
   });
 
   it("locks the e5d01ad7 closed and c643e966 reaped recovery regressions", async () => {
@@ -365,10 +400,16 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     `;
   }
 
-  async function projectFact(sessionId: string, fact: string, eventId: number) {
+  async function projectFact(
+    sessionId: string,
+    commandId: string,
+    fact: string,
+    eventId: number,
+  ) {
     return await harness.sql<Array<{ applied: boolean; status: string }>>`
       SELECT * FROM session_project_runner_terminal_fact(
-        ${sessionId}, 1, ${fact}, null, 'not_required', null, ${eventId}, NOW()
+        ${sessionId}, 1, ${commandId}, ${fact}, null,
+        'not_required', null, ${eventId}, NOW()
       )
     `;
   }

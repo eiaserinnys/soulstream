@@ -34,6 +34,7 @@ function makeSubject(
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      | "recordNotificationPublished" | "recordNotificationFailure"
   >,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
@@ -249,7 +250,153 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, onResume)).rejects.toThrow("execution activation rejected");
   });
 
-  it.each(["initializing", "running"] as const)(
+  it("projects terminal notification delivery only after ownership activation", async () => {
+    const deliveryId = "61616161-6161-4161-8161-616161616161";
+    let resolveActivation!: () => void;
+    const activation = new Promise<void>((resolve) => {
+      resolveActivation = () => {
+        task.status = "running";
+        resolve();
+      };
+    });
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+      recordNotificationPublished: vi.fn().mockResolvedValue(undefined),
+      recordNotificationFailure: vi.fn().mockResolvedValue(undefined),
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordNotificationPublished" | "recordNotificationFailure"
+    >;
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition, sessionNotificationPublisher } =
+      makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
+      resumedTask,
+      _message,
+      onResume,
+    ) => {
+      resumedTask.status = "initializing";
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const request = route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "child completed",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+      completionId: "completion-activation",
+      relationKey: "child_session:activation:1",
+      source: "completion_notifier",
+    }, (resumedTask) => {
+      resumedTask.executionActivationPromise = activation;
+    });
+
+    await vi.waitFor(() => expect(sessionNotificationPublisher.publish).toHaveBeenCalled());
+    expect(gate.recordResult).toHaveBeenCalledOnce();
+    expect(gate.recordNotificationPublished).not.toHaveBeenCalled();
+
+    resolveActivation();
+    await expect(request).resolves.toEqual({ autoResumed: true });
+    expect(gate.recordNotificationPublished).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId }),
+      "event:notification",
+    );
+    expect(gate.recordNotificationFailure).not.toHaveBeenCalled();
+  });
+
+  it("returns a staged terminal notification to retryable when activation fails", async () => {
+    const deliveryId = "62626262-6262-4262-8262-626262626262";
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+      recordNotificationPublished: vi.fn().mockResolvedValue(undefined),
+      recordNotificationFailure: vi.fn().mockResolvedValue(undefined),
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordNotificationPublished" | "recordNotificationFailure"
+    >;
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition } = makeSubject([task], gate);
+    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
+      resumedTask,
+      _message,
+      onResume,
+    ) => {
+      resumedTask.status = "initializing";
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "child completed",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+      completionId: "completion-activation-failed",
+      relationKey: "child_session:activation:2",
+      source: "completion_notifier",
+    }, (resumedTask) => {
+      resumedTask.executionActivationPromise = Promise.reject(
+        new Error("activation rejected"),
+      );
+    })).rejects.toThrow("activation rejected");
+
+    expect(gate.recordNotificationPublished).not.toHaveBeenCalled();
+    expect(gate.recordNotificationFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId }),
+      "auto-resume activation failed: activation rejected",
+    );
+  });
+
+  it("waits for an initializing execution before admitting a concurrent delivery", async () => {
+    const deliveryId = "63636363-6363-4363-8363-636363636363";
+    let resolveActivation!: () => void;
+    const task = makeTask({ status: "initializing" });
+    task.executionActivationPromise = new Promise<void>((resolve) => {
+      resolveActivation = () => {
+        task.status = "running";
+        resolve();
+      };
+    });
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const { route, runningInterventionTransition } = makeSubject([task], gate);
+    const request = route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "second delivery",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "durable_next_turn",
+      completionId: "completion-concurrent",
+      relationKey: "delivery:concurrent:1",
+    }, vi.fn());
+
+    await Promise.resolve();
+    expect(gate.beginDispatch).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+
+    resolveActivation();
+    await expect(request).resolves.toMatchObject({ queued: true });
+    expect(gate.beginDispatch).toHaveBeenCalledOnce();
+  });
+
+  it.each(["running"] as const)(
     "terminal-only delivery never enters the %s intervention path",
     async (status) => {
     const task = makeTask({ status });

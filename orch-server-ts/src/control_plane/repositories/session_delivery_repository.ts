@@ -384,25 +384,35 @@ export class SessionDeliveryRepository {
   ): Promise<SessionDeliveryRow | null> {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const reason = error ?? "delivery result rejected";
-      const rows = await transaction<SessionDeliveryRow[]>`
-        UPDATE session_deliveries
+      const rows = await transaction<Array<SessionDeliveryRow & {
+        attempt_lease_owner: string | null;
+      }>>`
+        WITH candidate AS MATERIALIZED (
+          SELECT delivery_id, lease_owner AS attempt_lease_owner
+          FROM session_deliveries
+          WHERE delivery_id = ${deliveryId}
+            AND aggregate_state NOT IN ('consumed', 'dead_letter')
+            AND state NOT IN ('consumed', 'superseded')
+            AND (
+              ${leaseOwner ?? null}::text IS NULL
+              OR (lease_owner = ${leaseOwner ?? null} AND state IN ('claimed', 'dispatching'))
+            )
+          FOR UPDATE
+        )
+        UPDATE session_deliveries AS delivery
         SET
           state = 'uncertain',
           aggregate_state = 'dead_letter',
           lease_owner = NULL,
           lease_expires_at = NULL,
+          attempt_count = delivery.attempt_count + 1,
           last_error = ${reason},
           dead_letter_reason = ${reason},
           dead_lettered_at = NOW(),
           updated_at = NOW()
-        WHERE delivery_id = ${deliveryId}
-          AND aggregate_state NOT IN ('consumed', 'dead_letter')
-          AND state NOT IN ('consumed', 'superseded')
-          AND (
-            ${leaseOwner ?? null}::text IS NULL
-            OR (lease_owner = ${leaseOwner ?? null} AND state IN ('claimed', 'dispatching'))
-          )
-        RETURNING *
+        FROM candidate
+        WHERE delivery.delivery_id = candidate.delivery_id
+        RETURNING delivery.*, candidate.attempt_lease_owner
       `;
       const row = rows[0];
       if (!row) return null;
@@ -410,7 +420,7 @@ export class SessionDeliveryRepository {
         deliveryId,
         outcome: "rejected",
         reason,
-        leaseOwner: row.lease_owner,
+        leaseOwner: row.attempt_lease_owner,
       });
       return normalizeDeliveryRow(row);
     });

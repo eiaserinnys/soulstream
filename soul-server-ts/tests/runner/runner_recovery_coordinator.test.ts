@@ -154,6 +154,84 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.terminate).toHaveBeenCalledOnce();
   });
 
+  it("converges e5d01ad7 and c643e966 owner-null inventory rows without registrations", async () => {
+    let now = RECOVERY_NOW_MS;
+    const sessions = ["e5d01ad7-regression", "c643e966-regression"];
+    const tasks = new Map(sessions.map((sessionId) => {
+      const candidate = task(sessionId);
+      candidate.hydratedFromDb = true;
+      return [sessionId, candidate] as const;
+    }));
+    const reconcileExecutionOwnershipObservations = vi.fn(async (
+      candidate: Task,
+      input: { probeOnly: boolean },
+    ) => {
+      if (!input.probeOnly) candidate.status = "interrupted";
+      return false;
+    });
+    const subject = makeSubject([], now, [], {
+      now: () => now,
+      taskManager: {
+        listOwnerNullRunningInventory: vi.fn(async () => sessions.map((sessionId) => ({
+          session_id: sessionId,
+          node_id: "node-a",
+          updated_at: new Date("2026-08-11T00:00:00.000Z"),
+        }))),
+        hydrateRunnerRecoveryTask: vi.fn(async (sessionId) => tasks.get(sessionId) ?? null),
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+        projectClosedRunner: vi.fn(async () => true),
+        reconcileExecutionOwnershipObservations,
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+    now += 15_000;
+    await subject.coordinator.scanOnce();
+
+    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledTimes(4);
+    for (const sessionId of sessions) {
+      expect(tasks.get(sessionId)?.status).toBe("interrupted");
+    }
+    for (const [, input] of reconcileExecutionOwnershipObservations.mock.calls) {
+      expect(input).toMatchObject({
+        first: {
+          manifestId: null,
+          registrationId: null,
+          pid: null,
+          startIdentity: null,
+          executionCommandId: null,
+        },
+        second: {
+          manifestId: null,
+          registrationId: null,
+          pid: null,
+          startIdentity: null,
+          executionCommandId: null,
+        },
+        evidenceHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+    }
+  });
+
+  it("isolates owner-null inventory read failure from registration recovery", async () => {
+    const current = registration({ lifecycleState: "running" });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        listOwnerNullRunningInventory: vi.fn(async () => {
+          throw new Error("orchestrator unavailable");
+        }),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeId: "node-a" }),
+      "owner-null running inventory read failed",
+    );
+  });
+
   it("reaps and restarts when adoption loses a runner before its socket becomes available", async () => {
     const socketError = runnerSocketMissingError();
     const failedRunner = failedRecoveryRunner();
@@ -1325,6 +1403,8 @@ function makeSubject(
     resume: (task: Task) => void,
   ) => resume(recovered));
   const projectClosedRunner = vi.fn(async () => true);
+  const listOwnerNullRunningInventory = vi.fn(async () => []);
+  const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
   const terminate = vi.fn(async () => {});
   const markReaped = vi.fn(async () => {});
   const logger = {
@@ -1332,15 +1412,18 @@ function makeSubject(
     info: vi.fn(),
     warn: vi.fn(),
   };
+  const baseTaskManager = {
+    hydrateRunnerRecoveryTask,
+    markRunnerFailureAndResume,
+    projectClosedRunner,
+    listOwnerNullRunningInventory,
+    reconcileExecutionOwnershipObservations,
+  };
   const options: RunnerRecoveryCoordinatorOptions = {
+    nodeId: "node-a",
     stateDirectory: "/runner",
     leaseTimeoutMs: 120_000,
     scanIntervalMs: 15_000,
-    taskManager: {
-      hydrateRunnerRecoveryTask,
-      markRunnerFailureAndResume,
-      projectClosedRunner,
-    },
     taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
@@ -1350,6 +1433,10 @@ function makeSubject(
     now: () => now,
     markReaped,
     ...overrides,
+    taskManager: {
+      ...baseTaskManager,
+      ...overrides.taskManager,
+    },
   };
   return {
     coordinator: new RunnerRecoveryCoordinator(options),

@@ -302,7 +302,7 @@ describe("TaskExecutor.startExecution", () => {
     consume.mockRestore();
   });
 
-  it("queued delivery를 turn 시작 시 delivered, 정상 Result 뒤 consumed로 기록한다", async () => {
+  it("#784 turn-start T0 receipt를 늦은 ACK의 T1 뒤 consume까지 보존한다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "child result",
@@ -336,7 +336,12 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+    expect(task.lastEventId).not.toBe(0);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      "event:0",
+    );
     expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
       deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
     );
@@ -380,7 +385,11 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      expect.stringMatching(/^event:/),
+    );
   });
 
   it("iterator 성공 뒤 ACK barrier 실패도 delivery를 정확히 한 번 consume한다", async () => {
@@ -418,7 +427,11 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      "event:0",
+    );
   });
 
   it("turn-start receipt 일시 실패 뒤 성공한 turn 종료에서 receipt를 재기록한다", async () => {
@@ -458,7 +471,11 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      expect.stringMatching(/^event:/),
+    );
   });
 
   it("turn-start receipt가 재실패해도 iterator 종료에서 consume을 직접 시도한다", async () => {

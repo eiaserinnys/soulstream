@@ -280,6 +280,16 @@ export class SessionDB {
     return await this.requireSessionDataHost().listRunningSessionsSummary(params);
   }
 
+  async listOwnerNullRunningInventory(params: {
+    nodeId: string;
+    limit?: number;
+  }) {
+    return await this.requireSessionDataHost().listOwnerNullRunningInventory({
+      nodeId: params.nodeId,
+      limit: params.limit ?? 100,
+    });
+  }
+
   async getAllFolders(): Promise<FolderRow[]> {
     return await this.requireFolderHost().getAllFolders();
   }

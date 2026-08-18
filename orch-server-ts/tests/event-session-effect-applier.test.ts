@@ -219,6 +219,7 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
   if (kind === "runner_terminal_fact") return {
     kind,
     ownership_generation: 1,
+    execution_command_id: "execute-1",
     runner_fact: "completed",
     termination_detail: null,
     review_state: "not_required",

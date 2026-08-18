@@ -7,6 +7,8 @@ import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_p
 import type { SqlClient } from "../../src/db/session_db.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
+import { isDeliveryLayerCombinationAllowed } from
+  "../../src/task/delivery_contract.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
@@ -707,62 +709,96 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       "delivery-rejected",
       "worker-c",
       "invalid target acknowledgement",
-    )).resolves.toMatchObject({ aggregate_state: "dead_letter" });
+    )).resolves.toMatchObject({
+      aggregate_state: "dead_letter",
+      attempt_count: 1,
+    });
 
     await expect(harness.sql<Array<{
       delivery_id: string;
       outcome: string;
+      lease_owner: string | null;
     }>>`
-      SELECT delivery_id, outcome
+      SELECT delivery_id, outcome, lease_owner
       FROM session_delivery_attempts
       WHERE delivery_id IN (
         'delivery-accepted', 'delivery-retryable', 'delivery-rejected'
       )
       ORDER BY delivery_id
     `).resolves.toEqual([
-      { delivery_id: "delivery-accepted", outcome: "accepted" },
-      { delivery_id: "delivery-rejected", outcome: "rejected" },
-      { delivery_id: "delivery-retryable", outcome: "retryable" },
+      {
+        delivery_id: "delivery-accepted",
+        outcome: "accepted",
+        lease_owner: "worker-a",
+      },
+      {
+        delivery_id: "delivery-rejected",
+        outcome: "rejected",
+        lease_owner: "worker-c",
+      },
+      {
+        delivery_id: "delivery-retryable",
+        outcome: "retryable",
+        lease_owner: "worker-b",
+      },
     ]);
   });
 
-  it("covers every delivery intent across attempt outcomes, aggregate states, and receipts", async () => {
+  it("covers every intent × attempt outcome × aggregate state × receipt decision", async () => {
     const intents = [
       "durable_next_turn",
       "completion_notification",
       "runtime_followup",
     ] as const;
-    const cases = [
-      { name: "accepted-pending", outcome: "accepted", aggregate: "pending", receipt: null },
-      { name: "accepted-delivered", outcome: "accepted", aggregate: "delivered", receipt: "event:delivered" },
-      { name: "accepted-consumed", outcome: "accepted", aggregate: "consumed", receipt: "event:consumed" },
-      { name: "retryable-pending", outcome: "retryable", aggregate: "pending", receipt: null },
-      { name: "rejected-dead-letter", outcome: "rejected", aggregate: "dead_letter", receipt: null },
-    ] as const;
+    const outcomes = ["accepted", "retryable", "rejected"] as const;
+    const aggregates = ["pending", "delivered", "consumed", "dead_letter"] as const;
+    const receiptOptions = [false, true] as const;
+    const allowedNames = new Set<string>([
+      "accepted:pending:false",
+      "accepted:delivered:true",
+      "accepted:consumed:true",
+      "retryable:pending:false",
+      "rejected:dead_letter:false",
+    ]);
+    let decisions = 0;
+    let allowedDecisions = 0;
 
     for (const intent of intents) {
-      for (const contract of cases) {
-        const deliveryId = `matrix-${intent}-${contract.name}`;
+      for (const outcome of outcomes) {
+        for (const aggregate of aggregates) {
+          for (const hasReceipt of receiptOptions) {
+            decisions += 1;
+            const decisionKey = `${outcome}:${aggregate}:${hasReceipt}`;
+            const allowed = allowedNames.has(decisionKey);
+            expect(isDeliveryLayerCombinationAllowed({
+              outcome,
+              aggregateState: aggregate,
+              hasTargetReceipt: hasReceipt,
+            }), `${intent}:${decisionKey}`).toBe(allowed);
+            if (!allowed) continue;
+            allowedDecisions += 1;
+            const deliveryId = `matrix-${intent}-${outcome}-${aggregate}-${hasReceipt}`;
+            const receipt = hasReceipt ? `event:${deliveryId}` : null;
         await register(deliveryId, `relation-${deliveryId}`, intent);
         await repository.claimForTarget(deliveryId, "caller-old", `worker-${deliveryId}`);
         await repository.beginDispatch(deliveryId, `worker-${deliveryId}`);
-        if (contract.name === "accepted-pending") {
+            if (outcome === "accepted" && aggregate === "pending") {
           await repository.markQueued(deliveryId, `worker-${deliveryId}`);
-        } else if (contract.name === "accepted-delivered") {
+            } else if (outcome === "accepted" && aggregate === "delivered") {
           await repository.markQueued(deliveryId, `worker-${deliveryId}`);
-          await repository.markDelivered(deliveryId, contract.receipt);
-        } else if (contract.name === "accepted-consumed") {
+              await repository.markDelivered(deliveryId, receipt!);
+            } else if (outcome === "accepted" && aggregate === "consumed") {
           await repository.markQueued(deliveryId, `worker-${deliveryId}`);
-          await repository.markDelivered(deliveryId, contract.receipt);
-          await repository.markConsumed(deliveryId, contract.receipt);
-        } else if (contract.name === "retryable-pending") {
+              await repository.markDelivered(deliveryId, receipt!);
+              await repository.markConsumed(deliveryId, receipt!);
+            } else if (outcome === "retryable") {
           await repository.retryLeasedDelivery(
             deliveryId,
             `worker-${deliveryId}`,
             "retryable",
             new Date(Date.now() + 1_000),
           );
-        } else {
+            } else {
           await repository.markUncertain(
             deliveryId,
             `worker-${deliveryId}`,
@@ -772,8 +808,8 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
         await expect(repository.get(deliveryId)).resolves.toMatchObject({
           intent,
-          aggregate_state: contract.aggregate,
-          target_receipt_id: contract.receipt,
+              aggregate_state: aggregate,
+              target_receipt_id: receipt,
         });
         await expect(harness.sql<Array<{ outcome: string; target_receipt_id: string | null }>>`
           SELECT outcome, target_receipt_id
@@ -782,11 +818,15 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
           ORDER BY attempt_number DESC
           LIMIT 1
         `).resolves.toEqual([{
-          outcome: contract.outcome,
+              outcome,
           target_receipt_id: null,
         }]);
+          }
+        }
       }
     }
+    expect(decisions).toBe(3 * 3 * 4 * 2);
+    expect(allowedDecisions).toBe(3 * 5);
   });
 
   it("backfills legacy delivered rows only when a target receipt exists", async () => {

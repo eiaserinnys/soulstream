@@ -239,6 +239,7 @@ export class TaskLifecycleTransition {
           {
             kind: "runner_terminal_fact",
             ownership_generation: ownership.ownershipGeneration,
+            execution_command_id: ownership.executionCommandId,
             runner_fact: task.runnerTerminalFact ?? runnerFactForTask(task),
             ...common,
           },

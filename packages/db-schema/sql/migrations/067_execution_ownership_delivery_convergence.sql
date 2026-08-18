@@ -409,6 +409,7 @@ $$;
 CREATE OR REPLACE FUNCTION session_project_runner_terminal_fact(
     p_session_id               TEXT,
     p_ownership_generation     BIGINT,
+    p_execution_command_id     TEXT,
     p_runner_fact              TEXT,
     p_termination_detail       TEXT,
     p_review_state             TEXT,
@@ -435,6 +436,9 @@ BEGIN
     IF p_runner_fact NOT IN ('completed', 'failed', 'reaped', 'closed') THEN
         RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
     END IF;
+    IF p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
+        RAISE EXCEPTION 'execution command id must be non-empty';
+    END IF;
     IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
         RAISE EXCEPTION 'terminal event id must be a positive integer';
     END IF;
@@ -459,6 +463,7 @@ BEGIN
            terminal_at = p_updated_at
      WHERE ownership.session_id = p_session_id
        AND ownership.ownership_generation = p_ownership_generation
+       AND ownership.execution_command_id = p_execution_command_id
        AND ownership.phase = 'active';
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
@@ -531,6 +536,7 @@ BEGIN
           FROM session_project_runner_terminal_fact(
               p_session_id,
               v_ownership_generation,
+              p_execution_command_id,
               p_runner_fact,
               p_termination_detail,
               p_review_state,

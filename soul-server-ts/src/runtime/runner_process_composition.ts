@@ -87,6 +87,7 @@ export async function startRunnerRecoveryCoordinator(options: {
     | "markRunnerFailureAndResume"
     | "projectClosedRunner"
     | "reconcileExecutionOwnershipObservations"
+    | "listOwnerNullRunningInventory"
   >;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
   logger: Logger;
@@ -100,6 +101,7 @@ export async function startRunnerRecoveryCoordinator(options: {
     throw new Error("SOUL_RUNNER_STATE_DIR required for runner recovery");
   }
   const coordinator = new RunnerRecoveryCoordinator({
+    nodeId: options.env.SOULSTREAM_NODE_ID,
     stateDirectory,
     leaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
     scanIntervalMs: options.env.SOUL_RUNNER_REAPER_INTERVAL_MS,

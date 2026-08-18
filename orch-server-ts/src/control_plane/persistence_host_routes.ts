@@ -84,6 +84,7 @@ const sessionDataOperations = {
   get: ["sessionReads", null, "getSession"],
   list_summary: ["sessionReads", null, "listSessionsSummary"],
   list_running: ["sessionReads", null, "listRunningSessionsSummary"],
+  owner_null_running_inventory: ["sessionReads", null, "listOwnerNullRunningInventory"],
   upstream_dump: ["sessionReads", null, "listSessionsForUpstreamDump"],
   event_count: ["eventReads", null, "countEvents"],
   event_read_page: ["eventReads", null, "readEvents"],

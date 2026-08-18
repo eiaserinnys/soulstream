@@ -312,9 +312,11 @@ export class TaskDeliveryLedgerGate {
   async recordConsumed(
     message: InterventionMessage,
     task: Task,
+    targetReceiptId?: string,
   ): Promise<void> {
     if (!this.enabled || !isControlledMessage(message)) return;
-    const consumedTurnId = `event:${task.lastEventId ?? "unknown"}`;
+    const consumedTurnId = targetReceiptId
+      ?? `event:${task.lastEventId ?? "unknown"}`;
     const repository = this.requireRepository();
     if (isInlineChildCompletion(message)) {
       await repository.recordRelationConsumed({

@@ -1,13 +1,7 @@
-export type SessionLastMessage = {
-  type: string;
-  preview: string;
-  timestamp: string;
-};
-
-export type EventOutboxSessionEffect =
+export type EventSessionEffect =
   | {
       kind: "last_message";
-      last_message: SessionLastMessage;
+      last_message: { type: string; preview: string; timestamp: string };
       updated_at: string;
     }
   | { kind: "set_backend_session_id"; backend_session_id: string }
@@ -118,3 +112,92 @@ export type EventOutboxSessionEffect =
       updated_at: string;
       replace_existing_type?: string;
     };
+
+export type EventIngressEnvelope = {
+  stream_id: string;
+  source_seq: number;
+  session_id: string;
+  event_type: string;
+  payload: unknown;
+  searchable_text: string | null;
+  created_at: string;
+  semantic_dedupe_key: string | null;
+  session_effect: EventSessionEffect | null;
+  payload_hash: string;
+};
+
+export type EventAppendBatch = {
+  type: "event_append_batch";
+  protocol_version: 1;
+  stream_id: string;
+  first_seq: number;
+  events: EventIngressEnvelope[];
+};
+
+export type EventAppendAck = {
+  type: "event_append_ack";
+  stream_id: string;
+  acked_through: number;
+  events: EventAppendAcknowledgement[];
+};
+
+export type EventAppendAcknowledgement =
+  | {
+      source_seq: number;
+      event_id: number;
+      effect_application?: EventSessionEffectApplicationWire;
+    }
+  | {
+      source_seq: number;
+      dead_letter: {
+        code: string;
+        reason: string;
+        rejected_at: string;
+      };
+    };
+
+export type EventCanonicalSessionProjection = {
+  status: string;
+  termination_reason: string | null;
+  termination_detail: string | null;
+  review_state: string;
+  last_assistant_text: string | null;
+  termination_event_id: number | null;
+  updated_at: string;
+  last_event_id: number | null;
+};
+
+export type EventSessionEffectApplication = {
+  applied: boolean;
+  canonicalSession: EventCanonicalSessionProjection | null;
+};
+
+export type EventSessionEffectApplicationWire = {
+  applied: boolean;
+  canonical_session: EventCanonicalSessionProjection;
+};
+
+export type CommittedIngressEvent = {
+  outcome?: "committed";
+  envelope: EventIngressEnvelope;
+  eventId: number;
+  duplicateReceipt: boolean;
+  sessionEffectApplication?: EventSessionEffectApplication;
+};
+
+export type DeadLetteredIngressEvent = {
+  outcome: "dead_lettered";
+  envelope: EventIngressEnvelope;
+  deadLetter: {
+    code: string;
+    reason: string;
+    rejectedAt: string;
+    path: string;
+  };
+};
+
+export type EventIngressResult = CommittedIngressEvent | DeadLetteredIngressEvent;
+
+export function isEventAppendBatchFrame(frame: Record<string, unknown>): boolean {
+  return frame.type === "event_append_batch";
+}

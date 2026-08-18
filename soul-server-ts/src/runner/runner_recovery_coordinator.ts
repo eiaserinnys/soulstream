@@ -1,9 +1,5 @@
-import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { Task } from "../task/task_models.js";
-import { isTerminalTaskStatus } from "../task/task_models.js";
-import type { ExecutionOwnershipObservation } from
-  "../task/execution_ownership.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
@@ -12,7 +8,6 @@ import {
   type RunnerRegistration,
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
-import { unreadableRegistrationFingerprint } from "./runner_recovery_fingerprint.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
@@ -22,12 +17,7 @@ import {
   requireRecoveryTask,
 } from "./runner_recovery_task.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
-import {
-  quarantineUnreadableRunnerRegistration,
-  type RunnerRegistrationQuarantineResult,
-} from "./runner_registration_quarantine.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
-import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import {
   closedRunnerTailRequiresDrain,
@@ -38,27 +28,56 @@ import {
   type RunnerAdoptionDisposition,
 } from "./runner_adoption_failure_recovery.js";
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import { OwnerNullExecutionReconciler } from "./owner_null_execution_reconciler.js";
+import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
+import { RunnerSessionGarbageCollectionScheduler } from
+  "./runner_session_gc_scheduler.js";
+import { UnreadableRunnerRegistrationHandler } from
+  "./unreadable_runner_registration_handler.js";
 
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
-const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
-  private readonly ownerNullObservations = new Map<
-    string,
-    ExecutionOwnershipObservation
-  >();
+  private readonly ownerNullExecutionReconciler: OwnerNullExecutionReconciler;
+  private readonly ownerNullInventoryReconciler: OwnerNullInventoryReconciler;
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
-  private readonly unreadableRegistrationFingerprints = new Map<string, string>();
   private readonly recoveryLogger: RunnerRecoveryLogger;
   private readonly hydrationPhase: RunnerRecoveryHydrationPhase;
   private readonly adoptionFailureRecovery: RunnerAdoptionFailureRecovery;
-  private sessionGarbageCollectionInFlight: Promise<void> | undefined;
-  private nextSessionGarbageCollectionAtMs = 0;
+  private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
+  private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
+    this.ownerNullExecutionReconciler = new OwnerNullExecutionReconciler(options);
+    this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
+      nodeId: options.nodeId,
+      scanIntervalMs: options.scanIntervalMs,
+      leaseTimeoutMs: options.leaseTimeoutMs,
+      taskManager: options.taskManager as Required<Pick<
+        typeof options.taskManager,
+        "listOwnerNullRunningInventory" | "hydrateRunnerRecoveryTask"
+          | "reconcileExecutionOwnershipObservations"
+      >>,
+      logger: options.logger,
+      now: options.now ?? Date.now,
+    });
+    this.sessionGarbageCollectionScheduler = new RunnerSessionGarbageCollectionScheduler({
+      ...(options.sessionGarbageCollector
+        ? { collector: options.sessionGarbageCollector }
+        : {}),
+      logger: options.logger,
+      now: options.now ?? Date.now,
+    });
+    this.unreadableRegistrationHandler = new UnreadableRunnerRegistrationHandler({
+      stateDirectory: options.stateDirectory,
+      logger: options.logger,
+      ...(options.quarantineFailure
+        ? { quarantineFailure: options.quarantineFailure }
+        : {}),
+    });
     this.recoveryLogger = new RunnerRecoveryLogger({
       logger: options.logger,
       now: options.now ?? Date.now,
@@ -124,19 +143,15 @@ export class RunnerRecoveryCoordinator {
   private async performScan(): Promise<void> {
     const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
     const startedAt = monotonicNow();
-    if (this.sessionGarbageCollectionInFlight) {
-      await this.sessionGarbageCollectionInFlight;
+    if (this.sessionGarbageCollectionScheduler.inFlight) {
+      await this.sessionGarbageCollectionScheduler.inFlight;
     }
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
-    const scannedSessionIds = new Set(
-      scan.registrations.map((registration) => registration.config.sessionId),
-    );
-    for (const sessionId of this.ownerNullObservations.keys()) {
-      if (!scannedSessionIds.has(sessionId)) this.ownerNullObservations.delete(sessionId);
-    }
-    await this.handleUnreadableRegistrations(scan.errors);
+    this.ownerNullExecutionReconciler.prune(scan.registrations);
+    await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
+    await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
     const admitted: Array<{
       registration: RunnerRegistration;
@@ -181,7 +196,7 @@ export class RunnerRecoveryCoordinator {
       }
       const task = outcome?.status === "ready" ? outcome.task : undefined;
       if (task) {
-        const ownerNullDisposition = await this.reconcileOwnerNullBeforeRecovery(
+        const ownerNullDisposition = await this.ownerNullExecutionReconciler.reconcile(
           task,
           registration,
         );
@@ -216,7 +231,7 @@ export class RunnerRecoveryCoordinator {
         this.options.logger.error({ err: error }, "runner release GC failed");
       }
     }
-    this.scheduleSessionGarbageCollection({
+    this.sessionGarbageCollectionScheduler.schedule({
       ...scan,
       registrations: scan.registrations.filter(
         (registration) => !this.active.has(registration.config.sessionId),
@@ -229,60 +244,12 @@ export class RunnerRecoveryCoordinator {
       monotonicNow(),
     );
   }
-  private async handleUnreadableRegistrations(
-    failures: Array<{ directory: string; error: Error; sessionId?: string; codeSha?: string }>,
-  ): Promise<void> {
-    const currentDirectories = new Set(failures.map((failure) => failure.directory));
-    for (const directory of this.unreadableRegistrationFingerprints.keys()) {
-      if (!currentDirectories.has(directory)) {
-        this.unreadableRegistrationFingerprints.delete(directory);
-      }
-    }
-    for (const failure of failures) {
-      const fingerprint = unreadableRegistrationFingerprint(failure);
-      const shouldLog = this.unreadableRegistrationFingerprints.get(failure.directory)
-        !== fingerprint;
-      if (shouldLog) {
-        const { error, ...failureContext } = failure;
-        this.options.logger.error(
-          { ...failureContext, err: error },
-          "runner registration is unreadable",
-        );
-        this.unreadableRegistrationFingerprints.set(failure.directory, fingerprint);
-      }
-      let result: RunnerRegistrationQuarantineResult;
-      try {
-        result = await (
-          this.options.quarantineFailure ?? quarantineUnreadableRunnerRegistration
-        )(this.options.stateDirectory, failure);
-      } catch (error) {
-        if (shouldLog) {
-          this.options.logger.error(
-            { err: error, directory: failure.directory, sessionId: failure.sessionId },
-            "runner registration quarantine failed",
-          );
-        }
-        continue;
-      }
-      if (result.status === "quarantined") {
-        this.options.logger.info(
-          {
-            directory: failure.directory,
-            quarantinePath: result.path,
-            pid: result.pid,
-            sessionId: failure.sessionId,
-          },
-          "proven-dead unreadable runner registration quarantined",
-        );
-      }
-    }
-  }
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     await this.waitForSettled();
-    await this.sessionGarbageCollectionInFlight;
+    await this.sessionGarbageCollectionScheduler.inFlight;
     this.active.clear();
   }
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
@@ -349,30 +316,6 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
-  }
-  private scheduleSessionGarbageCollection(
-    scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>,
-  ): void {
-    if (
-      !this.options.sessionGarbageCollector
-      || this.sessionGarbageCollectionInFlight
-      || (scan.registrations.length === 0 && scan.errors.length === 0)
-    ) return;
-    const now = (this.options.now ?? Date.now)();
-    if (now < this.nextSessionGarbageCollectionAtMs) return;
-    this.nextSessionGarbageCollectionAtMs = now + RUNNER_SESSION_GC_SWEEP_INTERVAL_MS;
-    const collection = this.options.sessionGarbageCollector.collect(scan)
-      .then(() => undefined)
-      .catch((error) => {
-        this.nextSessionGarbageCollectionAtMs = 0;
-        this.options.logger.error({ err: error }, "runner session GC failed");
-      })
-      .finally(() => {
-        if (this.sessionGarbageCollectionInFlight === collection) {
-          this.sessionGarbageCollectionInFlight = undefined;
-        }
-      });
-    this.sessionGarbageCollectionInFlight = collection;
   }
   private async handleWithFailureTracking(
     registration: RunnerRegistration,
@@ -533,94 +476,8 @@ export class RunnerRecoveryCoordinator {
     );
   }
 
-  private async reconcileOwnerNullBeforeRecovery(
-    task: Task,
-    registration: RunnerRegistration,
-  ): Promise<"proceed" | "wait" | "terminal"> {
-    if (
-      task.hydratedFromDb !== true
-      || task.status !== "running"
-      || task.executionOwnership !== undefined
-    ) return "proceed";
-
-    const reconcile = this.options.taskManager.reconcileExecutionOwnershipObservations;
-    if (!reconcile) {
-      throw new Error("owner-null execution reconciliation is not configured");
-    }
-    const observedAt = new Date((this.options.now ?? Date.now)());
-    const current = ownershipObservation(registration, observedAt);
-    const minimumLeaseIntervalMs = Math.max(
-      1,
-      Math.min(this.options.scanIntervalMs, this.options.leaseTimeoutMs),
-    );
-    const first = this.ownerNullObservations.get(task.agentSessionId);
-    if (!first) {
-      const applied = await reconcile.call(this.options.taskManager, task, {
-        first: current,
-        second: current,
-        evidenceHash: ownershipEvidenceHash(current, current),
-        minimumLeaseIntervalMs,
-        probeOnly: true,
-      });
-      if (applied) return "proceed";
-      if (isTerminalTaskStatus(task.status)) return "terminal";
-      this.ownerNullObservations.set(task.agentSessionId, current);
-      return "wait";
-    }
-    if (observedAt.getTime() - first.observedAt.getTime() < minimumLeaseIntervalMs) {
-      return "wait";
-    }
-
-    this.ownerNullObservations.delete(task.agentSessionId);
-    const applied = await reconcile.call(this.options.taskManager, task, {
-      first,
-      second: current,
-      evidenceHash: ownershipEvidenceHash(first, current),
-      minimumLeaseIntervalMs,
-      probeOnly: false,
-    });
-    if (applied) return "proceed";
-    return isTerminalTaskStatus(task.status) ? "terminal" : "wait";
-  }
 }
 
 function dispositionRequiresTask(disposition: RunnerRecoveryDisposition): boolean {
   return disposition !== "wait_for_bootstrap";
-}
-
-function ownershipObservation(
-  registration: RunnerRegistration,
-  observedAt: Date,
-): ExecutionOwnershipObservation {
-  return {
-    manifestId: registration.config.codeSha || null,
-    registrationId: registration.registrationId || null,
-    pid: registration.pid && registration.pid > 0 ? registration.pid : null,
-    startIdentity: registration.pidStartIdentity || null,
-    executionCommandId: registration.lifecycle?.execution_command_id || null,
-    observedAt,
-  };
-}
-
-function ownershipEvidenceHash(
-  first: ExecutionOwnershipObservation,
-  second: ExecutionOwnershipObservation,
-): string {
-  return createHash("sha256").update(JSON.stringify({
-    first: serializableOwnershipObservation(first),
-    second: serializableOwnershipObservation(second),
-  })).digest("hex");
-}
-
-function serializableOwnershipObservation(
-  observation: ExecutionOwnershipObservation,
-): Record<string, string | number | null> {
-  return {
-    manifest_id: observation.manifestId,
-    registration_id: observation.registrationId,
-    pid: observation.pid,
-    start_identity: observation.startIdentity,
-    execution_command_id: observation.executionCommandId,
-    observed_at: observation.observedAt.toISOString(),
-  };
 }

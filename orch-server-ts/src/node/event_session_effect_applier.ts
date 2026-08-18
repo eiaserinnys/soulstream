@@ -165,6 +165,7 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       SELECT * FROM session_project_runner_terminal_fact(
         ${envelope.session_id},
         ${effect.ownership_generation},
+        ${effect.execution_command_id},
         ${effect.runner_fact},
         ${effect.termination_detail},
         ${effect.review_state},

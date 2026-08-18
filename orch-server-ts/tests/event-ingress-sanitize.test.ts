@@ -97,6 +97,26 @@ describe("parseEventAppendBatch sanitization", () => {
       .toThrow("session_effect.execution_command_id must be a non-empty string");
   });
 
+  it("requires execution_command_id on generation-fenced terminal facts", () => {
+    const effect = {
+      kind: "runner_terminal_fact",
+      ownership_generation: 3,
+      execution_command_id: "execute-3",
+      runner_fact: "completed",
+      termination_detail: null,
+      review_state: "not_required",
+      last_assistant_text: "done",
+      updated_at: "2026-08-18T00:00:00.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    const { execution_command_id: _omitted, ...withoutCommand } = effect;
+    expect(() => parseEventAppendBatch(batchWithEffect(withoutCommand)))
+      .toThrow("session_effect.execution_command_id must be a non-empty string");
+  });
+
   it("keeps the two owner-null observations and evidence hash intact", () => {
     const effect = {
       kind: "execution_backfill",

@@ -39,6 +39,25 @@ export const DELIVERY_AGGREGATE_STATES = [
 ] as const;
 export type DeliveryAggregateState = (typeof DELIVERY_AGGREGATE_STATES)[number];
 
+export function isDeliveryLayerCombinationAllowed(input: {
+  outcome: DeliveryAttemptOutcome;
+  aggregateState: DeliveryAggregateState;
+  hasTargetReceipt: boolean;
+}): boolean {
+  if (input.outcome === "accepted") {
+    if (input.aggregateState === "pending") return !input.hasTargetReceipt;
+    if (
+      input.aggregateState === "delivered"
+      || input.aggregateState === "consumed"
+    ) return input.hasTargetReceipt;
+    return false;
+  }
+  if (input.outcome === "retryable") {
+    return input.aggregateState === "pending" && !input.hasTargetReceipt;
+  }
+  return input.aggregateState === "dead_letter" && !input.hasTargetReceipt;
+}
+
 /**
  * Optional additive metadata carried across every intervention boundary.
  *
