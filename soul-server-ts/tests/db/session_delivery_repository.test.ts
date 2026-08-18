@@ -246,16 +246,16 @@ describe("SessionDeliveryRepository", () => {
       [{ ...row, state: "dispatching" }],
       [{ ...row, state: "queued" }],
       [],
-      [{ ...row, state: "delivered", caller_turn_id: "turn-9" }],
-      [{ ...row, state: "consumed", caller_turn_id: "turn-9" }],
+      [{ ...row, state: "delivered", target_receipt_id: "receipt-9" }],
+      [{ ...row, state: "consumed", caller_turn_id: "turn-10" }],
     ]);
     const repository = new SessionDeliveryRepository(sql);
 
     await repository.claim(row.delivery_id);
     await repository.beginDispatch(row.delivery_id);
     await repository.markQueued(row.delivery_id);
-    await repository.markDelivered(row.delivery_id, "turn-9");
-    await repository.markConsumed(row.delivery_id, "turn-9");
+    await repository.markDelivered(row.delivery_id, "receipt-9");
+    await repository.markConsumed(row.delivery_id, "turn-10");
 
     expect(calls[0].query).toContain("state = 'pending'");
     expect(calls[1].query).toContain("state = 'claimed'");
@@ -264,6 +264,8 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[3].values).toContain("accepted");
     expect(calls[4].query).toContain("aggregate_state = 'delivered'");
     expect(calls[5].query).toContain("'consumed'");
+    expect(calls[5].query).toContain("target_receipt_id IS NOT NULL");
+    expect(calls[5].query).not.toContain("target_receipt_id =");
   });
 
   it("marks consumed by relation and completion identity", async () => {

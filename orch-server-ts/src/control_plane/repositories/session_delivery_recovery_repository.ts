@@ -28,6 +28,26 @@ export class SessionDeliveryRecoveryRepository {
   ): Promise<SessionDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       await transaction`
+        UPDATE session_deliveries AS delivery
+        SET
+          state = 'consumed',
+          aggregate_state = 'consumed',
+          caller_turn_id = consumption.consumed_turn_id,
+          consumed_at = consumption.consumed_at,
+          consumed_reason = 'exact relation receipt recovery',
+          lease_owner = NULL,
+          lease_expires_at = NULL,
+          updated_at = NOW()
+        FROM session_delivery_relation_consumptions AS consumption
+        WHERE delivery.relation_key = consumption.relation_key
+          AND delivery.completion_id = consumption.completion_id
+          AND delivery.target_session_id = consumption.caller_session_id
+          AND delivery.intent = 'completion_notification'
+          AND delivery.aggregate_state = 'delivered'
+          AND delivery.state IN ('delivered', 'queued')
+          AND delivery.target_receipt_id IS NOT NULL
+      `;
+      await transaction`
         WITH ranked AS (
           SELECT delivery_id,
             ROW_NUMBER() OVER (

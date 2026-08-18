@@ -304,6 +304,136 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("consumes a cross-node notification after the target lastEventId advances", async () => {
+    const deliveryId = "delivery-advanced-target-receipt";
+    const publishedReceiptId = "event:390";
+    const consumedTurnId = "event:447";
+    const leaseOwner = "cross-node-worker";
+    await harness.sql`
+      UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
+    `;
+    await register(deliveryId, "relation-advanced-target-receipt");
+    await repository.claimForTarget(deliveryId, "caller-old", leaseOwner);
+    await repository.beginDispatch(deliveryId, leaseOwner);
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner,
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: deliveryId,
+        delivery_intent: "completion_notification",
+        completion_id: "completion-relation-advanced-target-receipt",
+        relation_key: "relation-advanced-target-receipt",
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    });
+    await repository.notifications.markPublished(
+      deliveryId,
+      leaseOwner,
+      publishedReceiptId,
+    );
+
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    const message = {
+      text: "done",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification" as const,
+      source: "completion_notifier",
+      completionId: "completion-relation-advanced-target-receipt",
+      relationKey: "relation-advanced-target-receipt",
+    };
+    const task = {
+      agentSessionId: "caller-old",
+      prompt: "delegate",
+      status: "running" as const,
+      lastEventId: 447,
+      lastReadEventId: 390,
+      interventionQueue: [],
+      createdAt: new Date(),
+    };
+
+    await expect(gate.recordConsumed(message, task, consumedTurnId))
+      .resolves.toBeUndefined();
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      target_receipt_id: publishedReceiptId,
+      caller_turn_id: consumedTurnId,
+      consumed_at: expect.any(Date),
+    });
+    await expect(gate.recordConsumed(message, task, consumedTurnId))
+      .resolves.toBeUndefined();
+  });
+
+  it("recovers a delivered notification from its exact relation tombstone", async () => {
+    const deliveryId = "delivery-relation-tombstone-recovery";
+    const relationKey = "relation-tombstone-recovery";
+    const completionId = `completion-${relationKey}`;
+    const leaseOwner = "relation-recovery-worker";
+    const publishedReceiptId = "event:555";
+    const consumedTurnId = "event:626";
+    await register(deliveryId, relationKey);
+    await repository.claimForTarget(deliveryId, "caller-old", leaseOwner);
+    await repository.beginDispatch(deliveryId, leaseOwner);
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner,
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: deliveryId,
+        delivery_intent: "completion_notification",
+        completion_id: completionId,
+        relation_key: relationKey,
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    });
+    await repository.notifications.markPublished(
+      deliveryId,
+      leaseOwner,
+      publishedReceiptId,
+    );
+    await harness.sql`
+      INSERT INTO session_delivery_relation_consumptions (
+        relation_key, completion_id, caller_session_id, consumed_turn_id
+      ) VALUES (
+        ${relationKey}, ${completionId}, 'caller-old', ${consumedTurnId}
+      )
+    `;
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "periodic-recovery",
+    )).resolves.toEqual([]);
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      target_receipt_id: publishedReceiptId,
+      caller_turn_id: consumedTurnId,
+      consumed_reason: "exact relation receipt recovery",
+      consumed_at: expect.any(Date),
+    });
+
+    const unrelatedId = "delivery-unrelated-delivered";
+    await register(unrelatedId, "relation-unrelated-delivered");
+    await repository.claimForTarget(unrelatedId, "caller-old");
+    await repository.markDelivered(unrelatedId, "event:unrelated");
+    await repository.claimRecoverableCompletionDeliveries("periodic-recovery");
+    await expect(repository.get(unrelatedId)).resolves.toMatchObject({
+      state: "delivered",
+      aggregate_state: "delivered",
+    });
+  });
+
   it("stages an expired same-owner dispatch and rejects the replaced owner", async () => {
     await harness.sql`
       UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
@@ -751,10 +881,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         aggregate_state: "delivered",
         target_receipt_id: "event:501",
       });
-    await expect(repository.markConsumed("delivery-accepted", "event:wrong"))
-      .resolves.toBeNull();
-    await expect(repository.markConsumed("delivery-accepted", "event:501"))
-      .resolves.toMatchObject({ aggregate_state: "consumed" });
+    await expect(repository.markConsumed("delivery-accepted", "event:502"))
+      .resolves.toMatchObject({
+        aggregate_state: "consumed",
+        target_receipt_id: "event:501",
+        caller_turn_id: "event:502",
+      });
 
     await register("delivery-retryable", "relation-retryable");
     await repository.claimForTarget("delivery-retryable", "caller-old", "worker-b");
