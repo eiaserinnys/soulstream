@@ -154,11 +154,27 @@ export class SessionDeliveryNotificationRepository {
       if (!rows[0]) return null;
       const deliveryRows = await transaction<Array<{ delivery_id: string }>>`
         UPDATE session_deliveries
-        SET state = 'delivered', aggregate_state = 'delivered',
-            target_receipt_id = ${targetReceiptId}, target_receipt_at = NOW(),
-            delivered_at = NOW(), updated_at = NOW()
+        SET
+          state = CASE
+            WHEN aggregate_state = 'pending' THEN 'delivered'
+            ELSE state
+          END,
+          aggregate_state = CASE
+            WHEN aggregate_state = 'pending' THEN 'delivered'
+            ELSE aggregate_state
+          END,
+          target_receipt_id = COALESCE(target_receipt_id, ${targetReceiptId}),
+          target_receipt_at = COALESCE(target_receipt_at, NOW()),
+          delivered_at = COALESCE(delivered_at, NOW()),
+          updated_at = NOW()
         WHERE delivery_id = ${deliveryId}
-          AND aggregate_state = 'pending'
+          AND (
+            aggregate_state = 'pending'
+            OR (
+              aggregate_state = 'delivered'
+              AND target_receipt_id = ${targetReceiptId}
+            )
+          )
         RETURNING delivery_id
       `;
       if (!deliveryRows[0]) {

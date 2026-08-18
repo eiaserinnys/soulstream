@@ -54,7 +54,11 @@ import { composeChecklistTaskProjection } from "./checklist_task_composition.js"
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
-import { composeRunnerProcessRuntime, composeRunnerReconciliationReporter, startRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import {
+  composeRunnerProcessRuntime,
+  composeRunnerReconciliationReporter,
+  composeRunnerRecoveryCoordinator,
+} from "./runner_process_composition.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
@@ -281,7 +285,7 @@ export async function composeWorkerRuntime(
     transientEventLogAggregator,
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
   });
-  const runnerRecoveryCoordinator = await startRunnerRecoveryCoordinator({
+  const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,
     releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,

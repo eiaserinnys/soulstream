@@ -75,7 +75,7 @@ export async function composeRunnerProcessRuntime(
   }
 }
 
-export async function startRunnerRecoveryCoordinator(options: {
+export async function composeRunnerRecoveryCoordinator(options: {
   env: Env;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
@@ -116,7 +116,6 @@ export async function startRunnerRecoveryCoordinator(options: {
       ? { sessionGarbageCollector: options.sessionGarbageCollector }
       : {}),
   });
-  await coordinator.start();
   return coordinator;
 }
 

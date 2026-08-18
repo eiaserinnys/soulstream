@@ -240,6 +240,70 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     `).resolves.toEqual([{ outcome: "accepted" }]);
   });
 
+  it("projects an orphaned notification receipt when the same target turn already delivered the aggregate", async () => {
+    const deliveryId = "delivery-orphaned-receipt";
+    const targetReceiptId = "event:901";
+    await register(deliveryId, "relation-orphaned-receipt");
+    await repository.claimForTarget(deliveryId, "caller-old", "route-worker");
+    await repository.beginDispatch(deliveryId, "route-worker");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "route-worker",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: deliveryId,
+        delivery_intent: "completion_notification",
+        completion_id: "completion-relation-orphaned-receipt",
+        relation_key: "relation-orphaned-receipt",
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    });
+
+    await expect(repository.markDelivered(deliveryId, targetReceiptId))
+      .resolves.toMatchObject({
+        aggregate_state: "delivered",
+        target_receipt_id: targetReceiptId,
+      });
+
+    await expect(repository.notifications.markPublished(
+      deliveryId,
+      "route-worker",
+      "event:902",
+    )).rejects.toThrow(`notification delivery receipt was not projected: ${deliveryId}`);
+    await expect(harness.sql<Array<{
+      state: string;
+      projection_state: string;
+      target_receipt_id: string | null;
+    }>>`
+      SELECT state, projection_state, target_receipt_id
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = ${deliveryId}
+    `).resolves.toEqual([{
+      state: "claimed",
+      projection_state: "publishing",
+      target_receipt_id: null,
+    }]);
+
+    await expect(repository.notifications.markPublished(
+      deliveryId,
+      "route-worker",
+      targetReceiptId,
+    )).resolves.toMatchObject({
+      state: "published",
+      projection_state: "published",
+      target_receipt_id: targetReceiptId,
+    });
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      aggregate_state: "delivered",
+      target_receipt_id: targetReceiptId,
+    });
+  });
+
   it("stages an expired same-owner dispatch and rejects the replaced owner", async () => {
     await harness.sql`
       UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
