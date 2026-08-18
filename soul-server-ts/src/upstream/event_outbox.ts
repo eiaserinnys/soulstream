@@ -14,6 +14,12 @@ import {
   type EventOutboxQuarantineInput,
   type EventOutboxQuarantineResult,
 } from "./event_outbox_quarantine.js";
+import type { EventOutboxSessionEffect } from "./event_outbox_session_effect.js";
+
+export type {
+  EventOutboxSessionEffect,
+  SessionLastMessage,
+} from "./event_outbox_session_effect.js";
 
 export const EVENT_OUTBOX_MAX_BATCH_EVENTS = 64;
 export const EVENT_OUTBOX_MAX_BATCH_BYTES = 256 * 1024;
@@ -21,49 +27,6 @@ export const EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES = 2 * 1024 * 1024;
 export const EVENT_OUTBOX_COMPACT_ROWS = 1_000;
 export const EVENT_OUTBOX_COMPACT_BYTES = 8 * 1024 * 1024;
 export const EVENT_OUTBOX_RENAME_RETRY_DELAYS_MS = [25, 50, 100, 200, 400] as const;
-
-export type SessionLastMessage = {
-  type: string;
-  preview: string;
-  timestamp: string;
-};
-
-export type EventOutboxSessionEffect =
-  | {
-      kind: "last_message";
-      last_message: SessionLastMessage;
-      updated_at: string;
-    }
-  | {
-      kind: "set_backend_session_id";
-      backend_session_id: string;
-    }
-  | {
-      kind: "rotate_backend_session_id";
-      expected_backend_session_id: string;
-      backend_session_id: string;
-    }
-  | {
-      kind: "running_transition";
-      review_state: string;
-      expected_terminal_event_id?: number | null;
-      updated_at: string;
-    }
-  | {
-      kind: "terminal_transition";
-      status: string;
-      termination_reason: string;
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
-      kind: "append_metadata";
-      entry: Record<string, unknown>;
-      updated_at: string;
-      replace_existing_type?: string;
-    };
 
 export type EventOutboxRecord = {
   stream_id: string;

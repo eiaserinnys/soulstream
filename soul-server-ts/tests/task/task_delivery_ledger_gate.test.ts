@@ -64,17 +64,20 @@ describe("TaskDeliveryLedgerGate", () => {
 
   it("routes an exact runtime replay through repository admission coalescing", async () => {
     const deliveryId = "91919191-9191-4919-8919-919191919191";
+    const existing = {
+      ...row(deliveryId, "consumed"),
+      relation_key: "runtime-relation-1",
+      completion_id: "runtime-completion-1",
+      intent: "runtime_followup" as const,
+      payload_hash: "stored-runtime-hash",
+      payload: { text: "stored runtime payload" },
+    };
     const register = vi.fn().mockResolvedValue({
-      row: {
-        ...row(deliveryId, "consumed"),
-        relation_key: "runtime-relation-1",
-        completion_id: "runtime-completion-1",
-        intent: "runtime_followup",
-      },
+      row: existing,
       inserted: false,
       conflict: false,
     });
-    const get = vi.fn();
+    const get = vi.fn().mockResolvedValue(existing);
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
       claimForTarget: vi.fn(),
@@ -106,7 +109,11 @@ describe("TaskDeliveryLedgerGate", () => {
     });
 
     expect(register).toHaveBeenCalledTimes(1);
-    expect(get).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledWith(deliveryId);
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({
+      payloadHash: "stored-runtime-hash",
+      payload: { text: "stored runtime payload" },
+    }));
   });
 
   it("records an inline completion against its semantic relation and caller turn", async () => {
@@ -379,9 +386,10 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("fences an uncertain result to the active dispatch lease", async () => {
+  it("keeps an unknown first result retryable under the active dispatch lease", async () => {
     const deliveryId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
-    const markUncertain = vi.fn().mockResolvedValue(row(deliveryId, "uncertain"));
+    const markUncertain = vi.fn();
+    const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
@@ -393,7 +401,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
-      retryLeasedDelivery: vi.fn(),
+      retryLeasedDelivery,
       markPendingSuperseded: vi.fn(),
     });
 
@@ -403,6 +411,8 @@ describe("TaskDeliveryLedgerGate", () => {
       row: {
         ...row(deliveryId, "dispatching"),
         lease_owner: "route-uncertain",
+        attempt_count: 0,
+        created_at: new Date(),
       },
     }, {
       delivered: null,
@@ -410,11 +420,13 @@ describe("TaskDeliveryLedgerGate", () => {
       consumeWhen: null,
     });
 
-    expect(markUncertain).toHaveBeenCalledWith(
+    expect(retryLeasedDelivery).toHaveBeenCalledWith(
       deliveryId,
       "route-uncertain",
-      "delivery_result_not_accepted",
+      "verdict_unknown",
+      expect.any(Date),
     );
+    expect(markUncertain).not.toHaveBeenCalled();
   });
 
   it("supersedes only the pending durable retry selected by id", async () => {

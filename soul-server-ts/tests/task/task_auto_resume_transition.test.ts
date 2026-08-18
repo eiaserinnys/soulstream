@@ -35,6 +35,32 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("AutoResumeTransition", () => {
+  it("keeps an owned auto-resume initializing until executor activation", async () => {
+    const task = makeTerminalTask({ status: "error" });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const reserveExecutionOwnershipAndWaitForApplication = vi.fn();
+    const persistence = Object.assign(persistenceDouble.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication,
+    });
+    const onResume = vi.fn((resumedTask: Task) => {
+      expect(resumedTask.status).toBe("initializing");
+      expect(resumedTask.pendingExecutionExpectedTerminalEventId).toBe(6);
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence,
+    });
+
+    await expect(
+      transition.resume(task, { text: "owned resume", user: "u" }, onResume),
+    ).resolves.toEqual({ autoResumed: true });
+
+    expect(onResume).toHaveBeenCalledWith(task);
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .not.toHaveBeenCalled();
+    expect(reserveExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
+  });
+
   it("promotes resume through one durable running effect without a direct status broadcast", async () => {
     const order: string[] = [];
     const task = makeTerminalTask();

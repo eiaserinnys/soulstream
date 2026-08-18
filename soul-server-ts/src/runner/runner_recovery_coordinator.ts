@@ -8,7 +8,6 @@ import {
   type RunnerRegistration,
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
-import { unreadableRegistrationFingerprint } from "./runner_recovery_fingerprint.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
@@ -18,12 +17,7 @@ import {
   requireRecoveryTask,
 } from "./runner_recovery_task.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
-import {
-  quarantineUnreadableRunnerRegistration,
-  type RunnerRegistrationQuarantineResult,
-} from "./runner_registration_quarantine.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
-import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import {
   closedRunnerTailRequiresDrain,
@@ -34,24 +28,56 @@ import {
   type RunnerAdoptionDisposition,
 } from "./runner_adoption_failure_recovery.js";
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import { OwnerNullExecutionReconciler } from "./owner_null_execution_reconciler.js";
+import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
+import { RunnerSessionGarbageCollectionScheduler } from
+  "./runner_session_gc_scheduler.js";
+import { UnreadableRunnerRegistrationHandler } from
+  "./unreadable_runner_registration_handler.js";
 
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
-
-const RUNNER_SESSION_GC_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
+  private readonly ownerNullExecutionReconciler: OwnerNullExecutionReconciler;
+  private readonly ownerNullInventoryReconciler: OwnerNullInventoryReconciler;
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
-  private readonly unreadableRegistrationFingerprints = new Map<string, string>();
   private readonly recoveryLogger: RunnerRecoveryLogger;
   private readonly hydrationPhase: RunnerRecoveryHydrationPhase;
   private readonly adoptionFailureRecovery: RunnerAdoptionFailureRecovery;
-  private sessionGarbageCollectionInFlight: Promise<void> | undefined;
-  private nextSessionGarbageCollectionAtMs = 0;
+  private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
+  private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
+    this.ownerNullExecutionReconciler = new OwnerNullExecutionReconciler(options);
+    this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
+      nodeId: options.nodeId,
+      scanIntervalMs: options.scanIntervalMs,
+      leaseTimeoutMs: options.leaseTimeoutMs,
+      taskManager: options.taskManager as Required<Pick<
+        typeof options.taskManager,
+        "listOwnerNullRunningInventory" | "hydrateRunnerRecoveryTask"
+          | "reconcileExecutionOwnershipObservations"
+      >>,
+      logger: options.logger,
+      now: options.now ?? Date.now,
+    });
+    this.sessionGarbageCollectionScheduler = new RunnerSessionGarbageCollectionScheduler({
+      ...(options.sessionGarbageCollector
+        ? { collector: options.sessionGarbageCollector }
+        : {}),
+      logger: options.logger,
+      now: options.now ?? Date.now,
+    });
+    this.unreadableRegistrationHandler = new UnreadableRunnerRegistrationHandler({
+      stateDirectory: options.stateDirectory,
+      logger: options.logger,
+      ...(options.quarantineFailure
+        ? { quarantineFailure: options.quarantineFailure }
+        : {}),
+    });
     this.recoveryLogger = new RunnerRecoveryLogger({
       logger: options.logger,
       now: options.now ?? Date.now,
@@ -117,13 +143,15 @@ export class RunnerRecoveryCoordinator {
   private async performScan(): Promise<void> {
     const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
     const startedAt = monotonicNow();
-    if (this.sessionGarbageCollectionInFlight) {
-      await this.sessionGarbageCollectionInFlight;
+    if (this.sessionGarbageCollectionScheduler.inFlight) {
+      await this.sessionGarbageCollectionScheduler.inFlight;
     }
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
-    await this.handleUnreadableRegistrations(scan.errors);
+    this.ownerNullExecutionReconciler.prune(scan.registrations);
+    await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
+    await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
     const admitted: Array<{
       registration: RunnerRegistration;
@@ -167,6 +195,17 @@ export class RunnerRecoveryCoordinator {
         continue;
       }
       const task = outcome?.status === "ready" ? outcome.task : undefined;
+      if (task) {
+        const ownerNullDisposition = await this.ownerNullExecutionReconciler.reconcile(
+          task,
+          registration,
+        );
+        if (ownerNullDisposition === "wait") continue;
+        if (ownerNullDisposition === "terminal" && disposition !== "closed") {
+          if (registration.pidAlive) await this.terminateRegistration(registration);
+          continue;
+        }
+      }
       if (
         disposition === "adopt_prebootstrap"
         || disposition === "adopt_running"
@@ -192,7 +231,7 @@ export class RunnerRecoveryCoordinator {
         this.options.logger.error({ err: error }, "runner release GC failed");
       }
     }
-    this.scheduleSessionGarbageCollection({
+    this.sessionGarbageCollectionScheduler.schedule({
       ...scan,
       registrations: scan.registrations.filter(
         (registration) => !this.active.has(registration.config.sessionId),
@@ -205,60 +244,12 @@ export class RunnerRecoveryCoordinator {
       monotonicNow(),
     );
   }
-  private async handleUnreadableRegistrations(
-    failures: Array<{ directory: string; error: Error; sessionId?: string; codeSha?: string }>,
-  ): Promise<void> {
-    const currentDirectories = new Set(failures.map((failure) => failure.directory));
-    for (const directory of this.unreadableRegistrationFingerprints.keys()) {
-      if (!currentDirectories.has(directory)) {
-        this.unreadableRegistrationFingerprints.delete(directory);
-      }
-    }
-    for (const failure of failures) {
-      const fingerprint = unreadableRegistrationFingerprint(failure);
-      const shouldLog = this.unreadableRegistrationFingerprints.get(failure.directory)
-        !== fingerprint;
-      if (shouldLog) {
-        const { error, ...failureContext } = failure;
-        this.options.logger.error(
-          { ...failureContext, err: error },
-          "runner registration is unreadable",
-        );
-        this.unreadableRegistrationFingerprints.set(failure.directory, fingerprint);
-      }
-      let result: RunnerRegistrationQuarantineResult;
-      try {
-        result = await (
-          this.options.quarantineFailure ?? quarantineUnreadableRunnerRegistration
-        )(this.options.stateDirectory, failure);
-      } catch (error) {
-        if (shouldLog) {
-          this.options.logger.error(
-            { err: error, directory: failure.directory, sessionId: failure.sessionId },
-            "runner registration quarantine failed",
-          );
-        }
-        continue;
-      }
-      if (result.status === "quarantined") {
-        this.options.logger.info(
-          {
-            directory: failure.directory,
-            quarantinePath: result.path,
-            pid: result.pid,
-            sessionId: failure.sessionId,
-          },
-          "proven-dead unreadable runner registration quarantined",
-        );
-      }
-    }
-  }
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     await this.waitForSettled();
-    await this.sessionGarbageCollectionInFlight;
+    await this.sessionGarbageCollectionScheduler.inFlight;
     this.active.clear();
   }
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
@@ -301,9 +292,23 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "closed") {
-      if (registration.pidAlive) await this.terminateRegistration(registration);
-      if (!closedRunnerTailRequiresDrain(registration)) return;
-      await this.options.closedTailDrainer.drain({ ...registration, pidAlive: false });
+      const recoveredTask = requireRecoveryTask(task, registration);
+      const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+      if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
+      const closedRegistration = { ...hydrated, pidAlive: false };
+      if (closedRunnerTailRequiresDrain(closedRegistration)) {
+        await this.options.closedTailDrainer.drain(closedRegistration);
+      }
+      prepareRecoveredTask(recoveredTask, closedRegistration);
+      const projectClosedRunner = this.options.taskManager.projectClosedRunner;
+      if (!projectClosedRunner) {
+        throw new Error("closed runner central projection is not configured");
+      }
+      await projectClosedRunner.call(
+        this.options.taskManager,
+        recoveredTask,
+        "runner lifecycle closed during startup recovery",
+      );
       return;
     }
     if (disposition === "already_reaped") {
@@ -311,30 +316,6 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
-  }
-  private scheduleSessionGarbageCollection(
-    scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>,
-  ): void {
-    if (
-      !this.options.sessionGarbageCollector
-      || this.sessionGarbageCollectionInFlight
-      || (scan.registrations.length === 0 && scan.errors.length === 0)
-    ) return;
-    const now = (this.options.now ?? Date.now)();
-    if (now < this.nextSessionGarbageCollectionAtMs) return;
-    this.nextSessionGarbageCollectionAtMs = now + RUNNER_SESSION_GC_SWEEP_INTERVAL_MS;
-    const collection = this.options.sessionGarbageCollector.collect(scan)
-      .then(() => undefined)
-      .catch((error) => {
-        this.nextSessionGarbageCollectionAtMs = 0;
-        this.options.logger.error({ err: error }, "runner session GC failed");
-      })
-      .finally(() => {
-        if (this.sessionGarbageCollectionInFlight === collection) {
-          this.sessionGarbageCollectionInFlight = undefined;
-        }
-      });
-    this.sessionGarbageCollectionInFlight = collection;
   }
   private async handleWithFailureTracking(
     registration: RunnerRegistration,
@@ -440,6 +421,7 @@ export class RunnerRecoveryCoordinator {
     if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
     await this.recoverRegistered({ ...hydrated, pidAlive: false }, task, "offline");
     prepareRecoveredTask(task, hydrated);
+    task.runnerTerminalFact = "reaped";
     const message = hydrated.lifecycle?.terminal_error?.message
       ?? "runner was reaped before recovery completed";
     await this.options.taskManager.markRunnerFailureAndResume(
@@ -493,8 +475,9 @@ export class RunnerRecoveryCoordinator {
       { pid: registration.pid, startIdentity: registration.pidStartIdentity },
     );
   }
+
 }
 
 function dispositionRequiresTask(disposition: RunnerRecoveryDisposition): boolean {
-  return disposition !== "wait_for_bootstrap" && disposition !== "closed";
+  return disposition !== "wait_for_bootstrap";
 }

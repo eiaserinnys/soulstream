@@ -10,6 +10,14 @@ describe("applyEventSessionEffect", () => {
     ["set_backend_session_id", "session_set_claude_id"],
     ["rotate_backend_session_id", "session_rotate_claude_id"],
     ["running_transition", "session_apply_running_transition"],
+    ["execution_reserve", "session_reserve_execution_ownership"],
+    ["execution_prove", "session_prove_execution_ownership"],
+    ["execution_adopt_reserve", "session_reserve_execution_adoption"],
+    ["execution_activate", "session_activate_execution_ownership"],
+    ["execution_fail", "session_fail_execution_ownership"],
+    ["execution_backfill", "session_backfill_execution_ownership"],
+    ["runner_terminal_fact", "session_project_runner_terminal_fact"],
+    ["recovered_runner_terminal_fact", "session_project_recovered_runner_terminal_fact"],
     ["terminal_transition", "session_apply_terminal_transition"],
     ["append_metadata", "session_apply_metadata_entry"],
   ] as const)("applies %s through its session stored procedure", async (kind, procedure) => {
@@ -19,6 +27,9 @@ describe("applyEventSessionEffect", () => {
       statements.push(statement);
       return statement.includes("session_apply_running_transition")
         || statement.includes("session_apply_terminal_transition")
+        || statement.includes("execution_ownership")
+        || statement.includes("execution_adoption")
+        || statement.includes("runner_terminal_fact")
         ? [canonicalRow(true)]
         : [];
     }) as EventIngressQuerySql;
@@ -32,7 +43,13 @@ describe("applyEventSessionEffect", () => {
 
     expect(statements).toHaveLength(1);
     expect(statements[0]).toContain(procedure);
-    expect(statements[0]).not.toContain("last_event_id");
+    if (
+      kind !== "execution_prove"
+      && kind !== "execution_fail"
+      && kind !== "execution_backfill"
+    ) {
+      expect(statements[0]).not.toContain("last_event_id");
+    }
   });
 
   it("persists the first terminal event id as the canonical receipt", async () => {
@@ -140,6 +157,86 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
   if (kind === "running_transition") return {
     kind,
     review_state: "not_required",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_reserve") return {
+    kind,
+    ownership_generation: 1,
+    owner_kind: "runner_process",
+    manifest_id: "release-1",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_adopt_reserve") return {
+    kind,
+    ownership_generation: 2,
+    manifest_id: "release-1",
+    previous_registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_prove") return {
+    kind,
+    ownership_generation: 1,
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_activate") return {
+    kind,
+    ownership_generation: 1,
+    review_state: "not_required",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_fail") return {
+    kind,
+    ownership_generation: 1,
+    failure_reason: "spawn failed",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_backfill") return {
+    kind,
+    first_manifest_id: "release-1",
+    first_registration_id: "registration-1",
+    first_pid: 123,
+    first_start_identity: "start-1",
+    first_execution_command_id: "execute-1",
+    first_observed_at: "2026-08-06T00:00:00.000Z",
+    second_manifest_id: "release-1",
+    second_registration_id: "registration-1",
+    second_pid: 123,
+    second_start_identity: "start-1",
+    second_execution_command_id: "execute-1",
+    second_observed_at: "2026-08-06T00:00:15.000Z",
+    evidence_hash: "a".repeat(64),
+    minimum_lease_interval_ms: 15_000,
+    probe_only: false,
+    updated_at: "2026-08-06T00:00:15.000Z",
+  };
+  if (kind === "runner_terminal_fact") return {
+    kind,
+    ownership_generation: 1,
+    execution_command_id: "execute-1",
+    runner_fact: "completed",
+    termination_detail: null,
+    review_state: "not_required",
+    last_assistant_text: "done",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "recovered_runner_terminal_fact") return {
+    kind,
+    manifest_id: "release-1",
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
+    runner_fact: "reaped",
+    termination_detail: "runner exited",
+    review_state: "not_required",
+    last_assistant_text: null,
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "terminal_transition") return {

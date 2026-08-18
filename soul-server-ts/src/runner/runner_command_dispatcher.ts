@@ -6,6 +6,8 @@ import type {
   EnginePort,
   EngineUserInput,
 } from "../engine/protocol.js";
+import type { ExecutionIdentityProof } from "../task/execution_ownership.js";
+import { inspectProcessIdentity } from "./runner_process_lock.js";
 
 import {
   RunnerControlFrameSchema,
@@ -54,6 +56,7 @@ export interface RunnerCommandDispatcher {
   ): Promise<EngineInterventionResult>;
   discardIntervention?(interventionId: string): Promise<void>;
   recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
+  prepareExecutionIdentity?(commandId?: string): Promise<ExecutionIdentityProof>;
 }
 
 export interface RunnerInterventionStageInput {
@@ -83,6 +86,8 @@ export interface RunnerPendingIntervention {
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
   private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
   private activeExecuteCommandId: string | undefined;
+  private preparedExecuteCommandId: string | undefined;
+  private readonly registrationId = `in-process:${randomUUID()}`;
 
   constructor(
     private readonly target: EnginePort,
@@ -151,7 +156,8 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
-    const commandId = `execute:${randomUUID()}`;
+    const commandId = this.preparedExecuteCommandId ?? `execute:${randomUUID()}`;
+    this.preparedExecuteCommandId = undefined;
     const command = executeCommandFrame(commandId, params);
     const result = this.dispatch(command);
     return this.executeCommand(commandId, result);
@@ -162,6 +168,21 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     assertCommandAccepted(await this.dispatch(
       prepareSessionCommandFrame(commandId, agentSessionId),
     ));
+  }
+
+  async prepareExecutionIdentity(commandId?: string): Promise<ExecutionIdentityProof> {
+    const observed = await inspectProcessIdentity(process.pid);
+    if (!observed.alive || !observed.startIdentity) {
+      throw new Error("in-process runner identity unavailable");
+    }
+    const executionCommandId = commandId ?? `execute:${randomUUID()}`;
+    this.preparedExecuteCommandId = executionCommandId;
+    return {
+      registrationId: this.registrationId,
+      pid: process.pid,
+      startIdentity: observed.startIdentity,
+      executionCommandId,
+    };
   }
 
   async interrupt(): Promise<boolean> {

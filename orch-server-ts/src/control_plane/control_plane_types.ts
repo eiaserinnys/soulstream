@@ -16,6 +16,12 @@ export type DeliveryState =
   | "superseded"
   | "uncertain";
 
+export type DeliveryAggregateState =
+  | "pending"
+  | "delivered"
+  | "consumed"
+  | "dead_letter";
+
 export interface SessionDeliveryRow {
   delivery_id: string;
   enqueue_sequence?: string | number;
@@ -33,6 +39,7 @@ export interface SessionDeliveryRow {
   payload_hash: string;
   payload: Record<string, unknown>;
   state: DeliveryState;
+  aggregate_state: DeliveryAggregateState;
   created_at: Date;
   updated_at: Date;
   claimed_at: Date | null;
@@ -47,6 +54,11 @@ export interface SessionDeliveryRow {
   consumed_at: Date | null;
   superseded_at: Date | null;
   superseded_terminal_revision: string | null;
+  target_receipt_id: string | null;
+  target_receipt_at: Date | null;
+  consumed_reason: string | null;
+  dead_letter_reason: string | null;
+  dead_lettered_at: Date | null;
 }
 
 export interface RegisterSessionDeliveryParams {
@@ -121,6 +133,9 @@ export interface SessionDeliveryNotificationOutboxRow {
   payload: Record<string, unknown>;
   disposition: "queued" | "auto_resume";
   state: "pending" | "claimed" | "published" | "dead_letter";
+  projection_state: "staged" | "publishing" | "published" | "discarded";
+  target_receipt_id: string | null;
+  target_receipt_at: Date | null;
   lease_owner: string | null;
   lease_expires_at: Date | null;
   attempt_count: number;

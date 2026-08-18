@@ -251,7 +251,7 @@ export class RunnerChildRuntime {
     }
     if (command.kind === "close") {
       const lifecycle = this.lifecycle.read();
-      if (lifecycle) {
+      if (lifecycle?.execution_state === "running") {
         this.lifecycle.finish(
           lifecycle.execution_command_id,
           "closed",

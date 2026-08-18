@@ -14,13 +14,18 @@ import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
+  nodeId: string;
   stateDirectory: string;
   leaseTimeoutMs: number;
   scanIntervalMs: number;
   taskManager: Pick<
     TaskManager,
     "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume"
-  >;
+      | "listOwnerNullRunningInventory"
+  > & Partial<Pick<
+    TaskManager,
+    "projectClosedRunner" | "reconcileExecutionOwnershipObservations"
+  >>;
   taskExecutor: Pick<
     TaskExecutor,
     "recoverRegisteredRunner" | "restartRegisteredRunner"

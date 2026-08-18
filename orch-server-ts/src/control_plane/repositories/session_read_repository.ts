@@ -12,6 +12,12 @@ export interface HostSessionSummaryRow extends Record<string, unknown> {
   updated_at: Date;
 }
 
+export interface HostOwnerNullRunningSessionRow extends Record<string, unknown> {
+  session_id: string;
+  node_id: string | null;
+  updated_at: Date;
+}
+
 export class SessionReadRepository {
   constructor(private readonly sql: SqlClient) {}
 
@@ -139,5 +145,18 @@ export class SessionReadRepository {
       sessions: rows.map(({ total_count: _totalCount, ...row }) => row),
       total: rows[0] ? Number(rows[0].total_count) : 0,
     };
+  }
+
+  async listOwnerNullRunningInventory(params: {
+    nodeId: string;
+    limit: number;
+  }): Promise<HostOwnerNullRunningSessionRow[]> {
+    return await this.sql<HostOwnerNullRunningSessionRow[]>`
+      SELECT session_id, node_id, updated_at
+      FROM session_owner_null_running_inventory
+      WHERE node_id = ${params.nodeId}
+      ORDER BY updated_at, session_id
+      LIMIT ${params.limit}
+    `;
   }
 }

@@ -1,3 +1,7 @@
+import type { EventPersistence } from "../db/event_persistence.js";
+import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
+import { applyCanonicalSessionProjection } from
+  "./task_canonical_session_projection.js";
 import type { Task } from "./task_models.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { AutoResumeTransition } from "./task_auto_resume_transition.js";
@@ -9,6 +13,15 @@ export interface TaskRunnerRecoveryDeps {
   rememberTask(task: Task): void;
   lifecycleTransition: TaskLifecycleTransition;
   autoResumeTransition: AutoResumeTransition;
+  persistence?: EventPersistence;
+}
+
+export interface ExecutionOwnershipReconciliationInput {
+  first: ExecutionOwnershipObservation;
+  second: ExecutionOwnershipObservation;
+  evidenceHash: string;
+  minimumLeaseIntervalMs: number;
+  probeOnly: boolean;
 }
 
 /**
@@ -67,6 +80,33 @@ export class TaskRunnerRecovery {
       await this.deps.lifecycleTransition.persistExecutorFinalState(task);
       throw error;
     }
+  }
+
+  async projectClosed(task: Task, detail: string): Promise<boolean> {
+    task.runner = undefined;
+    task.runnerRetainedForClaudeBackground = undefined;
+    task.executionPromise = undefined;
+    return await this.deps.lifecycleTransition.projectRecoveredRunnerTerminalFact(
+      task,
+      "closed",
+      detail,
+    );
+  }
+
+  async reconcileExecutionOwnershipObservations(
+    task: Task,
+    input: ExecutionOwnershipReconciliationInput,
+  ): Promise<boolean> {
+    if (!this.deps.persistence) {
+      throw new Error("execution ownership backfill persistence is required");
+    }
+    const application =
+      await this.deps.persistence.backfillExecutionOwnershipAndWaitForApplication(
+        task.agentSessionId,
+        input,
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    return application.applied;
   }
 }
 

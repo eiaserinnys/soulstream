@@ -4,7 +4,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 
 import type { ExternalFinalizeParams } from "./task_lifecycle_transition.js";
-import type { Task } from "./task_models.js";
+import { isActiveTaskStatus, type Task } from "./task_models.js";
 import type { ClaudeRuntimeRegistryCloseReason } from
   "../engine/claude_session_client_registry.js";
 
@@ -47,7 +47,7 @@ export class TaskLifecycleRoute {
   async cancelTask(sessionId: string): Promise<boolean> {
     const task = this.deps.getTask(sessionId);
     const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
-    if (cancelled || !task || task.status === "running") return cancelled;
+    if (cancelled || !task || isActiveTaskStatus(task.status)) return cancelled;
     if (!this.deps.closeSessionRuntime) return false;
     return await this.deps.closeSessionRuntime(sessionId, "explicit_cancel");
   }
@@ -91,7 +91,7 @@ export class TaskLifecycleRoute {
         task.executionPromise = undefined;
         continue;
       }
-      if (task.status === "running") {
+      if (isActiveTaskStatus(task.status)) {
         await this.deps.lifecycleTransition.markRunningTaskInterruptedForShutdown(
           task,
           shutdownAt,

@@ -671,9 +671,14 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       FROM session_delivery_notification_outbox
       WHERE delivery_id = 'delivery-node-ownerless'
     `).resolves.toMatchObject([{
-      state: "dead_letter",
-      last_error: "notification target session has no owner node",
+      state: "pending",
+      last_error: null,
     }]);
+    await expect(harness.sql<Array<{ outcome: string }>>`
+      SELECT outcome FROM session_delivery_attempts
+      WHERE delivery_id = 'delivery-node-ownerless'
+      ORDER BY attempt_number
+    `).resolves.toEqual([{ outcome: "accepted" }]);
   });
 
   it("dead-letters retryable rows and only requeues them through the explicit operator path", async () => {

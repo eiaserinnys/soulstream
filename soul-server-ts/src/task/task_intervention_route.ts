@@ -2,7 +2,12 @@ import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resum
 import type { ActiveTaskRecovery } from "./task_active_recovery.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
-import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
+import {
+  isTerminalTaskStatus,
+  type CallerInfo,
+  type InterventionMessage,
+  type Task,
+} from "./task_models.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type {
   RunningInterventionResult,
@@ -15,6 +20,10 @@ import type {
 import { decideNotificationDelivery } from "./delivery_policy.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
+
+type NotificationPublication = Awaited<
+  ReturnType<SessionNotificationPublisher["publish"]>
+>;
 
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
@@ -152,6 +161,9 @@ export class TaskInterventionRoute {
     let ledgerResultRecorded = false;
     let deferredResumeTask: Task | undefined;
     let deferredResumeStarted = false;
+    let activationCompleted = false;
+    let notificationDisposition: "queued" | "auto_resume" | undefined;
+    let notificationPublication: NotificationPublication | undefined;
     const startDeferredResumeOnce = (): void => {
       if (deferredResumeStarted || !deferredResumeTask) return;
       deferredResumeStarted = true;
@@ -161,7 +173,8 @@ export class TaskInterventionRoute {
     };
     try {
       task = await this.resolveTask(params.agentSessionId);
-      if (params.onlyIfTerminal === true && task.status === "running") {
+      await this.awaitInitializingTask(task);
+      if (params.onlyIfTerminal === true && !isTerminalTaskStatus(task.status)) {
         const result = {
           delivered: false,
           deferred: true,
@@ -189,8 +202,13 @@ export class TaskInterventionRoute {
           };
         }
       }
-      const isRunning =
-        this.deps.activeTaskRecovery.prepareForIntervention(task) === "running";
+      const taskRoute = this.deps.activeTaskRecovery.prepareForIntervention(task);
+      if (taskRoute === "activating") {
+        throw new Error(
+          `execution activation did not reach running state for ${task.agentSessionId}`,
+        );
+      }
+      const isRunning = taskRoute === "running";
       const notificationDecision =
         admission.kind === "admitted" &&
         isNotificationIntent(message.deliveryIntent)
@@ -200,7 +218,6 @@ export class TaskInterventionRoute {
             )
           : undefined;
       let result: AddInterventionResult;
-      let notificationDisposition: "queued" | "auto_resume" | undefined;
       if (isRunning && admission.kind === "admitted") {
         if (notificationDecision?.action === "queue_only") {
           result = await this.deps.runningInterventionTransition.queueOnly(
@@ -247,26 +264,35 @@ export class TaskInterventionRoute {
         ledgerResultRecorded = true;
       }
       if (notificationDisposition && this.deps.sessionNotificationPublisher) {
-        const published = await this.deps.sessionNotificationPublisher.publish(
+        notificationPublication = await this.deps.sessionNotificationPublisher.publish(
           task,
           message,
           notificationDisposition,
         );
-        if (this.deps.deliveryLedgerGate) {
-          if (published !== false) {
-            await this.deps.deliveryLedgerGate.recordNotificationPublished?.(admission);
-          } else {
-            await this.deps.deliveryLedgerGate.recordNotificationFailure?.(
-              admission,
-              "session_notification persistence failed",
-            );
-          }
+        if (notificationDisposition !== "auto_resume") {
+          await this.projectNotificationPublication(
+            admission,
+            notificationPublication,
+          );
         }
       }
       // A terminal delivery must exist durably in `queued` before the executor
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
+      if ("autoResumed" in result && task.status === "initializing") {
+        const activation = task.executionActivationPromise;
+        if (!activation) {
+          throw new Error(
+            `auto-resume executor did not expose activation barrier for ${task.agentSessionId}`,
+          );
+        }
+        await activation;
+      }
+      activationCompleted = true;
+      if (notificationDisposition === "auto_resume" && notificationPublication) {
+        await this.projectNotificationPublication(admission, notificationPublication);
+      }
       return result;
     } catch (err) {
       let recoveryError: unknown;
@@ -274,6 +300,21 @@ export class TaskInterventionRoute {
         startDeferredResumeOnce();
       } catch (resumeError) {
         recoveryError = resumeError;
+      }
+      if (
+        this.deps.deliveryLedgerGate
+        && ledgerResultRecorded
+        && notificationDisposition === "auto_resume"
+        && !activationCompleted
+      ) {
+        try {
+          await this.deps.deliveryLedgerGate.recordNotificationFailure?.(
+            admission,
+            `auto-resume activation failed: ${errorMessage(err)}`,
+          );
+        } catch (notificationRecoveryError) {
+          recoveryError ??= notificationRecoveryError;
+        }
       }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         try {
@@ -289,6 +330,35 @@ export class TaskInterventionRoute {
     }
   }
 
+  private async awaitInitializingTask(task: Task): Promise<void> {
+    if (task.status !== "initializing") return;
+    const activation = task.executionActivationPromise;
+    if (!activation) {
+      throw new Error(
+        `initializing task has no activation barrier: ${task.agentSessionId}`,
+      );
+    }
+    await activation;
+  }
+
+  private async projectNotificationPublication(
+    admission: DeliveryLedgerAdmission,
+    publication: NotificationPublication,
+  ): Promise<void> {
+    if (!this.deps.deliveryLedgerGate) return;
+    if (publication.published) {
+      await this.deps.deliveryLedgerGate.recordNotificationPublished?.(
+        admission,
+        publication.targetReceiptId,
+      );
+      return;
+    }
+    await this.deps.deliveryLedgerGate.recordNotificationFailure?.(
+      admission,
+      "session_notification persistence failed",
+    );
+  }
+
   private async resolveTask(agentSessionId: string): Promise<Task> {
     const activeTask = this.deps.getTask(agentSessionId);
     if (activeTask) return activeTask;
@@ -300,6 +370,10 @@ export class TaskInterventionRoute {
     this.deps.rememberTask(loaded);
     return loaded;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function hydrateStoredDeliveryMessage(

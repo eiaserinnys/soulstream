@@ -133,7 +133,7 @@ export class TaskCreation {
     const task: Task = {
       agentSessionId: params.agentSessionId,
       prompt: params.prompt,
-      status: "running",
+      status: "initializing",
       ...review,
       profileId: params.profileId,
       agentProfileSnapshot: params.agentProfileSnapshot,
@@ -176,7 +176,7 @@ export class TaskCreation {
       sessionType,
       prompt: task.prompt,
       clientId: task.clientId ?? null,
-      status: task.status,
+      status: "initializing",
       createdAt: task.createdAt,
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,

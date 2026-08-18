@@ -1,5 +1,6 @@
 import type { AgentRegistry } from "../agent_registry.js";
 import type { TaskManager } from "../task/task_manager.js";
+import { isActiveTaskStatus } from "../task/task_models.js";
 import type {
   CommandHandlerMap,
   CommandLike,
@@ -30,7 +31,7 @@ async function handleHealthCheck(
     type: "health_status",
     runners: {
       max_concurrent: agents.length,
-      active: deps.taskManager.listTasks().filter((t) => t.status === "running").length,
+      active: deps.taskManager.listTasks().filter((t) => isActiveTaskStatus(t.status)).length,
     },
     node_id: deps.nodeId,
     requestId: cmd.requestId ?? cmd.request_id ?? "",

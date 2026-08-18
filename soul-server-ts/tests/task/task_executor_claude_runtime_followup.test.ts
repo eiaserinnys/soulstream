@@ -551,7 +551,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       order.indexOf("parent_consumed"),
     );
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(parent, task);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(parent, task, "event:0");
   });
 
   it("runtime follow-up turn이 빈 응답으로 끝나면 fallback follow-up을 재시도한다", async () => {

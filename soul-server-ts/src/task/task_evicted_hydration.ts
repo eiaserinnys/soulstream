@@ -15,6 +15,7 @@ import {
 } from "./task_metadata.js";
 
 const VALID_TASK_STATUSES: readonly TaskStatus[] = [
+  "initializing",
   "running",
   "completed",
   "error",

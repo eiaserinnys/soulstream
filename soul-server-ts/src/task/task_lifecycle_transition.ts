@@ -2,7 +2,15 @@ import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 
-import type { Task } from "./task_models.js";
+import {
+  isActiveTaskStatus,
+  isTerminalTaskStatus,
+  type Task,
+} from "./task_models.js";
+import {
+  runnerFactProjection,
+  type RunnerTerminalFact,
+} from "./execution_ownership.js";
 import { reviewStateAfterTerminal } from "./session_review.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -33,7 +41,7 @@ export class TaskLifecycleTransition {
 
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
-    if (task.status !== "running") return false;
+    if (!isActiveTaskStatus(task.status)) return false;
     if (!task.runner) return false;
     if (task.interruptRequest) return await task.interruptRequest;
 
@@ -48,7 +56,7 @@ export class TaskLifecycleTransition {
           );
           return false;
         }
-        if (task.status !== "running") {
+        if (!isActiveTaskStatus(task.status)) {
           this.deps.logger.info(
             { sessionId: task.agentSessionId, status: task.status },
             "Runner interrupt ACK arrived after task reached a terminal state",
@@ -93,7 +101,7 @@ export class TaskLifecycleTransition {
     task: Task,
     shutdownAt: Date,
   ): Promise<void> {
-    if (task.status !== "running") return;
+    if (!isActiveTaskStatus(task.status)) return;
 
     task.status = "interrupted";
     task.completedAt = shutdownAt;
@@ -141,6 +149,54 @@ export class TaskLifecycleTransition {
     return await this.persistFinalState(task);
   }
 
+  async projectRecoveredRunnerTerminalFact(
+    task: Task,
+    runnerFact: RunnerTerminalFact,
+    terminationDetail: string,
+  ): Promise<boolean> {
+    const ownership = task.recoveredExecutionOwnership;
+    if (!ownership) {
+      throw new Error("recovered execution ownership identity required");
+    }
+    if (!this.deps.persistence) {
+      throw new Error("recovered runner terminal persistence is required");
+    }
+
+    if (!isTerminalTaskStatus(task.status)) {
+      const projection = runnerFactProjection(runnerFact);
+      task.status = projection.status;
+      task.completedAt = new Date();
+      task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
+      task.terminationReason = projection.terminationReason;
+      task.terminationDetail = terminationDetail;
+      task.pendingTerminationHint = undefined;
+      task.pendingTerminationDetail = undefined;
+    }
+    task.runnerTerminalFact = runnerFact;
+
+    const completedAt = task.completedAt ?? new Date();
+    const application =
+      await this.deps.persistence.enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
+        task.agentSessionId,
+        buildSessionEndedEvent(task),
+        {
+          kind: "recovered_runner_terminal_fact",
+          manifest_id: ownership.manifestId,
+          registration_id: ownership.registrationId,
+          pid: ownership.pid,
+          start_identity: ownership.startIdentity,
+          execution_command_id: ownership.executionCommandId,
+          runner_fact: runnerFact,
+          termination_detail: terminationDetail,
+          review_state: task.reviewState ?? "not_required",
+          last_assistant_text: task.lastAssistantText ?? null,
+          updated_at: completedAt.toISOString(),
+        },
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    return application.applied;
+  }
+
   private async persistFinalState(task: Task): Promise<TaskFinalStatePersistenceResult> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
@@ -169,22 +225,59 @@ export class TaskLifecycleTransition {
       throw new Error("session_ended durable event persistence is required");
     }
     const event = buildSessionEndedEvent(task);
-    const application = await this.deps.persistence
-      .enqueueTerminalTransitionAndWaitForApplication(
-      task.agentSessionId,
-      event,
-      {
-        kind: "terminal_transition",
-        status: task.status,
-        termination_reason: terminationReason,
-        termination_detail: terminationDetail,
-        review_state: task.reviewState ?? "not_required",
-        last_assistant_text: task.lastAssistantText ?? null,
-        updated_at: (task.completedAt ?? new Date()).toISOString(),
-      },
-    );
+    const common = {
+      termination_detail: terminationDetail,
+      review_state: task.reviewState ?? "not_required",
+      last_assistant_text: task.lastAssistantText ?? null,
+      updated_at: (task.completedAt ?? new Date()).toISOString(),
+    };
+    const ownership = task.executionOwnership;
+    const application = ownership
+      ? await this.deps.persistence.enqueueRunnerTerminalFactAndWaitForApplication(
+          task.agentSessionId,
+          event,
+          {
+            kind: "runner_terminal_fact",
+            ownership_generation: ownership.ownershipGeneration,
+            execution_command_id: ownership.executionCommandId,
+            runner_fact: task.runnerTerminalFact ?? runnerFactForTask(task),
+            ...common,
+          },
+        )
+      : task.recoveredExecutionOwnership
+        ? await this.deps.persistence.enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
+            task.agentSessionId,
+            event,
+            {
+              kind: "recovered_runner_terminal_fact",
+              manifest_id: task.recoveredExecutionOwnership.manifestId,
+              registration_id: task.recoveredExecutionOwnership.registrationId,
+              pid: task.recoveredExecutionOwnership.pid,
+              start_identity: task.recoveredExecutionOwnership.startIdentity,
+              execution_command_id:
+                task.recoveredExecutionOwnership.executionCommandId,
+              runner_fact: task.runnerTerminalFact ?? runnerFactForTask(task),
+              ...common,
+            },
+          )
+        : await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+          task.agentSessionId,
+          event,
+          {
+            kind: "terminal_transition",
+            status: task.status,
+            termination_reason: terminationReason,
+            ...common,
+          },
+        );
     applyCanonicalSessionProjection(task, application.canonicalSession);
     return application.applied;
   }
 
+}
+
+function runnerFactForTask(task: Task): RunnerTerminalFact {
+  if (task.status === "completed") return "completed";
+  if (task.status === "interrupted") return "closed";
+  return "failed";
 }

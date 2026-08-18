@@ -74,6 +74,75 @@ describe("parseEventAppendBatch sanitization", () => {
     ).toThrow("session_effect has unexpected fields: unexpected");
   });
 
+  it("requires execution_command_id on recovered terminal facts", () => {
+    const effect = {
+      kind: "recovered_runner_terminal_fact",
+      manifest_id: "manifest-1",
+      registration_id: "registration-1",
+      pid: 123,
+      start_identity: "start-1",
+      execution_command_id: "execute-1",
+      runner_fact: "reaped",
+      termination_detail: "runner_exited",
+      review_state: "not_required",
+      last_assistant_text: null,
+      updated_at: "2026-08-18T00:00:00.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    const { execution_command_id: _omitted, ...withoutCommand } = effect;
+    expect(() => parseEventAppendBatch(batchWithEffect(withoutCommand)))
+      .toThrow("session_effect.execution_command_id must be a non-empty string");
+  });
+
+  it("requires execution_command_id on generation-fenced terminal facts", () => {
+    const effect = {
+      kind: "runner_terminal_fact",
+      ownership_generation: 3,
+      execution_command_id: "execute-3",
+      runner_fact: "completed",
+      termination_detail: null,
+      review_state: "not_required",
+      last_assistant_text: "done",
+      updated_at: "2026-08-18T00:00:00.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    const { execution_command_id: _omitted, ...withoutCommand } = effect;
+    expect(() => parseEventAppendBatch(batchWithEffect(withoutCommand)))
+      .toThrow("session_effect.execution_command_id must be a non-empty string");
+  });
+
+  it("keeps the two owner-null observations and evidence hash intact", () => {
+    const effect = {
+      kind: "execution_backfill",
+      first_manifest_id: "manifest-1",
+      first_registration_id: "registration-1",
+      first_pid: 123,
+      first_start_identity: "start-1",
+      first_execution_command_id: "execute-1",
+      first_observed_at: "2026-08-18T00:00:00.000Z",
+      second_manifest_id: "manifest-1",
+      second_registration_id: "registration-1",
+      second_pid: 123,
+      second_start_identity: "start-1",
+      second_execution_command_id: "execute-1",
+      second_observed_at: "2026-08-18T00:00:31.000Z",
+      evidence_hash: "b".repeat(64),
+      minimum_lease_interval_ms: 30_000,
+      probe_only: false,
+      updated_at: "2026-08-18T00:00:31.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+  });
+
   it("sanitizes payload, searchable_text, dedupe key, and session effect", () => {
     const batch = parseEventAppendBatch({
       type: "event_append_batch",

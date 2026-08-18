@@ -22,6 +22,9 @@ function row(
     },
     disposition: "queued",
     state: "claimed",
+    projection_state: "publishing",
+    target_receipt_id: null,
+    target_receipt_at: null,
     lease_owner: "notification-worker",
     lease_expires_at: new Date("2026-07-26T00:01:00Z"),
     attempt_count: 0,
@@ -53,11 +56,15 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([poison, healthy]),
+      get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(healthy),
       retry: vi.fn().mockResolvedValue(poison),
       deadLetter: vi.fn().mockResolvedValue({ ...poison, state: "dead_letter" }),
     };
-    const publish = vi.fn().mockResolvedValue(true);
+    const publish = vi.fn().mockResolvedValue({
+      published: true,
+      targetReceiptId: "event:healthy",
+    });
     const recovery = new SessionDeliveryNotificationRecovery({
       repository,
       targetNodeId: "node-test",
@@ -81,6 +88,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     expect(repository.markPublished).toHaveBeenCalledWith(
       "delivery-healthy",
       "notification-worker",
+      "event:healthy",
     );
   });
 
@@ -89,6 +97,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([pending]),
+      get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn().mockResolvedValue(pending),
       deadLetter: vi.fn(),
@@ -97,7 +106,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
       repository,
       targetNodeId: "node-test",
       resolveTask: vi.fn().mockResolvedValue(task("target")),
-      publish: vi.fn().mockResolvedValue(false),
+      publish: vi.fn().mockResolvedValue({ published: false }),
       logger: { warn: vi.fn() },
     });
 
@@ -125,11 +134,15 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([legacy]),
+      get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(legacy),
       retry: vi.fn(),
       deadLetter: vi.fn(),
     };
-    const publish = vi.fn().mockResolvedValue(true);
+    const publish = vi.fn().mockResolvedValue({
+      published: true,
+      targetReceiptId: "event:legacy",
+    });
     const recovery = new SessionDeliveryNotificationRecovery({
       repository,
       targetNodeId: "node-test",
@@ -159,11 +172,15 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([runtimeFollowup]),
+      get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(runtimeFollowup),
       retry: vi.fn(),
       deadLetter: vi.fn(),
     };
-    const publish = vi.fn().mockResolvedValue(true);
+    const publish = vi.fn().mockResolvedValue({
+      published: true,
+      targetReceiptId: "event:runtime",
+    });
     const recovery = new SessionDeliveryNotificationRecovery({
       repository,
       targetNodeId: "node-test",
@@ -190,6 +207,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([invalid]),
+      get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn(),
       deadLetter: vi.fn().mockResolvedValue({ ...invalid, state: "dead_letter" }),
@@ -216,6 +234,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn(),
       deadLetter: vi.fn(),

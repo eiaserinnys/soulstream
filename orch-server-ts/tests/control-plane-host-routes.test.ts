@@ -354,6 +354,9 @@ describe("control-plane host routes", () => {
           return [{ lease_expires_at: leaseExpiresAt }];
         }
         if (statement.includes("INSERT INTO session_delivery_notification_outbox")) {
+          return [{ delivery_id: "delivery-1" }];
+        }
+        if (statement.includes("INSERT INTO session_delivery_attempts")) {
           return [];
         }
         throw new Error(`unexpected SQL: ${statement}`);
@@ -493,6 +496,7 @@ describe("control-plane host routes", () => {
       listSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
       listRunningSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
       listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
+      listOwnerNullRunningInventory: vi.fn(async () => []),
       countEvents: vi.fn(async () => 0),
       readEvents: vi.fn(async () => []),
       readOneEvent: vi.fn(async () => null),
@@ -536,6 +540,7 @@ describe("control-plane host routes", () => {
       ["list_summary", "listSessionsSummary"],
       ["list_running", "listRunningSessionsSummary"],
       ["upstream_dump", "listSessionsForUpstreamDump"],
+      ["owner_null_running_inventory", "listOwnerNullRunningInventory"],
       ["event_count", "countEvents"],
       ["event_read_page", "readEvents"],
       ["event_read_one", "readOneEvent"],

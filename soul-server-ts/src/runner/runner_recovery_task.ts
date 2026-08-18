@@ -62,6 +62,20 @@ export function prepareRecoveredTask(
   task.agentProfileSnapshot = registration.config.agent;
   const backendSessionId = registration.bootstrap?.payload.backend_session_id;
   if (backendSessionId) task.codexThreadId = backendSessionId;
+  if (
+    registration.registrationId
+    && registration.pid
+    && registration.pidStartIdentity
+    && registration.lifecycle?.execution_command_id
+  ) {
+    task.recoveredExecutionOwnership = {
+      manifestId: registration.config.codeSha,
+      registrationId: registration.registrationId,
+      pid: registration.pid,
+      startIdentity: registration.pidStartIdentity,
+      executionCommandId: registration.lifecycle.execution_command_id,
+    };
+  }
 }
 
 export function requireRecoveryTask(

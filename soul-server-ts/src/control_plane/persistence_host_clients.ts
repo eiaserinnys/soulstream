@@ -146,6 +146,10 @@ function snakeTransitionFields(fields: SessionTransitionFields): Record<string, 
 export class SessionDeliveryNotificationHostClient {
   constructor(private readonly transport: PersistenceHostTransport) {}
 
+  get(deliveryId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request("session-deliveries", "get_notification", [deliveryId]);
+  }
+
   stageWithQueuedDelivery(params: {
     deliveryId: string;
     leaseOwner: string;
@@ -169,8 +173,8 @@ export class SessionDeliveryNotificationHostClient {
     );
   }
 
-  markPublished(deliveryId: string, leaseOwner: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner]);
+  markPublished(deliveryId: string, leaseOwner: string, targetReceiptId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner, targetReceiptId]);
   }
 
   retry(

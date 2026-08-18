@@ -16,7 +16,7 @@ import {
   persistUserMessageEvent,
 } from "./task_user_message_events.js";
 
-export type AutoResumeCallback = (task: Task) => void;
+export type AutoResumeCallback = (task: Task) => void | Promise<void>;
 
 export interface AutoResumeTransitionDeps {
   logger: Logger;
@@ -69,19 +69,28 @@ export class AutoResumeTransition {
     if (!this.deps.persistence) {
       throw new Error("running transition durable event persistence is required");
     }
-    const application = await this.deps.persistence
-      .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
-      reviewState: resumedReviewState,
-      transitionId: `resume:${transitionRevision}`,
-      expectedTerminalEventId: task.terminalEventId ?? null,
-    });
-    applyCanonicalSessionProjection(task, application.canonicalSession);
-    if (!application.applied) {
-      throw new Error(
-        `auto-resume running transition rejected for ${task.agentSessionId}`,
-      );
+    const ownershipPersistence = this.deps.persistence as EventPersistence & {
+      reserveExecutionOwnershipAndWaitForApplication?: unknown;
+    };
+    const ownershipEnabled =
+      typeof ownershipPersistence.reserveExecutionOwnershipAndWaitForApplication === "function";
+    if (!ownershipEnabled) {
+      const application = await this.deps.persistence
+        .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+        reviewState: resumedReviewState,
+        transitionId: `resume:${transitionRevision}`,
+        expectedTerminalEventId: task.terminalEventId ?? null,
+      });
+      applyCanonicalSessionProjection(task, application.canonicalSession);
+      if (!application.applied) {
+        throw new Error(
+          `auto-resume running transition rejected for ${task.agentSessionId}`,
+        );
+      }
+    } else {
+      task.pendingExecutionExpectedTerminalEventId = task.terminalEventId ?? null;
     }
-    transitionTaskToRunning(task, message);
+    prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
     if (userMessageEvent) {
       await finishUserMessageEvent(task, userMessageEvent, this.deps);
     }
@@ -155,7 +164,11 @@ export class AutoResumeTransition {
 
 }
 
-function transitionTaskToRunning(task: Task, message: InterventionMessage): void {
+function prepareTaskForAutoResume(
+  task: Task,
+  message: InterventionMessage,
+  status: "initializing" | "running",
+): void {
   task.prompt = message.text;
   task.clientId = message.user;
   if (message.callerInfo !== undefined) {
@@ -163,7 +176,7 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   }
   task.attachmentPaths = message.attachmentPaths ?? [];
   task.contextItems = message.context ?? [];
-  task.status = "running";
+  task.status = status;
   task.reviewState = reviewStateAfterFollowup(task.reviewState ?? "not_required");
   task.completedAt = undefined;
   task.error = undefined;
@@ -174,5 +187,6 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.pendingTerminationDetail = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
+  task.executionActivationPromise = undefined;
   enqueueInterventionOnce(task, message);
 }

@@ -32,6 +32,10 @@ import type {
 
 import type { SessionDB } from "./session_db.js";
 import {
+  EventTransitionPublisher,
+  type EventSessionTransitionApplication,
+} from "./event_transition_publisher.js";
+import {
   sanitizeJsonText,
   sanitizeJsonValue,
   truncateJsonText,
@@ -43,11 +47,7 @@ const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 
 export { sanitizeJsonText, sanitizeJsonValue, truncateJsonText };
 
-export type EventSessionTransitionApplication = {
-  eventId: number;
-  applied: boolean;
-  canonicalSession: EventCanonicalSessionProjection;
-};
+export type { EventSessionTransitionApplication } from "./event_transition_publisher.js";
 
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
@@ -68,7 +68,7 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   realtime_transcript: "text",
 };
 
-export class EventPersistence {
+export class EventPersistence extends EventTransitionPublisher {
   private readonly latestPendingAckBySession = new Map<
     string,
     EventOutboxRecord
@@ -83,7 +83,9 @@ export class EventPersistence {
       EventOutboxPump,
       "waitForAcknowledgement" | "waitForAcknowledgementResult"
     >,
-  ) {}
+  ) {
+    super();
+  }
 
   /**
    * Persistent 이벤트를 worker의 durable JSONL outbox에 넣는다.
@@ -158,70 +160,10 @@ export class EventPersistence {
     return null;
   }
 
-  /**
-   * Appends a state-only running transition independently from timeline
-   * events. A user_message must retain its last_message effect; folding this
-   * transition into that record would silently replace the preview update.
-   */
-  async enqueueRunningTransition(
-    sessionId: string,
-    input: {
-      reviewState: string;
-      transitionId: string;
-      expectedTerminalEventId?: number | null;
-      updatedAt?: Date;
-    },
-  ): Promise<EventOutboxRecord> {
-    const { event, effect } = buildRunningTransitionRecord(sessionId, input);
-    return this.enqueueEvent(sessionId, event, effect);
-  }
-
-  /**
-   * Runner adoption must not replay frames until orch has committed running.
-   * Other start/resume paths use enqueueRunningTransition so host downtime
-   * cannot block local execution after the durable append.
-   */
-  async enqueueRunningTransitionAndWaitForAck(
-    sessionId: string,
-    input: {
-      reviewState: string;
-      transitionId: string;
-      expectedTerminalEventId?: number | null;
-      updatedAt?: Date;
-    },
-  ): Promise<number> {
-    return (await this.enqueueRunningTransitionAndWaitForApplication(
-      sessionId,
-      input,
-    )).eventId;
-  }
-
-  async enqueueRunningTransitionAndWaitForApplication(
-    sessionId: string,
-    input: {
-      reviewState: string;
-      transitionId: string;
-      expectedTerminalEventId?: number | null;
-      updatedAt?: Date;
-    },
-  ): Promise<EventSessionTransitionApplication> {
-    const record = await this.enqueueRunningTransition(sessionId, input);
-    return await this.waitForTransitionApplication(sessionId, record, "running");
-  }
-
-  async enqueueTerminalTransitionAndWaitForApplication(
-    sessionId: string,
-    event: SSEEventPayload,
-    effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
-  ): Promise<EventSessionTransitionApplication> {
-    const record = await this.enqueueEvent(sessionId, event, effect);
-    return await this.waitForTransitionApplication(sessionId, record, "terminal");
-  }
-
-  private async waitForTransitionApplication(
+  protected async waitForTransitionApplication(
     sessionId: string,
     record: EventOutboxRecord,
-    transition: "running" | "terminal",
+    transition: string,
   ): Promise<EventSessionTransitionApplication> {
     const acknowledgement = await this.outboxPump.waitForAcknowledgementResult(record);
     this.clearPendingAckTarget(sessionId, record.source_seq);
@@ -276,39 +218,6 @@ export class EventPersistence {
     }
 
   }
-}
-
-function buildRunningTransitionRecord(
-  sessionId: string,
-  input: {
-    reviewState: string;
-    transitionId: string;
-    expectedTerminalEventId?: number | null;
-    updatedAt?: Date;
-  },
-): { event: SSEEventPayload; effect: EventOutboxSessionEffect } {
-  const timestamp = (input.updatedAt ?? new Date()).toISOString();
-  return {
-    event: {
-      type: "metadata",
-      metadata_type: "session_status_transition",
-      value: {
-        status: "running",
-        transition_id: input.transitionId,
-      },
-      timestamp,
-      [INTERNAL_DEDUPE_KEY]:
-        `running_transition:${sessionId}:${input.transitionId}`,
-    } as unknown as SSEEventPayload,
-    effect: {
-      kind: "running_transition",
-      review_state: input.reviewState,
-      ...(input.expectedTerminalEventId === undefined
-        ? {}
-        : { expected_terminal_event_id: input.expectedTerminalEventId }),
-      updated_at: timestamp,
-    },
-  };
 }
 
 export function buildEventOutboxAppendInput(

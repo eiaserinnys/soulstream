@@ -1,4 +1,24 @@
 import { sanitizePgJsonValue, sanitizePgText } from "./pg_text_sanitizer.js";
+import type {
+  EventAppendBatch,
+  EventIngressEnvelope,
+  EventSessionEffect,
+} from "./event_ingress_contract.js";
+
+export type {
+  CommittedIngressEvent,
+  DeadLetteredIngressEvent,
+  EventAppendAck,
+  EventAppendAcknowledgement,
+  EventAppendBatch,
+  EventCanonicalSessionProjection,
+  EventIngressEnvelope,
+  EventIngressResult,
+  EventSessionEffect,
+  EventSessionEffectApplication,
+  EventSessionEffectApplicationWire,
+} from "./event_ingress_contract.js";
+export { isEventAppendBatchFrame } from "./event_ingress_contract.js";
 
 export const EVENT_INGRESS_PROTOCOL_VERSION = 1;
 export const EVENT_INGRESS_MAX_EVENTS = 64;
@@ -7,132 +27,8 @@ export const EVENT_INGRESS_MAX_SINGLE_EVENT_FRAME_BYTES = 2 * 1024 * 1024;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-export type EventSessionEffect =
-  | {
-      kind: "last_message";
-      last_message: { type: string; preview: string; timestamp: string };
-      updated_at: string;
-    }
-  | { kind: "set_backend_session_id"; backend_session_id: string }
-  | {
-      kind: "rotate_backend_session_id";
-      expected_backend_session_id: string;
-      backend_session_id: string;
-    }
-  | {
-      kind: "running_transition";
-      review_state: string;
-      expected_terminal_event_id?: number | null;
-      updated_at: string;
-    }
-  | {
-      kind: "terminal_transition";
-      status: string;
-      termination_reason: string;
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
-      kind: "append_metadata";
-      entry: Record<string, unknown>;
-      updated_at: string;
-      replace_existing_type?: string;
-    };
-
-export type EventIngressEnvelope = {
-  stream_id: string;
-  source_seq: number;
-  session_id: string;
-  event_type: string;
-  payload: unknown;
-  searchable_text: string | null;
-  created_at: string;
-  semantic_dedupe_key: string | null;
-  session_effect: EventSessionEffect | null;
-  payload_hash: string;
-};
-
-export type EventAppendBatch = {
-  type: "event_append_batch";
-  protocol_version: 1;
-  stream_id: string;
-  first_seq: number;
-  events: EventIngressEnvelope[];
-};
-
-export type EventAppendAck = {
-  type: "event_append_ack";
-  stream_id: string;
-  acked_through: number;
-  events: EventAppendAcknowledgement[];
-};
-
-export type EventAppendAcknowledgement =
-  | {
-      source_seq: number;
-      event_id: number;
-      effect_application?: EventSessionEffectApplicationWire;
-    }
-  | {
-      source_seq: number;
-      dead_letter: {
-        code: string;
-        reason: string;
-        rejected_at: string;
-      };
-    };
-
-export type EventCanonicalSessionProjection = {
-  status: string;
-  termination_reason: string | null;
-  termination_detail: string | null;
-  review_state: string;
-  last_assistant_text: string | null;
-  termination_event_id: number | null;
-  updated_at: string;
-  last_event_id: number | null;
-};
-
-export type EventSessionEffectApplication = {
-  applied: boolean;
-  canonicalSession: EventCanonicalSessionProjection | null;
-};
-
-export type EventSessionEffectApplicationWire = {
-  applied: boolean;
-  canonical_session: EventCanonicalSessionProjection;
-};
-
-export type CommittedIngressEvent = {
-  outcome?: "committed";
-  envelope: EventIngressEnvelope;
-  eventId: number;
-  duplicateReceipt: boolean;
-  sessionEffectApplication?: EventSessionEffectApplication;
-};
-
-export type DeadLetteredIngressEvent = {
-  outcome: "dead_lettered";
-  envelope: EventIngressEnvelope;
-  deadLetter: {
-    code: string;
-    reason: string;
-    rejectedAt: string;
-    path: string;
-  };
-};
-
-export type EventIngressResult = CommittedIngressEvent | DeadLetteredIngressEvent;
 
 export class EventIngressValidationError extends Error {}
-
-export function isEventAppendBatchFrame(
-  frame: Record<string, unknown>,
-): boolean {
-  return frame.type === "event_append_batch";
-}
 
 export function parseEventAppendBatch(
   frame: Record<string, unknown>,
@@ -285,6 +181,213 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_reserve") {
+    assertExactKeys(
+      value,
+      ["kind", "ownership_generation", "owner_kind", "manifest_id", "updated_at"],
+      field,
+    );
+    const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
+    if (!["runner_process", "adopted_runner", "in_process"].includes(ownerKind)) {
+      throw new EventIngressValidationError(`${field}.owner_kind is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      owner_kind: ownerKind as "runner_process" | "adopted_runner" | "in_process",
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_prove") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "registration_id", "pid",
+        "start_identity", "execution_command_id", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(value.execution_command_id, `${field}.execution_command_id`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_adopt_reserve") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "manifest_id",
+        "previous_registration_id", "pid", "start_identity",
+        "execution_command_id", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      previous_registration_id: nonEmptyString(
+        value.previous_registration_id,
+        `${field}.previous_registration_id`,
+      ),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_activate") {
+    assertExactKeys(
+      value,
+      ["kind", "ownership_generation", "review_state", "expected_terminal_event_id", "updated_at"],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.expected_terminal_event_id === undefined
+        ? {}
+        : {
+            expected_terminal_event_id: value.expected_terminal_event_id === null
+              ? null
+              : positiveInteger(value.expected_terminal_event_id, `${field}.expected_terminal_event_id`),
+          }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_fail") {
+    assertExactKeys(
+      value,
+      ["kind", "ownership_generation", "failure_reason", "updated_at"],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      failure_reason: nonEmptyString(value.failure_reason, `${field}.failure_reason`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_backfill") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "first_manifest_id", "first_registration_id", "first_pid",
+        "first_start_identity", "first_execution_command_id", "first_observed_at",
+        "second_manifest_id", "second_registration_id", "second_pid",
+        "second_start_identity", "second_execution_command_id", "second_observed_at",
+        "evidence_hash", "minimum_lease_interval_ms", "probe_only", "updated_at",
+      ],
+      field,
+    );
+    const evidenceHash = nonEmptyString(value.evidence_hash, `${field}.evidence_hash`);
+    if (!SHA256_PATTERN.test(evidenceHash)) {
+      throw new EventIngressValidationError(`${field}.evidence_hash must be sha256`);
+    }
+    return {
+      kind: value.kind,
+      first_manifest_id: nullableNonEmptyString(value.first_manifest_id, `${field}.first_manifest_id`),
+      first_registration_id: nullableNonEmptyString(value.first_registration_id, `${field}.first_registration_id`),
+      first_pid: nullablePositiveInteger(value.first_pid, `${field}.first_pid`),
+      first_start_identity: nullableNonEmptyString(value.first_start_identity, `${field}.first_start_identity`),
+      first_execution_command_id: nullableNonEmptyString(
+        value.first_execution_command_id,
+        `${field}.first_execution_command_id`,
+      ),
+      first_observed_at: isoTimestamp(value.first_observed_at, `${field}.first_observed_at`),
+      second_manifest_id: nullableNonEmptyString(value.second_manifest_id, `${field}.second_manifest_id`),
+      second_registration_id: nullableNonEmptyString(value.second_registration_id, `${field}.second_registration_id`),
+      second_pid: nullablePositiveInteger(value.second_pid, `${field}.second_pid`),
+      second_start_identity: nullableNonEmptyString(value.second_start_identity, `${field}.second_start_identity`),
+      second_execution_command_id: nullableNonEmptyString(
+        value.second_execution_command_id,
+        `${field}.second_execution_command_id`,
+      ),
+      second_observed_at: isoTimestamp(value.second_observed_at, `${field}.second_observed_at`),
+      evidence_hash: evidenceHash,
+      minimum_lease_interval_ms: positiveInteger(
+        value.minimum_lease_interval_ms,
+        `${field}.minimum_lease_interval_ms`,
+      ),
+      probe_only: booleanValue(value.probe_only, `${field}.probe_only`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "runner_terminal_fact") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "execution_command_id", "runner_fact",
+        "termination_detail", "review_state", "last_assistant_text", "updated_at",
+      ],
+      field,
+    );
+    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
+    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
+      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
+      termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.last_assistant_text === undefined
+        ? {}
+        : { last_assistant_text: nullableString(value.last_assistant_text, `${field}.last_assistant_text`) }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "recovered_runner_terminal_fact") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "manifest_id", "registration_id", "pid", "start_identity",
+        "execution_command_id", "runner_fact", "termination_detail", "review_state",
+        "last_assistant_text", "updated_at",
+      ],
+      field,
+    );
+    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
+    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
+      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
+    }
+    return {
+      kind: value.kind,
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
+      termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.last_assistant_text === undefined
+        ? {}
+        : { last_assistant_text: nullableString(value.last_assistant_text, `${field}.last_assistant_text`) }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "terminal_transition") {
     return {
       kind: value.kind,
@@ -361,6 +464,18 @@ function positiveInteger(value: unknown, field: string): number {
   return value as number;
 }
 
+function nullablePositiveInteger(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  return positiveInteger(value, field);
+}
+
+function booleanValue(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new EventIngressValidationError(`${field} must be boolean`);
+  }
+  return value;
+}
+
 function nonEmptyString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new EventIngressValidationError(`${field} must be a non-empty string`);
@@ -372,6 +487,11 @@ function nullableString(value: unknown, field: string): string | null {
   if (value === null) return null;
   if (typeof value !== "string") throw new EventIngressValidationError(`${field} must be string|null`);
   return value;
+}
+
+function nullableNonEmptyString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  return nonEmptyString(value, field);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

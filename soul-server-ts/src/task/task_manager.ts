@@ -1,19 +1,4 @@
-/**
- * TaskManager — 세션 task 컬렉션 관리 (Phase B-3 기본 + B-4 intervention).
- *
- * Python `service/task_manager.py`의 *codex 적응판*. session_eviction은 본 PR 범위 외
- * (codex MVP).
- *
- * 책임:
- *   - createTask: Task 생성 + host `register_session` + broadcast `session_created`
- *   - getTask / listTasks
- *   - cancelTask: 진행 중 turn abort
- *   - deleteTask: 메모리 + host `delete_session` + broadcast `session_deleted`
- *   - addIntervention (B-4): turn 사이 큐잉 또는 auto-resume — 분석 캐시
- *     `20260517-1410-codex-ts-folder-resume-intervene.md` §D
- *
- * 본 PR은 *task lifecycle 메타 관리*만. 실제 *engine 실행*은 TaskExecutor 책임.
- */
+/** Coordinates task lifecycle metadata; TaskExecutor owns engine execution. */
 
 import type { Logger } from "pino";
 
@@ -34,7 +19,10 @@ import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
-import { TaskRunnerRecovery } from "./task_runner_recovery.js";
+import {
+  TaskRunnerRecovery,
+  type ExecutionOwnershipReconciliationInput,
+} from "./task_runner_recovery.js";
 import {
   TaskLifecycleRoute,
   type FinalizeTaskParams,
@@ -109,7 +97,7 @@ export class TaskManager {
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     /** Persistent publisher의 durable outbox ingress. 누락 시 발행 경로가 명시적으로 실패한다. */
-    persistence?: EventPersistence,
+    private readonly persistence?: EventPersistence,
     /**
      * Phase A context 정본 진입점 (atom d7a1ad86 차단):
      * auto-resume transition이 user_message wire에 박을 ContextItem[]을 조립할 때 사용.
@@ -179,6 +167,7 @@ export class TaskManager {
       rememberTask: (task) => this.tasks.set(task.agentSessionId, task),
       lifecycleTransition,
       autoResumeTransition,
+      ...(persistence ? { persistence } : {}),
     });
     const deliveryRepository = deliveryRuntimeV2Enabled
       ? db.sessionDeliveries()
@@ -291,12 +280,27 @@ export class TaskManager {
     return await this.runnerRecovery.hydrate(sessionId);
   }
 
+  async listOwnerNullRunningInventory(nodeId: string, limit = 100) {
+    return await this.db.listOwnerNullRunningInventory({ nodeId, limit });
+  }
+
   async markRunnerFailureAndResume(
     task: Task,
     message: string,
     onResume: StartExecutionCallback,
   ): Promise<void> {
     await this.runnerRecovery.markFailureAndResume(task, message, onResume);
+  }
+
+  async projectClosedRunner(task: Task, detail: string): Promise<boolean> {
+    return await this.runnerRecovery.projectClosed(task, detail);
+  }
+
+  async reconcileExecutionOwnershipObservations(
+    task: Task,
+    input: ExecutionOwnershipReconciliationInput,
+  ): Promise<boolean> {
+    return await this.runnerRecovery.reconcileExecutionOwnershipObservations(task, input);
   }
 
   getDeliveryConsumptionRecorder(): Pick<

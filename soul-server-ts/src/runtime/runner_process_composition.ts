@@ -81,7 +81,14 @@ export async function startRunnerRecoveryCoordinator(options: {
   releaseGarbageCollector?: Pick<RunnerReleaseGarbageCollector, "collect">;
   sessionGarbageCollector?: Pick<RunnerSessionGarbageCollector, "collect">;
   closedTailDrainer?: Pick<ClosedRunnerTailDrainer, "drain">;
-  taskManager: Pick<TaskManager, "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume">;
+  taskManager: Pick<
+    TaskManager,
+    | "hydrateRunnerRecoveryTask"
+    | "markRunnerFailureAndResume"
+    | "projectClosedRunner"
+    | "reconcileExecutionOwnershipObservations"
+    | "listOwnerNullRunningInventory"
+  >;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
@@ -94,6 +101,7 @@ export async function startRunnerRecoveryCoordinator(options: {
     throw new Error("SOUL_RUNNER_STATE_DIR required for runner recovery");
   }
   const coordinator = new RunnerRecoveryCoordinator({
+    nodeId: options.env.SOULSTREAM_NODE_ID,
     stateDirectory,
     leaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
     scanIntervalMs: options.env.SOUL_RUNNER_REAPER_INTERVAL_MS,

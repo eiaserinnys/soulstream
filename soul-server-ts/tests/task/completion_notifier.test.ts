@@ -201,6 +201,11 @@ describe("TaskCompletionNotifier.notify", () => {
           payload_hash: params.payloadHash,
           payload: params.payload,
           state: "pending",
+          attempt_count: 0,
+          next_attempt_at: params.createdAt,
+          last_error: null,
+          lease_owner: null,
+          lease_expires_at: null,
           created_at: params.createdAt,
           updated_at: params.createdAt,
           claimed_at: null,
@@ -502,10 +507,16 @@ describe("TaskCompletionNotifier.notify", () => {
     });
   });
 
-  it("v2 cross-node unknown 판정은 source ledger를 uncertain으로 막아 자동 재시도하지 않는다", async () => {
+  it("v2 cross-node unknown 판정은 source ledger를 pending으로 되돌려 재시도한다", async () => {
     let stored: Record<string, unknown> | undefined;
-    const markUncertain = vi.fn(async (deliveryId: string) => {
-      stored = { ...stored, delivery_id: deliveryId, state: "uncertain" };
+    const markUncertain = vi.fn();
+    const retryLeasedDelivery = vi.fn(async (deliveryId: string) => {
+      stored = {
+        ...stored,
+        delivery_id: deliveryId,
+        state: "pending",
+        lease_owner: null,
+      };
       return stored;
     });
     const claimRecoverableCompletionDeliveries = vi.fn().mockResolvedValue([]);
@@ -553,7 +564,7 @@ describe("TaskCompletionNotifier.notify", () => {
       }),
       claimRecoverableCompletionDeliveries,
       deferPending: vi.fn(),
-      retryLeasedDelivery: vi.fn(),
+      retryLeasedDelivery,
       releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
       markUncertain,
     };
@@ -580,13 +591,15 @@ describe("TaskCompletionNotifier.notify", () => {
     await notifier.recoverPending();
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(markUncertain).toHaveBeenCalledWith(
+    expect(retryLeasedDelivery).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
+      "Completion delivery verdict is unknown and must retry: verdict_unknown",
+      expect.any(Date),
     );
-    expect(stored).toMatchObject({ state: "uncertain" });
+    expect(markUncertain).not.toHaveBeenCalled();
+    expect(stored).toMatchObject({ state: "pending" });
     expect(claimRecoverableCompletionDeliveries).toHaveBeenCalledTimes(1);
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
   });
 
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {

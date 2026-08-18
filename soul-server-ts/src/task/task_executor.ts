@@ -48,7 +48,12 @@ import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
-import type { InterventionMessage, Task, TaskStatus } from "./task_models.js";
+import {
+  isTerminalTaskStatus,
+  type InterventionMessage,
+  type Task,
+  type TaskStatus,
+} from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
@@ -72,6 +77,12 @@ import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
 } from "./task_model_preset.js";
+import {
+  isCompleteExecutionIdentity,
+  newExecutionOwnershipGeneration,
+  type ExecutionEntryPath,
+  type ExecutionOwnerKind,
+} from "./execution_ownership.js";
 import {
   CLAUDE_BACKEND_ROLLOVER_LIMIT,
   claudeBackendRolloverMetadataEntry,
@@ -108,6 +119,10 @@ export interface RunnerProcessRuntimeFactory {
     config: RunnerChildConfig,
     snapshots: RunnerSnapshotPersistence,
   ): TaskRunnerRuntime;
+  describe?(): Promise<{
+    ownerKind: "runner_process";
+    manifestId: string;
+  }>;
 }
 
 export interface RunnerSnapshotPersistence {
@@ -208,7 +223,7 @@ export class TaskExecutor {
    * task.executionPromise에 drain promise를 박아 *후속 shutdown/cancel*이 drain 가능.
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
-  startExecution(task: Task, agent: AgentProfile): void {
+  startExecution(task: Task, agent: AgentProfile): Promise<void> {
     const retainedRunner = task.runnerRetainedForClaudeBackground === true
       ? task.runner
       : undefined;
@@ -230,31 +245,188 @@ export class TaskExecutor {
       );
     }
     const backend = effectiveTaskBackend(task, agent);
-    const runner = retainedRunner ?? (this.runnerProcessFactory
-      ? this.runnerProcessFactory(task, agent, backend, {
-          persistRunState: async (snapshot, idempotencyKey) =>
-            await this.agentsSnapshotPersistence.persistRunStateSnapshot(
-              task,
-              snapshot,
-              idempotencyKey,
-            ),
-          persistSessionItems: async (snapshot, idempotencyKey) =>
-            await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(
-              task,
-              snapshot,
-              idempotencyKey,
-            ),
-        })
-      : createInProcessTaskRunnerRuntime(
-          task.modelPresetBackend
-            ? this.engineFactory(agent, backend)
-            : this.engineFactory(agent),
-        ));
-    if (retainedRunner) {
-      task.runner = undefined;
-      task.runnerRetainedForClaudeBackground = undefined;
+    if (!this.supportsExecutionOwnership()) {
+      const runner = retainedRunner ?? (this.runnerProcessFactory
+        ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
+        : createInProcessTaskRunnerRuntime(
+            task.modelPresetBackend
+              ? this.engineFactory(agent, backend)
+              : this.engineFactory(agent),
+          ));
+      if (retainedRunner) {
+        task.runner = undefined;
+        task.runnerRetainedForClaudeBackground = undefined;
+      }
+      this.startExecutionWithRunner(task, agent, runner);
+      return task.executionPromise!;
     }
-    this.startExecutionWithRunner(task, agent, runner);
+
+    const activation = deferred<void>();
+    task.executionActivationPromise = activation.promise;
+    void activation.promise.catch(() => undefined);
+    const promise = this.startOwnedExecution(
+      task,
+      agent,
+      backend,
+      retainedRunner,
+      () => activation.resolve(undefined),
+    ).catch(
+      async (err: unknown) => {
+        activation.reject(err);
+        if (err instanceof ExecutionOwnershipRejectedError) {
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "Execution ownership reservation rejected; existing owner remains authoritative",
+          );
+          return;
+        }
+        await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
+        task.completedAt = new Date();
+        await this._finalize(task);
+      },
+    );
+    task.executionPromise = promise;
+    return promise;
+  }
+
+  private async startOwnedExecution(
+    task: Task,
+    agent: AgentProfile,
+    backend: BackendId,
+    retainedRunner: TaskRunnerRuntime | undefined,
+    resolveActivation: () => void,
+  ): Promise<void> {
+    const entryPath: ExecutionEntryPath =
+      task.pendingExecutionExpectedTerminalEventId !== undefined
+        ? "auto_resume"
+        : "initial";
+    const descriptor = await this.executionOwnerDescriptor(task, backend, retainedRunner);
+    const ownershipGeneration = newExecutionOwnershipGeneration();
+    const reservation = await this.persistence
+      .reserveExecutionOwnershipAndWaitForApplication(task.agentSessionId, {
+        ownershipGeneration,
+        ownerKind: descriptor.ownerKind,
+        manifestId: descriptor.manifestId,
+      });
+    applyCanonicalSessionProjection(task, reservation.canonicalSession);
+    if (!reservation.applied) {
+      throw new ExecutionOwnershipRejectedError(task.agentSessionId);
+    }
+    task.executionOwnershipReservation = {
+      ...descriptor,
+      ownershipGeneration,
+      entryPath,
+    };
+
+    let runner: TaskRunnerRuntime | undefined;
+    try {
+      runner = retainedRunner ?? (this.runnerProcessFactory
+        ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
+        : createInProcessTaskRunnerRuntime(
+            task.modelPresetBackend
+              ? this.engineFactory(agent, backend)
+              : this.engineFactory(agent),
+          ));
+      if (retainedRunner) {
+        task.runner = undefined;
+        task.runnerRetainedForClaudeBackground = undefined;
+      }
+      if (task.runner) {
+        throw new Error(
+          `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
+        );
+      }
+      task.runner = runner;
+      const proof = await runner.dispatcher.prepareExecutionIdentity?.();
+      if (!proof || !isCompleteExecutionIdentity(proof)) {
+        throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
+      }
+      const proofApplication = await this.persistence
+        .proveExecutionOwnershipAndWaitForApplication(
+          task.agentSessionId,
+          ownershipGeneration,
+          proof,
+        );
+      if (!proofApplication.applied) {
+        throw new Error(`Execution identity proof rejected: ${task.agentSessionId}`);
+      }
+      await runner.dispatcher.prepareSession(task.agentSessionId);
+      const activation = await this.persistence
+        .activateExecutionOwnershipAndWaitForApplication(task.agentSessionId, {
+          ownershipGeneration,
+          reviewState: task.reviewState ?? "not_required",
+          ...(task.pendingExecutionExpectedTerminalEventId === undefined
+            ? {}
+            : {
+                expectedTerminalEventId:
+                  task.pendingExecutionExpectedTerminalEventId,
+              }),
+        });
+      applyCanonicalSessionProjection(task, activation.canonicalSession);
+      if (!activation.applied) {
+        throw new Error(`Execution activation rejected: ${task.agentSessionId}`);
+      }
+      task.executionOwnership = {
+        ...descriptor,
+        ...proof,
+        ownershipGeneration,
+      };
+      task.executionOwnershipReservation = undefined;
+      task.recoveredExecutionOwnership = undefined;
+      task.runnerTerminalFact = undefined;
+      task.pendingExecutionExpectedTerminalEventId = undefined;
+      resolveActivation();
+      await this.restoreDurableRunnerInterventions(task, runner);
+      await this._consumeEventStream(task, runner, agent);
+    } catch (error) {
+      if (!task.executionOwnership) {
+        await this.persistence.failExecutionOwnershipAndWaitForApplication(
+          task.agentSessionId,
+          ownershipGeneration,
+          errorMessage(error),
+        ).catch((failureError) => {
+          this.logger.error(
+            { err: failureError, sessionId: task.agentSessionId, ownershipGeneration },
+            "Execution ownership failure projection failed",
+          );
+        });
+        task.executionOwnershipReservation = undefined;
+        if (runner) {
+          await runner.dispatcher.close().catch(() => undefined);
+          if (task.runner === runner) task.runner = undefined;
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async executionOwnerDescriptor(
+    task: Task,
+    backend: BackendId,
+    retainedRunner: TaskRunnerRuntime | undefined,
+  ): Promise<{ ownerKind: ExecutionOwnerKind; manifestId: string }> {
+    if (task.recoveredExecutionOwnership) {
+      return {
+        ownerKind: "runner_process",
+        manifestId: task.recoveredExecutionOwnership.manifestId,
+      };
+    }
+    if (retainedRunner && task.executionOwnership) {
+      return {
+        ownerKind: task.executionOwnership.ownerKind,
+        manifestId: task.executionOwnership.manifestId,
+      };
+    }
+    if (this.runnerProcessFactory) {
+      const descriptor = await this.runnerProcessFactory.describe?.();
+      if (!descriptor) throw new Error("Runner process manifest descriptor unavailable");
+      return descriptor;
+    }
+    return { ownerKind: "in_process", manifestId: `in-process:${backend}` };
+  }
+
+  private supportsExecutionOwnership(): boolean {
+    return typeof this.persistence.reserveExecutionOwnershipAndWaitForApplication === "function";
   }
 
   async releaseRetainedClaudeRunner(task: Task): Promise<void> {
@@ -295,7 +467,11 @@ export class TaskExecutor {
     runner: TaskRunnerRuntime,
     commandId?: string,
     mode: "adopt" | "replay" | "offline" = "adopt",
+    manifestId?: string,
   ): Promise<void> {
+    if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
+      return this.recoverOwnedRunnerExecution(task, agent, runner, manifestId, commandId);
+    }
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
@@ -335,6 +511,96 @@ export class TaskExecutor {
     return promise;
   }
 
+  private recoverOwnedRunnerExecution(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    manifestId: string,
+    commandId?: string,
+  ): Promise<void> {
+    if (task.runner) {
+      throw new Error(`Task ${task.agentSessionId} already has a runner`);
+    }
+    task.runner = runner;
+    const ownershipGeneration = newExecutionOwnershipGeneration();
+    let reservationApplied = false;
+    let activated = false;
+    const promise = (async () => {
+      try {
+        const proof = await runner.dispatcher.prepareExecutionIdentity?.(commandId);
+        if (!proof || !isCompleteExecutionIdentity(proof)) {
+          throw new Error(`Adopted runner identity proof unavailable: ${task.agentSessionId}`);
+        }
+        const reservation = await this.persistence
+          .reserveExecutionAdoptionAndWaitForApplication(task.agentSessionId, {
+            ownershipGeneration,
+            manifestId,
+            previousRegistrationId: proof.registrationId,
+            pid: proof.pid,
+            startIdentity: proof.startIdentity,
+            executionCommandId: proof.executionCommandId,
+          });
+        applyCanonicalSessionProjection(task, reservation.canonicalSession);
+        if (!reservation.applied) {
+          throw new ExecutionOwnershipRejectedError(task.agentSessionId);
+        }
+        reservationApplied = true;
+        task.executionOwnershipReservation = {
+          ownerKind: "adopted_runner",
+          manifestId,
+          ownershipGeneration,
+          entryPath: "adopt",
+        };
+        const proofApplication = await this.persistence
+          .proveExecutionOwnershipAndWaitForApplication(
+            task.agentSessionId,
+            ownershipGeneration,
+            proof,
+          );
+        if (!proofApplication.applied) {
+          throw new Error(`Adopted runner identity proof rejected: ${task.agentSessionId}`);
+        }
+        const activation = await this.persistence
+          .activateExecutionOwnershipAndWaitForApplication(task.agentSessionId, {
+            ownershipGeneration,
+            reviewState: task.reviewState ?? "not_required",
+          });
+        applyCanonicalSessionProjection(task, activation.canonicalSession);
+        if (!activation.applied) {
+          throw new Error(`Adopted runner activation rejected: ${task.agentSessionId}`);
+        }
+        activated = true;
+        task.executionOwnership = {
+          ownerKind: "adopted_runner",
+          manifestId,
+          ownershipGeneration,
+          ...proof,
+        };
+        task.executionOwnershipReservation = undefined;
+        const frames = runner.dispatcher.recoverFrames?.(commandId);
+        if (!frames) throw new Error("runner dispatcher does not support execution recovery");
+        await this.consumeRecoveredRunnerFrames(task, agent, runner, frames, true);
+      } catch (error) {
+        if (reservationApplied && !activated) {
+          await this.persistence.failExecutionOwnershipAndWaitForApplication(
+            task.agentSessionId,
+            ownershipGeneration,
+            errorMessage(error),
+          ).catch((failureError) => {
+            this.logger.error(
+              { err: failureError, sessionId: task.agentSessionId, ownershipGeneration },
+              "Adopted execution ownership failure projection failed",
+            );
+          });
+          task.executionOwnershipReservation = undefined;
+        }
+        throw error;
+      }
+    })();
+    task.executionPromise = promise;
+    return promise;
+  }
+
   recoverRegisteredRunner(
     task: Task,
     config: RunnerChildConfig,
@@ -354,10 +620,14 @@ export class TaskExecutor {
       runner,
       commandId,
       mode,
+      config.codeSha,
     );
   }
 
-  restartRegisteredRunner(task: Task, config: RunnerChildConfig): void {
+  restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
+    if (this.supportsExecutionOwnership()) {
+      return this.startExecution(task, config.agent);
+    }
     const runner = this.runnerProcessFactory?.restart?.(
       task,
       config,
@@ -365,6 +635,7 @@ export class TaskExecutor {
     );
     if (!runner) throw new Error("runner process restart factory unavailable");
     this.startExecutionWithRunner(task, config.agent, runner);
+    return task.executionPromise!;
   }
 
   private snapshotPersistenceFor(task: Task): RunnerSnapshotPersistence {
@@ -987,9 +1258,33 @@ export class TaskExecutor {
   }
 }
 
+class ExecutionOwnershipRejectedError extends Error {
+  constructor(sessionId: string) {
+    super(`Execution ownership reservation rejected: ${sessionId}`);
+  }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+  reject(reason?: unknown): void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** 외부 검증용 — task가 종료 상태인지. */
 export function isTerminalStatus(status: TaskStatus): boolean {
-  return status === "completed" || status === "error" || status === "interrupted";
+  return isTerminalTaskStatus(status);
 }
 
 function normalizeAssistantText(text: string | undefined): string {

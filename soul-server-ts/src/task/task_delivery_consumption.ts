@@ -18,10 +18,15 @@ export class TaskDeliveryConsumption {
   async recordConsumed(
     task: Task,
     intervention: InterventionMessage | undefined,
+    targetReceiptId?: string,
   ): Promise<void> {
     if (!intervention || !this.recorder) return;
     try {
-      await this.recorder.recordConsumed(intervention, task);
+      if (targetReceiptId === undefined) {
+        await this.recorder.recordConsumed(intervention, task);
+      } else {
+        await this.recorder.recordConsumed(intervention, task, targetReceiptId);
+      }
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },

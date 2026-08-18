@@ -275,11 +275,13 @@ export class RunnerSqliteLifecycle {
     let result = this.database.prepare(`
       UPDATE runner_event_outbox SET ${assignments}
       WHERE record_kind = 'bootstrap' AND execution_command_id = ?
+        AND execution_state = 'running'
     `).run(...args, commandId);
     if (result.changes === 0) {
       result = this.database.prepare(`
         UPDATE runner_prebootstrap_lifecycle SET ${assignments}
         WHERE singleton = 1 AND execution_command_id = ?
+          AND execution_state = 'running'
       `).run(...args, commandId);
     }
     if (result.changes !== 1) {
