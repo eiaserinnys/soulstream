@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   composeRunnerProcessRuntime,
   composeRunnerReconciliationReporter,
-  startRunnerRecoveryCoordinator,
+  composeRunnerRecoveryCoordinator,
 } from "../../src/runtime/runner_process_composition.js";
 
 describe("runner process composition feature gate", () => {
@@ -103,13 +103,43 @@ describe("runner process composition feature gate", () => {
   });
 
   it("does not require runner state configuration without a process factory", async () => {
-    await expect(startRunnerRecoveryCoordinator({
+    await expect(composeRunnerRecoveryCoordinator({
       env: {} as never,
       runnerProcessFactory: undefined,
       taskManager: {} as never,
       taskExecutor: {} as never,
       logger: {} as never,
     })).resolves.toBeUndefined();
+  });
+
+  it("composes runner recovery without starting a pre-listener scan", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-recovery-composition-"));
+    directories.push(root);
+    const listOwnerNullRunningInventory = vi.fn(async () => []);
+
+    const coordinator = await composeRunnerRecoveryCoordinator({
+      env: {
+        SOULSTREAM_NODE_ID: "node-a",
+        SOUL_RUNNER_STATE_DIR: root,
+        SOUL_RUNNER_LEASE_TIMEOUT_MS: 120_000,
+        SOUL_RUNNER_REAPER_INTERVAL_MS: 10_000,
+      } as never,
+      runnerProcessFactory: {} as never,
+      closedTailDrainer: { drain: vi.fn(async () => {}) },
+      taskManager: {
+        listOwnerNullRunningInventory,
+      } as never,
+      taskExecutor: {} as never,
+      logger: {
+        error: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+      } as never,
+    });
+
+    expect(coordinator).toBeDefined();
+    expect(listOwnerNullRunningInventory).not.toHaveBeenCalled();
+    await coordinator!.stop();
   });
 
   it("does not expose runner reconciliation dependencies while disabled", () => {

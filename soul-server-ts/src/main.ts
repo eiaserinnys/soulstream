@@ -10,6 +10,7 @@ import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import { loadModelCatalog } from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
+import { startWorkerRuntime } from "./runtime/worker_startup.js";
 import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
 import { installProcessErrorHandlers } from "./runtime/process_error_handlers.js";
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
@@ -157,47 +158,56 @@ async function main(): Promise<void> {
     }
   }
 
-  const runtime = await composeWorkerRuntime({
-    env,
-    logger,
-    agentRegistry,
-    mcpConfigService,
-    codexCliPath,
-    modelCatalog,
-    agentProfileSource,
-    nodeStallMonitor,
-  });
-  if (runtime.server.internalMcpServer) {
-    await startInternalMcpServer(runtime.server.internalMcpServer, env.MCP_INTERNAL_PORT);
-    logger.info(
-      {
-        host: "127.0.0.1",
-        port: env.MCP_INTERNAL_PORT,
-        path: `${env.MCP_PATH.replace(/\/+$/, "")}/internal`,
-      },
-      "Node-local internal MCP listening",
-    );
-  }
-  await startServer(runtime.server, env.HOST, env.PORT);
-  logger.info(
-    {
-      host: env.HOST,
-      port: env.PORT,
-      mcpEnabled: env.MCP_ENABLED,
-      mcpPath: env.MCP_ENABLED ? env.MCP_PATH : undefined,
-      mcpStatelessTransportEnabled: env.MCP_ENABLED
-        ? env.MCP_STATELESS_TRANSPORT_ENABLED
-        : undefined,
+  const { runtime, upstreamAdapter } = await startWorkerRuntime({
+    compose: async () => await composeWorkerRuntime({
+      env,
+      logger,
+      agentRegistry,
+      mcpConfigService,
+      codexCliPath,
+      modelCatalog,
+      agentProfileSource,
+      nodeStallMonitor,
+    }),
+    listen: async (composed) => {
+      if (composed.server.internalMcpServer) {
+        await startInternalMcpServer(
+          composed.server.internalMcpServer,
+          env.MCP_INTERNAL_PORT,
+        );
+        logger.info(
+          {
+            host: "127.0.0.1",
+            port: env.MCP_INTERNAL_PORT,
+            path: `${env.MCP_PATH.replace(/\/+$/, "")}/internal`,
+          },
+          "Node-local internal MCP listening",
+        );
+      }
+      await startServer(composed.server, env.HOST, env.PORT);
+      logger.info(
+        {
+          host: env.HOST,
+          port: env.PORT,
+          mcpEnabled: env.MCP_ENABLED,
+          mcpPath: env.MCP_ENABLED ? env.MCP_PATH : undefined,
+          mcpStatelessTransportEnabled: env.MCP_ENABLED
+            ? env.MCP_STATELESS_TRANSPORT_ENABLED
+            : undefined,
+        },
+        "HTTP listening",
+      );
     },
-    "HTTP listening",
-  );
-
-  const upstreamAdapter = runtime.createUpstreamAdapter();
-  upstreamAdapter.run().catch((err) => {
-    logger.fatal({ err }, "Upstream adapter terminated unexpectedly");
-    process.exit(1);
+    logger,
+    onUpstreamFailure: (err) => {
+      logger.fatal({ err }, "Upstream adapter terminated unexpectedly");
+      process.exit(1);
+    },
+    onRunnerRecoveryFailure: (err) => {
+      logger.fatal({ err }, "Runner recovery initial scan failed");
+      process.exit(1);
+    },
   });
-
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
