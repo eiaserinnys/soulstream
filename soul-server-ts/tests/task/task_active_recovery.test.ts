@@ -46,13 +46,13 @@ describe("classifyInterventionTaskActivity", () => {
     expect(classifyInterventionTaskActivity(task)).toBe("active-running");
   });
 
-  it("keeps initializing ownership active while its execution promise is present", () => {
+  it("keeps initializing ownership behind the activation barrier", () => {
     const task = makeTask({
       status: "initializing",
       executionPromise: Promise.resolve(),
     });
 
-    expect(classifyInterventionTaskActivity(task)).toBe("active-running");
+    expect(classifyInterventionTaskActivity(task)).toBe("activating");
   });
 
   it("classifies terminal statuses as auto-resume candidates", () => {

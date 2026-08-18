@@ -1271,6 +1271,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       prompt: "p",
       profileId: "codex-default",
     });
+    task.status = "running";
     const intervene = vi.fn().mockResolvedValue({
       status: "delivered",
       mechanism: "active_turn",
@@ -1315,6 +1316,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       prompt: "p",
       profileId: "claude-default",
     });
+    task.status = "running";
     const intervene = vi.fn().mockResolvedValue({
       status: "not_delivered",
       mechanism: "interrupt_then_next_turn",
@@ -1390,7 +1392,12 @@ describe("TaskManager.addIntervention (B-4)", () => {
   it("연속 큐잉 시 queuePosition이 1, 2로 증가", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const task = await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    task.status = "running";
     const onResume = vi.fn();
     const r1 = await tm.addIntervention({ agentSessionId: "s1", text: "a", user: "u" }, onResume);
     const r2 = await tm.addIntervention({ agentSessionId: "s1", text: "b", user: "u" }, onResume);
@@ -1600,6 +1607,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     task.status = status;
     task.error = status === "error" ? "prior error" : undefined;
     const onResume = vi.fn();
@@ -1627,6 +1635,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     task.status = "completed";
 
     // _finalize 미완료 상태를 시뮬레이션 — executionPromise는 살아있고 engine도 살아있음.
@@ -1699,6 +1708,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     mocks.enqueueEvent.mockRejectedValueOnce(new Error("outbox down"));
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     const onResume = vi.fn();
     await expect(tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
@@ -1852,6 +1862,7 @@ describe("TaskManager.addIntervention — running fallback without live surface 
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),
@@ -1871,6 +1882,7 @@ describe("TaskManager.addIntervention — running fallback without live surface 
     const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "running";
     await expect(
       tm.addIntervention(
         { agentSessionId: "s1", text: "x", user: "u" },
@@ -2307,7 +2319,12 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
   it("메모리에 task가 있으면 hydration skip (기존 동작 보존)", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const task = await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    task.status = "running";
     expect(tm.getTask("s1")).toBeDefined();
     mocks.getSession.mockClear();
     await tm.addIntervention(
