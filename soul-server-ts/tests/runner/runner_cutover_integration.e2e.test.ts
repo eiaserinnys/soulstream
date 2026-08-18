@@ -635,15 +635,14 @@ describe("runner cutover all-flags-on integration", () => {
       host.executor.restartRegisteredRunner(task, config);
       const executionPromise = task.executionPromise;
       if (!executionPromise) throw new Error("replacement execution promise missing");
+      let replacementPid: number | undefined;
       await waitFor(async () => {
-        if (!await pathExists(paths.pidPath)) return false;
-        const pid = Number.parseInt((await readFile(paths.pidPath, "utf8")).trim(), 10);
-        return pid !== firstPid && isPidAlive(pid);
+        const pid = await readPidIfExists(paths.pidPath);
+        if (pid === null || pid === firstPid || !isPidAlive(pid)) return false;
+        replacementPid = pid;
+        return true;
       });
-      const replacementPid = Number.parseInt(
-        (await readFile(paths.pidPath, "utf8")).trim(),
-        10,
-      );
+      if (replacementPid === undefined) throw new Error("replacement pid missing");
       childPids.add(replacementPid);
       const recoveredExecutionPath = join(
         controlDirectory,
@@ -1038,6 +1037,15 @@ async function pathExists(path: string): Promise<boolean> {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function readPidIfExists(path: string): Promise<number | null> {
+  try {
+    return Number.parseInt((await readFile(path, "utf8")).trim(), 10);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
 }

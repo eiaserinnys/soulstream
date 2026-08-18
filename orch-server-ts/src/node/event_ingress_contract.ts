@@ -56,6 +56,15 @@ export type EventSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_orphaned_spawn";
+      ownership_generation: number;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      updated_at: string;
+    }
+  | {
       kind: "execution_backfill";
       first_manifest_id: string | null;
       first_registration_id: string | null;
@@ -167,14 +176,28 @@ export type EventCanonicalSessionProjection = {
   last_event_id: number | null;
 };
 
+export type EventCanonicalExecutionOwnershipProjection = {
+  ownership_generation: number;
+  owner_kind: "runner_process" | "adopted_runner" | "in_process";
+  manifest_id: string;
+  registration_id: string | null;
+  pid: number | null;
+  start_identity: string | null;
+  execution_command_id: string | null;
+  phase: "reserved" | "identity_proven" | "active" | "terminal" | "failed";
+  failure_reason: string | null;
+};
+
 export type EventSessionEffectApplication = {
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection | null;
+  canonicalExecutionOwnership?: EventCanonicalExecutionOwnershipProjection | null;
 };
 
 export type EventSessionEffectApplicationWire = {
   applied: boolean;
   canonical_session: EventCanonicalSessionProjection;
+  canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
 };
 
 export type CommittedIngressEvent = {

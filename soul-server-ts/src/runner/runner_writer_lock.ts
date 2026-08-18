@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { access, open, readFile, rename, rm, unlink, type FileHandle } from "node:fs/promises";
+import {
+  access,
+  link,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -11,13 +20,19 @@ import {
 } from "./runner_process_lock.js";
 
 const activeWriterOwners = new Map<string, ProcessLockOwner>();
+const WRITER_BOOTSTRAP_LEASE_MS = 30_000;
+
+interface RunnerWriterBootstrap {
+  schemaVersion: 1;
+  nonce: string;
+  expiresAtMs: number;
+}
 
 export class RunnerWriterLock {
   private released = false;
 
   private constructor(
     private readonly path: string,
-    private readonly handle: FileHandle,
     private readonly owner: ProcessLockOwner,
   ) {}
 
@@ -26,31 +41,35 @@ export class RunnerWriterLock {
     deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
   ): Promise<RunnerWriterLock> {
     while (true) {
-      let handle: FileHandle;
-      try {
-        handle = await open(path, "wx", 0o600);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (await pathExists(path)) {
         if (await reclaimStaleWriterLock(path, deps)) continue;
         throw new Error(`runner writer lock already held: ${path}`);
       }
-      const owner = await deps.currentOwner();
+      const bootstrap = await claimWriterBootstrap(path, deps);
+      if (!bootstrap) {
+        if (await reclaimExpiredWriterBootstrap(path, deps)) continue;
+        throw new Error(`runner writer lock already held: ${path}`);
+      }
       try {
-        await handle.writeFile(`${JSON.stringify(owner)}\n`);
-        await handle.sync();
+        if (await pathExists(path)) {
+          if (await reclaimStaleWriterLock(path, deps)) continue;
+          throw new Error(`runner writer lock already held: ${path}`);
+        }
+        const owner = await deps.currentOwner();
+        await publishCompleteRecord(path, `${JSON.stringify(owner)}\n`);
         activeWriterOwners.set(resolve(path), owner);
-        return new RunnerWriterLock(path, handle, owner);
-      } catch (error) {
-        await handle.close();
-        await unlink(path).catch(() => {});
-        throw error;
+        return new RunnerWriterLock(path, owner);
+      } finally {
+        // The complete owner record is already the fence. A bootstrap cleanup
+        // failure must not turn a successful acquisition into an apparent
+        // failure and strand that owner; its finite lease remains recoverable.
+        await releaseWriterBootstrap(path, bootstrap.nonce).catch(() => undefined);
       }
     }
   }
 
   async release(): Promise<void> {
     if (this.released) return;
-    await this.handle.close();
     try {
       const current = await readProcessLockOwner(this.path);
       if (!sameOwner(current, this.owner)) {
@@ -78,9 +97,96 @@ export async function prepareRunnerWriterLockForSpawn(
   path: string,
   deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
 ): Promise<boolean> {
-  if (!await pathExists(path)) return false;
+  const bootstrapReclaimed = await reclaimExpiredWriterBootstrap(path, deps);
+  if (!await pathExists(path)) return bootstrapReclaimed;
   if (await reclaimStaleWriterLock(path, deps)) return true;
   throw new Error(`runner writer lock already held: ${path}`);
+}
+
+export function runnerWriterBootstrapPath(path: string): string {
+  return `${path}.bootstrap`;
+}
+
+async function claimWriterBootstrap(
+  path: string,
+  deps: ProcessOwnershipLockDependencies,
+): Promise<RunnerWriterBootstrap | null> {
+  const bootstrap = {
+    schemaVersion: 1 as const,
+    nonce: randomUUID(),
+    expiresAtMs: deps.now() + WRITER_BOOTSTRAP_LEASE_MS,
+  };
+  try {
+    await publishCompleteRecord(
+      runnerWriterBootstrapPath(path),
+      `${JSON.stringify(bootstrap)}\n`,
+    );
+    return bootstrap;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return null;
+    throw error;
+  }
+}
+
+async function reclaimExpiredWriterBootstrap(
+  path: string,
+  deps: ProcessOwnershipLockDependencies,
+): Promise<boolean> {
+  const bootstrapPath = runnerWriterBootstrapPath(path);
+  let bootstrap: RunnerWriterBootstrap | null = null;
+  try {
+    const parsed = JSON.parse(await readFile(bootstrapPath, "utf8")) as unknown;
+    if (
+      typeof parsed === "object"
+      && parsed !== null
+      && (parsed as Partial<RunnerWriterBootstrap>).schemaVersion === 1
+      && typeof (parsed as Partial<RunnerWriterBootstrap>).nonce === "string"
+      && Number.isFinite((parsed as Partial<RunnerWriterBootstrap>).expiresAtMs)
+    ) {
+      bootstrap = parsed as RunnerWriterBootstrap;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+  }
+  const expiresAtMs = bootstrap?.expiresAtMs
+    ?? (await stat(bootstrapPath)).mtimeMs + WRITER_BOOTSTRAP_LEASE_MS;
+  if (expiresAtMs > deps.now()) return false;
+  const quarantinePath = `${bootstrapPath}.stale-${process.pid}-${randomUUID()}`;
+  try {
+    await rename(bootstrapPath, quarantinePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    throw error;
+  }
+  await rm(quarantinePath, { force: true });
+  return true;
+}
+
+async function releaseWriterBootstrap(path: string, nonce: string): Promise<void> {
+  const bootstrapPath = runnerWriterBootstrapPath(path);
+  try {
+    const parsed = JSON.parse(await readFile(bootstrapPath, "utf8")) as Partial<RunnerWriterBootstrap>;
+    if (parsed.nonce !== nonce) return;
+    await unlink(bootstrapPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+async function publishCompleteRecord(path: string, contents: string): Promise<void> {
+  const temporaryPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const handle = await open(temporaryPath, "wx", 0o600);
+  try {
+    await handle.writeFile(contents);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await link(temporaryPath, path);
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
 }
 
 async function reclaimStaleWriterLock(

@@ -101,9 +101,12 @@ export interface RunnerHostCall {
 
 export interface RunnerProcessDispatcherOptions {
   spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>;
-  spawner?: Pick<RunnerProcessSpawner, "spawn"> & Partial<Pick<RunnerProcessSpawner, "adopt">>;
+  spawner?: Pick<RunnerProcessSpawner, "spawn">
+    & Partial<Pick<RunnerProcessSpawner, "adopt" | "terminate">>;
   adoptExisting?: boolean;
   offlineExisting?: boolean;
+  openParentOutbox?: typeof RunnerParentOutbox.open;
+  connectSocket?: typeof connectRunnerSocket;
   pumpMux: EventOutboxPumpMux;
   logger: Logger;
   reconnectPolicy?: RunnerIpcReconnectPolicy;
@@ -114,6 +117,15 @@ export interface RunnerProcessDispatcherOptions {
     "beginRunnerOperation" | "sqliteTransactionObserver"
   >;
   handleHostCall(call: RunnerHostCall): Promise<unknown>;
+}
+
+export class RunnerOrphanedSpawnError extends Error {
+  constructor(
+    readonly proof: ExecutionIdentityProof,
+    cause: unknown,
+  ) {
+    super(`spawned runner rollback failed: ${proof.pid}`, { cause });
+  }
 }
 
 export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
@@ -215,7 +227,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     ) {
       throw new Error(`runner registration identity incomplete: ${this.spawnInput.sessionId}`);
     }
-    const executionCommandId = commandId ?? `execute:${randomUUID()}`;
+    const executionCommandId = commandId
+      ?? this.preparedExecuteCommandId
+      ?? `execute:${randomUUID()}`;
     this.preparedExecuteCommandId = executionCommandId;
     return {
       registrationId: identity.registrationId,
@@ -476,13 +490,87 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.spawnedProcess = spawned;
     this.socketPath = spawned.paths.socketPath;
     this.runnerDatabasePath = spawned.paths.databasePath;
-    this.outbox = await RunnerParentOutbox.open(
-      spawned.paths.databasePath,
-      this.spawnInput.sessionId,
-      { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
-    );
-    this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
-    await this.connect(spawned.paths.socketPath);
+    const spawnedProof = spawned.adopted
+      ? undefined
+      : await this.prepareSpawnedIdentityProof(spawned);
+    try {
+      this.outbox = await (this.options.openParentOutbox ?? RunnerParentOutbox.open)(
+        spawned.paths.databasePath,
+        this.spawnInput.sessionId,
+        { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
+      );
+      this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
+      await this.connect(spawned.paths.socketPath);
+    } catch (error) {
+      if (!spawnedProof) throw error;
+      await this.rollbackSpawnAfterParentInitializationFailure(
+        spawner,
+        spawned,
+        spawnedProof,
+        error,
+      );
+    }
+  }
+
+  private async prepareSpawnedIdentityProof(
+    spawned: import("./runner_process_spawn.js").SpawnedRunnerProcess,
+  ): Promise<ExecutionIdentityProof> {
+    const identity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
+    if (
+      !identity
+      || identity.pid !== spawned.pid
+      || identity.startIdentity === null
+    ) {
+      throw new Error(`runner registration identity incomplete: ${this.spawnInput.sessionId}`);
+    }
+    const proof = {
+      registrationId: identity.registrationId,
+      pid: identity.pid,
+      startIdentity: identity.startIdentity,
+      executionCommandId: `execute:${randomUUID()}`,
+    };
+    this.preparedExecuteCommandId = proof.executionCommandId;
+    return proof;
+  }
+
+  private async rollbackSpawnAfterParentInitializationFailure(
+    spawner: RunnerProcessDispatcherOptions["spawner"] | RunnerProcessSpawner,
+    spawned: import("./runner_process_spawn.js").SpawnedRunnerProcess,
+    proof: ExecutionIdentityProof,
+    initializationError: unknown,
+  ): Promise<never> {
+    const cleanupErrors: unknown[] = [];
+    try {
+      await this.releaseHostResources();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    let terminationError: unknown;
+    try {
+      if (!spawner?.terminate) throw new Error("spawn rollback terminator unavailable");
+      await spawner.terminate(spawned.paths, {
+        pid: proof.pid,
+        startIdentity: proof.startIdentity,
+      });
+    } catch (error) {
+      terminationError = error;
+    }
+    if (terminationError !== undefined) {
+      throw new RunnerOrphanedSpawnError(
+        proof,
+        new AggregateError(
+          [initializationError, ...cleanupErrors, terminationError],
+          "runner parent initialization failed and spawned child remained live",
+        ),
+      );
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [initializationError, ...cleanupErrors],
+        `runner parent initialization cleanup failed: ${asError(initializationError).message}`,
+      );
+    }
+    throw initializationError;
   }
 
   private async adoptExisting(
@@ -639,7 +727,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async connect(socketPath: string): Promise<RunnerIpcConnection> {
-    const connection = await connectRunnerSocket(socketPath, {
+    const connection = await (this.options.connectSocket ?? connectRunnerSocket)(socketPath, {
       timeoutMs: 500,
       deadlineMs: RUNNER_SOCKET_CONNECT_DEADLINE_MS,
       retryDelayMs: RUNNER_SOCKET_CONNECT_RETRY_MS,

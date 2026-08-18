@@ -274,16 +274,14 @@ export class RunnerProcessSpawner {
       this.deps.isPidAlive,
     );
     if (pid === null || !this.deps.isPidAlive(pid)) return null;
-    if (identity) {
-      if (identity.pid === null || identity.startIdentity === null) return null;
-      const observed = await this.deps.inspectProcess(pid);
-      if (
-        identity.pid !== pid
-        || !observed.alive
-        || !observed.startIdentity
-        || observed.startIdentity !== identity.startIdentity
-      ) return null;
-    }
+    if (!identity || identity.pid === null || identity.startIdentity === null) return null;
+    const observed = await this.deps.inspectProcess(pid);
+    if (
+      identity.pid !== pid
+      || !observed.alive
+      || !observed.startIdentity
+      || observed.startIdentity !== identity.startIdentity
+    ) return null;
     const config = await readRunnerChildConfig(paths.configPath);
     if (config.sessionId !== input.sessionId || !samePaths(config.paths, paths)) {
       throw new Error(`runner registration mismatch for ${input.sessionId}`);

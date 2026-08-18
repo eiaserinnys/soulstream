@@ -191,6 +191,8 @@ function makeSubject(options: {
   const removeDirectory = vi.fn(async () => {});
   const deps = {
     now: () => NOW,
+    withMutationLock: async <T>(_path: string, operation: () => Promise<T>) =>
+      await operation(),
     refresh: options.refresh ?? (async (item: RunnerRegistration) => item),
     inspect: async (item) => {
       const hydrated = await (options.hydrate ?? (async (candidate) => candidate))(item);

@@ -131,7 +131,7 @@ describe("apply-schema.mjs", () => {
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 68,
+        migration_count: 69,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -612,6 +612,11 @@ describe("apply-schema.mjs", () => {
           {
             migration_id: "067_execution_ownership_delivery_convergence.sql",
             ordinal: 68,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "068_execution_owner_recovery_singleflight.sql",
+            ordinal: 69,
             applied_kind: "migration",
           },
         ]);

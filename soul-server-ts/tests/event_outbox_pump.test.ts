@@ -9,6 +9,8 @@ import {
   EventOutboxDeadLetterError,
   EventOutboxPump,
 } from "../src/upstream/event_outbox_pump.js";
+import { isValidEventAppendAck } from
+  "../src/upstream/event_outbox_pump_protocol.js";
 
 const tempDirectories: string[] = [];
 
@@ -19,6 +21,47 @@ afterEach(async () => {
 });
 
 describe("EventOutboxPump", () => {
+  it("validates the complete canonical ownership token in transition ACKs", () => {
+    const acknowledgement = {
+      type: "event_append_ack" as const,
+      stream_id: "stream-a",
+      acked_through: 1,
+      events: [{
+        source_seq: 1,
+        event_id: 41,
+        effect_application: {
+          applied: false,
+          canonical_session: {
+            status: "initializing",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: "not_required",
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-18T00:00:00.000Z",
+            last_event_id: 41,
+          },
+          canonical_execution_ownership: {
+            ownership_generation: 17,
+            owner_kind: "runner_process" as const,
+            manifest_id: "release-a",
+            registration_id: null,
+            pid: null,
+            start_identity: null,
+            execution_command_id: null,
+            phase: "reserved" as const,
+            failure_reason: null,
+          },
+        },
+      }],
+    };
+
+    expect(isValidEventAppendAck(acknowledgement)).toBe(true);
+    acknowledgement.events[0]!.effect_application.canonical_execution_ownership.phase =
+      "unfenced" as never;
+    expect(isValidEventAppendAck(acknowledgement)).toBe(false);
+  });
+
   it("does not read and send the same batch concurrently", async () => {
     const outbox = await createOutbox();
     await outbox.append(eventInput("one"));

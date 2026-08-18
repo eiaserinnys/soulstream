@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,7 @@ import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
   readRunnerRegistrationIdentity,
+  runnerRegistrationIdentityPath,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
 
@@ -351,6 +352,39 @@ describe("RunnerProcessSpawner", () => {
       sessionId: params.sessionId,
     })).resolves.toEqual({ ...registered, adopted: true });
     expect(spawnProcess).not.toHaveBeenCalled();
+  });
+
+  it("refuses to adopt a live legacy registration without start identity", async () => {
+    const params = await input();
+    const creator = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5111, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "start-5111" }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+    const registered = await creator.spawn(params);
+    await unlink(runnerRegistrationIdentityPath(registered.paths.sessionDirectory));
+    const adopter = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: vi.fn(),
+      registerPid: async () => {},
+      inspectProcess: async () => ({ alive: true, startIdentity: "start-5111" }),
+      isPidAlive: (pid) => pid === 5111,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(adopter.adopt({
+      stateDirectory: params.stateDirectory,
+      sessionId: params.sessionId,
+    })).resolves.toBeNull();
   });
 
   it("recovers across a persistent sidecar failure and runner pid generation change", async () => {

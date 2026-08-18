@@ -455,6 +455,61 @@ describe("EventPersistence durable ingress", () => {
     });
   });
 
+  it("maps the canonical ownership token from an applied=false ingress ACK", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
+      source_seq: 7,
+      event_id: 42,
+      effect_application: {
+        applied: false,
+        canonical_session: {
+          status: "initializing",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: "not_required",
+          last_assistant_text: null,
+          termination_event_id: null,
+          updated_at: "2026-08-18T00:00:00.000Z",
+          last_event_id: 42,
+        },
+        canonical_execution_ownership: {
+          ownership_generation: 17,
+          owner_kind: "runner_process",
+          manifest_id: "release-a",
+          registration_id: null,
+          pid: null,
+          start_identity: null,
+          execution_command_id: null,
+          phase: "reserved",
+          failure_reason: null,
+        },
+      },
+    });
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await expect(ep.reserveExecutionOwnershipAndWaitForApplication("sess-1", {
+      ownershipGeneration: 17,
+      ownerKind: "runner_process",
+      manifestId: "release-a",
+    })).resolves.toMatchObject({
+      applied: false,
+      canonicalExecutionOwnership: {
+        ownershipGeneration: 17,
+        ownerKind: "runner_process",
+        manifestId: "release-a",
+        phase: "reserved",
+      },
+    });
+  });
+
   it("returns the canonical session when a terminal transition CAS is rejected", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

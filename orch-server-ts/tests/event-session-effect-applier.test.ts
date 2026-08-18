@@ -15,6 +15,7 @@ describe("applyEventSessionEffect", () => {
     ["execution_adopt_reserve", "session_reserve_execution_adoption"],
     ["execution_activate", "session_activate_execution_ownership"],
     ["execution_fail", "session_fail_execution_ownership"],
+    ["execution_orphaned_spawn", "session_mark_execution_orphaned_spawn"],
     ["execution_backfill", "session_backfill_execution_ownership"],
     ["runner_terminal_fact", "session_project_runner_terminal_fact"],
     ["recovered_runner_terminal_fact", "session_project_recovered_runner_terminal_fact"],
@@ -25,10 +26,14 @@ describe("applyEventSessionEffect", () => {
     const sql = (async (strings: TemplateStringsArray) => {
       const statement = strings.join("?");
       statements.push(statement);
+      if (statement.includes("FROM session_execution_ownerships")) {
+        return [canonicalOwnershipRow()];
+      }
       return statement.includes("session_apply_running_transition")
         || statement.includes("session_apply_terminal_transition")
         || statement.includes("execution_ownership")
         || statement.includes("execution_adoption")
+        || statement.includes("execution_orphaned_spawn")
         || statement.includes("runner_terminal_fact")
         ? [canonicalRow(true)]
         : [];
@@ -41,11 +46,14 @@ describe("applyEventSessionEffect", () => {
       effect: effect(kind),
     });
 
-    expect(statements).toHaveLength(1);
+    const ownershipEffect = kind.startsWith("execution_")
+      && kind !== "execution_backfill";
+    expect(statements).toHaveLength(ownershipEffect ? 2 : 1);
     expect(statements[0]).toContain(procedure);
     if (
       kind !== "execution_prove"
       && kind !== "execution_fail"
+      && kind !== "execution_orphaned_spawn"
       && kind !== "execution_backfill"
     ) {
       expect(statements[0]).not.toContain("last_event_id");
@@ -122,6 +130,31 @@ describe("applyEventSessionEffect", () => {
       }),
     });
   });
+
+  it("returns the canonical owner when an execution generation CAS is idempotently rejected", async () => {
+    const sql = (async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      return statement.includes("FROM session_execution_ownerships")
+        ? [canonicalOwnershipRow({ phase: "active" })]
+        : [canonicalRow(false)];
+    }) as EventIngressQuerySql;
+    const activation = effect("execution_activate");
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 42,
+      envelope: envelope(activation),
+      effect: activation,
+    })).resolves.toMatchObject({
+      applied: false,
+      canonicalExecutionOwnership: {
+        ownership_generation: 1,
+        owner_kind: "runner_process",
+        manifest_id: "release-1",
+        phase: "active",
+      },
+    });
+  });
 });
 
 function canonicalRow(
@@ -138,6 +171,23 @@ function canonicalRow(
     termination_event_id: null,
     updated_at: new Date("2026-08-06T00:00:00.000Z"),
     last_event_id: 41,
+    ...overrides,
+  };
+}
+
+function canonicalOwnershipRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ownership_generation: 1,
+    owner_kind: "runner_process",
+    manifest_id: "release-1",
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
+    phase: "active",
+    failure_reason: null,
     ...overrides,
   };
 }
@@ -195,6 +245,15 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     kind,
     ownership_generation: 1,
     failure_reason: "spawn failed",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_orphaned_spawn") return {
+    kind,
+    ownership_generation: 1,
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_backfill") return {

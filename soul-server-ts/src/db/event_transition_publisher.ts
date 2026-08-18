@@ -1,5 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type {
+  CanonicalExecutionOwnership,
   ExecutionIdentityProof,
   ExecutionOwnershipObservation,
   ExecutionOwnerKind,
@@ -17,6 +18,7 @@ export type EventSessionTransitionApplication = {
   eventId: number;
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection;
+  canonicalExecutionOwnership?: CanonicalExecutionOwnership | null;
 };
 
 /** Owns the ordered durable transition API layered over event persistence. */
@@ -172,6 +174,27 @@ export abstract class EventTransitionPublisher {
     );
   }
 
+  async markExecutionOrphanedSpawnAndWaitForApplication(
+    sessionId: string,
+    ownershipGeneration: number,
+    proof: ExecutionIdentityProof,
+    updatedAt = new Date(),
+  ): Promise<EventSessionTransitionApplication> {
+    return await this.enqueueExecutionEffectAndWait(
+      sessionId,
+      `orphaned-spawn:${ownershipGeneration}`,
+      {
+        kind: "execution_orphaned_spawn",
+        ownership_generation: ownershipGeneration,
+        registration_id: proof.registrationId,
+        pid: proof.pid,
+        start_identity: proof.startIdentity,
+        execution_command_id: proof.executionCommandId,
+        updated_at: updatedAt.toISOString(),
+      },
+    );
+  }
+
   async backfillExecutionOwnershipAndWaitForApplication(
     sessionId: string,
     input: {
@@ -253,6 +276,7 @@ export abstract class EventTransitionPublisher {
       | "execution_adopt_reserve"
       | "execution_activate"
       | "execution_fail"
+      | "execution_orphaned_spawn"
       | "execution_backfill" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {

@@ -1,13 +1,9 @@
-import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { Logger } from "pino";
 
-import {
-  readClosedRunnerTailState,
-  type ClosedRunnerTailState,
-} from "./closed_runner_tail_state.js";
+import type { ClosedRunnerTailState } from "./closed_runner_tail_state.js";
 import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapRecord,
@@ -17,25 +13,16 @@ import {
   readRunnerHostAcknowledgedThrough,
   runnerHostStatePath,
 } from "./runner_host_state_store.js";
-import {
-  readAuthoritativeRunnerLifecycle,
-  type AuthoritativeRunnerLifecycleOptions,
-} from "./runner_lifecycle_reader.js";
+import type { AuthoritativeRunnerLifecycleOptions } from "./runner_lifecycle_reader.js";
 import {
   readRunnerSqliteLifecycle,
   type RunnerLifecycleRecord,
 } from "./sqlite_runner_lifecycle.js";
-import {
-  readRunnerChildConfig,
-  readRunnerPid,
-  resolveRegisteredRunnerPid,
-  type RunnerChildConfig,
-} from "./runner_process_spawn.js";
-import { inspectProcessIdentity, type ProcessIdentity } from "./runner_process_lock.js";
-import {
-  readRunnerRegistrationIdentity,
-  recoverRunnerDirectoryIdentity,
-} from "./runner_registration_identity.js";
+import type { RunnerChildConfig } from "./runner_process_spawn.js";
+import type { ProcessIdentity } from "./runner_process_lock.js";
+import { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
+
+export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 
 export interface RunnerRegistration {
   config: RunnerChildConfig;
@@ -265,88 +252,6 @@ export async function listLiveRunnerSessionIds(
   return [...sessionIds].sort();
 }
 
-export async function readRunnerRegistrationSummary(
-  directory: string,
-  options: {
-    verifyProcessIdentity?: boolean;
-    inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
-  } & AuthoritativeRunnerLifecycleOptions = {},
-): Promise<RunnerRegistration> {
-  const configPath = resolve(directory, "runner-config.json");
-  let config: RunnerChildConfig;
-  try {
-    config = await readRunnerChildConfig(configPath);
-  } catch (error) {
-    throw await annotateRegistrationError(directory, error, undefined, "config");
-  }
-  try {
-    if (resolve(config.paths.sessionDirectory) !== directory) {
-      throw new Error(`runner config directory mismatch: ${directory}`);
-    }
-    const configStat = await stat(configPath);
-    const databaseStat = await stat(config.paths.databasePath);
-    const hostDatabasePath = runnerHostStatePath(config.paths.databasePath);
-    const hostDatabaseStat = await statIfExists(hostDatabasePath);
-    const hostDatabaseWalStat = await statIfExists(`${hostDatabasePath}-wal`);
-    const identity = await readRunnerRegistrationIdentity(directory);
-    if (
-      identity
-      && (identity.sessionId !== config.sessionId || identity.codeSha !== config.codeSha)
-    ) {
-      throw new Error(`runner identity does not match config: ${directory}`);
-    }
-    const lifecycle = await readAuthoritativeRunnerLifecycle(config.paths.databasePath, options);
-    if (lifecycle && lifecycle.session_id !== config.sessionId) {
-      throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
-    }
-    const pid = resolveRegisteredRunnerPid(
-      await readRunnerPid(config.paths.pidPath),
-      lifecycle?.runner_pid ?? null,
-      identity?.pid ?? null,
-      directory,
-      isPidAlive,
-    );
-    if (identity && identity.pid !== null && identity.pid !== pid) {
-      throw new Error(`runner pid identity does not match registration: ${directory}`);
-    }
-    let pidAlive = pid !== null && isPidAlive(pid);
-    if (options.verifyProcessIdentity && pid !== null && pidAlive) {
-      const observed = await (options.inspectProcess ?? inspectProcessIdentity)(pid);
-      pidAlive = observed.alive && (
-        !identity?.startIdentity
-        || observed.startIdentity === null
-        || observed.startIdentity === identity.startIdentity
-      );
-    }
-    return {
-      config,
-      pid,
-      pidAlive,
-      registeredAtMs: configStat.mtimeMs,
-      bootstrap: null,
-      lifecycle,
-      registrationId: identity?.registrationId ?? null,
-      pidStartIdentity: identity?.startIdentity ?? null,
-      databaseMtimeMs: databaseStat.mtimeMs,
-      databaseSize: databaseStat.size,
-      hostDatabaseMtimeMs: hostDatabaseStat?.mtimeMs,
-      hostDatabaseSize: hostDatabaseStat?.size,
-      hostDatabaseWalMtimeMs: hostDatabaseWalStat?.mtimeMs,
-      hostDatabaseWalSize: hostDatabaseWalStat?.size,
-      ...(lifecycle?.execution_state === "closed"
-        ? { closedTailState: readClosedRunnerTailState(config.paths.databasePath, config.sessionId) }
-        : {}),
-    };
-  } catch (error) {
-    throw await annotateRegistrationError(
-      directory,
-      error,
-      { sessionId: config.sessionId, codeSha: config.codeSha },
-      "summary",
-    );
-  }
-}
-
 export async function readRunnerRegistrationForDeletion(
   directory: string,
 ): Promise<RunnerRegistration> {
@@ -449,24 +354,6 @@ export async function inspectRunnerDurableState(
   };
 }
 
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-async function statIfExists(path: string): Promise<Stats | null> {
-  try {
-    return await stat(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
 async function pathIsAbsent(path: string): Promise<boolean> {
   try {
     await stat(path);
@@ -478,22 +365,4 @@ async function pathIsAbsent(path: string): Promise<boolean> {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
-}
-
-async function annotateRegistrationError(
-  directory: string,
-  error: unknown,
-  known?: { sessionId: string; codeSha?: string },
-  stage?: "config" | "summary",
-): Promise<Error> {
-  const recovered = known ?? await recoverRunnerDirectoryIdentity(directory) ?? undefined;
-  const normalized = asError(error) as Error & {
-    runnerSessionId?: string;
-    runnerCodeSha?: string;
-    runnerRegistrationStage?: "config" | "summary";
-  };
-  if (recovered?.sessionId) normalized.runnerSessionId = recovered.sessionId;
-  if (recovered?.codeSha) normalized.runnerCodeSha = recovered.codeSha;
-  if (stage) normalized.runnerRegistrationStage = stage;
-  return normalized;
 }
