@@ -14,6 +14,17 @@ export interface RunnerProcessPaths {
 export const LINUX_UNIX_SOCKET_PATH_MAX_BYTES = 107;
 const RUNNER_SESSION_SLUG_LENGTH = 24;
 const RUNNER_SOCKET_FILE_NAME = "runner.sock";
+const RUNNER_STATE_INFRASTRUCTURE_PREFIX = "_";
+
+/**
+ * Runner paths use hexadecimal hashes, while underscore-prefixed direct
+ * children are reserved for node-level infrastructure such as `_control`.
+ * Every other directory remains a registration candidate so damaged or
+ * legacy evidence is still surfaced through the fail-closed scan contract.
+ */
+export function isRunnerRegistrationDirectoryName(name: string): boolean {
+  return !name.startsWith(RUNNER_STATE_INFRASTRUCTURE_PREFIX);
+}
 
 export function runnerSocketPathByteLength(stateDirectory: string): number {
   const longestSocketPath = join(
