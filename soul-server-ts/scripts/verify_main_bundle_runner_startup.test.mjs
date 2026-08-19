@@ -61,6 +61,7 @@ test(
         PATH: process.env.PATH ?? "",
         HOME: temporaryRoot,
         NODE_ENV: "test",
+        LOG_LEVEL: "warn",
       };
       await writeFile(serviceEnvPath, [
         "SOULSTREAM_NODE_ID=bundle-runner-startup",
