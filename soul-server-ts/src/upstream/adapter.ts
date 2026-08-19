@@ -157,6 +157,7 @@ export class UpstreamAdapter {
       controlChannelEnabled: this.controlChannelService !== undefined,
       runnerProcessEnabled: this.config.runnerProcessEnabled,
       runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
+      releaseActivationState: this.config.releaseActivationState,
       logger: this.logger,
     });
 
@@ -261,6 +262,8 @@ export class UpstreamAdapter {
             await this.deps.eventOutboxPump.handleRejection(cmd);
             return;
           }
+          if (this.config.releaseActivationState?.isReady() === false)
+            throw new Error("upstream command before release activation receipt ACK");
           await this.commandTransportObserver.observe(
             cmd,
             () => this.dispatcher.dispatch(cmd),
@@ -323,6 +326,7 @@ export class UpstreamAdapter {
           runnerProcessEnabled: this.config.runnerProcessEnabled,
           runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
           logger: this.logger,
+          releaseActivationState: this.config.releaseActivationState,
         }),
       );
       const catchUpReady = this.deps.eventOutboxPump
@@ -337,6 +341,15 @@ export class UpstreamAdapter {
         servePromise.then(() => undefined),
       ]);
       if (!registrationAck) return;
+      if (this.config.releaseActivationState) {
+        const activationReceipt = (registrationAck as NodeRegisterAck & {
+          release_activation_receipt?: import("../release/release_activation_state.js").ReleaseActivationReceipt;
+        }).release_activation_receipt;
+        if (!activationReceipt) {
+          throw new Error("node registration ACK missing release activation receipt");
+        }
+        this.config.releaseActivationState.acceptReceipt(activationReceipt);
+      }
       if (
         this.controlChannelService
         && registrationAck.capabilities?.control_channel_v1 === true

@@ -26,7 +26,7 @@ const wireCount = Array.isArray(schema.oneOf) ? schema.oneOf.length : 0;
 const sseCount = defsCount - wireCount;
 
 console.log(
-  `노드 ↔ 오케스트레이터 WebSocket 메시지 정본. ${defsCount}개 $defs (wire ${wireCount} + SSE event ${sseCount}). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.`,
+  `노드 ↔ 오케스트레이터 WebSocket 메시지 정본. ${defsCount}개 $defs (top-level wire ${wireCount} + supporting/SSE ${sseCount}). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.`,
 );
 NODE
 )"

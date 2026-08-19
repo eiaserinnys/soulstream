@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as WSServerWebSocket } from "ws";
 import pino from "pino";
 import type { AddressInfo } from "node:net";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
@@ -13,12 +16,32 @@ import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
 import { RunnerRecoveryCoordinator } from "../src/runner/runner_recovery_coordinator.js";
 import type { RunnerRegistration } from "../src/runner/runner_process_registry.js";
+import { ReleaseActivationState } from "../src/release/release_activation_state.js";
+import type { ReleaseManifestV1 } from "../src/release/release_manifest.js";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
   name: "Codex Default",
   backend: "codex",
   workspace_dir: "/tmp/codex-default",
+};
+
+const releaseManifest: ReleaseManifestV1 = {
+  schema_version: 1,
+  manifest_id: "manifest-1",
+  release_cohort_id: "cohort-1",
+  source_commit: "commit-1",
+  host_bundle_hash: "sha256-host",
+  runner_release_id: "sha256-runner-release",
+  runner_artifact_hash: "sha256-runner-artifact",
+  schema_generation: "schema-70",
+  wire_generation: "wire-1",
+  node: { version: "v22.18.0", platform: "linux", arch: "x64" },
+  deployment_env_identity: "sha256-env",
+  executables: {
+    claude: { kind: "claude", path: "/usr/bin/claude", identity: "sha256-claude" },
+    codex: { kind: "codex", path: "/usr/bin/codex", identity: "sha256-codex" },
+  },
 };
 
 function makeDeps(
@@ -30,10 +53,12 @@ function makeDeps(
     sessionDb?: SessionDB;
     eventOutboxPump?: EventOutboxPump;
     reconnectPolicy?: ReconnectPolicyBoundary;
+    taskManager?: TaskManager;
+    taskExecutor?: TaskExecutor;
   } = {},
 ) {
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
-  const taskManager = {
+  const taskManager = opts.taskManager ?? ({
     listTasks: () =>
       (opts.runningSessionIds ?? []).map((agentSessionId) => ({
         agentSessionId,
@@ -47,10 +72,10 @@ function makeDeps(
     shutdown: async () => undefined,
     getTask: () => undefined,
     setTaskStatus: () => undefined,
-  } as unknown as TaskManager;
-  const taskExecutor = {
+  } as unknown as TaskManager);
+  const taskExecutor = opts.taskExecutor ?? ({
     startExecution: () => undefined,
-  } as unknown as TaskExecutor;
+  } as unknown as TaskExecutor);
   return {
     agentRegistry,
     taskManager,
@@ -185,7 +210,9 @@ function deferred<T>() {
 function recoveryRegistration(
   sessionId: string,
   lifecycleState: "reaped" | "completed",
+  stateDirectory: string,
 ): RunnerRegistration {
+  const sessionDirectory = join(stateDirectory, sessionId);
   return {
     config: {
       schemaVersion: 1,
@@ -198,12 +225,12 @@ function recoveryRegistration(
         workspace_dir: "/workspace/a",
       },
       paths: {
-        sessionDirectory: `/runner/${sessionId}`,
-        databasePath: `/runner/${sessionId}/runner.sqlite`,
-        socketPath: `/runner/${sessionId}/runner.sock`,
-        pidPath: `/runner/${sessionId}/runner.pid`,
-        lockPath: `/runner/${sessionId}/runner.lock`,
-        configPath: `/runner/${sessionId}/runner-config.json`,
+        sessionDirectory,
+        databasePath: join(sessionDirectory, "runner.sqlite"),
+        socketPath: join(sessionDirectory, "runner.sock"),
+        pidPath: join(sessionDirectory, "runner.pid"),
+        lockPath: join(sessionDirectory, "runner.lock"),
+        configPath: join(sessionDirectory, "runner-config.json"),
       },
       codeSha: "sha-a",
       snapshotPath: "/release/sha-a/soul-server-ts",
@@ -358,16 +385,118 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("release receipt ACK 전에는 명령을 차단하고 heartbeat만 허용한다", async () => {
+    const releaseActivationState = new ReleaseActivationState(releaseManifest, {
+      now: () => new Date("2026-08-19T09:00:00.000Z"),
+      registrationIdempotencyKey: "registration-key",
+    });
+    releaseActivationState.markPrewarmed({
+      host: "verified",
+      runner: "verified",
+      env: "verified",
+      executable: "verified",
+    });
+    const createTask = vi.fn(async (params: { agentSessionId: string; prompt: string }) => ({
+      agentSessionId: params.agentSessionId,
+      prompt: params.prompt,
+      status: "running" as const,
+      createdAt: new Date("2026-08-19T09:00:00.000Z"),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    }));
+    const startExecution = vi.fn();
+    const taskManager = {
+      listTasks: () => [],
+      createTask,
+      cancelTask: async () => false,
+      deleteTask: async () => undefined,
+      shutdown: async () => undefined,
+      getTask: () => undefined,
+      setTaskStatus: () => undefined,
+    } as unknown as TaskManager;
+    const taskExecutor = { startExecution } as unknown as TaskExecutor;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        releaseActivationState,
+      },
+      silentLogger,
+      makeDeps({ taskManager, taskExecutor }),
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.receivedMessages.some(
+      (message) => (message as Record<string, unknown>).type === "node_register",
+    ));
+    const registration = orch.receivedMessages[0] as Record<string, unknown>;
+    expect(registration.release_manifest).toEqual(releaseManifest);
+    expect(registration.release_activation).toMatchObject({
+      manifest_id: "manifest-1",
+      registration_idempotency_key: "registration-key",
+    });
+
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "create_session",
+      agentSessionId: "blocked-session",
+      prompt: "must not start",
+      profile: "codex-default",
+      requestId: "blocked-request",
+    }));
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "app_heartbeat_ping",
+      sentAt: "2026-08-19T09:00:00.000Z",
+    }));
+    await waitFor(() => orch.receivedMessages.some(
+      (message) => (message as Record<string, unknown>).type === "app_heartbeat_pong",
+    ));
+    expect(createTask).not.toHaveBeenCalled();
+    expect(releaseActivationState.isReady()).toBe(false);
+
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "node_register_ack",
+      node_id: "eias-shopping-ts",
+      release_activation_receipt: {
+        manifest_id: "manifest-1",
+        activation_generation: 7,
+        activated_at: "2026-08-19T09:00:01.000Z",
+        registration_idempotency_key: "registration-key",
+      },
+    }));
+    await waitFor(() => releaseActivationState.isReady());
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "create_session",
+      agentSessionId: "activated-session",
+      prompt: "start now",
+      profile: "codex-default",
+      requestId: "activated-request",
+    }));
+    await waitFor(() => createTask.mock.calls.length === 1);
+    expect(createTask.mock.calls[0]?.[0]).toMatchObject({
+      agentSessionId: "activated-session",
+    });
+    expect(startExecution).toHaveBeenCalledOnce();
+    await adapter.shutdown();
+  });
+
   it("dead reaped/completed runner 복구가 outbox ACK에 의존해도 부팅을 완료한다", async () => {
     await stopMockOrch(orch);
     orch = await startMockOrch({ acknowledgeRegistration: true, autoPong: true });
     const logger = pino({ level: "silent" });
     const logInfo = vi.spyOn(logger, "info");
     const recoveryApplicationReady = deferred<void>();
+    const stateDirectory = await mkdtemp(join(tmpdir(), "soulstream-adapter-recovery-"));
     const registrations = [
-      recoveryRegistration("reaped-a", "reaped"),
-      recoveryRegistration("reaped-b", "reaped"),
-      recoveryRegistration("completed-a", "completed"),
+      recoveryRegistration("reaped-a", "reaped", stateDirectory),
+      recoveryRegistration("reaped-b", "reaped", stateDirectory),
+      recoveryRegistration("completed-a", "completed", stateDirectory),
     ];
     const tasks = new Map(
       registrations.map((registration) => [
@@ -387,11 +516,13 @@ describe("UpstreamAdapter", () => {
       await recoveryApplicationReady.promise;
     });
     const coordinator = new RunnerRecoveryCoordinator({
-      stateDirectory: "/runner",
+      stateDirectory,
       leaseTimeoutMs: 120_000,
       scanIntervalMs: 15_000,
       taskManager: {
         hydrateRunnerRecoveryTask: async (sessionId) => tasks.get(sessionId) ?? null,
+        listOwnerNullRunningInventory: async () => [],
+        reconcileExecutionOwnershipObservations: async () => false,
         markRunnerFailureAndResume,
       },
       taskExecutor: {
@@ -441,6 +572,7 @@ describe("UpstreamAdapter", () => {
       await waitFor(() => orch.receivedMessages.some(
         (message) => (message as Record<string, unknown>).type === "app_heartbeat_ping",
       ));
+      await waitFor(() => recoverRegisteredRunner.mock.calls.length === 3);
 
       expect((orch.receivedMessages[0] as Record<string, unknown>).type).toBe("node_register");
       expect(markRunnerFailureAndResume).toHaveBeenCalledTimes(2);
@@ -453,6 +585,7 @@ describe("UpstreamAdapter", () => {
       recoveryApplicationReady.resolve();
       await adapter.shutdown();
       await coordinator.stop();
+      await rm(stateDirectory, { recursive: true, force: true });
     }
   });
 

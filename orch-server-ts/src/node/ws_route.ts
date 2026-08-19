@@ -21,6 +21,12 @@ import {
 } from "./event_ingress_controller.js";
 import { isEventAppendBatchFrame } from "./event_ingress_types.js";
 import { registerNodeControlWsRoute } from "./control_ws_route.js";
+import type {
+  ReleaseActivationReceiptRecord,
+  ReleaseActivationReceiptStore,
+} from "./release_activation_receipt_repository.js";
+import { parseReleaseActivationRegistration } from
+  "./release_activation_registration.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
@@ -35,6 +41,7 @@ export type NodeWsRouteOptions = {
   eventIngress?: NodeEventIngressCommitter;
   registrationTimeoutMs?: number;
   runnerPolicy?: Omit<NodeRunnerRegistrationPolicy, "onWarning">;
+  releaseActivationReceipts?: ReleaseActivationReceiptStore;
 };
 
 export type NodeWsRouteSecurity = {
@@ -99,6 +106,7 @@ export function registerNodeWsRoute(
       let registeredSource: { nodeId: string; connectionId: string } | undefined;
       let ingressController: NodeEventIngressController | undefined;
       let finalized = false;
+      let releaseActivationInFlight = false;
       let registrationTimer: ReturnType<typeof setTimeout> | undefined;
 
       app.log.info({
@@ -150,18 +158,14 @@ export function registerNodeWsRoute(
         );
       }, registrationTimeoutMs);
 
-      socket.on("message", (payload) => {
-        if (finalized) return;
-        const parsed = parseJsonFrame(payload);
-        if (!parsed.ok) {
-          closeAndFinalize(parsed.closeCode, parsed.reason);
-          return;
-        }
-
+      const handleFrame = (
+        frame: Record<string, unknown>,
+        activationReceipt?: ReleaseActivationReceiptRecord,
+      ): void => {
         if (
           options.eventIngress !== undefined
           && registeredSource !== undefined
-          && isEventAppendBatchFrame(parsed.frame)
+          && isEventAppendBatchFrame(frame)
         ) {
           ingressController ??= createEventIngressController({
             app,
@@ -171,11 +175,11 @@ export function registerNodeWsRoute(
             committer: options.eventIngress,
             closeAndFinalize,
           });
-          ingressController.enqueue(parsed.frame);
+          ingressController.enqueue(frame);
           return;
         }
 
-        const result = controller.handleFrame(parsed.frame);
+        const result = controller.handleFrame(frame);
         if (result.type === "registered") {
           registeredSource = {
             nodeId: result.nodeId,
@@ -219,6 +223,9 @@ export function registerNodeWsRoute(
                 runner_inventory_v1: true,
                 control_channel_v1: true,
               },
+              ...(activationReceipt
+                ? { release_activation_receipt: activationReceipt }
+                : {}),
             }));
           } catch {
             closeAndFinalize(
@@ -243,6 +250,50 @@ export function registerNodeWsRoute(
             );
           }
         }
+      };
+
+      socket.on("message", (payload) => {
+        if (finalized) return;
+        const parsed = parseJsonFrame(payload);
+        if (!parsed.ok) {
+          closeAndFinalize(parsed.closeCode, parsed.reason);
+          return;
+        }
+        if (registeredSource === undefined && parsed.frame.type === "node_register") {
+          let activation;
+          try {
+            activation = parseReleaseActivationRegistration(parsed.frame);
+          } catch (error) {
+            app.log.warn({ err: error }, "Node release activation registration rejected");
+            closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, "release activation invalid");
+            return;
+          }
+          if (activation) {
+            if (!options.releaseActivationReceipts) {
+              closeAndFinalize(INTERNAL_ERROR_CLOSE_CODE, "release receipt store unavailable");
+              return;
+            }
+            if (releaseActivationInFlight) {
+              closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, "release activation already pending");
+              return;
+            }
+            releaseActivationInFlight = true;
+            void options.releaseActivationReceipts.persist(activation).then(
+              (receipt) => {
+                releaseActivationInFlight = false;
+                if (!finalized) handleFrame(parsed.frame, receipt);
+              },
+              (error) => {
+                releaseActivationInFlight = false;
+                app.log.error({ err: error, nodeId: activation?.nodeId },
+                  "Node release activation receipt persistence failed");
+                closeAndFinalize(INTERNAL_ERROR_CLOSE_CODE, "release activation persistence failed");
+              },
+            );
+            return;
+          }
+        }
+        handleFrame(parsed.frame);
       });
 
       socket.on("close", () => {

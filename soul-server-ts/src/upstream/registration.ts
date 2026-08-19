@@ -6,6 +6,7 @@ import type { NodeRegister } from "@soulstream/wire-schema";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
+import type { ReleaseActivationState } from "../release/release_activation_state.js";
 
 export interface RegistrationParams {
   nodeId: string;
@@ -18,6 +19,7 @@ export interface RegistrationParams {
   runnerProcessEnabled?: boolean;
   runnerLeaseTimeoutMs?: number;
   controlChannelEnabled?: boolean;
+  releaseActivationState?: ReleaseActivationState;
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
    * 실패는 silent (테스트·legacy 호환).
@@ -135,6 +137,12 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       }
       return entry;
     }),
+    ...(params.releaseActivationState
+      ? {
+          release_manifest: params.releaseActivationState.manifest,
+          release_activation: params.releaseActivationState.registration(),
+        }
+      : {}),
   };
   if (params.userName) {
     const portraitB64 = params.userPortraitPath

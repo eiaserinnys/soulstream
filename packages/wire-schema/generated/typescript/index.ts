@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 119개 $defs (wire 58 + SSE event 61). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 132개 $defs (top-level wire 66 + supporting/SSE 66). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -79,6 +79,8 @@ export interface NodeRegister {
   node_id: string;
   host?: string;
   port?: number;
+  release_manifest?: ReleaseManifestV1;
+  release_activation?: ReleaseActivationRegistration;
   /**
    * 노드 자체 가용성 정보. 예: {max_concurrent: 5, app_heartbeat_v1: true, runner_inventory_v1: true}
    */
@@ -134,6 +136,46 @@ export interface NodeRegister {
   };
   [k: string]: unknown;
 }
+export interface ReleaseManifestV1 {
+  schema_version: 1;
+  manifest_id: string;
+  release_cohort_id: string;
+  source_commit: string;
+  host_bundle_hash: string;
+  runner_release_id: string;
+  runner_artifact_hash: string;
+  schema_generation: string;
+  wire_generation: string;
+  node: {
+    version: string;
+    platform: string;
+    arch: string;
+  };
+  deployment_env_identity: string;
+  executables: {
+    claude: ReleaseExecutableIdentity;
+    codex: ReleaseExecutableIdentity;
+  };
+}
+export interface ReleaseExecutableIdentity {
+  kind: "claude" | "codex";
+  path: string | null;
+  identity: string | null;
+}
+export interface ReleaseActivationRegistration {
+  manifest_id: string;
+  release_cohort_id: string;
+  source_commit: string;
+  prewarmed_at: string;
+  verification: ReleaseVerificationResult;
+  registration_idempotency_key: string;
+}
+export interface ReleaseVerificationResult {
+  host: "verified";
+  runner: "verified";
+  env: "verified";
+  executable: "verified";
+}
 /**
  * orch→노드: 등록 수락과 orch wire capability 광고.
  */
@@ -141,12 +183,19 @@ export interface NodeRegisterAck {
   type: "node_register_ack";
   node_id: string;
   connection_id?: string;
+  release_activation_receipt?: ReleaseActivationReceipt;
   capabilities?: {
     runner_inventory_v1?: boolean;
     control_channel_v1?: boolean;
     [k: string]: unknown;
   };
   [k: string]: unknown;
+}
+export interface ReleaseActivationReceipt {
+  manifest_id: string;
+  activation_generation: number;
+  activated_at: string;
+  registration_idempotency_key: string;
 }
 /**
  * node control worker→orch: data registration generation에 귀속되는 control lane 등록.

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import pino from "pino";
 
+import { ReleaseActivationState } from "../src/release/release_activation_state.js";
+import { buildReleaseManifest } from "../src/release/release_manifest.js";
 import { buildServer } from "../src/server.js";
 
 /**
@@ -50,6 +52,56 @@ describe("buildServer (Phase B-1 hotfix F1 회귀 차단)", () => {
       service: "soul-server-ts",
       phase: "B-1",
     });
+
+    await server.close();
+  });
+
+  it("release activation receipt ACK 전에는 GET /health가 503이다", async () => {
+    const logger = pino({ level: "silent" });
+    const manifest = buildReleaseManifest({
+      sourceCommit: "commit",
+      hostBundleHash: "host",
+      runnerReleaseId: "runner",
+      runnerArtifactHash: "runner",
+      schemaGeneration: "schema",
+      wireGeneration: "wire",
+      nodeVersion: process.versions.node,
+      platform: process.platform,
+      arch: process.arch,
+      deploymentEnvIdentity: "env",
+      claudeExecutable: { kind: "claude", path: null, identity: null },
+      codexExecutable: { kind: "codex", path: null, identity: null },
+    });
+    const releaseActivationState = new ReleaseActivationState(manifest, {
+      registrationIdempotencyKey: "registration-key",
+    });
+    releaseActivationState.markPrewarmed({
+      host: "verified",
+      runner: "verified",
+      env: "verified",
+      executable: "verified",
+    });
+    const server = await buildServer({
+      host: "127.0.0.1",
+      port: 0,
+      nodeId: "test-node",
+      logger,
+      releaseActivationState,
+    });
+
+    const before = await server.inject({ method: "GET", url: "/health" });
+    expect(before.statusCode).toBe(503);
+    expect(before.json()).toMatchObject({ status: "starting", ready: false });
+
+    releaseActivationState.acceptReceipt({
+      manifest_id: manifest.manifest_id,
+      activation_generation: 1,
+      activated_at: "2026-08-19T09:00:01.000Z",
+      registration_idempotency_key: "registration-key",
+    });
+    const after = await server.inject({ method: "GET", url: "/health" });
+    expect(after.statusCode).toBe(200);
+    expect(after.json()).toMatchObject({ status: "ok", ready: true });
 
     await server.close();
   });

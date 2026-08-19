@@ -70,6 +70,7 @@
     { "id": "066_session_delivery_enqueue_sequence.sql", "sha256": "276ea0bf8aa838725902d093d5e754b61640fa3f24669a00f45528eb1c2bd683", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "067_execution_ownership_delivery_convergence.sql", "sha256": "52ebf997e56fd6f59f92b2de28ce35ffa1abd0605dfb7abb5ffbff2fb3c3ec95", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "068_execution_owner_recovery_singleflight.sql", "sha256": "a73bfcb03bd378e5fa48fa0c79487cdfd21b6537fab18ae01971abfa496f6a19", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "069_execution_reservation_lease_60s.sql", "sha256": "6dbb78ad71b40a98074204431af2a4e78abee8fcdc790d24ead92fbd7687bd70", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "069_execution_reservation_lease_60s.sql", "sha256": "6dbb78ad71b40a98074204431af2a4e78abee8fcdc790d24ead92fbd7687bd70", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "070_release_manifest_activation_receipts.sql", "sha256": "18d0f33d18e25289b0b87d422e64747c741f007e0152c3298fafe46c26a40e45", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }
