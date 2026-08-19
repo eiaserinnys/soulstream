@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { chmod, cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -12,6 +12,20 @@ import test from "node:test";
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDist = join(packageRoot, "dist");
 const execFileAsync = promisify(execFile);
+
+test("every Haniel build hook uses the cross-platform release env entrypoint", async () => {
+  const repositoryRoot = join(packageRoot, "..");
+  for (const relativePath of [
+    "install/haniel-soul-server-ts.example.yaml",
+    "install/haniel-standalone.yaml.template",
+  ]) {
+    const source = await readFile(join(repositoryRoot, relativePath), "utf8");
+    const postPull = source.match(/^\s*post_pull:\s*(.+)$/m)?.[1];
+    assert(postPull, `${relativePath} post_pull missing`);
+    assert.match(postPull, /node .*build_with_release_env\.mjs --env-file /, relativePath);
+    assert.doesNotMatch(postPull, /(?:^|&&)\s*[A-Z][A-Z0-9_]*=/, relativePath);
+  }
+});
 
 test(
   "dist/main.js prewarms the exact manifest and stays starting until receipt ACK",
