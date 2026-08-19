@@ -85,11 +85,21 @@ export class TaskRunnerRecovery {
   async projectClosed(task: Task, detail: string): Promise<boolean> {
     // A closed registration admitted by an earlier scan cannot supersede a
     // replacement that reserved or activated ownership while hydration ran.
+    const recoveredOwnership = task.recoveredExecutionOwnership;
+    const activeOwnership = task.executionOwnership;
+    const ownershipChanged = activeOwnership !== undefined && (
+      recoveredOwnership === undefined
+      || activeOwnership.manifestId !== recoveredOwnership.manifestId
+      || activeOwnership.registrationId !== recoveredOwnership.registrationId
+      || activeOwnership.pid !== recoveredOwnership.pid
+      || activeOwnership.startIdentity !== recoveredOwnership.startIdentity
+      || activeOwnership.executionCommandId !== recoveredOwnership.executionCommandId
+    );
     if (
       task.terminationEventRecorded
-      || task.runner
       || task.executionOwnershipReservation
-      || (task.executionOwnership && isActiveTaskStatus(task.status))
+      || ownershipChanged
+      || (task.runner && !activeOwnership && isActiveTaskStatus(task.status))
     ) return false;
     task.runner = undefined;
     task.runnerRetainedForClaudeBackground = undefined;

@@ -152,6 +152,13 @@ describe("TaskRunnerRecovery", () => {
         startIdentity: "start-4242",
         executionCommandId: "execute-new",
       },
+      recoveredExecutionOwnership: {
+        manifestId: "sha-old",
+        registrationId: "registration-old",
+        pid: 4141,
+        startIdentity: "start-4141",
+        executionCommandId: "execute-old",
+      },
     });
     const projectRecoveredRunnerTerminalFact = vi.fn();
     const recovery = new TaskRunnerRecovery({
@@ -221,5 +228,37 @@ describe("TaskRunnerRecovery", () => {
 
     await expect(recovery.projectClosed(task, "retry terminal fact")).resolves.toBe(true);
     expect(projectRecoveredRunnerTerminalFact).toHaveBeenCalledOnce();
+  });
+
+  it("allows a matching closed registration to recover its stranded active owner", async () => {
+    const ownership = {
+      manifestId: "sha-old",
+      registrationId: "registration-old",
+      pid: 4141,
+      startIdentity: "start-4141",
+      executionCommandId: "execute-old",
+    };
+    const task = makeTask({
+      status: "running",
+      runner: { dispatcher: {} as never },
+      executionOwnership: {
+        ownerKind: "spawned_runner",
+        ownershipGeneration: 41,
+        ...ownership,
+      },
+      recoveredExecutionOwnership: ownership,
+    });
+    const projectRecoveredRunnerTerminalFact = vi.fn().mockResolvedValue(true);
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
+      autoResumeTransition: {} as never,
+    });
+
+    await expect(recovery.projectClosed(task, "matching closed owner")).resolves.toBe(true);
+    expect(projectRecoveredRunnerTerminalFact).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
   });
 });
