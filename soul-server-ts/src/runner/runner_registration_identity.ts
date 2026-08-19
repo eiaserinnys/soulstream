@@ -80,7 +80,16 @@ export async function completeRunnerRegistrationIdentityFromChild(
   },
 ): Promise<RunnerRegistrationIdentity> {
   const current = await readRunnerRegistrationIdentity(sessionDirectory);
-  if (!current || current.sessionId !== input.sessionId || current.codeSha !== input.codeSha) {
+  if (!current) {
+    const completed = {
+      ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha),
+      pid: input.pid,
+      startIdentity: input.startIdentity,
+    };
+    await writeRunnerRegistrationIdentity(sessionDirectory, completed);
+    return completed;
+  }
+  if (current.sessionId !== input.sessionId || current.codeSha !== input.codeSha) {
     throw new Error(`runner registration changed before child startup: ${input.sessionId}`);
   }
   if (current.pid !== null) {
