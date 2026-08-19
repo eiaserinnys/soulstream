@@ -36,7 +36,6 @@ import {
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
-
 const RunnerProcessPathsSchema = z.object({
   sessionDirectory: z.string().min(1),
   databasePath: z.string().min(1),
@@ -56,7 +55,8 @@ const RunnerChildConfigFields = {
   agent: AgentProfileSchema,
   paths: RunnerProcessPathsSchema,
   codeSha: z.string().min(1),
-  releaseManifestId: z.string().min(1).optional(), runtimeEnvIdentity: z.string().min(1).optional(),
+  releaseManifestId: z.string().min(1).optional(),
+  runtimeEnvIdentity: z.string().min(1).optional(),
   snapshotPath: z.string().min(1),
   codexAdapterMode: z.enum(["sdk", "app-server"]),
   codexCliPath: z.string().min(1).optional(),
@@ -172,7 +172,6 @@ export class RunnerProcessSpawner {
       input.sessionId, input.codeSha, input,
     );
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
-
     const config: RunnerChildConfig = {
       schemaVersion: 1,
       sessionId: input.sessionId,
@@ -180,7 +179,8 @@ export class RunnerProcessSpawner {
       agent: input.agent,
       paths,
       codeSha: input.codeSha,
-      ...(input.releaseManifestId ? { releaseManifestId: input.releaseManifestId } : {}), ...(input.runtimeEnvIdentity ? { runtimeEnvIdentity: input.runtimeEnvIdentity } : {}),
+      ...(input.releaseManifestId ? { releaseManifestId: input.releaseManifestId } : {}),
+      ...(input.runtimeEnvIdentity ? { runtimeEnvIdentity: input.runtimeEnvIdentity } : {}),
       snapshotPath: input.snapshotPath,
       codexAdapterMode: input.codexAdapterMode,
       ...(input.codexCliPath ? { codexCliPath: input.codexCliPath } : {}),
