@@ -41,9 +41,7 @@ export const EVENT_INGRESS_PROTOCOL_VERSION = 1;
 export const EVENT_INGRESS_MAX_EVENTS = 64;
 export const EVENT_INGRESS_MAX_BATCH_FRAME_BYTES = 256 * 1024;
 export const EVENT_INGRESS_MAX_SINGLE_EVENT_FRAME_BYTES = 2 * 1024 * 1024;
-
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-
 export function parseEventAppendBatch(
   frame: Record<string, unknown>,
 ): EventAppendBatch {
