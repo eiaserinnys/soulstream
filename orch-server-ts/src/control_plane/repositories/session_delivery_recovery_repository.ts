@@ -82,6 +82,7 @@ export class SessionDeliveryRecoveryRepository {
             AND delivery.source = 'completion_notifier')
           OR (delivery.intent = 'runtime_followup'
             AND delivery.source = 'claude_runtime_task_followup')
+          OR delivery.intent = 'durable_next_turn'
         )
           AND delivery.state = 'pending'
           AND delivery.next_attempt_at <= NOW()
@@ -234,7 +235,9 @@ export class SessionDeliveryRecoveryRepository {
         SELECT delivery.delivery_id
         FROM session_deliveries AS delivery
         WHERE delivery.state = 'queued'
-          AND delivery.intent IN ('completion_notification', 'runtime_followup')
+          AND delivery.intent IN (
+            'durable_next_turn', 'completion_notification', 'runtime_followup'
+          )
           AND delivery.next_attempt_at <= NOW()
           AND (
             (

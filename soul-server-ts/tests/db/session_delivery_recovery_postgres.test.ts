@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
@@ -184,6 +184,51 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.get("runtime-claimed")).resolves.toMatchObject({
       state: "claimed",
       lease_owner: "existing-worker",
+    });
+  });
+
+  it("claims a due durable user turn through the existing delivery recovery worker", async () => {
+    await harness.sql`
+      INSERT INTO session_deliveries (
+        delivery_id, target_session_id, relation_key, completion_id,
+        intent, source, payload_hash, payload, state,
+        next_attempt_at, created_at, updated_at
+      ) VALUES (
+        'delivery-user-retry', 'caller-session',
+        'user_message:caller-session:delivery-user-retry',
+        'message:delivery-user-retry', 'durable_next_turn', 'user_message',
+        'hash-user-retry',
+        ${harness.sql.json({ text: "retry me", user: "alice", source: "user_message" })},
+        'pending', NOW(), NOW(), NOW()
+      )
+    `;
+
+    const dispatch = vi.fn(async (params) => {
+      expect(params).toMatchObject({
+        agentSessionId: "caller-session",
+        text: "retry me",
+        deliveryId: "delivery-user-retry",
+        deliveryIntent: "durable_next_turn",
+        deliveryLeaseOwner: "worker-user-retry",
+      });
+      await repository.beginDispatch(params.deliveryId!, params.deliveryLeaseOwner!);
+      await repository.markQueued(params.deliveryId!, params.deliveryLeaseOwner!);
+      await repository.markDelivered(params.deliveryId!, "event:auto-resumed-turn");
+      await repository.markConsumed(params.deliveryId!, "event:auto-resumed-turn");
+    });
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository,
+      dispatch,
+      logger: { error() {}, warn() {} },
+    }, "worker-user-retry");
+
+    await coordinator.recoverPending(1);
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    await expect(repository.get("delivery-user-retry")).resolves.toMatchObject({
+      intent: "durable_next_turn",
+      state: "consumed",
+      caller_turn_id: "event:auto-resumed-turn",
     });
   });
 

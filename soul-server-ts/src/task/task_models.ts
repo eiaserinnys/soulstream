@@ -405,6 +405,11 @@ export interface Task {
 
   /** Execution ownership activation barrier; auto-resume ACK waits for this promise. */
   executionActivationPromise?: Promise<void>;
+  executionActivationHandoff?: {
+    promise: Promise<void>;
+    resolve(): void;
+    reject(error: unknown): void;
+  };
 
   /** Runtime-only explicit cancel request serialized against turn finalization. */
   interruptRequest?: Promise<boolean>;

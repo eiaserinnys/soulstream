@@ -1,3 +1,5 @@
+import type { Logger } from "pino";
+
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { EventSessionTransitionApplication } from
   "../db/event_transition_publisher.js";
@@ -36,7 +38,10 @@ export interface ExpectedCanonicalExecutionOwnership {
 export class ExecutionOwnershipCoordinator {
   private readonly tails = new Map<string, Promise<void>>();
 
-  constructor(readonly persistence: EventPersistence) {}
+  constructor(
+    readonly persistence: EventPersistence,
+    private readonly logger?: Pick<Logger, "info">,
+  ) {}
 
   async withSessionLease<T>(
     sessionId: string,
@@ -61,14 +66,20 @@ export class ExecutionOwnershipCoordinator {
     sessionId: string,
     input: Parameters<EventPersistence["reserveExecutionOwnershipAndWaitForApplication"]>[1],
   ): Promise<EventSessionTransitionApplication> {
-    return await this.persistence.reserveExecutionOwnershipAndWaitForApplication(sessionId, input);
+    const application = await this.persistence
+      .reserveExecutionOwnershipAndWaitForApplication(sessionId, input);
+    this.logTransition("reserve", sessionId, input.ownershipGeneration, application);
+    return application;
   }
 
   async reserveAdoption(
     sessionId: string,
     input: Parameters<EventPersistence["reserveExecutionAdoptionAndWaitForApplication"]>[1],
   ): Promise<EventSessionTransitionApplication> {
-    return await this.persistence.reserveExecutionAdoptionAndWaitForApplication(sessionId, input);
+    const application = await this.persistence
+      .reserveExecutionAdoptionAndWaitForApplication(sessionId, input);
+    this.logTransition("adopt_reserve", sessionId, input.ownershipGeneration, application);
+    return application;
   }
 
   async prove(
@@ -76,18 +87,23 @@ export class ExecutionOwnershipCoordinator {
     ownershipGeneration: number,
     proof: Parameters<EventPersistence["proveExecutionOwnershipAndWaitForApplication"]>[2],
   ): Promise<EventSessionTransitionApplication> {
-    return await this.persistence.proveExecutionOwnershipAndWaitForApplication(
+    const application = await this.persistence.proveExecutionOwnershipAndWaitForApplication(
       sessionId,
       ownershipGeneration,
       proof,
     );
+    this.logTransition("prove", sessionId, ownershipGeneration, application);
+    return application;
   }
 
   async activate(
     sessionId: string,
     input: Parameters<EventPersistence["activateExecutionOwnershipAndWaitForApplication"]>[1],
   ): Promise<EventSessionTransitionApplication> {
-    return await this.persistence.activateExecutionOwnershipAndWaitForApplication(sessionId, input);
+    const application = await this.persistence
+      .activateExecutionOwnershipAndWaitForApplication(sessionId, input);
+    this.logTransition("activate", sessionId, input.ownershipGeneration, application);
+    return application;
   }
 
   async fail(
@@ -95,11 +111,13 @@ export class ExecutionOwnershipCoordinator {
     ownershipGeneration: number,
     failureReason: string,
   ): Promise<EventSessionTransitionApplication> {
-    return await this.persistence.failExecutionOwnershipAndWaitForApplication(
+    const application = await this.persistence.failExecutionOwnershipAndWaitForApplication(
       sessionId,
       ownershipGeneration,
       failureReason,
     );
+    this.logTransition("fail", sessionId, ownershipGeneration, application, failureReason);
+    return application;
   }
 
   async markOrphanedSpawn(
@@ -107,11 +125,13 @@ export class ExecutionOwnershipCoordinator {
     ownershipGeneration: number,
     proof: Parameters<EventPersistence["markExecutionOrphanedSpawnAndWaitForApplication"]>[2],
   ): Promise<EventSessionTransitionApplication> {
-    return await this.persistence.markExecutionOrphanedSpawnAndWaitForApplication(
+    const application = await this.persistence.markExecutionOrphanedSpawnAndWaitForApplication(
       sessionId,
       ownershipGeneration,
       proof,
     );
+    this.logTransition("orphaned_spawn", sessionId, ownershipGeneration, application);
+    return application;
   }
 
   isAppliedOrSameOwner(
@@ -132,6 +152,29 @@ export class ExecutionOwnershipCoordinator {
       && matchesOptional(canonical.executionCommandId, expected.executionCommandId)
       && (expected.failureReason === undefined
         || canonical.failureReason === expected.failureReason);
+  }
+
+  private logTransition(
+    operation:
+      | "reserve"
+      | "adopt_reserve"
+      | "prove"
+      | "activate"
+      | "fail"
+      | "orphaned_spawn",
+    sessionId: string,
+    ownershipGeneration: number,
+    application: EventSessionTransitionApplication,
+    failureReason?: string,
+  ): void {
+    this.logger?.info({
+      sessionId,
+      ownershipGeneration,
+      operation,
+      applied: application.applied,
+      canonicalPhase: application.canonicalExecutionOwnership?.phase ?? null,
+      ...(failureReason ? { failureReason } : {}),
+    }, "Execution ownership lifecycle transition applied");
   }
 }
 

@@ -47,55 +47,85 @@ export class AutoResumeTransition {
   ): Promise<{ autoResumed: true }> {
     this.requireResumableProfile(task);
     const transitionRevision = task.lastEventId;
-    await this.awaitExecutionDrain(task);
-    await this.closeStaleEngine(task);
-    await this.promoteCallerInfo(task, message.callerInfo);
-
-    const userMessageEvent = options.publishUserMessage === false
-      ? null
-      : buildUserMessageEvent({
-          text: message.text,
-          user: message.user,
-          callerInfo: message.callerInfo ?? task.callerInfo,
-          attachmentPaths: message.attachmentPaths,
-          contextItems: message.context,
-        });
-    const resumedReviewState = reviewStateAfterFollowup(
-      task.reviewState ?? "not_required",
-    );
-    if (userMessageEvent) {
-      await persistUserMessageEvent(task, userMessageEvent, this.deps);
-    }
-    if (!this.deps.persistence) {
-      throw new Error("running transition durable event persistence is required");
-    }
+    const expectedTerminalEventId = task.terminalEventId ?? null;
+    const originalStatus = task.status;
+    const originalTerminalEventId = task.terminalEventId;
     const ownershipPersistence = this.deps.persistence as EventPersistence & {
       reserveExecutionOwnershipAndWaitForApplication?: unknown;
-    };
+    } | undefined;
     const ownershipEnabled =
-      typeof ownershipPersistence.reserveExecutionOwnershipAndWaitForApplication === "function";
-    if (!ownershipEnabled) {
-      const application = await this.deps.persistence
-        .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
-        reviewState: resumedReviewState,
-        transitionId: `resume:${transitionRevision}`,
-        expectedTerminalEventId: task.terminalEventId ?? null,
+      typeof ownershipPersistence?.reserveExecutionOwnershipAndWaitForApplication === "function";
+    const activationHandoff = ownershipEnabled ? deferredActivationHandoff() : undefined;
+    if (activationHandoff) {
+      task.status = "initializing";
+      task.executionActivationHandoff = activationHandoff;
+      task.executionActivationPromise = activationHandoff.promise;
+      void activationHandoff.promise.catch(() => undefined);
+      void activationHandoff.promise.catch(() => {
+        if (task.status !== "initializing") return;
+        task.status = originalStatus;
+        task.terminalEventId = originalTerminalEventId;
+        task.pendingExecutionExpectedTerminalEventId = undefined;
       });
-      applyCanonicalSessionProjection(task, application.canonicalSession);
-      if (!application.applied) {
-        throw new Error(
-          `auto-resume running transition rejected for ${task.agentSessionId}`,
-        );
+    }
+
+    try {
+      await this.awaitExecutionDrain(task);
+      await this.closeStaleEngine(task);
+      await this.promoteCallerInfo(task, message.callerInfo);
+
+      const userMessageEvent = options.publishUserMessage === false
+        ? null
+        : buildUserMessageEvent({
+            text: message.text,
+            user: message.user,
+            callerInfo: message.callerInfo ?? task.callerInfo,
+            attachmentPaths: message.attachmentPaths,
+            contextItems: message.context,
+          });
+      const resumedReviewState = reviewStateAfterFollowup(
+        task.reviewState ?? "not_required",
+      );
+      if (userMessageEvent) {
+        await persistUserMessageEvent(task, userMessageEvent, this.deps);
       }
-    } else {
-      task.pendingExecutionExpectedTerminalEventId = task.terminalEventId ?? null;
+      if (!this.deps.persistence) {
+        throw new Error("running transition durable event persistence is required");
+      }
+      if (!ownershipEnabled) {
+        const application = await this.deps.persistence
+          .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+          reviewState: resumedReviewState,
+          transitionId: `resume:${transitionRevision}`,
+          expectedTerminalEventId,
+        });
+        applyCanonicalSessionProjection(task, application.canonicalSession);
+        if (!application.applied) {
+          throw new Error(
+            `auto-resume running transition rejected for ${task.agentSessionId}`,
+          );
+        }
+      }
+      if (userMessageEvent) {
+        await finishUserMessageEvent(task, userMessageEvent, this.deps);
+      }
+      if (ownershipEnabled) {
+        task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
+      }
+      prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
+      onResume(task);
+      return { autoResumed: true };
+    } catch (error) {
+      activationHandoff?.reject(error);
+      if (task.executionActivationHandoff === activationHandoff) {
+        task.executionActivationHandoff = undefined;
+      }
+      if (activationHandoff && task.status === "initializing") {
+        task.status = originalStatus;
+        task.terminalEventId = originalTerminalEventId;
+      }
+      throw error;
     }
-    prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
-    if (userMessageEvent) {
-      await finishUserMessageEvent(task, userMessageEvent, this.deps);
-    }
-    onResume(task);
-    return { autoResumed: true };
   }
 
   private requireResumableProfile(task: Task): void {
@@ -187,6 +217,15 @@ function prepareTaskForAutoResume(
   task.pendingTerminationDetail = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
-  task.executionActivationPromise = undefined;
   enqueueInterventionOnce(task, message);
+}
+
+function deferredActivationHandoff(): NonNullable<Task["executionActivationHandoff"]> {
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

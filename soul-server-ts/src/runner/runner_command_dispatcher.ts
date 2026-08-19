@@ -57,6 +57,7 @@ export interface RunnerCommandDispatcher {
   discardIntervention?(interventionId: string): Promise<void>;
   recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
   prepareExecutionIdentity?(commandId?: string): Promise<ExecutionIdentityProof>;
+  rollbackExecutionIdentity?(proof: ExecutionIdentityProof): Promise<void>;
 }
 
 export interface RunnerInterventionStageInput {
@@ -183,6 +184,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       startIdentity: observed.startIdentity,
       executionCommandId,
     };
+  }
+
+  async rollbackExecutionIdentity(_proof: ExecutionIdentityProof): Promise<void> {
+    await this.close();
   }
 
   async interrupt(): Promise<boolean> {

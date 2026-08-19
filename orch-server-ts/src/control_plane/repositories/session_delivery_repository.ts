@@ -215,7 +215,7 @@ export class SessionDeliveryRepository {
           updated_at = NOW()
         WHERE delivery_id = ${deliveryId}
           AND lease_owner = ${leaseOwner}
-          AND state IN ('claimed', 'dispatching')
+          AND state IN ('claimed', 'dispatching', 'queued')
         RETURNING *
       `;
       const row = rows[0];
@@ -398,7 +398,8 @@ export class SessionDeliveryRepository {
             AND state NOT IN ('consumed', 'superseded')
             AND (
               ${leaseOwner ?? null}::text IS NULL
-              OR (lease_owner = ${leaseOwner ?? null} AND state IN ('claimed', 'dispatching'))
+              OR (lease_owner = ${leaseOwner ?? null}
+                AND state IN ('claimed', 'dispatching', 'queued'))
             )
           FOR UPDATE
         )
