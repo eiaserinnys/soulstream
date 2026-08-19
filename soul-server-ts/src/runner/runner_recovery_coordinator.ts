@@ -294,6 +294,21 @@ export class RunnerRecoveryCoordinator {
     if (disposition === "closed") {
       const recoveredTask = requireRecoveryTask(task, registration);
       const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+      const verifiedDisposition = classifyRunnerRegistration(
+        hydrated,
+        (this.options.now ?? Date.now)(),
+        this.options.leaseTimeoutMs,
+      );
+      if (verifiedDisposition !== "closed") {
+        if (
+          verifiedDisposition === "adopt_prebootstrap"
+          || verifiedDisposition === "adopt_running"
+          || verifiedDisposition === "replay_terminal"
+        ) {
+          await this.recoverByDisposition(hydrated, verifiedDisposition, recoveredTask);
+        }
+        return;
+      }
       if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
       const closedRegistration = { ...hydrated, pidAlive: false };
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
