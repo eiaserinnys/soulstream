@@ -15,7 +15,11 @@ import {
   resolveRegisteredRunnerPid,
   type RunnerChildConfig,
 } from "./runner_process_spawn.js";
-import { inspectProcessIdentity, type ProcessIdentity } from "./runner_process_lock.js";
+import {
+  inspectProcessIdentity,
+  processStartIdentitiesMatch,
+  type ProcessIdentity,
+} from "./runner_process_lock.js";
 import {
   readRunnerRegistrationIdentity,
   recoverRunnerDirectoryIdentity,
@@ -111,7 +115,7 @@ export async function readRunnerRegistrationSummary(
       pidAlive = observed.alive && (
         !identity?.startIdentity
         || observed.startIdentity === null
-        || observed.startIdentity === identity.startIdentity
+        || processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
       );
     }
     return {

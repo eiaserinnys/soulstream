@@ -9,6 +9,8 @@ export interface ConnectRunnerSocketOptions {
   /** Absolute wall-clock budget across connect attempts and retry delays. */
   deadlineMs?: number;
   retryDelayMs?: number;
+  /** Missing socket is expected only while a freshly spawned child starts listening. */
+  retryOnMissingSocket?: boolean;
   onFrameDropped?(drop: RunnerDroppedFrame): void;
 }
 
@@ -16,7 +18,6 @@ export const RUNNER_SOCKET_RETRYABLE_ERROR_CODES = [
   "EAGAIN",
   "ECONNREFUSED",
   "ECONNRESET",
-  "ENOENT",
   "ETIMEDOUT",
 ] as const;
 
@@ -99,7 +100,9 @@ export async function connectRunnerSocket(
       );
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      if (!isRetryableSocketError(error)) throw lastError;
+      if (!isRetryableSocketError(error, options.retryOnMissingSocket === true)) {
+        throw lastError;
+      }
       const retryBudgetMs = deadlineAt - Date.now();
       if (retryBudgetMs <= 0) break;
       await new Promise((resolve) => setTimeout(
@@ -136,9 +139,11 @@ async function connectOnce(path: string, timeoutMs: number): Promise<Socket> {
   });
 }
 
-function isRetryableSocketError(error: unknown): boolean {
+function isRetryableSocketError(error: unknown, retryOnMissingSocket: boolean): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return typeof code === "string" && RETRYABLE_ERROR_CODES.has(code);
+  return code === "ENOENT"
+    ? retryOnMissingSocket
+    : typeof code === "string" && RETRYABLE_ERROR_CODES.has(code);
 }
 
 async function unlinkIfPresent(path: string): Promise<void> {

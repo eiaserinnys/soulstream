@@ -10,6 +10,7 @@ import {
 } from "../../src/runner/runner_state_host_lock.js";
 import {
   defaultProcessOwnershipLockDependencies,
+  processStartIdentitiesMatch,
   type ProcessOwnershipLockDependencies,
 } from "../../src/runner/runner_process_lock.js";
 
@@ -22,6 +23,24 @@ afterEach(async () => {
 });
 
 describe("RunnerStateHostLock", () => {
+  it("matches a child self timestamp to the equivalent Windows process start token", () => {
+    const unixStartMs = 1_700_000_000_123;
+    const windowsTicks = 621_355_968_000_000_000n + BigInt(unixStartMs) * 10_000n;
+
+    expect(processStartIdentitiesMatch(
+      `node-start-${unixStartMs}`,
+      `windows-process-${windowsTicks}`,
+    )).toBe(true);
+    expect(processStartIdentitiesMatch(
+      `node-start-${unixStartMs}`,
+      `windows-process-${windowsTicks + 30_000_000n}`,
+    )).toBe(false);
+    expect(processStartIdentitiesMatch(
+      `node-start-${unixStartMs}`,
+      `node-start-${unixStartMs + 1}`,
+    )).toBe(false);
+  });
+
   it("reuses one stable start identity for the current host process", async () => {
     const dependencies = defaultProcessOwnershipLockDependencies();
 

@@ -19,6 +19,7 @@ export interface RunnerAdoptionFailureRecoveryDeps {
   refreshRegistration?(registration: RunnerRegistration): Promise<RunnerRegistration>;
   hydrateRegistration?(registration: RunnerRegistration): Promise<RunnerRegistration>;
   terminateRegistration(registration: RunnerRegistration): Promise<void>;
+  invalidateRegistration(registration: RunnerRegistration): Promise<void>;
   markReaped(
     registration: RunnerRegistration,
     progressedAt: string,
@@ -82,6 +83,7 @@ export class RunnerAdoptionFailureRecovery {
         error,
       );
     }
+    await this.deps.invalidateRegistration(registration);
     const recoveredTask = registration.lifecycle
       ? await this.deps.recoverOffline({
           ...registration,

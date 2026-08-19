@@ -62,6 +62,7 @@ describe("runner socket ownership", () => {
       timeoutMs: 500,
       deadlineMs: 80,
       retryDelayMs: 20,
+      retryOnMissingSocket: true,
     })).rejects.toThrow("Runner socket unavailable after 80ms deadline");
 
     expect(Date.now() - startedAt).toBeLessThan(500);
@@ -69,9 +70,42 @@ describe("runner socket ownership", () => {
       "EAGAIN",
       "ECONNREFUSED",
       "ECONNRESET",
-      "ENOENT",
       "ETIMEDOUT",
     ]);
+  });
+
+  it("fails a missing adopted socket immediately but lets a fresh spawn wait for its listener", async () => {
+    const missingSocketPath = await temporarySocketPath();
+    const startedAt = Date.now();
+
+    await expect(connectRunnerSocket(missingSocketPath, {
+      timeoutMs: 500,
+      deadlineMs: 1_000,
+      retryDelayMs: 20,
+    })).rejects.toMatchObject({ code: "ENOENT" });
+    expect(Date.now() - startedAt).toBeLessThan(500);
+
+    const freshSocketPath = await temporarySocketPath();
+    const endpoint = new RunnerSocketEndpoint(
+      freshSocketPath,
+      async () => {},
+      vi.fn(),
+    );
+    const listening = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        void endpoint.listen().then(resolve);
+      }, 40);
+    });
+    const connection = await connectRunnerSocket(freshSocketPath, {
+      timeoutMs: 100,
+      deadlineMs: 1_000,
+      retryDelayMs: 20,
+      retryOnMissingSocket: true,
+    });
+
+    await listening;
+    connection.close();
+    await endpoint.close();
   });
 
   it("permits exactly one writer lock holder", async () => {

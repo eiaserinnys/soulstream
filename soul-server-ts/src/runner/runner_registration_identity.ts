@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { processStartIdentitiesMatch } from "./runner_process_lock.js";
 import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
@@ -67,6 +68,82 @@ export async function readRunnerRegistrationIdentity(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+}
+
+export async function completeRunnerRegistrationIdentityFromChild(
+  sessionDirectory: string,
+  input: {
+    sessionId: string;
+    codeSha: string;
+    pid: number;
+    startIdentity: string;
+  },
+): Promise<RunnerRegistrationIdentity> {
+  const current = await readRunnerRegistrationIdentity(sessionDirectory);
+  if (!current || current.sessionId !== input.sessionId || current.codeSha !== input.codeSha) {
+    throw new Error(`runner registration changed before child startup: ${input.sessionId}`);
+  }
+  if (current.pid !== null) {
+    if (
+      current.pid !== input.pid
+      || current.startIdentity === null
+      || !processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
+    ) {
+      throw new Error(`runner registration already belongs to another process: ${input.sessionId}`);
+    }
+    return current;
+  }
+  const completed = { ...current, pid: input.pid, startIdentity: input.startIdentity };
+  await writeRunnerRegistrationIdentity(sessionDirectory, completed);
+  return completed;
+}
+
+export async function invalidateRunnerRegistrationIdentity(
+  sessionDirectory: string,
+  expectedRegistrationId: string | null,
+): Promise<void> {
+  const current = await readRunnerRegistrationIdentity(sessionDirectory);
+  if (!current) return;
+  if (expectedRegistrationId === null || current.registrationId !== expectedRegistrationId) {
+    throw new Error(`runner registration was superseded before invalidation: ${current.sessionId}`);
+  }
+  await writeRunnerRegistrationIdentity(sessionDirectory, {
+    ...current,
+    pid: null,
+    startIdentity: null,
+  });
+}
+
+export async function waitForChildRunnerRegistrationIdentity(
+  sessionDirectory: string,
+  pending: RunnerRegistrationIdentity,
+  pid: number,
+  deps: {
+    isPidAlive(pid: number): boolean;
+    now(): number;
+    delay(ms: number): Promise<void>;
+  },
+): Promise<RunnerRegistrationIdentity | null> {
+  const deadline = deps.now() + 10_000;
+  while (deps.isPidAlive(pid) && deps.now() < deadline) {
+    const current = await readRunnerRegistrationIdentity(sessionDirectory);
+    if (
+      !current
+      || current.registrationId !== pending.registrationId
+      || current.sessionId !== pending.sessionId
+      || current.codeSha !== pending.codeSha
+    ) {
+      throw new Error(`runner registration changed during child startup: ${pending.sessionId}`);
+    }
+    if (current.pid !== null) {
+      if (current.pid !== pid || current.startIdentity === null) {
+        throw new Error(`runner child published an invalid process identity: ${pending.sessionId}`);
+      }
+      return current;
+    }
+    await deps.delay(25);
+  }
+  return null;
 }
 
 export async function recoverRunnerDirectoryIdentity(

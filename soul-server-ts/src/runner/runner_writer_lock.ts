@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import {
   defaultProcessOwnershipLockDependencies,
   isProvenStale,
+  processStartIdentitiesMatch,
   readProcessLockOwner,
   type ProcessLockOwner,
   type ProcessOwnershipLockDependencies,
@@ -33,7 +34,7 @@ export class RunnerWriterLock {
 
   private constructor(
     private readonly path: string,
-    private readonly owner: ProcessLockOwner,
+    readonly owner: ProcessLockOwner,
   ) {}
 
   static async acquire(
@@ -225,7 +226,8 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 function sameOwner(left: ProcessLockOwner | null, right: ProcessLockOwner): boolean {
-  return left?.pid === right.pid && left.startIdentity === right.startIdentity;
+  return left?.pid === right.pid
+    && processStartIdentitiesMatch(left.startIdentity, right.startIdentity);
 }
 
 async function readWriterLockOwner(path: string): Promise<ProcessLockOwner | null> {

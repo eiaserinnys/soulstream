@@ -40,6 +40,8 @@ import {
 } from "./runner_frame_drop.js";
 import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
+import { completeRunnerRegistrationIdentityFromChild } from
+  "./runner_registration_identity.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import {
@@ -87,6 +89,15 @@ export class RunnerChildRuntime {
 
   async start(): Promise<void> {
     this.lock = await RunnerWriterLock.acquire(this.config.paths.lockPath);
+    await completeRunnerRegistrationIdentityFromChild(
+      this.config.paths.sessionDirectory,
+      {
+        sessionId: this.config.sessionId,
+        codeSha: this.config.codeSha,
+        pid: this.lock.owner.pid,
+        startIdentity: this.lock.owner.startIdentity,
+      },
+    );
     this.outbox = await RunnerSqliteEventOutbox.open(this.config.paths.databasePath);
     this.lifecycle = RunnerSqliteLifecycle.open(
       this.config.paths.databasePath,
