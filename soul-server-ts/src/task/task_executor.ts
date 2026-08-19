@@ -124,9 +124,10 @@ export interface RunnerProcessRuntimeFactory {
     config: RunnerChildConfig,
     snapshots: RunnerSnapshotPersistence,
   ): TaskRunnerRuntime;
-  describe?(): Promise<{
+  describe?(agent: AgentProfile): Promise<{
     ownerKind: "runner_process";
     manifestId: string;
+    runtimeEnvIdentity: string;
   }>;
 }
 
@@ -353,7 +354,7 @@ export class TaskExecutor {
       task.pendingExecutionExpectedTerminalEventId !== undefined
         ? "auto_resume"
         : "initial";
-    const descriptor = await this.executionOwnerDescriptor(task, backend, retainedRunner);
+    const descriptor = await this.executionOwnerDescriptor(task, agent, backend, retainedRunner);
     const ownershipGeneration = newExecutionOwnershipGeneration();
     task.executionOwnership = undefined;
     let stage: ExecutionReservationStage = "reserve";
@@ -368,12 +369,14 @@ export class TaskExecutor {
           ownershipGeneration,
           ownerKind: descriptor.ownerKind,
           manifestId: descriptor.manifestId,
+          runtimeEnvIdentity: descriptor.runtimeEnvIdentity,
         });
       applyCanonicalSessionProjection(task, reservation.canonicalSession);
       if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(reservation, {
         ownershipGeneration,
         ownerKind: descriptor.ownerKind,
         manifestId: descriptor.manifestId,
+        runtimeEnvIdentity: descriptor.runtimeEnvIdentity,
         phases: ["reserved", "identity_proven", "active"],
       })) {
         throw this.executionOwnershipConflict(task.agentSessionId, reservation);
@@ -589,27 +592,34 @@ export class TaskExecutor {
 
   private async executionOwnerDescriptor(
     task: Task,
+    agent: AgentProfile,
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
-  ): Promise<{ ownerKind: ExecutionOwnerKind; manifestId: string }> {
+  ): Promise<{ ownerKind: ExecutionOwnerKind; manifestId: string; runtimeEnvIdentity: string }> {
     if (task.recoveredExecutionOwnership) {
       return {
         ownerKind: "runner_process",
         manifestId: task.recoveredExecutionOwnership.manifestId,
+        runtimeEnvIdentity: task.recoveredExecutionOwnership.runtimeEnvIdentity,
       };
     }
     if (retainedRunner && task.executionOwnership) {
       return {
         ownerKind: task.executionOwnership.ownerKind,
         manifestId: task.executionOwnership.manifestId,
+        runtimeEnvIdentity: task.executionOwnership.runtimeEnvIdentity,
       };
     }
     if (this.runnerProcessFactory) {
-      const descriptor = await this.runnerProcessFactory.describe?.();
+      const descriptor = await this.runnerProcessFactory.describe?.(agent);
       if (!descriptor) throw new Error("Runner process manifest descriptor unavailable");
       return descriptor;
     }
-    return { ownerKind: "in_process", manifestId: `in-process:${backend}` };
+    return {
+      ownerKind: "in_process",
+      manifestId: `in-process:${backend}`,
+      runtimeEnvIdentity: `in-process:${backend}:${agent.id}`,
+    };
   }
 
   private supportsExecutionOwnership(): boolean {
@@ -655,9 +665,17 @@ export class TaskExecutor {
     commandId?: string,
     mode: "adopt" | "replay" | "offline" = "adopt",
     manifestId?: string,
+    runtimeEnvIdentity?: string,
   ): Promise<void> {
     if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
-      return this.recoverOwnedRunnerExecution(task, agent, runner, manifestId, commandId);
+      return this.recoverOwnedRunnerExecution(
+        task,
+        agent,
+        runner,
+        manifestId,
+        runtimeEnvIdentity ?? `legacy:${manifestId}`,
+        commandId,
+      );
     }
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
@@ -703,6 +721,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     manifestId: string,
+    runtimeEnvIdentity: string,
     commandId?: string,
   ): Promise<void> {
     return this.executionOwnershipCoordinator.withSessionLease(
@@ -713,6 +732,7 @@ export class TaskExecutor {
         agent,
         runner,
         manifestId,
+        runtimeEnvIdentity,
         commandId,
       ),
     );
@@ -723,6 +743,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     manifestId: string,
+    runtimeEnvIdentity: string,
     commandId?: string,
   ): Promise<void> {
     if (task.runner) {
@@ -746,6 +767,7 @@ export class TaskExecutor {
           .reserveAdoption(task.agentSessionId, {
             ownershipGeneration,
             manifestId,
+            runtimeEnvIdentity,
             previousRegistrationId: proof.registrationId,
             pid: proof.pid,
             startIdentity: proof.startIdentity,
@@ -756,6 +778,7 @@ export class TaskExecutor {
           ownershipGeneration,
           ownerKind: "adopted_runner",
           manifestId,
+          runtimeEnvIdentity,
           phases: ["reserved", "identity_proven", "active"],
         })) {
           throw this.executionOwnershipConflict(task.agentSessionId, reservation);
@@ -763,6 +786,7 @@ export class TaskExecutor {
         task.executionOwnershipReservation = {
           ownerKind: "adopted_runner",
           manifestId,
+          runtimeEnvIdentity,
           ownershipGeneration,
           entryPath: "adopt",
         };
@@ -798,6 +822,7 @@ export class TaskExecutor {
         task.executionOwnership = {
           ownerKind: "adopted_runner",
           manifestId,
+          runtimeEnvIdentity,
           ownershipGeneration,
           ...proof,
         };
@@ -843,7 +868,8 @@ export class TaskExecutor {
       runner,
       commandId,
       mode,
-      config.codeSha,
+      config.releaseManifestId ?? config.codeSha,
+      config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
     );
   }
 

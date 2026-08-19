@@ -1,23 +1,43 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import test from "node:test";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const distMain = join(packageRoot, "dist", "main.js");
+const sourceDist = join(packageRoot, "dist");
+const execFileAsync = promisify(execFile);
+
+test("every Haniel build hook uses the cross-platform release env entrypoint", async () => {
+  const repositoryRoot = join(packageRoot, "..");
+  for (const relativePath of [
+    "install/haniel-soul-server-ts.example.yaml",
+    "install/haniel-standalone.yaml.template",
+  ]) {
+    const source = await readFile(join(repositoryRoot, relativePath), "utf8");
+    const postPull = source.match(/^\s*post_pull:\s*(.+)$/m)?.[1];
+    assert(postPull, `${relativePath} post_pull missing`);
+    assert.match(postPull, /node .*build_with_release_env\.mjs --env-file /, relativePath);
+    assert.doesNotMatch(postPull, /(?:^|&&)\s*[A-Z][A-Z0-9_]*=/, relativePath);
+  }
+});
 
 test(
-  "dist/main.js starts with SOUL_RUNNER_PROCESS_ENABLED=true using the built-in node:sqlite module",
+  "dist/main.js prewarms the exact manifest and stays starting until receipt ACK",
   { timeout: 20_000 },
   async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-main-bundle-"));
+    const temporaryRoot = await mkdtemp(join(packageRoot, ".tmp-main-bundle-"));
+    const runnerStateDirectory = await mkdtemp(join(tmpdir(), "ss-runner-"));
     const workspaceDirectory = join(temporaryRoot, "workspace");
     const agentsConfigPath = join(temporaryRoot, "agents.yaml");
+    const serviceEnvPath = join(temporaryRoot, ".env.soul-server-ts");
+    const distRoot = join(temporaryRoot, "dist");
+    const distMain = join(distRoot, "main.js");
     const port = await reservePort();
     let output = "";
     let child;
@@ -36,27 +56,51 @@ test(
         ].join("\n"),
         "utf8",
       );
+      await cp(sourceDist, distRoot, { recursive: true });
+      // The release is built in a clean environment and started by a service process
+      // whose PATH carries per-boot shims and whose HOME differs. Neither may move the
+      // manifest, so the two sides deliberately disagree on ambient env here.
+      const buildEnv = {
+        PATH: process.env.PATH ?? "",
+        HOME: temporaryRoot,
+        NODE_ENV: "test",
+        LOG_LEVEL: "warn",
+      };
+      const serviceHome = join(temporaryRoot, "service-home");
+      await mkdir(serviceHome);
+      const childEnv = {
+        ...buildEnv,
+        PATH: `${join(temporaryRoot, "arg0-shim")}:${buildEnv.PATH}`,
+        HOME: serviceHome,
+      };
+      await writeFile(serviceEnvPath, [
+        "SOULSTREAM_NODE_ID=bundle-runner-startup",
+        "SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:9/ws/node",
+        `EVENT_OUTBOX_DIR=${join(temporaryRoot, "event-outbox")}`,
+        "HOST=127.0.0.1",
+        `PORT=${port}`,
+        "LOG_LEVEL=error",
+        `AGENTS_CONFIG_PATH=${agentsConfigPath}`,
+        `AGENT_PROFILE_CACHE_PATH=${join(temporaryRoot, "agent-profile-cache.json")}`,
+        `MODEL_CATALOG_PATH=${join(temporaryRoot, "missing-model-catalog.yaml")}`,
+        "SOUL_RUNNER_PROCESS_ENABLED=true",
+        `SOUL_RUNNER_STATE_DIR=${runnerStateDirectory}`,
+        `SOUL_RUNNER_ARTIFACT_DIR=${join(distRoot, "runner")}`,
+        `SOUL_RUNNER_RELEASES_DIR=${join(temporaryRoot, "releases")}`,
+        "",
+      ].join("\n"), "utf8");
+      await execFileAsync(process.execPath, [
+        join(packageRoot, "node_modules", "tsx", "dist", "cli.mjs"),
+        join(packageRoot, "scripts", "write_release_manifest.ts"),
+        "--dist-root",
+        distRoot,
+        "--env-file",
+        serviceEnvPath,
+      ], { cwd: packageRoot, env: buildEnv });
 
       child = spawn(process.execPath, [distMain], {
         cwd: temporaryRoot,
-        env: {
-          PATH: process.env.PATH ?? "",
-          HOME: temporaryRoot,
-          NODE_ENV: "test",
-          SOULSTREAM_NODE_ID: "bundle-runner-startup",
-          SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:9/ws/node",
-          EVENT_OUTBOX_DIR: join(temporaryRoot, "event-outbox"),
-          HOST: "127.0.0.1",
-          PORT: String(port),
-          LOG_LEVEL: "error",
-          AGENTS_CONFIG_PATH: agentsConfigPath,
-          AGENT_PROFILE_CACHE_PATH: join(temporaryRoot, "agent-profile-cache.json"),
-          MODEL_CATALOG_PATH: join(temporaryRoot, "missing-model-catalog.yaml"),
-          SOUL_RUNNER_PROCESS_ENABLED: "true",
-          SOUL_RUNNER_STATE_DIR: join(temporaryRoot, "state"),
-          SOUL_RUNNER_ARTIFACT_DIR: join(packageRoot, "dist", "runner"),
-          SOUL_RUNNER_RELEASES_DIR: join(temporaryRoot, "releases"),
-        },
+        env: childEnv,
         stdio: ["ignore", "pipe", "pipe"],
       });
       child.stdout.on("data", (chunk) => {
@@ -67,13 +111,15 @@ test(
       });
 
       const response = await waitForHealth(child, port, () => output);
-      assert.equal(response.status, 200, output);
-      assert.deepEqual(await response.json(), {
-        status: "ok",
-        node_id: "bundle-runner-startup",
-        service: "soul-server-ts",
-        phase: "B-1",
-      });
+      assert.equal(response.status, 503, output);
+      const health = await response.json();
+      assert.equal(health.status, "starting");
+      assert.equal(health.node_id, "bundle-runner-startup");
+      assert.equal(health.service, "soul-server-ts");
+      assert.equal(health.phase, "B-1");
+      assert.equal(health.ready, false);
+      assert.equal(typeof health.manifest_id, "string");
+      assert.equal(health.activation_generation, null);
       assert.doesNotMatch(output, /Cannot find package ['"]sqlite['"]/);
     } finally {
       if (child && child.exitCode === null) {
@@ -93,6 +139,7 @@ test(
       }
       await makeDirectoriesWritable(temporaryRoot);
       await rm(temporaryRoot, { recursive: true, force: true });
+      await rm(runnerStateDirectory, { recursive: true, force: true });
     }
   },
 );

@@ -11,6 +11,7 @@ import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js";
 import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
+import type { ReleaseActivationState } from "../release/release_activation_state.js";
 
 export interface UpstreamConfig {
   url: string;
@@ -26,6 +27,7 @@ export interface UpstreamConfig {
   runnerStateDir?: string;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
+  releaseActivationState?: ReleaseActivationState;
 }
 
 export interface UpstreamDependencies {

@@ -141,6 +141,19 @@ describe("parseEventAppendBatch sanitization", () => {
     expect(
       parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
     ).toEqual(effect);
+
+    expect(() => parseEventAppendBatch(batchWithEffect({
+      ...effect,
+      first_runtime_env_identity: "runtime-env-1",
+    }))).toThrow("runtime env identities must be supplied together");
+    const withRuntimeIdentity = {
+      ...effect,
+      first_runtime_env_identity: "runtime-env-1",
+      second_runtime_env_identity: "runtime-env-1",
+    };
+    expect(
+      parseEventAppendBatch(batchWithEffect(withRuntimeIdentity)).events[0]!.session_effect,
+    ).toEqual(withRuntimeIdentity);
   });
 
   it("sanitizes payload, searchable_text, dedupe key, and session effect", () => {

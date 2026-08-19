@@ -41,6 +41,23 @@ const productionConfig = parseOrchServerConfig({
 
 describe("Node WS Fastify route harness", () => {
   const fixture = loadContractFixtures().fakeNodeReconnect;
+  const releaseManifest = {
+    schema_version: 1,
+    manifest_id: "manifest-1",
+    release_cohort_id: "cohort-1",
+    source_commit: "commit-1",
+    host_bundle_hash: "sha256-host",
+    runner_release_id: "sha256-runner-release",
+    runner_artifact_hash: "sha256-runner-artifact",
+    schema_generation: "schema-70",
+    wire_generation: "wire-1",
+    node: { version: "v22.18.0", platform: "linux", arch: "x64" },
+    deployment_env_identity: "sha256-env",
+    executables: {
+      claude: { kind: "claude", path: "/usr/bin/claude", identity: "sha256-claude" },
+      codex: { kind: "codex", path: "/usr/bin/codex", identity: "sha256-codex" },
+    },
+  } as const;
 
   function createRegistry(nowMs = 1_700_000_000_000): {
     registry: InMemoryNodeRegistry;
@@ -143,6 +160,104 @@ describe("Node WS Fastify route harness", () => {
     expect(resolveTokenAccess).not.toHaveBeenCalled();
 
     ws.terminate();
+    await app.close();
+  });
+
+  it("does not register or ACK a release-aware node before the activation receipt is durable", async () => {
+    const { registry } = createRegistry();
+    let resolvePersist!: (value: {
+      manifest_id: string;
+      activation_generation: number;
+      activated_at: string;
+      registration_idempotency_key: string;
+    }) => void;
+    const persist = vi.fn(async () => await new Promise<{
+      manifest_id: string;
+      activation_generation: number;
+      activated_at: string;
+      registration_idempotency_key: string;
+    }>((resolve) => { resolvePersist = resolve; }));
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, releaseActivationReceipts: { persist } },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    const registrationAck = waitForMessage(ws);
+    ws.send(JSON.stringify({
+      ...fixture.registration,
+      release_manifest: releaseManifest,
+      release_activation: {
+        manifest_id: "manifest-1",
+        release_cohort_id: "cohort-1",
+        source_commit: "commit-1",
+        prewarmed_at: "2026-08-19T09:00:00.000Z",
+        verification: {
+          host: "verified",
+          runner: "verified",
+          env: "verified",
+          executable: "verified",
+        },
+        registration_idempotency_key: "registration-key",
+      },
+    }));
+
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce());
+    expect(registry.getConnectedNode("fake-node")).toBeUndefined();
+    resolvePersist({
+      manifest_id: "manifest-1",
+      activation_generation: 7,
+      activated_at: "2026-08-19T09:00:01.000Z",
+      registration_idempotency_key: "registration-key",
+    });
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    await expect(registrationAck).resolves.toSatisfy((value: unknown) => {
+      const ack = JSON.parse(String(value)) as Record<string, unknown>;
+      return (ack.release_activation_receipt as Record<string, unknown>)
+        .activation_generation === 7;
+    });
+
+    ws.terminate();
+    await app.close();
+  });
+
+  it("rejects an incomplete release manifest before receipt persistence", async () => {
+    const { registry } = createRegistry();
+    const persist = vi.fn();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, releaseActivationReceipts: { persist } },
+    });
+    const { runner_artifact_hash: _omitted, ...incompleteManifest } = releaseManifest;
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    const closed = waitForClose(ws);
+    ws.send(JSON.stringify({
+      ...fixture.registration,
+      release_manifest: incompleteManifest,
+      release_activation: {
+        manifest_id: "manifest-1",
+        release_cohort_id: "cohort-1",
+        source_commit: "commit-1",
+        prewarmed_at: "2026-08-19T09:00:00.000Z",
+        verification: {
+          host: "verified",
+          runner: "verified",
+          env: "verified",
+          executable: "verified",
+        },
+        registration_idempotency_key: "registration-key",
+      },
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1008,
+      reason: "release activation invalid",
+    });
+    expect(persist).not.toHaveBeenCalled();
+    expect(registry.getConnectedNode("fake-node")).toBeUndefined();
     await app.close();
   });
 

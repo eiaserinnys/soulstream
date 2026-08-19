@@ -34,7 +34,7 @@ services:
     ready: http://127.0.0.1:__PORT__/health
     restart_delay: 3
     hooks:
-      post_pull: pnpm --dir __INSTALL_DIR__/soulstream install --frozen-lockfile --config.strict-dep-builds=false && pnpm --dir __INSTALL_DIR__/soulstream/soul-server-ts run build
+      post_pull: pnpm --dir __INSTALL_DIR__/soulstream install --frozen-lockfile --config.strict-dep-builds=false && node __INSTALL_DIR__/soulstream/soul-server-ts/scripts/build_with_release_env.mjs --env-file "__INSTALL_DIR__/soulstream/.env.soul-server-ts"
 
 install:
   requirements:

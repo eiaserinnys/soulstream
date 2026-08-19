@@ -7,6 +7,7 @@ export function emptyExecutionOwnershipObservation(
 ): ExecutionOwnershipObservation {
   return {
     manifestId: null,
+    runtimeEnvIdentity: null,
     registrationId: null,
     pid: null,
     startIdentity: null,
@@ -30,6 +31,7 @@ function serializableOwnershipObservation(
 ): Record<string, string | number | null> {
   return {
     manifest_id: observation.manifestId,
+    runtime_env_identity: observation.runtimeEnvIdentity,
     registration_id: observation.registrationId,
     pid: observation.pid,
     start_identity: observation.startIdentity,

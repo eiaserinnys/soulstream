@@ -60,6 +60,47 @@ describe("applyEventSessionEffect", () => {
     }
   });
 
+  it.each([
+    ["execution_reserve", "session_reserve_execution_ownership_v2"],
+    ["execution_adopt_reserve", "session_reserve_execution_adoption_v2"],
+    ["execution_backfill", "session_backfill_execution_ownership_v2"],
+  ] as const)("routes %s with runtime identity through the v2 procedure", async (kind, procedure) => {
+    const statements: string[] = [];
+    const values: unknown[][] = [];
+    const sql = (async (strings: TemplateStringsArray, ...params: unknown[]) => {
+      const statement = strings.join("?");
+      statements.push(statement);
+      values.push(params);
+      if (statement.includes("FROM session_execution_ownerships")) {
+        return [canonicalOwnershipRow({ runtime_env_identity: "runtime-env-1" })];
+      }
+      return [canonicalRow(true)];
+    }) as EventIngressQuerySql;
+    const legacy = effect(kind);
+    const releaseEffect = kind === "execution_backfill"
+      ? {
+          ...legacy,
+          first_runtime_env_identity: "runtime-env-1",
+          second_runtime_env_identity: "runtime-env-1",
+        }
+      : { ...legacy, runtime_env_identity: "runtime-env-1" };
+
+    const result = await applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: envelope(releaseEffect),
+      effect: releaseEffect,
+    });
+
+    expect(statements[0]).toContain(procedure);
+    expect(values[0]).toContain("runtime-env-1");
+    if (kind !== "execution_backfill") {
+      expect(result.canonicalExecutionOwnership).toMatchObject({
+        runtime_env_identity: "runtime-env-1",
+      });
+    }
+  });
+
   it("persists the first terminal event id as the canonical receipt", async () => {
     const values: unknown[][] = [];
     const sql = (async (_strings: TemplateStringsArray, ...params: unknown[]) => {
@@ -182,6 +223,7 @@ function canonicalOwnershipRow(
     ownership_generation: 1,
     owner_kind: "runner_process",
     manifest_id: "release-1",
+    runtime_env_identity: null,
     registration_id: "registration-1",
     pid: 123,
     start_identity: "start-1",

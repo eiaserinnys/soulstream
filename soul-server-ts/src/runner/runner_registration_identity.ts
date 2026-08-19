@@ -15,6 +15,8 @@ export interface RunnerRegistrationIdentity {
   registrationId: string;
   sessionId: string;
   codeSha: string;
+  releaseManifestId?: string;
+  runtimeEnvIdentity?: string;
   pid: number | null;
   startIdentity: string | null;
 }
@@ -31,6 +33,7 @@ export function runnerRegistrationIdentityPath(sessionDirectory: string): string
 export function pendingRunnerRegistrationIdentity(
   sessionId: string,
   codeSha: string,
+  release?: { releaseManifestId?: string; runtimeEnvIdentity?: string },
 ): RunnerRegistrationIdentity {
   if (!sessionId || !codeSha) throw new Error("runner registration identity requires session and release");
   return {
@@ -38,6 +41,8 @@ export function pendingRunnerRegistrationIdentity(
     registrationId: randomUUID(),
     sessionId,
     codeSha,
+    ...(release?.releaseManifestId ? { releaseManifestId: release.releaseManifestId } : {}),
+    ...(release?.runtimeEnvIdentity ? { runtimeEnvIdentity: release.runtimeEnvIdentity } : {}),
     pid: null,
     startIdentity: null,
   };
@@ -75,6 +80,8 @@ export async function completeRunnerRegistrationIdentityFromChild(
   input: {
     sessionId: string;
     codeSha: string;
+    releaseManifestId?: string;
+    runtimeEnvIdentity?: string;
     pid: number;
     startIdentity: string;
   },
@@ -82,7 +89,7 @@ export async function completeRunnerRegistrationIdentityFromChild(
   const current = await readRunnerRegistrationIdentity(sessionDirectory);
   if (!current) {
     const completed = {
-      ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha),
+      ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha, input),
       pid: input.pid,
       startIdentity: input.startIdentity,
     };
@@ -91,6 +98,10 @@ export async function completeRunnerRegistrationIdentityFromChild(
   }
   if (current.sessionId !== input.sessionId || current.codeSha !== input.codeSha) {
     throw new Error(`runner registration changed before child startup: ${input.sessionId}`);
+  }
+  if (input.releaseManifestId !== current.releaseManifestId
+    || input.runtimeEnvIdentity !== current.runtimeEnvIdentity) {
+    throw new Error(`runner release identity changed before child startup: ${input.sessionId}`);
   }
   if (current.pid !== null) {
     if (
@@ -212,6 +223,10 @@ function validateRunnerRegistrationIdentity(value: unknown): RunnerRegistrationI
     || !candidate.sessionId
     || typeof candidate.codeSha !== "string"
     || !candidate.codeSha
+    || (candidate.releaseManifestId !== undefined
+      && (typeof candidate.releaseManifestId !== "string" || !candidate.releaseManifestId))
+    || (candidate.runtimeEnvIdentity !== undefined
+      && (typeof candidate.runtimeEnvIdentity !== "string" || !candidate.runtimeEnvIdentity))
     || (candidate.pid !== null && (!Number.isSafeInteger(candidate.pid) || (candidate.pid ?? 0) <= 0))
     || (candidate.startIdentity !== null
       && (typeof candidate.startIdentity !== "string" || !candidate.startIdentity))

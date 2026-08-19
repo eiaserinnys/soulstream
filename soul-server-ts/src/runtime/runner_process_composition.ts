@@ -49,7 +49,9 @@ export async function composeRunnerProcessRuntime(
   try {
     const materializer = new BuildArtifactReleaseMaterializer(artifactDirectory);
     const releasePool = new RunnerReleasePool(releasesDirectory, materializer);
-    const release = await releasePool.resolveCurrentRelease();
+    const release = options.releaseManifest
+      ? releasePool.describe(options.releaseManifest.runner_release_id)
+      : await releasePool.resolveCurrentRelease();
     await releasePool.ensureRelease(release);
     return {
       runtimeFactory: createRunnerProcessRuntimeFactory({ ...options, releasePool }),

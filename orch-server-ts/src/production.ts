@@ -38,6 +38,7 @@ import { applyEventSessionEffect } from "./node/event_session_effect_applier.js"
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
 import { runnerInventoryCommandType } from "./node/registry_helpers.js";
 import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
+import { ReleaseActivationReceiptRepository } from "./node/release_activation_receipt_repository.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
   PushNotifier,
@@ -268,6 +269,7 @@ export async function createLiveProductionApplication(
       leaseAware: config.soul_runner_process_enabled,
       leaseTimeoutMs: config.soul_runner_lease_timeout_ms,
     },
+    releaseActivationReceipts: new ReleaseActivationReceiptRepository(sqlResolver),
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
     enableSessionActionCommandRoutes: true,

@@ -20,6 +20,7 @@ describePostgres("execution ownership PostgreSQL contract", () => {
   }, 45_000);
 
   beforeEach(async () => {
+    await harness.sql`DELETE FROM node_release_activation_receipts`;
     await harness.sql`DELETE FROM session_execution_ownership_migration_audit`;
     await harness.sql`DELETE FROM session_execution_ownerships`;
     await harness.sql`DELETE FROM sessions`;
@@ -65,6 +66,102 @@ describePostgres("execution ownership PostgreSQL contract", () => {
       SELECT ownership_generation FROM session_execution_ownerships
       WHERE session_id = 'adopt' AND phase = 'active'
     `).resolves.toEqual([{ ownership_generation: "2" }]);
+  });
+
+  it("stores runtime env identity through v2 while preserving the legacy ownership API", async () => {
+    await insertSession("runtime-v2", "initializing");
+    const reserved = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_ownership_v2(
+        'runtime-v2', 1, 'runner_process', 'manifest-a',
+        'runtime-env-a', NOW()
+      )
+    `;
+    expect(reserved[0]?.applied).toBe(true);
+    await prove("runtime-v2", 1, "registration-v2", "execute-v2");
+    await activate("runtime-v2", 1);
+    const adopted = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_adoption_v2(
+        'runtime-v2', 2, 'manifest-a', 'runtime-env-a',
+        'registration-v2', 123, 'start-registration-v2', 'execute-v2', NOW()
+      )
+    `;
+    expect(adopted[0]?.applied).toBe(true);
+    await expect(harness.sql<Array<{
+      ownership_generation: string;
+      runtime_env_identity: string;
+    }>>`
+      SELECT ownership_generation, runtime_env_identity
+      FROM session_execution_ownerships
+      WHERE session_id = 'runtime-v2'
+      ORDER BY ownership_generation
+    `).resolves.toEqual([
+      { ownership_generation: "1", runtime_env_identity: "runtime-env-a" },
+      { ownership_generation: "2", runtime_env_identity: "runtime-env-a" },
+    ]);
+
+    await insertSession("runtime-legacy", "initializing");
+    expect((await reserve("runtime-legacy", 1, "runner_process", "manifest-legacy"))[0]?.applied)
+      .toBe(true);
+    await expect(harness.sql<Array<{ runtime_env_identity: string | null }>>`
+      SELECT runtime_env_identity
+      FROM session_execution_ownerships
+      WHERE session_id = 'runtime-legacy'
+    `).resolves.toEqual([{ runtime_env_identity: null }]);
+
+    await insertSession("runtime-empty", "initializing");
+    await expect(harness.sql`
+      SELECT * FROM session_reserve_execution_ownership_v2(
+        'runtime-empty', 1, 'runner_process', 'manifest-a', '', NOW()
+      )
+    `).rejects.toThrow("runtime env identity required");
+  });
+
+  it("persists one immutable central activation receipt per registration attempt", async () => {
+    const verification = {
+      host: "verified",
+      runner: "verified",
+      env: "verified",
+      executable: "verified",
+    };
+    const persist = async (manifestId: string) => await harness.sql<Array<{
+      activation_generation: string;
+      manifest_id: string;
+    }>>`
+      INSERT INTO node_release_activation_receipts (
+        node_id, manifest_id, release_cohort_id, source_commit, prewarmed_at,
+        verification, registration_idempotency_key
+      ) VALUES (
+        'node-a', ${manifestId}, 'cohort-a', 'commit-a',
+        ${new Date("2026-08-19T09:00:00.000Z")},
+        ${harness.sql.json(verification)}, 'registration-key'
+      )
+      ON CONFLICT (node_id, registration_idempotency_key)
+      DO UPDATE SET registration_idempotency_key = EXCLUDED.registration_idempotency_key
+      WHERE node_release_activation_receipts.manifest_id = EXCLUDED.manifest_id
+        AND node_release_activation_receipts.release_cohort_id = EXCLUDED.release_cohort_id
+        AND node_release_activation_receipts.source_commit = EXCLUDED.source_commit
+        AND node_release_activation_receipts.prewarmed_at = EXCLUDED.prewarmed_at
+        AND node_release_activation_receipts.verification = EXCLUDED.verification
+      RETURNING activation_generation, manifest_id
+    `;
+
+    const first = await persist("manifest-a");
+    expect(first).toEqual([{
+      activation_generation: expect.any(String),
+      manifest_id: "manifest-a",
+    }]);
+    expect(await persist("manifest-a")).toEqual(first);
+    expect(await persist("manifest-other")).toEqual([]);
+    await expect(harness.sql`
+      INSERT INTO node_release_activation_receipts (
+        node_id, manifest_id, release_cohort_id, source_commit, prewarmed_at,
+        verification, registration_idempotency_key
+      ) VALUES (
+        'node-b', 'manifest-a', 'cohort-a', 'commit-a', NOW(),
+        ${harness.sql.json({ ...verification, runner: "unchecked" })},
+        'registration-invalid'
+      )
+    `).rejects.toThrow(/node_release_activation_receipts_verification_check/);
   });
 
   it("covers runner fact 4종 × existing central state 4종 and command fencing", async () => {

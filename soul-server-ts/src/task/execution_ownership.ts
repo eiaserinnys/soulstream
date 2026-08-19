@@ -30,6 +30,7 @@ export interface ExecutionIdentityProof {
 export interface ExecutionOwnershipToken extends ExecutionIdentityProof {
   ownerKind: ExecutionOwnerKind;
   manifestId: string;
+  runtimeEnvIdentity: string;
   ownershipGeneration: number;
 }
 
@@ -46,6 +47,7 @@ export interface CanonicalExecutionOwnership {
   ownershipGeneration: number;
   ownerKind: ExecutionOwnerKind;
   manifestId: string;
+  runtimeEnvIdentity: string;
   registrationId: string | null;
   pid: number | null;
   startIdentity: string | null;
@@ -85,6 +87,7 @@ export function isExecutionOwnershipConflictError(
 
 export interface RecoveredExecutionOwnershipIdentity {
   manifestId: string;
+  runtimeEnvIdentity: string;
   registrationId: string;
   pid: number;
   startIdentity: string;
@@ -93,6 +96,7 @@ export interface RecoveredExecutionOwnershipIdentity {
 
 export interface ExecutionOwnershipObservation {
   manifestId: string | null;
+  runtimeEnvIdentity: string | null;
   registrationId: string | null;
   pid: number | null;
   startIdentity: string | null;

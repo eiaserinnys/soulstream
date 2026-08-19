@@ -25,6 +25,7 @@ import {
   registerContextPreviewRoute,
   type ContextPreviewRouteConfig,
 } from "./context/context_preview_route.js";
+import type { ReleaseActivationState } from "./release/release_activation_state.js";
 
 export interface ServerParams {
   host: string;
@@ -36,6 +37,7 @@ export interface ServerParams {
    * `FastifyInstance` 반환 타입과의 contravariance 충돌을 회피한다.
    */
   logger: FastifyBaseLogger;
+  releaseActivationState?: ReleaseActivationState;
   /**
    * MCP Streamable HTTP 라우트 mount 설정. 미지정 시 MCP 라우트 미등록.
    * MCP_ENABLED=true일 때 main.ts가 채워 전달.
@@ -94,12 +96,17 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
     disableRequestLogging: false,
   });
 
-  fastify.get("/health", async () => ({
-    status: "ok",
-    node_id: params.nodeId,
-    service: "soul-server-ts",
-    phase: "B-1",
-  }));
+  fastify.get("/health", async (_request, reply) => {
+    const release = params.releaseActivationState?.health();
+    if (release && release.ready !== true) reply.code(503);
+    return {
+      status: release?.status ?? "ok",
+      node_id: params.nodeId,
+      service: "soul-server-ts",
+      phase: "B-1",
+      ...(release ?? {}),
+    };
+  });
 
   if (params.mcp) {
     const closePublicMcp = registerMcpRoutes(fastify, params.mcp.runtime, {

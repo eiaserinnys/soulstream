@@ -67,6 +67,7 @@ export abstract class EventTransitionPublisher {
       ownershipGeneration: number;
       ownerKind: ExecutionOwnerKind;
       manifestId: string;
+      runtimeEnvIdentity: string;
       updatedAt?: Date;
     },
   ): Promise<EventSessionTransitionApplication> {
@@ -78,6 +79,7 @@ export abstract class EventTransitionPublisher {
         ownership_generation: input.ownershipGeneration,
         owner_kind: input.ownerKind,
         manifest_id: input.manifestId,
+        runtime_env_identity: input.runtimeEnvIdentity,
         updated_at: (input.updatedAt ?? new Date()).toISOString(),
       },
     );
@@ -109,6 +111,7 @@ export abstract class EventTransitionPublisher {
     input: {
       ownershipGeneration: number;
       manifestId: string;
+      runtimeEnvIdentity: string;
       previousRegistrationId: string;
       pid: number;
       startIdentity: string;
@@ -123,6 +126,7 @@ export abstract class EventTransitionPublisher {
         kind: "execution_adopt_reserve",
         ownership_generation: input.ownershipGeneration,
         manifest_id: input.manifestId,
+        runtime_env_identity: input.runtimeEnvIdentity,
         previous_registration_id: input.previousRegistrationId,
         pid: input.pid,
         start_identity: input.startIdentity,
@@ -213,12 +217,14 @@ export abstract class EventTransitionPublisher {
       {
         kind: "execution_backfill",
         first_manifest_id: input.first.manifestId,
+        first_runtime_env_identity: input.first.runtimeEnvIdentity,
         first_registration_id: input.first.registrationId,
         first_pid: input.first.pid,
         first_start_identity: input.first.startIdentity,
         first_execution_command_id: input.first.executionCommandId,
         first_observed_at: input.first.observedAt.toISOString(),
         second_manifest_id: input.second.manifestId,
+        second_runtime_env_identity: input.second.runtimeEnvIdentity,
         second_registration_id: input.second.registrationId,
         second_pid: input.second.pid,
         second_start_identity: input.second.startIdentity,
