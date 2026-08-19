@@ -88,6 +88,19 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     });
   });
 
+  it("advertises the control lane only when the durable inbox is configured", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "control-node",
+      host: "127.0.0.1",
+      port: 4205,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+      controlChannelEnabled: true,
+    });
+
+    expect(msg.capabilities).toMatchObject({ control_channel_v1: true });
+  });
+
   it("빈 registry → agents=[], max_concurrent=0, supported_backends=[]", () => {
     const msg = buildRegistrationMsg({
       nodeId: "x",

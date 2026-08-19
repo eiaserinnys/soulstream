@@ -129,6 +129,7 @@ export class InMemoryNodeRegistry {
         lastPingAtMs: undefined,
         lastPongAtMs: undefined,
       },
+      controlAckMetrics: {},
       pendingCommands: new PendingNodeCommands({
         nowMs: this.nowMs,
         requestIdGenerator: this.requestIdGenerator,
@@ -329,6 +330,25 @@ export class InMemoryNodeRegistry {
     node.lastSeenAtMs = nowMs;
     replaceReportedRunnerInventory(node, message);
 
+    if (message.type === "control_ack_metric") {
+      const family = typeof message.commandFamily === "string"
+        ? message.commandFamily
+        : undefined;
+      if (family !== undefined) {
+        node.controlAckMetrics[family] = {
+          windowMs: finiteNumber(message.windowMs),
+          sampleCount: finiteNumber(message.sampleCount),
+          p99Ms: nullableFiniteNumber(message.p99Ms),
+          maxMs: finiteNumber(message.maxMs),
+          p99GateMs: finiteNumber(message.p99GateMs),
+          maxGateMs: finiteNumber(message.maxGateMs),
+          withinGate: message.withinGate === true,
+          observedAtMs: nowMs,
+        };
+      }
+      return [];
+    }
+
     if (message.type === "app_heartbeat_pong") {
       node.heartbeat.lastPongAtMs = nowMs;
       return [{ type: "node_heartbeat_pong", nodeId }];
@@ -337,6 +357,13 @@ export class InMemoryNodeRegistry {
     if (message.type === "app_heartbeat_ping") {
       node.heartbeat.lastPingAtMs = nowMs;
       return [{ type: "node_heartbeat_ping", nodeId }];
+    }
+
+    if (message.type === "control_admission_ack") {
+      // Durable admission confirms that the node owns the mutation. It is not
+      // the command's domain result; keep the pending request until the
+      // replayable control_result payload arrives.
+      return [];
     }
 
     if (typeof message.requestId === "string" && message.requestId.length > 0) {
@@ -497,4 +524,12 @@ export class InMemoryNodeRegistry {
     this.connectionSequence += 1;
     return `${nodeId}:${this.connectionSequence}`;
   }
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableFiniteNumber(value: unknown): number | null {
+  return value === null ? null : finiteNumber(value);
 }

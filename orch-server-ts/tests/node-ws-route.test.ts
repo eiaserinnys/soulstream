@@ -126,11 +126,16 @@ describe("Node WS Fastify route harness", () => {
     const registrationAck = waitForMessage(ws);
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
-    await expect(registrationAck).resolves.toBe(JSON.stringify({
-      type: "node_register_ack",
-      node_id: "fake-node",
-      capabilities: { runner_inventory_v1: true },
-    }));
+    await expect(registrationAck).resolves.toSatisfy((value: unknown) => {
+      if (typeof value !== "string") return false;
+      const raw = value;
+      const ack = JSON.parse(raw) as Record<string, unknown>;
+      return ack.type === "node_register_ack"
+        && ack.node_id === "fake-node"
+        && typeof ack.connection_id === "string"
+        && (ack.capabilities as Record<string, unknown>).runner_inventory_v1 === true
+        && (ack.capabilities as Record<string, unknown>).control_channel_v1 === true;
+    });
     expect(registry.getConnectedNode("fake-node")).toMatchObject({
       nodeId: "fake-node",
       status: "connected",
@@ -399,6 +404,175 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("activates a separately registered control lane and falls back to data when it closes", async () => {
+    const { registry } = createRegistry();
+    const transportHub = new NodeCommandTransportHub();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, transportHub },
+    });
+
+    await app.ready();
+    const dataWs = await injectAuthenticatedWs(app);
+    const registrationAck = waitForMessage(dataWs);
+    dataWs.send(JSON.stringify({
+      ...fixture.registration,
+      capabilities: {
+        ...((fixture.registration as Record<string, unknown>).capabilities as
+          Record<string, unknown> | undefined ?? {}),
+        control_channel_v1: true,
+      },
+    }));
+    const dataAck = JSON.parse(await registrationAck) as Record<string, unknown>;
+    const connectionId = requireDefined(dataAck.connection_id as string | undefined);
+
+    const controlWs = await injectAuthenticatedWs(app, "test-token", "/ws/node/control");
+    const controlRegistrationAck = waitForMessage(controlWs);
+    controlWs.send(JSON.stringify({
+      type: "node_control_register",
+      node_id: "fake-node",
+      connection_id: connectionId,
+    }));
+    await expect(controlRegistrationAck).resolves.toBe(JSON.stringify({
+      type: "node_control_register_ack",
+      node_id: "fake-node",
+      connection_id: connectionId,
+    }));
+
+    const controlReadyAck = waitForMessage(controlWs);
+    controlWs.send(JSON.stringify({ type: "node_control_ready" }));
+    await expect(controlReadyAck).resolves.toBe(JSON.stringify({
+      type: "node_control_ready_ack",
+    }));
+    await waitFor(() => transportHub.has({ nodeId: "fake-node", connectionId }));
+
+    const pending = registry.createCommand("fake-node", {
+      type: "intervene",
+      agentSessionId: "session-a",
+      text: "stop",
+    });
+    const controlCommand = waitForMessage(controlWs);
+    await transportHub.get({ nodeId: "fake-node", connectionId })?.send(
+      JSON.stringify(pending.message),
+    );
+    await expect(controlCommand).resolves.toBe(JSON.stringify(pending.message));
+
+    const receiveNodeMessage = vi.spyOn(registry, "receiveNodeMessage");
+    controlWs.send(JSON.stringify({
+      type: "control_admission_ack",
+      requestId: pending.requestId,
+      commandType: "intervene",
+      commandFamily: "intervention",
+      status: "accepted",
+      durability: "control_inbox_sqlite",
+    }));
+    await waitFor(() => receiveNodeMessage.mock.calls.some(([, message]) =>
+      message.type === "control_admission_ack"));
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      pendingCommandCount: 1,
+    });
+
+    const resultAck = waitForMessage(controlWs);
+    controlWs.send(JSON.stringify({
+      type: "control_result",
+      resultId: "result-1",
+      nodeId: "fake-node",
+      commandFamily: "intervention",
+      requestId: pending.requestId,
+      state: "completed",
+      response: {
+        type: "intervene_ack",
+        requestId: pending.requestId,
+        status: "ok",
+      },
+    }));
+    await expect(resultAck).resolves.toBe(JSON.stringify({
+      type: "control_result_ack",
+      resultId: "result-1",
+    }));
+    await expect(pending.result).resolves.toMatchObject({
+      type: "intervene_ack",
+      requestId: pending.requestId,
+      status: "ok",
+    });
+
+    controlWs.send(JSON.stringify({
+      type: "control_ack_metric",
+      nodeId: "fake-node",
+      commandFamily: "intervention",
+      windowMs: 5 * 60_000,
+      sampleCount: 20,
+      p99Ms: 42,
+      maxMs: 64,
+      p99GateMs: 250,
+      maxGateMs: 1_000,
+      withinGate: true,
+    }));
+    await waitFor(() =>
+      registry.getConnectedNode("fake-node")?.controlAckMetrics.intervention
+        ?.sampleCount === 20);
+    expect(
+      registry.getConnectedNode("fake-node")?.controlAckMetrics.intervention,
+    ).toMatchObject({ windowMs: 5 * 60_000, p99Ms: 42, maxMs: 64, withinGate: true });
+
+    controlWs.terminate();
+    await delay(20);
+    const dataProbe = waitForMessage(dataWs);
+    await transportHub.get({ nodeId: "fake-node", connectionId })?.send("data-probe");
+    await expect(dataProbe).resolves.toBe("data-probe");
+
+    dataWs.terminate();
+    await app.close();
+  });
+
+  it("closes without acknowledging a malformed durable result", async () => {
+    const { registry } = createRegistry();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, transportHub: new NodeCommandTransportHub() },
+    });
+
+    await app.ready();
+    const dataWs = await injectAuthenticatedWs(app);
+    const registrationAck = waitForMessage(dataWs);
+    dataWs.send(JSON.stringify({
+      ...fixture.registration,
+      capabilities: {
+        ...((fixture.registration as Record<string, unknown>).capabilities as
+          Record<string, unknown> | undefined ?? {}),
+        control_channel_v1: true,
+      },
+    }));
+    const dataAck = JSON.parse(await registrationAck) as Record<string, unknown>;
+    const connectionId = requireDefined(dataAck.connection_id as string | undefined);
+    const controlWs = await injectAuthenticatedWs(app, "test-token", "/ws/node/control");
+    const controlRegistrationAck = waitForMessage(controlWs);
+    controlWs.send(JSON.stringify({
+      type: "node_control_register",
+      node_id: "fake-node",
+      connection_id: connectionId,
+    }));
+    await controlRegistrationAck;
+
+    const closed = waitForClose(controlWs);
+    controlWs.send(JSON.stringify({
+      type: "control_result",
+      resultId: "result-malformed",
+      nodeId: "fake-node",
+      commandFamily: "intervention",
+      requestId: "req-1",
+      state: "completed",
+      response: { type: "intervene_ack", requestId: "different-request" },
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1008,
+      reason: "INVALID_CONTROL_RESULT",
+    });
+    dataWs.terminate();
+    await app.close();
+  });
+
   it("cleans registry and transport once when socket close is followed by app shutdown", async () => {
     const { registry } = createRegistry();
     const disconnectNode = vi.spyOn(registry, "disconnectNode");
@@ -557,8 +731,12 @@ function waitForMessage(ws: TestWebSocket): Promise<string> {
   });
 }
 
-function injectAuthenticatedWs(app: unknown, token = "test-token"): Promise<TestWebSocket> {
-  return (app as WebSocketInjectableApp).injectWS("/ws/node", {
+function injectAuthenticatedWs(
+  app: unknown,
+  token = "test-token",
+  path = "/ws/node",
+): Promise<TestWebSocket> {
+  return (app as WebSocketInjectableApp).injectWS(path, {
     headers: { authorization: `Bearer ${token}` },
   });
 }

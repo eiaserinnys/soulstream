@@ -49,12 +49,16 @@ export type RouteCoverageCompletenessInput = {
   registry: RouteRegistry;
   registeredRouteKeys: readonly string[];
   owners: readonly RouteCoverageOwner[];
+  additionalExpectedRouteKeys?: readonly string[];
 };
 
 export function validateRouteCoverageCompleteness(
   input: RouteCoverageCompletenessInput,
 ): RouteCoverageCompletenessResult {
-  const expectedRouteKeys = sortedRouteKeys(input.registry.entries.map((entry) => entry.key));
+  const expectedRouteKeys = sortedRouteKeys([
+    ...input.registry.entries.map((entry) => entry.key),
+    ...(input.additionalExpectedRouteKeys ?? []),
+  ]);
   const expectedRouteKeySet = new Set<RouteKey>(expectedRouteKeys);
   const registeredRouteKeys = sortedRouteKeys(input.registeredRouteKeys.map(normalizeRouteKey));
   const routeOwnerIndex = buildOwnerIndex(input.owners, "route");

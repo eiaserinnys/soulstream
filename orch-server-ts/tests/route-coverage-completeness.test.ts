@@ -7,6 +7,7 @@ import {
   parseOrchServerConfig,
   pythonRoutePathToFastifyPath,
   routeCoverageOwners,
+  tsOnlyRouteKeys,
   validateRouteCoverageCompleteness,
   type CreateAppOptions,
   type RouteRegistry,
@@ -45,11 +46,12 @@ describe("route coverage completeness gate", () => {
   const taskCreateRouteKey = "POST /api/tasks";
 
   it("covers every Python fixture route with opt-in TS registration and auth metadata", async () => {
-    const registeredRouteKeys = await collectRegisteredFixtureRouteKeys(registry);
+    const registeredRouteKeys = await collectRegisteredRouteKeys(registry);
     const result = validateRouteCoverageCompleteness({
       registry,
       registeredRouteKeys,
       owners: routeCoverageOwners,
+      additionalExpectedRouteKeys: tsOnlyRouteKeys,
     });
 
     expect(result).toMatchObject({
@@ -63,7 +65,7 @@ describe("route coverage completeness gate", () => {
       unknownRouteOwnerKeys: [],
       unknownAuthRequirementKeys: [],
     });
-    expect(registeredRouteKeys).toHaveLength(registry.entries.length);
+    expect(registeredRouteKeys).toHaveLength(registry.entries.length + tsOnlyRouteKeys.length);
     expect(registry.entries.map((entry) => entry.key)).toEqual(
       expect.arrayContaining([...browserRouteKeys, reviewRouteKey, taskCreateRouteKey]),
     );
@@ -79,6 +81,7 @@ describe("route coverage completeness gate", () => {
     const result = validateRouteCoverageCompleteness({
       registry,
       registeredRouteKeys,
+      additionalExpectedRouteKeys: tsOnlyRouteKeys,
       owners: [
         ...routeCoverageOwners,
         {
@@ -118,11 +121,11 @@ describe("route coverage completeness gate", () => {
   });
 });
 
-async function collectRegisteredFixtureRouteKeys(registry: RouteRegistry): Promise<string[]> {
+async function collectRegisteredRouteKeys(registry: RouteRegistry): Promise<string[]> {
   const app = createAllOptInRouteApp();
   await app.ready();
   try {
-    return registry.entries
+    const fixtureRouteKeys = registry.entries
       .filter((entry) =>
         app.hasRoute({
           method: fastifyRegistrationMethod(entry),
@@ -130,6 +133,17 @@ async function collectRegisteredFixtureRouteKeys(registry: RouteRegistry): Promi
         }),
       )
       .map((entry) => entry.key);
+    const registeredTsOnlyRouteKeys = tsOnlyRouteKeys.filter((key) => {
+      const separatorIndex = key.indexOf(" ");
+      if (separatorIndex <= 0) throw new Error(`invalid TS-only route key: ${key}`);
+      const method = key.slice(0, separatorIndex);
+      const path = key.slice(separatorIndex + 1);
+      return app.hasRoute({
+        method: method === "WEBSOCKET" ? "GET" : method,
+        url: pythonRoutePathToFastifyPath(path),
+      });
+    });
+    return [...fixtureRouteKeys, ...registeredTsOnlyRouteKeys];
   } finally {
     await app.close();
   }

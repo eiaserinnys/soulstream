@@ -6,6 +6,14 @@
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
   | NodeRegisterAck
+  | NodeControlRegister
+  | NodeControlRegisterAck
+  | NodeControlReady
+  | NodeControlReadyAck
+  | ControlAdmissionAck
+  | ControlResult
+  | ControlResultAck
+  | ControlAckMetric
   | AppHeartbeatPing
   | AppHeartbeatPong
   | SessionCreated
@@ -76,6 +84,7 @@ export interface NodeRegister {
    */
   capabilities?: {
     runner_inventory_v1?: boolean;
+    control_channel_v1?: boolean;
     [k: string]: unknown;
   };
   /**
@@ -131,11 +140,89 @@ export interface NodeRegister {
 export interface NodeRegisterAck {
   type: "node_register_ack";
   node_id: string;
+  connection_id?: string;
   capabilities?: {
     runner_inventory_v1?: boolean;
+    control_channel_v1?: boolean;
     [k: string]: unknown;
   };
   [k: string]: unknown;
+}
+/**
+ * node control worker→orch: data registration generation에 귀속되는 control lane 등록.
+ */
+export interface NodeControlRegister {
+  type: "node_control_register";
+  node_id: string;
+  connection_id: string;
+}
+/**
+ * orch→node control worker: control lane 등록 수락.
+ */
+export interface NodeControlRegisterAck {
+  type: "node_control_register_ack";
+  node_id: string;
+  connection_id: string;
+}
+/**
+ * node→orch: inbox reclaim과 result replay를 마친 뒤 control routing 준비 완료.
+ */
+export interface NodeControlReady {
+  type: "node_control_ready";
+}
+/**
+ * orch→node: control transport 우선 라우팅 활성화 확인.
+ */
+export interface NodeControlReadyAck {
+  type: "node_control_ready_ack";
+}
+/**
+ * durable control inbox commit 뒤에만 발행되는 admission ACK.
+ */
+export interface ControlAdmissionAck {
+  type: "control_admission_ack";
+  requestId: string;
+  commandType: string;
+  commandFamily: string;
+  status: "accepted" | "duplicate";
+  durability: "control_inbox_sqlite";
+  [k: string]: unknown;
+}
+/**
+ * node control worker→orch: durable domain result replay envelope.
+ */
+export interface ControlResult {
+  type: "control_result";
+  resultId: string;
+  nodeId: string;
+  commandFamily: string;
+  requestId: string;
+  state: "completed" | "rejected";
+  response: {
+    [k: string]: unknown;
+  };
+}
+/**
+ * orch→node control worker: replay result 수신 완료.
+ */
+export interface ControlResultAck {
+  type: "control_result_ack";
+  resultId: string;
+}
+/**
+ * node×command family 5분 rolling control ACK latency 관측값.
+ */
+export interface ControlAckMetric {
+  type: "control_ack_metric";
+  nodeId: string;
+  commandFamily: string;
+  windowMs: number;
+  sampleCount: number;
+  p99Ms: number | null;
+  maxMs: number;
+  p99GateMs: number;
+  maxGateMs: number;
+  withinGate: boolean;
 }
 /**
  * 양방향 app-level heartbeat ping. requestId 없는 liveness 전용 메시지.

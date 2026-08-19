@@ -27,6 +27,7 @@ const connectedNode: NodeConnectionSnapshot = {
     lastPingAtMs: undefined,
     lastPongAtMs: undefined,
   },
+  controlAckMetrics: {},
   pendingCommandCount: 0,
 };
 

@@ -73,3 +73,9 @@ export const routeCoverageOwners = [
   { owner: "user.preferences", authRequirements: userPreferencesRouteAuthRequirements },
   { owner: "usage.summary", authRequirements: usageSummaryRouteAuthRequirements },
 ] as const satisfies readonly RouteCoverageOwner[];
+
+// The route inventory fixture describes the retired Python server. New TS-only
+// routes must be listed explicitly instead of being backfilled into that fixture.
+export const tsOnlyRouteKeys = [
+  "WEBSOCKET /ws/node/control",
+] as const;
