@@ -8,9 +8,9 @@ const FILE_SET_DOMAIN = "soulstream.release.file-set.v1\0";
 const EXECUTABLE_DOMAIN = "soulstream.release.executable.v1\0";
 
 export const HOST_RELEASE_ARTIFACTS = [
-  "control_inbox_worker_entry.js",
   "main.js",
-  "runner_release_prewarm.js",
+  "runner/runner_release_prewarm.js",
+  "upstream/control_inbox_worker_entry.js",
 ] as const;
 
 export async function hashReleaseFileSet(
