@@ -6,10 +6,11 @@ import { execFileSync } from "node:child_process";
 import dotenv from "dotenv";
 
 import { parseEnv } from "../src/config.js";
-import { resolveClaudeExecutableFromPath } from "../src/engine/claude_executable_path.js";
-import { resolveCodexCliPath } from "../src/engine/codex_cli_path.js";
 import { hashArtifactSet } from "../src/runner/runner_release_materializer.js";
-import { deploymentEnvIdentity } from "../src/release/release_env.js";
+import {
+  declaredExecutablePath,
+  deploymentEnvIdentity,
+} from "../src/release/release_env.js";
 import {
   HOST_RELEASE_ARTIFACTS,
   executableIdentity,
@@ -26,21 +27,18 @@ const runnerRoot = resolve(distRoot, "runner");
 const migrationManifestPath = resolve(repositoryRoot, "packages/db-schema/migration-manifest.json");
 const wireSchemaPath = resolve(repositoryRoot, "packages/wire-schema/src/upstream.schema.json");
 
-const envFileOption = optionValue(process.argv.slice(2), "--env-file")
-  ?? process.env.SOULSTREAM_RELEASE_ENV_FILE?.trim()
-  ?? process.env.HANIEL_SERVICE_ENV_FILE?.trim();
-const envFilePath = envFileOption ? resolve(envFileOption) : undefined;
-const runtimeCwd = resolve(
-  optionValue(process.argv.slice(2), "--runtime-cwd")
-    ?? (envFilePath ? dirname(envFilePath) : process.cwd()),
+// The service loads "<repository root>/.env.soul-server-ts" from its working directory,
+// so that path is the default declared document. An explicit --env-file or
+// SOULSTREAM_RELEASE_ENV_FILE overrides it; a node whose build hook predates that
+// option still hashes the very document its service will start with.
+const envFilePath = resolve(
+  optionValue(process.argv.slice(2), "--env-file")
+    ?? process.env.SOULSTREAM_RELEASE_ENV_FILE?.trim()
+    ?? process.env.HANIEL_SERVICE_ENV_FILE?.trim()
+    ?? resolve(repositoryRoot, ".env.soul-server-ts"),
 );
-const processEnv = {
-  ...process.env,
-  ...(envFilePath ? dotenv.parse(await readFile(envFilePath, "utf8")) : {}),
-};
-const claudePath = resolveClaudeExecutableFromPath(processEnv, process.platform);
-const codexPath = resolveCodexCliPath(processEnv, process.platform)?.path;
-const env = parseEnv(processEnv);
+const declaredEnv = await readDeclaredEnv(envFilePath);
+const env = parseEnv({ ...process.env, ...declaredEnv });
 const runnerReleaseId = await hashArtifactSet(runnerRoot);
 const migrationManifestRaw = await readFile(migrationManifestPath, "utf8");
 const migrationManifest = JSON.parse(migrationManifestRaw) as {
@@ -62,9 +60,15 @@ const manifest = buildReleaseManifest({
   nodeVersion: process.versions.node,
   platform: process.platform,
   arch: process.arch,
-  deploymentEnvIdentity: deploymentEnvIdentity(env, processEnv, { runtimeCwd }),
-  claudeExecutable: await executableIdentity("claude", claudePath),
-  codexExecutable: await executableIdentity("codex", codexPath),
+  deploymentEnvIdentity: deploymentEnvIdentity(env, declaredEnv),
+  claudeExecutable: await executableIdentity(
+    "claude",
+    declaredExecutablePath(declaredEnv, "claude"),
+  ),
+  codexExecutable: await executableIdentity(
+    "codex",
+    declaredExecutablePath(declaredEnv, "codex"),
+  ),
 });
 
 await writeFile(resolve(distRoot, "release-manifest.json"), canonicalJson(
@@ -73,6 +77,17 @@ await writeFile(resolve(distRoot, "release-manifest.json"), canonicalJson(
 process.stdout.write(
   `release manifest written: ${manifest.manifest_id} cohort=${manifest.release_cohort_id}\n`,
 );
+
+async function readDeclaredEnv(path: string): Promise<Record<string, string>> {
+  try {
+    return dotenv.parse(await readFile(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // No declared document: the service that starts this bundle must also have none.
+    process.stdout.write(`release manifest: no deployment env document at ${path}\n`);
+    return {};
+  }
+}
 
 function sha256(value: string | Buffer): string {
   return `sha256-${createHash("sha256").update(value).digest("hex")}`;

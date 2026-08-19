@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 
 import type { Env } from "../config.js";
 import { hashArtifactSet } from "../runner/runner_release_materializer.js";
-import { deploymentEnvIdentity } from "./release_env.js";
+import {
+  declaredExecutablePath,
+  deploymentEnvIdentity,
+  type DeclaredDeploymentEnv,
+} from "./release_env.js";
 import {
   HOST_RELEASE_ARTIFACTS,
   executableIdentity,
@@ -18,10 +22,11 @@ export async function loadAndVerifyReleaseManifest(input: {
   hostBundleDirectory: string;
   runnerArtifactDirectory: string;
   env: Env;
-  processEnv: NodeJS.ProcessEnv;
-  runtimeCwd: string;
-  claudeExecutablePath?: string;
-  codexExecutablePath?: string;
+  /**
+   * Deployment env document this host was started with. The build hashes the same
+   * document, so the env axis stays comparable across build and startup.
+   */
+  declaredEnv: DeclaredDeploymentEnv;
 }): Promise<ReleaseManifestV1> {
   const manifest = parseReleaseManifest(JSON.parse(
     await readFile(input.manifestPath, "utf8"),
@@ -40,11 +45,15 @@ export async function loadAndVerifyReleaseManifest(input: {
     nodeVersion: process.versions.node,
     platform: process.platform,
     arch: process.arch,
-    deploymentEnvIdentity: deploymentEnvIdentity(input.env, input.processEnv, {
-      runtimeCwd: input.runtimeCwd,
-    }),
-    claudeExecutable: await executableIdentity("claude", input.claudeExecutablePath),
-    codexExecutable: await executableIdentity("codex", input.codexExecutablePath),
+    deploymentEnvIdentity: deploymentEnvIdentity(input.env, input.declaredEnv),
+    claudeExecutable: await executableIdentity(
+      "claude",
+      declaredExecutablePath(input.declaredEnv, "claude"),
+    ),
+    codexExecutable: await executableIdentity(
+      "codex",
+      declaredExecutablePath(input.declaredEnv, "codex"),
+    ),
   });
   return manifest;
 }

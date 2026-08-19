@@ -33,6 +33,10 @@ if (dotenvResult.error) {
     `[soul-server-ts] dotenv: "${DOTENV_PATH}" not loaded from cwd=${process.cwd()}: ${dotenvResult.error.message}`,
   );
 }
+// Release env identity is bound to this declared document, never to the surrounding
+// process env: the release is built in a clean environment whose PATH/HOME/credentials
+// differ from the live service, so an ambient digest can never match at startup.
+const declaredDeploymentEnv = dotenvResult.parsed ?? {};
 
 async function main(): Promise<void> {
   let env;
@@ -49,7 +53,6 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   }
-  const releaseProcessEnv = { ...process.env };
 
   await assertRunnerNodeRuntime({
     runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
@@ -174,10 +177,7 @@ async function main(): Promise<void> {
     runnerArtifactDirectory:
       env.SOUL_RUNNER_ARTIFACT_DIR ?? join(hostBundleDirectory, "runner"),
     env,
-    processEnv: releaseProcessEnv,
-    runtimeCwd: process.cwd(),
-    ...(claudeExecutablePath ? { claudeExecutablePath } : {}),
-    ...(codexCliPath ? { codexExecutablePath: codexCliPath.path } : {}),
+    declaredEnv: declaredDeploymentEnv,
   });
   const releaseActivationState = new ReleaseActivationState(releaseManifest);
 

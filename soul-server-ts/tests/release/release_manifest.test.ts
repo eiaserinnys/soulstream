@@ -12,11 +12,9 @@ import {
 } from "../../src/release/release_manifest.js";
 import {
   agentRuntimeEnvIdentity,
-  deploymentEnvIdentity,
   releaseEnvAllowlistKeys,
 } from "../../src/release/release_env.js";
 import { parseReleaseManifest } from "../../src/release/release_runtime.js";
-import { parseEnv } from "../../src/config.js";
 
 const buildInput: ReleaseManifestBuildInput = {
   sourceCommit: "46203dc8c05222cbac476d2973f6f9d554926ac2",
@@ -103,31 +101,6 @@ describe("ReleaseManifest v1", () => {
     expect(first).not.toContain("rotated-secret");
   });
 
-  it("normalizes relative release paths against the declared runtime cwd", () => {
-    const firstRaw = releaseEnv({
-      AGENTS_CONFIG_PATH: "config/agents.yaml",
-    });
-    const equivalentRaw = releaseEnv({
-      AGENTS_CONFIG_PATH: "soulstream/config/agents.yaml",
-    });
-    const changedRaw = releaseEnv({
-      AGENTS_CONFIG_PATH: "config/other-agents.yaml",
-    });
-
-    const first = deploymentEnvIdentity(parseEnv(firstRaw), firstRaw, {
-      runtimeCwd: "/srv/soulstream",
-    });
-    const equivalent = deploymentEnvIdentity(parseEnv(equivalentRaw), equivalentRaw, {
-      runtimeCwd: "/srv",
-    });
-    const changed = deploymentEnvIdentity(parseEnv(changedRaw), changedRaw, {
-      runtimeCwd: "/srv/soulstream",
-    });
-
-    expect(first).toBe(equivalent);
-    expect(first).not.toBe(changed);
-  });
-
   it("inventories every typed and direct static runtime env key in the checked-in allowlist", () => {
     const sourceRoot = resolve(import.meta.dirname, "../../src");
     const configSource = readFileSync(join(sourceRoot, "config.ts"), "utf8");
@@ -202,18 +175,4 @@ function readTypeScriptSources(root: string): string[] {
     }
   }
   return sources;
-}
-
-function releaseEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return {
-    SOULSTREAM_NODE_ID: "release-test",
-    SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:5200/ws/node",
-    EVENT_OUTBOX_DIR: "/srv/soulstream/.local/event-outbox",
-    AGENT_PROFILE_CACHE_PATH: "/srv/soulstream/.local/cache/agent-profiles.json",
-    MODEL_CATALOG_PATH: "/srv/soulstream/config/model-catalog.yaml",
-    INCOMING_FILE_DIR: "/srv/soulstream/.local/incoming",
-    PATH: "/usr/bin",
-    HOME: "/home/release-test",
-    ...overrides,
-  };
 }
