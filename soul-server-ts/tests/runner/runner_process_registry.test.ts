@@ -254,6 +254,18 @@ describe("runner process registry", () => {
     })).resolves.toEqual(["session-live", "session-pre"]);
   });
 
+  it("excludes reserved runner-state infrastructure from recovery scans", async () => {
+    const stateDirectory = await temporaryDirectory("reserved-infrastructure-scan");
+    const controlDirectory = join(stateDirectory, "_control");
+    await mkdir(controlDirectory);
+    await writeFile(join(controlDirectory, "control-inbox.sqlite"), "not-a-runner-database");
+
+    await expect(scanRunnerRegistrations(stateDirectory)).resolves.toEqual({
+      registrations: [],
+      errors: [],
+    });
+  });
+
   it("skips a registration directory collected during the inventory scan and logs it", async () => {
     const stateDirectory = await temporaryDirectory("inventory-gc-race");
     const collectedDirectory = join(stateDirectory, "collected");

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isRunnerRegistrationDirectoryName,
   LINUX_UNIX_SOCKET_PATH_MAX_BYTES,
   runnerProcessPaths,
 } from "../../src/runner/runner_process_paths.js";
@@ -27,5 +28,12 @@ describe("runner process path portability", () => {
       "session-a",
       "win32",
     )).not.toThrow();
+  });
+
+  it("reserves underscore-prefixed names for runner-state infrastructure", () => {
+    expect(isRunnerRegistrationDirectoryName("_control")).toBe(false);
+    expect(isRunnerRegistrationDirectoryName("_future-infrastructure")).toBe(false);
+    expect(isRunnerRegistrationDirectoryName("0123456789abcdef01234567")).toBe(true);
+    expect(isRunnerRegistrationDirectoryName("damaged-registration")).toBe(true);
   });
 });

@@ -13,8 +13,11 @@ import type {
   RunnerReleaseMaterializer,
 } from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
-import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
-import type { RunnerRegistrationScan } from "../../src/runner/runner_process_registry.js";
+import {
+  scanRunnerRegistrations,
+  type RunnerRegistration,
+  type RunnerRegistrationScan,
+} from "../../src/runner/runner_process_registry.js";
 
 const directories: string[] = [];
 
@@ -96,6 +99,24 @@ describe("RunnerReleaseGarbageCollector", () => {
     });
   });
 
+  it("does not fail closed on reserved runner-state infrastructure", async () => {
+    const subject = await makeSubject(
+      [],
+      false,
+      [],
+      async (stateDirectory) => await scanRunnerRegistrations(stateDirectory),
+    );
+    const controlDirectory = join(subject.stateDirectory, "_control");
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(controlDirectory, "control-inbox.sqlite"), "not-a-runner-database");
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "no_final_ack_evidence" }],
+    });
+    expect(subject.logger.warn).not.toHaveBeenCalled();
+  });
+
   it("fails closed when any runner registration is unreadable", async () => {
     const subject = await makeSubject([], false, [
       { directory: "/broken", error: new Error("unreadable registration") },
@@ -157,13 +178,16 @@ async function makeSubject(
   registrations: RunnerRegistration[],
   incomplete: boolean,
   errors: RunnerRegistrationScan["errors"] = [],
+  scanRegistrationInventory?: RunnerReleaseGarbageCollectorDependencies["scan"],
 ) {
   const root = await temporaryDirectory();
+  const stateDirectory = join(root, "runner-state");
   const materializer = new FakeMaterializer();
   const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
   const release = pool.describe("release-a");
   await pool.ensureRelease(release);
-  const scan = vi.fn(async () => ({ registrations, errors }));
+  const scan = vi.fn(scanRegistrationInventory
+    ?? (async () => ({ registrations, errors })));
   const inspect = vi.fn(async (registration: RunnerRegistration) => ({
     registration,
     acknowledgedThrough: incomplete ? 1 : 2,
@@ -181,7 +205,7 @@ async function makeSubject(
   return {
     collector: new RunnerReleaseGarbageCollector(
       pool,
-      join(root, "runner-state"),
+      stateDirectory,
       logger as never,
       deps,
     ),
@@ -190,6 +214,7 @@ async function makeSubject(
     pool,
     scan,
     inspect,
+    stateDirectory,
   };
 }
 

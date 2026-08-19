@@ -20,6 +20,7 @@ import {
 } from "./sqlite_runner_lifecycle.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import type { ProcessIdentity } from "./runner_process_lock.js";
+import { isRunnerRegistrationDirectoryName } from "./runner_process_paths.js";
 import { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 
 export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
@@ -106,7 +107,7 @@ export async function scanRunnerRegistrations(
     throw error;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || !isRunnerRegistrationDirectoryName(entry.name)) continue;
     const directory = resolve(stateDirectory, entry.name);
     try {
       registrations.push(await readRunnerRegistrationSummary(directory, options));
