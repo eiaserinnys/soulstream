@@ -57,11 +57,21 @@ test(
         "utf8",
       );
       await cp(sourceDist, distRoot, { recursive: true });
-      const childEnv = {
+      // The release is built in a clean environment and started by a service process
+      // whose PATH carries per-boot shims and whose HOME differs. Neither may move the
+      // manifest, so the two sides deliberately disagree on ambient env here.
+      const buildEnv = {
         PATH: process.env.PATH ?? "",
         HOME: temporaryRoot,
         NODE_ENV: "test",
         LOG_LEVEL: "warn",
+      };
+      const serviceHome = join(temporaryRoot, "service-home");
+      await mkdir(serviceHome);
+      const childEnv = {
+        ...buildEnv,
+        PATH: `${join(temporaryRoot, "arg0-shim")}:${buildEnv.PATH}`,
+        HOME: serviceHome,
       };
       await writeFile(serviceEnvPath, [
         "SOULSTREAM_NODE_ID=bundle-runner-startup",
@@ -86,7 +96,7 @@ test(
         distRoot,
         "--env-file",
         serviceEnvPath,
-      ], { cwd: packageRoot, env: childEnv });
+      ], { cwd: packageRoot, env: buildEnv });
 
       child = spawn(process.execPath, [distMain], {
         cwd: temporaryRoot,
