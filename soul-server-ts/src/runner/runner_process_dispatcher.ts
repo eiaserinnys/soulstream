@@ -231,7 +231,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const executionCommandId = commandId
       ?? this.preparedExecuteCommandId
       ?? `execute:${randomUUID()}`;
-    this.preparedExecuteCommandId = executionCommandId;
+    // An explicit command id proves an execution that already exists (adopt/recover).
+    // Only a newly allocated identity may reserve the next execute turn.
+    if (commandId === undefined) this.preparedExecuteCommandId = executionCommandId;
     return {
       registrationId: identity.registrationId,
       pid: identity.pid,

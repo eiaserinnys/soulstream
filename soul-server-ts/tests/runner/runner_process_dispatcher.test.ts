@@ -739,7 +739,7 @@ describe("RunnerProcessDispatcher", () => {
     }
   });
 
-  it("adopts a live runner and finishes replay from its durable terminal state", async () => {
+  it("does not reuse an adopted command identity for the next execute turn", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -779,7 +779,21 @@ describe("RunnerProcessDispatcher", () => {
     });
     lifecycle.finish("execute-old", "completed", "2026-08-11T00:00:02.000Z");
     lifecycle.close();
-    const endpoint = new RunnerSocketEndpoint(paths.socketPath, async () => {}, vi.fn());
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+      pid: 1001,
+      startIdentity: "start-1001",
+    });
+    let followupCommandId: string | undefined;
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command" || frame.kind !== "execute") return;
+      followupCommandId = frame.commandId;
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+      await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
+    }, vi.fn());
     await endpoint.listen();
     const spawn = vi.fn(async () => { throw new Error("must not spawn"); });
     const dispatcher = new RunnerProcessDispatcher({
@@ -794,6 +808,9 @@ describe("RunnerProcessDispatcher", () => {
       handleHostCall: async () => null,
     });
 
+    await expect(dispatcher.prepareExecutionIdentity("execute-old")).resolves.toMatchObject({
+      executionCommandId: "execute-old",
+    });
     await expect(collect(dispatcher.recoverFrames("execute-old"))).resolves.toEqual([
       expect.objectContaining({
         kind: "engine_event",
@@ -801,6 +818,13 @@ describe("RunnerProcessDispatcher", () => {
       }),
     ]);
     expect(spawn).not.toHaveBeenCalled();
+    await collect(dispatcher.executeFrames({
+      agentSessionId: "session-a",
+      prompt: "intervention follow-up",
+      resumeSessionId: "backend-a",
+    }));
+    expect(followupCommandId).toMatch(/^execute:/);
+    expect(followupCommandId).not.toBe("execute-old");
 
     await dispatcher.detachHost();
     writer.close();
