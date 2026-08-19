@@ -56,6 +56,7 @@ const RunnerChildConfigFields = {
   agent: AgentProfileSchema,
   paths: RunnerProcessPathsSchema,
   codeSha: z.string().min(1),
+  releaseManifestId: z.string().min(1).optional(), runtimeEnvIdentity: z.string().min(1).optional(),
   snapshotPath: z.string().min(1),
   codexAdapterMode: z.enum(["sdk", "app-server"]),
   codexCliPath: z.string().min(1).optional(),
@@ -135,7 +136,6 @@ export class RunnerProcessSpawner {
     private readonly deps: SpawnDependencies = defaultDependencies(),
     private readonly logger?: Pick<Logger, "info">,
   ) {}
-
   async spawn(input: SpawnRunnerProcessInput): Promise<SpawnedRunnerProcess> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
     return await withRunnerSessionMutationLock(
@@ -143,7 +143,6 @@ export class RunnerProcessSpawner {
       async () => await this.spawnLocked(input, paths),
     );
   }
-
   private async spawnLocked(
     input: SpawnRunnerProcessInput,
     paths: RunnerProcessPaths,
@@ -169,7 +168,9 @@ export class RunnerProcessSpawner {
         "Orphaned runner writer lock reclaimed before replacement spawn",
       );
     }
-    const registrationIdentity = pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha);
+    const registrationIdentity = pendingRunnerRegistrationIdentity(
+      input.sessionId, input.codeSha, input,
+    );
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
 
     const config: RunnerChildConfig = {
@@ -179,6 +180,7 @@ export class RunnerProcessSpawner {
       agent: input.agent,
       paths,
       codeSha: input.codeSha,
+      ...(input.releaseManifestId ? { releaseManifestId: input.releaseManifestId } : {}), ...(input.runtimeEnvIdentity ? { runtimeEnvIdentity: input.runtimeEnvIdentity } : {}),
       snapshotPath: input.snapshotPath,
       codexAdapterMode: input.codexAdapterMode,
       ...(input.codexCliPath ? { codexCliPath: input.codexCliPath } : {}),
@@ -302,7 +304,6 @@ export class RunnerProcessSpawner {
     child.unref();
     return { pid: child.pid, paths, config: validatedConfig, adopted: false };
   }
-
   async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
@@ -329,7 +330,6 @@ export class RunnerProcessSpawner {
     }
     return { pid, paths, config, adopted: true };
   }
-
   async terminate(
     paths: RunnerProcessPaths,
     expected?: { pid: number; startIdentity: string },

@@ -55,6 +55,7 @@ export type EventCanonicalExecutionOwnershipProjection = {
   ownership_generation: number;
   owner_kind: "runner_process" | "adopted_runner" | "in_process";
   manifest_id: string;
+  runtime_env_identity?: string;
   registration_id: string | null;
   pid: number | null;
   start_identity: string | null;
@@ -173,6 +174,8 @@ function isValidCanonicalExecutionOwnership(
     && ["runner_process", "adopted_runner", "in_process"].includes(value.owner_kind)
     && typeof value.manifest_id === "string"
     && value.manifest_id.length > 0
+    && (value.runtime_env_identity === undefined
+      || (typeof value.runtime_env_identity === "string" && value.runtime_env_identity.length > 0))
     && (value.registration_id === null || typeof value.registration_id === "string")
     && (value.pid === null || (Number.isSafeInteger(value.pid) && value.pid > 0))
     && (value.start_identity === null || typeof value.start_identity === "string")

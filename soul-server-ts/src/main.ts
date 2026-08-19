@@ -1,10 +1,15 @@
 import dotenv from "dotenv";
 import { ZodError } from "zod";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { loadAgentRegistry } from "./agent_registry.js";
 import { AgentProfileSource } from "./agent_profile_source.js";
 import { parseEnv } from "./config.js";
-import { configureClaudeExecutablePath } from "./engine/claude_executable_path.js";
+import {
+  configureClaudeExecutablePath,
+  resolveClaudeExecutableFromPath,
+} from "./engine/claude_executable_path.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
@@ -16,6 +21,8 @@ import { installProcessErrorHandlers } from "./runtime/process_error_handlers.js
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
 import { startInternalMcpServer, startServer } from "./server.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
+import { ReleaseActivationState } from "./release/release_activation_state.js";
+import { loadAndVerifyReleaseManifest } from "./release/release_runtime.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // legacy `.env`와 분리하여 SOULSTREAM_NODE_ID 충돌을 막는다.
@@ -133,8 +140,9 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  let claudeExecutablePath = resolveClaudeExecutableFromPath(process.env, process.platform);
   if (hasClaudeBackend) {
-    const claudeExecutablePath = configureClaudeExecutablePath(
+    claudeExecutablePath = configureClaudeExecutablePath(
       process.env,
       process.platform,
       logger,
@@ -145,6 +153,7 @@ async function main(): Promise<void> {
     );
   }
   const codexCliPath = resolveCodexCliPath(process.env);
+  if (codexCliPath) process.env.CODEX_CLI_PATH = codexCliPath.path;
   if (hasCodexBackend) {
     if (codexCliPath) {
       logger.info(
@@ -158,6 +167,23 @@ async function main(): Promise<void> {
     }
   }
 
+  const hostBundleDirectory = dirname(fileURLToPath(import.meta.url));
+  const releaseEnv = {
+    ...env,
+    ...(codexCliPath ? { CODEX_CLI_PATH: codexCliPath.path } : {}),
+  };
+  const releaseManifest = await loadAndVerifyReleaseManifest({
+    manifestPath: join(hostBundleDirectory, "release-manifest.json"),
+    hostBundleDirectory,
+    runnerArtifactDirectory:
+      env.SOUL_RUNNER_ARTIFACT_DIR ?? join(hostBundleDirectory, "runner"),
+    env: releaseEnv,
+    processEnv: process.env,
+    ...(claudeExecutablePath ? { claudeExecutablePath } : {}),
+    ...(codexCliPath ? { codexExecutablePath: codexCliPath.path } : {}),
+  });
+  const releaseActivationState = new ReleaseActivationState(releaseManifest);
+
   const { runtime, upstreamAdapter } = await startWorkerRuntime({
     compose: async () => await composeWorkerRuntime({
       env,
@@ -168,6 +194,7 @@ async function main(): Promise<void> {
       modelCatalog,
       agentProfileSource,
       nodeStallMonitor,
+      releaseActivationState,
     }),
     listen: async (composed) => {
       if (composed.server.internalMcpServer) {

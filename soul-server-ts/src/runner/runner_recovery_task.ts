@@ -69,7 +69,9 @@ export function prepareRecoveredTask(
     && registration.lifecycle?.execution_command_id
   ) {
     task.recoveredExecutionOwnership = {
-      manifestId: registration.config.codeSha,
+      manifestId: registration.config.releaseManifestId ?? registration.config.codeSha,
+      runtimeEnvIdentity:
+        registration.config.runtimeEnvIdentity ?? `legacy:${registration.config.codeSha}`,
       registrationId: registration.registrationId,
       pid: registration.pid,
       startIdentity: registration.pidStartIdentity,

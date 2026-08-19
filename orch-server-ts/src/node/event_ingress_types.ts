@@ -198,7 +198,10 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
   if (value.kind === "execution_reserve") {
     assertExactKeys(
       value,
-      ["kind", "ownership_generation", "owner_kind", "manifest_id", "updated_at"],
+      [
+        "kind", "ownership_generation", "owner_kind", "manifest_id",
+        "runtime_env_identity", "updated_at",
+      ],
       field,
     );
     const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
@@ -213,6 +216,14 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       ),
       owner_kind: ownerKind as "runner_process" | "adopted_runner" | "in_process",
       manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      ...(value.runtime_env_identity === undefined
+        ? {}
+        : {
+            runtime_env_identity: nonEmptyString(
+              value.runtime_env_identity,
+              `${field}.runtime_env_identity`,
+            ),
+          }),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
@@ -239,7 +250,7 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     assertExactKeys(
       value,
       [
-        "kind", "ownership_generation", "manifest_id",
+        "kind", "ownership_generation", "manifest_id", "runtime_env_identity",
         "previous_registration_id", "pid", "start_identity",
         "execution_command_id", "updated_at",
       ],
@@ -249,6 +260,14 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       kind: value.kind,
       ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
       manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      ...(value.runtime_env_identity === undefined
+        ? {}
+        : {
+            runtime_env_identity: nonEmptyString(
+              value.runtime_env_identity,
+              `${field}.runtime_env_identity`,
+            ),
+          }),
       previous_registration_id: nonEmptyString(
         value.previous_registration_id,
         `${field}.previous_registration_id`,
@@ -324,9 +343,11 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     assertExactKeys(
       value,
       [
-        "kind", "first_manifest_id", "first_registration_id", "first_pid",
+        "kind", "first_manifest_id", "first_runtime_env_identity",
+        "first_registration_id", "first_pid",
         "first_start_identity", "first_execution_command_id", "first_observed_at",
-        "second_manifest_id", "second_registration_id", "second_pid",
+        "second_manifest_id", "second_runtime_env_identity",
+        "second_registration_id", "second_pid",
         "second_start_identity", "second_execution_command_id", "second_observed_at",
         "evidence_hash", "minimum_lease_interval_ms", "probe_only", "updated_at",
       ],
@@ -336,9 +357,23 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     if (!SHA256_PATTERN.test(evidenceHash)) {
       throw new EventIngressValidationError(`${field}.evidence_hash must be sha256`);
     }
+    if ((value.first_runtime_env_identity === undefined)
+      !== (value.second_runtime_env_identity === undefined)) {
+      throw new EventIngressValidationError(
+        `${field} runtime env identities must be supplied together`,
+      );
+    }
     return {
       kind: value.kind,
       first_manifest_id: nullableNonEmptyString(value.first_manifest_id, `${field}.first_manifest_id`),
+      ...(value.first_runtime_env_identity === undefined
+        ? {}
+        : {
+            first_runtime_env_identity: nullableNonEmptyString(
+              value.first_runtime_env_identity,
+              `${field}.first_runtime_env_identity`,
+            ),
+          }),
       first_registration_id: nullableNonEmptyString(value.first_registration_id, `${field}.first_registration_id`),
       first_pid: nullablePositiveInteger(value.first_pid, `${field}.first_pid`),
       first_start_identity: nullableNonEmptyString(value.first_start_identity, `${field}.first_start_identity`),
@@ -348,6 +383,14 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       ),
       first_observed_at: isoTimestamp(value.first_observed_at, `${field}.first_observed_at`),
       second_manifest_id: nullableNonEmptyString(value.second_manifest_id, `${field}.second_manifest_id`),
+      ...(value.second_runtime_env_identity === undefined
+        ? {}
+        : {
+            second_runtime_env_identity: nullableNonEmptyString(
+              value.second_runtime_env_identity,
+              `${field}.second_runtime_env_identity`,
+            ),
+          }),
       second_registration_id: nullableNonEmptyString(value.second_registration_id, `${field}.second_registration_id`),
       second_pid: nullablePositiveInteger(value.second_pid, `${field}.second_pid`),
       second_start_identity: nullableNonEmptyString(value.second_start_identity, `${field}.second_start_identity`),

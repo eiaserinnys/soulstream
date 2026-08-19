@@ -34,6 +34,8 @@ import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type { RunnerChildConfig, SpawnRunnerProcessInput } from "./runner_process_spawn.js";
 import type { RunnerReleasePool } from "./runner_release_pool.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
+import type { ReleaseManifestV1 } from "../release/release_manifest.js";
+import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -58,6 +60,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
+  releaseManifest?: ReleaseManifestV1;
   nodeStallMonitor?: Pick<
     NodeStallMonitor,
     "beginRunnerOperation" | "sqliteTransactionObserver"
@@ -127,17 +130,27 @@ export function createRunnerProcessRuntimeFactory(
       agent,
       backend,
       snapshots,
-      (task.executionOwnershipReservation
-        ? Promise.resolve(options.releasePool.describe(
-            task.executionOwnershipReservation.manifestId,
-          ))
-        : options.releasePool.resolveCurrentRelease()).then((release) => ({
+      Promise.resolve().then(() => {
+        if (options.releaseManifest
+          && task.executionOwnershipReservation
+          && task.executionOwnershipReservation.manifestId
+            !== options.releaseManifest.manifest_id) {
+          throw new Error(
+            `execution reservation release manifest mismatch: ${task.executionOwnershipReservation.manifestId}`,
+          );
+        }
+        return options.releaseManifest
+          ? options.releasePool.describe(options.releaseManifest.runner_release_id)
+          : options.releasePool.resolveCurrentRelease();
+      }).then((release) => ({
         stateDirectory,
         sessionId: task.agentSessionId,
         backend,
         agent,
         // `codeSha` is a legacy field name for the opaque release id.
         codeSha: release.releaseId,
+        releaseManifestId: options.releaseManifest?.manifest_id ?? release.releaseId,
+        runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
         snapshotPath: release.runnerModuleRoot,
         codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
         codexCliPath: options.codexCliPath?.path,
@@ -154,10 +167,16 @@ export function createRunnerProcessRuntimeFactory(
       })),
     );
   }) as RunnerProcessRuntimeFactory;
-  factory.describe = async () => ({
-    ownerKind: "runner_process",
-    manifestId: (await options.releasePool.resolveCurrentRelease()).releaseId,
-  });
+  factory.describe = async (agent) => {
+    const release = options.releaseManifest
+      ? null
+      : await options.releasePool.resolveCurrentRelease();
+    return {
+      ownerKind: "runner_process",
+      manifestId: options.releaseManifest?.manifest_id ?? release!.releaseId,
+      runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
+    };
+  };
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
   factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
@@ -209,6 +228,8 @@ function spawnInputFromConfig(
     backend: config.backend,
     agent: config.agent,
     codeSha: config.codeSha,
+    ...(config.releaseManifestId ? { releaseManifestId: config.releaseManifestId } : {}),
+    ...(config.runtimeEnvIdentity ? { runtimeEnvIdentity: config.runtimeEnvIdentity } : {}),
     snapshotPath: config.snapshotPath,
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),

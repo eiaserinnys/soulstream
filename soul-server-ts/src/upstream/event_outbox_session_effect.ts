@@ -27,6 +27,7 @@ export type EventOutboxSessionEffect =
       ownership_generation: number;
       owner_kind: "runner_process" | "adopted_runner" | "in_process";
       manifest_id: string;
+      runtime_env_identity?: string;
       updated_at: string;
     }
   | {
@@ -42,6 +43,7 @@ export type EventOutboxSessionEffect =
       kind: "execution_adopt_reserve";
       ownership_generation: number;
       manifest_id: string;
+      runtime_env_identity?: string;
       previous_registration_id: string;
       pid: number;
       start_identity: string;
@@ -73,12 +75,14 @@ export type EventOutboxSessionEffect =
   | {
       kind: "execution_backfill";
       first_manifest_id: string | null;
+      first_runtime_env_identity?: string | null;
       first_registration_id: string | null;
       first_pid: number | null;
       first_start_identity: string | null;
       first_execution_command_id: string | null;
       first_observed_at: string;
       second_manifest_id: string | null;
+      second_runtime_env_identity?: string | null;
       second_registration_id: string | null;
       second_pid: number | null;
       second_start_identity: string | null;

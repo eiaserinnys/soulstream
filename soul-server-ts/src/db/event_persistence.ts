@@ -182,6 +182,9 @@ export class EventPersistence extends EventTransitionPublisher {
                 application.canonical_execution_ownership.ownership_generation,
               ownerKind: application.canonical_execution_ownership.owner_kind,
               manifestId: application.canonical_execution_ownership.manifest_id,
+              runtimeEnvIdentity:
+                application.canonical_execution_ownership.runtime_env_identity
+                ?? `legacy:${application.canonical_execution_ownership.manifest_id}`,
               registrationId: application.canonical_execution_ownership.registration_id,
               pid: application.canonical_execution_ownership.pid,
               startIdentity: application.canonical_execution_ownership.start_identity,

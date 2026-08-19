@@ -389,6 +389,7 @@ export interface Task {
   executionOwnershipReservation?: {
     ownerKind: ExecutionOwnerKind;
     manifestId: string;
+    runtimeEnvIdentity: string;
     ownershipGeneration: number;
     entryPath: ExecutionEntryPath;
   };

@@ -14,6 +14,7 @@ import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
   completeRunnerRegistrationIdentityFromChild,
+  pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
   runnerRegistrationIdentityPath,
   writeRunnerRegistrationIdentity,
@@ -154,6 +155,26 @@ describe("RunnerProcessSpawner", () => {
       registrationId: "registration-a",
       pid: 4124,
     });
+  });
+
+  it("rejects child self-publication when immutable release identity is omitted", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeRunnerRegistrationIdentity(
+      paths.sessionDirectory,
+      pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha, {
+        releaseManifestId: "manifest-a",
+        runtimeEnvIdentity: "runtime-env-a",
+      }),
+    );
+
+    await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+      sessionId: params.sessionId,
+      codeSha: params.codeSha,
+      pid: 4124,
+      startIdentity: "node-start-1",
+    })).rejects.toThrow("runner release identity changed before child startup");
   });
 
   it("does not kill a live child when the legacy host identity lookup is unavailable", async () => {

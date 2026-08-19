@@ -83,7 +83,9 @@ function ownershipObservation(
   observedAt: Date,
 ): ExecutionOwnershipObservation {
   return {
-    manifestId: registration.config.codeSha || null,
+    manifestId: registration.config.releaseManifestId ?? registration.config.codeSha ?? null,
+    runtimeEnvIdentity:
+      registration.config.runtimeEnvIdentity ?? `legacy:${registration.config.codeSha}`,
     registrationId: registration.registrationId || null,
     pid: registration.pid && registration.pid > 0 ? registration.pid : null,
     startIdentity: registration.pidStartIdentity || null,

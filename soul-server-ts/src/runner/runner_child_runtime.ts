@@ -94,6 +94,8 @@ export class RunnerChildRuntime {
       {
         sessionId: this.config.sessionId,
         codeSha: this.config.codeSha,
+        releaseManifestId: this.config.releaseManifestId,
+        runtimeEnvIdentity: this.config.runtimeEnvIdentity,
         pid: this.lock.owner.pid,
         startIdentity: this.lock.owner.startIdentity,
       },

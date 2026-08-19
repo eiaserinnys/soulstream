@@ -267,6 +267,13 @@ export async function composeWorkerRuntime(
     observeClaudeRuntime: claudeRuntime.backgroundLifecycle
       ? (sessionId, event, idempotencyKey) =>
         claudeRuntime.backgroundLifecycle!.observe(sessionId, event, idempotencyKey) : undefined,
+    releaseManifest: params.releaseActivationState.manifest,
+  });
+  params.releaseActivationState.markPrewarmed({
+    host: "verified",
+    runner: "verified",
+    env: "verified",
+    executable: "verified",
   });
   taskRuntime = composeTaskRuntime({
     env,
@@ -377,6 +384,7 @@ export async function composeWorkerRuntime(
     port: env.PORT,
     nodeId: env.SOULSTREAM_NODE_ID,
     logger,
+    releaseActivationState: params.releaseActivationState,
     mcp: env.MCP_ENABLED
       ? {
           runtime: mcpRuntime,
@@ -431,6 +439,7 @@ export async function composeWorkerRuntime(
         ...(env.SOUL_RUNNER_STATE_DIR
           ? { runnerStateDir: env.SOUL_RUNNER_STATE_DIR }
           : {}),
+        releaseActivationState: params.releaseActivationState,
       },
       logger,
       {

@@ -20,6 +20,7 @@ export interface ExpectedCanonicalExecutionOwnership {
   ownershipGeneration: number;
   ownerKind?: CanonicalExecutionOwnership["ownerKind"];
   manifestId?: string;
+  runtimeEnvIdentity?: string;
   registrationId?: string;
   pid?: number;
   startIdentity?: string;
@@ -146,6 +147,7 @@ export class ExecutionOwnershipCoordinator {
       && expected.phases.includes(canonical.phase)
       && matchesOptional(canonical.ownerKind, expected.ownerKind)
       && matchesOptional(canonical.manifestId, expected.manifestId)
+      && matchesOptional(canonical.runtimeEnvIdentity, expected.runtimeEnvIdentity)
       && matchesOptional(canonical.registrationId, expected.registrationId)
       && matchesOptional(canonical.pid, expected.pid)
       && matchesOptional(canonical.startIdentity, expected.startIdentity)
