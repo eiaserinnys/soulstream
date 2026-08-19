@@ -107,6 +107,33 @@ describe("Node command transport bridge", () => {
     });
   });
 
+  it("prefers the isolated control lane and falls back to the data lane after detach", async () => {
+    const transports = new NodeCommandTransportHub();
+    const data = { send: () => undefined };
+    const control = { send: () => undefined };
+    const key = { nodeId: "fake-node", connectionId: "connection-1" };
+
+    transports.attach({ ...key, lane: "data", transport: data });
+    expect(transports.get(key)).toBe(data);
+
+    transports.attach({ ...key, lane: "control", transport: control });
+    expect(transports.get(key)).toBe(control);
+
+    expect(transports.detach({ ...key, lane: "control", transport: control })).toBe(true);
+    expect(transports.get(key)).toBe(data);
+  });
+
+  it("detaches every lane for a stale connection key", () => {
+    const transports = new NodeCommandTransportHub();
+    const key = { nodeId: "fake-node", connectionId: "connection-1" };
+    transports.attach({ ...key, lane: "data", transport: { send: () => undefined } });
+    transports.attach({ ...key, lane: "control", transport: { send: () => undefined } });
+
+    expect(transports.detach(key)).toBe(true);
+    expect(transports.get(key)).toBeUndefined();
+    expect(transports.has(key)).toBe(false);
+  });
+
   it("sends routed fire-and-forget commands without creating pending entries", async () => {
     const { registry } = createRegistry();
     const connectionId = registerNode(registry);

@@ -17,6 +17,7 @@ export interface RegistrationParams {
   modelCatalog?: Pick<ModelCatalog, "advertise">;
   runnerProcessEnabled?: boolean;
   runnerLeaseTimeoutMs?: number;
+  controlChannelEnabled?: boolean;
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
    * 실패는 silent (테스트·legacy 호환).
@@ -107,6 +108,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       reflect_brief: true,
       app_heartbeat_v1: true,
       runner_inventory_v1: true,
+      ...(params.controlChannelEnabled ? { control_channel_v1: true } : {}),
       ...(params.runnerProcessEnabled === undefined
         ? {}
         : {

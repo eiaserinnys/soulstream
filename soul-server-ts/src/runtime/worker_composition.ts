@@ -428,6 +428,9 @@ export async function composeWorkerRuntime(
         userName: env.DASH_USER_NAME,
         userPortraitPath: env.DASH_USER_PORTRAIT,
         isProduction: env.ENVIRONMENT === "production", runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED, runnerLeaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+        ...(env.SOUL_RUNNER_STATE_DIR
+          ? { runnerStateDir: env.SOUL_RUNNER_STATE_DIR }
+          : {}),
       },
       logger,
       {

@@ -88,7 +88,8 @@
           "description": "노드 자체 가용성 정보. 예: {max_concurrent: 5, app_heartbeat_v1: true, runner_inventory_v1: true}",
           "additionalProperties": true,
           "properties": {
-            "runner_inventory_v1": { "type": "boolean" }
+            "runner_inventory_v1": { "type": "boolean" },
+            "control_channel_v1": { "type": "boolean" }
           }
         },
         "supported_backends": {
@@ -172,13 +173,108 @@
       "properties": {
         "type": { "const": "node_register_ack" },
         "node_id": { "type": "string" },
+        "connection_id": { "type": "string" },
         "capabilities": {
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "runner_inventory_v1": { "type": "boolean" }
+            "runner_inventory_v1": { "type": "boolean" },
+            "control_channel_v1": { "type": "boolean" }
           }
         }
+      }
+    },
+    "NodeControlRegister": {
+      "type": "object",
+      "description": "node control worker→orch: data registration generation에 귀속되는 control lane 등록.",
+      "required": ["type", "node_id", "connection_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "node_control_register" },
+        "node_id": { "type": "string" },
+        "connection_id": { "type": "string" }
+      }
+    },
+    "NodeControlRegisterAck": {
+      "type": "object",
+      "description": "orch→node control worker: control lane 등록 수락.",
+      "required": ["type", "node_id", "connection_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "node_control_register_ack" },
+        "node_id": { "type": "string" },
+        "connection_id": { "type": "string" }
+      }
+    },
+    "NodeControlReady": {
+      "type": "object",
+      "description": "node→orch: inbox reclaim과 result replay를 마친 뒤 control routing 준비 완료.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "node_control_ready" } }
+    },
+    "NodeControlReadyAck": {
+      "type": "object",
+      "description": "orch→node: control transport 우선 라우팅 활성화 확인.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "node_control_ready_ack" } }
+    },
+    "ControlAdmissionAck": {
+      "type": "object",
+      "description": "durable control inbox commit 뒤에만 발행되는 admission ACK.",
+      "required": ["type", "requestId", "commandType", "commandFamily", "status", "durability"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "control_admission_ack" },
+        "requestId": { "type": "string" },
+        "commandType": { "type": "string" },
+        "commandFamily": { "type": "string" },
+        "status": { "type": "string", "enum": ["accepted", "duplicate"] },
+        "durability": { "const": "control_inbox_sqlite" }
+      }
+    },
+    "ControlResult": {
+      "type": "object",
+      "description": "node control worker→orch: durable domain result replay envelope.",
+      "required": ["type", "resultId", "nodeId", "commandFamily", "requestId", "state", "response"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "control_result" },
+        "resultId": { "type": "string" },
+        "nodeId": { "type": "string" },
+        "commandFamily": { "type": "string" },
+        "requestId": { "type": "string" },
+        "state": { "type": "string", "enum": ["completed", "rejected"] },
+        "response": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ControlResultAck": {
+      "type": "object",
+      "description": "orch→node control worker: replay result 수신 완료.",
+      "required": ["type", "resultId"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "control_result_ack" },
+        "resultId": { "type": "string" }
+      }
+    },
+    "ControlAckMetric": {
+      "type": "object",
+      "description": "node×command family 5분 rolling control ACK latency 관측값.",
+      "required": ["type", "nodeId", "commandFamily", "windowMs", "sampleCount", "p99Ms", "maxMs", "p99GateMs", "maxGateMs", "withinGate"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "control_ack_metric" },
+        "nodeId": { "type": "string" },
+        "commandFamily": { "type": "string" },
+        "windowMs": { "type": "integer" },
+        "sampleCount": { "type": "integer" },
+        "p99Ms": { "type": ["number", "null"] },
+        "maxMs": { "type": "number" },
+        "p99GateMs": { "type": "number" },
+        "maxGateMs": { "type": "number" },
+        "withinGate": { "type": "boolean" }
       }
     },
     "AppHeartbeatPing": {
@@ -2430,6 +2526,14 @@
   "oneOf": [
     { "$ref": "#/$defs/NodeRegister" },
     { "$ref": "#/$defs/NodeRegisterAck" },
+    { "$ref": "#/$defs/NodeControlRegister" },
+    { "$ref": "#/$defs/NodeControlRegisterAck" },
+    { "$ref": "#/$defs/NodeControlReady" },
+    { "$ref": "#/$defs/NodeControlReadyAck" },
+    { "$ref": "#/$defs/ControlAdmissionAck" },
+    { "$ref": "#/$defs/ControlResult" },
+    { "$ref": "#/$defs/ControlResultAck" },
+    { "$ref": "#/$defs/ControlAckMetric" },
     { "$ref": "#/$defs/AppHeartbeatPing" },
     { "$ref": "#/$defs/AppHeartbeatPong" },
     { "$ref": "#/$defs/SessionCreated" },

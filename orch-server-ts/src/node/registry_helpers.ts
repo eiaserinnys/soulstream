@@ -39,6 +39,12 @@ export function snapshotNode(
     disconnectedAtMs: node.disconnectedAtMs,
     lastSeenAtMs: node.lastSeenAtMs,
     heartbeat: { ...node.heartbeat },
+    controlAckMetrics: Object.fromEntries(
+      Object.entries(node.controlAckMetrics).map(([family, metric]) => [
+        family,
+        { ...metric },
+      ]),
+    ),
     pendingCommandCount: node.pendingCommands.pendingCount,
   };
 }

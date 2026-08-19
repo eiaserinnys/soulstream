@@ -23,6 +23,7 @@ export interface UpstreamConfig {
   isProduction: boolean;
   runnerProcessEnabled?: boolean;
   runnerLeaseTimeoutMs?: number;
+  runnerStateDir?: string;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
 }

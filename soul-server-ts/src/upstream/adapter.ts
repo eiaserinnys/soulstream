@@ -2,13 +2,15 @@ import { WebSocket } from "ws";
 import type { Logger } from "pino";
 import type { NodeRegisterAck } from "@soulstream/wire-schema";
 
-import { CommandDispatcher } from "./dispatcher.js";
+import type { CommandDispatcher } from "./dispatcher.js";
 import { CommandTransportObserver } from "./command_transport_observer.js";
+import { ControlChannelService } from "./control_channel_service.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { sendInitialRunnerState } from "./initial_runner_state_sync.js";
 import { isConnectionError } from "./adapter_connection_error.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
+import { createUpstreamCommandDispatcher } from "./upstream_command_dispatcher.js";
 import type {
   ReconnectPolicyBoundary,
   UpstreamConfig,
@@ -44,6 +46,7 @@ export class UpstreamAdapter {
   private readonly reconnect: ReconnectPolicyBoundary;
   private readonly dispatcher: CommandDispatcher;
   private readonly commandTransportObserver: CommandTransportObserver;
+  private readonly controlChannelService: ControlChannelService | undefined;
   private authWarned = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private awaitingHeartbeatPong = false;
@@ -56,26 +59,33 @@ export class UpstreamAdapter {
   ) {
     this.reconnect = deps.reconnectPolicy ?? new ReconnectPolicy();
     this.commandTransportObserver = new CommandTransportObserver(logger);
-    this.dispatcher = new CommandDispatcher(
-      (data) => this.send(data),
-      logger,
-      config.nodeId,
-      deps.agentRegistry,
-      deps.taskManager,
-      deps.taskExecutor,
-      deps.attachmentStore,
-      deps.claudeAuth,
-      deps.sessionDb,
-      deps.realtimeBroker,
-      undefined,
-      deps.agentConfigService,
-      deps.reflectionRuntime,
-      deps.scheduleCommands,
-      deps.deliveryV2Enabled,
-      deps.modelCatalog,
-      deps.agentProfileSource,
-      async () => await this.listRunningSessionIds(),
-    );
+    const createDispatcher = (send: (data: unknown) => Promise<void>) =>
+      createUpstreamCommandDispatcher({
+        send,
+        logger,
+        nodeId: config.nodeId,
+        dependencies: deps,
+        listRunningSessionIds: async () => await this.listRunningSessionIds(),
+      });
+    this.dispatcher = createDispatcher((data) => this.send(data));
+    if (config.runnerStateDir) {
+      let controlChannelService!: ControlChannelService;
+      const controlDispatcher = createDispatcher(
+        async (data) => await controlChannelService.sendActiveResult(
+          data as Record<string, unknown>,
+        ),
+      );
+      controlChannelService = new ControlChannelService({
+        nodeId: config.nodeId,
+        upstreamUrl: config.url,
+        authBearerToken: config.authBearerToken,
+        runnerStateDir: config.runnerStateDir,
+        logger,
+        dispatchCommand: async (command) => await controlDispatcher.dispatch(command),
+      });
+      this.controlChannelService = controlChannelService;
+      controlChannelService.start();
+    }
   }
 
   async run(): Promise<void> {
@@ -111,6 +121,7 @@ export class UpstreamAdapter {
       this.ws.close();
     }
     this.ws = null;
+    await this.controlChannelService?.shutdown();
   }
 
   /**
@@ -143,6 +154,7 @@ export class UpstreamAdapter {
       userPortraitPath: this.config.userPortraitPath,
       agentRegistry: this.deps.agentRegistry,
       modelCatalog: this.deps.modelCatalog,
+      controlChannelEnabled: this.controlChannelService !== undefined,
       runnerProcessEnabled: this.config.runnerProcessEnabled,
       runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
       logger: this.logger,
@@ -307,6 +319,7 @@ export class UpstreamAdapter {
           userPortraitPath: this.config.userPortraitPath,
           agentRegistry: this.deps.agentRegistry,
           modelCatalog: this.deps.modelCatalog,
+          controlChannelEnabled: this.controlChannelService !== undefined,
           runnerProcessEnabled: this.config.runnerProcessEnabled,
           runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
           logger: this.logger,
@@ -324,6 +337,13 @@ export class UpstreamAdapter {
         servePromise.then(() => undefined),
       ]);
       if (!registrationAck) return;
+      if (
+        this.controlChannelService
+        && registrationAck.capabilities?.control_channel_v1 === true
+        && typeof registrationAck.connection_id === "string"
+      ) {
+        this.controlChannelService.activate(registrationAck.connection_id);
+      }
       await this.deps.waitForRunnerReconciliation?.();
       await sendInitialRunnerState({
         ws,

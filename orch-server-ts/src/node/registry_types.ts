@@ -41,6 +41,17 @@ export type NodeHeartbeatState = {
   lastPongAtMs: number | undefined;
 };
 
+export type ControlAckLatencyMetric = {
+  windowMs: number;
+  sampleCount: number;
+  p99Ms: number | null;
+  maxMs: number;
+  p99GateMs: number;
+  maxGateMs: number;
+  withinGate: boolean;
+  observedAtMs: number;
+};
+
 export type NodeConnectionSnapshot = {
   nodeId: string;
   connectionId: string;
@@ -56,6 +67,7 @@ export type NodeConnectionSnapshot = {
   disconnectedAtMs: number | undefined;
   lastSeenAtMs: number;
   heartbeat: NodeHeartbeatState;
+  controlAckMetrics: Record<string, ControlAckLatencyMetric>;
   pendingCommandCount: number;
 };
 
@@ -222,6 +234,7 @@ export type MutableNodeConnection = {
   disconnectedAtMs: number | undefined;
   lastSeenAtMs: number;
   heartbeat: NodeHeartbeatState;
+  controlAckMetrics: Record<string, ControlAckLatencyMetric>;
   pendingCommands: PendingNodeCommands;
   runningSessionIds: Set<string> | undefined;
 };

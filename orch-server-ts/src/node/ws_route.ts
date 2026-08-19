@@ -20,6 +20,7 @@ import {
   type NodeEventIngressCommitter,
 } from "./event_ingress_controller.js";
 import { isEventAppendBatchFrame } from "./event_ingress_types.js";
+import { registerNodeControlWsRoute } from "./control_ws_route.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
@@ -45,6 +46,7 @@ export type NodeRegistryEventSink = (events: NodeRegistryEvent[]) => void;
 
 export const nodeWsRouteAuthRequirements = {
   "WEBSOCKET /ws/node": false,
+  "WEBSOCKET /ws/node/control": false,
 } as const;
 
 export function registerNodeWsRoute(
@@ -57,6 +59,12 @@ export function registerNodeWsRoute(
   );
   registerWebsocketPlugin(app);
   app.after(() => {
+    registerNodeControlWsRoute(
+      app,
+      options,
+      security,
+      registrationTimeoutMs,
+    );
     app.get("/ws/node", {
       websocket: true,
       preValidation: async (request, reply) => {
@@ -188,6 +196,7 @@ export function registerNodeWsRoute(
           attachment = {
             nodeId: result.nodeId,
             connectionId: result.connectionId,
+            lane: "data",
             transport,
           };
           options.transportHub.attach(attachment);
@@ -205,7 +214,11 @@ export function registerNodeWsRoute(
             socket.send(JSON.stringify({
               type: "node_register_ack",
               node_id: result.nodeId,
-              capabilities: { runner_inventory_v1: true },
+              connection_id: result.connectionId,
+              capabilities: {
+                runner_inventory_v1: true,
+                control_channel_v1: true,
+              },
             }));
           } catch {
             closeAndFinalize(
@@ -287,6 +300,13 @@ function detachTransport(
   attachment: NodeCommandTransportAttachment | undefined,
 ): void {
   if (transportHub === undefined || attachment === undefined) return;
+  if ((attachment.lane ?? "data") === "data") {
+    transportHub.detach({
+      nodeId: attachment.nodeId,
+      connectionId: attachment.connectionId,
+    });
+    return;
+  }
   transportHub.detach(attachment);
 }
 

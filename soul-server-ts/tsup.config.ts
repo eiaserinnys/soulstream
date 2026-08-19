@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     "src/main.ts",
     "src/runner/runner_release_prewarm.ts",
+    "src/upstream/control_inbox_worker_entry.ts",
   ],
   format: ["esm"],
   target: "node22",
