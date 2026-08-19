@@ -891,6 +891,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await register("delivery-retryable", "relation-retryable");
     await repository.claimForTarget("delivery-retryable", "caller-old", "worker-b");
     await repository.beginDispatch("delivery-retryable", "worker-b");
+    await repository.markQueued("delivery-retryable", "worker-b");
     await expect(repository.retryLeasedDelivery(
       "delivery-retryable",
       "worker-b",
@@ -901,6 +902,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await register("delivery-rejected", "relation-rejected");
     await repository.claimForTarget("delivery-rejected", "caller-old", "worker-c");
     await repository.beginDispatch("delivery-rejected", "worker-c");
+    await repository.markQueued("delivery-rejected", "worker-c");
     await expect(repository.markUncertain(
       "delivery-rejected",
       "worker-c",
@@ -920,7 +922,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       WHERE delivery_id IN (
         'delivery-accepted', 'delivery-retryable', 'delivery-rejected'
       )
-      ORDER BY delivery_id
+      ORDER BY delivery_id, attempt_number
     `).resolves.toEqual([
       {
         delivery_id: "delivery-accepted",
@@ -929,8 +931,18 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       },
       {
         delivery_id: "delivery-rejected",
+        outcome: "accepted",
+        lease_owner: "worker-c",
+      },
+      {
+        delivery_id: "delivery-rejected",
         outcome: "rejected",
         lease_owner: "worker-c",
+      },
+      {
+        delivery_id: "delivery-retryable",
+        outcome: "accepted",
+        lease_owner: "worker-b",
       },
       {
         delivery_id: "delivery-retryable",

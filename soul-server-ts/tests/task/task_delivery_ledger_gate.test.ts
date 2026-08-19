@@ -459,4 +459,85 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(markPendingSuperseded).toHaveBeenCalledWith(deliveryId, "user_message");
   });
 
+  it("returns a queued ownership collision to the existing delivery retry ledger", async () => {
+    const deliveryId = "abababab-abab-4bab-8bab-abababababab";
+    const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+      retryLeasedDelivery,
+      markPendingSuperseded: vi.fn(),
+    });
+    const now = Date.parse("2026-08-19T00:09:00.000Z");
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+    const retryAt = "2026-08-19T00:10:00.000Z";
+
+    await expect(gate.recordReservationRetry({
+      kind: "admitted",
+      deliveryId,
+      row: {
+        ...row(deliveryId, "queued"),
+        intent: "durable_next_turn",
+        lease_owner: "route-reservation",
+        attempt_count: 9,
+        created_at: new Date(),
+      },
+    }, retryAt)).resolves.toBe("scheduled");
+    nowSpy.mockRestore();
+
+    expect(retryLeasedDelivery).toHaveBeenCalledWith(
+      deliveryId,
+      "route-reservation",
+      "reservation_in_flight",
+      new Date("2026-08-19T00:09:10.000Z"),
+    );
+  });
+
+  it("terminalizes ownership retries only after the existing delivery budget is exhausted", async () => {
+    const deliveryId = "acacacac-acac-4cac-8cac-acacacacacac";
+    const markUncertain = vi.fn().mockResolvedValue(row(deliveryId, "uncertain"));
+    const retryLeasedDelivery = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain,
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+      retryLeasedDelivery,
+      markPendingSuperseded: vi.fn(),
+    });
+
+    await expect(gate.recordReservationRetry({
+      kind: "admitted",
+      deliveryId,
+      row: {
+        ...row(deliveryId, "queued"),
+        intent: "durable_next_turn",
+        lease_owner: "route-exhausted",
+        attempt_count: 15,
+        created_at: new Date(),
+      },
+    }, "2026-08-19T00:10:00.000Z")).resolves.toBe("exhausted");
+
+    expect(markUncertain).toHaveBeenCalledWith(
+      deliveryId,
+      "route-exhausted",
+      "automatic ownership retry budget exhausted",
+    );
+    expect(retryLeasedDelivery).not.toHaveBeenCalled();
+  });
+
 });

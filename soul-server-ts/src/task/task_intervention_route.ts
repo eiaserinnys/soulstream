@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
-import type { ActiveTaskRecovery } from "./task_active_recovery.js";
+import type {
+  ActiveTaskRecovery,
+  InterventionTaskRoute,
+} from "./task_active_recovery.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
@@ -20,6 +25,7 @@ import type {
 import { decideNotificationDelivery } from "./delivery_policy.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
+import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
 
 type NotificationPublication = Awaited<
   ReturnType<SessionNotificationPublisher["publish"]>
@@ -103,6 +109,7 @@ export interface TaskInterventionRouteDeps {
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
+      | "recordReservationRetry"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -121,31 +128,57 @@ export class TaskInterventionRoute {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
+    let task: Task;
+    let preclassifiedRoute: InterventionTaskRoute | undefined;
+    let request = params;
+    let admission: DeliveryLedgerAdmission;
+    if (this.deps.deliveryLedgerGate && params.deliveryIntent) {
+      admission = await this.deps.deliveryLedgerGate.admit(params);
+      if (admission.kind === "suppressed") {
+        return {
+          suppressed: true,
+          deliveryId: admission.deliveryId,
+          reason: admission.reason,
+        };
+      }
+      task = await this.resolveTask(params.agentSessionId);
+      preclassifiedRoute = task.status === "initializing"
+        ? undefined
+        : this.deps.activeTaskRecovery.prepareForIntervention(task);
+    } else {
+      task = await this.resolveTask(params.agentSessionId);
+      preclassifiedRoute = task.status === "initializing"
+        ? undefined
+        : this.deps.activeTaskRecovery.prepareForIntervention(task);
+      request = this.deps.deliveryLedgerGate && preclassifiedRoute !== "running"
+        ? ensureDurableDeliveryIdentity(params)
+        : params;
+      admission = this.deps.deliveryLedgerGate
+        ? await this.deps.deliveryLedgerGate.admit(request)
+        : { kind: "legacy" };
+    }
     const initialMessage: InterventionMessage = {
-      text: params.text,
-      user: params.user,
-      callerInfo: params.callerInfo,
-      attachmentPaths: params.attachmentPaths,
-      context: params.context,
-      source: params.source,
-      deliveryId: params.deliveryId,
-      deliveryIntent: params.deliveryIntent,
-      completionId: params.completionId,
-      relationKey: params.relationKey,
-      producerTerminalRevision: params.producerTerminalRevision,
-      parentDeliveryId: params.parentDeliveryId,
-      callerTurnId: params.callerTurnId,
-      deliveryCreatedAt: params.deliveryCreatedAt,
-      deliveryLeaseOwner: params.deliveryLeaseOwner,
-      followupAttempt: params.followupAttempt,
-      followupKey: params.followupKey,
-      followupTaskIds: params.followupTaskIds,
-      storedDeliveryPayload: params.storedDeliveryPayload,
-      storedDeliveryPayloadHash: params.storedDeliveryPayloadHash,
+      text: request.text,
+      user: request.user,
+      callerInfo: request.callerInfo,
+      attachmentPaths: request.attachmentPaths,
+      context: request.context,
+      source: request.source,
+      deliveryId: request.deliveryId,
+      deliveryIntent: request.deliveryIntent,
+      completionId: request.completionId,
+      relationKey: request.relationKey,
+      producerTerminalRevision: request.producerTerminalRevision,
+      parentDeliveryId: request.parentDeliveryId,
+      callerTurnId: request.callerTurnId,
+      deliveryCreatedAt: request.deliveryCreatedAt,
+      deliveryLeaseOwner: request.deliveryLeaseOwner,
+      followupAttempt: request.followupAttempt,
+      followupKey: request.followupKey,
+      followupTaskIds: request.followupTaskIds,
+      storedDeliveryPayload: request.storedDeliveryPayload,
+      storedDeliveryPayloadHash: request.storedDeliveryPayloadHash,
     };
-    const admission: DeliveryLedgerAdmission = this.deps.deliveryLedgerGate
-      ? await this.deps.deliveryLedgerGate.admit(params)
-      : { kind: "legacy" };
     if (admission.kind === "suppressed") {
       return {
         suppressed: true,
@@ -157,7 +190,6 @@ export class TaskInterventionRoute {
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;
 
-    let task: Task | undefined;
     let ledgerResultRecorded = false;
     let deferredResumeTask: Task | undefined;
     let deferredResumeStarted = false;
@@ -172,9 +204,8 @@ export class TaskInterventionRoute {
       onResume(resumedTask);
     };
     try {
-      task = await this.resolveTask(params.agentSessionId);
       await this.awaitInitializingTask(task);
-      if (params.onlyIfTerminal === true && !isTerminalTaskStatus(task.status)) {
+      if (request.onlyIfTerminal === true && !isTerminalTaskStatus(task.status)) {
         const result = {
           delivered: false,
           deferred: true,
@@ -185,7 +216,7 @@ export class TaskInterventionRoute {
           await this.deps.deliveryLedgerGate.recordResult(
             admission,
             result,
-            params.deliveryNextAttemptAt,
+            request.deliveryNextAttemptAt,
           );
         }
         return result;
@@ -202,7 +233,8 @@ export class TaskInterventionRoute {
           };
         }
       }
-      const taskRoute = this.deps.activeTaskRecovery.prepareForIntervention(task);
+      const taskRoute = preclassifiedRoute
+        ?? this.deps.activeTaskRecovery.prepareForIntervention(task);
       if (taskRoute === "activating") {
         throw new Error(
           `execution activation did not reach running state for ${task.agentSessionId}`,
@@ -231,7 +263,7 @@ export class TaskInterventionRoute {
         }
       } else if (isRunning) {
         result = await this.deps.runningInterventionTransition.deliver(task, message, {
-          queueIfUndelivered: params.queueIfRunning ?? true,
+          queueIfUndelivered: request.queueIfRunning ?? true,
         });
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
@@ -245,6 +277,13 @@ export class TaskInterventionRoute {
             { publishUserMessage: false },
           );
           notificationDisposition = "auto_resume";
+        } else if (admission.row.attempt_count > 0) {
+          result = await this.deps.autoResumeTransition.resume(
+            task,
+            message,
+            deferResumeUntilQueued,
+            { publishUserMessage: false },
+          );
         } else {
           result = await this.deps.autoResumeTransition.resume(
             task,
@@ -259,7 +298,7 @@ export class TaskInterventionRoute {
         await this.deps.deliveryLedgerGate.recordResult(
           admission,
           result,
-          params.deliveryNextAttemptAt,
+          request.deliveryNextAttemptAt,
         );
         ledgerResultRecorded = true;
       }
@@ -316,6 +355,30 @@ export class TaskInterventionRoute {
           recoveryError ??= notificationRecoveryError;
         }
       }
+      if (
+        this.deps.deliveryLedgerGate
+        && isExecutionOwnershipConflictError(err)
+      ) {
+        const disposition = await this.deps.deliveryLedgerGate.recordReservationRetry(
+          admission,
+          err.retryAt,
+        );
+        if (disposition !== "exhausted") {
+          return {
+            delivered: false,
+            queued: true,
+            queuePosition: 1,
+            consumeWhen: "next_turn",
+            reason: "queue_only_policy",
+          };
+        }
+        if (disposition === "exhausted") {
+          throw new Error(
+            `Automatic message delivery retry budget exhausted for ${request.agentSessionId}`,
+            { cause: err },
+          );
+        }
+      }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         try {
           await this.deps.deliveryLedgerGate.recordFailure(admission);
@@ -370,6 +433,22 @@ export class TaskInterventionRoute {
     this.deps.rememberTask(loaded);
     return loaded;
   }
+}
+
+function ensureDurableDeliveryIdentity(
+  params: AddInterventionParams,
+): AddInterventionParams {
+  if (params.deliveryIntent) return params;
+  const deliveryId = randomUUID();
+  return {
+    ...params,
+    source: params.source ?? "user_message",
+    deliveryId,
+    deliveryIntent: "durable_next_turn",
+    completionId: `message:${deliveryId}`,
+    relationKey: `user_message:${params.agentSessionId}:${deliveryId}`,
+    deliveryCreatedAt: new Date().toISOString(),
+  };
 }
 
 function errorMessage(error: unknown): string {

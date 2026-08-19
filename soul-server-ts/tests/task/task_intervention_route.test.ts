@@ -11,6 +11,8 @@ import type {
   TaskDeliveryLedgerGate,
 } from "../../src/task/task_delivery_ledger_gate.js";
 import type { SessionNotificationPublisher } from "../../src/task/task_session_notification.js";
+import { ExecutionOwnershipConflictError } from
+  "../../src/task/execution_ownership.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -35,6 +37,7 @@ function makeSubject(
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
+      | "recordReservationRetry"
   >,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
@@ -248,6 +251,163 @@ describe("TaskInterventionRoute.addIntervention", () => {
       text: "resume",
       user: "alice",
     }, onResume)).rejects.toThrow("execution activation rejected");
+  });
+
+  it("queues a fenced auto-resume and schedules the same durable delivery without exposing an error", async () => {
+    const task = makeTask({ status: "completed" });
+    const deliveryId = "64646464-6464-4464-8464-646464646464";
+    const recordReservationRetry = vi.fn().mockResolvedValue("scheduled");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+      recordReservationRetry,
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordReservationRetry"
+    >;
+    const { route, autoResumeTransition } = makeSubject([task], gate);
+    const retryAt = "2026-08-19T00:08:30.000Z";
+    const rejected = new ExecutionOwnershipConflictError(
+      task.agentSessionId,
+      retryAt,
+      "reserved",
+    );
+    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
+      resumedTask,
+      _message,
+      onResume,
+    ) => {
+      resumedTask.status = "initializing";
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "resume",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "durable_next_turn",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+    }, (resumedTask) => {
+      resumedTask.executionActivationPromise = Promise.reject(rejected);
+    })).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
+    expect(recordReservationRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId }),
+      retryAt,
+    );
+  });
+
+  it("assigns legacy human interventions one durable delivery identity", async () => {
+    const task = makeTask({ status: "completed" });
+    const admit = vi.fn().mockImplementation(async (params) => ({
+      kind: "suppressed",
+      deliveryId: params.deliveryId,
+      reason: "captured",
+    }));
+    const gate = {
+      admit,
+      beginDispatch: vi.fn(),
+      recordResult: vi.fn(),
+      recordFailure: vi.fn(),
+      recordReservationRetry: vi.fn(),
+    } as unknown as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordReservationRetry"
+    >;
+    const { route } = makeSubject([task], gate);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "durable user message",
+      user: "alice",
+    }, vi.fn());
+
+    expect(admit).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryIntent: "durable_next_turn",
+      source: "user_message",
+      deliveryId: expect.any(String),
+      completionId: expect.stringMatching(/^message:/),
+      relationKey: expect.stringMatching(/^user_message:sess-intervention:/),
+      deliveryCreatedAt: expect.any(String),
+    }));
+  });
+
+  it("preserves live steering for a human intervention on an already running task", async () => {
+    const task = makeTask({ status: "running" });
+    const admit = vi.fn().mockResolvedValue({ kind: "legacy" });
+    const gate = {
+      admit,
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn(),
+      recordFailure: vi.fn(),
+      recordReservationRetry: vi.fn(),
+    } as unknown as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordReservationRetry"
+    >;
+    const { route, runningInterventionTransition } = makeSubject([task], gate);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "steer now",
+      user: "alice",
+    }, vi.fn());
+
+    expect(admit).toHaveBeenCalledWith(expect.not.objectContaining({
+      deliveryIntent: "durable_next_turn",
+    }));
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
+  });
+
+  it("auto-resumes a recovered user delivery without publishing its user event twice", async () => {
+    const task = makeTask({ status: "completed" });
+    const deliveryId = "65656565-6565-4565-8565-656565656565";
+    const recovered = admitted(deliveryId, "durable_next_turn");
+    if (recovered.kind !== "admitted") throw new Error("admission fixture mismatch");
+    recovered.row.attempt_count = 1;
+    const gate = {
+      admit: vi.fn().mockResolvedValue(recovered),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+      recordReservationRetry: vi.fn(),
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordReservationRetry"
+    >;
+    const { route, autoResumeTransition } = makeSubject([task], gate);
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "retry",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "durable_next_turn",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      deliveryLeaseOwner: "recovery-worker",
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "durable_next_turn" }),
+      expect.any(Function),
+      { publishUserMessage: false },
+    );
   });
 
   it("projects terminal notification delivery only after ownership activation", async () => {

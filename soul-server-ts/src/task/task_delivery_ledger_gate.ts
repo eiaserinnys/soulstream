@@ -26,6 +26,8 @@ export type DeliveryLedgerAdmission =
   | { kind: "suppressed"; deliveryId: string; reason: string }
   | { kind: "admitted"; deliveryId: string; row: SessionDeliveryRow };
 
+const OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
+
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
   "register" | "claimForTarget" | "beginDispatch" | "get"
@@ -273,6 +275,45 @@ export class TaskDeliveryLedgerGate {
     if (admission.kind !== "admitted") return;
     // The end-to-end coordinator owns retry scheduling. Keeping the lease
     // intact lets a cross-node fallback reuse the same fenced attempt token.
+  }
+
+  async recordReservationRetry(
+    admission: DeliveryLedgerAdmission,
+    retryAt: string,
+  ): Promise<"scheduled" | "lost" | "exhausted"> {
+    if (admission.kind !== "admitted") return "lost";
+    const leaseOwner = admission.row.lease_owner;
+    if (!leaseOwner) return "lost";
+    const requestedDueAt = new Date(retryAt);
+    if (!Number.isFinite(requestedDueAt.getTime())) {
+      throw new Error(`Delivery ${admission.deliveryId} has an invalid reservation retry time`);
+    }
+    const exhausted =
+      admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
+      || admission.row.created_at <= notificationOldestAllowedCreatedAt();
+    const repository = this.requireRepository();
+    if (exhausted) {
+      const uncertain = await repository.markUncertain(
+        admission.deliveryId,
+        leaseOwner,
+        "automatic ownership retry budget exhausted",
+      );
+      return uncertain ? "exhausted" : "lost";
+    }
+    const existingBackoffDueAt = notificationRetryAt(admission.row.attempt_count);
+    const maximumDueAt = new Date(Date.now() + OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS);
+    const dueAt = new Date(Math.min(
+      requestedDueAt.getTime(),
+      existingBackoffDueAt.getTime(),
+      maximumDueAt.getTime(),
+    ));
+    const retried = await repository.retryLeasedDelivery(
+      admission.deliveryId,
+      leaseOwner,
+      "reservation_in_flight",
+      dueAt,
+    );
+    return retried ? "scheduled" : "lost";
   }
 
   async recordNotificationPublished(

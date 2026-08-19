@@ -342,6 +342,55 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     ]);
   });
 
+  it("keeps a slow proof alive by refreshing the 60-second crash lease", async () => {
+    await insertSession("slow-proof", "initializing");
+    const reservedAt = new Date("2026-08-19T00:00:00.000Z");
+    const provenAt = new Date("2026-08-19T00:00:59.000Z");
+    const initial = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_ownership(
+        'slow-proof', 1, 'runner_process', 'release-slow', ${reservedAt}
+      )
+    `;
+    expect(initial[0]?.applied).toBe(true);
+    await expect(harness.sql<Array<{ reservation_expires_at: Date }>>`
+      SELECT reservation_expires_at
+      FROM session_execution_ownerships
+      WHERE session_id = 'slow-proof' AND ownership_generation = 1
+    `).resolves.toEqual([{
+      reservation_expires_at: new Date("2026-08-19T00:01:00.000Z"),
+    }]);
+
+    const proof = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT session_prove_execution_ownership(
+        'slow-proof', 1, 'registration-slow', 123, 'start-registration-slow',
+        'execute-slow', ${provenAt}
+      ) AS applied
+    `;
+    expect(proof).toEqual([{ applied: true }]);
+    await expect(harness.sql<Array<{ reservation_expires_at: Date }>>`
+      SELECT reservation_expires_at
+      FROM session_execution_ownerships
+      WHERE session_id = 'slow-proof' AND ownership_generation = 1
+    `).resolves.toEqual([{
+      reservation_expires_at: new Date("2026-08-19T00:01:59.000Z"),
+    }]);
+
+    const whileProving = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_ownership(
+        'slow-proof', 2, 'runner_process', 'release-slow',
+        ${new Date("2026-08-19T00:01:01.000Z")}
+      )
+    `;
+    expect(whileProving[0]?.applied).toBe(false);
+    const afterCrashLease = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_reserve_execution_ownership(
+        'slow-proof', 3, 'runner_process', 'release-slow',
+        ${new Date("2026-08-19T00:02:00.000Z")}
+      )
+    `;
+    expect(afterCrashLease[0]?.applied).toBe(true);
+  });
+
   it("admits exactly one ownership generation under concurrent attach and recovery reserve", async () => {
     await insertSession("concurrent-owner", "initializing");
     const recoveryPeer = harness.createPeer();

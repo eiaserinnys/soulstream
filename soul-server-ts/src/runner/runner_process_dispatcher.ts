@@ -155,6 +155,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private latestConsumedFrameSeq: number | undefined;
   private readonly requestLifetimes = new Map<string, RequestLifetime>();
   private readonly recentHostResponses = new Map<string, RunnerControlFrame>();
+  private readonly inFlightFrameHandlers = new Set<Promise<void>>();
   private hostCallIdempotency!: RunnerHostCallIdempotency;
   private finishActiveRunnerObservation: (() => void) | undefined;
   private closed = false;
@@ -237,6 +238,56 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       startIdentity: identity.startIdentity,
       executionCommandId,
     };
+  }
+
+  async rollbackExecutionIdentity(proof: ExecutionIdentityProof): Promise<void> {
+    await this.ready;
+    const spawned = this.spawnedProcess;
+    if (!spawned) throw new Error("runner process identity unavailable for rollback");
+    if (spawned.pid !== proof.pid) {
+      throw new Error("runner rollback proof does not match the spawned process");
+    }
+    if (spawned.adopted) {
+      await this.detachHost();
+      return;
+    }
+
+    this.closed = true;
+    this.abortRequestLifetimes(new Error("Runner execution ownership rejected"));
+    const cleanupErrors: unknown[] = [];
+    try {
+      await this.releaseHostResources();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    let terminationError: unknown;
+    try {
+      const rollbackSpawner = this.options.spawner ?? new RunnerProcessSpawner();
+      if (!rollbackSpawner.terminate) {
+        throw new Error("spawn rollback terminator unavailable");
+      }
+      await rollbackSpawner.terminate(spawned.paths, {
+        pid: proof.pid,
+        startIdentity: proof.startIdentity,
+      });
+    } catch (error) {
+      terminationError = error;
+    }
+    if (terminationError !== undefined) {
+      throw new RunnerOrphanedSpawnError(
+        proof,
+        new AggregateError(
+          [...cleanupErrors, terminationError],
+          "execution ownership rollback left the spawned child live",
+        ),
+      );
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        cleanupErrors,
+        "execution ownership rollback cleanup failed after child termination",
+      );
+    }
   }
 
   async interrupt(): Promise<boolean> {
@@ -749,7 +800,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.connection?.close();
     this.connection = connection;
     const connectedAtMs = (this.options.now ?? Date.now)();
-    connection.onFrame(async (frame) => await this.handleFrame(frame));
+    connection.onFrame(async (frame) => await this.trackFrameHandler(frame));
     connection.onFailure((error) => {
       if (this.connection !== connection || this.closed) return;
       this.connection = undefined;
@@ -921,6 +972,17 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       else this.activeStream?.finish();
       this.clearActiveExecution(frame.commandId);
       return;
+    }
+  }
+
+  private async trackFrameHandler(frame: RunnerFrame): Promise<void> {
+    if (this.closed) return;
+    const handler = this.handleFrame(frame);
+    this.inFlightFrameHandlers.add(handler);
+    try {
+      await handler;
+    } finally {
+      this.inFlightFrameHandlers.delete(handler);
     }
   }
 
@@ -1098,6 +1160,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     await releaseRunnerHostResources([
       { name: "runner observation", run: () => finishActiveRunnerObservation?.() },
       { name: "IPC connection", run: () => connection?.close() },
+      {
+        name: "in-flight runner frames",
+        run: async () => {
+          await Promise.allSettled([...this.inFlightFrameHandlers]);
+        },
+      },
       { name: "event pump registration", run: () => unregisterPump?.() },
       { name: "parent outbox", run: () => outbox?.close() },
       { name: "offline writer", run: () => stoppedRunnerWriter?.close() },

@@ -54,6 +54,35 @@ export interface CanonicalExecutionOwnership {
   failureReason: string | null;
 }
 
+export class ExecutionOwnershipConflictError extends Error {
+  readonly reason = "reservation_in_flight" as const;
+
+  constructor(
+    readonly sessionId: string,
+    public retryAt: string,
+    readonly phase: ExecutionOwnershipPhase,
+  ) {
+    super(`Execution ownership conflict: ${sessionId}`);
+    this.name = "ExecutionOwnershipConflictError";
+  }
+
+  retryImmediately(now = new Date()): void {
+    this.retryAt = now.toISOString();
+  }
+}
+
+export function isExecutionOwnershipConflictError(
+  error: unknown,
+): error is ExecutionOwnershipConflictError {
+  return error instanceof ExecutionOwnershipConflictError
+    || (
+      error instanceof Error
+      && error.name === "ExecutionOwnershipConflictError"
+      && (error as Partial<ExecutionOwnershipConflictError>).reason === "reservation_in_flight"
+      && typeof (error as Partial<ExecutionOwnershipConflictError>).retryAt === "string"
+    );
+}
+
 export interface RecoveredExecutionOwnershipIdentity {
   manifestId: string;
   registrationId: string;

@@ -61,6 +61,33 @@ describe("AutoResumeTransition", () => {
     expect(reserveExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
   });
 
+  it("fences an owned resume to the terminal revision captured before async metadata work", async () => {
+    const task = makeTerminalTask();
+    let releaseMetadata!: () => void;
+    const metadataBlocked = new Promise<void>((resolve) => { releaseMetadata = resolve; });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const enqueueMetadataEffect = vi.fn(async () => await metadataBlocked);
+    const persistence = Object.assign(persistenceDouble.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+      enqueueMetadataEffect,
+    });
+    const transition = new AutoResumeTransition({ logger: silentLogger, persistence });
+    const onResume = vi.fn();
+
+    const resuming = transition.resume(task, {
+      text: "fenced resume",
+      user: "u",
+      callerInfo: { source: "browser", display_name: "Alice" },
+    }, onResume);
+    await vi.waitFor(() => expect(enqueueMetadataEffect).toHaveBeenCalledOnce());
+    task.terminalEventId = 99;
+    releaseMetadata();
+    await resuming;
+
+    expect(task.pendingExecutionExpectedTerminalEventId).toBe(6);
+    expect(onResume).toHaveBeenCalledOnce();
+  });
+
   it("promotes resume through one durable running effect without a direct status broadcast", async () => {
     const order: string[] = [];
     const task = makeTerminalTask();

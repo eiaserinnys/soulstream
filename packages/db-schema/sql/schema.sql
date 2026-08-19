@@ -2627,7 +2627,7 @@ BEGIN
         phase, reserved_at, reservation_expires_at
     ) VALUES (
         p_session_id, p_ownership_generation, p_owner_kind, p_manifest_id,
-        'reserved', p_updated_at, p_updated_at + INTERVAL '5 minutes'
+        'reserved', p_updated_at, p_updated_at + INTERVAL '60 seconds'
     );
 
     RETURN QUERY
@@ -2666,7 +2666,7 @@ BEGIN
            execution_command_id = p_execution_command_id,
            phase = 'identity_proven',
            identity_proven_at = p_proven_at,
-           reservation_expires_at = p_proven_at + INTERVAL '5 minutes'
+           reservation_expires_at = p_proven_at + INTERVAL '60 seconds'
      WHERE session_id = p_session_id
        AND ownership_generation = p_ownership_generation
        AND phase = 'reserved'
@@ -2701,7 +2701,7 @@ BEGIN
            execution_command_id = p_execution_command_id,
            phase = 'identity_proven',
            identity_proven_at = p_updated_at,
-           reservation_expires_at = p_updated_at + INTERVAL '5 minutes',
+           reservation_expires_at = p_updated_at + INTERVAL '60 seconds',
            failure_reason = 'orphaned_spawn'
      WHERE session_id = p_session_id
        AND ownership_generation = p_ownership_generation
@@ -2774,7 +2774,7 @@ BEGIN
             phase, reserved_at, reservation_expires_at
         ) VALUES (
             p_session_id, p_ownership_generation, 'adopted_runner', p_manifest_id,
-            'reserved', p_updated_at, p_updated_at + INTERVAL '5 minutes'
+            'reserved', p_updated_at, p_updated_at + INTERVAL '60 seconds'
         );
         v_row_count := 1;
     END IF;
