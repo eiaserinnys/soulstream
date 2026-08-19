@@ -21,6 +21,7 @@ test(
     const runnerStateDirectory = await mkdtemp(join(tmpdir(), "ss-runner-"));
     const workspaceDirectory = join(temporaryRoot, "workspace");
     const agentsConfigPath = join(temporaryRoot, "agents.yaml");
+    const serviceEnvPath = join(temporaryRoot, ".env.soul-server-ts");
     const distRoot = join(temporaryRoot, "dist");
     const distMain = join(distRoot, "main.js");
     const port = await reservePort();
@@ -46,25 +47,30 @@ test(
         PATH: process.env.PATH ?? "",
         HOME: temporaryRoot,
         NODE_ENV: "test",
-        SOULSTREAM_NODE_ID: "bundle-runner-startup",
-        SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:9/ws/node",
-        EVENT_OUTBOX_DIR: join(temporaryRoot, "event-outbox"),
-        HOST: "127.0.0.1",
-        PORT: String(port),
-        LOG_LEVEL: "error",
-        AGENTS_CONFIG_PATH: agentsConfigPath,
-        AGENT_PROFILE_CACHE_PATH: join(temporaryRoot, "agent-profile-cache.json"),
-        MODEL_CATALOG_PATH: join(temporaryRoot, "missing-model-catalog.yaml"),
-        SOUL_RUNNER_PROCESS_ENABLED: "true",
-        SOUL_RUNNER_STATE_DIR: runnerStateDirectory,
-        SOUL_RUNNER_ARTIFACT_DIR: join(distRoot, "runner"),
-        SOUL_RUNNER_RELEASES_DIR: join(temporaryRoot, "releases"),
       };
+      await writeFile(serviceEnvPath, [
+        "SOULSTREAM_NODE_ID=bundle-runner-startup",
+        "SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:9/ws/node",
+        `EVENT_OUTBOX_DIR=${join(temporaryRoot, "event-outbox")}`,
+        "HOST=127.0.0.1",
+        `PORT=${port}`,
+        "LOG_LEVEL=error",
+        `AGENTS_CONFIG_PATH=${agentsConfigPath}`,
+        `AGENT_PROFILE_CACHE_PATH=${join(temporaryRoot, "agent-profile-cache.json")}`,
+        `MODEL_CATALOG_PATH=${join(temporaryRoot, "missing-model-catalog.yaml")}`,
+        "SOUL_RUNNER_PROCESS_ENABLED=true",
+        `SOUL_RUNNER_STATE_DIR=${runnerStateDirectory}`,
+        `SOUL_RUNNER_ARTIFACT_DIR=${join(distRoot, "runner")}`,
+        `SOUL_RUNNER_RELEASES_DIR=${join(temporaryRoot, "releases")}`,
+        "",
+      ].join("\n"), "utf8");
       await execFileAsync(process.execPath, [
         join(packageRoot, "node_modules", "tsx", "dist", "cli.mjs"),
         join(packageRoot, "scripts", "write_release_manifest.ts"),
         "--dist-root",
         distRoot,
+        "--env-file",
+        serviceEnvPath,
       ], { cwd: packageRoot, env: childEnv });
 
       child = spawn(process.execPath, [distMain], {

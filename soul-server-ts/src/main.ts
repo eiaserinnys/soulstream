@@ -175,6 +175,7 @@ async function main(): Promise<void> {
       env.SOUL_RUNNER_ARTIFACT_DIR ?? join(hostBundleDirectory, "runner"),
     env,
     processEnv: releaseProcessEnv,
+    runtimeCwd: process.cwd(),
     ...(claudeExecutablePath ? { claudeExecutablePath } : {}),
     ...(codexCliPath ? { codexExecutablePath: codexCliPath.path } : {}),
   });

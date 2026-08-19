@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import dotenv from "dotenv";
 
 import { parseEnv } from "../src/config.js";
 import { resolveClaudeExecutableFromPath } from "../src/engine/claude_executable_path.js";
@@ -25,7 +26,18 @@ const runnerRoot = resolve(distRoot, "runner");
 const migrationManifestPath = resolve(repositoryRoot, "packages/db-schema/migration-manifest.json");
 const wireSchemaPath = resolve(repositoryRoot, "packages/wire-schema/src/upstream.schema.json");
 
-const processEnv = { ...process.env };
+const envFileOption = optionValue(process.argv.slice(2), "--env-file")
+  ?? process.env.SOULSTREAM_RELEASE_ENV_FILE?.trim()
+  ?? process.env.HANIEL_SERVICE_ENV_FILE?.trim();
+const envFilePath = envFileOption ? resolve(envFileOption) : undefined;
+const runtimeCwd = resolve(
+  optionValue(process.argv.slice(2), "--runtime-cwd")
+    ?? (envFilePath ? dirname(envFilePath) : process.cwd()),
+);
+const processEnv = {
+  ...process.env,
+  ...(envFilePath ? dotenv.parse(await readFile(envFilePath, "utf8")) : {}),
+};
 const claudePath = resolveClaudeExecutableFromPath(processEnv, process.platform);
 const codexPath = resolveCodexCliPath(processEnv, process.platform)?.path;
 const env = parseEnv(processEnv);
@@ -50,7 +62,7 @@ const manifest = buildReleaseManifest({
   nodeVersion: process.versions.node,
   platform: process.platform,
   arch: process.arch,
-  deploymentEnvIdentity: deploymentEnvIdentity(env, processEnv),
+  deploymentEnvIdentity: deploymentEnvIdentity(env, processEnv, { runtimeCwd }),
   claudeExecutable: await executableIdentity("claude", claudePath),
   codexExecutable: await executableIdentity("codex", codexPath),
 });

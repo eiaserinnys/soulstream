@@ -1,4 +1,5 @@
 import allowlistDocument from "./release_env_allowlist.json" with { type: "json" };
+import { delimiter, resolve } from "node:path";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { Env } from "../config.js";
@@ -20,6 +21,7 @@ const SECRET_NAME = /(?:^|_)(?:API_?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)(?:_|$)
 export function deploymentEnvIdentity(
   env: Env,
   processEnv: NodeJS.ProcessEnv,
+  options: { runtimeCwd: string },
 ): string {
   const nonSecrets: Record<string, CanonicalJsonValue> = {};
   const credentials: RuntimeCredentialDescriptor[] = [];
@@ -37,7 +39,11 @@ export function deploymentEnvIdentity(
       continue;
     }
     const value = parsed ?? raw;
-    nonSecrets[key] = normalizeNonSecret(value, policy.normalization);
+    nonSecrets[key] = normalizeNonSecret(
+      value,
+      policy.normalization,
+      options.runtimeCwd,
+    );
   }
   return computeRuntimeEnvIdentity({ nonSecrets, credentials });
 }
@@ -66,16 +72,30 @@ export function releaseEnvAllowlistKeys(): readonly string[] {
   return Object.keys(allowlist).sort();
 }
 
-function normalizeNonSecret(value: unknown, normalization: string): CanonicalJsonValue {
+function normalizeNonSecret(
+  value: unknown,
+  normalization: string,
+  runtimeCwd: string,
+): CanonicalJsonValue {
   if (value === undefined) return null;
   if (value === null || typeof value === "boolean" || typeof value === "number") return value;
-  if (Array.isArray(value)) return value.map((entry) => String(entry).normalize("NFC"));
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).normalize("NFC"));
+  }
   const text = String(value).normalize("NFC");
   if (normalization === "boolean") return text === "true";
   if (normalization === "number") {
     const parsed = Number(text);
     if (!Number.isFinite(parsed)) throw new Error(`invalid numeric release env value: ${text}`);
     return parsed;
+  }
+  if (normalization === "url") return new URL(text).toString();
+  if (normalization === "path") return text.length === 0 ? "" : resolve(runtimeCwd, text);
+  if (normalization === "path_list") {
+    return text.split(delimiter).map((entry) => resolve(runtimeCwd, entry));
+  }
+  if (normalization === "string_array") {
+    return text.split(",").map((entry) => entry.trim().normalize("NFC")).filter(Boolean);
   }
   return text;
 }

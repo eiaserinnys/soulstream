@@ -19,6 +19,7 @@ export async function loadAndVerifyReleaseManifest(input: {
   runnerArtifactDirectory: string;
   env: Env;
   processEnv: NodeJS.ProcessEnv;
+  runtimeCwd: string;
   claudeExecutablePath?: string;
   codexExecutablePath?: string;
 }): Promise<ReleaseManifestV1> {
@@ -39,7 +40,9 @@ export async function loadAndVerifyReleaseManifest(input: {
     nodeVersion: process.versions.node,
     platform: process.platform,
     arch: process.arch,
-    deploymentEnvIdentity: deploymentEnvIdentity(input.env, input.processEnv),
+    deploymentEnvIdentity: deploymentEnvIdentity(input.env, input.processEnv, {
+      runtimeCwd: input.runtimeCwd,
+    }),
     claudeExecutable: await executableIdentity("claude", input.claudeExecutablePath),
     codexExecutable: await executableIdentity("codex", input.codexExecutablePath),
   });
