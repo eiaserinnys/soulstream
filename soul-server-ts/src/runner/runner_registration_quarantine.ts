@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, rename } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
-import { inspectProcessIdentity, type ProcessIdentity } from "./runner_process_lock.js";
+import {
+  inspectProcessIdentity,
+  processStartIdentitiesMatch,
+  type ProcessIdentity,
+} from "./runner_process_lock.js";
 import {
   readRunnerRegistrationSummary,
   type RunnerRegistrationScan,
@@ -69,7 +73,7 @@ export async function quarantineUnreadableRunnerRegistration(
     const originalRunnerAlive = observed.alive && (
       !identity?.startIdentity
       || observed.startIdentity === null
-      || observed.startIdentity === identity.startIdentity
+      || processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
     );
     if (originalRunnerAlive) return { status: "retained", reason: "runner_alive" };
 

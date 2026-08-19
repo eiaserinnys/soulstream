@@ -13,16 +13,24 @@ import {
 import { assertRunnerJsonValue } from "./frame_protocol.js";
 import { readAuthoritativeRunnerLifecycle } from "./runner_lifecycle_reader.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
+import {
+  readRunnerPid,
+  resolveRegisteredRunnerPid,
+} from "./runner_process_registration.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
   inspectProcessIdentity,
+  processStartIdentitiesMatch,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
+  invalidateRunnerRegistrationIdentity,
   pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
+  type RunnerRegistrationIdentity,
+  waitForChildRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "./runner_registration_identity.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
@@ -110,6 +118,11 @@ interface SpawnDependencies {
   openRunnerLog?(path: string): Promise<{ fd: number; close(): Promise<void> }>;
   registerPid(path: string, pid: number): Promise<void>;
   inspectProcess(pid: number): Promise<ProcessIdentity>;
+  waitForChildRegistrationIdentity?(
+    paths: RunnerProcessPaths,
+    pending: RunnerRegistrationIdentity,
+    pid: number,
+  ): Promise<RunnerRegistrationIdentity | null>;
   isPidAlive(pid: number): boolean;
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
@@ -221,19 +234,47 @@ export class RunnerProcessSpawner {
       }
       throw new Error("detached runner spawn returned no pid");
     }
+    let preserveLiveChild = false;
     try {
       await log.close();
-      const observed = await this.deps.inspectProcess(child.pid);
-      if (!observed.alive || !observed.startIdentity) {
-        throw new Error(`detached runner process identity unavailable: ${child.pid}`);
+      const childIdentity = await this.deps.waitForChildRegistrationIdentity?.(
+        paths,
+        registrationIdentity,
+        child.pid,
+      ) ?? null;
+      if (childIdentity) {
+        if (
+          childIdentity.registrationId !== registrationIdentity.registrationId
+          || childIdentity.pid !== child.pid
+          || !childIdentity.startIdentity
+        ) {
+          throw new Error(`detached runner published invalid identity: ${child.pid}`);
+        }
+      } else {
+        const observed = await this.deps.inspectProcess(child.pid);
+        if (!observed.alive) {
+          throw new Error(`detached runner process exited before registration: ${child.pid}`);
+        }
+        if (!observed.startIdentity) {
+          preserveLiveChild = true;
+          this.logger?.info(
+            { sessionId: input.sessionId, pid: child.pid },
+            "Live runner identity lookup was unavailable; child was left intact",
+          );
+          throw new Error(`detached runner process identity unavailable: ${child.pid}`);
+        }
+        await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+          ...registrationIdentity,
+          pid: child.pid,
+          startIdentity: observed.startIdentity,
+        });
       }
-      await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-        ...registrationIdentity,
-        pid: child.pid,
-        startIdentity: observed.startIdentity,
-      });
       await this.deps.registerPid(paths.pidPath, child.pid);
     } catch (registrationError) {
+      if (preserveLiveChild) {
+        child.unref();
+        throw registrationError;
+      }
       const cleanupErrors: unknown[] = [];
       try {
         await this.terminateSpawnedChild(child, child.pid);
@@ -280,7 +321,7 @@ export class RunnerProcessSpawner {
       identity.pid !== pid
       || !observed.alive
       || !observed.startIdentity
-      || observed.startIdentity !== identity.startIdentity
+      || !processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
     ) return null;
     const config = await readRunnerChildConfig(paths.configPath);
     if (config.sessionId !== input.sessionId || !samePaths(config.paths, paths)) {
@@ -294,6 +335,20 @@ export class RunnerProcessSpawner {
     expected?: { pid: number; startIdentity: string },
   ): Promise<void> {
     await this.stopExistingRunner(paths, expected);
+  }
+
+  async invalidateRegistration(
+    paths: RunnerProcessPaths,
+    expectedRegistrationId: string | null,
+  ): Promise<void> {
+    await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
+      await invalidateRunnerRegistrationIdentity(
+        paths.sessionDirectory,
+        expectedRegistrationId,
+      );
+      await unlinkIfPresent(paths.pidPath);
+      await unlinkIfPresent(paths.socketPath);
+    });
   }
 
   private async terminateSpawnedChild(
@@ -364,7 +419,7 @@ export class RunnerProcessSpawner {
     if (
       !observed.alive
       || observed.startIdentity === null
-      || observed.startIdentity !== expected.startIdentity
+      || !processStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)
     ) {
       throw new Error(
         `runner process identity changed before ${signal}: ${expected.pid}`,
@@ -380,6 +435,9 @@ export class RunnerProcessSpawner {
 }
 
 function defaultDependencies(): SpawnDependencies {
+  const delay = async (ms: number) => await new Promise<void>(
+    (resolveDelay) => setTimeout(resolveDelay, ms),
+  );
   return {
     prepareDatabase: async (path) => {
       const outbox = await RunnerSqliteEventOutbox.create(path);
@@ -389,24 +447,17 @@ function defaultDependencies(): SpawnDependencies {
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
     registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
     inspectProcess: inspectProcessIdentity,
+    waitForChildRegistrationIdentity: async (paths, pending, pid) =>
+      await waitForChildRunnerRegistrationIdentity(paths.sessionDirectory, pending, pid, {
+        isPidAlive: isProcessAlive,
+        now: Date.now,
+        delay,
+      }),
     isPidAlive: isProcessAlive,
     signalPid: (pid, signal) => process.kill(pid, signal),
     now: Date.now,
-    delay: async (ms) => await new Promise((resolve) => setTimeout(resolve, ms)),
+    delay,
   };
-}
-
-export async function readRunnerPid(path: string): Promise<number | null> {
-  try {
-    const value = Number.parseInt((await readFile(path, "utf8")).trim(), 10);
-    if (!Number.isSafeInteger(value) || value <= 0) {
-      throw new Error(`invalid runner pid file: ${path}`);
-    }
-    return value;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
 }
 
 export async function readRunnerChildConfig(path: string): Promise<RunnerChildConfig> {
@@ -430,27 +481,6 @@ function samePaths(left: RunnerProcessPaths, right: RunnerProcessPaths): boolean
     && left.logPath === right.logPath;
 }
 
-export function resolveRegisteredRunnerPid(
-  pidFilePid: number | null,
-  lifecyclePid: number | null,
-  identityPid: number | null,
-  label: string,
-  candidateIsAlive: (pid: number) => boolean = isProcessAlive,
-): number | null {
-  const candidates = [pidFilePid, lifecyclePid, identityPid]
-    .filter((pid): pid is number => pid !== null);
-  const uniqueCandidates = [...new Set(candidates)];
-  if (
-    uniqueCandidates.length > 1
-    && uniqueCandidates.filter(candidateIsAlive).length > 0
-  ) {
-    throw new Error(`runner pid evidence disagrees: ${label}`);
-  }
-  // Mismatched dead evidence is stale registration residue, not split brain.
-  // Prefer the identity owner so later identity checks remain authoritative.
-  return identityPid ?? pidFilePid ?? lifecyclePid ?? null;
-}
-
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -459,6 +489,7 @@ function isProcessAlive(pid: number): boolean {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
+export { readRunnerPid, resolveRegisteredRunnerPid } from "./runner_process_registration.js";
 
 async function unlinkIfPresent(path: string): Promise<void> {
   try {

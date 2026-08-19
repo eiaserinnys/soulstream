@@ -32,7 +32,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   >;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;
-  spawner?: Pick<RunnerProcessSpawner, "terminate">;
+  spawner?: Pick<RunnerProcessSpawner, "invalidateRegistration" | "terminate">;
   scan?: typeof scanRunnerRegistrations;
   hydrate?: typeof hydrateRunnerRegistration;
   refreshRegistration?: (

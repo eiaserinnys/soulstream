@@ -263,6 +263,13 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     expect(refreshRegistration).toHaveBeenCalledOnce();
     expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.invalidateRegistration).toHaveBeenCalledWith(
+      current.config.paths,
+      "registration-a",
+    );
+    expect(subject.invalidateRegistration.mock.invocationCallOrder[0]).toBeLessThan(
+      restartRegisteredRunner.mock.invocationCallOrder[0]!,
+    );
     expect(recoverRegisteredRunner).toHaveBeenNthCalledWith(
       2,
       subject.task,
@@ -672,6 +679,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     })]);
 
     await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
 
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
@@ -1423,6 +1431,7 @@ function makeSubject(
   const listOwnerNullRunningInventory = vi.fn(async () => []);
   const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
   const terminate = vi.fn(async () => {});
+  const invalidateRegistration = vi.fn(async () => {});
   const markReaped = vi.fn(async () => {});
   const logger = {
     error: vi.fn(),
@@ -1444,7 +1453,7 @@ function makeSubject(
     taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
-    spawner: { terminate },
+    spawner: { terminate, invalidateRegistration },
     scan: async () => structuredClone({ registrations, errors }),
     hydrate: async (registration) => registration,
     now: () => now,
@@ -1465,6 +1474,7 @@ function makeSubject(
     projectClosedRunner,
     markReaped,
     terminate,
+    invalidateRegistration,
     logger,
   };
 }

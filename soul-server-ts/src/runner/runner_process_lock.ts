@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const LOCK_RETRY_MS = 50;
+const WINDOWS_EPOCH_OFFSET_TICKS = 621_355_968_000_000_000n;
+const PROCESS_START_IDENTITY_TOLERANCE_MS = 2_000;
 const execFileAsync = promisify(execFile);
 const currentProcessFallbackIdentity = `node-start-${Math.round(
   Date.now() - process.uptime() * 1_000,
@@ -103,7 +105,8 @@ export async function isProvenStale(
 ): Promise<boolean> {
   const observed = await deps.inspectProcess(owner.pid);
   return !observed.alive
-    || (observed.startIdentity !== null && observed.startIdentity !== owner.startIdentity);
+    || (observed.startIdentity !== null
+      && !processStartIdentitiesMatch(observed.startIdentity, owner.startIdentity));
 }
 
 export async function readProcessLockOwner(path: string): Promise<ProcessLockOwner | null> {
@@ -137,6 +140,7 @@ export function defaultProcessOwnershipLockDependencies(): ProcessOwnershipLockD
 }
 
 async function getCurrentProcessStartIdentity(): Promise<string> {
+  if (process.platform === "win32") return currentProcessFallbackIdentity;
   currentProcessStartIdentity ??= readProcessStartIdentity(process.pid)
     .then((identity) => identity ?? currentProcessFallbackIdentity);
   return await currentProcessStartIdentity;
@@ -154,7 +158,36 @@ export async function inspectProcessIdentity(pid: number): Promise<ProcessIdenti
 }
 
 function sameOwner(left: ProcessLockOwner | null, right: ProcessLockOwner): boolean {
-  return left?.pid === right.pid && left.startIdentity === right.startIdentity;
+  return left?.pid === right.pid
+    && processStartIdentitiesMatch(left.startIdentity, right.startIdentity);
+}
+
+export function processStartIdentitiesMatch(left: string, right: string): boolean {
+  if (left === right) return true;
+  const leftEpochMs = processStartEpochMs(left);
+  const rightEpochMs = processStartEpochMs(right);
+  return leftEpochMs !== null
+    && rightEpochMs !== null
+    && leftEpochMs.kind !== rightEpochMs.kind
+    && Math.abs(leftEpochMs.value - rightEpochMs.value) <= PROCESS_START_IDENTITY_TOLERANCE_MS;
+}
+
+function processStartEpochMs(
+  identity: string,
+): { kind: "node" | "windows"; value: number } | null {
+  const nodeMatch = /^node-start-(\d+)$/.exec(identity);
+  if (nodeMatch) {
+    const epochMs = Number(nodeMatch[1]);
+    return Number.isSafeInteger(epochMs) ? { kind: "node", value: epochMs } : null;
+  }
+  const windowsMatch = /^windows-process-(\d+)$/.exec(identity);
+  if (!windowsMatch) return null;
+  try {
+    const epochMs = Number((BigInt(windowsMatch[1]!) - WINDOWS_EPOCH_OFFSET_TICKS) / 10_000n);
+    return Number.isSafeInteger(epochMs) ? { kind: "windows", value: epochMs } : null;
+  } catch {
+    return null;
+  }
 }
 
 function isProcessAlive(pid: number): boolean {

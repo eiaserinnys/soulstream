@@ -553,7 +553,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
       );
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
-      await this.connect(spawned.paths.socketPath);
+      await this.connect(spawned.paths.socketPath, !spawned.adopted);
     } catch (error) {
       if (!spawnedProof) throw error;
       await this.rollbackSpawnAfterParentInitializationFailure(
@@ -779,11 +779,15 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     );
   }
 
-  private async connect(socketPath: string): Promise<RunnerIpcConnection> {
+  private async connect(
+    socketPath: string,
+    retryOnMissingSocket = false,
+  ): Promise<RunnerIpcConnection> {
     const connection = await (this.options.connectSocket ?? connectRunnerSocket)(socketPath, {
       timeoutMs: 500,
       deadlineMs: RUNNER_SOCKET_CONNECT_DEADLINE_MS,
       retryDelayMs: RUNNER_SOCKET_CONNECT_RETRY_MS,
+      retryOnMissingSocket,
       onFrameDropped: (drop) => this.logDroppedFrame(drop),
     });
     this.attachConnection(connection, socketPath);

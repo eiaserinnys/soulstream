@@ -16,7 +16,7 @@ import {
   prepareRecoveredTask,
   requireRecoveryTask,
 } from "./runner_recovery_task.js";
-import { RunnerProcessSpawner } from "./runner_process_spawn.js";
+import { RunnerRegistrationControl } from "./runner_registration_control.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import {
@@ -48,9 +48,11 @@ export class RunnerRecoveryCoordinator {
   private readonly adoptionFailureRecovery: RunnerAdoptionFailureRecovery;
   private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
+  private readonly registrationControl: RunnerRegistrationControl;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
+    this.registrationControl = new RunnerRegistrationControl(options.spawner);
     this.ownerNullExecutionReconciler = new OwnerNullExecutionReconciler(options);
     this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
       nodeId: options.nodeId,
@@ -101,7 +103,9 @@ export class RunnerRecoveryCoordinator {
         : {}),
       ...(options.hydrate ? { hydrateRegistration: options.hydrate } : {}),
       terminateRegistration: async (registration) =>
-        await this.terminateRegistration(registration),
+        await this.registrationControl.terminate(registration),
+      invalidateRegistration: async (registration) =>
+        await this.registrationControl.invalidate(registration),
       markReaped: async (registration, progressedAt, error) => {
         if (options.markReaped) {
           await options.markReaped(registration, progressedAt, error);
@@ -202,7 +206,7 @@ export class RunnerRecoveryCoordinator {
         );
         if (ownerNullDisposition === "wait") continue;
         if (ownerNullDisposition === "terminal" && disposition !== "closed") {
-          if (registration.pidAlive) await this.terminateRegistration(registration);
+          if (registration.pidAlive) await this.registrationControl.terminate(registration);
           continue;
         }
       }
@@ -309,7 +313,7 @@ export class RunnerRecoveryCoordinator {
         }
         return;
       }
-      if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
+      if (hydrated.pidAlive) await this.registrationControl.terminate(hydrated);
       const closedRegistration = { ...hydrated, pidAlive: false };
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
         await this.options.closedTailDrainer.drain(closedRegistration);
@@ -433,7 +437,8 @@ export class RunnerRecoveryCoordinator {
     task: Task,
   ): Promise<void> {
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
-    if (hydrated.pidAlive) await this.terminateRegistration(hydrated);
+    if (hydrated.pidAlive) await this.registrationControl.terminate(hydrated);
+    await this.registrationControl.invalidate(hydrated);
     await this.recoverRegistered({ ...hydrated, pidAlive: false }, task, "offline");
     prepareRecoveredTask(task, hydrated);
     task.runnerTerminalFact = "reaped";
@@ -473,21 +478,9 @@ export class RunnerRecoveryCoordinator {
       "offline",
       async (guardedRegistration) => {
         if (!guardedRegistration.pidAlive) return guardedRegistration;
-        await this.terminateRegistration(guardedRegistration);
+        await this.registrationControl.terminate(guardedRegistration);
         return { ...guardedRegistration, pidAlive: false };
       },
-    );
-  }
-
-  private async terminateRegistration(registration: RunnerRegistration): Promise<void> {
-    if (registration.pid === null || !registration.pidStartIdentity) {
-      throw new Error(
-        `runner process identity unavailable before termination: ${registration.config.sessionId}`,
-      );
-    }
-    await (this.options.spawner ?? new RunnerProcessSpawner()).terminate(
-      registration.config.paths,
-      { pid: registration.pid, startIdentity: registration.pidStartIdentity },
     );
   }
 

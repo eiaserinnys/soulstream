@@ -13,6 +13,7 @@ import { defaultProcessOwnershipLockDependencies } from
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
+  completeRunnerRegistrationIdentityFromChild,
   readRunnerRegistrationIdentity,
   runnerRegistrationIdentityPath,
   writeRunnerRegistrationIdentity,
@@ -100,6 +101,124 @@ describe("RunnerProcessSpawner", () => {
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
       paths: { logPath: expect.stringMatching(/runner\.log$/) },
     });
+  });
+
+  it("accepts the identity published by the child without inspecting it from the host", async () => {
+    const inspectProcess = vi.fn(async () => ({ alive: true, startIdentity: "host-query" }));
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4124, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess,
+      waitForChildRegistrationIdentity: async (paths, pending, pid) => {
+        const completed = { ...pending, pid, startIdentity: "child-start-4124" };
+        await writeRunnerRegistrationIdentity(paths.sessionDirectory, completed);
+        return completed;
+      },
+      isPidAlive: () => true,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    const spawned = await spawner.spawn(await input());
+
+    expect(spawned.pid).toBe(4124);
+    expect(inspectProcess).not.toHaveBeenCalled();
+    await expect(readRunnerRegistrationIdentity(spawned.paths.sessionDirectory))
+      .resolves.toMatchObject({ pid: 4124, startIdentity: "child-start-4124" });
+  });
+
+  it("accepts the same Windows child when host registration wins the startup race", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const unixStartMs = 1_700_000_000_123;
+    const windowsTicks = 621_355_968_000_000_000n + BigInt(unixStartMs) * 10_000n;
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      schemaVersion: 1,
+      registrationId: "registration-a",
+      sessionId: params.sessionId,
+      codeSha: params.codeSha,
+      pid: 4124,
+      startIdentity: `windows-process-${windowsTicks}`,
+    });
+
+    await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+      sessionId: params.sessionId,
+      codeSha: params.codeSha,
+      pid: 4124,
+      startIdentity: `node-start-${unixStartMs}`,
+    })).resolves.toMatchObject({
+      registrationId: "registration-a",
+      pid: 4124,
+    });
+  });
+
+  it("does not kill a live child when the legacy host identity lookup is unavailable", async () => {
+    let alive = true;
+    let now = 0;
+    const signalPid = vi.fn(() => { alive = false; });
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4125, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async () => ({ alive: true, startIdentity: null }),
+      isPidAlive: () => alive,
+      signalPid,
+      now: () => now,
+      delay: async () => { now += 25; },
+    });
+
+    await expect(spawner.spawn(await input()))
+      .rejects.toThrow("detached runner process identity unavailable: 4125");
+
+    expect(signalPid).not.toHaveBeenCalled();
+    expect(alive).toBe(true);
+  });
+
+  it("invalidates a reaped registration before replacement selection", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      schemaVersion: 1,
+      registrationId: "registration-a",
+      sessionId: params.sessionId,
+      codeSha: params.codeSha,
+      pid: 4126,
+      startIdentity: "start-4126",
+    });
+    await writeFile(paths.pidPath, "4126\n", { mode: 0o600 });
+    const inspectProcess = vi.fn(async () => ({ alive: true, startIdentity: "start-4126" }));
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
+      registerPid: async () => {},
+      inspectProcess,
+      isPidAlive: () => true,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+      readLifecycle: async () => null,
+    });
+
+    await spawner.invalidateRegistration(paths, "registration-a");
+
+    await expect(readRunnerRegistrationIdentity(paths.sessionDirectory)).resolves.toMatchObject({
+      registrationId: "registration-a",
+      pid: null,
+      startIdentity: null,
+    });
+    await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(spawner.adopt({
+      stateDirectory: params.stateDirectory,
+      sessionId: params.sessionId,
+    })).resolves.toBeNull();
+    expect(inspectProcess).not.toHaveBeenCalled();
   });
 
   it("terminates a live prior pid before spawning its replacement", async () => {
