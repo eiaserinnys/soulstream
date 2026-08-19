@@ -18,16 +18,16 @@ import { buildReleaseManifest, canonicalJson } from "../src/release/release_mani
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "..");
-const distRoot = resolve(packageRoot, "dist");
+const distRoot = resolve(
+  optionValue(process.argv.slice(2), "--dist-root") ?? resolve(packageRoot, "dist"),
+);
 const runnerRoot = resolve(distRoot, "runner");
 const migrationManifestPath = resolve(repositoryRoot, "packages/db-schema/migration-manifest.json");
 const wireSchemaPath = resolve(repositoryRoot, "packages/wire-schema/src/upstream.schema.json");
 
 const processEnv = { ...process.env };
 const claudePath = resolveClaudeExecutableFromPath(processEnv, process.platform);
-if (claudePath) processEnv.CLAUDE_CODE_EXECPATH = claudePath;
 const codexPath = resolveCodexCliPath(processEnv, process.platform)?.path;
-if (codexPath) processEnv.CODEX_CLI_PATH = codexPath;
 const env = parseEnv(processEnv);
 const runnerReleaseId = await hashArtifactSet(runnerRoot);
 const migrationManifestRaw = await readFile(migrationManifestPath, "utf8");
@@ -64,4 +64,12 @@ process.stdout.write(
 
 function sha256(value: string | Buffer): string {
   return `sha256-${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function optionValue(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index === -1) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
+  return value;
 }

@@ -49,6 +49,7 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   }
+  const releaseProcessEnv = { ...process.env };
 
   await assertRunnerNodeRuntime({
     runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
@@ -153,7 +154,6 @@ async function main(): Promise<void> {
     );
   }
   const codexCliPath = resolveCodexCliPath(process.env);
-  if (codexCliPath) process.env.CODEX_CLI_PATH = codexCliPath.path;
   if (hasCodexBackend) {
     if (codexCliPath) {
       logger.info(
@@ -168,17 +168,13 @@ async function main(): Promise<void> {
   }
 
   const hostBundleDirectory = dirname(fileURLToPath(import.meta.url));
-  const releaseEnv = {
-    ...env,
-    ...(codexCliPath ? { CODEX_CLI_PATH: codexCliPath.path } : {}),
-  };
   const releaseManifest = await loadAndVerifyReleaseManifest({
     manifestPath: join(hostBundleDirectory, "release-manifest.json"),
     hostBundleDirectory,
     runnerArtifactDirectory:
       env.SOUL_RUNNER_ARTIFACT_DIR ?? join(hostBundleDirectory, "runner"),
-    env: releaseEnv,
-    processEnv: process.env,
+    env,
+    processEnv: releaseProcessEnv,
     ...(claudeExecutablePath ? { claudeExecutablePath } : {}),
     ...(codexCliPath ? { codexExecutablePath: codexCliPath.path } : {}),
   });
