@@ -736,6 +736,23 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(callerNotification).not.toHaveBeenCalled();
   });
 
+  it("reclassifies a closed admission after hydration instead of terminating its replacement", async () => {
+    const admittedClosed = registration({ pidAlive: false, lifecycleState: "closed" });
+    const replacement = registration({ pidAlive: true, lifecycleState: "running" });
+    const subject = makeSubject([admittedClosed], Date.now(), [], {
+      hydrate: vi.fn(async () => replacement),
+    });
+    subject.task.runner = { dispatcher: {} as never };
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.projectClosedRunner).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(subject.task.runner).toBeDefined();
+  });
+
   it.each([
     ["running", false],
     ["running", true],

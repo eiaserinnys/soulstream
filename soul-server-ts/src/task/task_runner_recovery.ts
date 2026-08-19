@@ -2,7 +2,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
-import type { Task } from "./task_models.js";
+import { isActiveTaskStatus, type Task } from "./task_models.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
@@ -83,6 +83,14 @@ export class TaskRunnerRecovery {
   }
 
   async projectClosed(task: Task, detail: string): Promise<boolean> {
+    // A closed registration admitted by an earlier scan cannot supersede a
+    // replacement that reserved or activated ownership while hydration ran.
+    if (
+      task.terminationEventRecorded
+      || task.runner
+      || task.executionOwnershipReservation
+      || (task.executionOwnership && isActiveTaskStatus(task.status))
+    ) return false;
     task.runner = undefined;
     task.runnerRetainedForClaudeBackground = undefined;
     task.executionPromise = undefined;

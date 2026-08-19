@@ -852,7 +852,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.reconnectRequested = false;
       const reconnectAttempt = this.reconnectAttempts + 1;
       if (reconnectAttempt > this.reconnectPolicy.maxAttempts) {
-        this.exhaustReconnectBudget(socketPath);
+        await this.exhaustReconnectBudget(socketPath);
         return;
       }
       this.reconnectAttempts = reconnectAttempt;
@@ -884,7 +884,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
   }
 
-  private exhaustReconnectBudget(socketPath: string): void {
+  private async exhaustReconnectBudget(socketPath: string): Promise<void> {
     const error = new Error(
       `Runner IPC reconnect budget exhausted after ${this.reconnectPolicy.maxAttempts} attempts`,
       { cause: this.reconnectCause },
@@ -900,8 +900,25 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       "Runner IPC reconnect budget exhausted; runner execution will be terminalized",
     );
     // The active stream is the single terminal bridge into TaskExecutor; its
-    // rejection persists the runner failure before finalizer cleanup.
-    this.activeStream?.fail(error);
+    // rejection persists the runner failure. Capture its exact identity before
+    // clearing local observation state, then release every host-owned resource
+    // so a later recovery can register the durable stream once.
+    const activeStream = this.activeStream;
+    const activeCommandId = this.activeExecuteCommandId;
+    activeStream?.fail(error);
+    if (activeCommandId) this.clearActiveExecution(activeCommandId);
+    this.closed = true;
+    try {
+      await this.releaseHostResources();
+    } catch (cleanupError) {
+      this.options.logger.error(
+        {
+          err: cleanupError,
+          ...this.runnerIdentityContext(socketPath),
+        },
+        "Runner reconnect terminal cleanup failed",
+      );
+    }
   }
 
   private runnerIdentityContext(socketPath: string): {
@@ -1147,6 +1164,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async releaseHostResources(): Promise<void> {
+    // A socket attach can start pump initialization concurrently with terminal
+    // cleanup. Let that single initializer settle before taking ownership of
+    // its unregister handle, otherwise it could register after cleanup.
+    if (this.pumpInitialization) {
+      await Promise.allSettled([this.pumpInitialization]);
+    }
     const finishActiveRunnerObservation = this.finishActiveRunnerObservation;
     this.finishActiveRunnerObservation = undefined;
     const connection = this.connection;

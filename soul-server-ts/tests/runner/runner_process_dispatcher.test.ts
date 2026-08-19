@@ -680,12 +680,20 @@ describe("RunnerProcessDispatcher", () => {
       info: vi.fn(),
       warn: vi.fn(),
     };
+    const unregisterPump = vi.fn();
+    const registerPump = vi.fn(() => unregisterPump);
+    const finishRecoveryObservation = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
       spawner: { spawn: async () => await spawnedProcessForTest(paths) },
-      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      pumpMux: { register: registerPump } as never,
       logger,
       handleHostCall: async () => null,
+      nodeStallMonitor: {
+        beginRunnerOperation: vi.fn((input) => input.operation === "execution:recover"
+          ? finishRecoveryObservation
+          : vi.fn()),
+      } as never,
       reconnectPolicy: {
         initialDelayMs: 1,
         maxDelayMs: 2,
@@ -732,6 +740,11 @@ describe("RunnerProcessDispatcher", () => {
       }),
       "Runner IPC reconnect budget exhausted; runner execution will be terminalized",
     );
+    await vi.waitFor(() => {
+      expect(registerPump).toHaveBeenCalledOnce();
+      expect(unregisterPump).toHaveBeenCalledOnce();
+      expect(finishRecoveryObservation).toHaveBeenCalledOnce();
+    });
 
     await dispatcher.detachHost();
     if (!serverClosed) {
