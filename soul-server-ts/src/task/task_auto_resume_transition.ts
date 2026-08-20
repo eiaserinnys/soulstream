@@ -174,6 +174,13 @@ export class AutoResumeTransition {
     const entry = buildCallerInfoMetadataEntry(callerInfo);
     if (!entry) return;
     task.callerInfo = callerInfo;
+    const previousCallerInfo = findLastCallerInfoMetadataEntry(task.metadata ?? []);
+    if (
+      previousCallerInfo !== undefined
+      && stableSerialize(previousCallerInfo) === stableSerialize(entry)
+    ) {
+      return;
+    }
     task.metadata = [...(task.metadata ?? []), entry];
     if (!this.deps.persistence) {
       this.deps.logger.warn(
@@ -192,6 +199,34 @@ export class AutoResumeTransition {
     }
   }
 
+}
+
+function findLastCallerInfoMetadataEntry(
+  metadata: readonly Record<string, unknown>[],
+): Record<string, unknown> | undefined {
+  for (let index = metadata.length - 1; index >= 0; index -= 1) {
+    const entry = metadata[index];
+    if (entry?.type === "caller_info") return entry;
+  }
+  return undefined;
+}
+
+function stableSerialize(value: unknown): string {
+  const serialized = JSON.stringify(sortJsonKeys(value));
+  if (serialized === undefined) {
+    throw new Error("caller_info metadata entry is not JSON serializable");
+  }
+  return serialized;
+}
+
+function sortJsonKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonKeys);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, entry]) => [key, sortJsonKeys(entry)]),
+  );
 }
 
 function prepareTaskForAutoResume(

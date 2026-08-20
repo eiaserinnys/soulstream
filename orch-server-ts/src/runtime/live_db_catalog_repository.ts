@@ -305,6 +305,7 @@ export function createLiveDbCatalogRepository(
         page.total,
         input.offset,
         input.limit,
+        { includeDetails: input.sessionIds?.length === 1 },
       );
     },
     async findSessionOwnerNodeId(sessionId) {
