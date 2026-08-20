@@ -8,6 +8,7 @@ import {
   pythonRoutePathToFastifyPath,
   routeCoverageOwners,
   shadowRouteCompositionOwners,
+  tsOnlyRouteKeys,
   validateRouteCoverageCompleteness,
   type RouteRegistry,
   type RouteRegistryEntry,
@@ -74,6 +75,12 @@ describe("shadow runtime composition", () => {
         registry,
         registeredRouteKeys,
         owners: routeCoverageOwners,
+        // The fixture inventory describes the retired Python server, so a
+        // TS-only route is expected only when it is declared here — same as
+        // route-coverage-completeness does. Without it `/ws/node/control`,
+        // which node.ws has owned since the control lane landed, reads as a
+        // route owned by nobody's inventory and fails the whole matrix.
+        additionalExpectedRouteKeys: tsOnlyRouteKeys,
       });
 
       expect(result).toMatchObject({
@@ -87,7 +94,9 @@ describe("shadow runtime composition", () => {
         unknownRouteOwnerKeys: [],
         unknownAuthRequirementKeys: [],
       });
-      expect(registeredRouteKeys).toHaveLength(registry.entries.length);
+      expect(registeredRouteKeys).toHaveLength(
+        registry.entries.length + tsOnlyRouteKeys.length,
+      );
     } finally {
       await shadow.app.close();
     }
@@ -122,7 +131,7 @@ function collectRegisteredFixtureRouteKeys(
   },
   registry: RouteRegistry,
 ): string[] {
-  return registry.entries
+  const fixtureRouteKeys = registry.entries
     .filter((entry) =>
       app.hasRoute({
         method: fastifyRegistrationMethod(entry),
@@ -130,6 +139,21 @@ function collectRegisteredFixtureRouteKeys(
       }),
     )
     .map((entry) => entry.key);
+  // TS-only routes are absent from the Python fixture inventory, so walking
+  // `registry.entries` alone can never see one. Probe them the same way
+  // route-coverage-completeness does, or the shadow composition could quietly
+  // stop registering `/ws/node/control` and this test would still pass.
+  const registeredTsOnlyRouteKeys = tsOnlyRouteKeys.filter((key) => {
+    const separatorIndex = key.indexOf(" ");
+    if (separatorIndex <= 0) throw new Error(`invalid TS-only route key: ${key}`);
+    const method = key.slice(0, separatorIndex);
+    const path = key.slice(separatorIndex + 1);
+    return app.hasRoute({
+      method: method === "WEBSOCKET" ? "GET" : method,
+      url: pythonRoutePathToFastifyPath(path),
+    });
+  });
+  return [...fixtureRouteKeys, ...registeredTsOnlyRouteKeys];
 }
 
 function fastifyRegistrationMethod(entry: RouteRegistryEntry): string {
