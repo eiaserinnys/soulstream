@@ -30,6 +30,17 @@ export interface DeliveryRetryOrDeadLetterInput {
    * than whatever the previous owner recorded before it died.
    */
   preserveExistingError?: boolean;
+  /**
+   * Whether this counts as a delivery attempt. Default true.
+   *
+   * A liveness probe — "is the transcript settled yet?" — is not an attempt to
+   * deliver anything, and it repeats on a one-second cadence. Charging it to
+   * the same 16-attempt budget would dead-letter a perfectly good user message
+   * about eighty seconds after its target node went quiet, which is the exact
+   * loss this budget exists to prevent. A probe spends time, not budget: only
+   * the age ceiling can end it.
+   */
+  spendsAttempt?: boolean;
   maxAttempts?: number;
   maxAgeMs?: number;
 }
@@ -50,6 +61,7 @@ export function deliveryRetryOrDeadLetterSet(
 ) {
   const maxAttempts = input.maxAttempts ?? DELIVERY_MAX_ATTEMPTS;
   const maxAgeMs = input.maxAgeMs ?? DELIVERY_MAX_AGE_MS;
+  const spendsAttempt = input.spendsAttempt ?? true;
   const reason = input.preserveExistingError
     ? sql`COALESCE(last_error, ${input.reason})`
     : sql`${input.reason}`;
@@ -59,12 +71,12 @@ export function deliveryRetryOrDeadLetterSet(
         INTERVAL '100 milliseconds' * POWER(2, LEAST(attempt_count, 9))
       )`
     : sql`(${input.retryDelayMs} * INTERVAL '1 millisecond')`;
-  const exhausted = sql`(
-    attempt_count + 1 >= ${maxAttempts}
-    OR created_at <= NOW() - (${maxAgeMs} * INTERVAL '1 millisecond')
-  )`;
+  const tooOld = sql`created_at <= NOW() - (${maxAgeMs} * INTERVAL '1 millisecond')`;
+  const exhausted = spendsAttempt
+    ? sql`(attempt_count + 1 >= ${maxAttempts} OR ${tooOld})`
+    : sql`(${tooOld})`;
   return sql`
-    attempt_count = attempt_count + 1,
+    attempt_count = attempt_count + ${spendsAttempt ? 1 : 0},
     state = CASE WHEN ${exhausted} THEN 'uncertain' ELSE ${input.retryState} END,
     aggregate_state = CASE WHEN ${exhausted} THEN 'dead_letter' ELSE 'pending' END,
     lease_owner = NULL,

@@ -216,6 +216,9 @@ export class SessionDeliveryRecoveryRepository {
           reason: error,
           retryState: "queued",
           retryDelayMs,
+          // Re-checking whether a transcript has settled is a liveness probe,
+          // not a delivery attempt.
+          spendsAttempt: false,
         })}
         WHERE delivery_id = ${deliveryId}
           AND state = 'claimed'
@@ -224,12 +227,16 @@ export class SessionDeliveryRecoveryRepository {
       `;
       const row = rows[0];
       if (!row) return null;
-      await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-        deliveryId,
-        outcome: attemptOutcomeFor(row),
-        reason: error,
-        leaseOwner,
-      });
+      // Probes stay out of the attempt ledger unless one of them ends the
+      // delivery; a one-second poll would otherwise bury the real attempts.
+      if (row.aggregate_state === "dead_letter") {
+        await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
+          deliveryId,
+          outcome: attemptOutcomeFor(row),
+          reason: error,
+          leaseOwner,
+        });
+      }
       return row;
     });
   }

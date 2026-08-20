@@ -576,9 +576,13 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       queuedRecovery.recoverAfterNodeRestart("node-test"),
     ).resolves.toBe(0);
 
+    // A transcript re-check is a liveness probe, not a delivery attempt: it
+    // repeats every second, so charging it to the retry budget would
+    // dead-letter a good message about eighty seconds after its target node
+    // went quiet.
     await expect(repository.get("delivery-input-pending")).resolves.toMatchObject({
       state: "queued",
-      attempt_count: 1,
+      attempt_count: 0,
       last_error: "queued_transcript_input_pending",
     });
   });
