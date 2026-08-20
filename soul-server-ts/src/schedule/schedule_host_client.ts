@@ -8,6 +8,9 @@ import type {
   SoulstreamSchedule,
 } from "./schedule_models.js";
 
+/** Matches the persistence host transport deadline. */
+const SCHEDULE_HOST_TIMEOUT_MS = 10_000;
+
 export class ScheduleHostClient {
   constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
 
@@ -68,6 +71,11 @@ export class ScheduleHostClient {
         method: "POST",
         headers: { ...this.config.orch.headers, "content-type": "application/json" },
         body: JSON.stringify(snakeCase(input)),
+        // Matches the persistence host transport. Without it the node
+        // heartbeat could hang for undici's default timeout, and a heartbeat
+        // that stops for two minutes makes this node look dead to every other
+        // node's delivery recovery scan.
+        signal: AbortSignal.timeout(SCHEDULE_HOST_TIMEOUT_MS),
       },
     );
     if (!response.ok) {

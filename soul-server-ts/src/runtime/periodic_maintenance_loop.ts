@@ -17,7 +17,8 @@ import { withDeadline } from "./deadline.js";
  *    of its step deadlines regardless of what the steps do;
  * 2. a step whose underlying promise is still outstanding from a previous tick
  *    is skipped rather than started again, so a permanently hung operation
- *    neither blocks its siblings nor accumulates;
+ *    neither blocks its siblings nor accumulates — unless the step declares
+ *    that missing it costs more than repeating it;
  * 3. a tick that outlives its deadline anyway is abandoned and re-scheduled.
  *
  * Every one of those events is logged at error level, and the lane emits a
@@ -46,6 +47,20 @@ export interface MaintenanceStep {
   run(): Promise<void>;
   /** Overrides the lane-level step deadline. */
   readonly timeoutMs?: number;
+  /**
+   * Start this step again even while an earlier invocation is still
+   * outstanding.
+   *
+   * Skipping an outstanding step keeps a stalled dependency from piling up
+   * work, which is right for an expensive drain and wrong for a cheap
+   * idempotent one. A node heartbeat that is skipped rather than retried turns
+   * one slow request into a node the whole cluster believes is dead — so for
+   * that shape, missing the step is worse than repeating it.
+   *
+   * Only set this when the step's own operation is bounded; otherwise
+   * invocations accumulate without limit.
+   */
+  readonly reissueWhileOutstanding?: boolean;
 }
 
 export interface PeriodicMaintenanceLoopOptions {
@@ -76,6 +91,7 @@ interface LaneCounters {
   stepFailures: number;
   stepTimeouts: number;
   stepsSkippedWhileOutstanding: number;
+  stepsReissuedWhileOutstanding: number;
   ticksAbandoned: number;
 }
 
@@ -225,22 +241,28 @@ export class PeriodicMaintenanceLoop {
     const timeoutMs = step.timeoutMs ?? this.stepTimeoutMs;
     const outstanding = this.outstanding.get(step.name);
     if (outstanding) {
-      this.counters.stepsSkippedWhileOutstanding += 1;
-      this.logger.error(
-        {
-          lane: this.lane,
-          step: step.name,
-          outstandingForMs: this.now() - outstanding.startedAtMs,
-        },
-        "Maintenance step is still outstanding from an earlier tick; skipping it so the rest of the lane keeps running",
+      const outstandingForMs = this.now() - outstanding.startedAtMs;
+      if (!step.reissueWhileOutstanding) {
+        this.counters.stepsSkippedWhileOutstanding += 1;
+        this.logger.error(
+          { lane: this.lane, step: step.name, outstandingForMs },
+          "Maintenance step is still outstanding from an earlier tick; skipping it so the rest of the lane keeps running",
+        );
+        return;
+      }
+      this.counters.stepsReissuedWhileOutstanding += 1;
+      this.logger.warn(
+        { lane: this.lane, step: step.name, outstandingForMs },
+        "Maintenance step is still outstanding from an earlier tick; re-issuing it because missing it costs more than repeating it",
       );
-      return;
     }
 
     const startedAtMs = this.now();
     const pending = invoke(step);
     this.outstanding.set(step.name, { startedAtMs });
     const clearOutstanding = (): void => {
+      // A re-issued step replaces the entry; only the newest invocation owns it.
+      if (this.outstanding.get(step.name)?.startedAtMs !== startedAtMs) return;
       this.outstanding.delete(step.name);
     };
     pending.then(clearOutstanding, clearOutstanding);
@@ -278,7 +300,8 @@ export class PeriodicMaintenanceLoop {
     };
     const degraded = counters.stepTimeouts > 0
       || counters.ticksAbandoned > 0
-      || counters.stepsSkippedWhileOutstanding > 0;
+      || counters.stepsSkippedWhileOutstanding > 0
+      || counters.stepsReissuedWhileOutstanding > 0;
     if (degraded) this.logger.error(record, "Maintenance lane is degraded");
     else this.logger.info(record, "Maintenance lane liveness");
   }
@@ -315,6 +338,7 @@ function emptyCounters(): LaneCounters {
     stepFailures: 0,
     stepTimeouts: 0,
     stepsSkippedWhileOutstanding: 0,
+    stepsReissuedWhileOutstanding: 0,
     ticksAbandoned: 0,
   };
 }

@@ -65,6 +65,57 @@ describe("PeriodicMaintenanceLoop", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * Skipping an outstanding step is right for an expensive drain and wrong for
+   * a cheap idempotent one. A node heartbeat that is skipped rather than
+   * repeated turns one slow request into a node the whole cluster believes is
+   * dead, which is worse than the stall it was protecting against.
+   */
+  it("re-issues a step that declares missing it costs more than repeating it", async () => {
+    const logger = makeLogger();
+    const run = vi.fn(neverSettles);
+    const loop = new PeriodicMaintenanceLoop({
+      lane: "lane",
+      steps: [{ name: "heartbeat", run, reissueWhileOutstanding: true }],
+      stepTimeoutMs: 10,
+      logger,
+    });
+
+    await loop.runOnce();
+    await loop.runOnce();
+    await loop.runOnce();
+
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(logger.warn.mock.calls.some(([, message]) =>
+      String(message).includes("re-issuing it")
+    )).toBe(true);
+  });
+
+  it("lets a settling re-issued step clear only its own outstanding entry", async () => {
+    let nowMs = 0;
+    const releases: Array<() => void> = [];
+    const run = vi.fn(() => new Promise<void>((resolve) => {
+      releases.push(resolve);
+    }));
+    const loop = new PeriodicMaintenanceLoop({
+      lane: "lane",
+      steps: [{ name: "heartbeat", run, reissueWhileOutstanding: true }],
+      stepTimeoutMs: 5,
+      logger: makeLogger(),
+      monotonicNowMs: () => (nowMs += 1),
+    });
+
+    await loop.runOnce();
+    await loop.runOnce();
+    // The first invocation settling must not retire the second one's entry.
+    releases[0]!();
+    await Promise.resolve();
+    await loop.runOnce();
+
+    expect(run).toHaveBeenCalledTimes(3);
+    for (const release of releases) release();
+  });
+
   it("re-runs a step once its earlier invocation finally settles", async () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {

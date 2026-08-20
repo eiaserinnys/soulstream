@@ -61,6 +61,9 @@ export class ScheduleDispatcher {
         {
           name: "touch_node_heartbeat",
           run: () => this.touchNodeHeartbeat(),
+          // Bounded by the schedule host request deadline, and a skipped
+          // heartbeat is what makes a live node look dead.
+          reissueWhileOutstanding: true,
         },
         {
           name: "dispatch_due_schedules",
