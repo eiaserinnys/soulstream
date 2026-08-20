@@ -13,57 +13,72 @@ import type { Logger } from "pino";
  * allowed — 56 conflicts in a minute during the 260820 incident, each one
  * rewriting the registration's identity file for nothing.
  *
- * After enough consecutive conflicts the session is dropped from the scan
- * altogether and said so out loud. A wedge that survives that many attempts is
- * not going to clear by being asked again on a timer; it needs the dead-owner
- * expiry path or an operator, and until then the scan should not spend itself
- * on it.
+ * After enough consecutive conflicts the session drops to a much longer probe
+ * interval and says so once. It is deliberately not excluded outright: the
+ * paths that could clear the wedge — the dead-owner expiry, an operator, the
+ * owner finally releasing — all run *inside* a recovery attempt, so a session
+ * that never gets attempted again could never recover either. Slowing the loop
+ * by two orders of magnitude stops the churn while keeping convergence.
  */
 
 const DEFAULT_MAX_CONSECUTIVE_CONFLICTS = 5;
+/** Probe cadence once a session's conflicts stop clearing. */
+const STUCK_PROBE_INTERVAL_MS = 5 * 60_000;
 
 interface ConflictState {
   retryAtMs: number;
   consecutive: number;
-  excluded: boolean;
+  stuck: boolean;
 }
 
 export interface ExecutionOwnershipBackoffOptions {
   logger: Pick<Logger, "warn" | "error">;
   now?: () => number;
   maxConsecutiveConflicts?: number;
+  stuckProbeIntervalMs?: number;
 }
 
 export class ExecutionOwnershipBackoff {
   private readonly states = new Map<string, ConflictState>();
   private readonly now: () => number;
   private readonly maxConsecutiveConflicts: number;
+  private readonly stuckProbeIntervalMs: number;
 
   constructor(private readonly options: ExecutionOwnershipBackoffOptions) {
     this.now = options.now ?? (() => Date.now());
     this.maxConsecutiveConflicts = options.maxConsecutiveConflicts
       ?? DEFAULT_MAX_CONSECUTIVE_CONFLICTS;
+    this.stuckProbeIntervalMs = options.stuckProbeIntervalMs
+      ?? STUCK_PROBE_INTERVAL_MS;
   }
 
   /** True when this scan must leave the session alone. */
   shouldSkip(sessionId: string): boolean {
     const state = this.states.get(sessionId);
     if (!state) return false;
-    if (state.excluded) return true;
     return this.now() < state.retryAtMs;
   }
 
   observeConflict(sessionId: string, retryAt: string): void {
+    const now = this.now();
     const parsed = Date.parse(retryAt);
-    const retryAtMs = Number.isFinite(parsed) ? parsed : this.now();
+    const requestedRetryAtMs = Number.isFinite(parsed) ? parsed : now;
     const previous = this.states.get(sessionId);
     const consecutive = (previous?.consecutive ?? 0) + 1;
-    const excluded = consecutive >= this.maxConsecutiveConflicts;
-    this.states.set(sessionId, { retryAtMs, consecutive, excluded });
-    if (excluded && previous?.excluded !== true) {
+    const stuck = consecutive >= this.maxConsecutiveConflicts;
+    const retryAtMs = stuck
+      ? Math.max(requestedRetryAtMs, now + this.stuckProbeIntervalMs)
+      : requestedRetryAtMs;
+    this.states.set(sessionId, { retryAtMs, consecutive, stuck });
+    if (stuck && previous?.stuck !== true) {
       this.options.logger.error(
-        { sessionId, consecutive, retryAt },
-        "execution ownership conflict did not clear; dropping this session from runner recovery scans until its ownership changes",
+        {
+          sessionId,
+          consecutive,
+          retryAt,
+          probeIntervalMs: this.stuckProbeIntervalMs,
+        },
+        "execution ownership conflict is not clearing; runner recovery will only probe this session occasionally until it does",
       );
       return;
     }

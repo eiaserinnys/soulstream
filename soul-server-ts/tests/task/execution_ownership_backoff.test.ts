@@ -33,26 +33,66 @@ describe("ExecutionOwnershipBackoff", () => {
     expect(backoff.shouldSkip("session-a")).toBe(false);
   });
 
-  it("drops a session from the scan once conflicts stop clearing, and says so once", () => {
+  it("slows to a probe once conflicts stop clearing, and says so once", () => {
     let nowMs = 0;
     const logger = makeLogger();
     const backoff = new ExecutionOwnershipBackoff({
       logger,
       now: () => nowMs,
       maxConsecutiveConflicts: 3,
+      stuckProbeIntervalMs: 5 * 60_000,
     });
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       backoff.observeConflict("session-a", new Date(nowMs).toISOString());
     }
 
-    // Excluded even though every retryAt has already elapsed.
-    nowMs += 10 * 60_000;
+    // The rejection asked for "now", but a session this stuck is not retried
+    // at scan cadence any more.
+    nowMs += 60_000;
     expect(backoff.shouldSkip("session-a")).toBe(true);
     expect(logger.error).toHaveBeenCalledTimes(1);
 
     backoff.observeConflict("session-a", new Date(nowMs).toISOString());
     expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The paths that can clear a wedge — dead-owner expiry, the owner finally
+   * releasing, an operator — all run inside a recovery attempt. A session that
+   * is never attempted again could never recover, so the probe must keep
+   * coming back.
+   */
+  it("keeps probing a stuck session instead of stranding it", () => {
+    let nowMs = 0;
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: makeLogger(),
+      now: () => nowMs,
+      maxConsecutiveConflicts: 2,
+      stuckProbeIntervalMs: 5 * 60_000,
+    });
+
+    backoff.observeConflict("session-a", new Date(nowMs).toISOString());
+    backoff.observeConflict("session-a", new Date(nowMs).toISOString());
+    expect(backoff.shouldSkip("session-a")).toBe(true);
+
+    nowMs += 5 * 60_000;
+    expect(backoff.shouldSkip("session-a")).toBe(false);
+  });
+
+  it("never shortens a backoff the rejection asked to be longer", () => {
+    let nowMs = 0;
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: makeLogger(),
+      now: () => nowMs,
+      maxConsecutiveConflicts: 1,
+      stuckProbeIntervalMs: 60_000,
+    });
+
+    backoff.observeConflict("session-a", new Date(nowMs + 30 * 60_000).toISOString());
+
+    nowMs += 10 * 60_000;
+    expect(backoff.shouldSkip("session-a")).toBe(true);
   });
 
   it("forgets a session as soon as recovery succeeds", () => {
