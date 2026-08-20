@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { StartExecutionCallback } from "../task/task_intervention_route.js";
 
@@ -17,9 +18,11 @@ export interface ScheduleDispatcherConfig {
   startedAt?: Date;
 }
 
+/** One tick drains at most `batchSize` schedules, each bounded by its own awaits. */
+const SCHEDULE_STEP_TIMEOUT_MS = 60_000;
+
 export class ScheduleDispatcher {
-  private timer: NodeJS.Timeout | null = null;
-  private running = false;
+  private loop: PeriodicMaintenanceLoop | null = null;
   private readonly startedAt: Date;
 
   constructor(
@@ -44,33 +47,61 @@ export class ScheduleDispatcher {
     this.startedAt = config.startedAt ?? new Date();
   }
 
+  /**
+   * The node heartbeat is a separate lane step from schedule dispatch on
+   * purpose: a wedged dispatch used to hold the tick guard forever, which
+   * silently froze the heartbeat and made this node look dead to every other
+   * node's recovery scan (260820 incident).
+   */
   start(): void {
-    if (this.timer) return;
-    this.timer = setInterval(
-      () => void this.runOnce(),
-      this.config.intervalMs ?? 30_000,
-    );
-    void this.runOnce();
+    if (this.loop) return;
+    this.loop = new PeriodicMaintenanceLoop({
+      lane: "schedule-dispatcher",
+      steps: [
+        {
+          name: "touch_node_heartbeat",
+          run: () => this.touchNodeHeartbeat(),
+        },
+        {
+          name: "dispatch_due_schedules",
+          run: () => this.dispatchDueSchedules(),
+        },
+      ],
+      intervalMs: this.config.intervalMs ?? 30_000,
+      stepTimeoutMs: SCHEDULE_STEP_TIMEOUT_MS,
+      logger: this.logger,
+    });
+    void this.loop.start();
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
+    if (!this.loop) return;
+    void this.loop.stop();
+    this.loop = null;
+  }
+
+  /** Direct-drive entry point. Production drives the two steps as a lane. */
+  async runOnce(now = new Date()): Promise<void> {
+    await this.touchNodeHeartbeat();
+    await this.dispatchDueSchedules(now);
+  }
+
+  private async touchNodeHeartbeat(): Promise<void> {
+    try {
+      await this.service.touchNodeHeartbeat(this.config.nodeId);
+    } catch (err) {
+      this.logger.warn({ err }, "schedule dispatcher heartbeat failed");
     }
   }
 
-  async runOnce(now = new Date()): Promise<void> {
-    if (this.running) return;
-    this.running = true;
+  private async dispatchDueSchedules(now = new Date()): Promise<void> {
     try {
       const batchSize = this.config.batchSize ?? 25;
-      const staleBefore = new Date(now.getTime() - (this.config.orphanNodeTtlMs ?? 300_000));
-      await this.service.touchNodeHeartbeat(this.config.nodeId, now);
+      const staleAfterMs = this.config.orphanNodeTtlMs ?? 300_000;
       await this.service.repairExpiredClaims(now, batchSize);
-      await this.service.restoreOrphanSchedulesForLiveNodes(staleBefore, batchSize);
+      await this.service.restoreOrphanSchedulesForLiveNodes(staleAfterMs, batchSize);
       if (this.canMarkOrphans(now)) {
-        await this.service.markOrphanDueSchedules(now, staleBefore, batchSize);
+        await this.service.markOrphanDueSchedules(now, staleAfterMs, batchSize);
       }
       const claimed = await this.service.claimDueSchedules(
         this.config.nodeId,
@@ -83,8 +114,6 @@ export class ScheduleDispatcher {
       }
     } catch (err) {
       this.logger.warn({ err }, "schedule dispatcher tick failed");
-    } finally {
-      this.running = false;
     }
   }
 

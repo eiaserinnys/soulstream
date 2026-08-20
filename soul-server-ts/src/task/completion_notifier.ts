@@ -42,6 +42,9 @@ import type { Task } from "./task_models.js";
 import type { QueuedDeliveryTranscriptRecovery } from
   "./queued_delivery_transcript_recovery.js";
 
+/** Matches the persistence host transport deadline for cross-service HTTP. */
+const CROSS_NODE_RELAY_TIMEOUT_MS = 10_000;
+
 /**
  * 본 notifier의 *유일한* 진입점. 다른 public 메서드를 추가하지 않는다 —
  * 임의 메시지 릴레이로 오용 차단 (위임 프롬프트 🟡 #1).
@@ -335,6 +338,10 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         method: "POST",
         headers,
         body: JSON.stringify(body),
+        // Every other persistence-host call carries a deadline; this relay was
+        // the one HTTP hop on the delivery path that could hang forever and
+        // park the maintenance lane behind it (260820 incident).
+        signal: AbortSignal.timeout(CROSS_NODE_RELAY_TIMEOUT_MS),
       });
       if (!resp.ok) {
         const bodyText = await safeReadText(resp);

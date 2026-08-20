@@ -17,7 +17,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       .mockRejectedValueOnce(new Error("orchestrator unavailable"))
       .mockRejectedValueOnce(new Error("still unavailable"))
       .mockResolvedValue(1);
-    const logger = { warn: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const recovery = new ClaudeRuntimeStartupRecovery(
       {
         recoverQueuedDeliveries,
@@ -63,7 +63,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       {
         recoverQueuedDeliveries,
         recoverBackgroundTasks,
-        logger: { warn: vi.fn() },
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
         nodeId: "windows-node",
       },
       50,
@@ -86,7 +86,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     const recovery = new ClaudeRuntimeStartupRecovery({
       recoverQueuedDeliveries,
       recoverBackgroundTasks,
-      logger: { warn: vi.fn() },
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       nodeId: "windows-node",
     });
 

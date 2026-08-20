@@ -4,11 +4,24 @@ import type {
 } from "../control_plane_types.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
+import {
+  attemptOutcomeFor,
+  deliveryRetryOrDeadLetterSet,
+} from "./session_delivery_retry_policy.js";
 
 export interface QueuedDeliveryRecoveryScan {
   recoveryNodeId: string;
-  staleNodeBefore: Date;
-  queuedBefore: Date;
+  /**
+   * How long a node's heartbeat may lag before its sessions count as dead.
+   *
+   * A duration, not an instant: `last_seen_at` and this bound used to come
+   * from two different node clocks with no database term between them, so a
+   * 7.45s skew shrank the threshold and let a live node's queued deliveries be
+   * claimed by another node (260820 incident).
+   */
+  staleNodeAfterMs: number;
+  /** How long a delivery may sit queued before any node may recover it. */
+  queuedAfterMs: number;
 }
 /**
  * Owns the short recovery lease used while a worker checks the Claude
@@ -100,18 +113,22 @@ export class SessionDeliveryRecoveryRepository {
           targetSessionId = targets[0]?.session_id ?? null;
         }
         if (!targetSessionId) {
-          await transaction`
+          const deferred = await transaction<Array<
+            Pick<SessionDeliveryRow, "aggregate_state">
+          >>`
             UPDATE session_deliveries
-            SET attempt_count = attempt_count + 1,
-                next_attempt_at = NOW()
-                  + LEAST(INTERVAL '60 seconds', INTERVAL '100 milliseconds'
-                    * POWER(2, LEAST(attempt_count, 9))),
-                last_error = 'no_current_target', updated_at = NOW()
+            SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+              reason: "no_current_target",
+              retryState: "pending",
+            })}
             WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
+            RETURNING aggregate_state
           `;
           await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
             deliveryId: row.delivery_id,
-            outcome: "retryable",
+            outcome: deferred[0]
+              ? attemptOutcomeFor(deferred[0])
+              : "retryable",
             reason: "no_current_target",
           });
           continue;
@@ -190,32 +207,30 @@ export class SessionDeliveryRecoveryRepository {
     deliveryId: string,
     leaseOwner: string,
     error: string,
-    nextAttemptAt: Date,
+    retryDelayMs: number,
   ): Promise<SessionDeliveryRow | null> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET
-          state = 'queued', aggregate_state = 'pending',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
-          attempt_count = attempt_count + 1,
-          next_attempt_at = ${nextAttemptAt},
-          last_error = ${error},
-          updated_at = NOW()
+        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+          reason: error,
+          retryState: "queued",
+          retryDelayMs,
+        })}
         WHERE delivery_id = ${deliveryId}
           AND state = 'claimed'
           AND lease_owner = ${leaseOwner}
         RETURNING *
       `;
-      if (!rows[0]) return null;
+      const row = rows[0];
+      if (!row) return null;
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
         deliveryId,
-        outcome: "retryable",
+        outcome: attemptOutcomeFor(row),
         reason: error,
         leaseOwner,
       });
-      return rows[0];
+      return row;
     });
   }
 
@@ -267,9 +282,11 @@ export class SessionDeliveryRecoveryRepository {
                   JOIN soulstream_node_heartbeats AS heartbeat
                     ON heartbeat.node_id = target.node_id
                   WHERE target.session_id = delivery.target_session_id
-                    AND heartbeat.last_seen_at < ${scan?.staleNodeBefore ?? null}
+                    AND heartbeat.last_seen_at < NOW()
+                      - (${scan?.staleNodeAfterMs ?? null} * INTERVAL '1 millisecond')
                 )
-                OR delivery.queued_at <= ${scan?.queuedBefore ?? null}
+                OR delivery.queued_at <= NOW()
+                  - (${scan?.queuedAfterMs ?? null} * INTERVAL '1 millisecond')
               )
             )
           )

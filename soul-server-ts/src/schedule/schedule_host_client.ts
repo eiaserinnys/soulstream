@@ -20,8 +20,8 @@ export class ScheduleHostClient {
   cancelSchedule(sessionId: string, scheduleId: string): Promise<CancelScheduleResult> {
     return this.request("cancel_schedule", { sessionId, scheduleId });
   }
-  async touchNodeHeartbeat(nodeId: string, now: Date): Promise<void> {
-    await this.request("touch_node_heartbeat", { nodeId, now });
+  async touchNodeHeartbeat(nodeId: string): Promise<void> {
+    await this.request("touch_node_heartbeat", { nodeId });
   }
   repairExpiredClaims(input: { now: Date; limit: number; error: string }): Promise<SoulstreamSchedule[]> {
     return this.request("repair_expired_claims", input);
@@ -32,12 +32,12 @@ export class ScheduleHostClient {
     return this.request("claim_due_schedules", input);
   }
   markOrphanDueSchedules(input: {
-    now: Date; staleBefore: Date; limit: number; error: string;
+    now: Date; staleAfterMs: number; limit: number; error: string;
   }): Promise<SoulstreamSchedule[]> {
     return this.request("mark_orphan_due_schedules", input);
   }
   restoreOrphanSchedulesForLiveNodes(input: {
-    staleBefore: Date; limit: number;
+    staleAfterMs: number; limit: number;
   }): Promise<SoulstreamSchedule[]> {
     return this.request("restore_orphan_schedules_for_live_nodes", input);
   }

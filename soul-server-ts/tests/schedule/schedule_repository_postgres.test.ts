@@ -42,7 +42,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
   it("repairs expired dispatching and firing claims so crash-after-claim is reclaimable", async () => {
     const now = new Date("2026-01-01T00:00:00Z");
     await insertSession(sql, "sess-claim", "node-a");
-    await repo.touchNodeHeartbeat("node-a", now);
+    await repo.touchNodeHeartbeat("node-a");
     await createSchedule(repo, {
       scheduleId: "sched-claim",
       sessionId: "sess-claim",
@@ -100,7 +100,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
   it("returns already_firing instead of successful delete once injection may be in progress", async () => {
     const now = new Date("2026-01-01T00:00:00Z");
     await insertSession(sql, "sess-delete", "node-a");
-    await repo.touchNodeHeartbeat("node-a", now);
+    await repo.touchNodeHeartbeat("node-a");
     await createSchedule(repo, {
       scheduleId: "sched-delete",
       sessionId: "sess-delete",
@@ -141,7 +141,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
     const retryAt = new Date("2026-01-01T00:00:05Z");
     const service = makeService(repo);
     await insertSession(sql, "sess-defer", "node-a");
-    await repo.touchNodeHeartbeat("node-a", now);
+    await repo.touchNodeHeartbeat("node-a");
     await createSchedule(repo, {
       scheduleId: "sched-defer",
       sessionId: "sess-defer",
@@ -195,7 +195,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
 
   it("marks due schedules orphaned only when owner heartbeat is known stale", async () => {
     const now = new Date("2026-01-01T00:10:00Z");
-    const staleBefore = new Date("2026-01-01T00:05:00Z");
+    const staleAfterMs = 5 * 60 * 1000;
     await insertSession(sql, "sess-missing-heartbeat", "dead-node");
     await createSchedule(repo, {
       scheduleId: "sched-missing-heartbeat",
@@ -203,14 +203,21 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
       nextRunAt: now,
     });
     await insertSession(sql, "sess-stale-heartbeat", "stale-node");
-    await repo.touchNodeHeartbeat("stale-node", new Date("2026-01-01T00:00:00Z"));
+    await repo.touchNodeHeartbeat("stale-node");
+    // last_seen_at is stamped by the database clock now, so staleness is
+    // simulated by ageing the stored row rather than by forging a timestamp.
+    await sql`
+      UPDATE soulstream_node_heartbeats
+      SET last_seen_at = NOW() - INTERVAL '10 minutes'
+      WHERE node_id = 'stale-node'
+    `;
     await createSchedule(repo, {
       scheduleId: "sched-stale-heartbeat",
       sessionId: "sess-stale-heartbeat",
       nextRunAt: now,
     });
     await insertSession(sql, "sess-live", "live-node");
-    await repo.touchNodeHeartbeat("live-node", now);
+    await repo.touchNodeHeartbeat("live-node");
     await createSchedule(repo, {
       scheduleId: "sched-live",
       sessionId: "sess-live",
@@ -219,7 +226,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
 
     const orphaned = await repo.markOrphanDueSchedules({
       now,
-      staleBefore,
+      staleAfterMs,
       limit: 10,
       error: "owner offline",
     });

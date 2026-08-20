@@ -1,105 +1,95 @@
 import type { Logger } from "pino";
 
+import { PeriodicMaintenanceLoop } from "./periodic_maintenance_loop.js";
+
+/**
+ * `composeClaudeRuntime` awaits the first pass, so this deadline is also the
+ * worst case this recovery can delay node startup. Before it existed, a wedged
+ * recovery call blocked composition — and therefore the listener — forever.
+ */
+const STARTUP_RECOVERY_STEP_TIMEOUT_MS = 15_000;
+
 export interface ClaudeRuntimeStartupRecoveryDeps {
   recoverQueuedDeliveries(): Promise<number>;
   recoverBackgroundTasks(): Promise<number>;
-  logger: Pick<Logger, "warn">;
+  logger: Pick<Logger, "info" | "warn" | "error">;
   nodeId: string;
 }
 
 /** Retries startup-only Claude recovery without holding worker health hostage. */
 export class ClaudeRuntimeStartupRecovery {
-  private timer?: NodeJS.Timeout;
-  private activeTick?: Promise<void>;
-  private stopping = false;
+  private readonly loop: PeriodicMaintenanceLoop;
   private queuedDeliveriesRecovered = false;
   private backgroundTasksRecovered = false;
+  private stopped = false;
 
   constructor(
     private readonly deps: ClaudeRuntimeStartupRecoveryDeps,
-    private readonly intervalMs = 5_000,
-  ) {}
+    intervalMs = 5_000,
+    stepTimeoutMs = STARTUP_RECOVERY_STEP_TIMEOUT_MS,
+  ) {
+    this.loop = new PeriodicMaintenanceLoop({
+      lane: "claude-runtime-startup-recovery",
+      steps: [
+        {
+          name: "recover_queued_deliveries",
+          run: () => this.recoverQueuedDeliveries(),
+        },
+        {
+          name: "recover_background_tasks",
+          run: () => this.recoverBackgroundTasks(),
+        },
+      ],
+      intervalMs,
+      stepTimeoutMs,
+      // A startup-only lane retires itself; a steady-state liveness summary
+      // would only report a lane that is meant to stop.
+      livenessIntervalMs: 0,
+      logger: deps.logger,
+    });
+  }
 
   async start(): Promise<void> {
-    this.stopping = false;
-    await this.runOnce();
-    this.scheduleRetry();
+    this.stopped = false;
+    await this.loop.start();
+    this.retireIfComplete();
   }
 
   async stop(timeoutMs = 5_000): Promise<"drained" | "timed_out"> {
-    this.stopping = true;
-    this.clearRetry();
-    if (!this.activeTick) return "drained";
-    return await new Promise<"drained" | "timed_out">((resolve) => {
-      const timer = setTimeout(() => resolve("timed_out"), timeoutMs);
-      timer.unref();
-      void this.activeTick!.then(() => {
-        clearTimeout(timer);
-        resolve("drained");
-      });
-    });
+    this.stopped = true;
+    return await this.loop.stop(timeoutMs);
   }
 
-  private async runOnce(): Promise<void> {
-    if (this.stopping || this.activeTick || this.isComplete()) return;
-    this.activeTick = this.runTick().finally(() => {
-      this.activeTick = undefined;
-    });
-    await this.activeTick;
-    if (this.isComplete()) this.clearRetry();
-  }
-
-  private async runTick(): Promise<void> {
-    if (!this.queuedDeliveriesRecovered) {
-      try {
-        const count = await this.deps.recoverQueuedDeliveries();
-        this.queuedDeliveriesRecovered = true;
-        if (count > 0) {
-          this.deps.logger.warn(
-            { count, nodeId: this.deps.nodeId },
-            "Reconciled queued deliveries after worker restart",
-          );
-        }
-      } catch (err) {
-        this.deps.logger.warn(
-          { err, nodeId: this.deps.nodeId },
-          "Queued delivery startup recovery failed; retry scheduled",
-        );
-      }
+  private async recoverQueuedDeliveries(): Promise<void> {
+    if (this.queuedDeliveriesRecovered) return;
+    const count = await this.deps.recoverQueuedDeliveries();
+    this.queuedDeliveriesRecovered = true;
+    if (count > 0) {
+      this.deps.logger.warn(
+        { count, nodeId: this.deps.nodeId },
+        "Reconciled queued deliveries after worker restart",
+      );
     }
-    if (this.stopping) return;
-    if (!this.backgroundTasksRecovered) {
-      try {
-        const count = await this.deps.recoverBackgroundTasks();
-        this.backgroundTasksRecovered = true;
-        if (count > 0) {
-          this.deps.logger.warn(
-            { count, nodeId: this.deps.nodeId },
-            "Recovered in-flight Claude background tasks after worker restart",
-          );
-        }
-      } catch (err) {
-        this.deps.logger.warn(
-          { err, nodeId: this.deps.nodeId },
-          "Claude background task startup recovery failed; retry scheduled",
-        );
-      }
+    this.retireIfComplete();
+  }
+
+  private async recoverBackgroundTasks(): Promise<void> {
+    if (this.backgroundTasksRecovered) return;
+    const count = await this.deps.recoverBackgroundTasks();
+    this.backgroundTasksRecovered = true;
+    if (count > 0) {
+      this.deps.logger.warn(
+        { count, nodeId: this.deps.nodeId },
+        "Recovered in-flight Claude background tasks after worker restart",
+      );
     }
+    this.retireIfComplete();
   }
 
-  private scheduleRetry(): void {
-    if (this.stopping || this.timer || this.isComplete()) return;
-    this.timer = setInterval(() => void this.runOnce(), this.intervalMs);
-    this.timer.unref();
-  }
-
-  private clearRetry(): void {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = undefined;
-  }
-
-  private isComplete(): boolean {
-    return this.queuedDeliveriesRecovered && this.backgroundTasksRecovered;
+  private retireIfComplete(): void {
+    if (this.stopped) return;
+    if (!this.queuedDeliveriesRecovered || !this.backgroundTasksRecovered) return;
+    this.stopped = true;
+    void this.loop.stop(0);
   }
 }

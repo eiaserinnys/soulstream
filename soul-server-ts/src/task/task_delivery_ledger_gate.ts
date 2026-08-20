@@ -14,6 +14,7 @@ import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
 import { loadOrRegisterDelivery } from "./task_delivery_registration.js";
 import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
+  deliveryRetryDelayMs,
   notificationOldestAllowedCreatedAt,
   notificationRetryAt,
 } from "./session_delivery_notification_policy.js";
@@ -205,7 +206,9 @@ export class TaskDeliveryLedgerGate {
         admission.deliveryId,
         leaseOwner,
         "scheduled_runtime_followup_retry",
-        nextAttemptAt,
+        // The caller schedules against its own clock; only the remaining
+        // interval survives the trip to the database's clock.
+        Math.max(0, nextAttemptAt.getTime() - Date.now()),
       );
       if (!reserved) {
         throw new Error(`Delivery ${admission.deliveryId} lost retry reservation CAS`);
@@ -251,7 +254,7 @@ export class TaskDeliveryLedgerGate {
           admission.deliveryId,
           leaseOwner,
           result.reason,
-          notificationRetryAt(admission.row.attempt_count),
+          deliveryRetryDelayMs(admission.row.attempt_count),
         );
         if (!retried) {
           throw new Error(`Delivery ${admission.deliveryId} lost retryable-state CAS`);
@@ -300,18 +303,19 @@ export class TaskDeliveryLedgerGate {
       );
       return uncertain ? "exhausted" : "lost";
     }
-    const existingBackoffDueAt = notificationRetryAt(admission.row.attempt_count);
-    const maximumDueAt = new Date(Date.now() + OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS);
-    const dueAt = new Date(Math.min(
-      requestedDueAt.getTime(),
-      existingBackoffDueAt.getTime(),
-      maximumDueAt.getTime(),
+    // All three candidates become durations before the minimum is taken: the
+    // requested instant is the only one that came from another clock, and
+    // mixing it with locally derived instants let skew pick the wrong bound.
+    const retryDelayMs = Math.max(0, Math.min(
+      requestedDueAt.getTime() - Date.now(),
+      deliveryRetryDelayMs(admission.row.attempt_count),
+      OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS,
     ));
     const retried = await repository.retryLeasedDelivery(
       admission.deliveryId,
       leaseOwner,
       "reservation_in_flight",
-      dueAt,
+      retryDelayMs,
     );
     return retried ? "scheduled" : "lost";
   }

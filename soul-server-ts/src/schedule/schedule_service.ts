@@ -247,8 +247,8 @@ export class SoulstreamScheduleService {
     });
   }
 
-  async touchNodeHeartbeat(nodeId: string, now: Date): Promise<void> {
-    await this.db.touchNodeHeartbeat(nodeId, now);
+  async touchNodeHeartbeat(nodeId: string): Promise<void> {
+    await this.db.touchNodeHeartbeat(nodeId);
   }
 
   async repairExpiredClaims(
@@ -268,12 +268,12 @@ export class SoulstreamScheduleService {
 
   async markOrphanDueSchedules(
     now: Date,
-    staleBefore: Date,
+    staleAfterMs: number,
     limit = 25,
   ): Promise<SoulstreamSchedule[]> {
     const schedules = await this.db.markOrphanDueSchedules({
       now,
-      staleBefore,
+      staleAfterMs,
       limit,
       error: "scheduled session owner node is not connected",
     });
@@ -284,11 +284,11 @@ export class SoulstreamScheduleService {
   }
 
   async restoreOrphanSchedulesForLiveNodes(
-    staleBefore: Date,
+    staleAfterMs: number,
     limit = 25,
   ): Promise<SoulstreamSchedule[]> {
     const schedules = await this.db.restoreOrphanSchedulesForLiveNodes({
-      staleBefore,
+      staleAfterMs,
       limit,
     });
     for (const schedule of schedules) {

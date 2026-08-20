@@ -37,6 +37,9 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
  * transcript therefore settles the ledger directly; an input without its
  * assistant result remains queued and is polled instead of being re-injected.
  */
+/** Poll cadence for a transcript that has not yet settled. */
+const TRANSCRIPT_RECHECK_DELAY_MS = 1_000;
+
 export class QueuedDeliveryTranscriptRecovery {
   constructor(
     private readonly deps: QueuedDeliveryTranscriptRecoveryDeps,
@@ -95,7 +98,7 @@ export class QueuedDeliveryTranscriptRecovery {
             row.delivery_id,
             this.workerId,
             "queued_transcript_input_absent",
-            new Date(),
+            0,
           );
           if (replayable) settled += 1;
           continue;
@@ -123,7 +126,7 @@ export class QueuedDeliveryTranscriptRecovery {
       deliveryId,
       this.workerId,
       reason,
-      new Date(Date.now() + 1_000),
+      TRANSCRIPT_RECHECK_DELAY_MS,
     );
   }
 }

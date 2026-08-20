@@ -315,7 +315,10 @@ function makeLifecycle(sql: SqlClient): ClaudeBackgroundTaskLifecycle {
   return new ClaudeBackgroundTaskLifecycle({
     repository: background(sql),
     sourceNode: "node-test",
-    now: () => new Date("2026-07-26T10:00:00.000Z"),
+    // Stamps the delivery's created_at, which the retry budget measures age
+    // against. A pinned past date would exhaust that budget before these
+    // tests reach the behaviour they are about.
+    now: () => new Date(),
   });
 }
 

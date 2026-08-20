@@ -203,14 +203,14 @@ describe("SoulstreamScheduleService", () => {
     await expect(
       service.markOrphanDueSchedules(
         new Date("2026-01-01T00:00:00Z"),
-        new Date("2025-12-31T23:55:00Z"),
+        5 * 60 * 1000,
         10,
       ),
     ).resolves.toEqual([expect.objectContaining({ scheduleId: "orphan-1" })]);
 
     expect(db.markOrphanDueSchedules).toHaveBeenCalledWith({
       now: new Date("2026-01-01T00:00:00Z"),
-      staleBefore: new Date("2025-12-31T23:55:00Z"),
+      staleAfterMs: 5 * 60 * 1000,
       limit: 10,
       error: "scheduled session owner node is not connected",
     });
@@ -233,13 +233,13 @@ describe("SoulstreamScheduleService", () => {
 
     await expect(
       service.restoreOrphanSchedulesForLiveNodes(
-        new Date("2025-12-31T23:55:00Z"),
+        5 * 60 * 1000,
         10,
       ),
     ).resolves.toEqual([expect.objectContaining({ scheduleId: "orphan-1" })]);
 
     expect(db.restoreOrphanSchedulesForLiveNodes).toHaveBeenCalledWith({
-      staleBefore: new Date("2025-12-31T23:55:00Z"),
+      staleAfterMs: 5 * 60 * 1000,
       limit: 10,
     });
     expect(persistence.enqueueEvent).toHaveBeenCalledWith(

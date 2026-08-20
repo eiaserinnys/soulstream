@@ -30,21 +30,18 @@ describe("ScheduleDispatcher", () => {
 
     await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
 
-    expect(service.touchNodeHeartbeat).toHaveBeenCalledWith(
-      "owner-node",
-      new Date("2026-01-01T00:00:00Z"),
-    );
+    expect(service.touchNodeHeartbeat).toHaveBeenCalledWith("owner-node");
     expect(service.repairExpiredClaims).toHaveBeenCalledWith(
       new Date("2026-01-01T00:00:00Z"),
       5,
     );
     expect(service.restoreOrphanSchedulesForLiveNodes).toHaveBeenCalledWith(
-      new Date("2025-12-31T23:55:00Z"),
+      300_000,
       5,
     );
     expect(service.markOrphanDueSchedules).toHaveBeenCalledWith(
       new Date("2026-01-01T00:00:00Z"),
-      new Date("2025-12-31T23:55:00Z"),
+      300_000,
       5,
     );
     expect(service.claimDueSchedules).toHaveBeenCalledWith(
@@ -181,7 +178,7 @@ describe("ScheduleDispatcher", () => {
     await dispatcher.runOnce(new Date("2026-01-01T00:01:00Z"));
 
     expect(service.restoreOrphanSchedulesForLiveNodes).toHaveBeenCalledWith(
-      new Date("2025-12-31T23:56:00Z"),
+      300_000,
       25,
     );
     expect(service.markOrphanDueSchedules).not.toHaveBeenCalled();

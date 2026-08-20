@@ -68,7 +68,7 @@ async function dispatch(
       requiredString(input, "sessionId"), requiredString(input, "scheduleId"),
     );
     case "touchNodeHeartbeat": return await repository.touchNodeHeartbeat(
-      requiredString(input, "nodeId"), requiredDate(input, "now"),
+      requiredString(input, "nodeId"),
     );
     case "repairExpiredClaims": return await repository.repairExpiredClaims(input as never);
     case "claimDueSchedules": return await repository.claimDueSchedules(input as never);
@@ -91,7 +91,7 @@ async function dispatch(
   }
 }
 
-const dateKeys = new Set(["runOnceAt", "nextRunAt", "createdAt", "now", "claimedUntil", "staleBefore", "firedAt"]);
+const dateKeys = new Set(["runOnceAt", "nextRunAt", "createdAt", "now", "claimedUntil", "firedAt"]);
 
 function toInput(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
