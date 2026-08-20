@@ -223,18 +223,20 @@ export class EventOutboxPump {
 
   async waitForAcknowledgement(
     record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
+    options: { timeoutMs?: number } = {},
   ): Promise<number> {
     const immediate = this.takeImmediateAcknowledgement(record);
     if (immediate) return immediate.event_id;
-    return (await this.waitForDeferredAcknowledgement(record)).event_id;
+    return (await this.waitForDeferredAcknowledgement(record, options)).event_id;
   }
 
   async waitForAcknowledgementResult(
     record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
+    options: { timeoutMs?: number } = {},
   ): Promise<EventAppendAcknowledgement> {
     const immediate = this.takeImmediateAcknowledgement(record);
     if (immediate) return immediate;
-    return await this.waitForDeferredAcknowledgement(record);
+    return await this.waitForDeferredAcknowledgement(record, options);
   }
 
   private takeImmediateAcknowledgement(
@@ -272,8 +274,10 @@ export class EventOutboxPump {
 
   private async waitForDeferredAcknowledgement(
     record: Pick<EventOutboxRecord, "source_seq" | "session_id">,
+    options: { timeoutMs?: number } = {},
   ): Promise<EventAppendAcknowledgement> {
-    const timeoutMs = this.options.acknowledgementTimeoutMs
+    const timeoutMs = options.timeoutMs
+      ?? this.options.acknowledgementTimeoutMs
       ?? DEFAULT_ACKNOWLEDGEMENT_TIMEOUT_MS;
     const acknowledgement = await new Promise<EventAppendAcknowledgement>((resolve, reject) => {
       const waiters = this.acknowledgementWaiters.get(record.source_seq) ?? new Set();
