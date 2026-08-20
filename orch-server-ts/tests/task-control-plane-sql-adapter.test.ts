@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createPostgresQueryAdapter } from "../src/runtime/postgres_query_adapter.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 import { TaskRepository } from "../src/tasks/control_plane/task_repository.js";
 
@@ -59,6 +60,59 @@ describe("task control-plane postgres.js adapter", () => {
 
     expect(helper).toEqual({ first: { title: "renamed" }, columns: [] });
     expect(helper).not.toBeInstanceOf(Promise);
+  });
+
+  it("hands back the driver's own query object so it can still be a fragment", async () => {
+    // postgres.js returns a `Query`: awaitable, and interpolatable into another
+    // query as a fragment. The adapter used to run every template through
+    // `Promise.resolve`, which adopted the thenable — firing the fragment off as
+    // its own statement — and returned a plain promise the driver no longer
+    // recognised, so the parent bound it as a parameter and emitted `SET $1`.
+    // Every `deliveryRetryOrDeadLetterSet` caller broke that way on 260820.
+    let thenCalls = 0;
+    const driverResult = {
+      marker: "driver-query",
+      then(onFulfilled?: (value: unknown) => unknown) {
+        thenCalls += 1;
+        return Promise.resolve([{ id: "row" }]).then(onFulfilled);
+      },
+    };
+    const rawSql = Object.assign(
+      (first: TemplateStringsArray | Record<string, unknown>) => (
+        Array.isArray(first) && Object.prototype.hasOwnProperty.call(first, "raw")
+          ? driverResult
+          : { first }
+      ),
+      { array: (values: readonly unknown[]) => values, json: (value: unknown) => value },
+    ) as unknown as LivePostgresSql;
+
+    const sql = createPostgresQueryAdapter(
+      rawSql as unknown as Parameters<typeof createPostgresQueryAdapter>[0],
+    );
+    const fragment = sql`COALESCE(last_error, ${"lease expired"})`;
+
+    expect(fragment).toBe(driverResult);
+    expect(thenCalls).toBe(0);
+
+    // Still awaitable once the caller actually wants rows.
+    await expect(fragment).resolves.toEqual([{ id: "row" }]);
+    expect(thenCalls).toBe(1);
+  });
+
+  it("still normalises a test double's synchronous rows into a promise", async () => {
+    const rows = [{ id: "sync" }];
+    const rawSql = Object.assign(
+      () => rows,
+      { array: (values: readonly unknown[]) => values, json: (value: unknown) => value },
+    ) as unknown as LivePostgresSql;
+
+    const sql = createPostgresQueryAdapter(
+      rawSql as unknown as Parameters<typeof createPostgresQueryAdapter>[0],
+    );
+    const result = sql`SELECT 1`;
+
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toBe(rows);
   });
 
   it("executes patchTaskTx with a synchronous SET helper", async () => {
