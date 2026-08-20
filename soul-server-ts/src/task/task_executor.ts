@@ -186,6 +186,7 @@ export class TaskExecutor {
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
+    executionOwnershipNodeId?: string,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -239,6 +240,11 @@ export class TaskExecutor {
           failureReason,
         ),
       inspectProcess: inspectProcessIdentity,
+      isSessionExecutedHere: async (sessionId) => {
+        if (!executionOwnershipNodeId) return false;
+        const session = await db.getSession(sessionId);
+        return session?.node_id === executionOwnershipNodeId;
+      },
       logger: this.logger,
     });
   }

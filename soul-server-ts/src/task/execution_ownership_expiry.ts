@@ -15,11 +15,18 @@ import type { CanonicalExecutionOwnership } from "./execution_ownership.js";
  * 260820 incident, with no path that could ever converge.
  *
  * The escape is narrow on purpose, and it errs toward leaving the reservation
- * alone. A pid alone would not be enough — pids are reused, and a recycled pid
- * would read as a live owner forever — so a live pid is only accepted as *the*
- * owner when its start identity still matches the one recorded with the
- * ownership. Anything unproven (no pid, no start identity on either side, an
- * unreadable process) is treated as "still owned".
+ * alone. Two things have to be proven before anything is displaced:
+ *
+ * - that the owner would be *here*. The pid is inspected on this host, so a
+ *   session executing on another node would read as "no such process" and its
+ *   perfectly healthy ownership would be revoked from across the cluster. The
+ *   session's own node assignment is checked first.
+ * - that the live process, if there is one, is still the recorded owner. Pids
+ *   are reused, so a recycled pid would otherwise read as a live owner forever;
+ *   the start identity recorded with the ownership settles it.
+ *
+ * Anything unproven — no pid, no start identity on either side, an unreadable
+ * process, an unknown session — is treated as "still owned".
  */
 
 export interface ExecutionOwnershipExpiryDeps {
@@ -30,6 +37,8 @@ export interface ExecutionOwnershipExpiryDeps {
     failureReason: string,
   ): Promise<{ applied: boolean }>;
   inspectProcess(pid: number): Promise<ProcessIdentity>;
+  /** False whenever this node is not the one that executes the session. */
+  isSessionExecutedHere(sessionId: string): Promise<boolean>;
   logger: Pick<Logger, "info" | "warn">;
 }
 
@@ -37,6 +46,7 @@ export type ExecutionOwnershipExpiryOutcome =
   | "expired"
   | "owner_alive"
   | "owner_unknown"
+  | "not_local"
   | "not_applied";
 
 /** Pids are reused, so liveness alone never proves the *recorded* owner lives. */
@@ -60,6 +70,17 @@ export class ExecutionOwnershipExpiry {
     if (ownership.phase === "terminal" || ownership.phase === "failed") {
       return "owner_unknown";
     }
+    let executedHere: boolean;
+    try {
+      executedHere = await this.deps.isSessionExecutedHere(sessionId);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId },
+        "could not confirm this node executes the session; leaving its ownership alone",
+      );
+      return "not_local";
+    }
+    if (!executedHere) return "not_local";
     let observed: ProcessIdentity;
     try {
       observed = await this.deps.inspectProcess(ownership.pid);

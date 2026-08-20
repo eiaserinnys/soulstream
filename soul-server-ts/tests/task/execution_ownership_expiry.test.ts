@@ -35,6 +35,8 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn().mockResolvedValue({ applied: true });
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
     });
@@ -57,6 +59,8 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn().mockResolvedValue({ applied: true });
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: true, startIdentity: "start-999" }),
       logger: makeLogger(),
     });
@@ -70,6 +74,8 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: true, startIdentity: null }),
       logger: makeLogger(),
     });
@@ -87,6 +93,9 @@ describe("ExecutionOwnershipExpiry", () => {
     const logger = makeLogger();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => {
         throw new Error("permission denied");
       },
@@ -99,10 +108,49 @@ describe("ExecutionOwnershipExpiry", () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The pid is inspected on this host, so a session executing elsewhere would
+   * read as "no such process" and have its healthy ownership revoked from
+   * across the cluster.
+   */
+  it("refuses to displace an ownership for a session another node executes", async () => {
+    const fail = vi.fn();
+    const expiry = new ExecutionOwnershipExpiry({
+      fail,
+      isSessionExecutedHere: async () => false,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
+      logger: makeLogger(),
+    });
+
+    await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
+      .resolves.toBe("not_local");
+    expect(fail).not.toHaveBeenCalled();
+  });
+
+  it("leaves ownership alone when node assignment cannot be read", async () => {
+    const fail = vi.fn();
+    const logger = makeLogger();
+    const expiry = new ExecutionOwnershipExpiry({
+      fail,
+      isSessionExecutedHere: async () => {
+        throw new Error("session host unavailable");
+      },
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
+      logger,
+    });
+
+    await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
+      .resolves.toBe("not_local");
+    expect(fail).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves a live owner alone", async () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: true, startIdentity: "start-1" }),
       logger: makeLogger(),
     });
@@ -116,6 +164,8 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
     });
@@ -131,6 +181,8 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
     });
@@ -145,6 +197,8 @@ describe("ExecutionOwnershipExpiry", () => {
     const logger = makeLogger();
     const rejecting = new ExecutionOwnershipExpiry({
       fail: vi.fn().mockResolvedValue({ applied: false }),
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger,
     });
@@ -153,6 +207,8 @@ describe("ExecutionOwnershipExpiry", () => {
 
     const throwing = new ExecutionOwnershipExpiry({
       fail: vi.fn().mockRejectedValue(new Error("host unavailable")),
+      isSessionExecutedHere: async () => true,
+      isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger,
     });

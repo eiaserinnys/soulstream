@@ -164,6 +164,7 @@ export function composeTaskRuntime(
     runnerProcessFactory,
     transientEventLogAggregator,
     executionOwnershipBackoff,
+    env.SOULSTREAM_NODE_ID,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(
