@@ -32,6 +32,12 @@ const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
 const REGISTRATION_TIMEOUT_CLOSE_CODE = 4001;
 const INTERNAL_ERROR_CLOSE_CODE = 1011;
+/**
+ * A registering node only has to park the frames it emits during one receipt
+ * round trip. Anything past that is a flood, not a handshake, and gets the
+ * connection closed rather than the orchestrator's heap.
+ */
+const MAX_DEFERRED_REGISTRATION_FRAMES = 512;
 const DEFAULT_REGISTRATION_TIMEOUT_MS = 10_000;
 
 export type NodeWsRouteOptions = {
@@ -107,6 +113,7 @@ export function registerNodeWsRoute(
       let ingressController: NodeEventIngressController | undefined;
       let finalized = false;
       let releaseActivationInFlight = false;
+      let deferredFrames: Record<string, unknown>[] | undefined;
       let registrationTimer: ReturnType<typeof setTimeout> | undefined;
 
       app.log.info({
@@ -157,6 +164,16 @@ export function registerNodeWsRoute(
           "registration_timeout",
         );
       }, registrationTimeoutMs);
+
+      const drainDeferredFrames = (): void => {
+        const queued = deferredFrames;
+        deferredFrames = undefined;
+        if (queued === undefined) return;
+        for (const frame of queued) {
+          if (finalized) return;
+          handleFrame(frame);
+        }
+      };
 
       const handleFrame = (
         frame: Record<string, unknown>,
@@ -259,6 +276,25 @@ export function registerNodeWsRoute(
           closeAndFinalize(parsed.closeCode, parsed.reason);
           return;
         }
+        if (releaseActivationInFlight && parsed.frame.type !== "node_register") {
+          // Registration is a round trip to the receipt store, and the node starts
+          // pumping its event outbox and app heartbeat the moment it has sent
+          // `node_register`. Those frames arrive before this connection is
+          // registered; handing them to the controller now would reject them as
+          // EXPECTED_NODE_REGISTER and close a connection that is registering
+          // correctly. Hold them in arrival order and replay them once the
+          // registration they belong to has landed.
+          deferredFrames ??= [];
+          if (deferredFrames.length >= MAX_DEFERRED_REGISTRATION_FRAMES) {
+            closeAndFinalize(
+              POLICY_VIOLATION_CLOSE_CODE,
+              "registration frame backlog exceeded",
+            );
+            return;
+          }
+          deferredFrames.push(parsed.frame);
+          return;
+        }
         if (registeredSource === undefined && parsed.frame.type === "node_register") {
           let activation;
           try {
@@ -281,10 +317,16 @@ export function registerNodeWsRoute(
             void options.releaseActivationReceipts.persist(activation).then(
               (receipt) => {
                 releaseActivationInFlight = false;
-                if (!finalized) handleFrame(parsed.frame, receipt);
+                if (finalized) {
+                  deferredFrames = undefined;
+                  return;
+                }
+                handleFrame(parsed.frame, receipt);
+                drainDeferredFrames();
               },
               (error) => {
                 releaseActivationInFlight = false;
+                deferredFrames = undefined;
                 app.log.error({ err: error, nodeId: activation?.nodeId },
                   "Node release activation receipt persistence failed");
                 closeAndFinalize(INTERNAL_ERROR_CLOSE_CODE, "release activation persistence failed");

@@ -222,6 +222,82 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("replays the frames a registering node sends while its activation receipt persists", async () => {
+    const { registry, sessionCache } = createRegistry();
+    let resolvePersist!: (value: {
+      manifest_id: string;
+      activation_generation: number;
+      activated_at: string;
+      registration_idempotency_key: string;
+    }) => void;
+    const persist = vi.fn(async () => await new Promise<{
+      manifest_id: string;
+      activation_generation: number;
+      activated_at: string;
+      registration_idempotency_key: string;
+    }>((resolve) => { resolvePersist = resolve; }));
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, releaseActivationReceipts: { persist } },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    const received: string[] = [];
+    ws.on("message", (data) => {
+      received.push(Buffer.isBuffer(data) ? data.toString("utf8") : String(data));
+    });
+    let closed = false;
+    ws.on("close", () => { closed = true; });
+
+    ws.send(JSON.stringify({
+      ...fixture.registration,
+      release_manifest: releaseManifest,
+      release_activation: {
+        manifest_id: "manifest-1",
+        release_cohort_id: "cohort-1",
+        source_commit: "commit-1",
+        prewarmed_at: "2026-08-19T09:00:00.000Z",
+        verification: {
+          host: "verified",
+          runner: "verified",
+          env: "verified",
+          executable: "verified",
+        },
+        registration_idempotency_key: "registration-key",
+      },
+    }));
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce());
+
+    // The node pumps its outbox and heartbeat the moment it has sent
+    // `node_register` — well before the receipt is durable.
+    const sentAt = "2026-08-19T09:00:00.500Z";
+    ws.send(JSON.stringify({ type: "app_heartbeat_ping", sentAt }));
+    ws.send(JSON.stringify(fixture.eventRelay));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(closed).toBe(false);
+
+    resolvePersist({
+      manifest_id: "manifest-1",
+      activation_generation: 7,
+      activated_at: "2026-08-19T09:00:01.000Z",
+      registration_idempotency_key: "registration-key",
+    });
+
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    await waitFor(() => sessionCache.findSession("sess-contract")?.lastEventId === 1);
+    await waitFor(
+      () => received.some((raw) => raw.includes("app_heartbeat_pong")),
+    );
+    expect(closed).toBe(false);
+    expect(JSON.parse(received[0] ?? "{}")).toMatchObject({
+      type: "node_register_ack",
+    });
+
+    ws.terminate();
+    await app.close();
+  });
+
   it("rejects an incomplete release manifest before receipt persistence", async () => {
     const { registry } = createRegistry();
     const persist = vi.fn();
