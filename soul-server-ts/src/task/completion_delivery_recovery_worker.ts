@@ -1,74 +1,65 @@
 import type { Logger } from "pino";
 
+import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js";
+
+/**
+ * Comfortably above a healthy drain, so the deadline means "something is
+ * wrong" rather than "the batch was large".
+ *
+ * Each step's own batch budget already stops it well inside its 60s claim
+ * lease, so a step that reaches this deadline is stuck, not busy — which is
+ * what makes the resulting error log worth reading.
+ */
+const RECOVERY_STEP_TIMEOUT_MS = 90_000;
+
 export interface CompletionDeliveryRecoveryWorkerDeps {
   recoverPending(): Promise<void>;
   recoverNotifications(): Promise<void>;
-  logger: Pick<Logger, "warn">;
+  logger: Pick<Logger, "info" | "warn" | "error">;
 }
 
-/** Replays durable completion rows until they leave pending/claimed state. */
+/**
+ * Replays durable completion rows until they leave pending/claimed state.
+ *
+ * The lane semantics — per-step deadlines, isolation of a hung step from its
+ * siblings, and the stalled-tick watchdog — belong to PeriodicMaintenanceLoop.
+ * This class only declares which steps the session-delivery lane runs.
+ */
 export class CompletionDeliveryRecoveryWorker {
-  private timer?: NodeJS.Timeout;
-  private activeTick?: Promise<void>;
-  private stopping = false;
+  private readonly loop: PeriodicMaintenanceLoop;
 
   constructor(
-    private readonly deps: CompletionDeliveryRecoveryWorkerDeps,
-    private readonly intervalMs = 5_000,
-  ) {}
+    deps: CompletionDeliveryRecoveryWorkerDeps,
+    intervalMs = 5_000,
+    stepTimeoutMs = RECOVERY_STEP_TIMEOUT_MS,
+  ) {
+    this.loop = new PeriodicMaintenanceLoop({
+      lane: "session-deliveries",
+      steps: [
+        {
+          name: "recover_pending_deliveries",
+          run: () => deps.recoverPending(),
+        },
+        {
+          name: "recover_delivery_notifications",
+          run: () => deps.recoverNotifications(),
+        },
+      ],
+      intervalMs,
+      stepTimeoutMs,
+      logger: deps.logger,
+    });
+  }
 
   start(): void {
-    if (this.timer) return;
-    this.stopping = false;
-    void this.runOnce();
-    this.timer = setInterval(() => void this.runOnce(), this.intervalMs);
-    this.timer.unref();
+    this.loop.start();
   }
 
   async stop(timeoutMs = 5_000): Promise<"drained" | "timed_out"> {
-    this.stopping = true;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = undefined;
-    }
-    if (!this.activeTick) return "drained";
-    return await Promise.race([
-      this.activeTick.then(() => "drained" as const),
-      new Promise<"timed_out">((resolve) => {
-        const timer = setTimeout(() => resolve("timed_out"), timeoutMs);
-        timer.unref();
-      }),
-    ]);
+    return await this.loop.stop(timeoutMs);
   }
 
   async runOnce(): Promise<void> {
-    if (this.stopping || this.activeTick) return;
-    this.activeTick = this.runTick().finally(() => {
-      this.activeTick = undefined;
-    });
-    await this.activeTick;
-  }
-
-  private async runTick(): Promise<void> {
-    await this.runRecoveryStep(
-      () => this.deps.recoverPending(),
-      "Completion delivery recovery tick failed",
-    );
-    if (this.stopping) return;
-    await this.runRecoveryStep(
-      () => this.deps.recoverNotifications(),
-      "Session notification recovery tick failed",
-    );
-  }
-
-  private async runRecoveryStep(
-    step: () => Promise<void>,
-    message: string,
-  ): Promise<void> {
-    try {
-      await step();
-    } catch (err) {
-      this.deps.logger.warn({ err }, message);
-    }
+    await this.loop.runOnce();
   }
 }

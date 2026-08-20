@@ -294,6 +294,7 @@ export async function composeWorkerRuntime(
   });
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
+    ownershipBackoff: taskRuntime.executionOwnershipBackoff,
     runnerProcessFactory: runnerProcess?.runtimeFactory,
     releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
     sessionGarbageCollector: runnerProcess?.sessionGarbageCollector,

@@ -63,6 +63,7 @@ export type RunnerRecoveryDisposition =
   | "adopt_prebootstrap"
   | "adopt_running"
   | "replay_terminal"
+  | "replay_terminal_dead"
   | "reap_dead"
   | "reap_stalled"
   | "already_reaped"
@@ -144,7 +145,13 @@ export function classifyRunnerRegistration(
     }
     return registration.pidAlive ? "reap_stalled" : "reap_dead";
   }
-  if (isTerminalRunnerExecutionState(lifecycle.execution_state)) return "replay_terminal";
+  if (isTerminalRunnerExecutionState(lifecycle.execution_state)) {
+    // A terminal lifecycle says the runner finished, not that its process is
+    // still there. Classifying both cases as `replay_terminal` attached an
+    // in-memory runner handle to a process that had already exited, which
+    // `startExecution` then refused to displace (260820 incident).
+    return registration.pidAlive ? "replay_terminal" : "replay_terminal_dead";
+  }
   if (!registration.pidAlive) return "reap_dead";
   const progressedAt = Date.parse(lifecycle.progress_at);
   if (!Number.isFinite(progressedAt)) {

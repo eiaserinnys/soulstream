@@ -2,6 +2,7 @@ import type { EventOutboxBatch, EventOutboxRecord } from "./event_outbox.js";
 import type { EventOutboxQuarantineResult } from "./event_outbox_quarantine.js";
 import {
   deadLetterError,
+  EventAcknowledgementTimeoutError,
   EventOutboxQuarantinedError,
   isDeadLetterAcknowledgement,
   isValidEventAppendAck,
@@ -14,6 +15,7 @@ import {
 } from "./event_outbox_pump_protocol.js";
 
 export {
+  EventAcknowledgementTimeoutError,
   EventOutboxDeadLetterError,
   EventOutboxQuarantinedError,
   type EventAppendAck,
@@ -33,6 +35,12 @@ export {
 const RECENT_ACKNOWLEDGEMENT_LIMIT = 128;
 const DEFAULT_REJECTION_THRESHOLD = 3;
 const DEFAULT_RETRY_FLUSH_DELAY_MS = 1_000;
+/**
+ * Long enough to ride out an upstream reconnect (the outbox replays durably on
+ * reconnect, so the same source_seq is acknowledged afterwards), short enough
+ * that no caller can be parked for the life of the process.
+ */
+const DEFAULT_ACKNOWLEDGEMENT_TIMEOUT_MS = 30_000;
 
 export class EventOutboxPump {
   private sender?: (batch: EventOutboxBatch) => Promise<void>;
@@ -215,18 +223,20 @@ export class EventOutboxPump {
 
   async waitForAcknowledgement(
     record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
+    options: { timeoutMs?: number } = {},
   ): Promise<number> {
     const immediate = this.takeImmediateAcknowledgement(record);
     if (immediate) return immediate.event_id;
-    return (await this.waitForDeferredAcknowledgement(record)).event_id;
+    return (await this.waitForDeferredAcknowledgement(record, options)).event_id;
   }
 
   async waitForAcknowledgementResult(
     record: Pick<EventOutboxRecord, "stream_id" | "source_seq" | "session_id">,
+    options: { timeoutMs?: number } = {},
   ): Promise<EventAppendAcknowledgement> {
     const immediate = this.takeImmediateAcknowledgement(record);
     if (immediate) return immediate;
-    return await this.waitForDeferredAcknowledgement(record);
+    return await this.waitForDeferredAcknowledgement(record, options);
   }
 
   private takeImmediateAcknowledgement(
@@ -264,10 +274,35 @@ export class EventOutboxPump {
 
   private async waitForDeferredAcknowledgement(
     record: Pick<EventOutboxRecord, "source_seq" | "session_id">,
+    options: { timeoutMs?: number } = {},
   ): Promise<EventAppendAcknowledgement> {
+    const timeoutMs = options.timeoutMs
+      ?? this.options.acknowledgementTimeoutMs
+      ?? DEFAULT_ACKNOWLEDGEMENT_TIMEOUT_MS;
     const acknowledgement = await new Promise<EventAppendAcknowledgement>((resolve, reject) => {
       const waiters = this.acknowledgementWaiters.get(record.source_seq) ?? new Set();
-      waiters.add({ resolve, reject });
+      const waiter = {
+        resolve: (value: EventAppendAcknowledgement) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error: Error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      };
+      const timer = setTimeout(() => {
+        // Drop only this waiter; siblings on the same seq keep their own
+        // deadlines, and the durable outbox still replays the record.
+        const pending = this.acknowledgementWaiters.get(record.source_seq);
+        pending?.delete(waiter);
+        if (pending && pending.size === 0) {
+          this.acknowledgementWaiters.delete(record.source_seq);
+        }
+        reject(new EventAcknowledgementTimeoutError(record.source_seq, timeoutMs));
+      }, timeoutMs);
+      timer.unref?.();
+      waiters.add(waiter);
       this.acknowledgementWaiters.set(record.source_seq, waiters);
     });
     const latest = this.latestAcknowledgementBySession.get(record.session_id);

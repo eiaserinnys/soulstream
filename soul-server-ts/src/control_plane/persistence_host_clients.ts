@@ -234,8 +234,8 @@ export class SessionDeliveryNotificationHostClient {
 
 export interface QueuedDeliveryRecoveryScan {
   recoveryNodeId: string;
-  staleNodeBefore: Date;
-  queuedBefore: Date;
+  staleNodeAfterMs: number;
+  queuedAfterMs: number;
 }
 
 export class SessionDeliveryRecoveryHostClient {
@@ -253,8 +253,8 @@ export class SessionDeliveryRecoveryHostClient {
     return this.transport.request("session-deliveries", "mark_delivered_from_transcript", [deliveryId, leaseOwner, assistantMessageUuid]);
   }
 
-  deferQueuedTranscriptCheck(deliveryId: string, leaseOwner: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "defer_queued_transcript_check", [deliveryId, leaseOwner, error, nextAttemptAt]);
+  deferQueuedTranscriptCheck(deliveryId: string, leaseOwner: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "defer_queued_transcript_check", [deliveryId, leaseOwner, error, retryDelayMs]);
   }
 }
 
@@ -302,11 +302,11 @@ export class SessionDeliveryHostClient {
   claimRecoverableCompletionDeliveries(leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {
     return this.transport.request("session-deliveries", "claim_recoverable_completion_deliveries", [leaseOwner, limit, leaseMs]);
   }
-  deferPending(deliveryId: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "defer_pending", [deliveryId, error, nextAttemptAt]);
+  deferPending(deliveryId: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "defer_pending", [deliveryId, error, retryDelayMs]);
   }
-  retryLeasedDelivery(deliveryId: string, leaseOwner: string, error: string, nextAttemptAt: Date): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "retry_leased_delivery", [deliveryId, leaseOwner, error, nextAttemptAt]);
+  retryLeasedDelivery(deliveryId: string, leaseOwner: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "retry_leased_delivery", [deliveryId, leaseOwner, error, retryDelayMs]);
   }
   markPendingSuperseded(deliveryId: string, supersededTerminalRevision: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_pending_superseded", [deliveryId, supersededTerminalRevision]);

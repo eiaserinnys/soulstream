@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
+import {
+  DELIVERY_MAX_AGE_MS,
+  DELIVERY_MAX_ATTEMPTS,
+} from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
@@ -896,7 +900,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       "delivery-retryable",
       "worker-b",
       "target busy",
-      new Date(Date.now() + 1_000),
+      1_000,
     )).resolves.toMatchObject({ aggregate_state: "pending" });
 
     await register("delivery-rejected", "relation-rejected");
@@ -1004,7 +1008,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
             deliveryId,
             `worker-${deliveryId}`,
             "retryable",
-            new Date(Date.now() + 1_000),
+            1_000,
           );
             } else {
           await repository.markUncertain(
@@ -1118,6 +1122,149 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       state: "pending",
       projection_state: "staged",
     }]);
+  });
+
+  /**
+   * 260820 incident: every retry path scheduled the next attempt without ever
+   * consulting a budget, so three user messages reached 1,932 / 155 / 154
+   * attempts with no terminal state and no dead-letter row.
+   */
+  it("dead-letters a delivery once its retry budget is spent", async () => {
+    await register("delivery-budget", "relation-budget", "durable_next_turn");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET attempt_count = ${DELIVERY_MAX_ATTEMPTS - 1}
+      WHERE delivery_id = 'delivery-budget'
+    `;
+    await repository.claimForTarget("delivery-budget", "caller-old", "worker-budget");
+
+    await expect(repository.retryLeasedDelivery(
+      "delivery-budget",
+      "worker-budget",
+      "target busy",
+      1_000,
+    )).resolves.toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+      dead_letter_reason: "target busy",
+    });
+
+    await expect(harness.sql<Array<{ outcome: string; reason: string }>>`
+      SELECT outcome, reason FROM session_delivery_attempts
+      WHERE delivery_id = 'delivery-budget'
+      ORDER BY attempt_number DESC LIMIT 1
+    `).resolves.toMatchObject([{ outcome: "rejected", reason: "target busy" }]);
+
+    // A dead-lettered delivery is terminal: the recovery scan must not pick it
+    // up again, which is what kept the incident's rows retrying forever.
+    await expect(repository.recovery.claimRecoverableCompletionDeliveries(
+      "worker-after",
+      10,
+      1_000,
+    )).resolves.toHaveLength(0);
+  });
+
+  /**
+   * 260820 follow-up: transcript re-checks poll on a one-second cadence. If
+   * they spent the delivery budget, a target node being quiet for two minutes
+   * would dead-letter a good user message in about eighty seconds — the exact
+   * loss the budget exists to prevent.
+   */
+  it("does not spend the delivery budget on transcript liveness probes", async () => {
+    await register("delivery-probe", "relation-probe", "durable_next_turn");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET attempt_count = ${DELIVERY_MAX_ATTEMPTS - 1}
+      WHERE delivery_id = 'delivery-probe'
+    `;
+    await repository.claimForTarget("delivery-probe", "caller-old", "worker-probe");
+
+    // The real cycle is claim -> probe -> back to queued, repeating once a
+    // second for as long as the transcript stays unsettled.
+    for (let probe = 0; probe < 5; probe += 1) {
+      await expect(repository.recovery.deferQueuedTranscriptCheck(
+        "delivery-probe",
+        "worker-probe",
+        "queued_transcript_input_pending",
+        1_000,
+      )).resolves.toMatchObject({ state: "queued", aggregate_state: "pending" });
+      await harness.sql`
+        UPDATE session_deliveries
+        SET state = 'claimed', lease_owner = 'worker-probe'
+        WHERE delivery_id = 'delivery-probe'
+      `;
+    }
+
+    await expect(harness.sql<Array<{ attempt_count: number; count: number }>>`
+      SELECT delivery.attempt_count,
+        (SELECT COUNT(*)::int FROM session_delivery_attempts AS attempt
+          WHERE attempt.delivery_id = delivery.delivery_id
+            AND attempt.reason = 'queued_transcript_input_pending') AS count
+      FROM session_deliveries AS delivery
+      WHERE delivery.delivery_id = 'delivery-probe'
+    `).resolves.toMatchObject([
+      { attempt_count: DELIVERY_MAX_ATTEMPTS - 1, count: 0 },
+    ]);
+  });
+
+  it("still ends a transcript probe that has outlived the age budget", async () => {
+    await register("delivery-probe-aged", "relation-probe-aged", "durable_next_turn");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET created_at = NOW() - (${DELIVERY_MAX_AGE_MS + 1_000} * INTERVAL '1 millisecond')
+      WHERE delivery_id = 'delivery-probe-aged'
+    `;
+    await repository.claimForTarget("delivery-probe-aged", "caller-old", "worker-probe");
+
+    await expect(repository.recovery.deferQueuedTranscriptCheck(
+      "delivery-probe-aged",
+      "worker-probe",
+      "queued_transcript_input_pending",
+      1_000,
+    )).resolves.toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+  });
+
+  it("dead-letters a delivery older than the retry age budget", async () => {
+    await register("delivery-aged", "relation-aged", "durable_next_turn");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET created_at = NOW() - (${DELIVERY_MAX_AGE_MS + 1_000} * INTERVAL '1 millisecond')
+      WHERE delivery_id = 'delivery-aged'
+    `;
+    await repository.claimForTarget("delivery-aged", "caller-old", "worker-aged");
+
+    await expect(repository.retryLeasedDelivery(
+      "delivery-aged",
+      "worker-aged",
+      "target busy",
+      1_000,
+    )).resolves.toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+  });
+
+  it("schedules the next attempt on the database clock, not the caller's", async () => {
+    await register("delivery-clock", "relation-clock", "durable_next_turn");
+    await repository.claimForTarget("delivery-clock", "caller-old", "worker-clock");
+    await repository.retryLeasedDelivery(
+      "delivery-clock",
+      "worker-clock",
+      "target busy",
+      60_000,
+    );
+
+    // The node clock ran 7.45s ahead of the host during the incident. A
+    // duration is immune to that; an absolute instant was not.
+    await expect(harness.sql<Array<{ delay_ms: number }>>`
+      SELECT (EXTRACT(EPOCH FROM (next_attempt_at - NOW())) * 1000)::float8 AS delay_ms
+      FROM session_deliveries WHERE delivery_id = 'delivery-clock'
+    `).resolves.toMatchObject([
+      { delay_ms: expect.closeTo(60_000, -3) },
+    ]);
   });
 
   async function register(

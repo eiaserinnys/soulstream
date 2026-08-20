@@ -1,4 +1,6 @@
 import { performance } from "node:perf_hooks";
+import { isExecutionOwnershipConflictError } from "../task/execution_ownership.js";
+import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
 import {
   classifyRunnerRegistration,
@@ -49,10 +51,16 @@ export class RunnerRecoveryCoordinator {
   private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private readonly registrationControl: RunnerRegistrationControl;
+  private readonly ownershipBackoff: ExecutionOwnershipBackoff;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
     this.registrationControl = new RunnerRegistrationControl(options.spawner);
+    this.ownershipBackoff = options.ownershipBackoff
+      ?? new ExecutionOwnershipBackoff({
+        logger: options.logger,
+        ...(options.now ? { now: options.now } : {}),
+      });
     this.ownerNullExecutionReconciler = new OwnerNullExecutionReconciler(options);
     this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
       nodeId: options.nodeId,
@@ -157,6 +165,9 @@ export class RunnerRecoveryCoordinator {
     await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
+    this.ownershipBackoff.prune(
+      scan.registrations.map((registration) => registration.config.sessionId),
+    );
     const admitted: Array<{
       registration: RunnerRegistration;
       disposition: RunnerRecoveryDisposition;
@@ -180,6 +191,15 @@ export class RunnerRecoveryCoordinator {
         this.recoveryLogger.clear(sessionId);
         continue;
       }
+      // The ownership backoff only governs work that goes on to claim
+      // ownership. Reaping a dead runner, draining a closed one, or
+      // reconciling an owner-null row neither contends for ownership nor
+      // benefits from waiting — and holding those back for five minutes would
+      // leave a session with a dead runner stranded exactly as long.
+      if (
+        contendsForExecutionOwnership(disposition)
+        && this.ownershipBackoff.shouldSkip(sessionId)
+      ) continue;
       admitted.push({ registration, disposition });
     }
     const hydrationOutcomes = await this.hydrationPhase.run(
@@ -279,6 +299,7 @@ export class RunnerRecoveryCoordinator {
       disposition === "adopt_prebootstrap"
       || disposition === "adopt_running"
       || disposition === "replay_terminal"
+      || disposition === "replay_terminal_dead"
     ) {
       await this.recoverByDisposition(
         registration,
@@ -308,6 +329,7 @@ export class RunnerRecoveryCoordinator {
           verifiedDisposition === "adopt_prebootstrap"
           || verifiedDisposition === "adopt_running"
           || verifiedDisposition === "replay_terminal"
+          || verifiedDisposition === "replay_terminal_dead"
         ) {
           await this.recoverByDisposition(hydrated, verifiedDisposition, recoveredTask);
         }
@@ -344,7 +366,15 @@ export class RunnerRecoveryCoordinator {
     try {
       await this.handle(registration, disposition, task);
       this.recoveryLogger.clear(registration.config.sessionId);
+      this.ownershipBackoff.clear(registration.config.sessionId);
     } catch (error) {
+      if (isExecutionOwnershipConflictError(error)) {
+        this.ownershipBackoff.observeConflict(
+          registration.config.sessionId,
+          error.retryAt,
+        );
+        return;
+      }
       this.recoveryLogger.failure(registration, disposition, error);
     }
   }
@@ -412,6 +442,7 @@ export class RunnerRecoveryCoordinator {
         verifiedDisposition === "adopt_prebootstrap"
         || verifiedDisposition === "adopt_running"
         || verifiedDisposition === "replay_terminal"
+        || verifiedDisposition === "replay_terminal_dead"
       ) {
         await this.recoverByDisposition(hydrated, verifiedDisposition, task);
       }
@@ -460,10 +491,14 @@ export class RunnerRecoveryCoordinator {
 
   private async recoverByDisposition(
     registration: RunnerRegistration,
-    disposition: "adopt_prebootstrap" | "adopt_running" | "replay_terminal",
+    disposition:
+      | "adopt_prebootstrap"
+      | "adopt_running"
+      | "replay_terminal"
+      | "replay_terminal_dead",
     task: Task,
   ): Promise<Task> {
-    if (disposition !== "replay_terminal") {
+    if (disposition === "adopt_prebootstrap" || disposition === "adopt_running") {
       return await this.recoverRegistered(
         registration,
         task,
@@ -472,7 +507,7 @@ export class RunnerRecoveryCoordinator {
         disposition,
       );
     }
-    return await this.recoverRegistered(
+    const recovered = await this.recoverRegistered(
       registration,
       task,
       "offline",
@@ -482,10 +517,34 @@ export class RunnerRecoveryCoordinator {
         return { ...guardedRegistration, pidAlive: false };
       },
     );
+    if (disposition === "replay_terminal_dead") {
+      // Its durable tail is drained and its process is gone, so leaving the
+      // registration in place only means every later scan re-derives the same
+      // dead runner — which is why a restart reproduced the wedge instead of
+      // clearing it.
+      await this.registrationControl.invalidate(registration);
+      this.options.logger.info(
+        {
+          sessionId: registration.config.sessionId,
+          disposition: "replay_terminal_dead",
+        },
+        "terminal runner with no live process replayed offline and invalidated",
+      );
+    }
+    return recovered;
   }
 
 }
 
 function dispositionRequiresTask(disposition: RunnerRecoveryDisposition): boolean {
   return disposition !== "wait_for_bootstrap";
+}
+
+/** Only these dispositions go on to reserve execution ownership. */
+function contendsForExecutionOwnership(
+  disposition: RunnerRecoveryDisposition,
+): boolean {
+  return disposition === "adopt_prebootstrap"
+    || disposition === "adopt_running"
+    || disposition === "already_reaped";
 }

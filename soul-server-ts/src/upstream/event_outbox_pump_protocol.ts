@@ -85,6 +85,18 @@ export class EventOutboxDeadLetterError extends Error {
   }
 }
 
+export class EventAcknowledgementTimeoutError extends Error {
+  /** Durable: the outbox replays on reconnect, so the caller may retry. */
+  readonly retryable = true;
+
+  constructor(readonly sourceSeq: number, readonly timeoutMs: number) {
+    super(
+      `event outbox source_seq ${sourceSeq} was not acknowledged within ${timeoutMs}ms`,
+    );
+    this.name = "EventAcknowledgementTimeoutError";
+  }
+}
+
 export class EventOutboxQuarantinedError extends Error {
   constructor(
     readonly sourceSeq: number,
@@ -100,6 +112,12 @@ export type EventOutboxPumpOptions = {
   rejectionThreshold?: number;
   /** Delay before re-sending a batch the far side rejected as retryable. */
   retryFlushDelayMs?: number;
+  /**
+   * Deadline for an upstream acknowledgement. Waiters used to have none, so an
+   * upstream that never acknowledged wedged every caller — and the maintenance
+   * lane that called them — permanently (260820 incident).
+   */
+  acknowledgementTimeoutMs?: number;
   now?: () => Date;
   onQuarantine?: (result: EventOutboxQuarantineResult) => void;
 };

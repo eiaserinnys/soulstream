@@ -74,6 +74,84 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(task.runnerRetainedForClaudeBackground).toBe(true);
   });
 
+  /**
+   * 260820 incident: a terminal runner whose process had exited was replayed
+   * offline, and the finalizer then retained that dead handle for background
+   * work. `task.runner` stayed set forever and `startExecution` refuses to run
+   * while a runner is attached, so the session could never take another turn.
+   */
+  it("never retains an offline replay handle, which has no live child to keep", async () => {
+    const close = vi.fn(async () => undefined);
+    const detachedClaudeRuntimeActivity = vi.fn(async () => ({
+      foregroundPhase: "post_result_drain",
+      queryLifecycle: "open",
+      backgroundTaskCount: 2,
+      pendingInputRequestCount: 0,
+      pendingRuntimeSignalCount: 0,
+    }));
+    const engine = {
+      ...makeEngine(close),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity,
+    } as EnginePort;
+    const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
+    task.runnerIsOfflineReplay = true;
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: true,
+          terminalTransitionApplied: true,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+    expect(task.runnerIsOfflineReplay).toBeUndefined();
+    expect(close).toHaveBeenCalled();
+  });
+
+  /**
+   * The flag travels with the attachment, so a live runner attached after an
+   * offline replay must not inherit it — otherwise retention would be skipped
+   * for a runner that really does own live background work.
+   */
+  it("retains a live runner attached after an earlier offline replay", async () => {
+    const close = vi.fn(async () => undefined);
+    const engine = {
+      ...makeEngine(close),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity: vi.fn(async () => ({
+        foregroundPhase: "post_result_drain",
+        queryLifecycle: "open",
+        backgroundTaskCount: 1,
+        pendingInputRequestCount: 0,
+        pendingRuntimeSignalCount: 0,
+      })),
+    } as EnginePort;
+    const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
+    task.runnerIsOfflineReplay = false;
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: true,
+          terminalTransitionApplied: true,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+  });
+
   it("closes a detached Claude runner immediately when the owner has no background work", async () => {
     const close = vi.fn(async () => undefined);
     const engine = {

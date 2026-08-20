@@ -595,7 +595,7 @@ describe("TaskCompletionNotifier.notify", () => {
       expect.any(String),
       expect.any(String),
       "Completion delivery verdict is unknown and must retry: verdict_unknown",
-      expect.any(Date),
+      expect.any(Number),
     );
     expect(markUncertain).not.toHaveBeenCalled();
     expect(stored).toMatchObject({ state: "pending" });

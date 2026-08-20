@@ -39,6 +39,9 @@ import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
+import { inspectProcessIdentity } from "../runner/runner_process_lock.js";
+import type { ExecutionOwnershipBackoff } from "./execution_ownership_backoff.js";
+import { ExecutionOwnershipExpiry } from "./execution_ownership_expiry.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
@@ -153,6 +156,7 @@ export class TaskExecutor {
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
   private readonly executionOwnershipCoordinator: ExecutionOwnershipCoordinator;
+  private readonly executionOwnershipExpiry: ExecutionOwnershipExpiry;
   constructor(
     private readonly engineFactory: EngineFactory,
     db: SessionDB,
@@ -181,6 +185,8 @@ export class TaskExecutor {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
+    private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
+    executionOwnershipNodeId?: string,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -226,6 +232,21 @@ export class TaskExecutor {
       persistence,
       this.logger,
     );
+    this.executionOwnershipExpiry = new ExecutionOwnershipExpiry({
+      fail: (sessionId, ownershipGeneration, failureReason) =>
+        this.executionOwnershipCoordinator.fail(
+          sessionId,
+          ownershipGeneration,
+          failureReason,
+        ),
+      inspectProcess: inspectProcessIdentity,
+      isSessionExecutedHere: async (sessionId) => {
+        if (!executionOwnershipNodeId) return false;
+        const session = await db.getSession(sessionId);
+        return session?.node_id === executionOwnershipNodeId;
+      },
+      logger: this.logger,
+    });
   }
 
   /**
@@ -296,6 +317,12 @@ export class TaskExecutor {
       async (err: unknown) => {
         activation.reject(err);
         if (isExecutionOwnershipConflictError(err)) {
+          // Recovery scans consult this so they stop re-attempting a session
+          // faster than the rejection said was worth trying.
+          this.executionOwnershipBackoff?.observeConflict(
+            task.agentSessionId,
+            err.retryAt,
+          );
           this.logger.warn(
             {
               err,
@@ -307,6 +334,7 @@ export class TaskExecutor {
           );
           return;
         }
+        this.executionOwnershipBackoff?.clear(task.agentSessionId);
         if (err instanceof RunnerOrphanedSpawnError) {
           this.logger.error(
             { err, sessionId: task.agentSessionId, proof: err.proof },
@@ -404,7 +432,7 @@ export class TaskExecutor {
           `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
         );
       }
-      task.runner = runner;
+      this.attachRunner(task, runner);
       proof = await runner.dispatcher.prepareExecutionIdentity?.();
       if (!proof || !isCompleteExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
@@ -485,6 +513,7 @@ export class TaskExecutor {
       sessionId,
       retryAt,
       ownership?.phase ?? "reserved",
+      ownership ?? undefined,
     );
   }
 
@@ -548,6 +577,14 @@ export class TaskExecutor {
         })
       ) {
         error.retryImmediately();
+      } else if (isExecutionOwnershipConflictError(error)) {
+        // Failing our own generation cannot dislodge the owner that beat us.
+        // If that owner's process is gone, nothing else ever will.
+        const outcome = await this.executionOwnershipExpiry.expireIfOwnerIsGone(
+          task.agentSessionId,
+          error.ownership,
+        );
+        if (outcome === "expired") error.retryImmediately();
       }
     } catch (failureError) {
       this.logger.error(
@@ -640,7 +677,7 @@ export class TaskExecutor {
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
       );
     }
-    task.runner = runner;
+    this.attachRunner(task, runner);
 
     const promise = (async () => {
       await runner.dispatcher.prepareSession(task.agentSessionId);
@@ -682,7 +719,7 @@ export class TaskExecutor {
     }
     const frames = runner.dispatcher.recoverFrames?.(commandId);
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
-    task.runner = runner;
+    this.attachRunner(task, runner, mode === "offline");
     if (mode === "offline") task.status = "running";
     const promise = (async () => {
       // Adoption must establish the same durable running projection as a new
@@ -750,7 +787,7 @@ export class TaskExecutor {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
     task.executionOwnership = undefined;
-    task.runner = runner;
+    this.attachRunner(task, runner);
     const ownershipGeneration = newExecutionOwnershipGeneration();
     let reservationAttempted = false;
     let activated = false;
@@ -1502,6 +1539,22 @@ export class TaskExecutor {
   /**
    * 종료 처리: final-state persistence + engine cleanup + delegated completion notification.
    */
+  /**
+   * Attaching a runner and recording what kind of runner it is are one act.
+   *
+   * When they were separate, an offline replay could leave the flag set behind
+   * it, and the next live turn would inherit it — silently disabling Claude
+   * background retention for a runner that really did own live work.
+   */
+  private attachRunner(
+    task: Task,
+    runner: TaskRunnerRuntime,
+    offlineReplay = false,
+  ): void {
+    task.runner = runner;
+    task.runnerIsOfflineReplay = offlineReplay;
+  }
+
   private async _finalize(task: Task): Promise<void> {
     await this.executorFinalizer.finalize(task);
   }

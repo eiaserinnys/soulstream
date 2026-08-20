@@ -8,6 +8,9 @@ import type {
   SoulstreamSchedule,
 } from "./schedule_models.js";
 
+/** Matches the persistence host transport deadline. */
+const SCHEDULE_HOST_TIMEOUT_MS = 10_000;
+
 export class ScheduleHostClient {
   constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
 
@@ -20,8 +23,8 @@ export class ScheduleHostClient {
   cancelSchedule(sessionId: string, scheduleId: string): Promise<CancelScheduleResult> {
     return this.request("cancel_schedule", { sessionId, scheduleId });
   }
-  async touchNodeHeartbeat(nodeId: string, now: Date): Promise<void> {
-    await this.request("touch_node_heartbeat", { nodeId, now });
+  async touchNodeHeartbeat(nodeId: string): Promise<void> {
+    await this.request("touch_node_heartbeat", { nodeId });
   }
   repairExpiredClaims(input: { now: Date; limit: number; error: string }): Promise<SoulstreamSchedule[]> {
     return this.request("repair_expired_claims", input);
@@ -32,12 +35,12 @@ export class ScheduleHostClient {
     return this.request("claim_due_schedules", input);
   }
   markOrphanDueSchedules(input: {
-    now: Date; staleBefore: Date; limit: number; error: string;
+    now: Date; staleAfterMs: number; limit: number; error: string;
   }): Promise<SoulstreamSchedule[]> {
     return this.request("mark_orphan_due_schedules", input);
   }
   restoreOrphanSchedulesForLiveNodes(input: {
-    staleBefore: Date; limit: number;
+    staleAfterMs: number; limit: number;
   }): Promise<SoulstreamSchedule[]> {
     return this.request("restore_orphan_schedules_for_live_nodes", input);
   }
@@ -68,6 +71,11 @@ export class ScheduleHostClient {
         method: "POST",
         headers: { ...this.config.orch.headers, "content-type": "application/json" },
         body: JSON.stringify(snakeCase(input)),
+        // Matches the persistence host transport. Without it the node
+        // heartbeat could hang for undici's default timeout, and a heartbeat
+        // that stops for two minutes makes this node look dead to every other
+        // node's delivery recovery scan.
+        signal: AbortSignal.timeout(SCHEDULE_HOST_TIMEOUT_MS),
       },
     );
     if (!response.ok) {

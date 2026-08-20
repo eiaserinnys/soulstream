@@ -409,7 +409,10 @@ describe("EventPersistence durable ingress", () => {
         updated_at: "2026-08-11T00:00:00.000Z",
       },
     });
-    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(ingress.record);
+    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(
+      ingress.record,
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    );
   });
 
   it("returns the canonical session when a running transition CAS is rejected", async () => {
@@ -566,7 +569,10 @@ describe("EventPersistence durable ingress", () => {
         last_event_id: 42,
       },
     });
-    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(ingress.record);
+    expect(ingress.waitForAcknowledgementResult).toHaveBeenCalledWith(
+      ingress.record,
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    );
   });
 
   it("waits for the last event enqueued for the session at the turn boundary", async () => {

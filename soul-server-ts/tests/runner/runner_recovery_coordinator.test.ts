@@ -7,6 +7,7 @@ import {
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
+import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
@@ -1404,6 +1405,63 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
     await subject.coordinator.scanOnce();
 
     expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
+  });
+});
+
+describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
+  /**
+   * 260820 incident: the scan re-attempted a session whose ownership was
+   * wedged on its own 14s cadence, ignoring the +60s the rejection asked for.
+   */
+  it("skips a session until the ownership backoff it was given expires", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => nowMs,
+    });
+    const subject = makeSubject(
+      [registration({ lifecycleState: "running" })],
+      RECOVERY_NOW_MS,
+      [],
+      { ownershipBackoff: backoff, now: () => nowMs },
+    );
+
+    await subject.coordinator.scanOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+
+    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
+
+    nowMs += 14_000;
+    await subject.coordinator.scanOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+
+    nowMs += 50_000;
+    await subject.coordinator.scanOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * The backoff exists to stop a session from re-contending for ownership it
+   * keeps losing. Reaping a runner that has since died contends for nothing,
+   * and holding it back would strand the session for the whole backoff.
+   */
+  it("still reaps a dead runner while its ownership backoff is in force", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => nowMs,
+    });
+    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
+    const subject = makeSubject(
+      [registration({ pidAlive: false })],
+      RECOVERY_NOW_MS,
+      [],
+      { ownershipBackoff: backoff, now: () => nowMs },
+    );
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.markReaped).toHaveBeenCalled();
   });
 });
 

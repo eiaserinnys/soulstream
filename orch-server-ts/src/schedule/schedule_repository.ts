@@ -128,12 +128,21 @@ export class SoulstreamScheduleRepository {
     return { outcome: row.outcome, schedule: scheduleFromRow(row) };
   }
 
-  async touchNodeHeartbeat(nodeId: string, now: Date): Promise<void> {
+  /**
+   * Stamped with the database clock, never the caller's.
+   *
+   * Every reader of `last_seen_at` compares it against a *different* node's
+   * clock, so a node-supplied timestamp made liveness a two-clock comparison
+   * with no database term in it at all. With a 7.45s skew the 120s staleness
+   * threshold effectively shrank to ~112s — and a live node judged dead has its
+   * queued deliveries claimed by another node (260820 incident).
+   */
+  async touchNodeHeartbeat(nodeId: string): Promise<void> {
     await this.sql`
       INSERT INTO soulstream_node_heartbeats (node_id, last_seen_at)
-      VALUES (${nodeId}, ${now})
+      VALUES (${nodeId}, NOW())
       ON CONFLICT (node_id)
-      DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
+      DO UPDATE SET last_seen_at = NOW()
     `;
   }
 
@@ -201,7 +210,7 @@ export class SoulstreamScheduleRepository {
 
   async markOrphanDueSchedules(params: {
     now: Date;
-    staleBefore: Date;
+    staleAfterMs: number;
     limit: number;
     error: string;
   }): Promise<SoulstreamSchedule[]> {
@@ -217,7 +226,7 @@ export class SoulstreamScheduleRepository {
           AND (
             session.session_id IS NULL
             OR session.node_id IS NULL
-            OR heartbeat.last_seen_at < ${params.staleBefore}
+            OR heartbeat.last_seen_at < NOW() - (${params.staleAfterMs} * INTERVAL '1 millisecond')
           )
         ORDER BY schedule.next_run_at, schedule.created_at
         LIMIT ${params.limit}
@@ -237,7 +246,7 @@ export class SoulstreamScheduleRepository {
   }
 
   async restoreOrphanSchedulesForLiveNodes(params: {
-    staleBefore: Date;
+    staleAfterMs: number;
     limit: number;
   }): Promise<SoulstreamSchedule[]> {
     const rows = await this.sql<ScheduleRow[]>`
@@ -248,7 +257,7 @@ export class SoulstreamScheduleRepository {
         JOIN soulstream_node_heartbeats heartbeat
           ON heartbeat.node_id = session.node_id
         WHERE schedule.status = 'orphaned'
-          AND heartbeat.last_seen_at >= ${params.staleBefore}
+          AND heartbeat.last_seen_at >= NOW() - (${params.staleAfterMs} * INTERVAL '1 millisecond')
         ORDER BY schedule.updated_at, schedule.created_at
         LIMIT ${params.limit}
         FOR UPDATE OF schedule SKIP LOCKED

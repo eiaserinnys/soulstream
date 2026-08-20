@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import type { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
@@ -14,6 +15,12 @@ import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
+  /**
+   * Shared with TaskExecutor so the scan honours the retry interval the
+   * ownership rejection reported. Omitted only in tests, which then get a
+   * private instance.
+   */
+  ownershipBackoff?: ExecutionOwnershipBackoff;
   nodeId: string;
   stateDirectory: string;
   leaseTimeoutMs: number;

@@ -288,4 +288,72 @@ describe("CompletionDeliveryCoordinator", () => {
       "Completion delivery dispatch failed; durable retry scheduled",
     );
   });
+  /**
+   * One claim covers the whole batch, so bounding a single dispatch is not
+   * enough: without a batch budget a long run of slow dispatches outlives the
+   * lease and the sweeper returns rows to `pending` underneath their owner.
+   */
+  it("stops dispatching once too little lease remains for another row", async () => {
+    const at = new Date("2026-08-20T00:00:00.000Z");
+    const rows = [1, 2, 3, 4].map((index) => ({
+      delivery_id: `delivery-batch-${index}`,
+      target_session_id: "caller-session",
+      source_session_id: "child-session",
+      relation_key: `child_session:child-session:${index}`,
+      completion_id: `completion-batch-${index}`,
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producer_kind: "child_session",
+      producer_id: "child-session",
+      producer_terminal_revision: `${index}`,
+      parent_delivery_id: null,
+      caller_turn_id: null,
+      payload_hash: "hash",
+      payload: { text: "done", user: "agent", caller_info: { source: "agent" } },
+      state: "claimed",
+      attempt_count: 0,
+      next_attempt_at: at,
+      last_error: null,
+      lease_owner: "worker-batch",
+      lease_expires_at: at,
+      created_at: at,
+      updated_at: at,
+      claimed_at: at,
+      dispatching_at: null,
+      queued_at: null,
+      delivered_at: null,
+      consumed_at: null,
+      superseded_at: null,
+      superseded_terminal_revision: null,
+    }));
+    const dispatch = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
+    const repository = {
+      register: vi.fn(),
+      get: vi.fn(),
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue(rows),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+      markUncertain: vi.fn(),
+    };
+    const coordinator = new CompletionDeliveryCoordinator(
+      { repository, dispatch, logger },
+      "worker-batch",
+      60,
+      1_800_000,
+      20,
+    );
+
+    await coordinator.recoverPending();
+
+    expect(dispatch.mock.calls.length).toBeLessThan(rows.length);
+    expect(logger.warn.mock.calls.some(([, message]) =>
+      String(message).includes("ran out of lease")
+    )).toBe(true);
+  });
+
 });

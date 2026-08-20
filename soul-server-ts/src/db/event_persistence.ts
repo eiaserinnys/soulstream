@@ -42,6 +42,20 @@ import {
 } from "./json_text.js";
 import { extractToolSearchableText } from "./tool_search_projection.js";
 
+/**
+ * State transitions wait far longer for their acknowledgement than ordinary
+ * events do.
+ *
+ * A plain event ACK that times out only costs us the event id. A *transition*
+ * ACK that times out is reported as a failed state change — so an orch restart
+ * of more than half a minute would turn a runner that really did finish into a
+ * session the cluster still believes is running. The outbox is durable and
+ * replays on reconnect, so waiting is not a risk of losing the write; it is
+ * simply the difference between learning the truth late and asserting
+ * something false on time.
+ */
+const TRANSITION_ACK_TIMEOUT_MS = 5 * 60_000;
+
 const LAST_MESSAGE_PREVIEW_LIMIT = 200;
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 
@@ -165,7 +179,10 @@ export class EventPersistence extends EventTransitionPublisher {
     record: EventOutboxRecord,
     transition: string,
   ): Promise<EventSessionTransitionApplication> {
-    const acknowledgement = await this.outboxPump.waitForAcknowledgementResult(record);
+    const acknowledgement = await this.outboxPump.waitForAcknowledgementResult(
+      record,
+      { timeoutMs: TRANSITION_ACK_TIMEOUT_MS },
+    );
     this.clearPendingAckTarget(sessionId, record.source_seq);
     const application = acknowledgement.effect_application;
     if (!application) {

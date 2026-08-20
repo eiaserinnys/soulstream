@@ -382,7 +382,7 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       "route-1",
       "scheduled_runtime_followup_retry",
-      new Date(dueAt),
+      expect.any(Number),
     );
   });
 
@@ -424,7 +424,7 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       "route-uncertain",
       "verdict_unknown",
-      expect.any(Date),
+      expect.any(Number),
     );
     expect(markUncertain).not.toHaveBeenCalled();
   });
@@ -497,7 +497,7 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       "route-reservation",
       "reservation_in_flight",
-      new Date("2026-08-19T00:09:10.000Z"),
+      10_000,
     );
   });
 

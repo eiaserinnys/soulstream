@@ -142,7 +142,7 @@ describe("SoulstreamScheduleRepository", () => {
     ]);
 
     const schedules = await new SoulstreamScheduleRepository(sql).restoreOrphanSchedulesForLiveNodes({
-      staleBefore: new Date("2026-01-01T00:05:00Z"),
+      staleAfterMs: 5 * 60 * 1000,
       limit: 25,
     });
 
@@ -168,7 +168,7 @@ describe("SoulstreamScheduleRepository", () => {
 
     const schedules = await new SoulstreamScheduleRepository(sql).markOrphanDueSchedules({
       now,
-      staleBefore: new Date("2025-12-31T23:55:00Z"),
+      staleAfterMs: 5 * 60 * 1000,
       limit: 25,
       error: "no owner",
     });
@@ -179,12 +179,7 @@ describe("SoulstreamScheduleRepository", () => {
     expect(query).toContain("heartbeat.last_seen_at <");
     expect(query).toContain("FOR UPDATE OF schedule SKIP LOCKED");
     expect(query).toContain("status = 'orphaned'");
-    expect(calls[0].values).toEqual([
-      now,
-      new Date("2025-12-31T23:55:00Z"),
-      25,
-      "no owner",
-    ]);
+    expect(calls[0].values).toEqual([now, 5 * 60 * 1000, 25, "no owner"]);
     expect(schedules).toEqual([
       expect.objectContaining({
         scheduleId: "orphan-1",

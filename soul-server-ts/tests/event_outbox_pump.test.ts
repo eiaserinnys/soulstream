@@ -490,6 +490,20 @@ describe("EventOutboxPump", () => {
 
     await expect(ready).resolves.toBe(true);
   });
+  it("gives a caller its own acknowledgement deadline", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("one"));
+    const pump = new EventOutboxPump(outbox, vi.fn(), {
+      acknowledgementTimeoutMs: 60_000,
+    });
+
+    // State transitions wait far longer than the lane default; a caller that
+    // cannot afford that supplies its own deadline instead.
+    await expect(
+      pump.waitForAcknowledgement(record, { timeoutMs: 10 }),
+    ).rejects.toMatchObject({ name: "EventAcknowledgementTimeoutError" });
+  });
+
 });
 
 async function createOutbox(): Promise<EventOutbox> {

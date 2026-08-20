@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
+import { withDeadline } from "../runtime/deadline.js";
+
 import type { AddInterventionParams } from "./task_intervention_route.js";
 import {
   buildDeterministicDeliveryIdentity,
@@ -16,6 +18,7 @@ import type { QueuedDeliveryTranscriptRecovery } from
 import {
   DELIVERY_NOTIFICATION_MAX_AGE_MS,
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
+  deliveryRetryDelayMs,
 } from "./session_delivery_notification_policy.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
@@ -61,15 +64,49 @@ export interface CompletionDeliveryCoordinatorDeps {
  * Registration always precedes target claiming, so a transient failure leaves a
  * replayable `pending` row instead of losing the finalizer's only call.
  */
+/**
+ * Schedule heartbeats run every 30s; two minutes absorbs a few missed beats
+ * while still recovering a genuinely dead node quickly. Evaluated against the
+ * database clock, so it means the same thing on every node.
+ */
+const STALE_NODE_HEARTBEAT_MS = 120_000;
+
+export class DeliveryDispatchTimeoutError extends Error {
+  constructor(readonly deliveryId: string, readonly timeoutMs: number) {
+    super(`Delivery ${deliveryId} dispatch exceeded ${timeoutMs}ms`);
+    this.name = "DeliveryDispatchTimeoutError";
+  }
+}
+
 export class CompletionDeliveryCoordinator {
   private readonly workerId: string;
 
+  /**
+   * `leaseMs` must exceed `dispatchTimeoutMs`.
+   *
+   * The lease is what stops a second worker from re-dispatching a delivery that
+   * is still in flight. When a dispatch could outlive its lease — which an
+   * unbounded dispatch always could — `releaseExpiredDeliveryLeases` returned
+   * the row to `pending` underneath its own owner and the next scan claimed it
+   * again (260820 incident).
+   *
+   * One claim covers a whole batch, so bounding a single dispatch is not
+   * enough; `dispatchClaimed` stops accepting rows once too little lease
+   * remains to cover another dispatch. Rows left over simply wait for the next
+   * scan, which is five seconds away.
+   */
   constructor(
     private readonly deps: CompletionDeliveryCoordinatorDeps,
     workerId = `completion:${randomUUID()}`,
-    private readonly leaseMs = 15_000,
+    private readonly leaseMs = 60_000,
     private readonly queuedRecoveryMaxAgeMs = 1_800_000,
+    private readonly dispatchTimeoutMs = 15_000,
   ) {
+    if (dispatchTimeoutMs >= leaseMs) {
+      throw new Error(
+        `Delivery dispatch timeout ${dispatchTimeoutMs}ms must be shorter than the ${leaseMs}ms lease`,
+      );
+    }
     this.workerId = workerId;
   }
 
@@ -98,14 +135,11 @@ export class CompletionDeliveryCoordinator {
   async recoverPending(limit = 100): Promise<void> {
     let rows: SessionDeliveryRow[];
     try {
-      const now = Date.now();
       if (this.deps.sourceNode && this.deps.queuedDeliveryRecovery) {
         await this.deps.queuedDeliveryRecovery.recoverPeriodic({
           recoveryNodeId: this.deps.sourceNode,
-          // Schedule heartbeats run every few seconds; two minutes avoids
-          // transient ownership gaps while still recovering a dead node quickly.
-          staleNodeBefore: new Date(now - 120_000),
-          queuedBefore: new Date(now - this.queuedRecoveryMaxAgeMs),
+          staleNodeAfterMs: STALE_NODE_HEARTBEAT_MS,
+          queuedAfterMs: this.queuedRecoveryMaxAgeMs,
         }, limit);
       }
       await this.deps.repository.releaseExpiredDeliveryLeases();
@@ -118,8 +152,20 @@ export class CompletionDeliveryCoordinator {
       this.deps.logger.warn({ err }, "Completion delivery recovery scan failed");
       return;
     }
+    const acceptUntilMs = Date.now() + (this.leaseMs - this.dispatchTimeoutMs);
+    let deferredForLease = 0;
     for (const row of rows) {
+      if (Date.now() >= acceptUntilMs) {
+        deferredForLease += 1;
+        continue;
+      }
       await this.dispatchClaimed(row);
+    }
+    if (deferredForLease > 0) {
+      this.deps.logger.warn(
+        { deferredForLease, claimed: rows.length, leaseMs: this.leaseMs },
+        "Completion delivery batch ran out of lease; remaining rows wait for the next scan",
+      );
     }
   }
 
@@ -137,7 +183,7 @@ export class CompletionDeliveryCoordinator {
         await this.deps.repository.deferPending(
           deliveryId,
           "no_current_target",
-          nextAttemptAt(current.attempt_count),
+          deliveryRetryDelayMs(current.attempt_count),
         );
         return;
       }
@@ -180,7 +226,14 @@ export class CompletionDeliveryCoordinator {
       return;
     }
     try {
-      await this.deps.dispatch(toInterventionParams(row, leaseOwner));
+      await withDeadline(
+        this.deps.dispatch(toInterventionParams(row, leaseOwner)),
+        this.dispatchTimeoutMs,
+        () => new DeliveryDispatchTimeoutError(
+          row.delivery_id,
+          this.dispatchTimeoutMs,
+        ),
+      );
     } catch (err) {
       const failure = errorText(err);
       if (isRetryExhausted(row)) {
@@ -204,7 +257,7 @@ export class CompletionDeliveryCoordinator {
         row.delivery_id,
         leaseOwner,
         failure,
-        nextAttemptAt(row.attempt_count),
+        deliveryRetryDelayMs(row.attempt_count),
       );
       if (!retried) {
         this.deps.logger.warn(
@@ -318,10 +371,6 @@ function requiredLeaseOwner(row: SessionDeliveryRow): string {
   return row.lease_owner;
 }
 
-function nextAttemptAt(attemptCount: number): Date {
-  const delayMs = Math.min(60_000, 100 * 2 ** Math.min(attemptCount, 9));
-  return new Date(Date.now() + delayMs);
-}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

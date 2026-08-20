@@ -9,6 +9,7 @@ import {
   type RunnerProcessRuntimeFactoryOptions,
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import type { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import { RunnerReleaseGarbageCollector } from "../runner/runner_release_gc.js";
 import { BuildArtifactReleaseMaterializer } from "../runner/runner_release_materializer.js";
@@ -92,6 +93,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "listOwnerNullRunningInventory"
   >;
   taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
+  ownershipBackoff?: ExecutionOwnershipBackoff;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;
@@ -109,6 +111,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     scanIntervalMs: options.env.SOUL_RUNNER_REAPER_INTERVAL_MS,
     taskManager: options.taskManager,
     taskExecutor: options.taskExecutor,
+    ...(options.ownershipBackoff ? { ownershipBackoff: options.ownershipBackoff } : {}),
     closedTailDrainer: options.closedTailDrainer,
     logger: options.logger,
     ...(options.releaseGarbageCollector

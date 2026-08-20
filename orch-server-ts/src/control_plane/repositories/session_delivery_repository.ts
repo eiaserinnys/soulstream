@@ -16,6 +16,10 @@ import { SessionDeliveryRecoveryRepository } from
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
 import {
+  attemptOutcomeFor,
+  deliveryRetryOrDeadLetterSet,
+} from "./session_delivery_retry_policy.js";
+import {
   getSessionDeliveryRelationConsumption,
   recordObservedChildCompletion,
   recordObservedChildCompletions,
@@ -169,17 +173,16 @@ export class SessionDeliveryRepository {
   async deferPending(
     deliveryId: string,
     error: string,
-    nextAttemptAt: Date,
+    retryDelayMs: number,
   ): Promise<SessionDeliveryRow | null> {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET
-          aggregate_state = 'pending',
-          attempt_count = attempt_count + 1,
-          next_attempt_at = ${nextAttemptAt},
-          last_error = ${error},
-          updated_at = NOW()
+        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+          reason: error,
+          retryState: "pending",
+          retryDelayMs,
+        })}
         WHERE delivery_id = ${deliveryId}
           AND state = 'pending'
         RETURNING *
@@ -188,7 +191,7 @@ export class SessionDeliveryRepository {
       if (!row) return null;
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
         deliveryId,
-        outcome: "retryable",
+        outcome: attemptOutcomeFor(row),
         reason: error,
       });
       return normalizeDeliveryRow(row);
@@ -199,20 +202,16 @@ export class SessionDeliveryRepository {
     deliveryId: string,
     leaseOwner: string,
     error: string,
-    nextAttemptAt: Date,
+    retryDelayMs: number,
   ): Promise<SessionDeliveryRow | null> {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET
-          state = 'pending',
-          aggregate_state = 'pending',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
-          attempt_count = attempt_count + 1,
-          next_attempt_at = ${nextAttemptAt},
-          last_error = ${error},
-          updated_at = NOW()
+        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+          reason: error,
+          retryState: "pending",
+          retryDelayMs,
+        })}
         WHERE delivery_id = ${deliveryId}
           AND lease_owner = ${leaseOwner}
           AND state IN ('claimed', 'dispatching', 'queued')
@@ -222,7 +221,7 @@ export class SessionDeliveryRepository {
       if (!row) return null;
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
         deliveryId,
-        outcome: "retryable",
+        outcome: attemptOutcomeFor(row),
         reason: error,
         leaseOwner,
       });
@@ -253,29 +252,25 @@ export class SessionDeliveryRepository {
 
   async releaseExpiredDeliveryLeases(): Promise<number> {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
-      const rows = await transaction<Array<{ delivery_id: string; lease_owner: string | null }>>`
+      const rows = await transaction<Array<{
+        delivery_id: string;
+        lease_owner: string | null;
+        aggregate_state: SessionDeliveryRow["aggregate_state"];
+      }>>`
         UPDATE session_deliveries
-        SET
-          state = 'pending', aggregate_state = 'pending',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
-          attempt_count = attempt_count + 1,
-          next_attempt_at = NOW()
-            + LEAST(
-                INTERVAL '60 seconds',
-                INTERVAL '100 milliseconds'
-                  * POWER(2, LEAST(attempt_count, 9))
-              ),
-          last_error = COALESCE(last_error, 'delivery lease expired'),
-          updated_at = NOW()
+        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+          reason: "delivery lease expired",
+          retryState: "pending",
+          preserveExistingError: true,
+        })}
         WHERE state IN ('claimed', 'dispatching')
           AND lease_expires_at <= NOW()
-        RETURNING delivery_id, lease_owner
+        RETURNING delivery_id, lease_owner, aggregate_state
       `;
       for (const row of rows) {
         await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
           deliveryId: row.delivery_id,
-          outcome: "retryable",
+          outcome: attemptOutcomeFor(row),
           reason: "delivery lease expired",
           leaseOwner: row.lease_owner,
         });
