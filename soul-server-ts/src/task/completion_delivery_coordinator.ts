@@ -88,16 +88,19 @@ export class CompletionDeliveryCoordinator {
    * is still in flight. When a dispatch could outlive its lease — which an
    * unbounded dispatch always could — `releaseExpiredDeliveryLeases` returned
    * the row to `pending` underneath its own owner and the next scan claimed it
-   * again (260820 incident). Bounding the dispatch strictly below the lease
-   * closes that window structurally: the owner always settles the row itself,
-   * and the expiry sweeper only ever sees a genuinely dead owner.
+   * again (260820 incident).
+   *
+   * One claim covers a whole batch, so bounding a single dispatch is not
+   * enough; `dispatchClaimed` stops accepting rows once too little lease
+   * remains to cover another dispatch. Rows left over simply wait for the next
+   * scan, which is five seconds away.
    */
   constructor(
     private readonly deps: CompletionDeliveryCoordinatorDeps,
     workerId = `completion:${randomUUID()}`,
     private readonly leaseMs = 60_000,
     private readonly queuedRecoveryMaxAgeMs = 1_800_000,
-    private readonly dispatchTimeoutMs = 45_000,
+    private readonly dispatchTimeoutMs = 15_000,
   ) {
     if (dispatchTimeoutMs >= leaseMs) {
       throw new Error(
@@ -149,8 +152,20 @@ export class CompletionDeliveryCoordinator {
       this.deps.logger.warn({ err }, "Completion delivery recovery scan failed");
       return;
     }
+    const acceptUntilMs = Date.now() + (this.leaseMs - this.dispatchTimeoutMs);
+    let deferredForLease = 0;
     for (const row of rows) {
+      if (Date.now() >= acceptUntilMs) {
+        deferredForLease += 1;
+        continue;
+      }
       await this.dispatchClaimed(row);
+    }
+    if (deferredForLease > 0) {
+      this.deps.logger.warn(
+        { deferredForLease, claimed: rows.length, leaseMs: this.leaseMs },
+        "Completion delivery batch ran out of lease; remaining rows wait for the next scan",
+      );
     }
   }
 
