@@ -125,7 +125,23 @@ describe("runner process registry", () => {
     expect(classifyRunnerRegistration(registration({
       pidAlive: false,
       lifecycleState: "failed",
+    }), NOW, 120_000)).toBe("replay_terminal_dead");
+  });
+
+  /**
+   * 260820 incident: a terminal lifecycle short-circuited the liveness check,
+   * so a runner whose process had already exited was still classified as
+   * something to attach to.
+   */
+  it("separates a terminal runner that is still running from one that is gone", () => {
+    expect(classifyRunnerRegistration(registration({
+      pidAlive: true,
+      lifecycleState: "completed",
     }), NOW, 120_000)).toBe("replay_terminal");
+    expect(classifyRunnerRegistration(registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    }), NOW, 120_000)).toBe("replay_terminal_dead");
   });
 
   it("reaps a hung execution with fresh liveness but no actual progress", () => {

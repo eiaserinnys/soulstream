@@ -401,6 +401,18 @@ export interface Task {
   /** foreground Result 뒤 Claude background runtime을 소유하여 다음 turn까지 보존된 runner. */
   runnerRetainedForClaudeBackground?: boolean;
 
+  /**
+   * The attached runner is an offline replay handle over durable records, not
+   * a live child process.
+   *
+   * Retention exists to keep Claude background work running inside a live
+   * child. Retaining a handle whose process is gone keeps `task.runner` set
+   * forever, and `startExecution` refuses to run while a runner is attached —
+   * so the session could never execute again, and every intervention queued
+   * itself behind a turn that would never come (260820 incident).
+   */
+  runnerIsOfflineReplay?: boolean;
+
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 

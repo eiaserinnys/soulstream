@@ -279,6 +279,7 @@ export class RunnerRecoveryCoordinator {
       disposition === "adopt_prebootstrap"
       || disposition === "adopt_running"
       || disposition === "replay_terminal"
+      || disposition === "replay_terminal_dead"
     ) {
       await this.recoverByDisposition(
         registration,
@@ -308,6 +309,7 @@ export class RunnerRecoveryCoordinator {
           verifiedDisposition === "adopt_prebootstrap"
           || verifiedDisposition === "adopt_running"
           || verifiedDisposition === "replay_terminal"
+          || verifiedDisposition === "replay_terminal_dead"
         ) {
           await this.recoverByDisposition(hydrated, verifiedDisposition, recoveredTask);
         }
@@ -412,6 +414,7 @@ export class RunnerRecoveryCoordinator {
         verifiedDisposition === "adopt_prebootstrap"
         || verifiedDisposition === "adopt_running"
         || verifiedDisposition === "replay_terminal"
+        || verifiedDisposition === "replay_terminal_dead"
       ) {
         await this.recoverByDisposition(hydrated, verifiedDisposition, task);
       }
@@ -460,10 +463,14 @@ export class RunnerRecoveryCoordinator {
 
   private async recoverByDisposition(
     registration: RunnerRegistration,
-    disposition: "adopt_prebootstrap" | "adopt_running" | "replay_terminal",
+    disposition:
+      | "adopt_prebootstrap"
+      | "adopt_running"
+      | "replay_terminal"
+      | "replay_terminal_dead",
     task: Task,
   ): Promise<Task> {
-    if (disposition !== "replay_terminal") {
+    if (disposition === "adopt_prebootstrap" || disposition === "adopt_running") {
       return await this.recoverRegistered(
         registration,
         task,
@@ -472,7 +479,7 @@ export class RunnerRecoveryCoordinator {
         disposition,
       );
     }
-    return await this.recoverRegistered(
+    const recovered = await this.recoverRegistered(
       registration,
       task,
       "offline",
@@ -482,6 +489,21 @@ export class RunnerRecoveryCoordinator {
         return { ...guardedRegistration, pidAlive: false };
       },
     );
+    if (disposition === "replay_terminal_dead") {
+      // Its durable tail is drained and its process is gone, so leaving the
+      // registration in place only means every later scan re-derives the same
+      // dead runner — which is why a restart reproduced the wedge instead of
+      // clearing it.
+      await this.registrationControl.invalidate(registration);
+      this.options.logger.info(
+        {
+          sessionId: registration.config.sessionId,
+          disposition: "replay_terminal_dead",
+        },
+        "terminal runner with no live process replayed offline and invalidated",
+      );
+    }
+    return recovered;
   }
 
 }

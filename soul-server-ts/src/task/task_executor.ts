@@ -683,6 +683,7 @@ export class TaskExecutor {
     const frames = runner.dispatcher.recoverFrames?.(commandId);
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
     task.runner = runner;
+    task.runnerIsOfflineReplay = mode === "offline";
     if (mode === "offline") task.status = "running";
     const promise = (async () => {
       // Adoption must establish the same durable running projection as a new
