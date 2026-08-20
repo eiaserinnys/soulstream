@@ -35,7 +35,7 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn().mockResolvedValue({ applied: true });
     const expiry = new ExecutionOwnershipExpiry({
       fail,
-      isProcessAlive: () => false,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
     });
 
@@ -48,11 +48,62 @@ describe("ExecutionOwnershipExpiry", () => {
     );
   });
 
+  /**
+   * Pids are reused. Treating a recycled pid as the original owner would keep
+   * the reservation alive forever; treating any live pid as *not* the owner
+   * would expire reservations that are legitimately held.
+   */
+  it("expires a reservation whose pid was recycled by another process", async () => {
+    const fail = vi.fn().mockResolvedValue({ applied: true });
+    const expiry = new ExecutionOwnershipExpiry({
+      fail,
+      inspectProcess: async () => ({ alive: true, startIdentity: "start-999" }),
+      logger: makeLogger(),
+    });
+
+    await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
+      .resolves.toBe("expired");
+    expect(fail).toHaveBeenCalledWith("session-a", 7, expect.any(String));
+  });
+
+  it("leaves a live pid alone when its start identity cannot be compared", async () => {
+    const fail = vi.fn();
+    const expiry = new ExecutionOwnershipExpiry({
+      fail,
+      inspectProcess: async () => ({ alive: true, startIdentity: null }),
+      logger: makeLogger(),
+    });
+
+    await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
+      .resolves.toBe("owner_alive");
+    await expect(
+      expiry.expireIfOwnerIsGone("session-a", ownership({ startIdentity: null })),
+    ).resolves.toBe("owner_alive");
+    expect(fail).not.toHaveBeenCalled();
+  });
+
+  it("leaves ownership alone when the process cannot be inspected", async () => {
+    const fail = vi.fn();
+    const logger = makeLogger();
+    const expiry = new ExecutionOwnershipExpiry({
+      fail,
+      inspectProcess: async () => {
+        throw new Error("permission denied");
+      },
+      logger,
+    });
+
+    await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
+      .resolves.toBe("owner_unknown");
+    expect(fail).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves a live owner alone", async () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
-      isProcessAlive: () => true,
+      inspectProcess: async () => ({ alive: true, startIdentity: "start-1" }),
       logger: makeLogger(),
     });
 
@@ -65,7 +116,7 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
-      isProcessAlive: () => false,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
     });
 
@@ -80,7 +131,7 @@ describe("ExecutionOwnershipExpiry", () => {
     const fail = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
       fail,
-      isProcessAlive: () => false,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
     });
 
@@ -94,7 +145,7 @@ describe("ExecutionOwnershipExpiry", () => {
     const logger = makeLogger();
     const rejecting = new ExecutionOwnershipExpiry({
       fail: vi.fn().mockResolvedValue({ applied: false }),
-      isProcessAlive: () => false,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger,
     });
     await expect(rejecting.expireIfOwnerIsGone("session-a", ownership()))
@@ -102,7 +153,7 @@ describe("ExecutionOwnershipExpiry", () => {
 
     const throwing = new ExecutionOwnershipExpiry({
       fail: vi.fn().mockRejectedValue(new Error("host unavailable")),
-      isProcessAlive: () => false,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger,
     });
     await expect(throwing.expireIfOwnerIsGone("session-a", ownership()))

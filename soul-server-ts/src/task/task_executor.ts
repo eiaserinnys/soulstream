@@ -39,11 +39,9 @@ import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
+import { inspectProcessIdentity } from "../runner/runner_process_lock.js";
 import type { ExecutionOwnershipBackoff } from "./execution_ownership_backoff.js";
-import {
-  ExecutionOwnershipExpiry,
-  isProcessAlive,
-} from "./execution_ownership_expiry.js";
+import { ExecutionOwnershipExpiry } from "./execution_ownership_expiry.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
@@ -240,7 +238,7 @@ export class TaskExecutor {
           ownershipGeneration,
           failureReason,
         ),
-      isProcessAlive,
+      inspectProcess: inspectProcessIdentity,
       logger: this.logger,
     });
   }
