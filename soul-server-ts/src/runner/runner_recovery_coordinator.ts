@@ -1,4 +1,6 @@
 import { performance } from "node:perf_hooks";
+import { isExecutionOwnershipConflictError } from "../task/execution_ownership.js";
+import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
 import {
   classifyRunnerRegistration,
@@ -49,10 +51,16 @@ export class RunnerRecoveryCoordinator {
   private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private readonly registrationControl: RunnerRegistrationControl;
+  private readonly ownershipBackoff: ExecutionOwnershipBackoff;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
     this.registrationControl = new RunnerRegistrationControl(options.spawner);
+    this.ownershipBackoff = options.ownershipBackoff
+      ?? new ExecutionOwnershipBackoff({
+        logger: options.logger,
+        ...(options.now ? { now: options.now } : {}),
+      });
     this.ownerNullExecutionReconciler = new OwnerNullExecutionReconciler(options);
     this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
       nodeId: options.nodeId,
@@ -157,6 +165,9 @@ export class RunnerRecoveryCoordinator {
     await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
+    this.ownershipBackoff.prune(
+      scan.registrations.map((registration) => registration.config.sessionId),
+    );
     const admitted: Array<{
       registration: RunnerRegistration;
       disposition: RunnerRecoveryDisposition;
@@ -166,6 +177,7 @@ export class RunnerRecoveryCoordinator {
       if (
         this.active.has(sessionId)
         || this.adoptionFailureRecovery.has(sessionId)
+        || this.ownershipBackoff.shouldSkip(sessionId)
       ) continue;
       const disposition = classifyRunnerRegistrationSafely(
         registration,
@@ -346,7 +358,15 @@ export class RunnerRecoveryCoordinator {
     try {
       await this.handle(registration, disposition, task);
       this.recoveryLogger.clear(registration.config.sessionId);
+      this.ownershipBackoff.clear(registration.config.sessionId);
     } catch (error) {
+      if (isExecutionOwnershipConflictError(error)) {
+        this.ownershipBackoff.observeConflict(
+          registration.config.sessionId,
+          error.retryAt,
+        );
+        return;
+      }
       this.recoveryLogger.failure(registration, disposition, error);
     }
   }

@@ -63,6 +63,14 @@ export class ExecutionOwnershipConflictError extends Error {
     readonly sessionId: string,
     public retryAt: string,
     readonly phase: ExecutionOwnershipPhase,
+    /**
+     * The ownership that won, when the rejection reported one.
+     *
+     * Without it a loser can only fail *its own* generation, which by
+     * definition is not the one holding the session — so an owner that died
+     * mid-flight could never be displaced by anyone (260820 incident).
+     */
+    readonly ownership?: CanonicalExecutionOwnership,
   ) {
     super(`Execution ownership conflict: ${sessionId}`);
     this.name = "ExecutionOwnershipConflictError";

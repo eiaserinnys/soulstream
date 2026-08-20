@@ -39,6 +39,11 @@ import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
+import type { ExecutionOwnershipBackoff } from "./execution_ownership_backoff.js";
+import {
+  ExecutionOwnershipExpiry,
+  isProcessAlive,
+} from "./execution_ownership_expiry.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
@@ -153,6 +158,7 @@ export class TaskExecutor {
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
   private readonly executionOwnershipCoordinator: ExecutionOwnershipCoordinator;
+  private readonly executionOwnershipExpiry: ExecutionOwnershipExpiry;
   constructor(
     private readonly engineFactory: EngineFactory,
     db: SessionDB,
@@ -181,6 +187,7 @@ export class TaskExecutor {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
+    private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -226,6 +233,16 @@ export class TaskExecutor {
       persistence,
       this.logger,
     );
+    this.executionOwnershipExpiry = new ExecutionOwnershipExpiry({
+      fail: (sessionId, ownershipGeneration, failureReason) =>
+        this.executionOwnershipCoordinator.fail(
+          sessionId,
+          ownershipGeneration,
+          failureReason,
+        ),
+      isProcessAlive,
+      logger: this.logger,
+    });
   }
 
   /**
@@ -296,6 +313,12 @@ export class TaskExecutor {
       async (err: unknown) => {
         activation.reject(err);
         if (isExecutionOwnershipConflictError(err)) {
+          // Recovery scans consult this so they stop re-attempting a session
+          // faster than the rejection said was worth trying.
+          this.executionOwnershipBackoff?.observeConflict(
+            task.agentSessionId,
+            err.retryAt,
+          );
           this.logger.warn(
             {
               err,
@@ -307,6 +330,7 @@ export class TaskExecutor {
           );
           return;
         }
+        this.executionOwnershipBackoff?.clear(task.agentSessionId);
         if (err instanceof RunnerOrphanedSpawnError) {
           this.logger.error(
             { err, sessionId: task.agentSessionId, proof: err.proof },
@@ -485,6 +509,7 @@ export class TaskExecutor {
       sessionId,
       retryAt,
       ownership?.phase ?? "reserved",
+      ownership ?? undefined,
     );
   }
 
@@ -548,6 +573,14 @@ export class TaskExecutor {
         })
       ) {
         error.retryImmediately();
+      } else if (isExecutionOwnershipConflictError(error)) {
+        // Failing our own generation cannot dislodge the owner that beat us.
+        // If that owner's process is gone, nothing else ever will.
+        const outcome = await this.executionOwnershipExpiry.expireIfOwnerIsGone(
+          task.agentSessionId,
+          error.ownership,
+        );
+        if (outcome === "expired") error.retryImmediately();
       }
     } catch (failureError) {
       this.logger.error(
