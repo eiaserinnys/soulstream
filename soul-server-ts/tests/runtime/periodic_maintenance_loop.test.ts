@@ -315,4 +315,27 @@ describe("PeriodicMaintenanceLoop", () => {
       })
     ).toThrow(/duplicate step dup/);
   });
+  it("does not carry outstanding steps across a restart", async () => {
+    const run = vi.fn()
+      .mockImplementationOnce(neverSettles)
+      .mockResolvedValue(undefined);
+    const loop = new PeriodicMaintenanceLoop({
+      lane: "lane",
+      steps: [{ name: "hung", run }],
+      stepTimeoutMs: 10,
+      livenessIntervalMs: 0,
+      logger: makeLogger(),
+    });
+
+    await loop.runOnce();
+    expect(run).toHaveBeenCalledTimes(1);
+    await loop.stop(50);
+
+    // Nobody is waiting on the abandoned invocation any more, so a restarted
+    // lane must not skip its first tick on its account.
+    await loop.start();
+    expect(run).toHaveBeenCalledTimes(2);
+    await loop.stop(50);
+  });
+
 });

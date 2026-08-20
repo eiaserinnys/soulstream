@@ -3,11 +3,14 @@ import type { Logger } from "pino";
 import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js";
 
 /**
- * A step is generous enough for a full 100-row drain over the persistence host
- * (each host call is itself bounded at 10s by the transport) while still being
- * short enough that a wedged step is reported within one interval budget.
+ * Comfortably above a healthy drain, so the deadline means "something is
+ * wrong" rather than "the batch was large".
+ *
+ * Each step's own batch budget already stops it well inside its 60s claim
+ * lease, so a step that reaches this deadline is stuck, not busy — which is
+ * what makes the resulting error log worth reading.
  */
-const RECOVERY_STEP_TIMEOUT_MS = 60_000;
+const RECOVERY_STEP_TIMEOUT_MS = 90_000;
 
 export interface CompletionDeliveryRecoveryWorkerDeps {
   recoverPending(): Promise<void>;

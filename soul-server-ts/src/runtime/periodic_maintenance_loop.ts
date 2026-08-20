@@ -173,6 +173,10 @@ export class PeriodicMaintenanceLoop {
       clearInterval(this.livenessTimer);
       this.livenessTimer = undefined;
     }
+    // Outstanding entries belong to the run that is ending. Carrying them into
+    // a restart would make its first tick skip steps for work nobody is
+    // waiting on any more.
+    this.outstanding.clear();
     const active = this.activeTick;
     if (!active) return "drained";
     return await Promise.race([
