@@ -1439,6 +1439,30 @@ describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
     await subject.coordinator.scanOnce();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(2);
   });
+
+  /**
+   * The backoff exists to stop a session from re-contending for ownership it
+   * keeps losing. Reaping a runner that has since died contends for nothing,
+   * and holding it back would strand the session for the whole backoff.
+   */
+  it("still reaps a dead runner while its ownership backoff is in force", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => nowMs,
+    });
+    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
+    const subject = makeSubject(
+      [registration({ pidAlive: false })],
+      RECOVERY_NOW_MS,
+      [],
+      { ownershipBackoff: backoff, now: () => nowMs },
+    );
+
+    await subject.coordinator.scanOnce();
+
+    expect(subject.markReaped).toHaveBeenCalled();
+  });
 });
 
 function makeSubject(

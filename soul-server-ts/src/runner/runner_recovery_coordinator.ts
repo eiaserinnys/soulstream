@@ -177,7 +177,6 @@ export class RunnerRecoveryCoordinator {
       if (
         this.active.has(sessionId)
         || this.adoptionFailureRecovery.has(sessionId)
-        || this.ownershipBackoff.shouldSkip(sessionId)
       ) continue;
       const disposition = classifyRunnerRegistrationSafely(
         registration,
@@ -192,6 +191,15 @@ export class RunnerRecoveryCoordinator {
         this.recoveryLogger.clear(sessionId);
         continue;
       }
+      // The ownership backoff only governs work that goes on to claim
+      // ownership. Reaping a dead runner, draining a closed one, or
+      // reconciling an owner-null row neither contends for ownership nor
+      // benefits from waiting — and holding those back for five minutes would
+      // leave a session with a dead runner stranded exactly as long.
+      if (
+        contendsForExecutionOwnership(disposition)
+        && this.ownershipBackoff.shouldSkip(sessionId)
+      ) continue;
       admitted.push({ registration, disposition });
     }
     const hydrationOutcomes = await this.hydrationPhase.run(
@@ -530,4 +538,13 @@ export class RunnerRecoveryCoordinator {
 
 function dispositionRequiresTask(disposition: RunnerRecoveryDisposition): boolean {
   return disposition !== "wait_for_bootstrap";
+}
+
+/** Only these dispositions go on to reserve execution ownership. */
+function contendsForExecutionOwnership(
+  disposition: RunnerRecoveryDisposition,
+): boolean {
+  return disposition === "adopt_prebootstrap"
+    || disposition === "adopt_running"
+    || disposition === "already_reaped";
 }
