@@ -426,7 +426,7 @@ export class TaskExecutor {
           `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
         );
       }
-      task.runner = runner;
+      this.attachRunner(task, runner);
       proof = await runner.dispatcher.prepareExecutionIdentity?.();
       if (!proof || !isCompleteExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
@@ -671,7 +671,7 @@ export class TaskExecutor {
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
       );
     }
-    task.runner = runner;
+    this.attachRunner(task, runner);
 
     const promise = (async () => {
       await runner.dispatcher.prepareSession(task.agentSessionId);
@@ -713,8 +713,7 @@ export class TaskExecutor {
     }
     const frames = runner.dispatcher.recoverFrames?.(commandId);
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
-    task.runner = runner;
-    task.runnerIsOfflineReplay = mode === "offline";
+    this.attachRunner(task, runner, mode === "offline");
     if (mode === "offline") task.status = "running";
     const promise = (async () => {
       // Adoption must establish the same durable running projection as a new
@@ -782,7 +781,7 @@ export class TaskExecutor {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
     task.executionOwnership = undefined;
-    task.runner = runner;
+    this.attachRunner(task, runner);
     const ownershipGeneration = newExecutionOwnershipGeneration();
     let reservationAttempted = false;
     let activated = false;
@@ -1534,6 +1533,22 @@ export class TaskExecutor {
   /**
    * 종료 처리: final-state persistence + engine cleanup + delegated completion notification.
    */
+  /**
+   * Attaching a runner and recording what kind of runner it is are one act.
+   *
+   * When they were separate, an offline replay could leave the flag set behind
+   * it, and the next live turn would inherit it — silently disabling Claude
+   * background retention for a runner that really did own live work.
+   */
+  private attachRunner(
+    task: Task,
+    runner: TaskRunnerRuntime,
+    offlineReplay = false,
+  ): void {
+    task.runner = runner;
+    task.runnerIsOfflineReplay = offlineReplay;
+  }
+
   private async _finalize(task: Task): Promise<void> {
     await this.executorFinalizer.finalize(task);
   }

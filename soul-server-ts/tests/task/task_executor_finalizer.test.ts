@@ -115,6 +115,43 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(close).toHaveBeenCalled();
   });
 
+  /**
+   * The flag travels with the attachment, so a live runner attached after an
+   * offline replay must not inherit it — otherwise retention would be skipped
+   * for a runner that really does own live background work.
+   */
+  it("retains a live runner attached after an earlier offline replay", async () => {
+    const close = vi.fn(async () => undefined);
+    const engine = {
+      ...makeEngine(close),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity: vi.fn(async () => ({
+        foregroundPhase: "post_result_drain",
+        queryLifecycle: "open",
+        backgroundTaskCount: 1,
+        pendingInputRequestCount: 0,
+        pendingRuntimeSignalCount: 0,
+      })),
+    } as EnginePort;
+    const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
+    task.runnerIsOfflineReplay = false;
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: true,
+          terminalTransitionApplied: true,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+  });
+
   it("closes a detached Claude runner immediately when the owner has no background work", async () => {
     const close = vi.fn(async () => undefined);
     const engine = {
