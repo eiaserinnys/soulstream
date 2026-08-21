@@ -296,16 +296,22 @@ jobs:
         run: |
           $stdout = Join-Path $env:RUNNER_TEMP "release-activation-orch.stdout.log"
           $stderr = Join-Path $env:RUNNER_TEMP "release-activation-orch.stderr.log"
-          $process = Start-Process `
-            -FilePath "node" `
-            -ArgumentList @(
-              "soul-server-ts/scripts/test_install_release_activation_orch.mjs",
-              "--host", "127.0.0.1",
-              "--port", "5200"
-            ) `
-            -PassThru `
-            -RedirectStandardOutput $stdout `
-            -RedirectStandardError $stderr
+          $runnerTrackingId = $env:RUNNER_TRACKING_ID
+          try {
+            $env:RUNNER_TRACKING_ID = ""
+            $process = Start-Process `
+              -FilePath "node" `
+              -ArgumentList @(
+                "soul-server-ts/scripts/test_install_release_activation_orch.mjs",
+                "--host", "127.0.0.1",
+                "--port", "5200"
+              ) `
+              -PassThru `
+              -RedirectStandardOutput $stdout `
+              -RedirectStandardError $stderr
+          } finally {
+            $env:RUNNER_TRACKING_ID = $runnerTrackingId
+          }
           "TEST_INSTALL_ACTIVATION_STUB_PID=$($process.Id)" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -331,6 +337,15 @@ jobs:
       - name: Run installer (non-interactive)
         shell: pwsh
         run: |
+          $stubProcess = Get-Process `
+            -Id ([int]$env:TEST_INSTALL_ACTIVATION_STUB_PID) `
+            -ErrorAction SilentlyContinue
+          if ($null -eq $stubProcess -or
+              -not (Test-NetConnection 127.0.0.1 -Port 5200 -InformationLevel Quiet)) {
+            Write-Error "Release activation contract stub did not survive the step boundary"
+            exit 1
+          }
+
           $dbUrl = "postgresql://{0}:{1}@127.0.0.1:{2}/{3}" -f $env:PGUSER, $env:PGPASSWORD, $env:PGPORT, $env:PGDATABASE
           .\install\install.ps1 `
             -NonInteractive `
