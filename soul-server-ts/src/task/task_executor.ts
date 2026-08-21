@@ -388,7 +388,7 @@ export class TaskExecutor {
       task.pendingExecutionExpectedTerminalEventId !== undefined
         ? "auto_resume"
         : "initial";
-    const descriptor = await this.executionOwnerDescriptor(task, agent, backend, retainedRunner);
+    const descriptor = await this.executionOwnerDescriptor(agent, backend);
     const ownershipGeneration = newExecutionOwnershipGeneration();
     task.executionOwnership = undefined;
     let stage: ExecutionReservationStage = "reserve";
@@ -638,25 +638,11 @@ export class TaskExecutor {
   }
 
   private async executionOwnerDescriptor(
-    task: Task,
     agent: AgentProfile,
     backend: BackendId,
-    retainedRunner: TaskRunnerRuntime | undefined,
   ): Promise<{ ownerKind: ExecutionOwnerKind; manifestId: string; runtimeEnvIdentity: string }> {
-    if (task.recoveredExecutionOwnership) {
-      return {
-        ownerKind: "runner_process",
-        manifestId: task.recoveredExecutionOwnership.manifestId,
-        runtimeEnvIdentity: task.recoveredExecutionOwnership.runtimeEnvIdentity,
-      };
-    }
-    if (retainedRunner && task.executionOwnership) {
-      return {
-        ownerKind: task.executionOwnership.ownerKind,
-        manifestId: task.executionOwnership.manifestId,
-        runtimeEnvIdentity: task.executionOwnership.runtimeEnvIdentity,
-      };
-    }
+    // A new ownership generation describes the runtime that will execute it.
+    // Historical runner identity remains authoritative only in the adoption path.
     if (this.runnerProcessFactory) {
       const descriptor = await this.runnerProcessFactory.describe?.(agent);
       if (!descriptor) throw new Error("Runner process manifest descriptor unavailable");
@@ -715,12 +701,35 @@ export class TaskExecutor {
     runtimeEnvIdentity?: string,
   ): Promise<void> {
     if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
+      const runnerRuntimeEnvIdentity = runtimeEnvIdentity ?? `legacy:${manifestId}`;
+      if (this.runnerProcessFactory) {
+        const describeHost = this.runnerProcessFactory.describe;
+        if (!describeHost) throw new Error("Runner process manifest descriptor unavailable");
+        return describeHost(agent).then((hostDescriptor) => {
+          if (hostDescriptor.manifestId !== manifestId
+            || hostDescriptor.runtimeEnvIdentity !== runnerRuntimeEnvIdentity) {
+            throw new Error(
+              "runner adoption release identity mismatch: "
+              + `runner manifest=${manifestId} env=${runnerRuntimeEnvIdentity}; `
+              + `host manifest=${hostDescriptor.manifestId} env=${hostDescriptor.runtimeEnvIdentity}`,
+            );
+          }
+          return this.recoverOwnedRunnerExecution(
+            task,
+            agent,
+            runner,
+            manifestId,
+            runnerRuntimeEnvIdentity,
+            commandId,
+          );
+        });
+      }
       return this.recoverOwnedRunnerExecution(
         task,
         agent,
         runner,
         manifestId,
-        runtimeEnvIdentity ?? `legacy:${manifestId}`,
+        runnerRuntimeEnvIdentity,
         commandId,
       );
     }

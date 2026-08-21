@@ -1888,6 +1888,104 @@ describe("TaskExecutor runner process boundary", () => {
     },
   );
 
+  it("새 스폰은 복구된 과거 manifest 대신 현재 호스트 manifest로 예약한다", async () => {
+    const mocks = makeMocks();
+    const transition = (status: "initializing" | "running" | "completed") => ({
+      eventId: status === "initializing" ? 10 : status === "running" ? 11 : 12,
+      applied: true,
+      canonicalSession: {
+        status,
+        termination_reason: status === "completed" ? "completed_ok" : null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: status === "completed" ? 12 : null,
+        updated_at: "2026-08-21T00:00:00.000Z",
+        last_event_id: status === "completed" ? 12 : null,
+      },
+    });
+    const reserve = vi.fn(async () => transition("initializing"));
+    const prove = vi.fn(async () => transition("initializing"));
+    const activate = vi.fn(async () => transition("running"));
+    const fail = vi.fn(async () => transition("initializing"));
+    const terminal = vi.fn(async () => transition("completed"));
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: reserve,
+      proveExecutionOwnershipAndWaitForApplication: prove,
+      activateExecutionOwnershipAndWaitForApplication: activate,
+      failExecutionOwnershipAndWaitForApplication: fail,
+      enqueueRunnerTerminalFactAndWaitForApplication: terminal,
+      enqueueRecoveredRunnerTerminalFactAndWaitForApplication: terminal,
+    });
+    const { runner, dispatcher } = makeRunnerProcessRuntime([
+      { type: "complete", result: "done", timestamp: 1 },
+    ]);
+    const proof = {
+      registrationId: "registration-b",
+      pid: 4321,
+      startIdentity: "start-b",
+      executionCommandId: "execute-b",
+    };
+    dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
+    const currentManifestId = "release-b";
+    const processFactory = vi.fn((task: Task) => {
+      const reservedManifestId = task.executionOwnershipReservation?.manifestId;
+      if (reservedManifestId !== currentManifestId) {
+        throw new Error(
+          `execution reservation release manifest mismatch: ${reservedManifestId} !== ${currentManifestId}`,
+        );
+      }
+      return runner;
+    }) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: currentManifestId,
+      runtimeEnvIdentity: "env-b",
+    }));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const task = makeTask();
+    task.status = "initializing";
+    task.recoveredExecutionOwnership = {
+      manifestId: "release-a",
+      runtimeEnvIdentity: "env-a",
+      registrationId: "registration-a",
+      pid: 1234,
+      startIdentity: "start-a",
+      executionCommandId: "execute-a",
+    };
+
+    const execution = executor.startExecution(task, agent);
+    const activation = task.executionActivationPromise!;
+    await execution;
+    await expect(activation).resolves.toBeUndefined();
+
+    expect(processFactory.describe).toHaveBeenCalledWith(agent);
+    expect(reserve).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+      manifestId: currentManifestId,
+      runtimeEnvIdentity: "env-b",
+    }));
+    expect(task.executionOwnership).toMatchObject({
+      ...proof,
+      manifestId: currentManifestId,
+      runtimeEnvIdentity: "env-b",
+    });
+    expect(task.recoveredExecutionOwnership).toBeUndefined();
+    expect(fail).not.toHaveBeenCalled();
+  });
+
   it("does not reserve again while the shared ownership retry deadline is active", async () => {
     const mocks = makeMocks();
     const reserve = vi.fn();
@@ -2156,6 +2254,52 @@ describe("TaskExecutor runner process boundary", () => {
 
     expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
     expect(reserveAdoption).not.toHaveBeenCalled();
+  });
+
+  it("호스트와 release identity가 다른 러너는 adopt 전에 거부한다", async () => {
+    const mocks = makeMocks();
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+    });
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    dispatcher.prepareExecutionIdentity = vi.fn(async () => {
+      throw new Error("mismatched runner must not prepare adoption identity");
+    });
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-b",
+      runtimeEnvIdentity: "env-b",
+    }));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+
+    await expect(executor.recoverRunnerExecution(
+      makeTask(),
+      agent,
+      runner,
+      "execute-a",
+      "adopt",
+      "release-a",
+      "env-a",
+    )).rejects.toThrow(
+      "runner adoption release identity mismatch: runner manifest=release-a env=env-a; host manifest=release-b env=env-b",
+    );
+
+    expect(processFactory.describe).toHaveBeenCalledWith(agent);
+    expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
   });
 
   it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {
