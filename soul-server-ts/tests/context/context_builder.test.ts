@@ -1592,18 +1592,47 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
     expect(await buildWithPage(0)).not.toHaveProperty("running_sessions_truncated");
   });
 
-  it("turn-critical running session host 실패는 빈 context로 바꾸지 않는다", async () => {
+  it("retryable resume_context host 실패 뒤에도 신규 첫 turn context를 조립한다", async () => {
     const error = new SessionDataHostError({
       operation: "resume_context",
       retryable: true,
-      message: "db down",
+      message: "aborted due to timeout",
+    });
+    const getSession = vi.fn().mockResolvedValue(null);
+    const cb = makeBuilder({
+      getResumeContext: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        throw error;
+      }),
+      getSession,
+    } as unknown as Partial<SessionDB>);
+
+    const context = await cb.build(
+      makeTask({ agentSessionId: "sess-current" }),
+      codexAgent,
+    );
+
+    expect(context.assembledPrompt).toBe("user prompt");
+    expect(getSession).toHaveBeenCalledWith("sess-current");
+  });
+
+  it.each([
+    { operation: "resume_context", retryable: false },
+    { operation: "get", retryable: true },
+  ])("강등 대상이 아닌 host 실패는 전파한다: $operation/$retryable", async ({
+    operation,
+    retryable,
+  }) => {
+    const error = new SessionDataHostError({
+      operation,
+      retryable,
+      message: "invalid host response",
     });
     const cb = makeBuilder({
       getResumeContext: vi.fn().mockRejectedValue(error),
     } as unknown as Partial<SessionDB>);
 
-    await expect(cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent))
-      .rejects.toBe(error);
+    await expect(cb.build(makeTask(), codexAgent)).rejects.toBe(error);
   });
 });
 

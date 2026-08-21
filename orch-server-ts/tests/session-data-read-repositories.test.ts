@@ -13,7 +13,7 @@ describe("session-data read repositories", () => {
         folder_id: null,
         predecessor_session_id: null,
       }];
-      if (text.includes("session_list_summary(")) return [{
+      if (text.includes("WITH paged AS")) return [{
         session_id: "s1",
         display_name: "Session",
         created_at: now,
@@ -48,10 +48,14 @@ describe("session-data read repositories", () => {
 
     expect(calls.map((call) => call.text)).toEqual(expect.arrayContaining([
       expect.stringContaining("session_get("),
-      expect.stringContaining("session_list_summary("),
+      expect.stringContaining("WITH paged AS"),
       expect.stringContaining("WITH filtered AS"),
       expect.stringContaining("FROM sessions s"),
     ]));
+    const summaryQuery = calls.find((call) => call.text.includes("WITH paged AS"))?.text;
+    expect(summaryQuery).toBeDefined();
+    expect(summaryQuery).not.toContain("session_list_summary(");
+    expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 
   it("owns all seven event read operations and preserves payload contracts", async () => {

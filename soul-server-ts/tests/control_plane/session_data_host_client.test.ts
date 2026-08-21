@@ -129,7 +129,8 @@ describe("SessionDataHostClient", () => {
   });
 
   it("marks exhausted turn-critical failures as explicit session-data errors", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("orch unavailable")));
+    const fetchMock = vi.fn().mockRejectedValue(new Error("orch unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
     const client = new SessionDataHostClient({
       orch: { baseUrl: "http://orchestrator.test", headers: {} },
       logger,
@@ -138,5 +139,6 @@ describe("SessionDataHostClient", () => {
     await expect(client.getResumeContext("session-a", 20)).rejects.toBeInstanceOf(
       SessionDataHostError,
     );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -62,6 +62,7 @@ import {
   withoutSessionContextSourceMarkers,
 } from "./session_context_sources.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
+import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
@@ -69,10 +70,7 @@ import {
   buildBestEffortBackendRolloverContext,
   type BackendRolloverContext,
 } from "./backend_rollover_context.js";
-
-export {
-  CLAUDE_ROLLOVER_HISTORY_MAX_CHARS,
-} from "./backend_rollover_context.js";
+export { CLAUDE_ROLLOVER_HISTORY_MAX_CHARS } from "./backend_rollover_context.js";
 export type { BackendRolloverContext } from "./backend_rollover_context.js";
 
 export interface PreparedContext {
@@ -222,7 +220,9 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    const resumeContext = await this.db.getResumeContext(
+    const resumeContext = await loadInitialResumeContext(
+      this.db,
+      this.logger,
       task.agentSessionId,
       BOARD_WORKSPACE_SESSION_LIMIT,
     );
