@@ -137,7 +137,7 @@ export class SessionDeliveryRecoveryRepository {
           UPDATE session_deliveries
           SET target_session_id = ${targetSessionId}, state = 'claimed',
               claimed_at = NOW(), lease_owner = ${leaseOwner},
-              lease_expires_at = NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
+              lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
               updated_at = NOW()
           WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
           RETURNING *
@@ -290,10 +290,10 @@ export class SessionDeliveryRecoveryRepository {
                     ON heartbeat.node_id = target.node_id
                   WHERE target.session_id = delivery.target_session_id
                     AND heartbeat.last_seen_at < NOW()
-                      - (${scan?.staleNodeAfterMs ?? null} * INTERVAL '1 millisecond')
+                      - (${scan?.staleNodeAfterMs ?? null}::double precision * INTERVAL '1 millisecond')
                 )
                 OR delivery.queued_at <= NOW()
-                  - (${scan?.queuedAfterMs ?? null} * INTERVAL '1 millisecond')
+                  - (${scan?.queuedAfterMs ?? null}::double precision * INTERVAL '1 millisecond')
               )
             )
           )
@@ -305,7 +305,7 @@ export class SessionDeliveryRecoveryRepository {
       SET
         state = 'claimed',
         lease_owner = ${leaseOwner},
-        lease_expires_at = NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
+        lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
       FROM recoverable
       WHERE delivery.delivery_id = recoverable.delivery_id

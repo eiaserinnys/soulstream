@@ -14,6 +14,11 @@ const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
+const RETRY_DELAY_ARG_INDEX = new Map<string, number>([
+  ["defer_pending", 2],
+  ["retry_leased_delivery", 3],
+  ["defer_queued_transcript_check", 3],
+]);
 
 const deliveryOperations = {
   register: ["deliveries", null, "register"],
@@ -134,10 +139,15 @@ function registerDomain(
         return sendTimed(request, reply, timing, 404, () =>
           errorReply(reply, 404, "HOST_OPERATION_NOT_FOUND", `unknown ${domain} operation`));
       }
-      const args = readArgs(request.body);
-      if (!args) {
+      const rawArgs = readArgs(request.body);
+      if (!rawArgs) {
         return sendTimed(request, reply, timing, 422, () =>
           errorReply(reply, 422, "INVALID_HOST_REQUEST", "body.args must be an array"));
+      }
+      const args = normalizeRetryDelay(request.params.operation, rawArgs);
+      if (!args) {
+        return sendTimed(request, reply, timing, 422, () =>
+          errorReply(reply, 422, "INVALID_HOST_REQUEST", "retry delay must be a duration or absolute instant"));
       }
       try {
         const repositories = await options.repositoryProvider();
@@ -223,6 +233,18 @@ function readArgs(value: unknown): unknown[] | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const args = (value as Record<string, unknown>).args;
   return Array.isArray(args) ? args.map(child => camelCase(child)) : null;
+}
+
+function normalizeRetryDelay(operation: string, args: unknown[]): unknown[] | null {
+  const index = RETRY_DELAY_ARG_INDEX.get(operation);
+  if (index === undefined) return args;
+  const value = args[index];
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return args;
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) return null;
+  // Rolling upgrades may still send the pre-#797 absolute retry instant.
+  const normalized = [...args];
+  normalized[index] = Math.max(0, value.getTime() - Date.now());
+  return normalized;
 }
 
 function camelCase(value: unknown, key?: string): unknown {

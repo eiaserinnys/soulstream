@@ -93,7 +93,7 @@ export class SessionDeliveryRepository {
         state = 'claimed',
         claimed_at = NOW(),
         lease_owner = ${leaseOwner},
-        lease_expires_at = NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
+        lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId} AND state = 'pending'
       RETURNING *
@@ -114,7 +114,7 @@ export class SessionDeliveryRepository {
         state = 'claimed',
         claimed_at = NOW(),
         lease_owner = ${leaseOwner},
-        lease_expires_at = NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
+        lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
         AND state = 'pending'
