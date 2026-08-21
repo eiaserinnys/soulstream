@@ -66,6 +66,10 @@ test("bootstrap initializes only after dependencies and builds exist", () => {
   const initializeAt = bootstrap.indexOf('migrate.mjs" initialize');
   assert.ok(installAt >= 0 && initializeAt > installAt);
   assert.doesNotMatch(bootstrap, /flock -u 9|exec 9>&-/);
+  assert.match(
+    bootstrap,
+    /HANIEL_BACKUP_DIR="\$LAB_ROOT\/state\/database-release\/\$release_id"/,
+  );
 
   const start = readFileSync(join(directory, "start.sh"), "utf8");
   assert.match(start, /migrate\.mjs" verify/);
