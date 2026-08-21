@@ -81,6 +81,7 @@ port_is_listening() {
 
 assert_port_free() {
   port_is_listening "$1" && fail "port $1 is already listening"
+  return 0
 }
 
 postgres_container_is_owned() {

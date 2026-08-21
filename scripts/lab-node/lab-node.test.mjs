@@ -37,6 +37,14 @@ test("the lab identity is explicit and production ports are guarded", () => {
   assert.match(common, /com\.soulstream\.lab/);
 });
 
+test("an available port is a successful guard result", () => {
+  execFileSync(
+    "bash",
+    ["-c", `source "$1"; assert_port_free 65431`, "lab-test", join(directory, "common.sh")],
+    { stdio: "pipe" },
+  );
+});
+
 test("database and process mutations are scoped to lab-owned targets", () => {
   const sources = shellScripts
     .map((script) => readFileSync(join(directory, script), "utf8"))
