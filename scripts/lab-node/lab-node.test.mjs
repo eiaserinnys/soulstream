@@ -57,6 +57,7 @@ test("database and process mutations are scoped to lab-owned targets", () => {
   assert.match(sources, /kill -TERM/);
   assert.doesNotMatch(sources, /kill -KILL|kill -9/);
   assert.match(sources, /setsid -f bash -c/);
+  assert.match(sources, /\/proc\/\$\$\/fd\/\*/);
 });
 
 test("bootstrap initializes only after dependencies and builds exist", () => {

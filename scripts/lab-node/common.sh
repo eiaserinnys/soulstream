@@ -173,6 +173,12 @@ start_background() {
     shift 2
     cd "$runtime_dir"
     printf "%s\n" "$$" >"$pid_path"
+    for fd_path in /proc/$$/fd/*; do
+      fd="${fd_path##*/}"
+      if [[ "$fd" =~ ^[0-9]+$ ]] && (( fd > 2 )); then
+        eval "exec ${fd}>&-"
+      fi
+    done
     exec "$@"
   ' lab-detach "$LAB_REPO" "$temporary_pid_file" "$@" \
     </dev/null >>"$log_file" 2>&1
