@@ -287,54 +287,86 @@ jobs:
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs `
             (Join-Path "soul-server-ts" $resultPath) 26
 
-      - name: Run installer (non-interactive)
+      - name: Verify release activation contract stub
         shell: pwsh
-        run: |
-          $dbUrl = "postgresql://{0}:{1}@127.0.0.1:{2}/{3}" -f $env:PGUSER, $env:PGPASSWORD, $env:PGPORT, $env:PGDATABASE
-          .\install\install.ps1 `
-            -NonInteractive `
-            -Force `
-            -InstallDir "C:\soulstream-test" `
-            -WorkspaceDir "C:\workspace-test" `
-            -Port 3105 `
-            -DatabaseUrl $dbUrl `
-            -AuthBearerToken "ci-test-token" `
-            -RepositoryUrl $env:SOULSTREAM_SOURCE_URL `
-            -RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH
+        run: node --test soul-server-ts/scripts/test_install_release_activation_orch.test.mjs
 
-      - name: Verify actual release manifest recovery contract
+      - name: Run installer and verify release activation
         shell: pwsh
         run: |
-          python -m unittest discover `
-            -s deploy/tests `
-            -p "test_haniel_release_contract.py" `
-            -v
+          $stdout = Join-Path $env:RUNNER_TEMP "release-activation-orch.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "release-activation-orch.stderr.log"
+          $stubProcess = Start-Process `
+            -FilePath "node" `
+            -ArgumentList @(
+              "soul-server-ts/scripts/test_install_release_activation_orch.mjs",
+              "--host", "127.0.0.1",
+              "--port", "5200"
+            ) `
+            -PassThru `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
 
-      - name: Verify service health
-        shell: pwsh
-        run: |
-          $maxRetry = 10
-          $attempt = 0
-          $ok = $false
-          while ($attempt -lt $maxRetry) {
-            try {
-              $res = Invoke-RestMethod "http://localhost:3105/health" -TimeoutSec 3
-              Write-Host "Health check OK: $($res | ConvertTo-Json -Compress)"
-              if ($res.service -ne "soul-server-ts") {
-                Write-Error "Unexpected service: $($res.service)"
-                exit 1
+          try {
+            $stubReady = $false
+            for ($attempt = 1; $attempt -le 15; $attempt++) {
+              if ($stubProcess.HasExited) {
+                Get-Content $stdout -ErrorAction Continue
+                Get-Content $stderr -ErrorAction Continue
+                throw "Release activation contract stub exited before listening"
               }
-              $ok = $true
-              break
-            } catch {
-              Write-Host "Attempt $($attempt+1)/$maxRetry failed: $_"
-              Start-Sleep -Seconds 3
-              $attempt++
+              if (Test-NetConnection 127.0.0.1 -Port 5200 -InformationLevel Quiet) {
+                $stubReady = $true
+                break
+              }
+              Start-Sleep -Seconds 1
             }
-          }
-          if (-not $ok) {
-            Write-Error "Service did not respond after $maxRetry attempts"
-            exit 1
+            if (-not $stubReady) {
+              throw "Release activation contract stub did not listen on port 5200"
+            }
+
+            $dbUrl = "postgresql://{0}:{1}@127.0.0.1:{2}/{3}" -f `
+              $env:PGUSER, $env:PGPASSWORD, $env:PGPORT, $env:PGDATABASE
+            .\install\install.ps1 `
+              -NonInteractive `
+              -Force `
+              -InstallDir "C:\soulstream-test" `
+              -WorkspaceDir "C:\workspace-test" `
+              -Port 3105 `
+              -DatabaseUrl $dbUrl `
+              -AuthBearerToken "ci-test-token" `
+              -RepositoryUrl $env:SOULSTREAM_SOURCE_URL `
+              -RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH
+
+            python -m unittest discover `
+              -s deploy/tests `
+              -p "test_haniel_release_contract.py" `
+              -v
+            if ($LASTEXITCODE -ne 0) {
+              throw "Release manifest recovery contract failed"
+            }
+
+            $maxRetry = 10
+            $healthReady = $false
+            for ($attempt = 1; $attempt -le $maxRetry; $attempt++) {
+              try {
+                $res = Invoke-RestMethod "http://localhost:3105/health" -TimeoutSec 3
+                Write-Host "Health check OK: $($res | ConvertTo-Json -Compress)"
+                if ($res.service -ne "soul-server-ts") {
+                  throw "Unexpected service: $($res.service)"
+                }
+                $healthReady = $true
+                break
+              } catch {
+                Write-Host "Attempt $attempt/$maxRetry failed: $_"
+                Start-Sleep -Seconds 3
+              }
+            }
+            if (-not $healthReady) {
+              throw "Service did not respond after $maxRetry attempts"
+            }
+          } finally {
+            Stop-Process -Id $stubProcess.Id -Force -ErrorAction SilentlyContinue
           }
 
       - name: Smoke test — PostgreSQL schema
@@ -398,6 +430,17 @@ jobs:
           path: C:\soulstream-test\logs\
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Dump release activation contract stub logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content `
+            (Join-Path $env:RUNNER_TEMP "release-activation-orch.stdout.log") `
+            -ErrorAction Continue
+          Get-Content `
+            (Join-Path $env:RUNNER_TEMP "release-activation-orch.stderr.log") `
+            -ErrorAction Continue
 
       - name: Print service info
         shell: pwsh
