@@ -117,6 +117,25 @@ describe("parseEventAppendBatch sanitization", () => {
       .toThrow("session_effect.execution_command_id must be a non-empty string");
   });
 
+  it("requires the exact process identity on dead-owner expiry", () => {
+    const effect = {
+      kind: "execution_expire_dead_owner",
+      ownership_generation: 7,
+      pid: 968_764,
+      start_identity: "start-1",
+      failure_reason: "owner process is gone",
+      updated_at: "2026-08-21T00:00:00.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    expect(() => parseEventAppendBatch(batchWithEffect({
+      ...effect,
+      start_identity: "",
+    }))).toThrow("session_effect.start_identity must be a non-empty string");
+  });
+
   it("keeps the two owner-null observations and evidence hash intact", () => {
     const effect = {
       kind: "execution_backfill",

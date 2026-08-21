@@ -26,6 +26,8 @@ import {
 } from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
+import { ExecutionOwnershipBackoff } from
+  "../../src/task/execution_ownership_backoff.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -1886,6 +1888,51 @@ describe("TaskExecutor runner process boundary", () => {
     },
   );
 
+  it("does not reserve again while the shared ownership retry deadline is active", async () => {
+    const mocks = makeMocks();
+    const reserve = vi.fn();
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: reserve,
+    });
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => 0,
+    });
+    backoff.observeConflict("sess-1", new Date(60_000).toISOString());
+    const { runner } = makeRunnerProcessRuntime([]);
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-1",
+    }));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+      undefined,
+      backoff,
+    );
+    const task = makeTask();
+    task.status = "initializing";
+
+    const execution = executor.startExecution(task, agent);
+    const activation = task.executionActivationPromise!;
+    await execution;
+    await expect(activation).rejects.toThrow("Execution ownership conflict");
+
+    expect(reserve).not.toHaveBeenCalled();
+    expect(processFactory.describe).not.toHaveBeenCalled();
+  });
+
   it.each(
     (["initial", "auto_resume"] as const).flatMap((entryPath) =>
       (["reserve", "spawn", "prove", "prepare_session", "activate"] as const)
@@ -2064,6 +2111,51 @@ describe("TaskExecutor runner process boundary", () => {
     expect(dispatcher.close).not.toHaveBeenCalled();
     expect(task.runner).toBeUndefined();
     expect(task.status).toBe("initializing");
+  });
+
+  it("does not adopt again while the shared ownership retry deadline is active", async () => {
+    const mocks = makeMocks();
+    const reserveAdoption = vi.fn();
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+      reserveExecutionAdoptionAndWaitForApplication: reserveAdoption,
+    });
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => 0,
+    });
+    backoff.observeConflict("sess-1", new Date(60_000).toISOString());
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    dispatcher.prepareExecutionIdentity = vi.fn();
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      backoff,
+    );
+
+    await expect(executor.recoverRunnerExecution(
+      makeTask(),
+      agent,
+      runner,
+      "execute-old",
+      "adopt",
+      "release-old",
+      "env-old",
+    )).rejects.toThrow("Execution ownership conflict");
+
+    expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
+    expect(reserveAdoption).not.toHaveBeenCalled();
   });
 
   it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {

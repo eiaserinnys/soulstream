@@ -522,6 +522,39 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "offline",
     );
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
+      expect.anything(),
+      "registration-a",
+    );
+  });
+
+  it("replays and logs a dead terminal registration only once after retirement", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    const retireTerminalRegistration = vi.fn(async () => {
+      current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      spawner: {
+        terminate: vi.fn(async () => {}),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration,
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    await subject.coordinator.scanOnce();
+
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ disposition: "replay_terminal_dead" }),
+      "terminal runner with no live process replayed offline and retired",
+    );
+    expect(subject.logger.info.mock.calls.filter(
+      ([, message]) => message
+        === "terminal runner with no live process replayed offline and retired",
+    )).toHaveLength(1);
   });
 
   it("does not block server startup on a dead terminal runner waiting for upstream ACK", async () => {
@@ -1463,6 +1496,26 @@ describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
 
     expect(subject.markReaped).toHaveBeenCalled();
   });
+
+  it("does not clear a shared ownership conflict after terminal replay work", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => nowMs,
+    });
+    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
+    const subject = makeSubject(
+      [registration({ pidAlive: false, lifecycleState: "completed" })],
+      RECOVERY_NOW_MS,
+      [],
+      { ownershipBackoff: backoff, now: () => nowMs },
+    );
+
+    await subject.coordinator.scanOnce();
+
+    nowMs += 14_000;
+    expect(backoff.shouldSkip("session-a")).toBe(true);
+  });
 });
 
 function makeSubject(
@@ -1490,6 +1543,7 @@ function makeSubject(
   const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
   const terminate = vi.fn(async () => {});
   const invalidateRegistration = vi.fn(async () => {});
+  const retireTerminalRegistration = vi.fn(async () => {});
   const markReaped = vi.fn(async () => {});
   const logger = {
     error: vi.fn(),
@@ -1511,7 +1565,7 @@ function makeSubject(
     taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
-    spawner: { terminate, invalidateRegistration },
+    spawner: { terminate, invalidateRegistration, retireTerminalRegistration },
     scan: async () => structuredClone({ registrations, errors }),
     hydrate: async (registration) => registration,
     now: () => now,
@@ -1533,6 +1587,7 @@ function makeSubject(
     markReaped,
     terminate,
     invalidateRegistration,
+    retireTerminalRegistration,
     logger,
   };
 }

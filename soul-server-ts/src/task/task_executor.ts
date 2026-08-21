@@ -233,12 +233,8 @@ export class TaskExecutor {
       this.logger,
     );
     this.executionOwnershipExpiry = new ExecutionOwnershipExpiry({
-      fail: (sessionId, ownershipGeneration, failureReason) =>
-        this.executionOwnershipCoordinator.fail(
-          sessionId,
-          ownershipGeneration,
-          failureReason,
-        ),
+      expireDeadOwner: (sessionId, input) =>
+        this.executionOwnershipCoordinator.expireDeadOwner(sessionId, input),
       inspectProcess: inspectProcessIdentity,
       isSessionExecutedHere: async (sessionId) => {
         if (!executionOwnershipNodeId) return false;
@@ -378,6 +374,16 @@ export class TaskExecutor {
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
   ): Promise<void> {
+    const deferredUntil = this.executionOwnershipBackoff?.deferUntil(
+      task.agentSessionId,
+    );
+    if (deferredUntil) {
+      throw new ExecutionOwnershipConflictError(
+        task.agentSessionId,
+        deferredUntil,
+        "active",
+      );
+    }
     const entryPath: ExecutionEntryPath =
       task.pendingExecutionExpectedTerminalEventId !== undefined
         ? "auto_resume"
@@ -409,6 +415,7 @@ export class TaskExecutor {
       })) {
         throw this.executionOwnershipConflict(task.agentSessionId, reservation);
       }
+      this.executionOwnershipBackoff?.clear(task.agentSessionId);
       task.executionOwnershipReservation = {
         ...descriptor,
         ownershipGeneration,
@@ -584,7 +591,10 @@ export class TaskExecutor {
           task.agentSessionId,
           error.ownership,
         );
-        if (outcome === "expired") error.retryImmediately();
+        if (outcome === "expired") {
+          this.executionOwnershipBackoff?.clear(task.agentSessionId);
+          error.retryImmediately();
+        }
       }
     } catch (failureError) {
       this.logger.error(
@@ -783,6 +793,16 @@ export class TaskExecutor {
     runtimeEnvIdentity: string,
     commandId?: string,
   ): Promise<void> {
+    const deferredUntil = this.executionOwnershipBackoff?.deferUntil(
+      task.agentSessionId,
+    );
+    if (deferredUntil) {
+      throw new ExecutionOwnershipConflictError(
+        task.agentSessionId,
+        deferredUntil,
+        "active",
+      );
+    }
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
@@ -820,6 +840,7 @@ export class TaskExecutor {
         })) {
           throw this.executionOwnershipConflict(task.agentSessionId, reservation);
         }
+        this.executionOwnershipBackoff?.clear(task.agentSessionId);
         task.executionOwnershipReservation = {
           ownerKind: "adopted_runner",
           manifestId,

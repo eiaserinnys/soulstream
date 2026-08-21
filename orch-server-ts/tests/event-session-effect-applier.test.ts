@@ -15,6 +15,7 @@ describe("applyEventSessionEffect", () => {
     ["execution_adopt_reserve", "session_reserve_execution_adoption"],
     ["execution_activate", "session_activate_execution_ownership"],
     ["execution_fail", "session_fail_execution_ownership"],
+    ["execution_expire_dead_owner", "session_expire_dead_execution_owner"],
     ["execution_orphaned_spawn", "session_mark_execution_orphaned_spawn"],
     ["execution_backfill", "session_backfill_execution_ownership"],
     ["runner_terminal_fact", "session_project_runner_terminal_fact"],
@@ -32,6 +33,7 @@ describe("applyEventSessionEffect", () => {
       return statement.includes("session_apply_running_transition")
         || statement.includes("session_apply_terminal_transition")
         || statement.includes("execution_ownership")
+        || statement.includes("expire_dead_execution_owner")
         || statement.includes("execution_adoption")
         || statement.includes("execution_orphaned_spawn")
         || statement.includes("runner_terminal_fact")
@@ -53,6 +55,7 @@ describe("applyEventSessionEffect", () => {
     if (
       kind !== "execution_prove"
       && kind !== "execution_fail"
+      && kind !== "execution_expire_dead_owner"
       && kind !== "execution_orphaned_spawn"
       && kind !== "execution_backfill"
     ) {
@@ -287,6 +290,14 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     kind,
     ownership_generation: 1,
     failure_reason: "spawn failed",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_expire_dead_owner") return {
+    kind,
+    ownership_generation: 1,
+    pid: 123,
+    start_identity: "start-1",
+    failure_reason: "owner process is gone",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_orphaned_spawn") return {

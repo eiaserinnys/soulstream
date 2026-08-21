@@ -19,6 +19,7 @@ export interface RunnerRegistrationIdentity {
   runtimeEnvIdentity?: string;
   pid: number | null;
   startIdentity: string | null;
+  retiredAt?: string;
 }
 
 export interface RecoveredRunnerIdentity {
@@ -134,6 +135,24 @@ export async function invalidateRunnerRegistrationIdentity(
   });
 }
 
+export async function retireTerminalRunnerRegistrationIdentity(
+  sessionDirectory: string,
+  expectedRegistrationId: string | null,
+  retiredAt = new Date(),
+): Promise<void> {
+  const current = await readRunnerRegistrationIdentity(sessionDirectory);
+  if (!current) return;
+  if (expectedRegistrationId === null || current.registrationId !== expectedRegistrationId) {
+    throw new Error(`runner registration was superseded before retirement: ${current.sessionId}`);
+  }
+  await writeRunnerRegistrationIdentity(sessionDirectory, {
+    ...current,
+    pid: null,
+    startIdentity: null,
+    retiredAt: retiredAt.toISOString(),
+  });
+}
+
 export async function waitForChildRunnerRegistrationIdentity(
   sessionDirectory: string,
   pending: RunnerRegistrationIdentity,
@@ -230,6 +249,9 @@ function validateRunnerRegistrationIdentity(value: unknown): RunnerRegistrationI
     || (candidate.pid !== null && (!Number.isSafeInteger(candidate.pid) || (candidate.pid ?? 0) <= 0))
     || (candidate.startIdentity !== null
       && (typeof candidate.startIdentity !== "string" || !candidate.startIdentity))
+    || (candidate.retiredAt !== undefined
+      && (typeof candidate.retiredAt !== "string"
+        || !Number.isFinite(Date.parse(candidate.retiredAt))))
     || ((candidate.pid === null) !== (candidate.startIdentity === null))
   ) {
     throw new Error("runner registration identity is invalid");

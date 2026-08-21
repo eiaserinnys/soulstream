@@ -178,6 +178,30 @@ export abstract class EventTransitionPublisher {
     );
   }
 
+  async expireDeadExecutionOwnerAndWaitForApplication(
+    sessionId: string,
+    input: {
+      ownershipGeneration: number;
+      pid: number;
+      startIdentity: string;
+      failureReason: string;
+      updatedAt?: Date;
+    },
+  ): Promise<EventSessionTransitionApplication> {
+    return await this.enqueueExecutionEffectAndWait(
+      sessionId,
+      `expire-dead-owner:${input.ownershipGeneration}`,
+      {
+        kind: "execution_expire_dead_owner",
+        ownership_generation: input.ownershipGeneration,
+        pid: input.pid,
+        start_identity: input.startIdentity,
+        failure_reason: input.failureReason,
+        updated_at: (input.updatedAt ?? new Date()).toISOString(),
+      },
+    );
+  }
+
   async markExecutionOrphanedSpawnAndWaitForApplication(
     sessionId: string,
     ownershipGeneration: number,
@@ -282,6 +306,7 @@ export abstract class EventTransitionPublisher {
       | "execution_adopt_reserve"
       | "execution_activate"
       | "execution_fail"
+      | "execution_expire_dead_owner"
       | "execution_orphaned_spawn"
       | "execution_backfill" }>,
   ): Promise<EventSessionTransitionApplication> {

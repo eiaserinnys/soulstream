@@ -1,7 +1,10 @@
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 
-type RegistrationSpawner = Pick<RunnerProcessSpawner, "invalidateRegistration" | "terminate">;
+type RegistrationSpawner = Pick<
+  RunnerProcessSpawner,
+  "invalidateRegistration" | "retireTerminalRegistration" | "terminate"
+>;
 
 export class RunnerRegistrationControl {
   constructor(private readonly spawner: RegistrationSpawner = new RunnerProcessSpawner()) {}
@@ -20,6 +23,13 @@ export class RunnerRegistrationControl {
 
   async invalidate(registration: RunnerRegistration): Promise<void> {
     await this.spawner.invalidateRegistration(
+      registration.config.paths,
+      registration.registrationId ?? null,
+    );
+  }
+
+  async retireTerminal(registration: RunnerRegistration): Promise<void> {
+    await this.spawner.retireTerminalRegistration(
       registration.config.paths,
       registration.registrationId ?? null,
     );

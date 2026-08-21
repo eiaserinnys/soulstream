@@ -513,6 +513,40 @@ describe("EventPersistence durable ingress", () => {
     });
   });
 
+  it("publishes dead-owner expiry with the exact generation and process identity", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await ep.expireDeadExecutionOwnerAndWaitForApplication("sess-1", {
+      ownershipGeneration: 17,
+      pid: 968_764,
+      startIdentity: "start-1",
+      failureReason: "owner process is gone",
+      updatedAt: new Date("2026-08-21T00:00:00.000Z"),
+    });
+
+    expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "sess-1",
+      semantic_dedupe_key: "execution_ownership:sess-1:expire-dead-owner:17",
+      session_effect: {
+        kind: "execution_expire_dead_owner",
+        ownership_generation: 17,
+        pid: 968_764,
+        start_identity: "start-1",
+        failure_reason: "owner process is gone",
+        updated_at: "2026-08-21T00:00:00.000Z",
+      },
+    }));
+  });
+
   it("returns the canonical session when a terminal transition CAS is rejected", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

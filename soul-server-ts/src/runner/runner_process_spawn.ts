@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, chmod, mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { z } from "zod";
@@ -26,13 +26,17 @@ import {
 } from "./runner_process_lock.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
-  invalidateRunnerRegistrationIdentity,
   pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
   type RunnerRegistrationIdentity,
   waitForChildRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "./runner_registration_identity.js";
+import {
+  invalidateRunnerRegistrationFiles,
+  retireTerminalRunnerRegistrationFiles,
+  unlinkIfPresent,
+} from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
@@ -337,18 +341,22 @@ export class RunnerProcessSpawner {
     await this.stopExistingRunner(paths, expected);
   }
 
-  async invalidateRegistration(
+  invalidateRegistration(
     paths: RunnerProcessPaths,
     expectedRegistrationId: string | null,
   ): Promise<void> {
-    await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
-      await invalidateRunnerRegistrationIdentity(
-        paths.sessionDirectory,
-        expectedRegistrationId,
-      );
-      await unlinkIfPresent(paths.pidPath);
-      await unlinkIfPresent(paths.socketPath);
-    });
+    return invalidateRunnerRegistrationFiles(paths, expectedRegistrationId);
+  }
+
+  retireTerminalRegistration(
+    paths: RunnerProcessPaths,
+    expectedRegistrationId: string | null,
+  ): Promise<void> {
+    return retireTerminalRunnerRegistrationFiles(
+      paths,
+      expectedRegistrationId,
+      new Date(this.deps.now()),
+    );
   }
 
   private async terminateSpawnedChild(
@@ -490,11 +498,3 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 export { readRunnerPid, resolveRegisteredRunnerPid } from "./runner_process_registration.js";
-
-async function unlinkIfPresent(path: string): Promise<void> {
-  try {
-    await unlink(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-}

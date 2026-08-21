@@ -24,11 +24,14 @@ import type { Logger } from "pino";
 const DEFAULT_MAX_CONSECUTIVE_CONFLICTS = 5;
 /** Probe cadence once a session's conflicts stop clearing. */
 const STUCK_PROBE_INTERVAL_MS = 5 * 60_000;
+/** Keep one cross-path counter long enough to reach the stuck probe cadence. */
+const CONFLICT_STATE_RETENTION_MS = 30 * 60_000;
 
 interface ConflictState {
   retryAtMs: number;
   consecutive: number;
   stuck: boolean;
+  observedAtMs: number;
 }
 
 export interface ExecutionOwnershipBackoffOptions {
@@ -54,9 +57,14 @@ export class ExecutionOwnershipBackoff {
 
   /** True when this scan must leave the session alone. */
   shouldSkip(sessionId: string): boolean {
+    return this.deferUntil(sessionId) !== null;
+  }
+
+  /** Shared gate for every caller that could attempt another reservation. */
+  deferUntil(sessionId: string): string | null {
     const state = this.states.get(sessionId);
-    if (!state) return false;
-    return this.now() < state.retryAtMs;
+    if (!state || this.now() >= state.retryAtMs) return null;
+    return new Date(state.retryAtMs).toISOString();
   }
 
   observeConflict(sessionId: string, retryAt: string): void {
@@ -64,12 +72,25 @@ export class ExecutionOwnershipBackoff {
     const parsed = Date.parse(retryAt);
     const requestedRetryAtMs = Number.isFinite(parsed) ? parsed : now;
     const previous = this.states.get(sessionId);
+    if (previous && now < previous.retryAtMs) {
+      this.states.set(sessionId, {
+        ...previous,
+        retryAtMs: Math.max(previous.retryAtMs, requestedRetryAtMs),
+        observedAtMs: now,
+      });
+      return;
+    }
     const consecutive = (previous?.consecutive ?? 0) + 1;
     const stuck = consecutive >= this.maxConsecutiveConflicts;
     const retryAtMs = stuck
       ? Math.max(requestedRetryAtMs, now + this.stuckProbeIntervalMs)
       : requestedRetryAtMs;
-    this.states.set(sessionId, { retryAtMs, consecutive, stuck });
+    this.states.set(sessionId, {
+      retryAtMs,
+      consecutive,
+      stuck,
+      observedAtMs: now,
+    });
     if (stuck && previous?.stuck !== true) {
       this.options.logger.error(
         {
@@ -94,8 +115,15 @@ export class ExecutionOwnershipBackoff {
 
   prune(sessionIds: Iterable<string>): void {
     const live = new Set(sessionIds);
-    for (const sessionId of this.states.keys()) {
-      if (!live.has(sessionId)) this.states.delete(sessionId);
+    const now = this.now();
+    for (const [sessionId, state] of this.states) {
+      if (
+        !live.has(sessionId)
+        && now >= state.retryAtMs
+        && now - state.observedAtMs >= CONFLICT_STATE_RETENTION_MS
+      ) {
+        this.states.delete(sessionId);
+      }
     }
   }
 }

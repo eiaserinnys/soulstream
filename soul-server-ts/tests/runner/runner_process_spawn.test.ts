@@ -242,6 +242,43 @@ describe("RunnerProcessSpawner", () => {
     expect(inspectProcess).not.toHaveBeenCalled();
   });
 
+  it("retires a dead terminal registration with a durable convergence marker", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      schemaVersion: 1,
+      registrationId: "registration-a",
+      sessionId: params.sessionId,
+      codeSha: params.codeSha,
+      pid: 4126,
+      startIdentity: "start-4126",
+    });
+    await writeFile(paths.pidPath, "4126\n", { mode: 0o600 });
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
+      registerPid: async () => {},
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => Date.parse("2026-08-21T00:00:00.000Z"),
+      delay: async () => {},
+      readLifecycle: async () => null,
+    });
+
+    await spawner.retireTerminalRegistration(paths, "registration-a");
+
+    await expect(readRunnerRegistrationIdentity(paths.sessionDirectory)).resolves.toMatchObject({
+      registrationId: "registration-a",
+      pid: null,
+      startIdentity: null,
+      retiredAt: "2026-08-21T00:00:00.000Z",
+    });
+    await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("terminates a live prior pid before spawning its replacement", async () => {
     let alive = true;
     const signals: NodeJS.Signals[] = [];

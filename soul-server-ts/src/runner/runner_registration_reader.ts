@@ -127,6 +127,7 @@ export async function readRunnerRegistrationSummary(
       lifecycle,
       registrationId: identity?.registrationId ?? null,
       pidStartIdentity: identity?.startIdentity ?? null,
+      retiredAt: identity?.retiredAt ?? null,
       databaseMtimeMs: databaseStat.mtimeMs,
       databaseSize: databaseStat.size,
       hostDatabaseMtimeMs: hostDatabaseStat?.mtimeMs,
