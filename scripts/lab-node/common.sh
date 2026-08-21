@@ -163,13 +163,25 @@ start_background() {
     return 0
   fi
 
+  require_command setsid
   mkdir -p "$(dirname "$pid_file")" "$(dirname "$log_file")"
   local temporary_pid_file="$pid_file.tmp"
-  (
-    cd "$LAB_REPO"
-    nohup "$@" >>"$log_file" 2>&1 &
-    printf '%s\n' "$!" >"$temporary_pid_file"
-  )
+  rm -f "$temporary_pid_file"
+  setsid -f bash -c '
+    runtime_dir="$1"
+    pid_path="$2"
+    shift 2
+    cd "$runtime_dir"
+    printf "%s\n" "$$" >"$pid_path"
+    exec "$@"
+  ' lab-detach "$LAB_REPO" "$temporary_pid_file" "$@" \
+    </dev/null >>"$log_file" 2>&1
+  local attempt
+  for attempt in $(seq 1 50); do
+    [[ -s "$temporary_pid_file" ]] && break
+    sleep 0.1
+  done
+  [[ -s "$temporary_pid_file" ]] || fail "$name did not publish its detached pid"
   mv "$temporary_pid_file" "$pid_file"
   sleep 1
   pid_is_running "$pid_file" || fail "$name exited during startup; inspect $log_file"
