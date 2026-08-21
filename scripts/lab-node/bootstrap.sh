@@ -126,8 +126,9 @@ timeout 300s pnpm --dir "$LAB_REPO/orch-server-ts" run build
 ensure_postgres
 unset DATABASE_URL
 export DATABASE_URL="$(lab_database_url)"
-export SOULSTREAM_RELEASE_ID="lab-$(git -C "$LAB_REPO" rev-parse --short=12 HEAD)"
-export HANIEL_BACKUP_DIR="$LAB_ROOT/state/database-release"
+release_id="lab-$(git -C "$LAB_REPO" rev-parse --short=12 HEAD)"
+export SOULSTREAM_RELEASE_ID="$release_id"
+export HANIEL_BACKUP_DIR="$LAB_ROOT/state/database-release/$release_id"
 export HANIEL_SERVICE_CWD="$LAB_REPO"
 node "$LAB_REPO/packages/db-schema/scripts/migrate.mjs" initialize
 node "$LAB_REPO/packages/db-schema/scripts/migrate.mjs" verify

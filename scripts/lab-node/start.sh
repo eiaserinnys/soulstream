@@ -10,9 +10,6 @@ ensure_postgres
 
 unset DATABASE_URL
 export DATABASE_URL="$(lab_database_url)"
-export SOULSTREAM_RELEASE_ID="lab-$(git -C "$LAB_REPO" rev-parse --short=12 HEAD)"
-export HANIEL_BACKUP_DIR="$LAB_ROOT/state/database-release"
-export HANIEL_SERVICE_CWD="$LAB_REPO"
 node "$LAB_REPO/packages/db-schema/scripts/migrate.mjs" verify
 unset DATABASE_URL
 

@@ -38,6 +38,8 @@ LAB_CLAUDE_AUTH_SOURCE=/absolute/path/to/claude-auth.json \
 
 Bootstrap creates the dedicated Docker resources, initializes the empty database through the canonical migration ledger, verifies migrations, installs dependencies, and builds the worker and orchestrator sequentially under the host verification lock.
 
+Each Git commit receives its own database release journal below `state/database-release/lab-{sha}`. Re-running bootstrap after a fast-forward therefore reconciles the already-current lab schema without colliding with a previous release identity.
+
 The migration command is `migrate.mjs initialize`, not `apply`: the canonical migration implementation explicitly rejects normal `apply` for an empty database and routes `initialize` to a fresh install without manual ledger edits.
 
 ## Start, status, and stop
