@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import os
 import shlex
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -21,6 +21,11 @@ from deploy.generate_haniel_writer_projection import (
     extract_writer_graph,
     render_haniel_projection,
     verify_committed_projection,
+)
+from deploy.update_database_release_writer_sources import (
+    assert_source_sha256,
+    check_writer_source_checksums,
+    refresh_writer_source_checksums,
 )
 
 
@@ -236,6 +241,81 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
         self.assertIsNone(parsed.migration.provenance_probe)
 
 
+class DatabaseReleaseWriterSourcesTest(unittest.TestCase):
+    def test_refresh_updates_repository_source_pins_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "fixtures").mkdir()
+            (root / "fixtures" / "central.yaml").write_text("central\n", encoding="utf8")
+            (root / "fixtures" / "standalone.yaml").write_text(
+                "standalone\n",
+                encoding="utf8",
+            )
+            sources_path = root / "writer-sources.json"
+            sources_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "soulstream.database-release-writer-sources.v1",
+                        "haniel_contract_sha": "contract-sha",
+                        "sources": {
+                            "central": {
+                                "path": "fixtures/central.yaml",
+                                "sha256": "stale-central",
+                                "source_sha256": "live-source-provenance",
+                            },
+                            "standalone": {
+                                "path": "fixtures/standalone.yaml",
+                                "sha256": "stale-standalone",
+                            },
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf8",
+            )
+
+            self.assertTrue(refresh_writer_source_checksums(root, sources_path))
+            refreshed = json.loads(sources_path.read_text(encoding="utf8"))
+            self.assertEqual(
+                refreshed["sources"]["central"]["source_sha256"],
+                "live-source-provenance",
+            )
+            self.assertRegex(refreshed["sources"]["central"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(
+                refreshed["sources"]["standalone"]["sha256"],
+                r"^[0-9a-f]{64}$",
+            )
+            self.assertFalse(refresh_writer_source_checksums(root, sources_path))
+            check_writer_source_checksums(root, sources_path)
+
+    def test_check_names_the_stale_source_and_both_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "standalone.yaml").write_text("current\n", encoding="utf8")
+            sources_path = root / "writer-sources.json"
+            sources_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "soulstream.database-release-writer-sources.v1",
+                        "sources": {
+                            "standalone": {
+                                "path": "standalone.yaml",
+                                "sha256": "stale-sha",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf8",
+            )
+
+            with self.assertRaisesRegex(
+                AssertionError,
+                r"source=standalone .*expected=stale-sha actual=[0-9a-f]{64}",
+            ):
+                check_writer_source_checksums(root, sources_path)
+
+
 def _find_commands(value: object) -> list[str]:
     if isinstance(value, dict):
         commands = (
@@ -256,10 +336,10 @@ def _writer_source(name: str) -> dict[str, str]:
     return sources["sources"][name]
 
 
-def _render_source(source: dict[str, str]) -> str:
+def _render_source(source_name: str, source: dict[str, str]) -> str:
     path = REPOSITORY_ROOT / source["path"]
+    assert_source_sha256(REPOSITORY_ROOT, source_name, source)
     raw = path.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == source["sha256"]
     rendered = raw.decode("utf8")
     replacements = {
         "__INSTALL_DIR__": "C:/soulstream-test",
@@ -276,7 +356,9 @@ def _render_source(source: dict[str, str]) -> str:
 
 
 def _load_writer_source(name: str) -> HanielConfig:
-    return HanielConfig.model_validate(yaml.safe_load(_render_source(_writer_source(name))))
+    return HanielConfig.model_validate(
+        yaml.safe_load(_render_source(name, _writer_source(name)))
+    )
 
 
 def _assert_writer_services(config: HanielConfig, expected: list[str]) -> None:
