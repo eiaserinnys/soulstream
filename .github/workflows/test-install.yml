@@ -287,6 +287,47 @@ jobs:
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs `
             (Join-Path "soul-server-ts" $resultPath) 26
 
+      - name: Verify release activation contract stub
+        shell: pwsh
+        run: node --test soul-server-ts/scripts/test_install_release_activation_orch.test.mjs
+
+      - name: Start release activation contract stub
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "release-activation-orch.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "release-activation-orch.stderr.log"
+          $process = Start-Process `
+            -FilePath "node" `
+            -ArgumentList @(
+              "soul-server-ts/scripts/test_install_release_activation_orch.mjs",
+              "--host", "127.0.0.1",
+              "--port", "5200"
+            ) `
+            -PassThru `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
+          "TEST_INSTALL_ACTIVATION_STUB_PID=$($process.Id)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $ready = $false
+          for ($attempt = 1; $attempt -le 15; $attempt++) {
+            if ($process.HasExited) {
+              Get-Content $stdout -ErrorAction Continue
+              Get-Content $stderr -ErrorAction Continue
+              Write-Error "Release activation contract stub exited before listening"
+              exit 1
+            }
+            if (Test-NetConnection 127.0.0.1 -Port 5200 -InformationLevel Quiet) {
+              $ready = $true
+              break
+            }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ready) {
+            Write-Error "Release activation contract stub did not listen on port 5200"
+            exit 1
+          }
+
       - name: Run installer (non-interactive)
         shell: pwsh
         run: |
@@ -399,6 +440,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Dump release activation contract stub logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content `
+            (Join-Path $env:RUNNER_TEMP "release-activation-orch.stdout.log") `
+            -ErrorAction Continue
+          Get-Content `
+            (Join-Path $env:RUNNER_TEMP "release-activation-orch.stderr.log") `
+            -ErrorAction Continue
+
       - name: Print service info
         shell: pwsh
         run: |
@@ -426,4 +478,15 @@ jobs:
           $dataDir = Join-Path $env:RUNNER_TEMP "soulstream-test-pg"
           if (Test-Path $dataDir) {
             pg_ctl -D $dataDir stop -m fast
+          }
+
+      - name: Stop release activation contract stub
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:TEST_INSTALL_ACTIVATION_STUB_PID) {
+            Stop-Process `
+              -Id ([int]$env:TEST_INSTALL_ACTIVATION_STUB_PID) `
+              -Force `
+              -ErrorAction SilentlyContinue
           }
