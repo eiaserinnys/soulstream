@@ -55,8 +55,7 @@ test("bootstrap initializes only after dependencies and builds exist", () => {
   const installAt = bootstrap.indexOf('pnpm --dir "$LAB_REPO" install');
   const initializeAt = bootstrap.indexOf('migrate.mjs" initialize');
   assert.ok(installAt >= 0 && initializeAt > installAt);
-  assert.match(bootstrap, /exec 9>&-/);
-  assert.doesNotMatch(bootstrap, /flock -u 9/);
+  assert.doesNotMatch(bootstrap, /flock -u 9|exec 9>&-/);
 
   const start = readFileSync(join(directory, "start.sh"), "utf8");
   assert.match(start, /migrate\.mjs" verify/);

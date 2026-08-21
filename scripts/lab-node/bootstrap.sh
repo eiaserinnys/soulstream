@@ -122,7 +122,6 @@ timeout 300s env NODE_ENV=development pnpm --dir "$LAB_REPO" install --frozen-lo
 timeout 300s node "$LAB_REPO/soul-server-ts/scripts/build_with_release_env.mjs" \
   --env-file "$LAB_REPO/.env.soul-server-ts"
 timeout 300s pnpm --dir "$LAB_REPO/orch-server-ts" run build
-exec 9>&-
 
 ensure_postgres
 unset DATABASE_URL
