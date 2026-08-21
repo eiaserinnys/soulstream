@@ -27,6 +27,10 @@ export type SessionSnapshotListResponse = {
   hasMore: boolean;
 };
 
+export type SessionSnapshotListResponseOptions = {
+  includeDetails?: boolean;
+};
+
 export type SessionSnapshotRecord = Record<string, unknown> & {
   agent_session_id: string;
   agentSessionId: string;
@@ -43,6 +47,7 @@ export type SessionSnapshotServiceOptions = {
 const DEFAULT_LIMIT = 50;
 export const SESSION_SNAPSHOT_MAX_LIMIT = 200;
 export const SESSION_SNAPSHOT_MAX_TARGET_IDS = SESSION_SNAPSHOT_MAX_LIMIT;
+const SESSION_LIST_PROMPT_PREVIEW_LENGTH = 200;
 
 export class SessionSnapshotService {
   private readonly registry: InMemoryNodeRegistry;
@@ -71,7 +76,13 @@ export class SessionSnapshotService {
     const page = filtered
       .slice(offset, offset + limit)
       .map((entry) => entry.snapshot);
-    return buildSessionSnapshotListResponse(page, filtered.length, offset, limit);
+    return buildSessionSnapshotListResponse(
+      page,
+      filtered.length,
+      offset,
+      limit,
+      { includeDetails: normalizedQuery.session_ids?.length === 1 },
+    );
   }
 
   loadSessionStreamSnapshot(): Promise<SessionStreamSnapshot> {
@@ -140,18 +151,51 @@ export function buildSessionSnapshotListResponse(
   total: number,
   offset: number,
   limit: number,
+  options: SessionSnapshotListResponseOptions = {},
 ): SessionSnapshotListResponse {
   const loadedCount = offset + sessions.length;
   const hasMore = limit > 0 && loadedCount < total;
   const nextCursor = hasMore ? String(offset + limit) : null;
+  const responseSessions = options.includeDetails
+    ? sessions
+    : sessions.map(projectSessionListSummary);
   return {
-    sessions,
-    sessionList: sessions,
+    sessions: responseSessions,
+    sessionList: responseSessions,
     total,
     cursor: nextCursor,
     nextCursor,
     hasMore,
   };
+}
+
+function projectSessionListSummary(
+  session: Record<string, unknown>,
+): Record<string, unknown> {
+  const summary = { ...session };
+  if (typeof summary.prompt === "string") {
+    summary.prompt = summary.prompt.slice(0, SESSION_LIST_PROMPT_PREVIEW_LENGTH);
+  }
+  if (Array.isArray(summary.metadata)) {
+    summary.metadataCount = summary.metadata.length;
+    summary.metadata = latestMetadataEntryPerType(summary.metadata);
+  } else {
+    delete summary.metadata;
+  }
+  return summary;
+}
+
+function latestMetadataEntryPerType(metadata: unknown[]): unknown[] {
+  const latestByType = new Map<string, { entry: unknown; index: number }>();
+  metadata.forEach((entry, index) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return;
+    const type = (entry as Record<string, unknown>).type;
+    if (typeof type !== "string" || type.length === 0) return;
+    latestByType.set(type, { entry, index });
+  });
+  return [...latestByType.values()]
+    .sort((left, right) => left.index - right.index)
+    .map(({ entry }) => entry);
 }
 
 function matchesQuery(

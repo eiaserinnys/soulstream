@@ -117,6 +117,53 @@ describe("session snapshot route harness", () => {
     await app.close();
   });
 
+  it("summarizes prompt and metadata only for list responses while preserving one-session detail", async () => {
+    const { app, registry } = createHarness(() => 1_700_000_000_000);
+    const connectionId = registerNode(registry, "node-a");
+    const prompt = "p".repeat(260);
+    const metadata = [
+      { type: "caller_info", value: { source: "browser", display_name: "First" } },
+      { type: "git_commit", value: "first-commit" },
+      { type: "caller_info", value: { source: "browser", display_name: "Latest" } },
+      { type: "git_commit", value: "latest-commit" },
+    ];
+    registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId },
+      {
+        type: "session_updated",
+        agentSessionId: "sess-detail",
+        status: "completed",
+        prompt,
+        metadata,
+      },
+    );
+
+    const listResponse = await app.inject({ method: "GET", url: "/api/sessions" });
+    const listBody = listResponse.json();
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listBody.sessionList).toEqual(listBody.sessions);
+    expect(listBody.sessions[0]).toMatchObject({
+      prompt: "p".repeat(200),
+      metadataCount: 4,
+      metadata: [
+        { type: "caller_info", value: { source: "browser", display_name: "Latest" } },
+        { type: "git_commit", value: "latest-commit" },
+      ],
+    });
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: "/api/sessions?session_id=sess-detail",
+    });
+    const detail = detailResponse.json().sessions[0];
+
+    expect(detail.prompt).toBe(prompt);
+    expect(detail.metadata).toEqual(metadata);
+    expect(detail.metadataCount).toBeUndefined();
+    await app.close();
+  });
+
   it("projects cached node sessions with Python-compatible list shape", async () => {
     const { app, registry } = createHarness(() => 1_700_000_000_000);
     const connectionId = registerNode(registry, "node-a");
