@@ -70,8 +70,8 @@ export function deliveryRetryOrDeadLetterSet(
         INTERVAL '60 seconds',
         INTERVAL '100 milliseconds' * POWER(2, LEAST(attempt_count, 9))
       )`
-    : sql`(${input.retryDelayMs} * INTERVAL '1 millisecond')`;
-  const tooOld = sql`created_at <= NOW() - (${maxAgeMs} * INTERVAL '1 millisecond')`;
+    : sql`(${input.retryDelayMs}::double precision * INTERVAL '1 millisecond')`;
+  const tooOld = sql`created_at <= NOW() - (${maxAgeMs}::double precision * INTERVAL '1 millisecond')`;
   const exhausted = spendsAttempt
     ? sql`(attempt_count + 1 >= ${maxAttempts} OR ${tooOld})`
     : sql`(${tooOld})`;

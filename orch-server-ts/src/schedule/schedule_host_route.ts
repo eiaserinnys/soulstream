@@ -37,8 +37,17 @@ export function registerScheduleHostRoute(app: FastifyInstance, options: Schedul
       }
       const method = operations[request.params.operation as keyof typeof operations];
       if (!method) return errorReply(reply, 404, "SCHEDULE_OPERATION_NOT_FOUND", "unknown schedule operation");
-      const body = toInput(request.body);
-      if (!body) return errorReply(reply, 422, "INVALID_SCHEDULE_REQUEST", "body must be an object");
+      const rawBody = toInput(request.body);
+      if (!rawBody) return errorReply(reply, 422, "INVALID_SCHEDULE_REQUEST", "body must be an object");
+      const body = normalizeStaleScheduleInput(method, rawBody);
+      if (!body) {
+        return errorReply(
+          reply,
+          422,
+          "INVALID_SCHEDULE_REQUEST",
+          "staleAfterMs or staleBefore is required",
+        );
+      }
       try {
         const repository = await options.repositoryProvider();
         const result = await dispatch(repository, method, body);
@@ -91,7 +100,15 @@ async function dispatch(
   }
 }
 
-const dateKeys = new Set(["runOnceAt", "nextRunAt", "createdAt", "now", "claimedUntil", "firedAt"]);
+const dateKeys = new Set([
+  "runOnceAt",
+  "nextRunAt",
+  "createdAt",
+  "now",
+  "claimedUntil",
+  "firedAt",
+  "staleBefore",
+]);
 
 function toInput(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -101,15 +118,34 @@ function toInput(value: unknown): Record<string, unknown> | null {
   }));
 }
 
+function normalizeStaleScheduleInput(
+  method: typeof operations[keyof typeof operations],
+  input: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (method !== "markOrphanDueSchedules" && method !== "restoreOrphanSchedulesForLiveNodes") {
+    return input;
+  }
+  const currentDelay = input.staleAfterMs;
+  if (typeof currentDelay === "number" && Number.isFinite(currentDelay) && currentDelay >= 0) {
+    return withoutLegacyStaleBefore(input, currentDelay);
+  }
+  const staleBefore = input.staleBefore;
+  if (!(staleBefore instanceof Date) || !Number.isFinite(staleBefore.getTime())) return null;
+  // Rolling upgrades may still send the pre-#797 absolute staleness boundary.
+  return withoutLegacyStaleBefore(input, Math.max(0, Date.now() - staleBefore.getTime()));
+}
+
+function withoutLegacyStaleBefore(
+  input: Record<string, unknown>,
+  staleAfterMs: number,
+): Record<string, unknown> {
+  const { staleBefore: _staleBefore, ...currentInput } = input;
+  return { ...currentInput, staleAfterMs };
+}
+
 function requiredString(input: Record<string, unknown>, key: string): string {
   const value = input[key];
   if (typeof value !== "string" || value.length === 0) throw new Error(`${key} is required`);
-  return value;
-}
-
-function requiredDate(input: Record<string, unknown>, key: string): Date {
-  const value = input[key];
-  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw new Error(`${key} is required`);
   return value;
 }
 

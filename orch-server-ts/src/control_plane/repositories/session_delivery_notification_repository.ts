@@ -66,7 +66,7 @@ export class SessionDeliveryNotificationRepository {
           'claimed',
           'publishing',
           ${params.leaseOwner},
-          NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
+          NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
           NOW(),
           NOW(),
           NOW()
@@ -118,7 +118,7 @@ export class SessionDeliveryNotificationRepository {
           state = 'claimed',
           projection_state = 'publishing',
           lease_owner = ${leaseOwner},
-          lease_expires_at = NOW() + (${leaseMs} * INTERVAL '1 millisecond'),
+          lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
           updated_at = NOW()
         FROM due
         WHERE outbox.delivery_id = due.delivery_id

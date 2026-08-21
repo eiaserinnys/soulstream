@@ -226,7 +226,7 @@ export class SoulstreamScheduleRepository {
           AND (
             session.session_id IS NULL
             OR session.node_id IS NULL
-            OR heartbeat.last_seen_at < NOW() - (${params.staleAfterMs} * INTERVAL '1 millisecond')
+            OR heartbeat.last_seen_at < NOW() - (${params.staleAfterMs}::double precision * INTERVAL '1 millisecond')
           )
         ORDER BY schedule.next_run_at, schedule.created_at
         LIMIT ${params.limit}
@@ -257,7 +257,7 @@ export class SoulstreamScheduleRepository {
         JOIN soulstream_node_heartbeats heartbeat
           ON heartbeat.node_id = session.node_id
         WHERE schedule.status = 'orphaned'
-          AND heartbeat.last_seen_at >= NOW() - (${params.staleAfterMs} * INTERVAL '1 millisecond')
+          AND heartbeat.last_seen_at >= NOW() - (${params.staleAfterMs}::double precision * INTERVAL '1 millisecond')
         ORDER BY schedule.updated_at, schedule.created_at
         LIMIT ${params.limit}
         FOR UPDATE OF schedule SKIP LOCKED
