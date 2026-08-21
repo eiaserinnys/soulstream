@@ -121,6 +121,22 @@ export class ExecutionOwnershipCoordinator {
     return application;
   }
 
+  async expireDeadOwner(
+    sessionId: string,
+    input: Parameters<EventPersistence["expireDeadExecutionOwnerAndWaitForApplication"]>[1],
+  ): Promise<EventSessionTransitionApplication> {
+    const application = await this.persistence
+      .expireDeadExecutionOwnerAndWaitForApplication(sessionId, input);
+    this.logTransition(
+      "expire_dead_owner",
+      sessionId,
+      input.ownershipGeneration,
+      application,
+      input.failureReason,
+    );
+    return application;
+  }
+
   async markOrphanedSpawn(
     sessionId: string,
     ownershipGeneration: number,
@@ -163,6 +179,7 @@ export class ExecutionOwnershipCoordinator {
       | "prove"
       | "activate"
       | "fail"
+      | "expire_dead_owner"
       | "orphaned_spawn",
     sessionId: string,
     ownershipGeneration: number,

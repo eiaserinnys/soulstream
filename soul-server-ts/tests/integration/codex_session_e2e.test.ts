@@ -114,6 +114,7 @@ function makeAppliedTransitionAcknowledgement(
     "execution_adopt_reserve",
     "execution_activate",
     "execution_fail",
+    "execution_expire_dead_owner",
     "runner_terminal_fact",
     "recovered_runner_terminal_fact",
   ].includes(effect.kind)) {
@@ -122,7 +123,8 @@ function makeAppliedTransitionAcknowledgement(
   const terminal = effect.kind === "terminal_transition";
   const activated = effect.kind === "running_transition"
     || effect.kind === "execution_activate";
-  const failed = effect.kind === "execution_fail";
+  const failed = effect.kind === "execution_fail"
+    || effect.kind === "execution_expire_dead_owner";
   const runnerFact = "runner_fact" in effect ? effect.runner_fact : undefined;
   const runnerTerminalStatus = runnerFact === "completed"
     ? "completed"

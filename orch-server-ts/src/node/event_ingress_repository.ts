@@ -330,6 +330,7 @@ function isCanonicalTransitionEffect(
       | "execution_adopt_reserve"
       | "execution_activate"
       | "execution_fail"
+      | "execution_expire_dead_owner"
       | "execution_orphaned_spawn"
       | "runner_terminal_fact"
       | "recovered_runner_terminal_fact";
@@ -342,6 +343,7 @@ function isCanonicalTransitionEffect(
     || effect?.kind === "execution_adopt_reserve"
     || effect?.kind === "execution_activate"
     || effect?.kind === "execution_fail"
+    || effect?.kind === "execution_expire_dead_owner"
     || effect?.kind === "execution_orphaned_spawn"
     || effect?.kind === "runner_terminal_fact"
     || effect?.kind === "recovered_runner_terminal_fact";

@@ -306,6 +306,38 @@ describePostgres("execution ownership PostgreSQL contract", () => {
     ]);
   });
 
+  it("expires only the exact active dead-owner generation and process identity", async () => {
+    await insertSession("dead-owner", "initializing");
+    await reserve("dead-owner", 7, "runner_process", "release-1");
+    await prove("dead-owner", 7, "registration-dead", "execute-dead");
+    await activate("dead-owner", 7);
+
+    const expire = async (generation: number, pid: number, startIdentity: string) =>
+      await harness.sql<Array<{ applied: boolean }>>`
+        SELECT session_expire_dead_execution_owner(
+          'dead-owner', ${generation}, ${pid}, ${startIdentity},
+          'owner process is gone', NOW()
+        ) AS applied
+      `;
+
+    await expect(expire(8, 123, "start-registration-dead"))
+      .resolves.toEqual([{ applied: false }]);
+    await expect(expire(7, 999, "start-registration-dead"))
+      .resolves.toEqual([{ applied: false }]);
+    await expect(expire(7, 123, "wrong-start"))
+      .resolves.toEqual([{ applied: false }]);
+    await expect(expire(7, 123, "start-registration-dead"))
+      .resolves.toEqual([{ applied: true }]);
+    await expect(harness.sql<Array<{ phase: string; failure_reason: string }>>`
+      SELECT phase, failure_reason
+      FROM session_execution_ownerships
+      WHERE session_id = 'dead-owner' AND ownership_generation = 7
+    `).resolves.toEqual([{
+      phase: "failed",
+      failure_reason: "owner process is gone",
+    }]);
+  });
+
   it("projects a recovered reaped fact only through the exact durable identity", async () => {
     await insertSession("recovered-reaped", "initializing");
     await reserve("recovered-reaped", 7, "runner_process", "release-1");

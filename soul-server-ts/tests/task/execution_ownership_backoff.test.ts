@@ -57,6 +57,27 @@ describe("ExecutionOwnershipBackoff", () => {
     expect(logger.error).toHaveBeenCalledTimes(1);
   });
 
+  it("does not count another caller while the shared retry deadline is still active", () => {
+    let nowMs = 0;
+    const logger = makeLogger();
+    const backoff = new ExecutionOwnershipBackoff({
+      logger,
+      now: () => nowMs,
+      maxConsecutiveConflicts: 2,
+    });
+
+    const retryAt = new Date(nowMs + 60_000).toISOString();
+    backoff.observeConflict("session-a", retryAt);
+    nowMs += 5_000;
+    backoff.observeConflict("session-a", retryAt);
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ consecutive: 1 }),
+      expect.any(String),
+    );
+  });
+
   /**
    * The paths that can clear a wedge — dead-owner expiry, the owner finally
    * releasing, an operator — all run inside a recovery attempt. A session that
@@ -122,16 +143,28 @@ describe("ExecutionOwnershipBackoff", () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it("drops state for registrations that no longer exist", () => {
+  it("keeps the counter across paths even without a runner registration", () => {
+    let nowMs = 0;
+    const logger = makeLogger();
     const backoff = new ExecutionOwnershipBackoff({
-      logger: makeLogger(),
-      now: () => 0,
+      logger,
+      now: () => nowMs,
+      maxConsecutiveConflicts: 2,
     });
 
     backoff.observeConflict("session-a", new Date(60_000).toISOString());
     backoff.prune(["session-b"]);
+    expect(backoff.shouldSkip("session-a")).toBe(true);
 
+    nowMs = 60_000;
+    backoff.prune(["session-b"]);
     expect(backoff.shouldSkip("session-a")).toBe(false);
+
+    backoff.observeConflict("session-a", new Date(120_000).toISOString());
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a", consecutive: 2 }),
+      expect.any(String),
+    );
   });
 
   it("retries immediately when the rejection reports an unusable retryAt", () => {

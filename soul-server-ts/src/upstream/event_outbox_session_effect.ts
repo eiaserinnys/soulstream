@@ -64,6 +64,14 @@ export type EventOutboxSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_expire_dead_owner";
+      ownership_generation: number;
+      pid: number;
+      start_identity: string;
+      failure_reason: string;
+      updated_at: string;
+    }
+  | {
       kind: "execution_orphaned_spawn";
       ownership_generation: number;
       registration_id: string;

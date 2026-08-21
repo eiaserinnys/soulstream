@@ -4,6 +4,7 @@ import type {
   EventIngressEnvelope,
   EventSessionEffect,
 } from "./event_ingress_contract.js";
+import { parseExecutionFailureEffect } from "./event_ingress_execution_failure.js";
 import {
   assertExactKeys,
   booleanValue,
@@ -299,19 +300,8 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
-  if (value.kind === "execution_fail") {
-    assertExactKeys(
-      value,
-      ["kind", "ownership_generation", "failure_reason", "updated_at"],
-      field,
-    );
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
-      failure_reason: nonEmptyString(value.failure_reason, `${field}.failure_reason`),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
+  const executionFailureEffect = parseExecutionFailureEffect(value, field);
+  if (executionFailureEffect) return executionFailureEffect;
   if (value.kind === "execution_orphaned_spawn") {
     assertExactKeys(
       value,

@@ -144,6 +144,13 @@ describe("runner process registry", () => {
     }), NOW, 120_000)).toBe("replay_terminal_dead");
   });
 
+  it("does not replay a dead terminal registration after its durable replay retired it", () => {
+    expect(classifyRunnerRegistration({
+      ...registration({ pidAlive: false, lifecycleState: "completed" }),
+      retiredAt: "2026-08-11T00:00:29.000Z",
+    }, NOW, 120_000)).toBe("retired_terminal");
+  });
+
   it("reaps a hung execution with fresh liveness but no actual progress", () => {
     expect(classifyRunnerRegistration(registration({
       progressedAt: "2026-08-11T00:00:00.000Z",

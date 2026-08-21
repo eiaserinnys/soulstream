@@ -1,5 +1,4 @@
 import { performance } from "node:perf_hooks";
-import { isExecutionOwnershipConflictError } from "../task/execution_ownership.js";
 import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
 import {
@@ -12,6 +11,15 @@ import {
 } from "./runner_process_registry.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
+import {
+  contendsForExecutionOwnership,
+  dispositionRequiresTask,
+  handleRecoveryWithFailureTracking,
+  reapAndResumeRunner,
+  recoverRunnerByDisposition,
+  resumeReapedRunner,
+  type RecoverableRunnerDisposition,
+} from "./runner_recovery_disposition.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
 import {
   markRegistrationReaped,
@@ -32,11 +40,8 @@ import {
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 import { OwnerNullExecutionReconciler } from "./owner_null_execution_reconciler.js";
 import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
-import { RunnerSessionGarbageCollectionScheduler } from
-  "./runner_session_gc_scheduler.js";
-import { UnreadableRunnerRegistrationHandler } from
-  "./unreadable_runner_registration_handler.js";
-
+import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
+import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
@@ -188,6 +193,10 @@ export class RunnerRecoveryCoordinator {
       if (
         disposition === "wait_for_bootstrap"
       ) {
+        this.recoveryLogger.clear(sessionId);
+        continue;
+      }
+      if (disposition === "retired_terminal") {
         this.recoveryLogger.clear(sessionId);
         continue;
       }
@@ -353,7 +362,25 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "already_reaped") {
-      await this.resumeReaped(registration, requireRecoveryTask(task, registration));
+      await resumeReapedRunner({
+        registration,
+        task: requireRecoveryTask(task, registration),
+        ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
+        terminate: async (owned) => await this.registrationControl.terminate(owned),
+        invalidate: async (owned) => await this.registrationControl.invalidate(owned),
+        recoverOffline: async (owned, recoveredTask) =>
+          await this.recoverRegistered(owned, recoveredTask, "offline"),
+        resumeReplacement: async (recoveredTask, message, config) =>
+          await this.options.taskManager.markRunnerFailureAndResume(
+            recoveredTask,
+            message,
+            (resumedTask) => this.options.taskExecutor.restartRegisteredRunner(
+              resumedTask,
+              config,
+            ),
+          ),
+        logger: this.options.logger,
+      });
       return;
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
@@ -363,22 +390,16 @@ export class RunnerRecoveryCoordinator {
     disposition: RunnerRecoveryDisposition,
     task?: Task,
   ): Promise<void> {
-    try {
-      await this.handle(registration, disposition, task);
-      this.recoveryLogger.clear(registration.config.sessionId);
-      this.ownershipBackoff.clear(registration.config.sessionId);
-    } catch (error) {
-      if (isExecutionOwnershipConflictError(error)) {
-        this.ownershipBackoff.observeConflict(
-          registration.config.sessionId,
-          error.retryAt,
-        );
-        return;
-      }
-      this.recoveryLogger.failure(registration, disposition, error);
-    }
+    await handleRecoveryWithFailureTracking({
+      registration,
+      disposition,
+      ...(task ? { task } : {}),
+      handle: async (owned, ownedDisposition, recoveredTask) =>
+        await this.handle(owned, ownedDisposition, recoveredTask),
+      recoveryLogger: this.recoveryLogger,
+      ownershipBackoff: this.ownershipBackoff,
+    });
   }
-
   private async recoverRegistered(
     registration: RunnerRegistration,
     task: Task,
@@ -431,120 +452,49 @@ export class RunnerRecoveryCoordinator {
     disposition: "reap_dead" | "reap_stalled",
     task: Task,
   ): Promise<void> {
-    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
-    const verifiedDisposition = classifyRunnerRegistration(
-      hydrated,
-      (this.options.now ?? Date.now)(),
-      this.options.leaseTimeoutMs,
-    );
-    if (verifiedDisposition !== disposition) {
-      if (
-        verifiedDisposition === "adopt_prebootstrap"
-        || verifiedDisposition === "adopt_running"
-        || verifiedDisposition === "replay_terminal"
-        || verifiedDisposition === "replay_terminal_dead"
-      ) {
-        await this.recoverByDisposition(hydrated, verifiedDisposition, task);
-      }
-      return;
-    }
-    const message = disposition === "reap_stalled"
-      ? "runner progress lease expired"
-      : "runner process exited before execution completed";
-    const error = {
-      code: disposition === "reap_stalled" ? "lease_expired" : "runner_exited",
-      message,
-    };
-    await this.adoptionFailureRecovery.terminalize(
-      hydrated,
-      task,
-      error,
+    await reapAndResumeRunner({
+      registration,
       disposition,
-    );
-  }
-
-  private async resumeReaped(
-    registration: RunnerRegistration,
-    task: Task,
-  ): Promise<void> {
-    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
-    if (hydrated.pidAlive) await this.registrationControl.terminate(hydrated);
-    await this.registrationControl.invalidate(hydrated);
-    await this.recoverRegistered({ ...hydrated, pidAlive: false }, task, "offline");
-    prepareRecoveredTask(task, hydrated);
-    task.runnerTerminalFact = "reaped";
-    const message = hydrated.lifecycle?.terminal_error?.message
-      ?? "runner was reaped before recovery completed";
-    await this.options.taskManager.markRunnerFailureAndResume(
       task,
-      message,
-      (resumedTask) => this.options.taskExecutor.restartRegisteredRunner(
-        resumedTask,
-        hydrated.config,
-      ),
-    );
-    this.options.logger.info(
-      { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
-      "reaped runner recovery resumed",
-    );
+      ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
+      now: this.options.now ?? Date.now,
+      leaseTimeoutMs: this.options.leaseTimeoutMs,
+      recover: async (owned, verified, recoveredTask) =>
+        await this.recoverByDisposition(owned, verified, recoveredTask),
+      terminalize: async (owned, recoveredTask, error, verified) =>
+        await this.adoptionFailureRecovery.terminalize(
+          owned,
+          recoveredTask,
+          error,
+          verified,
+        ),
+    });
   }
 
   private async recoverByDisposition(
     registration: RunnerRegistration,
-    disposition:
-      | "adopt_prebootstrap"
-      | "adopt_running"
-      | "replay_terminal"
-      | "replay_terminal_dead",
+    disposition: RecoverableRunnerDisposition,
     task: Task,
   ): Promise<Task> {
-    if (disposition === "adopt_prebootstrap" || disposition === "adopt_running") {
-      return await this.recoverRegistered(
-        registration,
-        task,
-        "adopt",
-        undefined,
-        disposition,
-      );
-    }
-    const recovered = await this.recoverRegistered(
+    return await recoverRunnerByDisposition({
       registration,
+      disposition,
       task,
-      "offline",
-      async (guardedRegistration) => {
-        if (!guardedRegistration.pidAlive) return guardedRegistration;
-        await this.registrationControl.terminate(guardedRegistration);
-        return { ...guardedRegistration, pidAlive: false };
-      },
-    );
-    if (disposition === "replay_terminal_dead") {
-      // Its durable tail is drained and its process is gone, so leaving the
-      // registration in place only means every later scan re-derives the same
-      // dead runner — which is why a restart reproduced the wedge instead of
-      // clearing it.
-      await this.registrationControl.invalidate(registration);
-      this.options.logger.info(
-        {
-          sessionId: registration.config.sessionId,
-          disposition: "replay_terminal_dead",
-        },
-        "terminal runner with no live process replayed offline and invalidated",
-      );
-    }
-    return recovered;
+      recoverAdopt: async (ownedRegistration, ownedTask, adoptionDisposition) =>
+        await this.recoverRegistered(
+          ownedRegistration,
+          ownedTask,
+          "adopt",
+          undefined,
+          adoptionDisposition,
+        ),
+      recoverOffline: async (ownedRegistration, ownedTask, prepare) =>
+        await this.recoverRegistered(ownedRegistration, ownedTask, "offline", prepare),
+      terminate: async (ownedRegistration) =>
+        await this.registrationControl.terminate(ownedRegistration),
+      retireTerminal: async (ownedRegistration) =>
+        await this.registrationControl.retireTerminal(ownedRegistration),
+      logger: this.options.logger,
+    });
   }
-
-}
-
-function dispositionRequiresTask(disposition: RunnerRecoveryDisposition): boolean {
-  return disposition !== "wait_for_bootstrap";
-}
-
-/** Only these dispositions go on to reserve execution ownership. */
-function contendsForExecutionOwnership(
-  disposition: RunnerRecoveryDisposition,
-): boolean {
-  return disposition === "adopt_prebootstrap"
-    || disposition === "adopt_running"
-    || disposition === "already_reaped";
 }

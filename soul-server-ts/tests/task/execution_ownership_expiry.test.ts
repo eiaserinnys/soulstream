@@ -26,15 +26,10 @@ function makeLogger() {
 }
 
 describe("ExecutionOwnershipExpiry", () => {
-  /**
-   * 260820 incident: the owning process died holding an active reservation.
-   * Every later attempt lost the CAS, and the compensation path failed its own
-   * generation — never the stuck one — so nothing could ever converge.
-   */
-  it("fails the stuck owner's generation, not the caller's", async () => {
-    const fail = vi.fn().mockResolvedValue({ applied: true });
+  it("expires an active dead owner through the dedicated generation-and-identity CAS", async () => {
+    const expireDeadOwner = vi.fn().mockResolvedValue({ applied: true });
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
@@ -42,10 +37,39 @@ describe("ExecutionOwnershipExpiry", () => {
 
     await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
       .resolves.toBe("expired");
-    expect(fail).toHaveBeenCalledWith(
+    expect(expireDeadOwner).toHaveBeenCalledWith(
       "session-a",
-      7,
-      expect.stringContaining("968764"),
+      {
+        ownershipGeneration: 7,
+        pid: 968_764,
+        startIdentity: "start-1",
+        failureReason: expect.stringContaining("968764"),
+      },
+    );
+  });
+
+  /**
+   * 260820 incident: the owning process died holding an active reservation.
+   * Every later attempt lost the CAS, and the compensation path failed its own
+   * generation — never the stuck one — so nothing could ever converge.
+   */
+  it("expires the stuck owner's generation, not the caller's", async () => {
+    const expireDeadOwner = vi.fn().mockResolvedValue({ applied: true });
+    const expiry = new ExecutionOwnershipExpiry({
+      expireDeadOwner,
+      isSessionExecutedHere: async () => true,
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
+      logger: makeLogger(),
+    });
+
+    await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
+      .resolves.toBe("expired");
+    expect(expireDeadOwner).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({
+        ownershipGeneration: 7,
+        failureReason: expect.stringContaining("968764"),
+      }),
     );
   });
 
@@ -55,9 +79,9 @@ describe("ExecutionOwnershipExpiry", () => {
    * would expire reservations that are legitimately held.
    */
   it("expires a reservation whose pid was recycled by another process", async () => {
-    const fail = vi.fn().mockResolvedValue({ applied: true });
+    const expireDeadOwner = vi.fn().mockResolvedValue({ applied: true });
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: true, startIdentity: "start-999" }),
       logger: makeLogger(),
@@ -65,13 +89,16 @@ describe("ExecutionOwnershipExpiry", () => {
 
     await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
       .resolves.toBe("expired");
-    expect(fail).toHaveBeenCalledWith("session-a", 7, expect.any(String));
+    expect(expireDeadOwner).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({ ownershipGeneration: 7 }),
+    );
   });
 
   it("leaves a live pid alone when its start identity cannot be compared", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: true, startIdentity: null }),
       logger: makeLogger(),
@@ -81,15 +108,15 @@ describe("ExecutionOwnershipExpiry", () => {
       .resolves.toBe("owner_alive");
     await expect(
       expiry.expireIfOwnerIsGone("session-a", ownership({ startIdentity: null })),
-    ).resolves.toBe("owner_alive");
-    expect(fail).not.toHaveBeenCalled();
+    ).resolves.toBe("owner_unknown");
+    expect(expireDeadOwner).not.toHaveBeenCalled();
   });
 
   it("leaves ownership alone when the process cannot be inspected", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const logger = makeLogger();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => {
         throw new Error("permission denied");
@@ -99,7 +126,7 @@ describe("ExecutionOwnershipExpiry", () => {
 
     await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
       .resolves.toBe("owner_unknown");
-    expect(fail).not.toHaveBeenCalled();
+    expect(expireDeadOwner).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
@@ -109,9 +136,9 @@ describe("ExecutionOwnershipExpiry", () => {
    * across the cluster.
    */
   it("refuses to displace an ownership for a session another node executes", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => false,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
@@ -119,14 +146,14 @@ describe("ExecutionOwnershipExpiry", () => {
 
     await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
       .resolves.toBe("not_local");
-    expect(fail).not.toHaveBeenCalled();
+    expect(expireDeadOwner).not.toHaveBeenCalled();
   });
 
   it("leaves ownership alone when node assignment cannot be read", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const logger = makeLogger();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => {
         throw new Error("session host unavailable");
       },
@@ -136,14 +163,14 @@ describe("ExecutionOwnershipExpiry", () => {
 
     await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
       .resolves.toBe("not_local");
-    expect(fail).not.toHaveBeenCalled();
+    expect(expireDeadOwner).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a live owner alone", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: true, startIdentity: "start-1" }),
       logger: makeLogger(),
@@ -151,13 +178,13 @@ describe("ExecutionOwnershipExpiry", () => {
 
     await expect(expiry.expireIfOwnerIsGone("session-a", ownership()))
       .resolves.toBe("owner_alive");
-    expect(fail).not.toHaveBeenCalled();
+    expect(expireDeadOwner).not.toHaveBeenCalled();
   });
 
   it("refuses to guess when the owner pid is unknown", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
@@ -167,13 +194,13 @@ describe("ExecutionOwnershipExpiry", () => {
       .resolves.toBe("owner_unknown");
     await expect(expiry.expireIfOwnerIsGone("session-a", undefined))
       .resolves.toBe("owner_unknown");
-    expect(fail).not.toHaveBeenCalled();
+    expect(expireDeadOwner).not.toHaveBeenCalled();
   });
 
   it("leaves an already terminal ownership alone", async () => {
-    const fail = vi.fn();
+    const expireDeadOwner = vi.fn();
     const expiry = new ExecutionOwnershipExpiry({
-      fail,
+      expireDeadOwner,
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger: makeLogger(),
@@ -182,13 +209,13 @@ describe("ExecutionOwnershipExpiry", () => {
     await expect(
       expiry.expireIfOwnerIsGone("session-a", ownership({ phase: "failed" })),
     ).resolves.toBe("owner_unknown");
-    expect(fail).not.toHaveBeenCalled();
+    expect(expireDeadOwner).not.toHaveBeenCalled();
   });
 
   it("reports a rejected or throwing expiry instead of claiming success", async () => {
     const logger = makeLogger();
     const rejecting = new ExecutionOwnershipExpiry({
-      fail: vi.fn().mockResolvedValue({ applied: false }),
+      expireDeadOwner: vi.fn().mockResolvedValue({ applied: false }),
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger,
@@ -197,7 +224,7 @@ describe("ExecutionOwnershipExpiry", () => {
       .resolves.toBe("not_applied");
 
     const throwing = new ExecutionOwnershipExpiry({
-      fail: vi.fn().mockRejectedValue(new Error("host unavailable")),
+      expireDeadOwner: vi.fn().mockRejectedValue(new Error("host unavailable")),
       isSessionExecutedHere: async () => true,
       inspectProcess: async () => ({ alive: false, startIdentity: null }),
       logger,

@@ -30,11 +30,15 @@ import type { CanonicalExecutionOwnership } from "./execution_ownership.js";
  */
 
 export interface ExecutionOwnershipExpiryDeps {
-  /** Fails the *named* generation, not the caller's. */
-  fail(
+  /** Expires only the exact proven generation and recorded process identity. */
+  expireDeadOwner(
     sessionId: string,
-    ownershipGeneration: number,
-    failureReason: string,
+    input: {
+      ownershipGeneration: number;
+      pid: number;
+      startIdentity: string;
+      failureReason: string;
+    },
   ): Promise<{ applied: boolean }>;
   inspectProcess(pid: number): Promise<ProcessIdentity>;
   /** False whenever this node is not the one that executes the session. */
@@ -66,7 +70,9 @@ export class ExecutionOwnershipExpiry {
     sessionId: string,
     ownership: CanonicalExecutionOwnership | undefined,
   ): Promise<ExecutionOwnershipExpiryOutcome> {
-    if (!ownership || ownership.pid === null) return "owner_unknown";
+    if (!ownership || ownership.pid === null || !ownership.startIdentity) {
+      return "owner_unknown";
+    }
     if (ownership.phase === "terminal" || ownership.phase === "failed") {
       return "owner_unknown";
     }
@@ -97,10 +103,14 @@ export class ExecutionOwnershipExpiry {
       `execution owner process ${ownership.pid} is gone while holding ${ownership.phase}`;
     let applied: boolean;
     try {
-      const application = await this.deps.fail(
+      const application = await this.deps.expireDeadOwner(
         sessionId,
-        ownership.ownershipGeneration,
-        failureReason,
+        {
+          ownershipGeneration: ownership.ownershipGeneration,
+          pid: ownership.pid,
+          startIdentity: ownership.startIdentity,
+          failureReason,
+        },
       );
       applied = application.applied;
     } catch (err) {
