@@ -84,4 +84,5 @@ test("smoke validation fixes both turns to one session and restarts only the nod
   assert.match(smoke, /restart-node\.sh/);
   assert.match(smoke, /api\/sessions\/\$session_id\/intervene/);
   assert.match(smoke, /LAB_TURN_2_OK/);
+  assert.doesNotMatch(smoke, /durable_next_turn/);
 });

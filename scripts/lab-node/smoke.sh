@@ -58,7 +58,7 @@ wait_for_marker LAB_TURN_1_OK
 curl -fsS \
   -H "Authorization: Bearer $LAB_AUTH_BEARER_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"text":"Reply with exactly LAB_TURN_2_OK.","user":"lab-smoke","delivery_intent":"durable_next_turn","source":"lab-smoke"}' \
+  -d '{"text":"Reply with exactly LAB_TURN_2_OK.","user":"lab-smoke"}' \
   "$api_base/api/sessions/$session_id/intervene" >"$intervene_response"
 
 wait_for_marker LAB_TURN_2_OK
