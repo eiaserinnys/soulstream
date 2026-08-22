@@ -429,6 +429,16 @@ export interface Task {
 
   /** DB에서 복원된 task인지 여부. 실행 중 메모리 task와 구분할 때 사용. */
   hydratedFromDb?: boolean;
+  /**
+   * This resume re-attaches an executor to a session the database still
+   * considers running, rather than resuming one that ended.
+   *
+   * A hydrated running task whose executor is gone is marked interrupted in
+   * memory so the auto-resume transition will take it, but the central row was
+   * never transitioned. Asking the database to resume *from* a terminal state
+   * it never entered updates nothing, and the activation is refused.
+   */
+  detachedRunningResume?: boolean;
 
   /**
    * Turn 사이 큐잉되는 개입 메시지 (B-4, claude `task_manager.py:603-609`의 asyncio.Queue

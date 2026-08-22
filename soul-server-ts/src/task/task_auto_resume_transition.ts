@@ -47,7 +47,13 @@ export class AutoResumeTransition {
   ): Promise<{ autoResumed: true }> {
     this.requireResumableProfile(task);
     const transitionRevision = task.lastEventId;
-    const expectedTerminalEventId = task.terminalEventId ?? null;
+    // `null` is a real expectation -- a session can end without a terminal
+    // event -- so it cannot double as "this session never ended". The detached
+    // running case says so explicitly instead.
+    const detachedRunningResume = task.detachedRunningResume === true;
+    const expectedTerminalEventId = detachedRunningResume
+      ? undefined
+      : task.terminalEventId ?? null;
     const originalStatus = task.status;
     const originalTerminalEventId = task.terminalEventId;
     const ownershipPersistence = this.deps.persistence as EventPersistence & {
@@ -97,7 +103,7 @@ export class AutoResumeTransition {
           .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
           reviewState: resumedReviewState,
           transitionId: `resume:${transitionRevision}`,
-          expectedTerminalEventId,
+          ...(expectedTerminalEventId === undefined ? {} : { expectedTerminalEventId }),
         });
         applyCanonicalSessionProjection(task, application.canonicalSession);
         if (!application.applied) {
@@ -109,9 +115,10 @@ export class AutoResumeTransition {
       if (userMessageEvent) {
         await finishUserMessageEvent(task, userMessageEvent, this.deps);
       }
-      if (ownershipEnabled) {
+      if (ownershipEnabled && expectedTerminalEventId !== undefined) {
         task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
       }
+      task.detachedRunningResume = undefined;
       prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
       onResume(task);
       return { autoResumed: true };

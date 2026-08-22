@@ -59,7 +59,11 @@ export class ActiveTaskRecovery {
       { sessionId: task.agentSessionId },
       "hydrated running task has no active execution; auto-resuming instead of queueing",
     );
+    // In memory only: nothing has transitioned the central row, and the resume
+    // has to know that so it does not claim a terminal state the database
+    // never reached.
     task.status = "interrupted";
     task.completedAt = new Date();
+    task.detachedRunningResume = true;
   }
 }
