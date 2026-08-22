@@ -68,6 +68,16 @@ jobs:
       - name: Apply canonical schema
         run: psql -v ON_ERROR_STOP=1 -q -f packages/db-schema/sql/schema.sql
 
+      # 이 DB가 버려도 되는 것임을 스스로 증명하게 한다. 게이트는 이 마커가
+      # 없으면 실행을 거부한다 — "랩이 아니면 허용"이 아니라 "이것이어야만
+      # 실행"이다. 살아 있는 어떤 DB에도 이 테이블은 없다.
+      - name: Mark the database disposable
+        run: |
+          psql -v ON_ERROR_STOP=1 -q -c \
+            "CREATE TABLE lab_harness_throwaway_marker (token text);"
+          psql -v ON_ERROR_STOP=1 -q -c \
+            "INSERT INTO lab_harness_throwaway_marker VALUES ('disposable-harness-database');"
+
       - name: Verdict and harness contract tests
         working-directory: scripts/lab-node
         run: |

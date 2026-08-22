@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   DEMAND_OUTCOMES,
+  findPendingSessions,
   findUnansweredDemands,
   pairSessionDemands,
 } from "./fault-harness-verdict.mjs";
@@ -132,9 +133,14 @@ test("a completed session does not get the same forgiveness", () => {
   assert.equal(paired.unanswered.length, 1);
 });
 
-test("one input recorded twice as sent and projected counts once", () => {
-  // Otherwise a healthy intervention demands two replies and turns green runs
-  // red. A judge that cries wolf gets switched off.
+test("REVIEW: two recorded inputs are two inputs, whatever their wording", () => {
+  // This asserted the opposite until the second review checked the premise.
+  // The judge used to fold a `user_message` and an `intervention_sent` with
+  // matching text into one input, assuming one intervention gets recorded
+  // twice. It does not: the two events have disjoint writers, and across every
+  // session in the lab database -- 273 user messages, 3 interventions -- there
+  // is not one cross-type same-text pair. The rule only ever fired on
+  // genuinely separate inputs, and it fired in the direction that hides a loss.
   const paired = pairSessionDemands(
     session(),
     stream(
@@ -145,8 +151,8 @@ test("one input recorded twice as sent and projected counts once", () => {
     ),
     NOW,
   );
-  assert.equal(paired.demandCount, 1);
-  assert.deepEqual(paired.unanswered, []);
+  assert.equal(paired.demandCount, 2);
+  assert.equal(paired.unansweredCount, 1);
 });
 
 test("the same text sent twice as the same kind stays two inputs", () => {
@@ -304,6 +310,14 @@ test("REVIEW P1-1: the same wording sent again after a reply is a separate input
   assert.deepEqual(paired.candidates.map((demand) => demand.eventType), ["intervention_sent"]);
 });
 
+test("REVIEW: the verdict declares what it is not good for", () => {
+  // The review accepted the ambiguity handling on one condition: that the
+  // result never be quoted as identifying a victim. Saying so in the payload
+  // means a consumer cannot claim it by accident.
+  const paired = pairSessionDemands(session(), stream(event("user_message", { text: "x" })), NOW);
+  assert.equal(paired.scope, "count_and_candidates_only");
+});
+
 test("REVIEW P1-2: a next-turn intervention loss is reported as ambiguous, not misnamed", () => {
   // A input, B queued as a next-turn intervention, one reply. The runtime
   // drains FIFO within a priority lane, so the reply most likely answered A
@@ -353,4 +367,40 @@ test("an unambiguous single loss still names exactly one input", () => {
   assert.equal(paired.unansweredCount, 1);
   assert.equal(paired.ambiguous, false);
   assert.deepEqual(paired.candidates.map((demand) => demand.excerpt), ["dropped one"]);
+});
+
+
+test("REVIEW P1-1(2nd): pending sessions are enumerated for the sampler to consume", () => {
+  // `pending` existed as a returned string and nothing read it, so a session
+  // with a fresh input and a live runner produced neither a violation nor any
+  // other signal and the sample came back clean. The sampler now settles on
+  // this list, so it has to be reachable from outside the module.
+  const working = { session_id: "live", status: "running", runnerProgressing: true };
+  const quiet = { session_id: "quiet", status: "completed", last_event_at: LONG_AGO };
+  const events = new Map([
+    ["live", [{ id: 1, event_type: "user_message", text: "hi", created_at: LONG_AGO }]],
+    ["quiet", [{ id: 1, event_type: "user_message", text: "hi", created_at: LONG_AGO }]],
+  ]);
+  assert.deepEqual(findPendingSessions([working, quiet], events, NOW), ["live"]);
+  // And a pending session is not also counted as a loss.
+  const losses = findUnansweredDemands([working, quiet], events, NOW);
+  assert.deepEqual(losses.map((loss) => loss.session_id), ["quiet"]);
+});
+
+test("REVIEW P1-2(2nd): the verdict follows the clock it is given, not the wall", () => {
+  // A stored capture has to be judged with the capture's clock. Judged with
+  // `Date.now()`, a session that was legitimately mid-answer turns red purely
+  // because time passed between the run and the replay.
+  const capturedAt = Date.parse("2026-08-22T15:59:59.000Z");
+  const midAnswer = session({
+    status: "running",
+    last_event_at: "2026-08-22T15:59:50.000Z",
+  });
+  const events = stream(event("user_message", { text: "answer me" }));
+  assert.equal(pairSessionDemands(midAnswer, events, capturedAt).verdict, "pending");
+  // Same inputs, replayed an hour later with the wrong clock.
+  assert.equal(
+    pairSessionDemands(midAnswer, events, capturedAt + 3_600_000).verdict,
+    "unanswered",
+  );
 });

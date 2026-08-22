@@ -37,19 +37,49 @@ const FIXTURE_MANIFEST = Object.freeze({
   sourceCommit: "ci-fixture-commit",
 });
 
-async function main() {
-  // A lab shell exports LAB_POSTGRES_*, and this gate writes. Running it there
-  // once put a fixture row into the live lab database because the connection
-  // silently preferred the lab's name over the one it was handed. Refusing
-  // outright is cheaper than trusting the next reader to notice.
-  if (process.env.LAB_POSTGRES_CONTAINER) {
-    throw new Error(
-      "refusing to run: LAB_POSTGRES_CONTAINER is set, so this shell can reach the"
-      + " live lab. This gate plants rows and belongs on a throwaway database"
-      + " (unset the LAB_POSTGRES_* variables, or run fault-harness.sh mutation instead).",
-    );
+/**
+ * The database must prove it is disposable before anything is written to it.
+ *
+ * The first guard refused when `LAB_POSTGRES_CONTAINER` was set -- a denylist,
+ * and denylists are satisfied by unsetting one variable. Unset it, point
+ * `PGDATABASE` at the live lab, and the guard waves the gate through to plant
+ * rows in production data. That is the exact accident this file already caused
+ * once, so "is not obviously the lab" is not a good enough answer.
+ *
+ * So the requirement is positive and unforgeable by omission: the target must
+ * contain a marker table this gate did not create, carrying the expected
+ * token. Creating it is a deliberate act -- one line in the CI workflow next
+ * to the throwaway database it applies to -- and no live database has it.
+ */
+const THROWAWAY_MARKER_TABLE = "lab_harness_throwaway_marker";
+const THROWAWAY_MARKER_TOKEN = "disposable-harness-database";
+
+async function assertThrowawayTarget(query) {
+  let marker;
+  try {
+    marker = await query(`
+      SELECT json_build_object('token', (
+        SELECT token FROM ${THROWAWAY_MARKER_TABLE} LIMIT 1
+      ))
+    `);
+  } catch {
+    marker = null;
   }
+  if (marker?.token === THROWAWAY_MARKER_TOKEN) return;
+  throw new Error(
+    `refusing to run: ${process.env.PGDATABASE ?? "<no PGDATABASE>"} did not present a`
+    + ` throwaway marker. This gate plants rows and must only ever touch a database`
+    + ` created for it. Prove the target is disposable with:\n`
+    + `  CREATE TABLE ${THROWAWAY_MARKER_TABLE} (token text);\n`
+    + `  INSERT INTO ${THROWAWAY_MARKER_TABLE} VALUES ('${THROWAWAY_MARKER_TOKEN}');\n`
+    + `To exercise the judges against the live lab instead, run`
+    + ` fault-harness.sh mutation, which reverts everything it plants.`,
+  );
+}
+
+async function main() {
   const query = createQueryRunner(process.env);
+  await assertThrowawayTarget(query);
   const runnerStateDirectory = await mkdtemp(join(tmpdir(), "lab-harness-ci-"));
 
   // The gate's activation mutation works by making the newest receipt disagree

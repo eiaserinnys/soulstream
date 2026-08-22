@@ -60,15 +60,12 @@ export function pairSessionDemands(session, events, now = Date.now()) {
   const ordered = [...events].sort((left, right) => Number(left.id) - Number(right.id));
   const demands = [];
   const open = [];
-  let sawClosureSinceLastDemand = true;
   for (const event of ordered) {
     if (DEMAND_EVENT_TYPES.includes(event.event_type)) {
-      if (isProjectionDuplicate(demands.at(-1), event, sawClosureSinceLastDemand)) continue;
       const demand = {
         eventId: Number(event.id),
         eventType: event.event_type,
         at: event.created_at ?? null,
-        text: normalizeText(event.text),
         excerpt: excerpt(event.text),
         outcome: DEMAND_OUTCOMES.unanswered,
         closedByEventId: null,
@@ -76,11 +73,9 @@ export function pairSessionDemands(session, events, now = Date.now()) {
       };
       demands.push(demand);
       open.push(demand);
-      sawClosureSinceLastDemand = false;
       continue;
     }
     if (event.event_type === RESPONSE_EVENT_TYPE) {
-      sawClosureSinceLastDemand = true;
       if (open.length === 0) continue;
       if (open.length > 1) {
         // More than one input was waiting, so which one this reply belongs to
@@ -106,7 +101,6 @@ export function pairSessionDemands(session, events, now = Date.now()) {
       continue;
     }
     if (event.event_type === TERMINAL_EVENT_TYPE) {
-      sawClosureSinceLastDemand = true;
       if (!isOkTermination(event)) {
         closeAll(open, Number(event.id), event.termination_reason ?? event.ended_status ?? "session_ended");
       }
@@ -127,6 +121,14 @@ export function pairSessionDemands(session, events, now = Date.now()) {
   return {
     sessionId: session.session_id,
     status: session.status,
+    // What this verdict is good for, and what it is not.
+    //
+    // It establishes *that* an input went unanswered and *how many* did, and
+    // it bounds the possibilities to `candidates`. It does not identify which
+    // one when `ambiguous` is set, and it must not be quoted as if it did:
+    // the correlation simply is not in the events. Naming a victim needs a
+    // human reading the raw stream, or a runtime that records the link.
+    scope: "count_and_candidates_only",
     // A session that may yet answer is neither a loss nor a pass. It is
     // reported as `pending` so a caller can settle and re-sample instead of
     // reading an empty list as proof of health.
@@ -177,33 +179,28 @@ export function findPendingSessions(sessions, eventsBySession, now = Date.now())
 }
 
 /**
- * Whether this input is the second recording of the input right before it.
+ * There is no de-duplication here, deliberately.
  *
- * One intervention can land twice: once as `intervention_sent` when it is
- * accepted and once as `user_message` when it is projected into the turn.
- * Counting both would demand two replies for one input and turn a healthy
- * session red, and a judge that cries wolf gets switched off.
+ * An earlier version collapsed a `user_message` and an `intervention_sent`
+ * carrying the same text into one input, on the theory that one intervention
+ * is recorded twice -- once when accepted, once when projected into the turn.
+ * That theory was never checked against anything.
  *
- * The first version matched the same text *anywhere in the session*, which
- * quietly swallowed a real loss: send a message, get it answered, then send an
- * intervention worded identically and never get an answer -- the second was
- * written off as a duplicate of the first. So a match now requires all of:
- * the immediately preceding input, a different event type, nothing closing the
- * turn in between, and a short window. A projection follows its own acceptance
- * within milliseconds; a person repeating themselves after a reply does not.
+ * It is false. The two events have disjoint writers: interventions go through
+ * `publishInterventionSent`
+ * (soul-server-ts/src/task/task_running_intervention_transition.ts) and
+ * ordinary input through `task_user_message_events.ts`; no path emits both for
+ * one input. Across every session in the lab database -- 273 `user_message`
+ * and 3 `intervention_sent` -- there are **zero** cross-type same-text pairs.
+ *
+ * So the rule only ever fired on inputs that were genuinely distinct, and it
+ * fired in the direction that hides losses: send a message, get it answered,
+ * send the same words again as an intervention, get nothing, and the judge
+ * counted one input and reported clean. Guessing at a mechanism and then
+ * writing a rule for the guess is the failure this whole audit is about.
+ *
+ * Every recorded input counts as an input.
  */
-const PROJECTION_WINDOW_MS = 10_000;
-
-function isProjectionDuplicate(previous, event, sawClosureSinceLastDemand) {
-  if (!previous || sawClosureSinceLastDemand) return false;
-  if (previous.eventType === event.event_type) return false;
-  const text = normalizeText(event.text);
-  if (text === "" || text !== previous.text) return false;
-  const previousAt = Date.parse(previous.at ?? "");
-  const currentAt = Date.parse(event.created_at ?? "");
-  if (Number.isNaN(previousAt) || Number.isNaN(currentAt)) return true;
-  return Math.abs(currentAt - previousAt) <= PROJECTION_WINDOW_MS;
-}
 
 function closeAll(open, eventId, reason) {
   while (open.length > 0) {

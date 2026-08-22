@@ -62,7 +62,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
     }
   }
   const invariant = await recorder.invariant(`after-${id}`, baseline.violations, 90_000);
-  result = withBaselineHonesty(result, baseline);
+  result = withBaselineHonesty(result, baseline, invariant);
   if (invariant.newViolations.length > 0 && !failure) {
     failure = {
       name: "InvariantViolation",
@@ -381,7 +381,7 @@ async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, 
     );
     result.invariant = invariant;
     if (invariant.newViolations.length > 0) result.status = "failed";
-    Object.assign(result, withBaselineHonesty(result, baseline));
+    Object.assign(result, withBaselineHonesty(result, baseline, invariant));
     await recorder.scenario(`cycle-${cycle}`, result);
     if (queue.length > 0) await delay(intervalSeconds * 1_000);
   }
@@ -484,7 +484,19 @@ function delayedMarkerPrompt(marker, seconds) {
  * calling the result a pass. A scenario that could not start from a clean lab
  * has not shown the system works, it has only shown it did not get worse.
  */
-function withBaselineHonesty(result, baseline) {
+function withBaselineHonesty(result, baseline, invariant) {
+  const stillPending = invariant?.unresolvedPending ?? [];
+  if (stillPending.length > 0 && result.status === "passed") {
+    // The settle budget ran out with sessions that had still not answered and
+    // had not yet failed. Nobody knows whether they were lost, so this is not
+    // a pass -- it is the question left open.
+    return {
+      ...result,
+      status: "inconclusive_unresolved_pending",
+      unresolvedPending: stillPending,
+      reason: "the settle budget expired while sessions were still mid-answer",
+    };
+  }
   const dirty = baseline?.violations ?? [];
   if (dirty.length === 0 || result.status !== "passed") return result;
   return {
