@@ -119,6 +119,40 @@ async function sampleInvariants(runtime, messageLosses) {
           FROM sessions AS session
         ) AS summary
       ),
+      'unansweredUserInput', (
+        -- A user turn that never produced an assistant reply. Delivery
+        -- bookkeeping can look perfectly clean while this is true: the 260822
+        -- F9 reproduction lost a reply with zero dead letters, zero overdue
+        -- retries and zero uncertain deliveries. Only the reply itself proves
+        -- the message arrived somewhere that could answer it.
+        --
+        -- Sessions that are still working are exempt until they go quiet, so
+        -- an in-flight turn is never reported as a loss.
+        SELECT COALESCE(json_agg(row_to_json(unanswered)), '[]'::json) FROM (
+          SELECT session.session_id, session.status,
+            asked.last_user_id, answered.last_assistant_id
+          FROM sessions AS session
+          JOIN LATERAL (
+            SELECT MAX(id) AS last_user_id FROM events
+            WHERE events.session_id = session.session_id
+              AND events.event_type = 'user_message'
+          ) AS asked ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT MAX(id) AS last_assistant_id FROM events
+            WHERE events.session_id = session.session_id
+              AND events.event_type = 'assistant_message'
+          ) AS answered ON TRUE
+          WHERE asked.last_user_id IS NOT NULL
+            AND (
+              answered.last_assistant_id IS NULL
+              OR answered.last_assistant_id < asked.last_user_id
+            )
+            AND (
+              session.status NOT IN ('running', 'initializing')
+              OR session.updated_at < NOW() - INTERVAL '10 minutes'
+            )
+        ) AS unanswered
+      ),
       'activationReceipt', (
         SELECT row_to_json(receipt) FROM (
           SELECT manifest_id, release_cohort_id, source_commit
@@ -137,6 +171,7 @@ async function sampleInvariants(runtime, messageLosses) {
   const receipt = database?.activationReceipt;
   const snapshot = {
     ownerlessRunning: database?.ownerlessRunning ?? 0,
+    unansweredUserInput: database?.unansweredUserInput ?? [],
     terminalProjectionMismatches,
     overdueRetries: database?.overdueRetries ?? 0,
     ambiguousUncertain: database?.ambiguousUncertain ?? 0,

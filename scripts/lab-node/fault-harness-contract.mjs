@@ -112,6 +112,10 @@ export function evaluateInvariantSnapshot(snapshot) {
   if (snapshot.activationManifestMismatch) {
     violations.push(invariant("activation_manifest", 1));
   }
+  const unanswered = snapshot.unansweredUserInput ?? [];
+  if (unanswered.length > 0) {
+    violations.push(invariant("unanswered_user_input", unanswered.length, unanswered));
+  }
   if (snapshot.messageLosses.length > 0) {
     violations.push(invariant("user_message_loss", snapshot.messageLosses.length, snapshot.messageLosses));
   }

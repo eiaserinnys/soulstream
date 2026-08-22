@@ -173,3 +173,27 @@ test("evidence redaction removes bearer tokens and known lab secrets", () => {
   assert.doesNotMatch(redacted, /abc123|lab-secret/);
   assert.match(redacted, /<redacted>/);
 });
+
+test("an unanswered user turn is a violation even when delivery bookkeeping is clean", () => {
+  // The 260822 F9 reproduction produced exactly this snapshot: no dead
+  // letters, no overdue retries, nothing uncertain, and a user turn that
+  // never got a reply. The judge used to report it as healthy.
+  const clean = {
+    ownerlessRunning: 0,
+    terminalProjectionMismatches: [],
+    overdueRetries: 0,
+    ambiguousUncertain: 0,
+    reasonlessDeadLetters: 0,
+    activationManifestMismatch: false,
+    messageLosses: [],
+    unansweredUserInput: [
+      { session_id: "f2620ddb", status: "error", last_user_id: 27, last_assistant_id: 19 },
+    ],
+  };
+  const violations = evaluateInvariantSnapshot(clean);
+  assert.deepEqual(violations.map((violation) => violation.invariant), ["unanswered_user_input"]);
+  assert.equal(violations[0].count, 1);
+
+  const answered = { ...clean, unansweredUserInput: [] };
+  assert.deepEqual(evaluateInvariantSnapshot(answered), []);
+});

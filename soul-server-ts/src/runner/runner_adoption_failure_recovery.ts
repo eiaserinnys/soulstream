@@ -116,11 +116,10 @@ export class RunnerAdoptionFailureRecovery {
     // Task execution identity is the first fence. A newer turn owns both its
     // runner and registration; this recovery must not touch either.
     //
-    // Absence may not be supersession at all: an adoption that rejects before
-    // it assigns `task.executionPromise` leaves the slot empty, and reading
-    // empty as "a newer execution owns this" would abandon a live runner that
-    // still holds the session's execution ownership. That distinction is
-    // reported (`execution_absent`) but not yet acted on.
+    // Absence is not supersession. An adoption that rejects before it assigns
+    // `task.executionPromise` leaves the slot empty, and reading empty as "a
+    // newer execution owns this" abandons a live runner that still holds the
+    // session's execution ownership.
     const supersededBy = supersedingExecution(task, completion, ownedRunner);
     if (supersededBy) {
       this.deps.logger.warn(
@@ -209,15 +208,15 @@ function supersedingExecution(
   task: Task,
   completion: Promise<void>,
   ownedRunner: Task["runner"],
-): "runner" | "execution" | "execution_absent" | undefined {
+): "runner" | "execution" | undefined {
   if (task.runner !== undefined && task.runner !== ownedRunner) return "runner";
   if (task.executionPromise === completion) return undefined;
-  // `execution_absent` is reported separately because it is almost certainly
-  // not supersession at all: an adoption that rejected before assigning
-  // `task.executionPromise` leaves this slot empty. The predicate is kept
-  // as-is until the lab says what actually rejects, so that this round
-  // measures rather than changes behaviour.
-  return task.executionPromise === undefined ? "execution_absent" : "execution";
+  // An empty slot is not supersession. Lab scenario F9 showed every adoption
+  // rejection landing here as `execution_absent`: the release identity gate
+  // throws before `recoverRunnerExecution` assigns `task.executionPromise`,
+  // so nothing newer exists and standing down abandons the replacement path.
+  if (task.executionPromise === undefined) return undefined;
+  return "execution";
 }
 
 async function refreshRunnerRegistration(

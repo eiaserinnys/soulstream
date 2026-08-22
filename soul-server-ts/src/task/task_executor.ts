@@ -937,7 +937,42 @@ export class TaskExecutor {
       mode,
       config.releaseManifestId ?? config.codeSha,
       config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
-    );
+    ).catch(async (error: unknown) => {
+      await this.releaseUnadoptedRunner(task, runner, config.sessionId);
+      throw error;
+    });
+  }
+
+  /**
+   * Releases a recovery runner handle that never became the task's execution.
+   *
+   * `recover()` builds a dispatcher before anything has decided the adoption is
+   * allowed, and that dispatcher registers the session's durable event stream
+   * on the shared mux straight away. When the release identity gate then
+   * rejects the adoption, no one holds a reference to that dispatcher any
+   * more: `task.runner` was never assigned, so no later cleanup can reach it.
+   * The stream registration outlives the attempt, the next dispatcher for the
+   * same session fails to register at all, and the session goes on to accept a
+   * user turn that it can never answer -- one user message, no assistant reply
+   * (260822 outage; lab scenario F9).
+   *
+   * The child process is deliberately left running. It owns a turn that will
+   * finish detached and replay offline, which is the adoption contract.
+   */
+  private async releaseUnadoptedRunner(
+    task: Task,
+    runner: TaskRunnerRuntime,
+    sessionId: string,
+  ): Promise<void> {
+    if (task.runner === runner) return;
+    try {
+      await runner.dispatcher.detachHost();
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId },
+        "unadopted runner host detach failed; its event stream may stay registered",
+      );
+    }
   }
 
   restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
