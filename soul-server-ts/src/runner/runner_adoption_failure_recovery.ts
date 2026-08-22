@@ -92,11 +92,13 @@ export class RunnerAdoptionFailureRecovery {
     task: Task,
     error: { code: string; message: string },
     disposition: "reap_dead" | "reap_stalled" | "socket_unavailable" | "release_superseded",
+    afterProcessStopped?: () => Promise<void>,
   ): Promise<void> {
     if (registration.pidAlive) {
       await this.deps.terminateRegistration(registration);
       registration = { ...registration, pidAlive: false };
     }
+    await afterProcessStopped?.();
     if (registration.lifecycle) {
       await this.deps.markReaped(
         registration,
@@ -136,7 +138,38 @@ export class RunnerAdoptionFailureRecovery {
   }): Promise<void> {
     const { registration, disposition, task, completion, ownedRunner, attemptRunner, error } = input;
     const recoveryRunner = ownedRunner ?? attemptRunner;
-    let attemptAttachedToTask = task.runner === attemptRunner;
+    let attemptReleased = false;
+
+    const releaseUnownedAttempt = async (): Promise<void> => {
+      if (
+        !attemptRunner
+        || attemptReleased
+        || task.runner === attemptRunner
+      ) return;
+      attemptReleased = true;
+      await attemptRunner.dispatcher.detachHost().catch((detachError) => {
+        this.deps.logger.warn(
+          { err: detachError, sessionId: registration.config.sessionId },
+          "failed rejected adoption runner detach could not release local resources",
+        );
+      });
+    };
+
+    const releaseStoppedRecoveryHandles = async (): Promise<void> => {
+      if (recoveryRunner && task.runner === recoveryRunner) {
+        task.runner = undefined;
+        task.runnerRetainedForClaudeBackground = undefined;
+        if (recoveryRunner === attemptRunner) attemptReleased = true;
+        await recoveryRunner.dispatcher.detachHost().catch((detachError) => {
+          this.deps.logger.warn(
+            { err: detachError, sessionId: registration.config.sessionId },
+            "failed runner host detach could not release local resources",
+          );
+        });
+      }
+      await releaseUnownedAttempt();
+    };
+
     try {
       // Task execution identity is the first fence. A newer turn owns both its
       // runner and registration; this recovery must not touch either.
@@ -147,6 +180,10 @@ export class RunnerAdoptionFailureRecovery {
       // session's execution ownership.
       const supersededBy = supersedingExecution(task, completion, recoveryRunner);
       if (supersededBy) {
+        // A different runner owns the task now, so the rejected attempt no
+        // longer serves this session. If the task still holds this attempt,
+        // the identity fence leaves it to that execution's normal cleanup.
+        await releaseUnownedAttempt();
         this.deps.logger.warn(
           { ...recoveryLogContext(registration, error, disposition), supersededBy },
           "runner adoption failure was superseded by a newer execution",
@@ -154,17 +191,6 @@ export class RunnerAdoptionFailureRecovery {
         return;
       }
       task.executionPromise = undefined;
-      if (task.runner === recoveryRunner) {
-        attemptAttachedToTask = task.runner === attemptRunner;
-        task.runner = undefined;
-        task.runnerRetainedForClaudeBackground = undefined;
-        await recoveryRunner?.dispatcher.detachHost().catch((detachError) => {
-          this.deps.logger.warn(
-            { err: detachError, sessionId: registration.config.sessionId },
-            "failed runner host detach could not release local resources",
-          );
-        });
-      }
 
       // Refresh PID and start identity after the socket failure. The old scan is
       // never authority for a process that could have died during the deadline.
@@ -189,6 +215,7 @@ export class RunnerAdoptionFailureRecovery {
             ? { code: "lease_expired", message: "runner progress lease expired" }
             : { code: "runner_exited", message: "runner process exited before execution completed" },
           verifiedDisposition,
+          releaseStoppedRecoveryHandles,
         );
         return;
       }
@@ -209,6 +236,7 @@ export class RunnerAdoptionFailureRecovery {
             message: "runner release identity is incompatible with the current host release",
           },
           "release_superseded",
+          releaseStoppedRecoveryHandles,
         );
         this.clear(registration.config.sessionId);
         return;
@@ -230,6 +258,7 @@ export class RunnerAdoptionFailureRecovery {
             message: "runner socket disappeared while the registered process remained alive",
           },
           "socket_unavailable",
+          releaseStoppedRecoveryHandles,
         );
         return;
       }
@@ -242,19 +271,19 @@ export class RunnerAdoptionFailureRecovery {
         },
         "live runner adoption failed but registration is not safe to replace",
       );
-    } finally {
-      if (
-        attemptRunner
-        && !attemptAttachedToTask
-        && task.runner !== attemptRunner
-      ) {
-        await attemptRunner.dispatcher.detachHost().catch((detachError) => {
-          this.deps.logger.warn(
-            { err: detachError, sessionId: registration.config.sessionId },
-            "failed rejected adoption runner detach could not release local resources",
-          );
-        });
-      }
+      // Deliberately keep the dispatcher and host request channel alive here.
+      // ed68a090 detached it as apparent leak cleanup and lab F9 then stalled
+      // at tool_start; 8f347263 restored the old runner's host-call lifeline.
+      // The per-session backoff prevents another dispatcher from accumulating
+      // while this live runner is allowed to finish.
+    } catch (recoveryError) {
+      // Refresh/classification failures are uncertain about process fate. Keep
+      // the live channel by default and still suppress another adoption attempt.
+      this.deferredUntilMs.set(
+        registration.config.sessionId,
+        (this.deps.now ?? Date.now)() + this.deps.leaseTimeoutMs,
+      );
+      throw recoveryError;
     }
   }
 }
