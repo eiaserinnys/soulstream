@@ -138,18 +138,38 @@ export class LabRuntime {
     return JSON.parse(text);
   }
 
+  /**
+   * Waits for the marker, and says what it actually saw if it never arrives.
+   *
+   * This used to swallow every read error, so a timeline call that failed for
+   * the whole window was indistinguishable from an assistant that never
+   * answered. Four F9 runs were recorded as lost turns whose markers were in
+   * the database three seconds after the prompt -- the run was red, and the
+   * red said nothing about which side had failed.
+   */
   async waitForMarker(sessionId, marker, timeoutMs = 180_000) {
     const deadline = Date.now() + timeoutMs;
+    let polls = 0;
+    let reads = 0;
+    let lastError;
     while (Date.now() < deadline) {
+      polls += 1;
       try {
         const timeline = await this.timeline(sessionId);
+        reads += 1;
         if (countMatchingTimelineEvents(timeline, "assistant_message", marker) > 0) {
           return timeline;
         }
-      } catch {}
+      } catch (error) {
+        lastError = error;
+      }
       await delay(1_000);
     }
-    throw new Error(`assistant marker not observed: ${marker}`);
+    throw new Error(
+      `assistant marker not observed: ${marker}`
+      + ` (polls=${polls}, timeline reads=${reads}`
+      + `${lastError ? `, last read error: ${lastError.message}` : ""})`,
+    );
   }
 
   async countTimelineText(sessionId, text) {

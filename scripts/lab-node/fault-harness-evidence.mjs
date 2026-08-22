@@ -184,11 +184,12 @@ async function sampleInvariants(runtime, messageLosses, since) {
             AND session.created_at >= ${sqlTimestamp(since)}
             AND (
               session.status NOT IN ('running', 'initializing')
-              -- Quiet, not merely unfinished. Session status alone is the
-              -- wrong exemption: the 260822 F9 reproduction sat in the running
-              -- status with nothing happening, so a status-based grace let the
-              -- very failure the run was chasing pass as healthy.
-              OR asked.last_event_at < NOW() - INTERVAL '3 minutes'
+              -- Whether real work is happening is decided by runner progress
+              -- below, not by this clock, so the clock only has to outlast a
+              -- pause. Measured replies land three to five seconds after the
+              -- prompt, and three minutes of grace on top of that buys
+              -- nothing but blindness.
+              OR asked.last_event_at < NOW() - INTERVAL '30 seconds'
             )
         ) AS unanswered
       ),
@@ -246,7 +247,7 @@ function sqlTimestamp(value) {
 }
 
 const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
-const RUNNER_PROGRESS_GRACE_MS = 180_000;
+const RUNNER_PROGRESS_GRACE_MS = 60_000;
 
 /** Reads every readable runner lifecycle, keyed by the session it belongs to. */
 async function readRunnerLifecycles(runnerStateDirectory) {
