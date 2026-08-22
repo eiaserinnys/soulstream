@@ -2,6 +2,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
+import { attachClaudeBackgroundDeliveryMetadata } from
+  "../../src/engine/claude_background_delivery_metadata.js";
 import { readClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import {
@@ -275,12 +277,23 @@ describe("applyRunnerHostCall", () => {
   });
 
   it("restores process-local Claude metadata before an observational host call", async () => {
+    const delivery = {
+      deliveryId: "delivery-1",
+      completionId: "completion-1",
+      relationKey: "claude_runtime:session-a:task-1",
+      producerTerminalRevision: "terminal-1",
+      deliveryCreatedAt: "2026-08-22T00:00:00.000Z",
+      source: "claude_runtime_background_task_followup",
+      storedPayload: { followup_task_ids: ["task-1"] },
+      storedPayloadHash: "payload-hash-1",
+    };
     const observeClaudeRuntime = vi.fn(async (_sessionId, event: object) => {
       expect(readClaudeBackgroundProvenance(event)).toBe("sdk_membership");
+      attachClaudeBackgroundDeliveryMetadata(event, delivery);
       return true;
     });
 
-    await applyRunnerHostCall(
+    const result = await applyRunnerHostCall(
       {
         service: "claude_runtime",
         operation: "observe",
@@ -303,5 +316,9 @@ describe("applyRunnerHostCall", () => {
     );
 
     expect(observeClaudeRuntime).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      accepted: true,
+      claudeBackgroundDelivery: delivery,
+    });
   });
 });

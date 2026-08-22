@@ -226,7 +226,7 @@ export async function composeWorkerRuntime(
         sourceNode: env.SOULSTREAM_NODE_ID,
         idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
-        turnTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+        turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
         detachedEventSink: publishDetachedClaudeEvent,
       })

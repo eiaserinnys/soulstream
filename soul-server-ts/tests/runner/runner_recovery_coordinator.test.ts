@@ -724,7 +724,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("a live but stale progress lease is killed before offline drain and resume", async () => {
     const subject = makeSubject([registration({
       progressedAt: "2026-08-11T00:00:00.000Z",
-    })], Date.parse("2026-08-11T00:03:00.000Z"));
+    })], Date.parse("2026-08-11T00:11:00.000Z"));
 
     await subject.coordinator.scanOnce();
     await vi.waitFor(() => expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce());
@@ -750,7 +750,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const terminal = registration({ lifecycleState: "completed" });
     const subject = makeSubject(
       [scanned],
-      Date.parse("2026-08-11T00:03:00.000Z"),
+      Date.parse("2026-08-11T00:11:00.000Z"),
       [],
       { hydrate: async () => terminal },
     );
@@ -1748,7 +1748,7 @@ function registration(options: {
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,
-      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      claudeRuntimeTurnTimeoutMs: 600_000,
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
       codexHome: "/home/test/.codex",
       rolloutRoot: "/home/test/.codex/sessions",

@@ -14,6 +14,9 @@ import type {
   EngineSessionItemsSnapshot,
 } from "../engine/protocol.js";
 import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
+import {
+  buildRunnerClaudeRuntimeObservationResult,
+} from "./runner_claude_runtime_observation.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
@@ -70,7 +73,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     sessionId: string,
     event: ClaudeClientEvent,
     idempotencyKey: string,
-  ): Promise<unknown>;
+  ): Promise<boolean>;
   publishDetachedClaudeEvent?(
     sessionId: string,
     event: ClaudeClientEvent,
@@ -324,7 +327,9 @@ export async function applyRunnerHostCall(
   const event = call.args[1] as ClaudeClientEvent;
   restoreRunnerEngineEventMetadata(event, call.args[2]);
   if (call.service === "claude_runtime" && call.operation === "observe") {
-    return await options.observeClaudeRuntime?.(sessionId, event, call.correlationId) ?? true;
+    const accepted =
+      await options.observeClaudeRuntime?.(sessionId, event, call.correlationId) !== false;
+    return buildRunnerClaudeRuntimeObservationResult(accepted, event);
   }
   if (call.service === "detached_event" && call.operation === "publish") {
     await options.publishDetachedClaudeEvent?.(sessionId, event, call.correlationId);

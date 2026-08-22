@@ -8,10 +8,12 @@ import type { Logger } from "pino";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
+import { messageContent } from "./claude_sdk_event_mapper_helpers.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type { RateLimitTerminationState } from
   "./claude_sdk_rate_limit_stop_failure.js";
+import type { ClaudeForegroundPhase } from "./claude_session_runtime.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
 export type ClaudeRuntimeEventSink = (
@@ -26,7 +28,7 @@ export interface ClaudeSdkPersistentSessionConfig {
   runtimeEventSink?: ClaudeRuntimeEventSink;
   logger: Logger;
   postResultDrainMs: number;
-  turnTimeoutMs: number;
+  turnInactivityTimeoutMs: number;
   runtimeFollowupNoOutputTimeoutMs: number;
   onClosed?(): void;
 }
@@ -34,7 +36,6 @@ export interface ClaudeSdkPersistentSessionConfig {
 export type ActiveForeground = {
   uuid: string;
   output: EventQueue<ClaudeClientEvent>;
-  deadlineTimer: ReturnType<typeof setTimeout>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
   origin: { kind: string; id: string };
@@ -54,21 +55,45 @@ export function describeResultProvenance(
   };
 }
 
+export function provableTurnResultOwner(
+  phase: ClaudeForegroundPhase,
+  active: ActiveForeground | null,
+  message: Record<string, unknown>,
+  logger: Logger,
+): string | null {
+  // Bare Results also terminate SDK-owned notification turns. Only the abort
+  // Result of our sole interrupting foreground can inherit local ownership.
+  if (phase !== "interrupting" || !active) return null;
+  if (asString(asRecord(message.origin)?.kind) === "task-notification") return null;
+  logger.info(
+    { activeForegroundUuid: active.uuid, resultUuid: asString(message.uuid) },
+    "Correlating Claude Result without user_message_uuid to the interrupted turn",
+  );
+  return active.uuid;
+}
+
 export function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {
   return event.type === "error"
     && event.fatal === false
     && event.errorCode === "error_during_execution";
 }
 
+export function isTurnStartingUserInput(message: Record<string, unknown>): boolean {
+  if (message.isSynthetic === true) return false;
+  const content = messageContent(message);
+  return content.length === 0
+    || content.some((block) => asString(asRecord(block)?.type) !== "tool_result");
+}
+
 export function hashSdkUserMessage(message: SDKUserMessage): string {
   return createHash("sha256").update(JSON.stringify(message)).digest("hex");
 }
 
-export function turnTimeoutError(timeoutMs: number): ClaudeClientEvent {
+export function turnInactivityError(timeoutMs: number): ClaudeClientEvent {
   return {
     type: "error",
     fatal: true,
     errorCode: "claude_persistent_turn_timeout",
-    message: `Claude foreground turn exceeded ${timeoutMs}ms and was interrupted.`,
+    message: `Claude foreground turn was inactive for ${timeoutMs}ms and was interrupted.`,
   };
 }

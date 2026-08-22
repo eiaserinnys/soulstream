@@ -201,12 +201,12 @@ describe("parseEnv", () => {
     expect(env.CLAUDE_AUTH_TOKEN_PATH).toBe("/var/lib/soulstream-ts/claude-auth.json");
   });
 
-  it("Claude session runtime v2는 미설정 시 기본 ON이고 명시 false가 kill-switch다", () => {
+  it("Claude runtime v2 defaults to a ten-minute inactivity gap and explicit kill-switch", () => {
     const defaults = parseEnv(minimal);
     expect(defaults.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(true);
     expect(defaults.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS).toBe(300_000);
     expect(defaults.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES).toBe(16);
-    expect(defaults.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS).toBe(1_800_000);
+    expect(defaults.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS).toBe(1_200_000);
     expect(
       parseEnv({
         ...minimal,

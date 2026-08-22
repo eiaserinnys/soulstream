@@ -89,8 +89,6 @@ export interface LiveRunnerSessionIdsOptions {
   logger?: Pick<Logger, "info">;
 }
 
-const RUNNER_TOOL_LEASE_MULTIPLIER = 2;
-
 export async function scanRunnerRegistrations(
   stateDirectory: string,
   options: {
@@ -164,51 +162,29 @@ export function classifyRunnerRegistration(
   if (!Number.isFinite(progressedAt)) {
     throw new Error(`runner lifecycle progress timestamp invalid: ${lifecycle.progress_at}`);
   }
-  if (lifecycle.in_flight_tools.length > 0) {
-    const toolLeaseTimeoutMs = runnerToolLeaseTimeoutMs(
-      leaseTimeoutMs,
-      registration.config.claudeRuntimeTurnTimeoutMs,
-    );
-    for (const tool of lifecycle.in_flight_tools) {
-      const startedAt = Date.parse(tool.started_at);
-      if (!Number.isFinite(startedAt)) {
-        throw new Error(`runner tool lease timestamp invalid: ${tool.started_at}`);
-      }
-      // The finite cap is absolute: later progress cannot renew an existing
-      // tool identity once its first observed start has expired.
-      if (nowMs - startedAt >= toolLeaseTimeoutMs) return "reap_stalled";
-    }
-  }
-  if (nowMs - progressedAt < leaseTimeoutMs) return "adopt_running";
-  if (lifecycle.in_flight_tools.length === 0) return "reap_stalled";
-  const livenessAt = Date.parse(lifecycle.liveness_at);
-  if (!Number.isFinite(livenessAt)) {
-    throw new Error(`runner lifecycle liveness timestamp invalid: ${lifecycle.liveness_at}`);
-  }
-  return nowMs - livenessAt < leaseTimeoutMs ? "adopt_running" : "reap_stalled";
+  const inactivityTimeoutMs = runnerProgressInactivityTimeoutMs(
+    leaseTimeoutMs,
+    registration.config.claudeRuntimeTurnTimeoutMs,
+  );
+  return nowMs - progressedAt < inactivityTimeoutMs ? "adopt_running" : "reap_stalled";
 }
 
 /**
- * Twice the configured turn ceiling preserves the longest supported tool call
- * with one full turn of safety margin. A larger runner lease receives the same
- * margin. Missing tool_result events still expire at the resulting finite cap.
+ * Recovery also uses a renewable progress gap instead of a tool start-time cap.
+ * Periodic process liveness and an old in-flight tool identity cannot renew it;
+ * only durable runner progress can.
  */
-export function runnerToolLeaseTimeoutMs(
+export function runnerProgressInactivityTimeoutMs(
   leaseTimeoutMs: number,
-  turnTimeoutMs: number,
+  turnInactivityTimeoutMs: number,
 ): number {
   if (!Number.isSafeInteger(leaseTimeoutMs) || leaseTimeoutMs <= 0) {
     throw new Error("runner lease timeout must be a positive integer");
   }
-  if (!Number.isSafeInteger(turnTimeoutMs) || turnTimeoutMs <= 0) {
-    throw new Error("runner turn timeout must be a positive integer");
+  if (!Number.isSafeInteger(turnInactivityTimeoutMs) || turnInactivityTimeoutMs <= 0) {
+    throw new Error("runner turn inactivity timeout must be a positive integer");
   }
-  const scaled = Math.max(leaseTimeoutMs, turnTimeoutMs)
-    * RUNNER_TOOL_LEASE_MULTIPLIER;
-  if (!Number.isSafeInteger(scaled)) {
-    throw new Error("runner tool lease timeout exceeds safe integer range");
-  }
-  return scaled;
+  return Math.max(leaseTimeoutMs, turnInactivityTimeoutMs);
 }
 
 /**

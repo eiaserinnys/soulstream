@@ -337,7 +337,7 @@ export class ClaudeEngineAdapter
       : {
           status: "not_delivered",
           mechanism: "interrupt_then_next_turn",
-          reason: "no_active_turn",
+          reason: "not_accepting_input",
         };
   }
 
