@@ -57,13 +57,15 @@ const allResults = [...scenarioResults, ...cycleResults];
 const skipped = allResults.filter((result) => result.status === "skipped_precondition");
 // Started from a red lab, so the verdict subtracted a violation that was
 // already there. Reported apart from both passes and failures: it is neither.
-const inconclusive = allResults.filter(
-  (result) => result.status === "inconclusive_dirty_baseline",
-);
+const INCONCLUSIVE_STATUSES = new Set([
+  "inconclusive_dirty_baseline",
+  "inconclusive_unresolved_pending",
+]);
+const inconclusive = allResults.filter((result) => INCONCLUSIVE_STATUSES.has(result.status));
 const failures = allResults.filter((result) => (
   (result.status !== "passed"
     && result.status !== "skipped_precondition"
-    && result.status !== "inconclusive_dirty_baseline")
+    && !INCONCLUSIVE_STATUSES.has(result.status))
   || result.invariant?.newViolations?.length > 0
 ));
 const summary = await recorder.finish({
@@ -79,6 +81,7 @@ const summary = await recorder.finish({
     id: result.id,
     reason: result.reason,
     baselineViolations: result.baselineViolations,
+    unresolvedPending: result.unresolvedPending,
   })),
   failureCount: failures.length + (fatalFailure ? 1 : 0),
   inconclusiveCount: inconclusive.length,

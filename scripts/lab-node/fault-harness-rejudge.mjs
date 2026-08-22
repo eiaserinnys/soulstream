@@ -68,17 +68,22 @@ export async function rejudgeDirectory(directory, database) {
       source: stored ? "stored_evidence" : "database",
     };
   }
-  const losses = findUnansweredDemands(
-    sessions,
-    groupEventsBySession(inputs?.events),
-    Date.now(),
-  );
+  // The clock the capture had, not the clock now.
+  //
+  // Reading stored inputs but judging them against `Date.now()` is not a
+  // replay: a session that was legitimately mid-answer when captured turns
+  // red thirty seconds later purely because time passed. `runnerProgressing`
+  // travels with the inputs for the same reason -- it is read from disk at
+  // sample time and cannot be recovered afterwards.
+  const asOf = stored ? Date.parse(stored.capturedAt ?? "") || Date.now() : Date.now();
+  const losses = findUnansweredDemands(sessions, groupEventsBySession(inputs?.events), asOf);
   return {
     directory: basename(directory),
     verdict: losses.length > 0 ? "red" : "green",
     reported,
     window,
     source,
+    asOf: new Date(asOf).toISOString(),
     sessionCount: sessions.length,
     unansweredCount: losses.reduce((total, loss) => total + loss.unanswered_count, 0),
     unanswered: losses,

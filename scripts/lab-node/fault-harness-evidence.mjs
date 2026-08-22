@@ -16,7 +16,10 @@ import {
   groupEventsBySession,
   pairingInputsQuery,
 } from "./fault-harness-database.mjs";
-import { findUnansweredDemands } from "./fault-harness-verdict.mjs";
+import {
+  findPendingSessions,
+  findUnansweredDemands,
+} from "./fault-harness-verdict.mjs";
 
 export class EvidenceRecorder {
   constructor(runtime, runId, directory) {
@@ -61,11 +64,15 @@ export class EvidenceRecorder {
     // that is always one second inside the grace.
     const firstViolations = sample.newViolations;
     const firstSeenAt = firstViolations.length > 0 ? sample.sampledAt : null;
-    while (sample.newViolations.length > 0 && Date.now() < deadline) {
+    // Unresolved `pending` keeps the loop running for the same reason a
+    // violation does: the question has not been answered yet. Treating it as
+    // clean is how a still-running session became evidence of health.
+    while (unsettled(sample) && Date.now() < deadline) {
       await delay(5_000);
       sample = await this.sampleOnce(label, baseline);
     }
-    sample.settled = sample.newViolations.length === 0;
+    sample.settled = !unsettled(sample);
+    sample.unresolvedPending = sample.pendingSessions ?? [];
     sample.recovery = {
       firstSeenAt,
       firstSeenViolations: firstViolations.map((violation) => ({
@@ -223,11 +230,16 @@ export async function sampleInvariants(runtime, since) {
     ...session,
     runnerProgressing: runnerIsStillWorking(lifecycles.get(session.session_id)),
   }));
-  const unansweredDemands = findUnansweredDemands(
-    pairedSessions,
-    groupEventsBySession(pairingInputs?.events),
-    Date.now(),
-  );
+  const groupedEvents = groupEventsBySession(pairingInputs?.events);
+  const unansweredDemands = findUnansweredDemands(pairedSessions, groupedEvents, Date.now());
+  // Sessions that may still answer.
+  //
+  // `pending` was added to the verdict and then never read, so a session with
+  // a fresh input and a live owner produced neither a violation nor any other
+  // signal and the sample came back clean. A state that nothing consumes is
+  // not a state; it is a comment. The recorder waits these out below rather
+  // than letting them count as health.
+  const pendingSessions = findPendingSessions(pairedSessions, groupedEvents, Date.now());
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
@@ -246,7 +258,14 @@ export async function sampleInvariants(runtime, since) {
     sampledAt: new Date().toISOString(),
     snapshot,
     violations: evaluateInvariantSnapshot(snapshot),
-    pairingInputs,
+    pendingSessions,
+    // P1-2 of the second review: a replay has to judge with the clock the
+    // capture had. `runnerProgressing` is read from disk at sample time and is
+    // gone by the time anyone re-judges, so it travels with the inputs.
+    pairingInputs: pairingInputs && {
+      ...pairingInputs,
+      sessions: pairedSessions,
+    },
   };
 }
 
@@ -311,6 +330,11 @@ function findTerminalProjectionMismatches(lifecycles, sessionRows) {
     }
   }
   return mismatches;
+}
+
+/** Whether a sample still has an open question of any kind. */
+function unsettled(sample) {
+  return sample.newViolations.length > 0 || (sample.pendingSessions ?? []).length > 0;
 }
 
 async function appendJsonLine(path, value) {
