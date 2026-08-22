@@ -11,6 +11,8 @@ import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import { parseEnv } from "../../src/config.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { attachClaudeBackgroundDeliveryMetadata } from
+  "../../src/engine/claude_background_delivery_metadata.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
@@ -24,7 +26,10 @@ import { readRunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecy
 import { composeRunnerProcessRuntime } from "../../src/runtime/runner_process_composition.js";
 import { buildServer } from "../../src/server.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
-import { ClaudeRuntimeTaskFollowupController } from
+import {
+  CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+  ClaudeRuntimeTaskFollowupController,
+} from
   "../../src/task/claude_runtime_task_followup.js";
 import { AutoResumeTransition } from
   "../../src/task/task_auto_resume_transition.js";
@@ -35,7 +40,7 @@ import { createDetachedClaudeEventBridge } from
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
-import type { Task } from "../../src/task/task_models.js";
+import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import {
   EventOutboxPump,
@@ -128,10 +133,13 @@ describe("runner cutover all-flags-on integration", () => {
       logger,
       persistence: persistenceDouble.persistence,
     });
+    const lifecycleDeliveryIds = new Map<string, string>();
+    const deliveredInterventions: InterventionMessage[] = [];
     let executor!: TaskExecutor;
     const followup = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
         addIntervention: vi.fn(async (message, onResume) => {
+          deliveredInterventions.push(message);
           await autoResume.resume(task, message, onResume, { publishUserMessage: false });
           return { queued: true, queuePosition: 1 };
         }),
@@ -167,8 +175,30 @@ describe("runner cutover all-flags-on integration", () => {
       } as never,
       mcpConfigService,
       observeClaudeRuntime: async (_sessionId, event: ClaudeClientEvent) => {
-        observedAndPublished.push(`observe:${"taskId" in event ? event.taskId : event.type}`);
-        return { durableFollowupRegistered: true };
+        const taskId = "taskId" in event ? event.taskId : event.type;
+        observedAndPublished.push(`observe:${taskId}`);
+        const deliveryId = `lifecycle-delivery:${taskId}`;
+        lifecycleDeliveryIds.set(taskId, deliveryId);
+        attachClaudeBackgroundDeliveryMetadata(event, {
+          deliveryId,
+          completionId: `completion:${taskId}`,
+          relationKey: `claude_runtime:${task.agentSessionId}:${taskId}`,
+          producerTerminalRevision: `terminal:${taskId}`,
+          deliveryCreatedAt: new Date(0).toISOString(),
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          storedPayload: {
+            text: `background task ${taskId} completed`,
+            user: "system",
+            attachment_paths: null,
+            context: null,
+            caller_info: null,
+            followup_key: `${task.agentSessionId}:${taskId}`,
+            followup_attempt: 1,
+            followup_task_ids: [taskId],
+          },
+          storedPayloadHash: `payload-hash:${taskId}`,
+        });
+        return true;
       },
       publishDetachedClaudeEvent: publishDetached,
       buildChildProcessEnv: () => ({
@@ -259,6 +289,22 @@ describe("runner cutover all-flags-on integration", () => {
       "observe:background-2",
       "publish:background-2",
     ]);
+    for (const taskId of ["background-1", "background-2"]) {
+      const lifecycleDeliveryId = lifecycleDeliveryIds.get(taskId);
+      if (!lifecycleDeliveryId) throw new Error(`missing lifecycle delivery for ${taskId}`);
+      const semanticDeliveryIds = new Set([
+        lifecycleDeliveryId,
+        ...deliveredInterventions.flatMap((message) =>
+          message.followupTaskIds?.includes(taskId) && message.deliveryId
+            ? [message.deliveryId]
+            : []
+        ),
+      ]);
+      expect(
+        semanticDeliveryIds,
+        `${taskId} terminal crossed the runner boundary with multiple delivery identities`,
+      ).toEqual(new Set([lifecycleDeliveryId]));
+    }
     expect(task.lastAssistantText).toBe("background follow-up complete");
     expect(task.runner).toBeUndefined();
     expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
