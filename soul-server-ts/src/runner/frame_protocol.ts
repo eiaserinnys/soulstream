@@ -140,6 +140,17 @@ const RunnerSessionItemsSnapshotSchema = z.object({
   items: z.array(z.json()),
 }).passthrough();
 
+export const RunnerClaudeBackgroundDeliveryMetadataSchema = z.object({
+  deliveryId: z.string(),
+  completionId: z.string(),
+  relationKey: z.string(),
+  producerTerminalRevision: z.string(),
+  deliveryCreatedAt: z.string(),
+  source: z.string(),
+  storedPayload: jsonRecord,
+  storedPayloadHash: z.string(),
+}).passthrough();
+
 export const RunnerEngineEventMetadataSchema = z.object({
   claudePostResultDrain: z.literal(true).optional(),
   claudeBackgroundProvenance: z.enum([
@@ -147,16 +158,14 @@ export const RunnerEngineEventMetadataSchema = z.object({
     "explicit_background_tool_result",
     "runtime_close",
   ]).optional(),
-  claudeBackgroundDelivery: z.object({
-    deliveryId: z.string(),
-    completionId: z.string(),
-    relationKey: z.string(),
-    producerTerminalRevision: z.string(),
-    deliveryCreatedAt: z.string(),
-    source: z.string(),
-    storedPayload: jsonRecord,
-    storedPayloadHash: z.string(),
-  }).passthrough().optional(),
+  claudeBackgroundDelivery:
+    RunnerClaudeBackgroundDeliveryMetadataSchema.optional(),
+}).passthrough();
+
+export const RunnerClaudeRuntimeObservationResultSchema = z.object({
+  accepted: z.boolean(),
+  claudeBackgroundDelivery:
+    RunnerClaudeBackgroundDeliveryMetadataSchema.optional(),
 }).passthrough();
 
 const RunnerRequestSchema = z.discriminatedUnion("kind", [
@@ -315,6 +324,8 @@ export type RunnerControlFrame = z.infer<typeof RunnerControlFrameSchema>;
 export type RunnerCommandResultFrame = Extract<RunnerControlFrame, { kind: "command_result" }>;
 export type RunnerFrame = z.infer<typeof RunnerFrameSchema>;
 export type RunnerEngineEventMetadata = z.infer<typeof RunnerEngineEventMetadataSchema>;
+export type RunnerClaudeRuntimeObservationResult =
+  z.infer<typeof RunnerClaudeRuntimeObservationResultSchema>;
 
 export function isRunnerObservationalFrame(value: unknown): boolean {
   if (!isRecord(value) || value.channel !== "event") return false;

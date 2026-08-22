@@ -18,6 +18,9 @@ import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js
 import type { EnginePort } from "../engine/protocol.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import type { RunnerHostRequestClient } from "./runner_host_request_client.js";
+import {
+  applyRunnerClaudeRuntimeObservationResult,
+} from "./runner_claude_runtime_observation.js";
 
 const HOST_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -67,12 +70,13 @@ export function createRunnerChildEngine(
         (sessionId) => new ClaudeSdkClient({
           runtimeEventSink: async (event) => {
             const metadata = claudeEngineEventMetadata(event);
-            await host.call(
+            const result = await host.call(
               "claude_runtime",
               "observe",
               [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
               hostOptions(),
             );
+            return applyRunnerClaudeRuntimeObservationResult(event, result);
           },
           detachedEventSink: async (event) => {
             const metadata = claudeEngineEventMetadata(event);

@@ -11,7 +11,10 @@ import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import { parseEnv } from "../../src/config.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import { attachClaudeBackgroundDeliveryMetadata } from
+import {
+  attachClaudeBackgroundDeliveryMetadata,
+  readClaudeBackgroundDeliveryMetadata,
+} from
   "../../src/engine/claude_background_delivery_metadata.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
@@ -39,6 +42,8 @@ import { createDetachedClaudeEventBridge } from
   "../../src/runtime/detached_claude_event_bridge.js";
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
+import { enqueueInterventionOnce } from
+  "../../src/task/task_intervention_queue.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
@@ -134,12 +139,18 @@ describe("runner cutover all-flags-on integration", () => {
       persistence: persistenceDouble.persistence,
     });
     const lifecycleDeliveryIds = new Map<string, string>();
+    const publishedDeliveryIds = new Map<string, string>();
+    const collectedDeliveryIds = new Map<string, string>();
     const deliveredInterventions: InterventionMessage[] = [];
     let executor!: TaskExecutor;
     const followup = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
         addIntervention: vi.fn(async (message, onResume) => {
           deliveredInterventions.push(message);
+          if (task.status === "running") {
+            const queuePosition = enqueueInterventionOnce(task, message);
+            return { queued: true, queuePosition };
+          }
           await autoResume.resume(task, message, onResume, { publishUserMessage: false });
           return { queued: true, queuePosition: 1 };
         }),
@@ -161,7 +172,10 @@ describe("runner cutover all-flags-on integration", () => {
       findTask: (sessionId) => sessionId === task.agentSessionId ? task : undefined,
       getPublisher: () => detachedPublisher,
       collectDetached: async (liveTask, payload) => {
-        observedAndPublished.push(`publish:${String((payload as Record<string, unknown>).task_id)}`);
+        const taskId = String((payload as Record<string, unknown>).task_id);
+        observedAndPublished.push(`publish:${taskId}`);
+        const delivery = readClaudeBackgroundDeliveryMetadata(payload);
+        if (delivery) collectedDeliveryIds.set(taskId, delivery.deliveryId);
         await followup.collectDetached(liveTask, payload);
       },
     });
@@ -200,7 +214,12 @@ describe("runner cutover all-flags-on integration", () => {
         });
         return true;
       },
-      publishDetachedClaudeEvent: publishDetached,
+      publishDetachedClaudeEvent: async (sessionId, event, idempotencyKey) => {
+        const taskId = "taskId" in event ? event.taskId : event.type;
+        const delivery = readClaudeBackgroundDeliveryMetadata(event);
+        if (delivery) publishedDeliveryIds.set(taskId, delivery.deliveryId);
+        await publishDetached(sessionId, event, idempotencyKey);
+      },
       buildChildProcessEnv: () => ({
         ...process.env,
         NODE_OPTIONS: `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
@@ -265,11 +284,30 @@ describe("runner cutover all-flags-on integration", () => {
     expect(isPidAlive(pid)).toBe(true);
 
     await writeFile(join(controlDirectory, "release-background-1"), "go\n");
-    await waitFor(async () => await pathExists(join(controlDirectory, "published-background-1")));
+    await waitFor(async () =>
+      await pathExists(join(controlDirectory, "published-background-1"))
+      || await pathExists(join(controlDirectory, "child-error"))
+    );
+    if (await pathExists(join(controlDirectory, "child-error"))) {
+      throw new Error(await readFile(join(controlDirectory, "child-error"), "utf8"));
+    }
     expect(isPidAlive(pid)).toBe(true);
     expect(await pathExists(join(controlDirectory, "followup-executed"))).toBe(false);
 
     await writeFile(join(controlDirectory, "release-background-2"), "go\n");
+    await waitFor(async () =>
+      await pathExists(join(controlDirectory, "published-background-2"))
+      || await pathExists(join(controlDirectory, "child-error"))
+    );
+    if (await pathExists(join(controlDirectory, "child-error"))) {
+      throw new Error(await readFile(join(controlDirectory, "child-error"), "utf8"));
+    }
+    expect(observedAndPublished).toEqual([
+      "observe:background-1",
+      "publish:background-1",
+      "observe:background-2",
+      "publish:background-2",
+    ]);
     await waitFor(async () => {
       const path = join(controlDirectory, "followup-executed");
       if (!(await pathExists(path))) return false;
@@ -282,16 +320,34 @@ describe("runner cutover all-flags-on integration", () => {
     const followupExecution = task.executionPromise;
     if (!followupExecution) throw new Error("runtime follow-up execution was not started");
     await followupExecution;
-
-    expect(observedAndPublished).toEqual([
-      "observe:background-1",
-      "publish:background-1",
-      "observe:background-2",
-      "publish:background-2",
+    expect(
+      (await readFile(join(controlDirectory, "followup-execution-count"), "utf8")).trim(),
+    ).toBe("2");
+    expect(deliveredInterventions.map((message) => ({
+      deliveryId: message.deliveryId,
+      taskIds: message.followupTaskIds,
+    }))).toEqual([
+      {
+        deliveryId: lifecycleDeliveryIds.get("background-1"),
+        taskIds: ["background-1"],
+      },
+      {
+        deliveryId: lifecycleDeliveryIds.get("background-2"),
+        taskIds: ["background-2"],
+      },
     ]);
+
     for (const taskId of ["background-1", "background-2"]) {
       const lifecycleDeliveryId = lifecycleDeliveryIds.get(taskId);
       if (!lifecycleDeliveryId) throw new Error(`missing lifecycle delivery for ${taskId}`);
+      expect(
+        publishedDeliveryIds.get(taskId),
+        `${taskId} detached publish lost its host-owned delivery identity`,
+      ).toBe(lifecycleDeliveryId);
+      expect(
+        collectedDeliveryIds.get(taskId),
+        `${taskId} mapped detached payload lost its host-owned delivery identity`,
+      ).toBe(lifecycleDeliveryId);
       const semanticDeliveryIds = new Set([
         lifecycleDeliveryId,
         ...deliveredInterventions.flatMap((message) =>
@@ -305,7 +361,7 @@ describe("runner cutover all-flags-on integration", () => {
         `${taskId} terminal crossed the runner boundary with multiple delivery identities`,
       ).toEqual(new Set([lifecycleDeliveryId]));
     }
-    expect(task.lastAssistantText).toBe("background follow-up complete");
+    expect(task.lastAssistantText).toBe("background follow-up 2 complete");
     expect(task.runner).toBeUndefined();
     expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
     await waitFor(async () => !isPidAlive(pid));

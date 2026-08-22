@@ -4,7 +4,10 @@ import pino from "pino";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import type { ClaudeRunOptions } from "../../../src/engine/claude_adapter.js";
+import {
+  claudeEngineEventMetadata,
+  type ClaudeRunOptions,
+} from "../../../src/engine/claude_adapter.js";
 import { buildMcpOptions } from "../../../src/engine/claude_sdk_mcp_options.js";
 import type {
   EngineExecuteParams,
@@ -18,6 +21,9 @@ import {
 import { RunnerChildRuntime } from "../../../src/runner/runner_child_runtime.js";
 import type { RunnerHostRequestClient } from
   "../../../src/runner/runner_host_request_client.js";
+import {
+  applyRunnerClaudeRuntimeObservationResult,
+} from "../../../src/runner/runner_claude_runtime_observation.js";
 import { parseRunnerChildConfig } from "../../../src/runner/runner_process_spawn.js";
 
 const configPath = argument("--config");
@@ -59,19 +65,24 @@ class ControlledEngine implements EnginePort {
         yield engineEventFrame({ type: "complete", result: "foreground complete" });
         return;
       }
-      if (this.executionCount !== 2) {
+      if (this.executionCount < 2 || this.executionCount > 3) {
         throw new Error(`background follow-up executed ${this.executionCount} times`);
       }
       await writeFile(
         `${this.controlDirectory}/followup-executed`,
         `${process.pid}\n`,
       );
+      await writeFile(
+        `${this.controlDirectory}/followup-execution-count`,
+        `${this.executionCount - 1}\n`,
+      );
+      const followupResult = `background follow-up ${this.executionCount - 1} complete`;
       yield engineEventFrame({
         type: "assistant_message",
-        content: "background follow-up complete",
+        content: followupResult,
         timestamp: 3,
       });
-      yield engineEventFrame({ type: "complete", result: "background follow-up complete" });
+      yield engineEventFrame({ type: "complete", result: followupResult });
       return;
     }
     if (process.env.RUNNER_E2E_INTERVENTION_RECOVERY === "1") {
@@ -246,17 +257,19 @@ class ControlledEngine implements EnginePort {
         claudePostResultDrain: true,
         claudeBackgroundProvenance: "sdk_membership",
       };
-      await this.host.call(
+      const observation = await this.host.call(
         "claude_runtime",
         "observe",
         [config.sessionId, event, metadata],
         { timeoutMs: 20_000 },
       );
+      applyRunnerClaudeRuntimeObservationResult(event, observation);
       this.backgroundTaskCount -= 1;
+      const detachedMetadata = claudeEngineEventMetadata(event);
       await this.host.call(
         "detached_event",
         "publish",
-        [config.sessionId, event, metadata],
+        [config.sessionId, { ...event }, ...(detachedMetadata ? [detachedMetadata] : [])],
         { timeoutMs: 20_000 },
       );
       await writeFile(`${this.controlDirectory}/published-${taskId}`, "ready\n");
