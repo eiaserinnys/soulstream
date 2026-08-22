@@ -119,7 +119,7 @@ export const EnvSchema = z
      * it no longer represents an absolute turn duration.
      */
     CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: z.coerce
-      .number().int().positive().default(600_000),
+      .number().int().positive().default(1_200_000),
     /**
      * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).

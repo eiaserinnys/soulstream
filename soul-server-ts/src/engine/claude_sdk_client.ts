@@ -129,7 +129,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.detachedEventSink = config.detachedEventSink ?? (async () => undefined);
     this.runtimeEventSink = config.runtimeEventSink;
     this.persistentTurnInactivityTimeoutMs =
-      config.persistentTurnInactivityTimeoutMs ?? 600_000;
+      config.persistentTurnInactivityTimeoutMs ?? 1_200_000;
     this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs ?? 30_000;
   }
 

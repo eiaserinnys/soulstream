@@ -70,7 +70,7 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | `true` | Persistent Claude Query runtime. Set `false` only as the emergency legacy kill switch. |
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | `300000` | Idle Query reclamation delay. |
 | `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | `16` | Worker-local persistent Query cap. |
-| `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | `1800000` | Foreground Claude turn timeout. |
+| `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | `1200000` | Foreground Claude turn inactivity timeout. |
 
 `DATABASE_URL` is intentionally absent from the worker `EnvSchema`. In a
 cluster, the central orchestrator deployment owns PostgreSQL credentials and
