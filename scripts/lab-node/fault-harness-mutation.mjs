@@ -20,7 +20,7 @@
  *
  * Every planted row is prefixed `lab-mutation-` so a leak is greppable.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { sampleInvariants } from "./fault-harness-evidence.mjs";
@@ -280,10 +280,53 @@ export async function runMutationGate(runtime) {
     },
   };
   const results = [];
-  for (const [index, mutation] of MUTATIONS.entries()) {
-    results.push(await runMutation(mutation, context, index));
+  try {
+    for (const [index, mutation] of MUTATIONS.entries()) {
+      results.push(await runMutation(mutation, context, index));
+    }
+  } finally {
+    // Per-mutation revert only runs when `inject` got far enough to return.
+    // An injection that fails halfway -- session written, events rejected --
+    // would otherwise leave a row behind and quietly poison every later run,
+    // which is the failure mode this whole gate exists to prevent. Everything
+    // planted carries the prefix, so one sweep collects all of it.
+    const residue = await sweepResidue(runtime);
+    if (residue > 0) {
+      results.push({
+        invariant: "(cleanup)",
+        what: `${residue} planted row(s) survived their own revert and were swept`,
+        outcome: "DIRTY",
+      });
+    }
   }
   return results;
+}
+
+/** Removes anything the gate planted, and reports how much there was. */
+async function sweepResidue(runtime) {
+  const swept = await runtime.psqlOne(`
+    WITH removed_sessions AS (
+      DELETE FROM sessions WHERE session_id LIKE '${PREFIX}-%' RETURNING 1
+    ), removed_deliveries AS (
+      DELETE FROM session_deliveries WHERE delivery_id LIKE '${PREFIX}-%' RETURNING 1
+    ), removed_receipts AS (
+      DELETE FROM node_release_activation_receipts
+      WHERE registration_idempotency_key LIKE '${PREFIX}-%' RETURNING 1
+    )
+    SELECT json_build_object('rows',
+      (SELECT COUNT(*) FROM removed_sessions)
+      + (SELECT COUNT(*) FROM removed_deliveries)
+      + (SELECT COUNT(*) FROM removed_receipts))
+  `);
+  let directories = 0;
+  try {
+    for (const entry of await readdir(runtime.runnerStateDirectory, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith(PREFIX)) continue;
+      await rm(join(runtime.runnerStateDirectory, entry.name), { recursive: true, force: true });
+      directories += 1;
+    }
+  } catch {}
+  return (swept?.rows ?? 0) + directories;
 }
 
 export function reportMutationGate(results) {
