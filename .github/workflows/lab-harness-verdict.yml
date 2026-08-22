@@ -68,6 +68,27 @@ jobs:
       - name: Apply canonical schema
         run: psql -v ON_ERROR_STOP=1 -q -f packages/db-schema/sql/schema.sql
 
+      # 거부 경로를 먼저 태운다. 마커가 없는 DB에 게이트를 겨누고 exit 1과
+      # "쓰기 0건"을 요구한다 — 성공 경로만 돌리면 가드가 사라져도 초록이다.
+      # 이 자리는 이미 한 번 라이브 DB 오염 사고가 난 곳이다.
+      - name: Gate refuses a database that has not proven it is disposable
+        working-directory: scripts/lab-node
+        run: |
+          if node fault-harness-ci-gate.mjs; then
+            echo "::error::the gate ran against a database with no throwaway marker"
+            exit 1
+          fi
+          echo "refused as required"
+      - name: And wrote nothing while refusing
+        run: |
+          rows=$(psql -X -qAt -c \
+            "SELECT count(*) FROM node_release_activation_receipts")
+          if [ "$rows" != "0" ]; then
+            echo "::error::the gate wrote $rows row(s) before refusing"
+            exit 1
+          fi
+          echo "no rows written"
+
       # 이 DB가 버려도 되는 것임을 스스로 증명하게 한다. 게이트는 이 마커가
       # 없으면 실행을 거부한다 — "랩이 아니면 허용"이 아니라 "이것이어야만
       # 실행"이다. 살아 있는 어떤 DB에도 이 테이블은 없다.
@@ -84,6 +105,7 @@ jobs:
           node --test --test-concurrency=1 \
             fault-harness.test.mjs \
             fault-harness-verdict.test.mjs \
+            fault-harness-contracts.test.mjs \
             lab-node.test.mjs
 
       # 진짜 위반 행을 심고, 진짜 샘플러를 돌리고, 판정기가 그것을 지목하기를

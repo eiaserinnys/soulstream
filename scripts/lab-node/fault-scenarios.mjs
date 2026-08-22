@@ -76,13 +76,41 @@ export async function runCanonicalScenario(id, runtime, recorder) {
   return result;
 }
 
+/**
+ * Runs the traffic cycles and does not return until every worker has stopped.
+ *
+ * `Promise.all` rejects the moment one worker throws, which finalised the run
+ * report while a sibling was still working: a 2x4 run wrote `result.json` at
+ * 17:58:42 and then kept writing evidence until 18:01:07 -- two and a half
+ * minutes of a scorecard that no longer described what was on disk. A verdict
+ * you cannot tie to the evidence it was computed from is the exact failure
+ * this harness exists to prevent, so the report waits.
+ *
+ * A failing worker also drains the queue. The siblings finish the cycle they
+ * are in -- killing that mid-flight would leave a half-run session that the
+ * next run inherits as a dirty baseline -- and then stop.
+ */
 export async function runTrafficCycles(options, runtime, recorder) {
   const queue = Array.from({ length: options.cycles }, (_, index) => index + 1);
   const results = [];
-  const workers = Array.from({ length: options.concurrency }, (_, workerIndex) => (
-    runCycleWorker(workerIndex + 1, queue, results, options.intervalSeconds, runtime, recorder)
-  ));
-  await Promise.all(workers);
+  const state = { stopping: false };
+  const settled = await Promise.allSettled(
+    Array.from({ length: options.concurrency }, (_, workerIndex) => (
+      runCycleWorker(
+        workerIndex + 1, queue, results, options.intervalSeconds, runtime, recorder, state,
+      )
+    )),
+  );
+  const failures = settled
+    .filter((outcome) => outcome.status === "rejected")
+    .map((outcome) => outcome.reason);
+  if (failures.length > 0) {
+    // Rethrown only now, with every worker stopped and every file written.
+    const error = failures.length === 1
+      ? failures[0]
+      : new AggregateError(failures, `${failures.length} traffic cycle workers failed`);
+    throw error;
+  }
   return results.sort((left, right) => left.cycle - right.cycle);
 }
 
@@ -367,8 +395,22 @@ const SCENARIOS = {
   },
 };
 
-async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, recorder) {
-  while (queue.length > 0) {
+async function runCycleWorker(
+  worker, queue, results, intervalSeconds, runtime, recorder, state,
+) {
+  try {
+    await driveCycles(worker, queue, results, intervalSeconds, runtime, recorder, state);
+  } catch (error) {
+    // Stop handing out new cycles, but let the siblings land the one they are
+    // running. The failure is reported by runTrafficCycles once all of them
+    // have stopped.
+    state.stopping = true;
+    throw error;
+  }
+}
+
+async function driveCycles(worker, queue, results, intervalSeconds, runtime, recorder, state) {
+  while (queue.length > 0 && !state.stopping) {
     const cycle = queue.shift();
     if (cycle === undefined) return;
     const baseline = await recorder.invariant(`before-cycle-${cycle}`);
@@ -383,7 +425,7 @@ async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, 
     if (invariant.newViolations.length > 0) result.status = "failed";
     Object.assign(result, withBaselineHonesty(result, baseline, invariant));
     await recorder.scenario(`cycle-${cycle}`, result);
-    if (queue.length > 0) await delay(intervalSeconds * 1_000);
+    if (queue.length > 0 && !state.stopping) await delay(intervalSeconds * 1_000);
   }
 }
 

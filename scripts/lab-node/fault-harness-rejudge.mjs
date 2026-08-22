@@ -107,13 +107,37 @@ async function readStoredInputs(directory) {
   try {
     const lines = (await readFile(join(directory, "pairing-inputs.jsonl"), "utf8"))
       .split("\n").filter(Boolean);
-    const last = lines.at(-1);
-    if (last) return JSON.parse(last);
+    if (lines.length > 0) return mergeCaptures(lines.map((line) => JSON.parse(line)));
   } catch {}
   try {
     return JSON.parse(await readFile(join(directory, "pairing-inputs.json"), "utf8"));
   } catch {}
   return null;
+}
+
+/**
+ * Rebuilds a run's inputs from its appended deltas.
+ *
+ * Each line carries only what changed since the one before it, so the last
+ * line alone is not the capture -- reading it that way would re-judge a run
+ * against whatever happened to move in its final seconds. Sessions take their
+ * latest recorded state, events accumulate, and `capturedAt` is the last
+ * sample's, because that is the moment the run's verdict was fixed.
+ */
+function mergeCaptures(captures) {
+  const sessions = new Map();
+  const events = new Map();
+  for (const capture of captures) {
+    for (const session of capture.sessions ?? []) sessions.set(session.session_id, session);
+    for (const event of capture.events ?? []) events.set(`${event.session_id}#${event.id}`, event);
+  }
+  const last = captures.at(-1);
+  return {
+    since: captures[0]?.since ?? last?.since,
+    capturedAt: last?.capturedAt,
+    sessions: [...sessions.values()],
+    events: [...events.values()],
+  };
 }
 
 /**

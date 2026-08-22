@@ -24,6 +24,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import {
+  reportBoundaryContracts,
+  runBoundaryContracts,
+} from "./fault-harness-contracts.mjs";
 import { createQueryRunner } from "./fault-harness-database.mjs";
 import {
   reportMutationGate,
@@ -105,8 +109,24 @@ async function main() {
     runnerStateDirectory,
     async currentManifest() { return FIXTURE_MANIFEST; },
   };
+  // Boundaries first, and unconditionally.
+  //
+  // They need no database, so a failure here is never confounded by one, and
+  // they cover the wiring the row-planting mutations structurally cannot see.
+  process.stdout.write("boundary contracts:\n");
+  const contracts = await runBoundaryContracts();
+  const boundariesHeld = reportBoundaryContracts(contracts);
+
+  process.stdout.write("\ninvariant mutations:\n");
   const results = await runMutationGate(target);
-  const passed = reportMutationGate(results);
+  const passed = reportMutationGate(results) && boundariesHeld;
+  if (!boundariesHeld) {
+    process.stdout.write(
+      "\nA boundary between two modules has come apart. The judges may still\n"
+      + "see a row planted in front of them and report nothing, because what\n"
+      + "carries their answer to the verdict is broken rather than the judge.\n",
+    );
+  }
   if (!passed) {
     process.stdout.write(
       "\nThe judges did not see a violation planted directly in front of them.\n"
