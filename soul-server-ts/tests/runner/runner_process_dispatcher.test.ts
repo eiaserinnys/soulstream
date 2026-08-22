@@ -42,6 +42,33 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("released event stream registration은 뒤늦은 pump 등록도 남기지 않는다", async () => {
+    // An adoption can be rejected before the pump has started registering, so
+    // releasing the registration finds nothing to release and the registration
+    // lands afterwards -- owned by a dispatcher nobody holds. The next turn
+    // then cannot register the session's stream at all and answers nothing
+    // ("Durable event stream already registered", 260822 lab F9 next turn).
+    //
+    // The dispatcher is built without its spawn path on purpose: the contract
+    // under test is two lines of pump bookkeeping, and starting a real child
+    // would only add an unrelated failure mode to a test about them.
+    const registerPump = vi.fn(() => vi.fn());
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher & { ensurePump(): Promise<void> };
+    Object.assign(dispatcher, {
+      options: { pumpMux: { register: registerPump } },
+      eventStreamReleased: false,
+      pump: undefined,
+      pumpInitialization: undefined,
+      unregisterPump: undefined,
+    });
+
+    await dispatcher.releaseEventStreamRegistration();
+    await dispatcher.ensurePump();
+
+    expect(registerPump).not.toHaveBeenCalled();
+  });
+
   it("prefers the first-durable child intervention and consumes a conflicting host fallback", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

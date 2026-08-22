@@ -64,6 +64,19 @@ export class LabRuntime {
     return new EvidenceRecorder(this, runId, directory);
   }
 
+  /**
+   * Requires a *new* node connection after we deliberately stopped one.
+   *
+   * `/api/nodes` only lists connected nodes and `status` is the same boolean,
+   * so asking for either proves nothing across a restart: the previous
+   * connection is still listed for as long as orch has not noticed it go.
+   * Three runs were lost to `503 NO_AVAILABLE_NODE` that way. The connection
+   * id is what actually changes, so a restart waits for a different one.
+   */
+  expectFreshNodeConnection() {
+    this.staleConnectionId = this.lastConnectionId;
+  }
+
   async assertReady() {
     await this.waitForHttp(`${this.apiBase}/api/health`, 30_000);
     await this.waitForHttp(`http://127.0.0.1:${this.nodePort}/health`, 30_000);
@@ -125,18 +138,38 @@ export class LabRuntime {
     return JSON.parse(text);
   }
 
+  /**
+   * Waits for the marker, and says what it actually saw if it never arrives.
+   *
+   * This used to swallow every read error, so a timeline call that failed for
+   * the whole window was indistinguishable from an assistant that never
+   * answered. Four F9 runs were recorded as lost turns whose markers were in
+   * the database three seconds after the prompt -- the run was red, and the
+   * red said nothing about which side had failed.
+   */
   async waitForMarker(sessionId, marker, timeoutMs = 180_000) {
     const deadline = Date.now() + timeoutMs;
+    let polls = 0;
+    let reads = 0;
+    let lastError;
     while (Date.now() < deadline) {
+      polls += 1;
       try {
         const timeline = await this.timeline(sessionId);
+        reads += 1;
         if (countMatchingTimelineEvents(timeline, "assistant_message", marker) > 0) {
           return timeline;
         }
-      } catch {}
+      } catch (error) {
+        lastError = error;
+      }
       await delay(1_000);
     }
-    throw new Error(`assistant marker not observed: ${marker}`);
+    throw new Error(
+      `assistant marker not observed: ${marker}`
+      + ` (polls=${polls}, timeline reads=${reads}`
+      + `${lastError ? `, last read error: ${lastError.message}` : ""})`,
+    );
   }
 
   async countTimelineText(sessionId, text) {
@@ -243,6 +276,7 @@ export class LabRuntime {
     process.kill(pid, signal);
     await waitForExit(pid, signal === "SIGKILL" ? 5_000 : 30_000);
     await unlink(definition.pidPath).catch(ignoreMissing);
+    if (service === "node") this.expectFreshNodeConnection();
     await this.startStack();
     return pid;
   }
@@ -254,6 +288,7 @@ export class LabRuntime {
     process.kill(pid, "SIGTERM");
     await waitForExit(pid, 30_000);
     await unlink(pidPath).catch(ignoreMissing);
+    this.expectFreshNodeConnection();
     return pid;
   }
 
@@ -384,19 +419,46 @@ export class LabRuntime {
     return value?.count ?? 0;
   }
 
+  /**
+   * Waits until the lab node can actually take work, not merely until a row
+   * exists for it.
+   *
+   * A registry row survives a restart, so requiring only its presence was
+   * satisfied instantly while nothing was connected. Three scenario runs were
+   * lost that way in one day -- each began seconds after a lab restart, each
+   * died on `503 NO_AVAILABLE_NODE` at the first `create_session`, and each
+   * cost a round before anyone noticed the verdict was void rather than red.
+   */
   async waitForNodeRegistration(timeoutMs) {
     const deadline = Date.now() + timeoutMs;
+    let lastSeen;
     while (Date.now() < deadline) {
       try {
         const nodes = await this.getJson("/api/nodes");
         const matches = Array.isArray(nodes.nodes)
           ? nodes.nodes.filter((node) => node?.nodeId === "eias-lab")
           : [];
-        if (matches.length === 1) return;
+        if (matches.length === 1) {
+          lastSeen = matches[0];
+          const connected = lastSeen.connected === true || lastSeen.status === "connected";
+          const fresh = this.staleConnectionId === undefined
+            || (lastSeen.connectionId !== undefined
+              && lastSeen.connectionId !== this.staleConnectionId);
+          if (connected && fresh) {
+            this.lastConnectionId = lastSeen.connectionId;
+            this.staleConnectionId = undefined;
+            return;
+          }
+        }
       } catch {}
       await delay(250);
     }
-    throw new Error("eias-lab did not register");
+    throw new Error(
+      "eias-lab did not present a serving connection"
+      + ` (status: ${lastSeen?.status ?? "absent"},`
+      + ` connection: ${lastSeen?.connectionId ?? "none"},`
+      + ` replacing: ${this.staleConnectionId ?? "none"})`,
+    );
   }
 
   async waitForHttp(url, timeoutMs) {

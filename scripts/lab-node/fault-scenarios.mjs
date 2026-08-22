@@ -22,6 +22,7 @@ const LOG_TERMS = {
   F11: ["F11_", "intervention", "delivery"],
   F9: ["F9_", "runner adoption release identity mismatch", "offline",
     "runner adoption failure was superseded by a newer execution",
+    "registered runner recovery skipped", "terminal runner replay was skipped",
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
   "dead-owner": ["DEAD_OWNER_", "dead execution owner", "expire_dead_owner"],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
@@ -60,7 +61,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
       }
     }
   }
-  const invariant = await recorder.invariant(`after-${id}`, [], baseline.violations);
+  const invariant = await recorder.invariant(`after-${id}`, [], baseline.violations, 90_000);
   if (invariant.newViolations.length > 0 && !failure) {
     failure = {
       name: "InvariantViolation",
@@ -376,6 +377,7 @@ async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, 
       `after-cycle-${cycle}`,
       [],
       baseline.violations,
+      90_000,
     );
     result.invariant = invariant;
     if (invariant.newViolations.length > 0) result.status = "failed";
@@ -404,7 +406,9 @@ async function runTrafficCycle(cycle, worker, runtime, recorder) {
     sessionId,
     "initial cycle completion",
   );
-  const cancelText = `Use Bash once to sleep 12 seconds, then reply CYCLE_CANCELLED_${seed}.`;
+  const cancelText = "Use Bash once to run "
+    + 'python3 -c "import time; time.sleep(12)"'
+    + `, then reply CYCLE_CANCELLED_${seed}.`;
   await runtime.intervene(sessionId, buildInterventionPayload(randomUUID(), cancelText));
   await runtime.waitForRunner(sessionId);
   await delay(1_000);
@@ -453,8 +457,20 @@ async function runTrafficCycle(cycle, worker, runtime, recorder) {
   };
 }
 
+/**
+ * A prompt whose Bash call stays in flight for a known duration.
+ *
+ * It deliberately avoids a bare `sleep`: the lab agent workspace inherits a
+ * hook that blocks a standalone one, and the block returns instantly. The tool
+ * then never stays in flight, `waitForInFlightTool` times out, and the run is
+ * void -- which is how several dead-owner runs were lost before anyone read
+ * the tool_result and saw the block. A timed Python call is not a standalone
+ * sleep and is not what the hook is guarding against.
+ */
 function delayedMarkerPrompt(marker, seconds) {
-  return `Use Bash exactly once to run sleep ${seconds}. After it finishes, reply with exactly ${marker}.`;
+  return "Use Bash exactly once to run "
+    + `python3 -c "import time; time.sleep(${seconds})". `
+    + `After it finishes, reply with exactly ${marker}.`;
 }
 
 function assertScenario(condition, message) {

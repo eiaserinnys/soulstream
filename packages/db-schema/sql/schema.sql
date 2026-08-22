@@ -4966,7 +4966,23 @@ DECLARE
     v_action TEXT;
     v_row_count INTEGER;
 BEGIN
-    IF p_second_runtime_env_identity IS NULL OR p_second_runtime_env_identity = '' THEN
+    -- Only an observation that names a runtime can be required to identify it.
+    -- The owner-null reconciler exists to report that *nothing* is running, and
+    -- says so with an entirely empty observation; `session_backfill_execution_
+    -- ownership` treats that as a first-class input and takes its incomplete
+    -- identity branch. Requiring the identity unconditionally rejected exactly
+    -- that evidence, so from migration 070 onward the reconciler threw on every
+    -- real sample -- twenty-one times in one lab dead-owner run -- and an
+    -- owner-null running session had nothing left that could converge it.
+    IF (
+        p_second_manifest_id IS NOT NULL
+        OR p_second_registration_id IS NOT NULL
+        OR p_second_pid IS NOT NULL
+        OR p_second_start_identity IS NOT NULL
+        OR p_second_execution_command_id IS NOT NULL
+    ) AND (
+        p_second_runtime_env_identity IS NULL OR p_second_runtime_env_identity = ''
+    ) THEN
         RAISE EXCEPTION 'second runtime env identity required';
     END IF;
     IF p_first_runtime_env_identity IS NOT NULL

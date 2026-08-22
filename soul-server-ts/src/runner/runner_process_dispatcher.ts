@@ -141,6 +141,15 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private pump: EventOutboxPump | undefined;
   private pumpInitialization: Promise<void> | undefined;
   private unregisterPump: (() => void) | undefined;
+  /** Set once this host has given the session's event stream back. */
+  private eventStreamReleased = false;
+  /**
+   * Distinguishes this host-side dispatcher from every other one for the same
+   * session. A session can have more than one at a time -- a rejected adoption
+   * leaves its own behind while a replacement turn builds another -- and
+   * without a name the logs cannot say which of them a decision was about.
+   */
+  private readonly instanceId = randomUUID().slice(0, 8);
   private connecting: Promise<RunnerIpcConnection> | undefined;
   private reconnectInFlight: Promise<void> | undefined;
   private reconnectRequested = false;
@@ -314,6 +323,48 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     } finally {
       await this.releaseHostResources();
     }
+  }
+
+  /**
+   * Releases only this host's durable event stream registration.
+   *
+   * A rejected adoption must give the shared mux its stream back, but nothing
+   * else. `detachHost` additionally aborts in-flight host requests and closes
+   * the IPC connection, and a detached runner mid-tool is *waiting on* one of
+   * those requests: tearing them down leaves its tool without a result, so the
+   * turn never finishes and its output never reaches the user. Releasing this
+   * registration alone is what a rejected adoption actually owns.
+   */
+  /**
+   * True once this host has given the runner up and will not talk to it again.
+   *
+   * Reconnect exhaustion announces that the execution "will be terminalized",
+   * but the only thing that carries that news out is `activeStream.fail`. With
+   * no active stream there is nothing to fail, so the task went on holding a
+   * runner the host had already abandoned and every later offline replay was
+   * refused against it.
+   */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  dispatcherId(): string {
+    return this.instanceId;
+  }
+
+  async releaseEventStreamRegistration(): Promise<void> {
+    // The flag has to be set before the await. An adoption can be rejected
+    // before the pump has even started registering, and then there is nothing
+    // to release yet: the registration lands afterwards and outlives the
+    // attempt, so the next turn cannot register at all. `detachHost` never had
+    // this hole only because it also marks the dispatcher closed.
+    this.eventStreamReleased = true;
+    if (this.pumpInitialization) {
+      await Promise.allSettled([this.pumpInitialization]);
+    }
+    const unregisterPump = this.unregisterPump;
+    this.unregisterPump = undefined;
+    unregisterPump?.();
   }
 
   async detachHost(): Promise<void> {
@@ -929,8 +980,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     sessionId: string;
     runnerDirectory: string;
     socketPath: string;
+    dispatcherId: string;
   } {
     return {
+      dispatcherId: this.instanceId,
       sessionId: this.spawnInput.sessionId,
       runnerDirectory: runnerProcessPaths(
         this.spawnInput.stateDirectory,
@@ -1056,6 +1109,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   private async ensurePump(): Promise<void> {
     if (this.pump) return;
+    if (this.eventStreamReleased) return;
     // Socket attachment and recovery both replay immediately; publish one
     // initialization before the bootstrap read yields so they cannot double-register.
     if (!this.pumpInitialization) {
@@ -1084,6 +1138,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       },
     });
     const unregisterPump = this.options.pumpMux.register(pump);
+    if (this.eventStreamReleased) {
+      // Released while this initialization was in flight. Hand the stream back
+      // immediately rather than leaving it registered to a dispatcher nobody
+      // owns any more.
+      unregisterPump();
+      return;
+    }
     this.pump = pump;
     this.unregisterPump = unregisterPump;
   }

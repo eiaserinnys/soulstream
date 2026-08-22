@@ -115,12 +115,15 @@ export class RunnerAdoptionFailureRecovery {
     const { registration, disposition, task, completion, ownedRunner, error } = input;
     // Task execution identity is the first fence. A newer turn owns both its
     // runner and registration; this recovery must not touch either.
-    if (
-      task.executionPromise !== completion
-      || (task.runner !== undefined && task.runner !== ownedRunner)
-    ) {
-      this.deps.logger.info(
-        { sessionId: registration.config.sessionId, disposition },
+    //
+    // Absence is not supersession. An adoption that rejects before it assigns
+    // `task.executionPromise` leaves the slot empty, and reading empty as "a
+    // newer execution owns this" abandons a live runner that still holds the
+    // session's execution ownership.
+    const supersededBy = supersedingExecution(task, completion, ownedRunner);
+    if (supersededBy) {
+      this.deps.logger.warn(
+        { ...recoveryLogContext(registration, error, disposition), supersededBy },
         "runner adoption failure was superseded by a newer execution",
       );
       return;
@@ -188,6 +191,26 @@ export class RunnerAdoptionFailureRecovery {
       "live runner adoption failed but registration is not safe to replace",
     );
   }
+}
+
+/**
+ * Names the newer execution that owns this session, or undefined when none
+ * does. Only a *present* execution or runner that is not the one this recovery
+ * started can supersede it.
+ */
+function supersedingExecution(
+  task: Task,
+  completion: Promise<void>,
+  ownedRunner: Task["runner"],
+): "runner" | "execution" | undefined {
+  if (task.runner !== undefined && task.runner !== ownedRunner) return "runner";
+  if (task.executionPromise === completion) return undefined;
+  // An empty slot is not supersession. Lab scenario F9 showed every adoption
+  // rejection landing here as `execution_absent`: the release identity gate
+  // throws before `recoverRunnerExecution` assigns `task.executionPromise`,
+  // so nothing newer exists and standing down abandons the replacement path.
+  if (task.executionPromise === undefined) return undefined;
+  return "execution";
 }
 
 async function refreshRunnerRegistration(

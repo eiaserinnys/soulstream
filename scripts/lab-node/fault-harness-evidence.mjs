@@ -18,6 +18,10 @@ export class EvidenceRecorder {
     this.runtime = runtime;
     this.runId = runId;
     this.directory = directory;
+    // Sessions from earlier runs stay in the lab database forever. Counting
+    // them makes every verdict a running total that nobody can read: "11
+    // violations" says nothing about which one this run caused.
+    this.since = new Date().toISOString();
     this.eventsPath = join(directory, "events.jsonl");
     this.invariantsPath = join(directory, "invariants.jsonl");
   }
@@ -28,11 +32,35 @@ export class EvidenceRecorder {
     return record;
   }
 
-  async invariant(label, messageLosses = [], baseline = []) {
-    await delay(2_000);
-    const sample = { label, ...(await sampleInvariants(this.runtime, messageLosses)) };
-    sample.newViolations = newInvariantViolations(baseline, sample.violations);
+  /**
+   * Samples the invariants once, or waits for a post-scenario sample to settle.
+   *
+   * Central session state is projected asynchronously from runner state, so a
+   * single sample taken seconds after a scenario ends reports whatever happened
+   * to still be in flight. F1 was failed by exactly that: a session the judge
+   * called dead-but-running had reached `interrupted` with both ownerships
+   * terminal moments later. The contract this harness exists to defend is that
+   * nothing is lost or stuck permanently -- delay is allowed -- so pass
+   * `settleMs` on the after-sample and a violation only counts once it has had
+   * that long to clear. Baseline samples never wait; they are the comparison.
+   */
+  async invariant(label, messageLosses = [], baseline = [], settleMs = 0) {
+    const deadline = Date.now() + settleMs;
+    let sample = await this.sampleOnce(label, messageLosses, baseline);
+    while (sample.newViolations.length > 0 && Date.now() < deadline) {
+      await delay(5_000);
+      sample = await this.sampleOnce(label, messageLosses, baseline);
+    }
+    sample.settled = sample.newViolations.length === 0;
     await appendJsonLine(this.invariantsPath, sample);
+    return sample;
+  }
+
+  async sampleOnce(label, messageLosses, baseline) {
+    await delay(2_000);
+    const sample = { label, since: this.since,
+      ...(await sampleInvariants(this.runtime, messageLosses, this.since)) };
+    sample.newViolations = newInvariantViolations(baseline, sample.violations);
     return sample;
   }
 
@@ -81,11 +109,14 @@ export class EvidenceRecorder {
   }
 }
 
-async function sampleInvariants(runtime, messageLosses) {
+async function sampleInvariants(runtime, messageLosses, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
       'ownerlessRunning', (
-        SELECT COUNT(*)::integer FROM sessions AS session
+        -- Identities, not a tally. A count cannot tell an old violation
+        -- clearing from a new one arriving, and the two cancel.
+        SELECT COALESCE(json_agg(json_build_object('session_id', session.session_id)), '[]'::json)
+        FROM sessions AS session
         WHERE session.status = 'running'
           AND NOT EXISTS (
             SELECT 1 FROM session_execution_ownerships AS ownership
@@ -94,17 +125,20 @@ async function sampleInvariants(runtime, messageLosses) {
           )
       ),
       'overdueRetries', (
-        SELECT COUNT(*)::integer FROM session_deliveries
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
         WHERE aggregate_state = 'pending'
           AND state = 'pending'
           AND next_attempt_at < NOW() - INTERVAL '5 seconds'
       ),
       'ambiguousUncertain', (
-        SELECT COUNT(*)::integer FROM session_deliveries
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
       'reasonlessDeadLetters', (
-        SELECT COUNT(*)::integer FROM session_deliveries
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
         WHERE aggregate_state = 'dead_letter'
           AND NULLIF(dead_letter_reason, '') IS NULL
       ),
@@ -119,6 +153,46 @@ async function sampleInvariants(runtime, messageLosses) {
           FROM sessions AS session
         ) AS summary
       ),
+      'unansweredUserInput', (
+        -- A user turn that never produced an assistant reply. Delivery
+        -- bookkeeping can look perfectly clean while this is true: the 260822
+        -- F9 reproduction lost a reply with zero dead letters, zero overdue
+        -- retries and zero uncertain deliveries. Only the reply itself proves
+        -- the message arrived somewhere that could answer it.
+        --
+        -- Sessions that are still working are exempt until they go quiet, so
+        -- an in-flight turn is never reported as a loss.
+        SELECT COALESCE(json_agg(row_to_json(unanswered)), '[]'::json) FROM (
+          SELECT session.session_id, session.status,
+            asked.last_user_id, answered.last_assistant_id, asked.last_event_at
+          FROM sessions AS session
+          JOIN LATERAL (
+            SELECT MAX(id) FILTER (WHERE event_type = 'user_message') AS last_user_id,
+              MAX(created_at) AS last_event_at
+            FROM events WHERE events.session_id = session.session_id
+          ) AS asked ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT MAX(id) AS last_assistant_id FROM events
+            WHERE events.session_id = session.session_id
+              AND events.event_type = 'assistant_message'
+          ) AS answered ON TRUE
+          WHERE asked.last_user_id IS NOT NULL
+            AND (
+              answered.last_assistant_id IS NULL
+              OR answered.last_assistant_id < asked.last_user_id
+            )
+            AND session.created_at >= ${sqlTimestamp(since)}
+            AND (
+              session.status NOT IN ('running', 'initializing')
+              -- Whether real work is happening is decided by runner progress
+              -- below, not by this clock, so the clock only has to outlast a
+              -- pause. Measured replies land three to five seconds after the
+              -- prompt, and three minutes of grace on top of that buys
+              -- nothing but blindness.
+              OR asked.last_event_at < NOW() - INTERVAL '30 seconds'
+            )
+        ) AS unanswered
+      ),
       'activationReceipt', (
         SELECT row_to_json(receipt) FROM (
           SELECT manifest_id, release_cohort_id, source_commit
@@ -129,18 +203,28 @@ async function sampleInvariants(runtime, messageLosses) {
       )
     )
   `);
-  const terminalProjectionMismatches = await findTerminalProjectionMismatches(
-    runtime.runnerStateDirectory,
+  const lifecycles = await readRunnerLifecycles(runtime.runnerStateDirectory);
+  const terminalProjectionMismatches = findTerminalProjectionMismatches(
+    lifecycles,
     database?.sessions ?? [],
+  );
+  // SQL can see that nothing has been written for a while; it cannot see that a
+  // runner is alive and working. A model turn or a Bash call may legitimately
+  // run past the quiet threshold, and reporting those as lost message would
+  // teach the next reader to distrust the judge -- at which point it may as
+  // well not exist. A session whose runner is still progressing is exempt.
+  const unansweredUserInput = (database?.unansweredUserInput ?? []).filter(
+    (row) => !runnerIsStillWorking(lifecycles.get(row.session_id)),
   );
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
-    ownerlessRunning: database?.ownerlessRunning ?? 0,
+    ownerlessRunning: database?.ownerlessRunning ?? [],
+    unansweredUserInput,
     terminalProjectionMismatches,
-    overdueRetries: database?.overdueRetries ?? 0,
-    ambiguousUncertain: database?.ambiguousUncertain ?? 0,
-    reasonlessDeadLetters: database?.reasonlessDeadLetters ?? 0,
+    overdueRetries: database?.overdueRetries ?? [],
+    ambiguousUncertain: database?.ambiguousUncertain ?? [],
+    reasonlessDeadLetters: database?.reasonlessDeadLetters ?? [],
     activationManifestMismatch: !receipt
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId
@@ -154,11 +238,24 @@ async function sampleInvariants(runtime, messageLosses) {
   };
 }
 
-async function findTerminalProjectionMismatches(runnerStateDirectory, sessionRows) {
-  const byId = new Map(sessionRows.map((row) => [row.session_id, row]));
-  const mismatches = [];
+/** Quotes an ISO timestamp for inline SQL; rejects anything that is not one. */
+function sqlTimestamp(value) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    throw new Error(`invalid invariant window timestamp: ${value}`);
+  }
+  return `TIMESTAMPTZ '${value}'`;
+}
+
+const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
+const RUNNER_PROGRESS_GRACE_MS = 60_000;
+
+/** Reads every readable runner lifecycle, keyed by the session it belongs to. */
+async function readRunnerLifecycles(runnerStateDirectory) {
+  const lifecycles = new Map();
   let entries = [];
-  try { entries = await readdir(runnerStateDirectory, { withFileTypes: true }); } catch { return []; }
+  try {
+    entries = await readdir(runnerStateDirectory, { withFileTypes: true });
+  } catch { return lifecycles; }
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
     try {
@@ -166,17 +263,48 @@ async function findTerminalProjectionMismatches(runnerStateDirectory, sessionRow
         join(runnerStateDirectory, entry.name, "runner-lifecycle.json"),
         "utf8",
       ));
-      if (!["completed", "failed"].includes(lifecycle.execution_state)) continue;
-      const session = byId.get(lifecycle.session_id);
-      if (session && (session.status === "running" || session.has_open_owner)) {
-        mismatches.push({
-          sessionId: lifecycle.session_id,
-          runnerState: lifecycle.execution_state,
-          centralStatus: session.status,
-          hasOpenOwner: session.has_open_owner,
-        });
-      }
+      if (lifecycle?.session_id) lifecycles.set(lifecycle.session_id, lifecycle);
     } catch {}
+  }
+  return lifecycles;
+}
+
+/**
+ * A runner that is still *advancing* is owed its answer; a merely breathing
+ * one is not.
+ *
+ * `liveness_at` is refreshed for as long as a command is assigned, whether or
+ * not anything is happening, so a runner blocked on a host tool response looks
+ * alive forever. That is precisely the failure this harness exists to catch --
+ * exempting it would leave the judge unable to see the very class of stall it
+ * was strengthened for. Only `progress_at`, which moves when the runner
+ * actually emits, counts as work.
+ *
+ * The cost is accepted: a tool that legitimately runs past the grace without
+ * emitting anything gets reported. A false positive is visible and can be
+ * checked; a false negative is invisible and makes every green meaningless.
+ */
+function runnerIsStillWorking(lifecycle) {
+  if (!lifecycle) return false;
+  if (RUNNER_TERMINAL_STATES.includes(lifecycle.execution_state)) return false;
+  const progressedAt = Date.parse(lifecycle.progress_at ?? "") || 0;
+  return Date.now() - progressedAt < RUNNER_PROGRESS_GRACE_MS;
+}
+
+function findTerminalProjectionMismatches(lifecycles, sessionRows) {
+  const byId = new Map(sessionRows.map((row) => [row.session_id, row]));
+  const mismatches = [];
+  for (const lifecycle of lifecycles.values()) {
+    if (!["completed", "failed"].includes(lifecycle.execution_state)) continue;
+    const session = byId.get(lifecycle.session_id);
+    if (session && (session.status === "running" || session.has_open_owner)) {
+      mismatches.push({
+        sessionId: lifecycle.session_id,
+        runnerState: lifecycle.execution_state,
+        centralStatus: session.status,
+        hasOpenOwner: session.has_open_owner,
+      });
+    }
   }
   return mismatches;
 }

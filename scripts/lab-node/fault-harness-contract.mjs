@@ -90,8 +90,12 @@ export function buildInterventionPayload(deliveryId, text) {
 
 export function evaluateInvariantSnapshot(snapshot) {
   const violations = [];
-  if (snapshot.ownerlessRunning > 0) {
-    violations.push(invariant("ownerless_running", snapshot.ownerlessRunning));
+  // Every invariant now names what it found. A violation that cannot be named
+  // can only be compared by count, and counts cancel: an old one clearing as a
+  // new one arrives reads as no change at all.
+  const ownerless = asExamples(snapshot.ownerlessRunning);
+  if (ownerless.length > 0) {
+    violations.push(invariant("ownerless_running", ownerless.length, ownerless));
   }
   if (snapshot.terminalProjectionMismatches.length > 0) {
     violations.push(invariant(
@@ -100,17 +104,24 @@ export function evaluateInvariantSnapshot(snapshot) {
       snapshot.terminalProjectionMismatches,
     ));
   }
-  if (snapshot.overdueRetries > 0) {
-    violations.push(invariant("overdue_retry", snapshot.overdueRetries));
+  const overdueRetriesExamples = asExamples(snapshot.overdueRetries);
+  if (overdueRetriesExamples.length > 0) {
+    violations.push(invariant("overdue_retry", overdueRetriesExamples.length, overdueRetriesExamples));
   }
-  if (snapshot.ambiguousUncertain > 0) {
-    violations.push(invariant("ambiguous_uncertain", snapshot.ambiguousUncertain));
+  const ambiguousUncertainExamples = asExamples(snapshot.ambiguousUncertain);
+  if (ambiguousUncertainExamples.length > 0) {
+    violations.push(invariant("ambiguous_uncertain", ambiguousUncertainExamples.length, ambiguousUncertainExamples));
   }
-  if (snapshot.reasonlessDeadLetters > 0) {
-    violations.push(invariant("reasonless_dead_letter", snapshot.reasonlessDeadLetters));
+  const reasonlessDeadLettersExamples = asExamples(snapshot.reasonlessDeadLetters);
+  if (reasonlessDeadLettersExamples.length > 0) {
+    violations.push(invariant("reasonless_dead_letter", reasonlessDeadLettersExamples.length, reasonlessDeadLettersExamples));
   }
   if (snapshot.activationManifestMismatch) {
     violations.push(invariant("activation_manifest", 1));
+  }
+  const unanswered = snapshot.unansweredUserInput ?? [];
+  if (unanswered.length > 0) {
+    violations.push(invariant("unanswered_user_input", unanswered.length, unanswered));
   }
   if (snapshot.messageLosses.length > 0) {
     violations.push(invariant("user_message_loss", snapshot.messageLosses.length, snapshot.messageLosses));
@@ -118,17 +129,39 @@ export function evaluateInvariantSnapshot(snapshot) {
   return violations;
 }
 
+/**
+ * The violations present after a scenario that were not present before it.
+ *
+ * Identity, not arithmetic. Comparing counts hid a real failure whenever an
+ * old violation cleared while a new one appeared: the delta came out zero and
+ * the run passed while a session it had just broken sat in the list. Where a
+ * violation carries examples, each example is matched by its own identity;
+ * only count-only violations, which name nothing to match, still fall back to
+ * the difference in counts.
+ */
+/** Tolerates the old count-shaped snapshots so a stored sample still reads. */
+function asExamples(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "number" && value > 0) {
+    return Array.from({ length: value }, (_, index) => ({ unnamed: index }));
+  }
+  return [];
+}
+
 export function newInvariantViolations(before, after) {
   const baseline = new Map(before.map((violation) => [violation.invariant, violation]));
   return after.flatMap((violation) => {
     const previous = baseline.get(violation.invariant);
-    const delta = violation.count - (previous?.count ?? 0);
-    if (delta <= 0) return [];
+    const examples = violation.examples ?? [];
+    if (examples.length === 0) {
+      const delta = violation.count - (previous?.count ?? 0);
+      return delta > 0 ? [{ ...violation, count: delta, examples: [] }] : [];
+    }
     const previousExamples = new Set((previous?.examples ?? []).map(stableExampleKey));
-    const examples = (violation.examples ?? [])
-      .filter((example) => !previousExamples.has(stableExampleKey(example)))
-      .slice(0, delta);
-    return [{ ...violation, count: delta, examples }];
+    const fresh = examples.filter(
+      (example) => !previousExamples.has(stableExampleKey(example)),
+    );
+    return fresh.length > 0 ? [{ ...violation, count: fresh.length, examples: fresh }] : [];
   });
 }
 

@@ -173,3 +173,74 @@ test("evidence redaction removes bearer tokens and known lab secrets", () => {
   assert.doesNotMatch(redacted, /abc123|lab-secret/);
   assert.match(redacted, /<redacted>/);
 });
+
+test("an unanswered user turn is a violation even when delivery bookkeeping is clean", () => {
+  // The 260822 F9 reproduction produced exactly this snapshot: no dead
+  // letters, no overdue retries, nothing uncertain, and a user turn that
+  // never got a reply. The judge used to report it as healthy.
+  const clean = {
+    ownerlessRunning: 0,
+    terminalProjectionMismatches: [],
+    overdueRetries: 0,
+    ambiguousUncertain: 0,
+    reasonlessDeadLetters: 0,
+    activationManifestMismatch: false,
+    messageLosses: [],
+    unansweredUserInput: [
+      { session_id: "f2620ddb", status: "error", last_user_id: 27, last_assistant_id: 19 },
+    ],
+  };
+  const violations = evaluateInvariantSnapshot(clean);
+  assert.deepEqual(violations.map((violation) => violation.invariant), ["unanswered_user_input"]);
+  assert.equal(violations[0].count, 1);
+
+  const answered = { ...clean, unansweredUserInput: [] };
+  assert.deepEqual(evaluateInvariantSnapshot(answered), []);
+});
+
+test("a violation that clears while another appears is still reported", () => {
+  // Counting hid this: one old violation resolving as one new one arrives
+  // makes the delta zero, and the run passed while a session it had just
+  // broken sat in the list.
+  const before = [{
+    invariant: "unanswered_user_input",
+    count: 1,
+    examples: [{ session_id: "old-one" }],
+  }];
+  const after = [{
+    invariant: "unanswered_user_input",
+    count: 1,
+    examples: [{ session_id: "new-one" }],
+  }];
+  const fresh = newInvariantViolations(before, after);
+  assert.equal(fresh.length, 1);
+  assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
+});
+
+test("ownerless running sessions are named, so a swap is not a wash", () => {
+  // This used to be counted, and a count cannot tell an old violation clearing
+  // from a new one arriving -- the two cancelled and the run passed.
+  const before = evaluateInvariantSnapshot({
+    ownerlessRunning: [{ session_id: "old-one" }],
+    terminalProjectionMismatches: [],
+    overdueRetries: [],
+    ambiguousUncertain: [],
+    reasonlessDeadLetters: [],
+    activationManifestMismatch: false,
+    messageLosses: [],
+    unansweredUserInput: [],
+  });
+  const after = evaluateInvariantSnapshot({
+    ownerlessRunning: [{ session_id: "new-one" }],
+    terminalProjectionMismatches: [],
+    overdueRetries: [],
+    ambiguousUncertain: [],
+    reasonlessDeadLetters: [],
+    activationManifestMismatch: false,
+    messageLosses: [],
+    unansweredUserInput: [],
+  });
+  const fresh = newInvariantViolations(before, after);
+  assert.equal(fresh.length, 1);
+  assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
+});

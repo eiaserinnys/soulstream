@@ -343,7 +343,30 @@ export class TaskExecutor {
         await this._finalize(task);
       },
     );
+    return this.holdExecutionSlot(task, promise);
+  }
+
+  /**
+   * Holds the task's execution slot for exactly as long as the execution runs.
+   *
+   * Recovery, intervention routing and auto-resume all read a present
+   * `task.executionPromise` as "an execution is in flight". Nothing ever
+   * cleared it when one finished, so a settled promise went on standing in for
+   * a live execution: the offline replay of a finished runner turn was refused
+   * for as long as the task stayed in memory, and that turn's output never
+   * reached the user (260822 outage; lab scenario F9 logs
+   * `blockedBy=execution_promise` on the replay it refused).
+   *
+   * Waiters are unaffected. Every reader either awaits the slot to drain -- and
+   * an absent slot has already drained -- or asks whether an execution is
+   * running, which is now the question the field actually answers.
+   */
+  private holdExecutionSlot(task: Task, promise: Promise<void>): Promise<void> {
     task.executionPromise = promise;
+    const release = (): void => {
+      if (task.executionPromise === promise) task.executionPromise = undefined;
+    };
+    void promise.then(release, release);
     return promise;
   }
 
@@ -354,17 +377,40 @@ export class TaskExecutor {
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
   ): Promise<void> {
-    await this.executionOwnershipCoordinator.withSessionLease(
-      task.agentSessionId,
-      retainedRunner ? "attach" : "spawn",
-      async () => await this.startOwnedExecutionLocked(
-        task,
-        agent,
-        backend,
-        retainedRunner,
-        resolveActivation,
-      ),
-    );
+    // An attempt that lost to an owner it then proved dead has displaced the
+    // only thing in its way, and giving up there left the session waiting on a
+    // "durable delivery recovery" that had already consumed its message -- so
+    // nothing ever reserved again. In the lab the expiry and the surrender
+    // land in the same millisecond, and the session never speaks again.
+    //
+    // One retry is the whole fix: the corpse is now `failed`, and a second
+    // conflict means somebody genuinely holds the session.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.executionOwnershipCoordinator.withSessionLease(
+          task.agentSessionId,
+          retainedRunner ? "attach" : "spawn",
+          async () => await this.startOwnedExecutionLocked(
+            task,
+            agent,
+            backend,
+            retainedRunner,
+            resolveActivation,
+          ),
+        );
+        return;
+      } catch (error) {
+        if (
+          attempt >= 1
+          || !isExecutionOwnershipConflictError(error)
+          || !error.blockingOwnerDisplaced
+        ) throw error;
+        this.logger.info(
+          { sessionId: task.agentSessionId, phase: error.phase },
+          "retrying the execution reservation that displaced a dead owner",
+        );
+      }
+    }
   }
 
   private async startOwnedExecutionLocked(
@@ -593,7 +639,7 @@ export class TaskExecutor {
         );
         if (outcome === "expired") {
           this.executionOwnershipBackoff?.clear(task.agentSessionId);
-          error.retryImmediately();
+          error.displaceBlockingOwner();
         }
       }
     } catch (failureError) {
@@ -687,7 +733,7 @@ export class TaskExecutor {
         await this._finalize(task);
       },
     );
-    task.executionPromise = promise;
+    this.holdExecutionSlot(task, promise);
   }
 
   /** Reattaches host-side consumption to an execution already owned by a runner child. */
@@ -706,8 +752,7 @@ export class TaskExecutor {
         const describeHost = this.runnerProcessFactory.describe;
         if (!describeHost) throw new Error("Runner process manifest descriptor unavailable");
         return describeHost(agent).then((hostDescriptor) => {
-          if (hostDescriptor.manifestId !== manifestId
-            || hostDescriptor.runtimeEnvIdentity !== runnerRuntimeEnvIdentity) {
+          if (!releaseIdentityMatches(hostDescriptor, manifestId, runnerRuntimeEnvIdentity)) {
             throw new Error(
               "runner adoption release identity mismatch: "
               + `runner manifest=${manifestId} env=${runnerRuntimeEnvIdentity}; `
@@ -768,7 +813,7 @@ export class TaskExecutor {
         mode === "adopt",
       );
     })();
-    task.executionPromise = promise;
+    this.holdExecutionSlot(task, promise);
     return promise;
   }
 
@@ -912,7 +957,7 @@ export class TaskExecutor {
         throw error;
       }
     })();
-    task.executionPromise = promise;
+    this.holdExecutionSlot(task, promise);
     return promise;
   }
 
@@ -937,7 +982,45 @@ export class TaskExecutor {
       mode,
       config.releaseManifestId ?? config.codeSha,
       config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
-    );
+    ).catch(async (error: unknown) => {
+      await this.releaseUnadoptedRunner(task, runner, config.sessionId);
+      throw error;
+    });
+  }
+
+  /**
+   * Releases a recovery runner handle that never became the task's execution.
+   *
+   * `recover()` builds a dispatcher before anything has decided the adoption is
+   * allowed, and that dispatcher registers the session's durable event stream
+   * on the shared mux straight away. When the release identity gate then
+   * rejects the adoption, no one holds a reference to that dispatcher any
+   * more: `task.runner` was never assigned, so no later cleanup can reach it.
+   * The stream registration outlives the attempt, the next dispatcher for the
+   * same session fails to register at all, and the session goes on to accept a
+   * user turn that it can never answer -- one user message, no assistant reply
+   * (260822 outage; lab scenario F9).
+   *
+   * Only the registration is given back. The child process keeps running and,
+   * critically, keeps its host request channel: a runner mid-tool is waiting
+   * on a host request, and aborting that leaves the tool without a result --
+   * the turn then never finishes and its output never reaches the user (lab
+   * F9 regression, old turn stuck at tool_start with no tool_result).
+   */
+  private async releaseUnadoptedRunner(
+    task: Task,
+    runner: TaskRunnerRuntime,
+    sessionId: string,
+  ): Promise<void> {
+    if (task.runner === runner) return;
+    try {
+      await runner.dispatcher.releaseEventStreamRegistration?.();
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId },
+        "unadopted runner event stream release failed; the stream may stay registered",
+      );
+    }
   }
 
   restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
@@ -1638,4 +1721,13 @@ function resolveFollowupStallReason(
 
 function formatErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function releaseIdentityMatches(
+  hostDescriptor: { manifestId: string; runtimeEnvIdentity: string },
+  manifestId: string,
+  runtimeEnvIdentity: string,
+): boolean {
+  return hostDescriptor.manifestId === manifestId
+    && hostDescriptor.runtimeEnvIdentity === runtimeEnvIdentity;
 }

@@ -76,8 +76,25 @@ export class ExecutionOwnershipConflictError extends Error {
     this.name = "ExecutionOwnershipConflictError";
   }
 
+  /** True once the owner that beat this attempt was proven dead and displaced. */
+  blockingOwnerDisplaced = false;
+
   retryImmediately(now = new Date()): void {
     this.retryAt = now.toISOString();
+  }
+
+  /**
+   * Records that the owner standing in this attempt's way is gone.
+   *
+   * Losing to a live owner and losing to a corpse are different outcomes, and
+   * only the caller that displaced the corpse knows which happened. Without
+   * the distinction the attempt gave up identically in both cases, so a
+   * session whose dead owner had just been expired still waited for someone
+   * else to reserve -- and nobody did (260822).
+   */
+  displaceBlockingOwner(now = new Date()): void {
+    this.retryImmediately(now);
+    this.blockingOwnerDisplaced = true;
   }
 }
 

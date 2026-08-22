@@ -2302,6 +2302,112 @@ describe("TaskExecutor runner process boundary", () => {
     expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
   });
 
+  it("adopt를 거부해도 구 러너의 host channel은 살려 두고 stream 등록만 돌려준다", async () => {
+    // The rejected adoption owns one thing: the durable event stream entry its
+    // dispatcher registered. The IPC connection and in-flight host requests
+    // belong to the runner, which is mid-tool and waiting on one of them.
+    // Closing those left the tool without a result, so the turn never finished
+    // and its output never reached the user (260822; lab F9 old turn stuck at
+    // tool_start). This contract is why that cannot come back.
+    const mocks = makeMocks();
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+    });
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-host",
+      runtimeEnvIdentity: "env-host",
+    }));
+    processFactory.recover = vi.fn(() => runner);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const task = makeTask();
+
+    await expect(executor.recoverRegisteredRunner(
+      task,
+      {
+        sessionId: task.agentSessionId,
+        agent,
+        releaseManifestId: "release-runner",
+        runtimeEnvIdentity: "env-runner",
+        codeSha: "sha-runner",
+      } as never,
+      "execute-old",
+      "adopt",
+    )).rejects.toThrow("runner adoption release identity mismatch");
+
+    expect(dispatcher.releaseEventStreamRegistration).toHaveBeenCalledTimes(1);
+    expect(dispatcher.detachHost).not.toHaveBeenCalled();
+    expect(dispatcher.close).not.toHaveBeenCalled();
+  });
+
+  it("실행이 끝나면 성공이든 소유권 거부든 execution slot을 비운다", async () => {
+    // Recovery, intervention routing and auto-resume all read a present
+    // `executionPromise` as "an execution is in flight". A settled one left
+    // behind refused the offline replay of a finished turn for three hours
+    // (260822) and turned every later message into a queue-only intervention.
+    const mocks = makeMocks();
+    const { runner } = makeRunnerProcessRuntime([]);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecutionWithRunner(task, agent, runner);
+    expect(task.executionPromise).toBeDefined();
+    await task.executionPromise;
+    expect(task.executionPromise).toBeUndefined();
+
+    // The ownership rejection path is the one that mattered: it returns early
+    // on purpose so durable delivery recovery can take over, so nothing
+    // finalizes the task and nothing else would clear the slot.
+    const rejectingMocks = makeMocks();
+    Object.assign(rejectingMocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+    });
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => 0,
+    });
+    backoff.observeConflict("sess-1", new Date(60_000).toISOString());
+    const rejectingExecutor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      rejectingMocks.db,
+      rejectingMocks.persistence,
+      rejectingMocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      backoff,
+    );
+    const rejectedTask = makeTask();
+    await rejectingExecutor.startExecution(rejectedTask, agent);
+    expect(rejectedTask.executionPromise).toBeUndefined();
+  });
+
   it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {
     const mocks = makeMocks();
     const transition = (status: "initializing" | "running" | "completed") => ({
@@ -2687,6 +2793,7 @@ function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
     interrupt: vi.fn(async () => true),
     close: vi.fn(async () => {}),
     detachHost: vi.fn(async () => {}),
+    releaseEventStreamRegistration: vi.fn(async () => {}),
     sendControlFrame: vi.fn(async () => true),
     requestContext: vi.fn(),
     waitForSessionAck: vi.fn(async () => 12),

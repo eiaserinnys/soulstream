@@ -127,7 +127,7 @@ export class RunnerRecoveryCoordinator {
         }
       },
       recoverOffline: async (registration, task) =>
-        await this.recoverRegistered(registration, task, "offline"),
+        (await this.recoverRegistered(registration, task, "offline")).task,
       resumeReplacement: async (task, message, config) =>
         await options.taskManager.markRunnerFailureAndResume(
           task,
@@ -369,7 +369,7 @@ export class RunnerRecoveryCoordinator {
         terminate: async (owned) => await this.registrationControl.terminate(owned),
         invalidate: async (owned) => await this.registrationControl.invalidate(owned),
         recoverOffline: async (owned, recoveredTask) =>
-          await this.recoverRegistered(owned, recoveredTask, "offline"),
+          (await this.recoverRegistered(owned, recoveredTask, "offline")).task,
         resumeReplacement: async (recoveredTask, message, config) =>
           await this.options.taskManager.markRunnerFailureAndResume(
             recoveredTask,
@@ -408,8 +408,75 @@ export class RunnerRecoveryCoordinator {
       registration: RunnerRegistration,
     ) => Promise<RunnerRegistration>,
     adoptionDisposition?: RunnerAdoptionDisposition,
-  ): Promise<Task> {
-    if (task.runner || task.executionPromise) return task;
+  ): Promise<{ task: Task; replayed: boolean }> {
+    // An offline recovery is only reached when the registration on disk says
+    // this runner finished. The host is not always told: the dispatcher stays
+    // open, holding the task, delivering nothing, and every replay after it is
+    // refused against a runner that has nothing left to run. Measured, that is
+    // thirteen skips at fifteen seconds each before the runner process happens
+    // to exit -- and when it never exits, forever (260822).
+    //
+    // Detaching here cannot starve a turn: a terminal lifecycle means the turn
+    // is over, and the frames it has left are durable in the runner's own
+    // outbox, which is what the offline replay reads. That is the difference
+    // from `detachHost` on a runner still working, which stranded a live tool.
+    if (mode === "offline" && task.runner) {
+      this.options.logger.warn(
+        {
+          sessionId: registration.config.sessionId,
+          runnerDispatcher: task.runner.dispatcher.dispatcherId?.(),
+          runnerDispatcherClosed: task.runner.dispatcher.isClosed?.(),
+        },
+        "detaching a finished runner so its own replay can run",
+      );
+      const finished = task.runner;
+      task.runner = undefined;
+      task.runnerRetainedForClaudeBackground = undefined;
+      // Letting go of the handle is only half of it. `detachHost` releases the
+      // host's resources but never settles the execution it was consuming, so
+      // the promise stays pending forever and the slot is never cleared -- the
+      // skip simply changes from `runner` to `execution_promise` and the same
+      // thirteen scans go by. Shutdown already states the whole gesture:
+      // detach, drop the runner, drop the execution (task_lifecycle_route).
+      task.executionPromise = undefined;
+      await finished.dispatcher.detachHost().catch((error: unknown) => {
+        this.options.logger.warn(
+          { err: error, sessionId: registration.config.sessionId },
+          "finished runner host detach failed before replay",
+        );
+      });
+    }
+    if (task.runner?.dispatcher.isClosed?.() === true) {
+      this.options.logger.warn(
+        { sessionId: registration.config.sessionId, mode },
+        "releasing a runner the host has given up so recovery can take over",
+      );
+      task.runner = undefined;
+      task.runnerRetainedForClaudeBackground = undefined;
+    }
+    if (task.runner || task.executionPromise) {
+      // This guard returned in silence for three hours during the 260822
+      // outage: a settled execution promise left behind by a failed ownership
+      // reservation reads exactly like a live execution, so every later scan
+      // skipped the offline replay without saying so. An offline replay that
+      // cannot run is a stranded terminal fact, never routine.
+      this.options.logger[mode === "offline" ? "warn" : "info"](
+        {
+          sessionId: registration.config.sessionId,
+          mode,
+          blockedBy: task.runner ? "runner" : "execution_promise",
+          taskStatus: task.status,
+          // Which dispatcher, and whether it has already given up. A session
+          // can hold one while another for the same session is the one whose
+          // reconnect budget ran out, and the two are indistinguishable
+          // without saying so.
+          runnerDispatcher: task.runner?.dispatcher.dispatcherId?.(),
+          runnerDispatcherClosed: task.runner?.dispatcher.isClosed?.(),
+        },
+        "registered runner recovery skipped because the task still holds an execution",
+      );
+      return { task, replayed: false };
+    }
     if (prepareRegistrationAfterTaskGuard) {
       registration = await prepareRegistrationAfterTaskGuard(registration);
     }
@@ -444,7 +511,7 @@ export class RunnerRecoveryCoordinator {
         );
       });
     }
-    return task;
+    return { task, replayed: true };
   }
 
   private async reapAndResume(
@@ -481,13 +548,13 @@ export class RunnerRecoveryCoordinator {
       disposition,
       task,
       recoverAdopt: async (ownedRegistration, ownedTask, adoptionDisposition) =>
-        await this.recoverRegistered(
+        (await this.recoverRegistered(
           ownedRegistration,
           ownedTask,
           "adopt",
           undefined,
           adoptionDisposition,
-        ),
+        )).task,
       recoverOffline: async (ownedRegistration, ownedTask, prepare) =>
         await this.recoverRegistered(ownedRegistration, ownedTask, "offline", prepare),
       terminate: async (ownedRegistration) =>
