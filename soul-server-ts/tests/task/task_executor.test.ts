@@ -16,6 +16,8 @@ import {
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
+import { RunnerReleaseIdentityMismatchError } from
+  "../../src/runner/runner_adoption_error.js";
 import { RunnerOrphanedSpawnError } from
   "../../src/runner/runner_process_dispatcher.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
@@ -2286,7 +2288,7 @@ describe("TaskExecutor runner process boundary", () => {
       processFactory,
     );
 
-    await expect(executor.recoverRunnerExecution(
+    const error = await executor.recoverRunnerExecution(
       makeTask(),
       agent,
       runner,
@@ -2294,9 +2296,16 @@ describe("TaskExecutor runner process boundary", () => {
       "adopt",
       "release-a",
       "env-a",
-    )).rejects.toThrow(
-      "runner adoption release identity mismatch: runner manifest=release-a env=env-a; host manifest=release-b env=env-b",
-    );
+    ).catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(RunnerReleaseIdentityMismatchError);
+    expect(error).toMatchObject({
+      runnerManifestId: "release-a",
+      runnerRuntimeEnvIdentity: "env-a",
+      hostManifestId: "release-b",
+      hostRuntimeEnvIdentity: "env-b",
+      message: "runner adoption release identity mismatch: runner manifest=release-a env=env-a; host manifest=release-b env=env-b",
+    });
 
     expect(processFactory.describe).toHaveBeenCalledWith(agent);
     expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();

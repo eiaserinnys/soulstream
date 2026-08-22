@@ -37,6 +37,7 @@ import {
 } from "../runner/task_runner_runtime.js";
 import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
+import { RunnerReleaseIdentityMismatchError } from "../runner/runner_adoption_error.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { inspectProcessIdentity } from "../runner/runner_process_lock.js";
@@ -753,11 +754,12 @@ export class TaskExecutor {
         if (!describeHost) throw new Error("Runner process manifest descriptor unavailable");
         return describeHost(agent).then((hostDescriptor) => {
           if (!releaseIdentityMatches(hostDescriptor, manifestId, runnerRuntimeEnvIdentity)) {
-            throw new Error(
-              "runner adoption release identity mismatch: "
-              + `runner manifest=${manifestId} env=${runnerRuntimeEnvIdentity}; `
-              + `host manifest=${hostDescriptor.manifestId} env=${hostDescriptor.runtimeEnvIdentity}`,
-            );
+            throw new RunnerReleaseIdentityMismatchError({
+              runnerManifestId: manifestId,
+              runnerRuntimeEnvIdentity,
+              hostManifestId: hostDescriptor.manifestId,
+              hostRuntimeEnvIdentity: hostDescriptor.runtimeEnvIdentity,
+            });
           }
           return this.recoverOwnedRunnerExecution(
             task,
@@ -966,6 +968,7 @@ export class TaskExecutor {
     config: RunnerChildConfig,
     commandId: string | undefined,
     mode: "adopt" | "replay" | "offline",
+    onAttemptCreated?: (runner: TaskRunnerRuntime) => void,
   ): Promise<void> {
     const runner = this.runnerProcessFactory?.recover?.(
       task,
@@ -974,6 +977,7 @@ export class TaskExecutor {
       mode,
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
+    onAttemptCreated?.(runner);
     return this.recoverRunnerExecution(
       task,
       config.agent,

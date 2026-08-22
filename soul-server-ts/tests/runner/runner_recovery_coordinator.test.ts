@@ -6,6 +6,7 @@ import {
 } from "../../src/runner/runner_recovery_coordinator.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { RunnerReleaseIdentityMismatchError } from "../../src/runner/runner_adoption_error.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -48,6 +49,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       expect.anything(),
       "offline",
+      expect.any(Function),
     );
   });
 
@@ -74,6 +76,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       expect.anything(),
       "offline",
+      expect.any(Function),
     );
   });
 
@@ -94,6 +97,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "adopt",
+      expect.any(Function),
     );
     expect(subject.logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -119,6 +123,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       undefined,
       "adopt",
+      expect.any(Function),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -133,6 +138,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "adopt",
+      expect.any(Function),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -301,9 +307,16 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const socketError = runnerSocketMissingError();
     const failedRunner = failedRecoveryRunner();
     const restartRegisteredRunner = vi.fn();
-    const recoverRegisteredRunner = vi.fn((recovered: Task, _config, _commandId, mode) => {
+    const recoverRegisteredRunner = vi.fn((
+      recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
       if (mode === "offline") return Promise.resolve();
       const failure = Promise.reject(socketError);
+      onAttemptCreated?.(failedRunner.runner);
       recovered.runner = failedRunner.runner;
       recovered.executionPromise = failure;
       return failure;
@@ -341,6 +354,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
       recoverRegisteredRunner.mock.invocationCallOrder[1]!,
@@ -352,9 +366,16 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const socketError = runnerSocketMissingError();
     const failedRunner = failedRecoveryRunner();
     const restartRegisteredRunner = vi.fn();
-    const recoverRegisteredRunner = vi.fn((recovered: Task, _config, _commandId, mode) => {
+    const recoverRegisteredRunner = vi.fn((
+      recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
       if (mode === "offline") return Promise.resolve();
       const failure = Promise.reject(socketError);
+      onAttemptCreated?.(failedRunner.runner);
       recovered.runner = failedRunner.runner;
       recovered.executionPromise = failure;
       return failure;
@@ -386,6 +407,92 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
     expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
       recoverRegisteredRunner.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("reaps and replaces a live runner whose release identity the host cannot adopt", async () => {
+    const failedRunner = failedRecoveryRunner();
+    const restartRegisteredRunner = vi.fn();
+    const mismatch = runnerReleaseIdentityMismatchError();
+    const recoverRegisteredRunner = vi.fn((
+      _recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      if (mode === "offline") return Promise.resolve();
+      onAttemptCreated?.(failedRunner.runner);
+      return Promise.reject(mismatch);
+    });
+    const current = registration({ lifecycleState: "running" });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
+      refreshRegistration: vi.fn(async () => current),
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.terminate).toHaveBeenCalledWith(
+      expect.anything(),
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.markReaped).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      {
+        code: "release_superseded",
+        message: "runner release identity is incompatible with the current host release",
+      },
+    );
+    expect(recoverRegisteredRunner).toHaveBeenNthCalledWith(
+      2,
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "offline",
+      expect.any(Function),
+    );
+    expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce();
+    expect(restartRegisteredRunner).toHaveBeenCalledOnce();
+    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
+    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
+      subject.markReaped.mock.invocationCallOrder[0]!,
+    );
+    expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
+      recoverRegisteredRunner.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("releases the attempt runner even when release-superseded terminalization fails", async () => {
+    const failedRunner = failedRecoveryRunner();
+    const recoverRegisteredRunner = vi.fn((
+      _recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      _mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      onAttemptCreated?.(failedRunner.runner);
+      return Promise.reject(runnerReleaseIdentityMismatchError());
+    });
+    const current = registration({ lifecycleState: "running" });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
+      refreshRegistration: vi.fn(async () => current),
+      markReaped: vi.fn(async () => {
+        throw new Error("central mark failed");
+      }),
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
+    expect(subject.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a" }),
+      "runner recovery action failed",
     );
   });
 
@@ -428,7 +535,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const adoptionFailure = new Promise<void>((_resolve, reject) => {
       rejectAdoption = reject;
     });
-    const recoverRegisteredRunner = vi.fn((recovered: Task) => {
+    const recoverRegisteredRunner = vi.fn((
+      recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      _mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      onAttemptCreated?.(failedRunner.runner);
       recovered.runner = failedRunner.runner;
       recovered.executionPromise = adoptionFailure;
       return adoptionFailure;
@@ -451,10 +565,55 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.task.runner).toBe(newerRunner.runner);
     expect(subject.task.executionPromise).toBe(newerExecution);
     expect(refreshRegistration).not.toHaveBeenCalled();
-    expect(failedRunner.detachHost).not.toHaveBeenCalled();
+    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.markReaped).not.toHaveBeenCalled();
     expect(restartRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("backs off a generic adoption stand-down without delaying a later dead-runner reap", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const current = registration({ lifecycleState: "running" });
+    const failedRunner = failedRecoveryRunner();
+    const recoverRegisteredRunner = vi.fn((
+      _recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      if (mode === "offline") return Promise.resolve();
+      onAttemptCreated?.(failedRunner.runner);
+      return Promise.reject(new Error("transient adoption failure"));
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      now: () => nowMs,
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
+      refreshRegistration: vi.fn(async () => current),
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
+
+    nowMs += 15_000;
+    await subject.coordinator.scanOnce();
+    expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+
+    current.pidAlive = false;
+    nowMs += 15_000;
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.markReaped).toHaveBeenCalledOnce();
+    expect(recoverRegisteredRunner).toHaveBeenLastCalledWith(
+      subject.task,
+      expect.anything(),
+      "execute-a",
+      "offline",
+      expect.any(Function),
+    );
   });
 
   it("runner death while the server lives drains offline, marks error, and auto-resumes", async () => {
@@ -468,6 +627,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
@@ -501,6 +661,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -523,6 +684,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -553,6 +715,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.terminate).toHaveBeenCalledOnce();
 
@@ -584,6 +747,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
     expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
@@ -644,6 +808,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     finishRecovery();
     await subject.coordinator.stop();
@@ -764,6 +929,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.markReaped).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -784,6 +950,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "offline",
+      expect.any(Function),
     );
     expect(subject.markRunnerFailureAndResume).toHaveBeenCalledWith(
       subject.task,
@@ -1212,6 +1379,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "execute-a",
       "adopt",
+      expect.any(Function),
     );
     expect(subject.logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1697,6 +1865,15 @@ function failureContext(message: string) {
 function runnerSocketMissingError(): Error {
   return new Error("Runner socket unavailable after 10000ms deadline", {
     cause: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
+  });
+}
+
+function runnerReleaseIdentityMismatchError(): RunnerReleaseIdentityMismatchError {
+  return new RunnerReleaseIdentityMismatchError({
+    runnerManifestId: "release-old",
+    runnerRuntimeEnvIdentity: "env-old",
+    hostManifestId: "release-current",
+    hostRuntimeEnvIdentity: "env-current",
   });
 }
 
