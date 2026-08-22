@@ -12,6 +12,7 @@ import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type { RateLimitTerminationState } from
   "./claude_sdk_rate_limit_stop_failure.js";
+import type { ClaudeForegroundPhase } from "./claude_session_runtime.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
 export type ClaudeRuntimeEventSink = (
@@ -52,6 +53,23 @@ export function describeResultProvenance(
     originKind: asString(asRecord(message.origin)?.kind) ?? null,
     numTurns: message.num_turns ?? null,
   };
+}
+
+export function provableTurnResultOwner(
+  phase: ClaudeForegroundPhase,
+  active: ActiveForeground | null,
+  message: Record<string, unknown>,
+  logger: Logger,
+): string | null {
+  // Bare Results also terminate SDK-owned notification turns. Only the abort
+  // Result of our sole interrupting foreground can inherit local ownership.
+  if (phase !== "interrupting" || !active) return null;
+  if (asString(asRecord(message.origin)?.kind) === "task-notification") return null;
+  logger.info(
+    { activeForegroundUuid: active.uuid, resultUuid: asString(message.uuid) },
+    "Correlating Claude Result without user_message_uuid to the interrupted turn",
+  );
+  return active.uuid;
 }
 
 export function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {

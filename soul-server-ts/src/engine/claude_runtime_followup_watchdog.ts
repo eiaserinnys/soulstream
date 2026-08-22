@@ -26,6 +26,10 @@ interface ArmedWatchdog {
 /** Bounds runtime-followup-only turns without changing the normal turn deadline. */
 export class ClaudeRuntimeFollowupWatchdog {
   private armed: ArmedWatchdog | null = null;
+  // The SDK may start a task-notification turn before Soulstream arms its follow-up.
+  // Keep the observed SDK owner across arm() so later progress stays attributable.
+  private observedTurnInputUuid: string | null = null;
+  private observedTurnOriginKind: string | null = null;
 
   constructor(private readonly config: WatchdogConfig) {}
 
@@ -44,9 +48,39 @@ export class ClaudeRuntimeFollowupWatchdog {
     };
   }
 
+  observeTurnInput(input: { uuid: string; originKind: string }): void {
+    this.observedTurnInputUuid = input.uuid;
+    this.observedTurnOriginKind = input.originKind;
+  }
+
+  observeTurnResult(result: {
+    inputUuid: string | undefined;
+    originKind: string | undefined;
+  }): void {
+    const matchesInput = result.inputUuid === this.observedTurnInputUuid;
+    const matchesOrigin = result.originKind === "task-notification"
+      && result.originKind === this.observedTurnOriginKind;
+    if (!matchesInput && !matchesOrigin) return;
+    this.observedTurnInputUuid = null;
+    this.observedTurnOriginKind = null;
+  }
+
+  observesTurnOrigin(uuid: string, originKind: string): boolean {
+    const armed = this.armed;
+    return armed?.uuid === uuid && this.observedTurnOriginKind === originKind;
+  }
+
+  observesForeignTurn(uuid: string): boolean {
+    const armed = this.armed;
+    return armed?.uuid === uuid
+      && this.observedTurnInputUuid !== null
+      && this.observedTurnInputUuid !== uuid;
+  }
+
   observeProgress(uuid: string, event: ClaudeClientEvent): void {
     const armed = this.armed;
     if (!armed || armed.uuid !== uuid || !armed.noOutputTimer) return;
+    if (this.observedTurnInputUuid !== uuid) return;
     if (!isForegroundResponseProgress(event)) return;
     clearTimeout(armed.noOutputTimer);
     armed.noOutputTimer = null;
