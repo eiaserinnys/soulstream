@@ -409,6 +409,19 @@ export class RunnerRecoveryCoordinator {
     ) => Promise<RunnerRegistration>,
     adoptionDisposition?: RunnerAdoptionDisposition,
   ): Promise<{ task: Task; replayed: boolean }> {
+    // A runner the host has already abandoned is not an execution. The
+    // dispatcher says so plainly once its reconnect budget is spent, but
+    // nothing was asking, so the handle stayed attached and every offline
+    // replay after it was refused -- the runner's finished output never
+    // reached the session, which stayed `running` for good.
+    if (task.runner?.dispatcher.isClosed?.() === true) {
+      this.options.logger.warn(
+        { sessionId: registration.config.sessionId, mode },
+        "releasing a runner the host has given up so recovery can take over",
+      );
+      task.runner = undefined;
+      task.runnerRetainedForClaudeBackground = undefined;
+    }
     if (task.runner || task.executionPromise) {
       // This guard returned in silence for three hours during the 260822
       // outage: a settled execution promise left behind by a failed ownership

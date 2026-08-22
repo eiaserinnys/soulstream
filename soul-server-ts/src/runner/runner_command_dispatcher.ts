@@ -45,6 +45,7 @@ export interface RunnerCommandDispatcher {
   close(): Promise<void>;
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
+  isClosed?(): boolean;
   sendControlFrame(frame: RunnerControlFrame): Promise<boolean>;
   requestContext(correlationId: string): {
     signal: AbortSignal;

@@ -328,6 +328,19 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
    * turn never finishes and its output never reaches the user. Releasing this
    * registration alone is what a rejected adoption actually owns.
    */
+  /**
+   * True once this host has given the runner up and will not talk to it again.
+   *
+   * Reconnect exhaustion announces that the execution "will be terminalized",
+   * but the only thing that carries that news out is `activeStream.fail`. With
+   * no active stream there is nothing to fail, so the task went on holding a
+   * runner the host had already abandoned and every later offline replay was
+   * refused against it.
+   */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
   async releaseEventStreamRegistration(): Promise<void> {
     // The flag has to be set before the await. An adoption can be rejected
     // before the pump has even started registering, and then there is nothing

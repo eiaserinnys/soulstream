@@ -13,6 +13,33 @@ import type { Task } from "../../src/task/task_models.js";
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+
+  it("호스트가 포기한 러너를 붙들고 offline replay를 막지 않는다", async () => {
+    // Reconnect exhaustion announces that the execution "will be terminalized",
+    // but the only thing carrying that out is `activeStream.fail`. With no
+    // active stream nothing propagated, the task kept the runner, and every
+    // offline replay after it was refused -- the finished runner's output never
+    // reached the session, which stayed running for good (260822 lab F9).
+    const stranded = registration({ lifecycleState: "completed", pidAlive: false });
+    const strandedTask = task("session-a");
+    strandedTask.runner = abandonedRunner();
+    const subject = makeSubject([stranded], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(strandedTask.runner).toBeUndefined();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-a" }),
+      expect.anything(),
+      expect.anything(),
+      "offline",
+    );
+  });
+
   it("isolates a malformed registration classification and recovers later sessions", async () => {
     const malformed = registration({
       sessionId: "session-malformed",
@@ -1589,6 +1616,17 @@ function makeSubject(
     invalidateRegistration,
     retireTerminalRegistration,
     logger,
+  };
+}
+
+function abandonedRunner(): NonNullable<Task["runner"]> {
+  return {
+    dispatcher: {
+      detachHost: vi.fn(async () => {}),
+      isClosed: () => true,
+    } as unknown as NonNullable<Task["runner"]>["dispatcher"],
+    engine: {} as NonNullable<Task["runner"]>["engine"],
+    eventPersistence: "runner",
   };
 }
 
