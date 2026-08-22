@@ -196,15 +196,24 @@ async function sampleInvariants(runtime, messageLosses, since) {
       )
     )
   `);
-  const terminalProjectionMismatches = await findTerminalProjectionMismatches(
-    runtime.runnerStateDirectory,
+  const lifecycles = await readRunnerLifecycles(runtime.runnerStateDirectory);
+  const terminalProjectionMismatches = findTerminalProjectionMismatches(
+    lifecycles,
     database?.sessions ?? [],
+  );
+  // SQL can see that nothing has been written for a while; it cannot see that a
+  // runner is alive and working. A model turn or a Bash call may legitimately
+  // run past the quiet threshold, and reporting those as lost message would
+  // teach the next reader to distrust the judge -- at which point it may as
+  // well not exist. A session whose runner is still progressing is exempt.
+  const unansweredUserInput = (database?.unansweredUserInput ?? []).filter(
+    (row) => !runnerIsStillWorking(lifecycles.get(row.session_id)),
   );
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
     ownerlessRunning: database?.ownerlessRunning ?? 0,
-    unansweredUserInput: database?.unansweredUserInput ?? [],
+    unansweredUserInput,
     terminalProjectionMismatches,
     overdueRetries: database?.overdueRetries ?? 0,
     ambiguousUncertain: database?.ambiguousUncertain ?? 0,
@@ -230,11 +239,16 @@ function sqlTimestamp(value) {
   return `TIMESTAMPTZ '${value}'`;
 }
 
-async function findTerminalProjectionMismatches(runnerStateDirectory, sessionRows) {
-  const byId = new Map(sessionRows.map((row) => [row.session_id, row]));
-  const mismatches = [];
+const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
+const RUNNER_PROGRESS_GRACE_MS = 180_000;
+
+/** Reads every readable runner lifecycle, keyed by the session it belongs to. */
+async function readRunnerLifecycles(runnerStateDirectory) {
+  const lifecycles = new Map();
   let entries = [];
-  try { entries = await readdir(runnerStateDirectory, { withFileTypes: true }); } catch { return []; }
+  try {
+    entries = await readdir(runnerStateDirectory, { withFileTypes: true });
+  } catch { return lifecycles; }
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
     try {
@@ -242,17 +256,37 @@ async function findTerminalProjectionMismatches(runnerStateDirectory, sessionRow
         join(runnerStateDirectory, entry.name, "runner-lifecycle.json"),
         "utf8",
       ));
-      if (!["completed", "failed"].includes(lifecycle.execution_state)) continue;
-      const session = byId.get(lifecycle.session_id);
-      if (session && (session.status === "running" || session.has_open_owner)) {
-        mismatches.push({
-          sessionId: lifecycle.session_id,
-          runnerState: lifecycle.execution_state,
-          centralStatus: session.status,
-          hasOpenOwner: session.has_open_owner,
-        });
-      }
+      if (lifecycle?.session_id) lifecycles.set(lifecycle.session_id, lifecycle);
     } catch {}
+  }
+  return lifecycles;
+}
+
+/** A runner that has neither finished nor gone quiet is still owed its answer. */
+function runnerIsStillWorking(lifecycle) {
+  if (!lifecycle) return false;
+  if (RUNNER_TERMINAL_STATES.includes(lifecycle.execution_state)) return false;
+  const progressedAt = Math.max(
+    Date.parse(lifecycle.progress_at ?? "") || 0,
+    Date.parse(lifecycle.liveness_at ?? "") || 0,
+  );
+  return Date.now() - progressedAt < RUNNER_PROGRESS_GRACE_MS;
+}
+
+function findTerminalProjectionMismatches(lifecycles, sessionRows) {
+  const byId = new Map(sessionRows.map((row) => [row.session_id, row]));
+  const mismatches = [];
+  for (const lifecycle of lifecycles.values()) {
+    if (!["completed", "failed"].includes(lifecycle.execution_state)) continue;
+    const session = byId.get(lifecycle.session_id);
+    if (session && (session.status === "running" || session.has_open_owner)) {
+      mismatches.push({
+        sessionId: lifecycle.session_id,
+        runnerState: lifecycle.execution_state,
+        centralStatus: session.status,
+        hasOpenOwner: session.has_open_owner,
+      });
+    }
   }
   return mismatches;
 }

@@ -197,3 +197,29 @@ test("an unanswered user turn is a violation even when delivery bookkeeping is c
   const answered = { ...clean, unansweredUserInput: [] };
   assert.deepEqual(evaluateInvariantSnapshot(answered), []);
 });
+
+test("a violation that clears while another appears is still reported", () => {
+  // Counting hid this: one old violation resolving as one new one arrives
+  // makes the delta zero, and the run passed while a session it had just
+  // broken sat in the list.
+  const before = [{
+    invariant: "unanswered_user_input",
+    count: 1,
+    examples: [{ session_id: "old-one" }],
+  }];
+  const after = [{
+    invariant: "unanswered_user_input",
+    count: 1,
+    examples: [{ session_id: "new-one" }],
+  }];
+  const fresh = newInvariantViolations(before, after);
+  assert.equal(fresh.length, 1);
+  assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
+});
+
+test("a count-only violation still compares by count", () => {
+  const before = [{ invariant: "ownerless_running", count: 1 }];
+  assert.deepEqual(newInvariantViolations(before, [{ invariant: "ownerless_running", count: 1 }]), []);
+  const grown = newInvariantViolations(before, [{ invariant: "ownerless_running", count: 3 }]);
+  assert.equal(grown[0].count, 2);
+});

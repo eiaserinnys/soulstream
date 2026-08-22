@@ -122,17 +122,30 @@ export function evaluateInvariantSnapshot(snapshot) {
   return violations;
 }
 
+/**
+ * The violations present after a scenario that were not present before it.
+ *
+ * Identity, not arithmetic. Comparing counts hid a real failure whenever an
+ * old violation cleared while a new one appeared: the delta came out zero and
+ * the run passed while a session it had just broken sat in the list. Where a
+ * violation carries examples, each example is matched by its own identity;
+ * only count-only violations, which name nothing to match, still fall back to
+ * the difference in counts.
+ */
 export function newInvariantViolations(before, after) {
   const baseline = new Map(before.map((violation) => [violation.invariant, violation]));
   return after.flatMap((violation) => {
     const previous = baseline.get(violation.invariant);
-    const delta = violation.count - (previous?.count ?? 0);
-    if (delta <= 0) return [];
+    const examples = violation.examples ?? [];
+    if (examples.length === 0) {
+      const delta = violation.count - (previous?.count ?? 0);
+      return delta > 0 ? [{ ...violation, count: delta, examples: [] }] : [];
+    }
     const previousExamples = new Set((previous?.examples ?? []).map(stableExampleKey));
-    const examples = (violation.examples ?? [])
-      .filter((example) => !previousExamples.has(stableExampleKey(example)))
-      .slice(0, delta);
-    return [{ ...violation, count: delta, examples }];
+    const fresh = examples.filter(
+      (example) => !previousExamples.has(stableExampleKey(example)),
+    );
+    return fresh.length > 0 ? [{ ...violation, count: fresh.length, examples: fresh }] : [];
   });
 }
 

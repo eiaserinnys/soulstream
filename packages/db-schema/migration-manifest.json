@@ -72,6 +72,7 @@
     { "id": "068_execution_owner_recovery_singleflight.sql", "sha256": "a73bfcb03bd378e5fa48fa0c79487cdfd21b6537fab18ae01971abfa496f6a19", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "069_execution_reservation_lease_60s.sql", "sha256": "6dbb78ad71b40a98074204431af2a4e78abee8fcdc790d24ead92fbd7687bd70", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "070_release_manifest_activation_receipts.sql", "sha256": "18d0f33d18e25289b0b87d422e64747c741f007e0152c3298fafe46c26a40e45", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "071_execution_dead_owner_expiry.sql", "sha256": "7bcb74bb68d95ece7ba29e5240abd85caa111c819c802a59ddf2a255bc4f5176", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "071_execution_dead_owner_expiry.sql", "sha256": "7bcb74bb68d95ece7ba29e5240abd85caa111c819c802a59ddf2a255bc4f5176", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "072_owner_null_backfill_identity_guard.sql", "sha256": "f445fd51e8d37f8587b88e441acefaa09549d819071e75ca5d1de0737d3e5202", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }
