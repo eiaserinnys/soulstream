@@ -224,6 +224,21 @@ export async function sampleInvariants(runtime, since) {
         FROM session_deliveries
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
+      'strandedDeliveries', (
+        -- Handed over and never taken.
+        --
+        -- Found by running under load: a parent session died with a duplicate
+        -- durable event stream registration while a child's completion sat in
+        -- the delivered state, and it stayed there. Every delivery judge
+        -- missed it -- overdue_retry wants pending, ambiguous_uncertain wants
+        -- uncertain, reasonless_dead_letter wants dead_letter -- so the one
+        -- terminal-looking state that is not terminal had nobody watching it.
+        -- Two minutes is far past the seconds a real handover takes.
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
+        WHERE aggregate_state = 'delivered'
+          AND delivered_at < NOW() - INTERVAL '120 seconds'
+      ),
       'reasonlessDeadLetters', (
         SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
         FROM session_deliveries
@@ -286,6 +301,7 @@ export async function sampleInvariants(runtime, since) {
     overdueRetries: database?.overdueRetries ?? [],
     ambiguousUncertain: database?.ambiguousUncertain ?? [],
     reasonlessDeadLetters: database?.reasonlessDeadLetters ?? [],
+    strandedDeliveries: database?.strandedDeliveries ?? [],
     activationManifestMismatch: !receipt
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId

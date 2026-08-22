@@ -196,6 +196,24 @@ const MUTATIONS = [
     },
   },
   {
+    invariant: "stranded_delivery",
+    what: "a delivery handed over and never taken",
+    identity: (planted) => planted.deliveryId,
+    async inject(context) {
+      const deliveryId = context.id("stranded");
+      await context.insertDelivery(deliveryId, {
+        state: "delivered",
+        aggregateState: "delivered",
+        extraColumns: ", delivered_at",
+        extraValues: ", NOW() - INTERVAL '10 minutes'",
+      });
+      return { deliveryId };
+    },
+    async revert(context, planted) {
+      await context.sql(`DELETE FROM session_deliveries WHERE delivery_id = '${planted.deliveryId}'`);
+    },
+  },
+  {
     invariant: "activation_manifest",
     what: "the newest activation receipt naming a release the host is not running",
     async inject(context) {
