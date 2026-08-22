@@ -432,6 +432,13 @@ export class RunnerRecoveryCoordinator {
       const finished = task.runner;
       task.runner = undefined;
       task.runnerRetainedForClaudeBackground = undefined;
+      // Letting go of the handle is only half of it. `detachHost` releases the
+      // host's resources but never settles the execution it was consuming, so
+      // the promise stays pending forever and the slot is never cleared -- the
+      // skip simply changes from `runner` to `execution_promise` and the same
+      // thirteen scans go by. Shutdown already states the whole gesture:
+      // detach, drop the runner, drop the execution (task_lifecycle_route).
+      task.executionPromise = undefined;
       await finished.dispatcher.detachHost().catch((error: unknown) => {
         this.options.logger.warn(
           { err: error, sessionId: registration.config.sessionId },

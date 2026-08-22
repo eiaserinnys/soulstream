@@ -29,6 +29,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const strandedTask = task("session-a");
     const { runner, detachHost } = finishedRunner();
     strandedTask.runner = runner;
+    // A pending execution promise is the other half of the same hold: without
+    // it being dropped the skip only changes which field it names.
+    strandedTask.executionPromise = new Promise<void>(() => {});
     const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
@@ -39,6 +42,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     expect(detachHost).toHaveBeenCalledOnce();
     expect(strandedTask.runner).toBeUndefined();
+    expect(strandedTask.executionPromise).toBeUndefined();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       expect.objectContaining({ agentSessionId: "session-a" }),
       expect.anything(),
