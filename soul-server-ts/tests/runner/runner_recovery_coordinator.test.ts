@@ -606,7 +606,39 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
-  it("keeps the old runner host channel during generic stand-down and reaps it once dead", async () => {
+  it("keeps an unowned attempt host channel during generic stand-down without respawning", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const current = registration({ lifecycleState: "running" });
+    const failedRunner = failedRecoveryRunner();
+    const recoverRegisteredRunner = vi.fn((
+      _recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      if (mode === "offline") return Promise.resolve();
+      onAttemptCreated?.(failedRunner.runner);
+      return Promise.reject(new Error("transient adoption failure"));
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      now: () => nowMs,
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
+      refreshRegistration: vi.fn(async () => current),
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
+
+    nowMs += 15_000;
+    await subject.coordinator.scanOnce();
+    expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
+  });
+
+  it("keeps an attached attempt during stand-down and detaches it once the runner dies", async () => {
     let nowMs = RECOVERY_NOW_MS;
     const current = registration({ lifecycleState: "running" });
     const failedRunner = failedRecoveryRunner();
@@ -630,13 +662,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     await subject.coordinator.scanOnce();
     await subject.coordinator.waitForSettled();
-    expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
     expect(subject.task.runner).toBe(failedRunner.runner);
     expect(failedRunner.detachHost).not.toHaveBeenCalled();
-
-    nowMs += 15_000;
-    await subject.coordinator.scanOnce();
-    expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
 
     current.pidAlive = false;
     nowMs += 15_000;
