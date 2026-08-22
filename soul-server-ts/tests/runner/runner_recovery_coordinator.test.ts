@@ -410,7 +410,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("reaps and replaces a live runner whose release identity the host cannot adopt", async () => {
+  it("releases the attempt host channel only after superseded-release termination", async () => {
     const failedRunner = failedRecoveryRunner();
     const restartRegisteredRunner = vi.fn();
     const mismatch = runnerReleaseIdentityMismatchError();
@@ -458,6 +458,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(restartRegisteredRunner).toHaveBeenCalledOnce();
     expect(failedRunner.detachHost).toHaveBeenCalledOnce();
     expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
+      failedRunner.detachHost.mock.invocationCallOrder[0]!,
+    );
+    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
       subject.markReaped.mock.invocationCallOrder[0]!,
     );
     expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
@@ -494,6 +497,38 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.objectContaining({ sessionId: "session-a" }),
       "runner recovery action failed",
     );
+  });
+
+  it("keeps the attempt host channel when runner termination itself is uncertain", async () => {
+    const failedRunner = failedRecoveryRunner();
+    const recoverRegisteredRunner = vi.fn((
+      _recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      _mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      onAttemptCreated?.(failedRunner.runner);
+      return Promise.reject(runnerReleaseIdentityMismatchError());
+    });
+    const current = registration({ lifecycleState: "running" });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
+      refreshRegistration: vi.fn(async () => current),
+      spawner: {
+        terminate: vi.fn(async () => {
+          throw new Error("termination outcome unknown");
+        }),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration: vi.fn(async () => {}),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
+    expect(subject.markReaped).not.toHaveBeenCalled();
   });
 
   it("does not kill a live prebootstrap runner for a transient missing socket", async () => {
@@ -571,7 +606,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
-  it("backs off a generic adoption stand-down without delaying a later dead-runner reap", async () => {
+  it("keeps an unowned attempt host channel during generic stand-down without respawning", async () => {
     let nowMs = RECOVERY_NOW_MS;
     const current = registration({ lifecycleState: "running" });
     const failedRunner = failedRecoveryRunner();
@@ -595,11 +630,40 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.scanOnce();
     await subject.coordinator.waitForSettled();
     expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
-    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
 
     nowMs += 15_000;
     await subject.coordinator.scanOnce();
     expect(recoverRegisteredRunner).toHaveBeenCalledTimes(1);
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
+  });
+
+  it("keeps an attached attempt during stand-down and detaches it once the runner dies", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const current = registration({ lifecycleState: "running" });
+    const failedRunner = failedRecoveryRunner();
+    const recoverRegisteredRunner = vi.fn((
+      recovered: Task,
+      _config: unknown,
+      _commandId: unknown,
+      mode: string,
+      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
+    ) => {
+      if (mode === "offline") return Promise.resolve();
+      onAttemptCreated?.(failedRunner.runner);
+      recovered.runner = failedRunner.runner;
+      return Promise.reject(new Error("transient adoption failure"));
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      now: () => nowMs,
+      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
+      refreshRegistration: vi.fn(async () => current),
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(subject.task.runner).toBe(failedRunner.runner);
+    expect(failedRunner.detachHost).not.toHaveBeenCalled();
 
     current.pidAlive = false;
     nowMs += 15_000;
@@ -607,6 +671,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.waitForSettled();
 
     expect(subject.markReaped).toHaveBeenCalledOnce();
+    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
     expect(recoverRegisteredRunner).toHaveBeenLastCalledWith(
       subject.task,
       expect.anything(),
