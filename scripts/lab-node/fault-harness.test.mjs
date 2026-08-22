@@ -1,0 +1,175 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  SCENARIO_DEFINITIONS,
+  buildInterventionPayload,
+  countMatchingTimelineEvents,
+  evaluateInvariantSnapshot,
+  newInvariantViolations,
+  parseHarnessArguments,
+  redactEvidenceLine,
+  toggleReleaseGeneration,
+} from "./fault-harness-contract.mjs";
+
+test("assistant marker detection ignores the marker echoed by the user prompt", () => {
+  const timeline = {
+    messages: [
+      { event_type: "user_message", payload: { text: "Reply exactly MARKER." } },
+      { event_type: "assistant_message", payload: { content: "working" } },
+    ],
+  };
+  assert.equal(countMatchingTimelineEvents(timeline, "assistant_message", "MARKER"), 0);
+  timeline.messages.push({
+    event_type: "assistant_message",
+    payload: { content: "MARKER" },
+  });
+  assert.equal(countMatchingTimelineEvents(timeline, "assistant_message", "MARKER"), 1);
+});
+
+test("fault catalog is complete and F1 explicitly covers both host signals", () => {
+  assert.deepEqual(Object.keys(SCENARIO_DEFINITIONS), [
+    "F1",
+    "F11",
+    "F9",
+    "dead-owner",
+    "F7",
+  ]);
+  assert.deepEqual(SCENARIO_DEFINITIONS.F1.modes, ["SIGTERM", "SIGKILL"]);
+  for (const scenario of Object.values(SCENARIO_DEFINITIONS)) {
+    assert.ok(scenario.injection.length > 0);
+    assert.ok(scenario.expectedOutcome.length > 0);
+    assert.ok(scenario.verdict.length > 0);
+  }
+});
+
+test("traffic loop defaults are bounded and concurrency above two is rejected", () => {
+  assert.deepEqual(parseHarnessArguments(["cycle"]), {
+    command: "cycle",
+    concurrency: 1,
+    cycles: 1,
+    intervalSeconds: 300,
+  });
+  assert.deepEqual(
+    parseHarnessArguments([
+      "cycle",
+      "--concurrency",
+      "2",
+      "--cycles",
+      "3",
+      "--interval-seconds",
+      "0",
+    ]),
+    { command: "cycle", concurrency: 2, cycles: 3, intervalSeconds: 0 },
+  );
+  assert.throws(
+    () => parseHarnessArguments(["cycle", "--concurrency", "3"]),
+    /concurrency must be 1 or 2/,
+  );
+});
+
+test("scenario CLI accepts only the five canonical ids", () => {
+  assert.deepEqual(parseHarnessArguments(["scenario", "F9"]), {
+    command: "scenario",
+    scenarioId: "F9",
+  });
+  assert.deepEqual(parseHarnessArguments(["all"]), { command: "all" });
+  assert.throws(
+    () => parseHarnessArguments(["scenario", "unknown"]),
+    /unknown scenario/,
+  );
+});
+
+test("F9 manifest perturbation changes only a credential generation identity input", () => {
+  const original = "PORT=3116\nSOUL_RUNNER_LEASE_TIMEOUT_MS=1800000\nATOM_ENABLED=false\n";
+  const first = toggleReleaseGeneration(original);
+  assert.equal(first.previous, null);
+  assert.equal(first.next, "lab-fault-a");
+  assert.equal(
+    first.text,
+    `${original}AUTH_BEARER_TOKEN_GENERATION=lab-fault-a\n`,
+  );
+  const second = toggleReleaseGeneration(first.text);
+  assert.equal(second.previous, "lab-fault-a");
+  assert.equal(second.next, "lab-fault-b");
+  assert.equal(
+    second.text,
+    `${original}AUTH_BEARER_TOKEN_GENERATION=lab-fault-b\n`,
+  );
+  assert.equal(toggleReleaseGeneration(second.text).text, first.text);
+});
+
+test("F11 retry reuses a stable delivery id and exact-consume metadata", () => {
+  const first = buildInterventionPayload(
+    "delivery-f11-0001",
+    "Reply exactly F11_INTERVENTION_OK.",
+  );
+  const retry = buildInterventionPayload(
+    "delivery-f11-0001",
+    "Reply exactly F11_INTERVENTION_OK.",
+  );
+  assert.deepEqual(retry, first);
+  assert.equal(first.delivery_id, "delivery-f11-0001");
+  assert.equal(first.delivery_intent, "human_live_steer");
+  assert.equal(first.source, "lab_fault_harness");
+});
+
+test("invariant verdict distinguishes explained dead letters from ambiguity", () => {
+  const clean = evaluateInvariantSnapshot({
+    ownerlessRunning: 0,
+    terminalProjectionMismatches: [],
+    overdueRetries: 0,
+    ambiguousUncertain: 0,
+    reasonlessDeadLetters: 0,
+    activationManifestMismatch: false,
+    messageLosses: [],
+  });
+  assert.deepEqual(clean, []);
+
+  const violations = evaluateInvariantSnapshot({
+    ownerlessRunning: 1,
+    terminalProjectionMismatches: [{ sessionId: "session-a" }],
+    overdueRetries: 2,
+    ambiguousUncertain: 1,
+    reasonlessDeadLetters: 1,
+    activationManifestMismatch: true,
+    messageLosses: [{ messageId: "message-a", reason: "no outcome" }],
+  });
+  assert.deepEqual(
+    violations.map((violation) => violation.invariant),
+    [
+      "ownerless_running",
+      "runner_terminal_projection",
+      "overdue_retry",
+      "ambiguous_uncertain",
+      "reasonless_dead_letter",
+      "activation_manifest",
+      "user_message_loss",
+    ],
+  );
+});
+
+test("invariant deltas preserve global samples without blaming later scenarios", () => {
+  const before = [
+    { invariant: "runner_terminal_projection", count: 1, examples: [{ sessionId: "old" }] },
+  ];
+  const after = [
+    {
+      invariant: "runner_terminal_projection",
+      count: 2,
+      examples: [{ sessionId: "old" }, { sessionId: "new" }],
+    },
+    { invariant: "overdue_retry", count: 1, examples: [] },
+  ];
+  assert.deepEqual(newInvariantViolations(before, after), [
+    { invariant: "runner_terminal_projection", count: 1, examples: [{ sessionId: "new" }] },
+    { invariant: "overdue_retry", count: 1, examples: [] },
+  ]);
+});
+
+test("evidence redaction removes bearer tokens and known lab secrets", () => {
+  const line = "Authorization: Bearer abc123 password=lab-secret token=abc123";
+  const redacted = redactEvidenceLine(line, ["lab-secret", "abc123"]);
+  assert.doesNotMatch(redacted, /abc123|lab-secret/);
+  assert.match(redacted, /<redacted>/);
+});

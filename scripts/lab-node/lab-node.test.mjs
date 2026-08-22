@@ -14,6 +14,7 @@ const shellScripts = [
   "restart-node.sh",
   "status.sh",
   "smoke.sh",
+  "fault-harness.sh",
 ];
 
 test("all lab shell scripts pass bash syntax validation", () => {
@@ -90,4 +91,28 @@ test("smoke validation fixes both turns to one session and restarts only the nod
   assert.match(smoke, /api\/sessions\/\$session_id\/intervene/);
   assert.match(smoke, /LAB_TURN_2_OK/);
   assert.doesNotMatch(smoke, /durable_next_turn/);
+});
+
+test("fault harness is lab-only, bounded, and inventories all five scenarios", () => {
+  const wrapper = readFileSync(join(directory, "fault-harness.sh"), "utf8");
+  const runtime = readFileSync(join(directory, "fault-harness-runtime.mjs"), "utf8");
+  const processFaults = readFileSync(join(directory, "fault-harness-process.mjs"), "utf8");
+  const scenarios = readFileSync(join(directory, "fault-scenarios.mjs"), "utf8");
+  assert.match(wrapper, /load_lab_env/);
+  assert.match(wrapper, /export LAB_ROOT/);
+  assert.match(wrapper, /SOULSTREAM_HEAVY_LOCK_HELD=1/);
+  assert.match(wrapper, /flock -w 300 \/tmp\/soulstream-heavy-verify\.lock/);
+  assert.match(wrapper, /\$LAB_REPO\/scripts\/lab-node\/fault-harness\.mjs/);
+  assert.match(runtime, /unsafe LAB_ROOT/);
+  assert.match(runtime, /protectedPorts\.includes/);
+  assert.match(runtime, /soulstream-lab-/);
+  assert.doesNotMatch(
+    runtime + processFaults + scenarios,
+    /serendipity-postgres|haniel_(pull|restart|start|stop)/,
+  );
+  assert.match(scenarios, /F9 injection and lab restoration failed/);
+  assert.match(scenarios, /dead-owner injection and lab restoration failed/);
+  for (const scenario of ["F1", "F11", "F9", "dead-owner", "F7"]) {
+    assert.match(scenarios, new RegExp(`(?:async )?["']?${scenario}["']?\\(`));
+  }
 });

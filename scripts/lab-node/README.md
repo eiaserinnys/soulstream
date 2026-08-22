@@ -72,6 +72,39 @@ To restart only the worker without running the smoke flow:
 
 Keep at most two concurrent lab sessions. Before builds or smoke runs, confirm at least 2GB available memory with `free -m`.
 
+## Fault harness
+
+The stage-2 harness records every injection and every invariant sample below
+`/home/eias/services/soulstream-lab/state/fault-harness/{run-id}`. `events.jsonl`
+contains the injection timeline, `invariants.jsonl` contains cycle verdicts, and
+`result.json` is the run summary. Matching lab log excerpts are copied beside
+them with bearer tokens and known lab secrets redacted.
+
+Run one scenario or the complete prioritized set:
+
+```bash
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario F9
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario dead-owner
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh all
+```
+
+`all` runs F9, dead-owner, F1, F11, and F7 in that order, then one normal
+traffic cycle. F1 includes both SIGTERM and SIGKILL. F9 toggles only the lab
+bearer credential's non-secret generation marker so the release identity
+changes without changing runtime behavior. The new generation stays canonical
+for the next lab run.
+
+The bounded traffic loop supports at most two concurrent sessions:
+
+```bash
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh \
+  cycle --concurrency 2 --cycles 4 --interval-seconds 300
+```
+
+The harness exits nonzero when a scenario verdict or invariant fails. It may
+write only the dedicated lab PostgreSQL container and may signal only PIDs
+whose command line and runtime root match the lab clone.
+
 ## Updating the runtime clone
 
 Stop the lab stack, fast-forward `main`, and rerun bootstrap so the worker release manifest is rebuilt against the lab deployment env.
@@ -84,4 +117,4 @@ LAB_CLAUDE_AUTH_SOURCE=/home/eias/services/soulstream-lab/state/claude-auth.json
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/start.sh
 ```
 
-Do not register this stack with Haniel during stage 1.
+Do not register this stack with Haniel.
