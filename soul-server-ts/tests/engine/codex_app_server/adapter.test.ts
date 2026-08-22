@@ -325,6 +325,28 @@ describe("CodexAppServerEngineAdapter", () => {
     });
   });
 
+  it("keeps a Codex turn open for hours after turn/start acknowledges it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { adapter, client } = makeAdapter();
+      const eventsPromise = drain(adapter.execute({ prompt: "overnight work" }));
+      await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+      await vi.advanceTimersByTimeAsync(12 * 60 * 60_000);
+      expect(client.interruptTurn).not.toHaveBeenCalled();
+
+      client.emit({
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      });
+      await expect(eventsPromise).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects known and future server requests without leaving Codex waiting", async () => {
     const { adapter, client } = makeAdapter();
     const eventsPromise = drain(adapter.execute({ prompt: "hello" }));

@@ -21,6 +21,7 @@ import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdog.js";
+import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
 import {
   type ActiveForeground,
   type ClaudeDetachedEventSink,
@@ -31,7 +32,7 @@ import {
   isExpectedInterruptDiagnostic,
   isTurnStartingUserInput,
   provableTurnResultOwner,
-  turnTimeoutError,
+  turnInactivityError,
 } from "./claude_sdk_persistent_session_support.js";
 import {
   ClaudeSessionRuntime,
@@ -45,7 +46,6 @@ export type {
   ClaudeRuntimeEventSink,
   ClaudeSdkPersistentSessionConfig,
 } from "./claude_sdk_persistent_session_support.js";
-
 /**
  * One long-lived SDK Query for one Soulstream session.
  *
@@ -61,14 +61,13 @@ export class ClaudeSdkPersistentSession {
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly logger: Logger;
   private readonly postResultDrainMs: number;
-  private readonly turnTimeoutMs: number;
   private readonly runtimeFollowupNoOutputTimeoutMs: number;
   private readonly pump: Promise<void>;
   private readonly hookPump: Promise<void>;
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
+  private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
   private activeForeground: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
-
   constructor(config: ClaudeSdkPersistentSessionConfig) {
     this.eventMapper = config.eventMapper;
     this.hookOutput = config.hookOutput;
@@ -76,9 +75,12 @@ export class ClaudeSdkPersistentSession {
     this.runtimeEventSink = config.runtimeEventSink;
     this.logger = config.logger;
     this.postResultDrainMs = config.postResultDrainMs;
-    this.turnTimeoutMs = config.turnTimeoutMs;
     this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs;
     this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
+    this.turnInactivityWatchdog = new ClaudeTurnInactivityWatchdog({
+      timeoutMs: config.turnInactivityTimeoutMs,
+      onInactive: async (uuid) => await this.handleTurnInactivity(uuid),
+    });
     this.followupWatchdog = new ClaudeRuntimeFollowupWatchdog({
       timeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
       resultWaitMs: this.postResultDrainMs,
@@ -132,10 +134,6 @@ export class ClaudeSdkPersistentSession {
       payloadHash: hashSdkUserMessage(message),
       message,
     });
-    const deadlineTimer = setTimeout(() => {
-      void this.handleTurnTimeout(uuid);
-    }, this.turnTimeoutMs);
-    deadlineTimer.unref?.();
     const origin = {
       kind: options.turnOrigin?.kind ?? "initial_prompt",
       id: options.turnOrigin?.id ?? uuid,
@@ -143,12 +141,12 @@ export class ClaudeSdkPersistentSession {
     this.activeForeground = {
       uuid,
       output,
-      deadlineTimer,
       interruptResultTimer: null,
       timedOut: false,
       origin,
       rateLimitTerminationState: "none",
     };
+    this.turnInactivityWatchdog.arm(uuid);
     if (origin.kind === "runtime_followup") {
       this.followupWatchdog.arm(uuid, origin);
     }
@@ -352,7 +350,7 @@ export class ClaudeSdkPersistentSession {
         "Runtime follow-up ended as a non-fatal no-op after watchdog interrupt",
       );
     } else if (active?.timedOut) {
-      active.output.push(turnTimeoutError(this.turnTimeoutMs));
+      active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
       for (const event of terminalEvents) {
@@ -382,6 +380,7 @@ export class ClaudeSdkPersistentSession {
       await this.emitDetached(event);
       return;
     }
+    if (active) this.turnInactivityWatchdog.recordEvent(active.uuid, event);
     if (active) this.followupWatchdog.observeProgress(active.uuid, event);
     if (active) {
       active.rateLimitTerminationState =
@@ -435,7 +434,7 @@ export class ClaudeSdkPersistentSession {
     }
   }
 
-  private async handleTurnTimeout(uuid: string): Promise<void> {
+  private async handleTurnInactivity(uuid: string): Promise<void> {
     const active = this.activeForeground;
     if (!active || active.uuid !== uuid || active.timedOut) return;
     active.timedOut = true;
@@ -444,9 +443,9 @@ export class ClaudeSdkPersistentSession {
         uuid,
         turnOriginKind: active.origin.kind,
         turnOriginId: active.origin.id,
-        timeoutMs: this.turnTimeoutMs,
+        inactivityTimeoutMs: this.turnInactivityWatchdog.timeoutMs,
       },
-      "Persistent Claude foreground turn timed out",
+      "Persistent Claude foreground turn became inactive",
     );
     try {
       if (this.runtime.snapshot().foregroundPhase === "generating") {
@@ -458,7 +457,7 @@ export class ClaudeSdkPersistentSession {
       active.interruptResultTimer.unref?.();
     } catch (err) {
       this.logger.warn({ err, uuid }, "Persistent Claude turn timeout interrupt failed");
-      active.output.push(turnTimeoutError(this.turnTimeoutMs));
+      active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
       active.output.close();
       this.clearForegroundTimers(active);
       this.activeForeground = null;
@@ -469,7 +468,7 @@ export class ClaudeSdkPersistentSession {
   private async handleTimedOutTurnWithoutResult(uuid: string): Promise<void> {
     const active = this.activeForeground;
     if (!active || active.uuid !== uuid || !active.timedOut) return;
-    active.output.push(turnTimeoutError(this.turnTimeoutMs));
+    active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     active.output.close();
     this.clearForegroundTimers(active);
     this.activeForeground = null;
@@ -478,7 +477,7 @@ export class ClaudeSdkPersistentSession {
 
   private clearForegroundTimers(active: ActiveForeground | null): void {
     if (!active) return;
-    clearTimeout(active.deadlineTimer);
+    this.turnInactivityWatchdog.clear(active.uuid);
     this.followupWatchdog.clear(active.uuid);
     if (active.interruptResultTimer) {
       clearTimeout(active.interruptResultTimer);

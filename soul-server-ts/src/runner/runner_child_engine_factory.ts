@@ -94,7 +94,7 @@ export function createRunnerChildEngine(
               hostOptions(),
             );
           },
-          persistentTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
+          persistentTurnInactivityTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
         }, logger),
         {
           idleTtlMs: config.claudeRuntimeIdleTtlMs,

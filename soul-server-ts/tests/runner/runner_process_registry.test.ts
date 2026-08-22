@@ -153,13 +153,13 @@ describe("runner process registry", () => {
 
   it("reaps a hung execution with fresh liveness but no actual progress", () => {
     expect(classifyRunnerRegistration(registration({
-      progressedAt: "2026-08-11T00:00:00.000Z",
+      progressedAt: "2026-08-10T23:29:59.999Z",
       livenessAt: "2026-08-11T00:00:29.000Z",
       inFlightTools: [],
     }), NOW, 10_000)).toBe("reap_stalled");
   });
 
-  it("reaps a hung tool after its finite tool lease expires", () => {
+  it("reaps a hung tool after the configured progress gap expires", () => {
     expect(classifyRunnerRegistration(registration({
       progressedAt: "2026-08-10T22:59:59.999Z",
       livenessAt: "2026-08-11T00:00:29.000Z",
@@ -170,7 +170,7 @@ describe("runner process registry", () => {
     }), NOW, 10_000)).toBe("reap_stalled");
   });
 
-  it("enforces an expired tool lease before fresh progress", () => {
+  it("keeps a night-long tool when durable runner progress is fresh", () => {
     expect(classifyRunnerRegistration(registration({
       progressedAt: "2026-08-11T00:00:29.000Z",
       livenessAt: "2026-08-11T00:00:29.000Z",
@@ -178,10 +178,10 @@ describe("runner process registry", () => {
         tool_use_id: "tool-expired",
         started_at: "2026-08-10T22:59:59.999Z",
       }],
-    }), NOW, 10_000)).toBe("reap_stalled");
+    }), NOW, 10_000)).toBe("adopt_running");
   });
 
-  it("reaps a tool whose completion event is lost after the finite tool lease", () => {
+  it("keeps a tool below the progress inactivity threshold even when its start is old", () => {
     expect(classifyRunnerRegistration(registration({
       progressedAt: "2026-08-10T23:59:00.000Z",
       livenessAt: "2026-08-11T00:00:29.000Z",
@@ -189,10 +189,10 @@ describe("runner process registry", () => {
         tool_use_id: "tool-result-lost",
         started_at: "2026-08-10T22:59:59.999Z",
       }],
-    }), NOW, 10_000)).toBe("reap_stalled");
+    }), NOW, 10_000)).toBe("adopt_running");
   });
 
-  it("reaps after repeated duplicate tool starts exceed the finite lease", async () => {
+  it("reaps repeated duplicate tool starts after the progress gap expires", async () => {
     const directory = await temporaryDirectory("duplicate-tool-starts");
     const databasePath = join(directory, "runner.sqlite");
     const outbox = await RunnerSqliteEventOutbox.create(databasePath);
@@ -242,13 +242,13 @@ describe("runner process registry", () => {
     }, NOW, 10_000)).toBe("reap_stalled");
   });
 
-  it("preserves a normal thirty-minute tool call below the finite tool lease cap", () => {
+  it("preserves an in-flight tool below the configured progress gap", () => {
     expect(classifyRunnerRegistration(registration({
-      progressedAt: "2026-08-10T23:30:00.000Z",
+      progressedAt: "2026-08-10T23:31:00.000Z",
       livenessAt: "2026-08-11T00:00:29.000Z",
       inFlightTools: [{
         tool_use_id: "tool-long",
-        started_at: "2026-08-10T23:30:00.000Z",
+        started_at: "2026-08-10T20:00:00.000Z",
       }],
     }), NOW, 1_800_000)).toBe("adopt_running");
   });
