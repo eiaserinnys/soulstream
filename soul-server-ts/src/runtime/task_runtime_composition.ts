@@ -118,7 +118,7 @@ export function composeTaskRuntime(
     db,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     completionDeliveryRepository,
-    env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+    undefined, // Delivery recovery retains its independent 30-minute policy.
     queuedDeliveryRecovery,
   );
   const completionDeliveryRecoveryWorker = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED

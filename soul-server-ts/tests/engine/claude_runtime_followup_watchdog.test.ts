@@ -34,6 +34,13 @@ describe("ClaudeRuntimeFollowupWatchdog ownership", () => {
     watchdog.arm("own-turn", { kind: "runtime_followup", id: "delivery-1" });
 
     watchdog.observeProgress("own-turn", { type: "text", text: "working" });
+    watchdog.observeTurnInput({
+      uuid: "foreign",
+      originKind: "task-notification",
+    });
+
+    expect(watchdog.observesForeignTurn("own-turn")).toBe(false);
+
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(interrupt).not.toHaveBeenCalled();

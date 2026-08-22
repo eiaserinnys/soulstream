@@ -52,13 +52,13 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
-  it("interrupts an overlong foreground turn without closing the persistent Query", async () => {
+  it("interrupts an inactive foreground turn without closing the persistent Query", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 10,
+        persistentTurnInactivityTimeoutMs: 10,
         postResultDrainMs: 1_000,
       },
       silentLogger,
@@ -96,13 +96,90 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
+  it("keeps a foreground turn alive for hours while user-visible activity continues", async () => {
+    vi.useFakeTimers();
+    try {
+      const inactivityTimeoutMs = 10 * 60_000;
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnInactivityTimeoutMs: inactivityTimeoutMs,
+        },
+        silentLogger,
+      );
+
+      const turn = collect(client.runPersistent(runOptions("multi-hour turn"), abortSignal()));
+      const input = await harness.nextInput();
+      harness.push(input as SDKMessage);
+
+      for (let index = 0; index < 20; index += 1) {
+        await vi.advanceTimersByTimeAsync(9 * 60_000);
+        if (index % 3 === 0) {
+          harness.push(sdkAssistantText(`long-text-${index}`, `progress ${index}`));
+        } else if (index % 3 === 1) {
+          harness.push(sdkAssistantThinking(`long-thinking-${index}`, `thinking ${index}`));
+        } else {
+          harness.push(sdkToolResultInput(`long-tool-result-${index}`, "human", `tool-${index}`));
+        }
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      expect(harness.interrupt).not.toHaveBeenCalled();
+      harness.push(sdkResult("sdk-session", input.uuid, "finished after three hours"));
+      await expect(turn).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "finished after three hours" }),
+      );
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows a silent in-flight tool for the full interval and renews on tool_result", async () => {
+    vi.useFakeTimers();
+    try {
+      const inactivityTimeoutMs = 10 * 60_000;
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnInactivityTimeoutMs: inactivityTimeoutMs,
+        },
+        silentLogger,
+      );
+
+      const turn = collect(client.runPersistent(runOptions("large upload"), abortSignal()));
+      const input = await harness.nextInput();
+      harness.push(input as SDKMessage);
+      harness.push(sdkAssistantToolStart("upload-start", "upload-tool"));
+      await vi.advanceTimersByTimeAsync(inactivityTimeoutMs - 1_000);
+      expect(harness.interrupt).not.toHaveBeenCalled();
+
+      harness.push(sdkToolResultInput("upload-result", "human", "upload-tool"));
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(inactivityTimeoutMs - 1_000);
+      expect(harness.interrupt).not.toHaveBeenCalled();
+
+      harness.push(sdkResult("sdk-session", input.uuid, "upload complete"));
+      await expect(turn).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "upload complete" }),
+      );
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ends a silent runtime follow-up as a non-fatal no-op and keeps the Query on its Result", async () => {
     const harness = makeHarness({ receipt: { still_queued: [] } });
     const client = new ClaudeSdkClient(
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 10,
         postResultDrainMs: 1_000,
       },
@@ -142,7 +219,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 10,
         postResultDrainMs: 10,
       },
@@ -183,7 +260,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 30_000,
         postResultDrainMs: 10,
       },
@@ -269,7 +346,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 10,
       },
       silentLogger,
@@ -568,7 +645,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 10,
       },
       silentLogger,
@@ -609,7 +686,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 10,
       },
       silentLogger,
@@ -653,7 +730,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       {
         query: harness.queryFn,
         detachedEventSink: harness.detached,
-        persistentTurnTimeoutMs: 30 * 60_000,
+        persistentTurnInactivityTimeoutMs: 30 * 60_000,
         runtimeFollowupNoOutputTimeoutMs: 10,
         postResultDrainMs: 1_000,
       },
@@ -773,7 +850,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
         {
           query: harness.queryFn,
           detachedEventSink: harness.detached,
-          persistentTurnTimeoutMs: 30 * 60_000,
+          persistentTurnInactivityTimeoutMs: 30 * 60_000,
         },
         silentLogger,
       );
@@ -811,7 +888,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
         {
           query: harness.queryFn,
           detachedEventSink: harness.detached,
-          persistentTurnTimeoutMs: 30 * 60_000,
+          persistentTurnInactivityTimeoutMs: 30 * 60_000,
           postResultDrainMs: 10,
         },
         silentLogger,
@@ -855,7 +932,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
         {
           query: harness.queryFn,
           detachedEventSink: harness.detached,
-          persistentTurnTimeoutMs: 30 * 60_000,
+          persistentTurnInactivityTimeoutMs: 30 * 60_000,
           postResultDrainMs: 10,
         },
         silentLogger,
@@ -1325,7 +1402,11 @@ function sdkRemoteInput(uuid: string, originKind: string, text: string): SDKMess
   } as unknown as SDKMessage;
 }
 
-function sdkToolResultInput(uuid: string, originKind: string | undefined): SDKMessage {
+function sdkToolResultInput(
+  uuid: string,
+  originKind: string | undefined,
+  toolUseId = "tool-1",
+): SDKMessage {
   return {
     type: "user",
     uuid,
@@ -1334,7 +1415,35 @@ function sdkToolResultInput(uuid: string, originKind: string | undefined): SDKMe
     ...(originKind ? { origin: { kind: originKind } } : {}),
     message: {
       role: "user",
-      content: [{ type: "tool_result", tool_use_id: "tool-1", content: "done" }],
+      content: [{ type: "tool_result", tool_use_id: toolUseId, content: "done" }],
+    },
+  } as unknown as SDKMessage;
+}
+
+function sdkAssistantThinking(uuid: string, thinking: string): SDKMessage {
+  return {
+    type: "assistant",
+    uuid,
+    session_id: "sdk-session",
+    message: {
+      id: uuid,
+      model: "claude",
+      role: "assistant",
+      content: [{ type: "thinking", thinking }],
+    },
+  } as unknown as SDKMessage;
+}
+
+function sdkAssistantToolStart(uuid: string, toolUseId: string): SDKMessage {
+  return {
+    type: "assistant",
+    uuid,
+    session_id: "sdk-session",
+    message: {
+      id: uuid,
+      model: "claude",
+      role: "assistant",
+      content: [{ type: "tool_use", id: toolUseId, name: "Upload", input: {} }],
     },
   } as unknown as SDKMessage;
 }

@@ -28,7 +28,7 @@ export interface ClaudeSdkPersistentSessionConfig {
   runtimeEventSink?: ClaudeRuntimeEventSink;
   logger: Logger;
   postResultDrainMs: number;
-  turnTimeoutMs: number;
+  turnInactivityTimeoutMs: number;
   runtimeFollowupNoOutputTimeoutMs: number;
   onClosed?(): void;
 }
@@ -36,7 +36,6 @@ export interface ClaudeSdkPersistentSessionConfig {
 export type ActiveForeground = {
   uuid: string;
   output: EventQueue<ClaudeClientEvent>;
-  deadlineTimer: ReturnType<typeof setTimeout>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
   origin: { kind: string; id: string };
@@ -90,11 +89,11 @@ export function hashSdkUserMessage(message: SDKUserMessage): string {
   return createHash("sha256").update(JSON.stringify(message)).digest("hex");
 }
 
-export function turnTimeoutError(timeoutMs: number): ClaudeClientEvent {
+export function turnInactivityError(timeoutMs: number): ClaudeClientEvent {
   return {
     type: "error",
     fatal: true,
     errorCode: "claude_persistent_turn_timeout",
-    message: `Claude foreground turn exceeded ${timeoutMs}ms and was interrupted.`,
+    message: `Claude foreground turn was inactive for ${timeoutMs}ms and was interrupted.`,
   };
 }

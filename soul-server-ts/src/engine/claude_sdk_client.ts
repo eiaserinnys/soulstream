@@ -8,10 +8,7 @@ import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
-import {
-  buildClaudeCompactRunOptions,
-  consumeClaudeCompact,
-} from "./claude_sdk_compact.js";
+import { buildClaudeCompactRunOptions, consumeClaudeCompact } from "./claude_sdk_compact.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import { ClaudePostResultDrain } from "./claude_sdk_drain.js";
@@ -60,7 +57,6 @@ const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
  */
 const DEFAULT_POST_RESULT_DRAIN_MS = 2_000;
 const DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS = 6 * 60 * 60 * 1_000;
-
 export type ClaudeSdkQueryParams = {
   prompt: string | AsyncIterable<SDKUserMessage>;
   options?: ClaudeSdkOptions;
@@ -83,12 +79,8 @@ export interface ClaudeSdkClientConfig {
   resolveClaudeExecutablePath?: () => string | undefined;
   detachedEventSink?: ClaudeDetachedEventSink;
   runtimeEventSink?: ClaudeRuntimeEventSink;
-  /**
-   * Persistent runtime foreground deadline. The legacy worker exposed a
-   * 30-minute SESSION_TIMEOUT_SECONDS boundary; runtime v2 preserves it
-   * without forwarding Query-global SDK maxTurns.
-   */
-  persistentTurnTimeoutMs?: number;
+  /** Maximum gap between user-visible foreground activity frames. */
+  persistentTurnInactivityTimeoutMs?: number;
   runtimeFollowupNoOutputTimeoutMs?: number;
 }
 
@@ -104,7 +96,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly postResultDrainer: ClaudePostResultDrain;
   private readonly detachedEventSink: ClaudeDetachedEventSink;
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
-  private readonly persistentTurnTimeoutMs: number;
+  private readonly persistentTurnInactivityTimeoutMs: number;
   private readonly runtimeFollowupNoOutputTimeoutMs: number;
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: EventQueue<SDKUserMessage> | null = null;
@@ -116,17 +108,12 @@ export class ClaudeSdkClient implements ClaudeClient {
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
     this.queryFn = config.query ?? defaultQuery;
     this.logger = logger;
-    const inputRequestTimeoutMs =
-      config.inputRequestTimeoutMs ?? DEFAULT_INPUT_REQUEST_TIMEOUT_MS;
-    this.postResultDrainMs =
-      config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
-    this.runtimeDrainMaxMs =
-      config.runtimeDrainMaxMs ?? DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS;
-    this.resolveClaudeExecutablePath =
-      config.resolveClaudeExecutablePath ?? resolveClaudeExecutableFromPath;
-    this.runtimeState = new ClaudeRuntimeState(
-      config.runtimeEventSink !== undefined,
-    );
+    const inputRequestTimeoutMs = config.inputRequestTimeoutMs ?? DEFAULT_INPUT_REQUEST_TIMEOUT_MS;
+    this.postResultDrainMs = config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
+    this.runtimeDrainMaxMs = config.runtimeDrainMaxMs ?? DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS;
+    this.resolveClaudeExecutablePath = config.resolveClaudeExecutablePath
+      ?? resolveClaudeExecutableFromPath;
+    this.runtimeState = new ClaudeRuntimeState(config.runtimeEventSink !== undefined);
     this.eventMapper = new ClaudeSdkEventMapper(this.runtimeState);
     this.toolPermissionController = new ClaudeSdkToolPermissionController({
       inputRequestTimeoutMs,
@@ -141,8 +128,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     });
     this.detachedEventSink = config.detachedEventSink ?? (async () => undefined);
     this.runtimeEventSink = config.runtimeEventSink;
-    this.persistentTurnTimeoutMs =
-      config.persistentTurnTimeoutMs ?? 1_800_000;
+    this.persistentTurnInactivityTimeoutMs =
+      config.persistentTurnInactivityTimeoutMs ?? 1_200_000;
     this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs ?? 30_000;
   }
 
@@ -239,10 +226,7 @@ export class ClaudeSdkClient implements ClaudeClient {
           try {
             query = this.queryFn({ prompt: input, options: queryOptions });
           } catch (err) {
-            throw this.normalizeExecutionError(
-              err,
-              queryOptions.pathToClaudeCodeExecutable,
-            );
+            throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
           }
           this.activeQuery = query;
           return query;
@@ -253,7 +237,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         runtimeEventSink: this.runtimeEventSink,
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,
-        turnTimeoutMs: this.persistentTurnTimeoutMs,
+        turnInactivityTimeoutMs: this.persistentTurnInactivityTimeoutMs,
         runtimeFollowupNoOutputTimeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
         onClosed: () => {
           if (this.persistentSession === createdSession) {
