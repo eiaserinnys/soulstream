@@ -303,16 +303,6 @@ export class TaskExecutor {
         }
       });
     }
-    // Both early returns below leave the task deliberately unfinalized, so
-    // nothing else clears this slot. A settled promise parked on the task is
-    // indistinguishable from a live execution to every recovery path that
-    // reads it, and that is what stranded the offline replay of a finished
-    // turn for three hours during the 260822 outage (lab: F9 logs
-    // `blockedBy=execution_promise` on the offline replay).
-    let ownExecution: Promise<void> | undefined;
-    const releaseExecutionSlot = (): void => {
-      if (task.executionPromise === ownExecution) task.executionPromise = undefined;
-    };
     const promise = this.startOwnedExecution(
       task,
       agent,
@@ -338,7 +328,6 @@ export class TaskExecutor {
             },
             "Execution ownership conflict deferred to durable delivery recovery",
           );
-          releaseExecutionSlot();
           return;
         }
         this.executionOwnershipBackoff?.clear(task.agentSessionId);
@@ -347,7 +336,6 @@ export class TaskExecutor {
             { err, sessionId: task.agentSessionId, proof: err.proof },
             "Spawned runner parent initialization failed; recovery owns the live child",
           );
-          releaseExecutionSlot();
           return;
         }
         await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
@@ -355,8 +343,30 @@ export class TaskExecutor {
         await this._finalize(task);
       },
     );
-    ownExecution = promise;
+    return this.holdExecutionSlot(task, promise);
+  }
+
+  /**
+   * Holds the task's execution slot for exactly as long as the execution runs.
+   *
+   * Recovery, intervention routing and auto-resume all read a present
+   * `task.executionPromise` as "an execution is in flight". Nothing ever
+   * cleared it when one finished, so a settled promise went on standing in for
+   * a live execution: the offline replay of a finished runner turn was refused
+   * for as long as the task stayed in memory, and that turn's output never
+   * reached the user (260822 outage; lab scenario F9 logs
+   * `blockedBy=execution_promise` on the replay it refused).
+   *
+   * Waiters are unaffected. Every reader either awaits the slot to drain -- and
+   * an absent slot has already drained -- or asks whether an execution is
+   * running, which is now the question the field actually answers.
+   */
+  private holdExecutionSlot(task: Task, promise: Promise<void>): Promise<void> {
     task.executionPromise = promise;
+    const release = (): void => {
+      if (task.executionPromise === promise) task.executionPromise = undefined;
+    };
+    void promise.then(release, release);
     return promise;
   }
 
@@ -700,7 +710,7 @@ export class TaskExecutor {
         await this._finalize(task);
       },
     );
-    task.executionPromise = promise;
+    this.holdExecutionSlot(task, promise);
   }
 
   /** Reattaches host-side consumption to an execution already owned by a runner child. */
@@ -780,7 +790,7 @@ export class TaskExecutor {
         mode === "adopt",
       );
     })();
-    task.executionPromise = promise;
+    this.holdExecutionSlot(task, promise);
     return promise;
   }
 
@@ -924,7 +934,7 @@ export class TaskExecutor {
         throw error;
       }
     })();
-    task.executionPromise = promise;
+    this.holdExecutionSlot(task, promise);
     return promise;
   }
 
