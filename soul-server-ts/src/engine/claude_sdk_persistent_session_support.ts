@@ -8,6 +8,7 @@ import type { Logger } from "pino";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
+import { messageContent } from "./claude_sdk_event_mapper_helpers.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type { RateLimitTerminationState } from
@@ -76,6 +77,13 @@ export function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean
   return event.type === "error"
     && event.fatal === false
     && event.errorCode === "error_during_execution";
+}
+
+export function isTurnStartingUserInput(message: Record<string, unknown>): boolean {
+  if (message.isSynthetic === true) return false;
+  const content = messageContent(message);
+  return content.length === 0
+    || content.some((block) => asString(asRecord(block)?.type) !== "tool_result");
 }
 
 export function hashSdkUserMessage(message: SDKUserMessage): string {
