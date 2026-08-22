@@ -66,9 +66,14 @@ test("MUTATION: a dropped first turn is red even though a later reply exists", (
     ),
     NOW,
   );
-  assert.equal(paired.unanswered.length, 1);
-  // Named correctly: the dropped first turn, not the recovery that was answered.
-  assert.equal(paired.unanswered[0].excerpt, "sleep 30 then say OLD");
+  assert.equal(paired.unansweredCount, 1);
+  // Two inputs were waiting when the single reply arrived, so which one it
+  // answered is not in the events. The count is exact; the name is a set.
+  assert.equal(paired.ambiguous, true);
+  assert.deepEqual(
+    paired.candidates.map((demand) => demand.excerpt).sort(),
+    ["say RECOVERED", "sleep 30 then say OLD"],
+  );
 });
 
 test("MUTATION: an intervention that was never projected is red", () => {
@@ -202,8 +207,8 @@ test("events arriving out of order are paired by id, not by arrival", () => {
     ],
     NOW,
   );
-  assert.equal(paired.unanswered.length, 1);
-  assert.equal(paired.unanswered[0].excerpt, "first");
+  assert.equal(paired.unansweredCount, 1);
+  assert.equal(paired.ambiguous, true);
 });
 
 test("findUnansweredDemands reports across sessions and names each one", () => {
@@ -220,7 +225,9 @@ test("findUnansweredDemands reports across sessions and names each one", () => {
   );
   assert.equal(losses.length, 1);
   assert.equal(losses[0].session_id, "a");
-  assert.equal(losses[0].demand_event_id, 1);
+  assert.equal(losses[0].unanswered_count, 1);
+  assert.equal(losses[0].ambiguous, false);
+  assert.deepEqual(losses[0].candidates.map((c) => c.event_id), [1]);
 });
 
 // --- the discriminating pair, taken from real lab evidence -------------------
@@ -270,4 +277,80 @@ test("cycle shape: the same turn swallowed and reported completed IS a loss", ()
   );
   assert.equal(paired.unanswered.length, 1);
   assert.equal(paired.unanswered[0].excerpt, "sleep 12 then reply CYCLE_CANCELLED.");
+});
+
+
+// --- the two cases the independent review planted and this judge failed -----
+
+test("REVIEW P1-1: the same wording sent again after a reply is a separate input", () => {
+  // Planted in the lab by the reviewer: a user message answered normally, then
+  // a distinct intervention worded identically that never got an answer. The
+  // first dedupe matched the same text anywhere in the session, wrote the
+  // second one off as a projection of the first, and returned green on a real
+  // loss.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "same text" }),
+      event("assistant_message"),
+      event("intervention_sent", { text: "same text" }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.demandCount, 2);
+  assert.equal(paired.unansweredCount, 1);
+  assert.equal(paired.ambiguous, false);
+  assert.deepEqual(paired.candidates.map((demand) => demand.eventType), ["intervention_sent"]);
+});
+
+test("REVIEW P1-2: a next-turn intervention loss is reported as ambiguous, not misnamed", () => {
+  // A input, B queued as a next-turn intervention, one reply. The runtime
+  // drains FIFO within a priority lane, so the reply most likely answered A
+  // and B is the loss -- but the events carry no lane and no correlation, so
+  // asserting either name is a guess. LIFO asserted A, which is wrong here;
+  // FIFO asserts B, which is wrong in the dead-owner shape above. The only
+  // true statement is "one of these two".
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "A" }),
+      event("intervention_sent", { text: "B" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.unansweredCount, 1);
+  assert.equal(paired.ambiguous, true);
+  assert.deepEqual(paired.candidates.map((demand) => demand.excerpt).sort(), ["A", "B"]);
+});
+
+test("REVIEW P2-2: a session that may still answer reports pending, not clean", () => {
+  const paired = pairSessionDemands(
+    session({ status: "running", last_event_at: new Date(NOW - 1_000).toISOString() }),
+    stream(event("user_message", { text: "answer me" })),
+    NOW,
+  );
+  assert.equal(paired.verdict, "pending");
+  assert.equal(paired.unansweredCount, 0);
+  assert.equal(paired.demandCount, 1);
+});
+
+test("an unambiguous single loss still names exactly one input", () => {
+  // Ambiguity must not become the answer to everything: when only one input
+  // was ever waiting, the judge still says which.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "answered one" }),
+      event("assistant_message"),
+      event("user_message", { text: "dropped one" }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.unansweredCount, 1);
+  assert.equal(paired.ambiguous, false);
+  assert.deepEqual(paired.candidates.map((demand) => demand.excerpt), ["dropped one"]);
 });

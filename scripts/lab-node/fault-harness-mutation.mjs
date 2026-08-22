@@ -233,6 +233,17 @@ export const MUTATION_COVERAGE = Object.freeze(
 );
 
 /**
+ * Seven judges, eight mutations.
+ *
+ * `unanswered_demand` gets two because it has two distinct failure shapes --
+ * an input with no reply at all, and an input covered by a later reply. The
+ * earlier reporting said "8 판정기", conflating mutations with judges and
+ * overstating coverage by one. Counting the wrong thing is how this whole
+ * audit started.
+ */
+export const JUDGE_COUNT = MUTATION_COVERAGE.length;
+
+/**
  * Whether `violations` name the exact row this mutation planted.
  *
  * Identity, not presence. Presence was not good enough: run the gate right
@@ -405,7 +416,7 @@ export function reportMutationGate(results) {
   }
   const failures = results.filter((result) => result.outcome !== "detected");
   process.stdout.write(
-    `\n${results.length} mutation(s): `
+    `\n${results.length} mutation(s) over ${JUDGE_COUNT} judge(s): `
     + `${results.length - failures.length} detected, ${failures.length} not.\n`,
   );
   return failures.length === 0;

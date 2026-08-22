@@ -44,17 +44,28 @@ export async function rejudgeDirectory(directory, database) {
   if (!window) {
     return { directory: basename(directory), verdict: "unreadable", reported };
   }
-  const inputs = await database.pairingInputs(window.since, window.until);
+  // Stored inputs first.
+  //
+  // The run recorded exactly what its verdict was computed from, so replaying
+  // those is a re-judgement of *that run* rather than of whatever the database
+  // looks like now. It also works with no database at all, which is the whole
+  // point of writing them: the first version of this file wrote the inputs and
+  // then never read them, so pulling the database out still produced
+  // `evidence_expired` on a directory that had the answer sitting in it.
+  const stored = await readStoredInputs(directory);
+  const inputs = stored ?? await readDatabaseInputs(database, window);
+  const source = stored ? "stored_evidence" : "database";
   const sessions = inputs?.sessions ?? [];
   if (sessions.length === 0) {
-    // The lab database is rebuilt from time to time. Evidence older than the
-    // current database cannot be re-judged, and saying so is the point: the
-    // stored evidence was never self-contained enough to carry its own inputs.
+    // Evidence written before the inputs were stored, whose sessions the
+    // database no longer holds. Saying so is the point: that evidence was
+    // never self-contained and cannot be re-checked by anyone, ever.
     return {
       directory: basename(directory),
       verdict: "evidence_expired",
       reported,
       window,
+      source: stored ? "stored_evidence" : "database",
     };
   }
   const losses = findUnansweredDemands(
@@ -67,10 +78,37 @@ export async function rejudgeDirectory(directory, database) {
     verdict: losses.length > 0 ? "red" : "green",
     reported,
     window,
+    source,
     sessionCount: sessions.length,
-    unansweredCount: losses.length,
+    unansweredCount: losses.reduce((total, loss) => total + loss.unanswered_count, 0),
     unanswered: losses,
   };
+}
+
+/** The database, when there is one and it still holds the run's sessions. */
+async function readDatabaseInputs(database, window) {
+  if (!database) return null;
+  try { return await database.pairingInputs(window.since, window.until); } catch { return null; }
+}
+
+/**
+ * The last recorded sample's inputs, from either evidence format.
+ *
+ * `.jsonl` is the current one, appended per sample; `.json` is what runs
+ * between this audit's first and second pass wrote, kept readable so that
+ * evidence is not orphaned by its own fix.
+ */
+async function readStoredInputs(directory) {
+  try {
+    const lines = (await readFile(join(directory, "pairing-inputs.jsonl"), "utf8"))
+      .split("\n").filter(Boolean);
+    const last = lines.at(-1);
+    if (last) return JSON.parse(last);
+  } catch {}
+  try {
+    return JSON.parse(await readFile(join(directory, "pairing-inputs.json"), "utf8"));
+  } catch {}
+  return null;
 }
 
 /**
@@ -157,13 +195,19 @@ function printReport(results) {
     const reported = entry.reported?.status ?? "?";
     process.stdout.write(
       `${entry.verdict.padEnd(17)} reported=${String(reported).padEnd(7)}`
+      + ` via=${(entry.source ?? "-").padEnd(15)}`
       + ` unanswered=${entry.unansweredCount ?? "-"}  ${entry.directory}\n`,
     );
     for (const loss of entry.unanswered ?? []) {
-      process.stdout.write(
-        `    ${loss.session_id} status=${loss.status}`
-        + ` #${loss.demand_event_id} ${loss.demand_event_type}: ${loss.excerpt}\n`,
-      );
+      const shape = loss.ambiguous
+        ? `${loss.unanswered_count} of ${loss.candidates.length} unanswered (which one is not in the events)`
+        : `${loss.unanswered_count} unanswered`;
+      process.stdout.write(`    ${loss.session_id} status=${loss.status} ${shape}\n`);
+      for (const candidate of loss.candidates) {
+        process.stdout.write(
+          `      #${candidate.event_id} ${candidate.event_type}: ${candidate.excerpt}\n`,
+        );
+      }
     }
   }
   const flippedToRed = red.filter((entry) => entry.reported?.status === "passed");

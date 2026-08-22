@@ -1,31 +1,57 @@
 name: lab harness verdict
 
-# scripts/lab-node/ 변경 시 랩 판정기의 자기 증명 테스트를 돌린다.
+# scripts/lab-node/ 변경 시 랩 판정기가 스스로를 증명하는지 확인한다.
 #
-# 이 워크플로가 있는 이유: 하니스는 발화할 수 없는 판정기(`user_message_loss`,
-# 함수 파라미터를 읽었다)를 달고 하루치 판단의 근거가 됐다. 상설 테스트로
-# 남겼어도 아무도 돌리지 않으면 같은 일이 반복된다.
+# 이 워크플로의 첫 판은 순수 테스트만 돌렸고, 독립 검수가 그것으로 부족함을
+# 실험으로 보였다: DB·파일에서 판정 스냅샷을 만드는 7개 출력을 전부 빈 값으로
+# 강제해도 순수 테스트는 41/41 초록에 exit 0이었다. 그런데 이번 감사가 발각한
+# 결함이 정확히 그 연결(DB → 스냅샷)의 부재였다. 재발 방지 장치가 그 재발을
+# 못 막으면, 그건 그것이 지키려던 판정기와 같은 부류의 물건이다.
 #
-# 여기서 도는 것은 랩이 필요 없는 순수 테스트뿐이다. DB에 위반 행을 심는
-# 변이 게이트(`fault-harness.sh mutation`)는 살아 있는 랩이 있어야 하므로
-# CI에서 돌 수 없다 — 랩 노드에서 수동으로 돌린다.
+# 그래서 여기서 일회용 PostgreSQL에 schema.sql을 그대로 적용하고, 랩에서 도는
+# 것과 **같은** 변이 게이트를 돌린다. 같은 사보타주에 이 잡은 exit 1이다.
 
 on:
   push:
     branches: [main]
     paths:
       - 'scripts/lab-node/**'
+      - 'packages/db-schema/sql/schema.sql'
       - '.github/workflows/lab-harness-verdict.yml'
   pull_request:
     paths:
       - 'scripts/lab-node/**'
+      - 'packages/db-schema/sql/schema.sql'
       - '.github/workflows/lab-harness-verdict.yml'
   workflow_dispatch:
 
 jobs:
   verdict-self-proof:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
+    # 랩과 같은 메이저 버전. schema.sql은 identity 컬럼과 jsonb CHECK를 쓴다.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: soulstream_lab_ci
+          POSTGRES_PASSWORD: soulstream_lab_ci
+          POSTGRES_DB: soulstream_lab_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: soulstream_lab_ci
+      PGPASSWORD: soulstream_lab_ci
+      PGDATABASE: soulstream_lab_ci
 
     steps:
       - name: Checkout
@@ -36,6 +62,12 @@ jobs:
         with:
           node-version: '22'
 
+      # 정본 스키마를 그대로 붓는다. migrate.mjs는 dotenv·postgres 의존성이
+      # 있어 설치가 필요하고, 이 잡이 검증하는 것은 마이그레이션 절차가 아니라
+      # 판정기가 진짜 테이블을 읽는가이다.
+      - name: Apply canonical schema
+        run: psql -v ON_ERROR_STOP=1 -q -f packages/db-schema/sql/schema.sql
+
       - name: Verdict and harness contract tests
         working-directory: scripts/lab-node
         run: |
@@ -43,3 +75,9 @@ jobs:
             fault-harness.test.mjs \
             fault-harness-verdict.test.mjs \
             lab-node.test.mjs
+
+      # 진짜 위반 행을 심고, 진짜 샘플러를 돌리고, 판정기가 그것을 지목하기를
+      # 요구한다. 지목 못 하면 exit 1.
+      - name: Mutation gate against a real database
+        working-directory: scripts/lab-node
+        run: node fault-harness-ci-gate.mjs
