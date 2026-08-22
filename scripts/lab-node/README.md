@@ -77,14 +77,19 @@ Keep at most two concurrent lab sessions. Before builds or smoke runs, confirm a
 The stage-2 harness records every injection and every invariant sample below
 `/home/eias/services/soulstream-lab/state/fault-harness/{run-id}`. `events.jsonl`
 contains the injection timeline, `invariants.jsonl` contains cycle verdicts,
-`pairing-inputs.json` contains the sessions and events the verdict was computed
-from, and `result.json` is the run summary. Matching lab log excerpts are copied
+`pairing-inputs.jsonl` contains the sessions and events the verdict was computed
+from, appended per sample as deltas, and `result.json` is the run summary. Matching lab log excerpts are copied
 beside them with bearer tokens and known lab secrets redacted.
 
-`pairing-inputs.json` is what makes a run re-judgeable later. Evidence written
-before it existed carries conclusions only, so once the lab database is rebuilt
-those runs can no longer be checked -- 39 of the runs stored on 2026-08-22 are
-in that state.
+`pairing-inputs.jsonl` is what makes a run re-judgeable later, and
+`fault-harness-rejudge.mjs` reads it with no database at all. Each line carries
+only what changed since the previous sample, so a long soak stays linear; the
+replay merges them and judges at the last sample's `capturedAt`, not at the
+wall clock. Evidence written before it existed carries conclusions only, so
+once the lab database is rebuilt those runs can no longer be checked -- 39 of
+the runs stored on 2026-08-22 are in that state. A short-lived earlier format,
+`pairing-inputs.json`, is still read so that evidence is not orphaned by its
+own fix.
 
 Run one scenario or the complete prioritized set:
 

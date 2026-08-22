@@ -33,6 +33,9 @@ export class EvidenceRecorder {
     this.eventsPath = join(directory, "events.jsonl");
     this.invariantsPath = join(directory, "invariants.jsonl");
     this.pairingInputsPath = join(directory, "pairing-inputs.jsonl");
+    // What has already been written, so each append carries only the change.
+    this.emittedSessions = new Map();
+    this.emittedEventIds = new Set();
   }
 
   async event(action, details = {}) {
@@ -62,27 +65,32 @@ export class EvidenceRecorder {
     // is allowed -- but erasing the fact that something *was* broken is not,
     // because the next reader has no way to tell a healthy system from one
     // that is always one second inside the grace.
-    const firstViolations = sample.newViolations;
-    const firstSeenAt = firstViolations.length > 0 ? sample.sampledAt : null;
+    const openedWith = describeOpenQuestions(sample);
+    const firstSeenAt = openedWith.length > 0 ? sample.sampledAt : null;
+    let samplesTaken = 1;
     // Unresolved `pending` keeps the loop running for the same reason a
     // violation does: the question has not been answered yet. Treating it as
     // clean is how a still-running session became evidence of health.
     while (unsettled(sample) && Date.now() < deadline) {
       await delay(5_000);
       sample = await this.sampleOnce(label, baseline);
+      samplesTaken += 1;
     }
     sample.settled = !unsettled(sample);
     sample.unresolvedPending = sample.pendingSessions ?? [];
+    // Recovery history covers *both* kinds of open question. Recording only
+    // violations meant a sample that pended three times and converged after
+    // twenty-four seconds reported firstSeenAt/clearedAt/recoveredAfterMs all
+    // null -- indistinguishable from one that was never in doubt, which is the
+    // very confusion this block was added to remove.
     sample.recovery = {
       firstSeenAt,
-      firstSeenViolations: firstViolations.map((violation) => ({
-        invariant: violation.invariant,
-        count: violation.count,
-      })),
+      firstSeenOpenQuestions: openedWith,
       clearedAt: firstSeenAt && sample.settled ? sample.sampledAt : null,
       recoveredAfterMs: firstSeenAt && sample.settled
         ? Date.parse(sample.sampledAt) - Date.parse(firstSeenAt)
         : null,
+      samplesTaken,
       settleBudgetMs: settleMs,
       waitedMs: Date.now() - startedAt,
     };
@@ -110,9 +118,38 @@ export class EvidenceRecorder {
       label,
       since: this.since,
       capturedAt: sample.sampledAt,
-      ...pairingInputs,
+      ...this.newInputsSince(pairingInputs),
     });
     return sample;
+  }
+
+  /**
+   * The part of a capture that is not already on disk.
+   *
+   * Re-appending every session and event on every sample made a run's evidence
+   * grow with the square of its length: harmless at nineteen samples, not
+   * harmless in a soak with `--cycles` unbounded. Sessions are re-emitted when
+   * anything the verdict reads about them changes -- `runnerProgressing` moves
+   * on its own -- and events only once, since an event never changes.
+   */
+  newInputsSince(pairingInputs) {
+    const sessions = [];
+    for (const session of pairingInputs?.sessions ?? []) {
+      const fingerprint = JSON.stringify([
+        session.status, session.last_event_at, session.runnerProgressing,
+      ]);
+      if (this.emittedSessions.get(session.session_id) === fingerprint) continue;
+      this.emittedSessions.set(session.session_id, fingerprint);
+      sessions.push(session);
+    }
+    const events = [];
+    for (const event of pairingInputs?.events ?? []) {
+      const key = `${event.session_id}#${event.id}`;
+      if (this.emittedEventIds.has(key)) continue;
+      this.emittedEventIds.add(key);
+      events.push(event);
+    }
+    return { sessions, events };
   }
 
   async scenario(id, result) {
@@ -330,6 +367,18 @@ function findTerminalProjectionMismatches(lifecycles, sessionRows) {
     }
   }
   return mismatches;
+}
+
+/** Everything a sample is still waiting on, named so the record can say what. */
+function describeOpenQuestions(sample) {
+  return [
+    ...sample.newViolations.map((violation) => ({
+      kind: "violation", invariant: violation.invariant, count: violation.count,
+    })),
+    ...(sample.pendingSessions ?? []).map((sessionId) => ({
+      kind: "pending", sessionId,
+    })),
+  ];
 }
 
 /** Whether a sample still has an open question of any kind. */
