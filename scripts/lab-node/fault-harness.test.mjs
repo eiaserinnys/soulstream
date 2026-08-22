@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { MUTATION_COVERAGE } from "./fault-harness-mutation.mjs";
 import {
   SCENARIO_DEFINITIONS,
   buildInterventionPayload,
@@ -122,7 +123,6 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
     ambiguousUncertain: 0,
     reasonlessDeadLetters: 0,
     activationManifestMismatch: false,
-    messageLosses: [],
   });
   assert.deepEqual(clean, []);
 
@@ -132,8 +132,8 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
     overdueRetries: 2,
     ambiguousUncertain: 1,
     reasonlessDeadLetters: 1,
+    strandedDeliveries: 1,
     activationManifestMismatch: true,
-    messageLosses: [{ messageId: "message-a", reason: "no outcome" }],
   });
   assert.deepEqual(
     violations.map((violation) => violation.invariant),
@@ -143,8 +143,8 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
       "overdue_retry",
       "ambiguous_uncertain",
       "reasonless_dead_letter",
+      "stranded_delivery",
       "activation_manifest",
-      "user_message_loss",
     ],
   );
 });
@@ -185,16 +185,16 @@ test("an unanswered user turn is a violation even when delivery bookkeeping is c
     ambiguousUncertain: 0,
     reasonlessDeadLetters: 0,
     activationManifestMismatch: false,
-    messageLosses: [],
-    unansweredUserInput: [
-      { session_id: "f2620ddb", status: "error", last_user_id: 27, last_assistant_id: 19 },
+    unansweredDemands: [
+      { session_id: "f2620ddb", status: "completed", demand_event_id: 6,
+        demand_event_type: "user_message", excerpt: "reply with the marker" },
     ],
   };
   const violations = evaluateInvariantSnapshot(clean);
-  assert.deepEqual(violations.map((violation) => violation.invariant), ["unanswered_user_input"]);
+  assert.deepEqual(violations.map((violation) => violation.invariant), ["unanswered_demand"]);
   assert.equal(violations[0].count, 1);
 
-  const answered = { ...clean, unansweredUserInput: [] };
+  const answered = { ...clean, unansweredDemands: [] };
   assert.deepEqual(evaluateInvariantSnapshot(answered), []);
 });
 
@@ -203,12 +203,12 @@ test("a violation that clears while another appears is still reported", () => {
   // makes the delta zero, and the run passed while a session it had just
   // broken sat in the list.
   const before = [{
-    invariant: "unanswered_user_input",
+    invariant: "unanswered_demand",
     count: 1,
     examples: [{ session_id: "old-one" }],
   }];
   const after = [{
-    invariant: "unanswered_user_input",
+    invariant: "unanswered_demand",
     count: 1,
     examples: [{ session_id: "new-one" }],
   }];
@@ -227,8 +227,7 @@ test("ownerless running sessions are named, so a swap is not a wash", () => {
     ambiguousUncertain: [],
     reasonlessDeadLetters: [],
     activationManifestMismatch: false,
-    messageLosses: [],
-    unansweredUserInput: [],
+    unansweredDemands: [],
   });
   const after = evaluateInvariantSnapshot({
     ownerlessRunning: [{ session_id: "new-one" }],
@@ -237,10 +236,48 @@ test("ownerless running sessions are named, so a swap is not a wash", () => {
     ambiguousUncertain: [],
     reasonlessDeadLetters: [],
     activationManifestMismatch: false,
-    messageLosses: [],
-    unansweredUserInput: [],
+    unansweredDemands: [],
   });
   const fresh = newInvariantViolations(before, after);
   assert.equal(fresh.length, 1);
   assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
+});
+
+test("every invariant the verdict can emit has a mutation that plants it", () => {
+  // The gate that would have caught `user_message_loss` on the day it was
+  // written. An invariant with no mutation has never been observed to fire;
+  // shipping one is shipping a green light wired to nothing.
+  const everyInvariant = evaluateInvariantSnapshot({
+    ownerlessRunning: [{ session_id: "a" }],
+    terminalProjectionMismatches: [{ sessionId: "a" }],
+    overdueRetries: [{ delivery_id: "a" }],
+    ambiguousUncertain: [{ delivery_id: "a" }],
+    reasonlessDeadLetters: [{ delivery_id: "a" }],
+    strandedDeliveries: [{ delivery_id: "a" }],
+    activationManifestMismatch: true,
+    unansweredDemands: [{ session_id: "a", demand_event_id: 1 }],
+  }).map((violation) => violation.invariant);
+
+  const uncovered = everyInvariant.filter((name) => !MUTATION_COVERAGE.includes(name));
+  assert.deepEqual(uncovered, [], `invariants with no mutation: ${uncovered.join(", ")}`);
+});
+
+test("the deleted judges are gone, not renamed", () => {
+  // `user_message_loss` read a function parameter that every caller set to
+  // `[]`; `unanswered_user_input` compared the newest input id against the
+  // newest reply id, so one reply cleared every input at once. Neither is
+  // repairable in place, and leaving either name alive would let a future
+  // reader assume the coverage still exists.
+  const names = evaluateInvariantSnapshot({
+    ownerlessRunning: [],
+    terminalProjectionMismatches: [],
+    overdueRetries: [],
+    ambiguousUncertain: [],
+    reasonlessDeadLetters: [],
+    activationManifestMismatch: true,
+    unansweredDemands: [{ session_id: "a" }],
+  }).map((violation) => violation.invariant);
+  assert.ok(!names.includes("user_message_loss"));
+  assert.ok(!names.includes("unanswered_user_input"));
+  assert.ok(names.includes("unanswered_demand"));
 });

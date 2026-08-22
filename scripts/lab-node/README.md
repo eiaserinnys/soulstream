@@ -76,9 +76,20 @@ Keep at most two concurrent lab sessions. Before builds or smoke runs, confirm a
 
 The stage-2 harness records every injection and every invariant sample below
 `/home/eias/services/soulstream-lab/state/fault-harness/{run-id}`. `events.jsonl`
-contains the injection timeline, `invariants.jsonl` contains cycle verdicts, and
-`result.json` is the run summary. Matching lab log excerpts are copied beside
-them with bearer tokens and known lab secrets redacted.
+contains the injection timeline, `invariants.jsonl` contains cycle verdicts,
+`pairing-inputs.jsonl` contains the sessions and events the verdict was computed
+from, appended per sample as deltas, and `result.json` is the run summary. Matching lab log excerpts are copied
+beside them with bearer tokens and known lab secrets redacted.
+
+`pairing-inputs.jsonl` is what makes a run re-judgeable later, and
+`fault-harness-rejudge.mjs` reads it with no database at all. Each line carries
+only what changed since the previous sample, so a long soak stays linear; the
+replay merges them and judges at the last sample's `capturedAt`, not at the
+wall clock. Evidence written before it existed carries conclusions only, so
+once the lab database is rebuilt those runs can no longer be checked -- 39 of
+the runs stored on 2026-08-22 are in that state. A short-lived earlier format,
+`pairing-inputs.json`, is still read so that evidence is not orphaned by its
+own fix.
 
 Run one scenario or the complete prioritized set:
 
@@ -104,6 +115,33 @@ The bounded traffic loop supports at most two concurrent sessions:
 The harness exits nonzero when a scenario verdict or invariant fails. It may
 write only the dedicated lab PostgreSQL container and may signal only PIDs
 whose command line and runtime root match the lab clone.
+
+### Proving the judges still work
+
+```bash
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh mutation
+```
+
+Plants a real violating row for every invariant, requires the judge to name it,
+then removes the row and requires the judge to go quiet again. Run it before
+trusting a green scorecard, and after touching anything under
+`fault-harness-verdict.mjs` or the invariant SQL.
+
+This exists because the harness once shipped an invariant, `user_message_loss`,
+whose input was a function parameter every caller set to `[]`. It could not
+fire, it passed the unit tests over hand-built snapshots, and a full day of
+verdicts rested on it.
+
+### Re-judging stored evidence
+
+```bash
+scripts/lab-node/fault-harness-rejudge.mjs            # every stored run
+scripts/lab-node/fault-harness-rejudge.mjs <run-id>   # one run
+```
+
+Replays stored runs against the current verdict, so a change to a judge can be
+checked against every run ever taken instead of against a fresh reproduction.
+Needs only the lab postgres environment variables.
 
 ## Updating the runtime clone
 

@@ -61,7 +61,8 @@ export async function runCanonicalScenario(id, runtime, recorder) {
       }
     }
   }
-  const invariant = await recorder.invariant(`after-${id}`, [], baseline.violations, 90_000);
+  const invariant = await recorder.invariant(`after-${id}`, baseline.violations, 90_000);
+  result = withBaselineHonesty(result, baseline, invariant);
   if (invariant.newViolations.length > 0 && !failure) {
     failure = {
       name: "InvariantViolation",
@@ -75,13 +76,41 @@ export async function runCanonicalScenario(id, runtime, recorder) {
   return result;
 }
 
+/**
+ * Runs the traffic cycles and does not return until every worker has stopped.
+ *
+ * `Promise.all` rejects the moment one worker throws, which finalised the run
+ * report while a sibling was still working: a 2x4 run wrote `result.json` at
+ * 17:58:42 and then kept writing evidence until 18:01:07 -- two and a half
+ * minutes of a scorecard that no longer described what was on disk. A verdict
+ * you cannot tie to the evidence it was computed from is the exact failure
+ * this harness exists to prevent, so the report waits.
+ *
+ * A failing worker also drains the queue. The siblings finish the cycle they
+ * are in -- killing that mid-flight would leave a half-run session that the
+ * next run inherits as a dirty baseline -- and then stop.
+ */
 export async function runTrafficCycles(options, runtime, recorder) {
   const queue = Array.from({ length: options.cycles }, (_, index) => index + 1);
   const results = [];
-  const workers = Array.from({ length: options.concurrency }, (_, workerIndex) => (
-    runCycleWorker(workerIndex + 1, queue, results, options.intervalSeconds, runtime, recorder)
-  ));
-  await Promise.all(workers);
+  const state = { stopping: false };
+  const settled = await Promise.allSettled(
+    Array.from({ length: options.concurrency }, (_, workerIndex) => (
+      runCycleWorker(
+        workerIndex + 1, queue, results, options.intervalSeconds, runtime, recorder, state,
+      )
+    )),
+  );
+  const failures = settled
+    .filter((outcome) => outcome.status === "rejected")
+    .map((outcome) => outcome.reason);
+  if (failures.length > 0) {
+    // Rethrown only now, with every worker stopped and every file written.
+    const error = failures.length === 1
+      ? failures[0]
+      : new AggregateError(failures, `${failures.length} traffic cycle workers failed`);
+    throw error;
+  }
   return results.sort((left, right) => left.cycle - right.cycle);
 }
 
@@ -366,8 +395,22 @@ const SCENARIOS = {
   },
 };
 
-async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, recorder) {
-  while (queue.length > 0) {
+async function runCycleWorker(
+  worker, queue, results, intervalSeconds, runtime, recorder, state,
+) {
+  try {
+    await driveCycles(worker, queue, results, intervalSeconds, runtime, recorder, state);
+  } catch (error) {
+    // Stop handing out new cycles, but let the siblings land the one they are
+    // running. The failure is reported by runTrafficCycles once all of them
+    // have stopped.
+    state.stopping = true;
+    throw error;
+  }
+}
+
+async function driveCycles(worker, queue, results, intervalSeconds, runtime, recorder, state) {
+  while (queue.length > 0 && !state.stopping) {
     const cycle = queue.shift();
     if (cycle === undefined) return;
     const baseline = await recorder.invariant(`before-cycle-${cycle}`);
@@ -375,14 +418,14 @@ async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, 
     results.push(result);
     const invariant = await recorder.invariant(
       `after-cycle-${cycle}`,
-      [],
       baseline.violations,
       90_000,
     );
     result.invariant = invariant;
     if (invariant.newViolations.length > 0) result.status = "failed";
+    Object.assign(result, withBaselineHonesty(result, baseline, invariant));
     await recorder.scenario(`cycle-${cycle}`, result);
-    if (queue.length > 0) await delay(intervalSeconds * 1_000);
+    if (queue.length > 0 && !state.stopping) await delay(intervalSeconds * 1_000);
   }
 }
 
@@ -471,6 +514,42 @@ function delayedMarkerPrompt(marker, seconds) {
   return "Use Bash exactly once to run "
     + `python3 -c "import time; time.sleep(${seconds})". `
     + `After it finishes, reply with exactly ${marker}.`;
+}
+
+/**
+ * Refuses to call a run `passed` when it started from a red lab.
+ *
+ * Verdicts are reported as the violations present after a scenario that were
+ * not present before it, so a loss that is already sitting in the lab is
+ * subtracted from the run that follows -- including a loss the previous run
+ * caused. The delta is still the right thing to *measure*; what was wrong was
+ * calling the result a pass. A scenario that could not start from a clean lab
+ * has not shown the system works, it has only shown it did not get worse.
+ */
+function withBaselineHonesty(result, baseline, invariant) {
+  const stillPending = invariant?.unresolvedPending ?? [];
+  if (stillPending.length > 0 && result.status === "passed") {
+    // The settle budget ran out with sessions that had still not answered and
+    // had not yet failed. Nobody knows whether they were lost, so this is not
+    // a pass -- it is the question left open.
+    return {
+      ...result,
+      status: "inconclusive_unresolved_pending",
+      unresolvedPending: stillPending,
+      reason: "the settle budget expired while sessions were still mid-answer",
+    };
+  }
+  const dirty = baseline?.violations ?? [];
+  if (dirty.length === 0 || result.status !== "passed") return result;
+  return {
+    ...result,
+    status: "inconclusive_dirty_baseline",
+    baselineViolations: dirty.map((violation) => ({
+      invariant: violation.invariant,
+      count: violation.count,
+    })),
+    reason: "the lab was already violating an invariant before this scenario ran",
+  };
 }
 
 function assertScenario(condition, message) {

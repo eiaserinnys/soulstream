@@ -12,6 +12,14 @@ import {
   newInvariantViolations,
   redactEvidenceLine,
 } from "./fault-harness-contract.mjs";
+import {
+  groupEventsBySession,
+  pairingInputsQuery,
+} from "./fault-harness-database.mjs";
+import {
+  findPendingSessions,
+  findUnansweredDemands,
+} from "./fault-harness-verdict.mjs";
 
 export class EvidenceRecorder {
   constructor(runtime, runId, directory) {
@@ -24,6 +32,10 @@ export class EvidenceRecorder {
     this.since = new Date().toISOString();
     this.eventsPath = join(directory, "events.jsonl");
     this.invariantsPath = join(directory, "invariants.jsonl");
+    this.pairingInputsPath = join(directory, "pairing-inputs.jsonl");
+    // What has already been written, so each append carries only the change.
+    this.emittedSessions = new Map();
+    this.emittedEventIds = new Set();
   }
 
   async event(action, details = {}) {
@@ -44,24 +56,100 @@ export class EvidenceRecorder {
    * `settleMs` on the after-sample and a violation only counts once it has had
    * that long to clear. Baseline samples never wait; they are the comparison.
    */
-  async invariant(label, messageLosses = [], baseline = [], settleMs = 0) {
+  async invariant(label, baseline = [], settleMs = 0) {
     const deadline = Date.now() + settleMs;
-    let sample = await this.sampleOnce(label, messageLosses, baseline);
-    while (sample.newViolations.length > 0 && Date.now() < deadline) {
+    const startedAt = Date.now();
+    let sample = await this.sampleOnce(label, baseline);
+    // A run that recovers after eighty-nine seconds and a run that was never
+    // broken used to produce the same record. Waiting is the contract -- delay
+    // is allowed -- but erasing the fact that something *was* broken is not,
+    // because the next reader has no way to tell a healthy system from one
+    // that is always one second inside the grace.
+    const openedWith = describeOpenQuestions(sample);
+    const firstSeenAt = openedWith.length > 0 ? sample.sampledAt : null;
+    let samplesTaken = 1;
+    // Unresolved `pending` keeps the loop running for the same reason a
+    // violation does: the question has not been answered yet. Treating it as
+    // clean is how a still-running session became evidence of health.
+    while (unsettled(sample) && Date.now() < deadline) {
       await delay(5_000);
-      sample = await this.sampleOnce(label, messageLosses, baseline);
+      sample = await this.sampleOnce(label, baseline);
+      samplesTaken += 1;
     }
-    sample.settled = sample.newViolations.length === 0;
+    sample.settled = !unsettled(sample);
+    sample.unresolvedPending = sample.pendingSessions ?? [];
+    // Recovery history covers *both* kinds of open question. Recording only
+    // violations meant a sample that pended three times and converged after
+    // twenty-four seconds reported firstSeenAt/clearedAt/recoveredAfterMs all
+    // null -- indistinguishable from one that was never in doubt, which is the
+    // very confusion this block was added to remove.
+    sample.recovery = {
+      firstSeenAt,
+      firstSeenOpenQuestions: openedWith,
+      clearedAt: firstSeenAt && sample.settled ? sample.sampledAt : null,
+      recoveredAfterMs: firstSeenAt && sample.settled
+        ? Date.parse(sample.sampledAt) - Date.parse(firstSeenAt)
+        : null,
+      samplesTaken,
+      settleBudgetMs: settleMs,
+      waitedMs: Date.now() - startedAt,
+    };
     await appendJsonLine(this.invariantsPath, sample);
     return sample;
   }
 
-  async sampleOnce(label, messageLosses, baseline) {
+  async sampleOnce(label, baseline) {
     await delay(2_000);
-    const sample = { label, since: this.since,
-      ...(await sampleInvariants(this.runtime, messageLosses, this.since)) };
+    const { pairingInputs, ...sample } = await sampleInvariants(this.runtime, this.since);
+    sample.label = label;
+    sample.since = this.since;
     sample.newViolations = newInvariantViolations(baseline, sample.violations);
+    // The inputs the verdict was computed from, kept beside the verdict.
+    //
+    // Without this a stored run cannot be re-judged: the two directories this
+    // audit was asked to re-judge could not be, because the lab database had
+    // been rebuilt and the evidence carried only conclusions. Evidence that
+    // cannot be re-checked is a claim, not evidence.
+    //
+    // Appended, not overwritten. The first version wrote one file per run and
+    // rewrote it on every sample, so the settle loop erased each intermediate
+    // state and a run that recovered kept no record of what it recovered from.
+    await appendJsonLine(this.pairingInputsPath, {
+      label,
+      since: this.since,
+      capturedAt: sample.sampledAt,
+      ...this.newInputsSince(pairingInputs),
+    });
     return sample;
+  }
+
+  /**
+   * The part of a capture that is not already on disk.
+   *
+   * Re-appending every session and event on every sample made a run's evidence
+   * grow with the square of its length: harmless at nineteen samples, not
+   * harmless in a soak with `--cycles` unbounded. Sessions are re-emitted when
+   * anything the verdict reads about them changes -- `runnerProgressing` moves
+   * on its own -- and events only once, since an event never changes.
+   */
+  newInputsSince(pairingInputs) {
+    const sessions = [];
+    for (const session of pairingInputs?.sessions ?? []) {
+      const fingerprint = JSON.stringify([
+        session.status, session.last_event_at, session.runnerProgressing,
+      ]);
+      if (this.emittedSessions.get(session.session_id) === fingerprint) continue;
+      this.emittedSessions.set(session.session_id, fingerprint);
+      sessions.push(session);
+    }
+    const events = [];
+    for (const event of pairingInputs?.events ?? []) {
+      const key = `${event.session_id}#${event.id}`;
+      if (this.emittedEventIds.has(key)) continue;
+      this.emittedEventIds.add(key);
+      events.push(event);
+    }
+    return { sessions, events };
   }
 
   async scenario(id, result) {
@@ -109,7 +197,7 @@ export class EvidenceRecorder {
   }
 }
 
-async function sampleInvariants(runtime, messageLosses, since) {
+export async function sampleInvariants(runtime, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
       'ownerlessRunning', (
@@ -136,6 +224,21 @@ async function sampleInvariants(runtime, messageLosses, since) {
         FROM session_deliveries
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
+      'strandedDeliveries', (
+        -- Handed over and never taken.
+        --
+        -- Found by running under load: a parent session died with a duplicate
+        -- durable event stream registration while a child's completion sat in
+        -- the delivered state, and it stayed there. Every delivery judge
+        -- missed it -- overdue_retry wants pending, ambiguous_uncertain wants
+        -- uncertain, reasonless_dead_letter wants dead_letter -- so the one
+        -- terminal-looking state that is not terminal had nobody watching it.
+        -- Two minutes is far past the seconds a real handover takes.
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
+        WHERE aggregate_state = 'delivered'
+          AND delivered_at < NOW() - INTERVAL '120 seconds'
+      ),
       'reasonlessDeadLetters', (
         SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
         FROM session_deliveries
@@ -153,46 +256,6 @@ async function sampleInvariants(runtime, messageLosses, since) {
           FROM sessions AS session
         ) AS summary
       ),
-      'unansweredUserInput', (
-        -- A user turn that never produced an assistant reply. Delivery
-        -- bookkeeping can look perfectly clean while this is true: the 260822
-        -- F9 reproduction lost a reply with zero dead letters, zero overdue
-        -- retries and zero uncertain deliveries. Only the reply itself proves
-        -- the message arrived somewhere that could answer it.
-        --
-        -- Sessions that are still working are exempt until they go quiet, so
-        -- an in-flight turn is never reported as a loss.
-        SELECT COALESCE(json_agg(row_to_json(unanswered)), '[]'::json) FROM (
-          SELECT session.session_id, session.status,
-            asked.last_user_id, answered.last_assistant_id, asked.last_event_at
-          FROM sessions AS session
-          JOIN LATERAL (
-            SELECT MAX(id) FILTER (WHERE event_type = 'user_message') AS last_user_id,
-              MAX(created_at) AS last_event_at
-            FROM events WHERE events.session_id = session.session_id
-          ) AS asked ON TRUE
-          LEFT JOIN LATERAL (
-            SELECT MAX(id) AS last_assistant_id FROM events
-            WHERE events.session_id = session.session_id
-              AND events.event_type = 'assistant_message'
-          ) AS answered ON TRUE
-          WHERE asked.last_user_id IS NOT NULL
-            AND (
-              answered.last_assistant_id IS NULL
-              OR answered.last_assistant_id < asked.last_user_id
-            )
-            AND session.created_at >= ${sqlTimestamp(since)}
-            AND (
-              session.status NOT IN ('running', 'initializing')
-              -- Whether real work is happening is decided by runner progress
-              -- below, not by this clock, so the clock only has to outlast a
-              -- pause. Measured replies land three to five seconds after the
-              -- prompt, and three minutes of grace on top of that buys
-              -- nothing but blindness.
-              OR asked.last_event_at < NOW() - INTERVAL '30 seconds'
-            )
-        ) AS unanswered
-      ),
       'activationReceipt', (
         SELECT row_to_json(receipt) FROM (
           SELECT manifest_id, release_cohort_id, source_commit
@@ -208,42 +271,55 @@ async function sampleInvariants(runtime, messageLosses, since) {
     lifecycles,
     database?.sessions ?? [],
   );
-  // SQL can see that nothing has been written for a while; it cannot see that a
-  // runner is alive and working. A model turn or a Bash call may legitimately
-  // run past the quiet threshold, and reporting those as lost message would
-  // teach the next reader to distrust the judge -- at which point it may as
-  // well not exist. A session whose runner is still progressing is exempt.
-  const unansweredUserInput = (database?.unansweredUserInput ?? []).filter(
-    (row) => !runnerIsStillWorking(lifecycles.get(row.session_id)),
-  );
+  // The user-facing verdict, derived here rather than handed in.
+  //
+  // What stood here before was `messageLosses`, a parameter. Every scenario
+  // passed `[]` and the default was `[]`, so the one invariant built to catch
+  // a lost user message could not report one no matter what the system did.
+  // It is gone; this reads the event stream instead.
+  const pairingInputs = await runtime.psqlOne(pairingInputsQuery(since));
+  const pairedSessions = (pairingInputs?.sessions ?? []).map((session) => ({
+    ...session,
+    runnerProgressing: runnerIsStillWorking(lifecycles.get(session.session_id)),
+  }));
+  const groupedEvents = groupEventsBySession(pairingInputs?.events);
+  const unansweredDemands = findUnansweredDemands(pairedSessions, groupedEvents, Date.now());
+  // Sessions that may still answer.
+  //
+  // `pending` was added to the verdict and then never read, so a session with
+  // a fresh input and a live owner produced neither a violation nor any other
+  // signal and the sample came back clean. A state that nothing consumes is
+  // not a state; it is a comment. The recorder waits these out below rather
+  // than letting them count as health.
+  const pendingSessions = findPendingSessions(pairedSessions, groupedEvents, Date.now());
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
     ownerlessRunning: database?.ownerlessRunning ?? [],
-    unansweredUserInput,
+    unansweredDemands,
     terminalProjectionMismatches,
     overdueRetries: database?.overdueRetries ?? [],
     ambiguousUncertain: database?.ambiguousUncertain ?? [],
     reasonlessDeadLetters: database?.reasonlessDeadLetters ?? [],
+    strandedDeliveries: database?.strandedDeliveries ?? [],
     activationManifestMismatch: !receipt
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId
       || receipt.source_commit !== manifest.sourceCommit,
-    messageLosses,
   };
   return {
     sampledAt: new Date().toISOString(),
     snapshot,
     violations: evaluateInvariantSnapshot(snapshot),
+    pendingSessions,
+    // P1-2 of the second review: a replay has to judge with the clock the
+    // capture had. `runnerProgressing` is read from disk at sample time and is
+    // gone by the time anyone re-judges, so it travels with the inputs.
+    pairingInputs: pairingInputs && {
+      ...pairingInputs,
+      sessions: pairedSessions,
+    },
   };
-}
-
-/** Quotes an ISO timestamp for inline SQL; rejects anything that is not one. */
-function sqlTimestamp(value) {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
-    throw new Error(`invalid invariant window timestamp: ${value}`);
-  }
-  return `TIMESTAMPTZ '${value}'`;
 }
 
 const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
@@ -307,6 +383,23 @@ function findTerminalProjectionMismatches(lifecycles, sessionRows) {
     }
   }
   return mismatches;
+}
+
+/** Everything a sample is still waiting on, named so the record can say what. */
+function describeOpenQuestions(sample) {
+  return [
+    ...sample.newViolations.map((violation) => ({
+      kind: "violation", invariant: violation.invariant, count: violation.count,
+    })),
+    ...(sample.pendingSessions ?? []).map((sessionId) => ({
+      kind: "pending", sessionId,
+    })),
+  ];
+}
+
+/** Whether a sample still has an open question of any kind. */
+function unsettled(sample) {
+  return sample.newViolations.length > 0 || (sample.pendingSessions ?? []).length > 0;
 }
 
 async function appendJsonLine(path, value) {
