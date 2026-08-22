@@ -90,8 +90,12 @@ export function buildInterventionPayload(deliveryId, text) {
 
 export function evaluateInvariantSnapshot(snapshot) {
   const violations = [];
-  if (snapshot.ownerlessRunning > 0) {
-    violations.push(invariant("ownerless_running", snapshot.ownerlessRunning));
+  // Every invariant now names what it found. A violation that cannot be named
+  // can only be compared by count, and counts cancel: an old one clearing as a
+  // new one arrives reads as no change at all.
+  const ownerless = asExamples(snapshot.ownerlessRunning);
+  if (ownerless.length > 0) {
+    violations.push(invariant("ownerless_running", ownerless.length, ownerless));
   }
   if (snapshot.terminalProjectionMismatches.length > 0) {
     violations.push(invariant(
@@ -100,14 +104,17 @@ export function evaluateInvariantSnapshot(snapshot) {
       snapshot.terminalProjectionMismatches,
     ));
   }
-  if (snapshot.overdueRetries > 0) {
-    violations.push(invariant("overdue_retry", snapshot.overdueRetries));
+  const overdueRetriesExamples = asExamples(snapshot.overdueRetries);
+  if (overdueRetriesExamples.length > 0) {
+    violations.push(invariant("overdue_retry", overdueRetriesExamples.length, overdueRetriesExamples));
   }
-  if (snapshot.ambiguousUncertain > 0) {
-    violations.push(invariant("ambiguous_uncertain", snapshot.ambiguousUncertain));
+  const ambiguousUncertainExamples = asExamples(snapshot.ambiguousUncertain);
+  if (ambiguousUncertainExamples.length > 0) {
+    violations.push(invariant("ambiguous_uncertain", ambiguousUncertainExamples.length, ambiguousUncertainExamples));
   }
-  if (snapshot.reasonlessDeadLetters > 0) {
-    violations.push(invariant("reasonless_dead_letter", snapshot.reasonlessDeadLetters));
+  const reasonlessDeadLettersExamples = asExamples(snapshot.reasonlessDeadLetters);
+  if (reasonlessDeadLettersExamples.length > 0) {
+    violations.push(invariant("reasonless_dead_letter", reasonlessDeadLettersExamples.length, reasonlessDeadLettersExamples));
   }
   if (snapshot.activationManifestMismatch) {
     violations.push(invariant("activation_manifest", 1));
@@ -132,6 +139,15 @@ export function evaluateInvariantSnapshot(snapshot) {
  * only count-only violations, which name nothing to match, still fall back to
  * the difference in counts.
  */
+/** Tolerates the old count-shaped snapshots so a stored sample still reads. */
+function asExamples(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "number" && value > 0) {
+    return Array.from({ length: value }, (_, index) => ({ unnamed: index }));
+  }
+  return [];
+}
+
 export function newInvariantViolations(before, after) {
   const baseline = new Map(before.map((violation) => [violation.invariant, violation]));
   return after.flatMap((violation) => {

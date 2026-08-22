@@ -36,6 +36,9 @@ export async function preserveDeadOwnership(runtime, runnerPid) {
     50,
   );
   await unlink(pidPath);
+  // This kills the host directly rather than through the runtime, so readiness
+  // has to be told that the connection it last saw is gone.
+  runtime.expectFreshNodeConnection();
   return nodePid;
 }
 

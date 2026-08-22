@@ -64,6 +64,19 @@ export class LabRuntime {
     return new EvidenceRecorder(this, runId, directory);
   }
 
+  /**
+   * Requires a *new* node connection after we deliberately stopped one.
+   *
+   * `/api/nodes` only lists connected nodes and `status` is the same boolean,
+   * so asking for either proves nothing across a restart: the previous
+   * connection is still listed for as long as orch has not noticed it go.
+   * Three runs were lost to `503 NO_AVAILABLE_NODE` that way. The connection
+   * id is what actually changes, so a restart waits for a different one.
+   */
+  expectFreshNodeConnection() {
+    this.staleConnectionId = this.lastConnectionId;
+  }
+
   async assertReady() {
     await this.waitForHttp(`${this.apiBase}/api/health`, 30_000);
     await this.waitForHttp(`http://127.0.0.1:${this.nodePort}/health`, 30_000);
@@ -243,6 +256,7 @@ export class LabRuntime {
     process.kill(pid, signal);
     await waitForExit(pid, signal === "SIGKILL" ? 5_000 : 30_000);
     await unlink(definition.pidPath).catch(ignoreMissing);
+    if (service === "node") this.expectFreshNodeConnection();
     await this.startStack();
     return pid;
   }
@@ -254,6 +268,7 @@ export class LabRuntime {
     process.kill(pid, "SIGTERM");
     await waitForExit(pid, 30_000);
     await unlink(pidPath).catch(ignoreMissing);
+    this.expectFreshNodeConnection();
     return pid;
   }
 
@@ -405,13 +420,24 @@ export class LabRuntime {
           : [];
         if (matches.length === 1) {
           lastSeen = matches[0];
-          if (lastSeen.connected === true || lastSeen.status === "connected") return;
+          const connected = lastSeen.connected === true || lastSeen.status === "connected";
+          const fresh = this.staleConnectionId === undefined
+            || (lastSeen.connectionId !== undefined
+              && lastSeen.connectionId !== this.staleConnectionId);
+          if (connected && fresh) {
+            this.lastConnectionId = lastSeen.connectionId;
+            this.staleConnectionId = undefined;
+            return;
+          }
         }
       } catch {}
       await delay(250);
     }
     throw new Error(
-      `eias-lab did not become connected (last status: ${lastSeen?.status ?? "absent"})`,
+      "eias-lab did not present a serving connection"
+      + ` (status: ${lastSeen?.status ?? "absent"},`
+      + ` connection: ${lastSeen?.connectionId ?? "none"},`
+      + ` replacing: ${this.staleConnectionId ?? "none"})`,
     );
   }
 

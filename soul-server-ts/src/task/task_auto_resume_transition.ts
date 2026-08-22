@@ -67,12 +67,24 @@ export class AutoResumeTransition {
       task.executionActivationHandoff = activationHandoff;
       task.executionActivationPromise = activationHandoff.promise;
       void activationHandoff.promise.catch(() => undefined);
-      void activationHandoff.promise.catch(() => {
-        if (task.status !== "initializing") return;
-        task.status = originalStatus;
-        task.terminalEventId = originalTerminalEventId;
-        task.pendingExecutionExpectedTerminalEventId = undefined;
-      });
+      // The resume has not landed until ownership activates. Everything below
+      // only queues the attempt; the executor starts deferred and the
+      // activation is awaited by the caller. Treating the transition as the
+      // landing point cleared the detached-running flag while the reservation
+      // could still fail, and the next durable retry then went back down the
+      // terminal branch against a session row that is still `running`.
+      void activationHandoff.promise.then(
+        () => {
+          task.detachedRunningResume = undefined;
+        },
+        () => {
+          if (task.status !== "initializing") return;
+          task.status = originalStatus;
+          task.terminalEventId = originalTerminalEventId;
+          task.pendingExecutionExpectedTerminalEventId = undefined;
+          if (detachedRunningResume) task.detachedRunningResume = true;
+        },
+      );
     }
 
     try {
@@ -118,12 +130,10 @@ export class AutoResumeTransition {
       if (ownershipEnabled && expectedTerminalEventId !== undefined) {
         task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
       }
-      // Cleared only on success, and deliberately so. The flag describes a
-      // state -- the session is centrally running with no executor -- that
-      // stays true until a resume actually lands. Clearing it on failure would
-      // send the very next retry back down the terminal branch that just
-      // refused it.
-      task.detachedRunningResume = undefined;
+      // Without ownership there is no activation to wait for, so the durable
+      // transition is where this resume lands. With ownership, the handoff
+      // above owns the flag.
+      if (!activationHandoff) task.detachedRunningResume = undefined;
       prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
       onResume(task);
       return { autoResumed: true };

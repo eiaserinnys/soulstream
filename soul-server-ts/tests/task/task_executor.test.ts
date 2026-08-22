@@ -2374,6 +2374,38 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.executionPromise).toBeDefined();
     await task.executionPromise;
     expect(task.executionPromise).toBeUndefined();
+
+    // The ownership rejection path is the one that mattered: it returns early
+    // on purpose so durable delivery recovery can take over, so nothing
+    // finalizes the task and nothing else would clear the slot.
+    const rejectingMocks = makeMocks();
+    Object.assign(rejectingMocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+    });
+    const backoff = new ExecutionOwnershipBackoff({
+      logger: { warn: vi.fn(), error: vi.fn() },
+      now: () => 0,
+    });
+    backoff.observeConflict("sess-1", new Date(60_000).toISOString());
+    const rejectingExecutor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      rejectingMocks.db,
+      rejectingMocks.persistence,
+      rejectingMocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      backoff,
+    );
+    const rejectedTask = makeTask();
+    await rejectingExecutor.startExecution(rejectedTask, agent);
+    expect(rejectedTask.executionPromise).toBeUndefined();
   });
 
   it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {

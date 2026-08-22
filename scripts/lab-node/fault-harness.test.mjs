@@ -217,9 +217,30 @@ test("a violation that clears while another appears is still reported", () => {
   assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
 });
 
-test("a count-only violation still compares by count", () => {
-  const before = [{ invariant: "ownerless_running", count: 1 }];
-  assert.deepEqual(newInvariantViolations(before, [{ invariant: "ownerless_running", count: 1 }]), []);
-  const grown = newInvariantViolations(before, [{ invariant: "ownerless_running", count: 3 }]);
-  assert.equal(grown[0].count, 2);
+test("ownerless running sessions are named, so a swap is not a wash", () => {
+  // This used to be counted, and a count cannot tell an old violation clearing
+  // from a new one arriving -- the two cancelled and the run passed.
+  const before = evaluateInvariantSnapshot({
+    ownerlessRunning: [{ session_id: "old-one" }],
+    terminalProjectionMismatches: [],
+    overdueRetries: [],
+    ambiguousUncertain: [],
+    reasonlessDeadLetters: [],
+    activationManifestMismatch: false,
+    messageLosses: [],
+    unansweredUserInput: [],
+  });
+  const after = evaluateInvariantSnapshot({
+    ownerlessRunning: [{ session_id: "new-one" }],
+    terminalProjectionMismatches: [],
+    overdueRetries: [],
+    ambiguousUncertain: [],
+    reasonlessDeadLetters: [],
+    activationManifestMismatch: false,
+    messageLosses: [],
+    unansweredUserInput: [],
+  });
+  const fresh = newInvariantViolations(before, after);
+  assert.equal(fresh.length, 1);
+  assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
 });

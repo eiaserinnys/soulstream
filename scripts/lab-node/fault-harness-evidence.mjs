@@ -113,7 +113,10 @@ async function sampleInvariants(runtime, messageLosses, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
       'ownerlessRunning', (
-        SELECT COUNT(*)::integer FROM sessions AS session
+        -- Identities, not a tally. A count cannot tell an old violation
+        -- clearing from a new one arriving, and the two cancel.
+        SELECT COALESCE(json_agg(json_build_object('session_id', session.session_id)), '[]'::json)
+        FROM sessions AS session
         WHERE session.status = 'running'
           AND NOT EXISTS (
             SELECT 1 FROM session_execution_ownerships AS ownership
@@ -122,17 +125,20 @@ async function sampleInvariants(runtime, messageLosses, since) {
           )
       ),
       'overdueRetries', (
-        SELECT COUNT(*)::integer FROM session_deliveries
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
         WHERE aggregate_state = 'pending'
           AND state = 'pending'
           AND next_attempt_at < NOW() - INTERVAL '5 seconds'
       ),
       'ambiguousUncertain', (
-        SELECT COUNT(*)::integer FROM session_deliveries
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
       'reasonlessDeadLetters', (
-        SELECT COUNT(*)::integer FROM session_deliveries
+        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
+        FROM session_deliveries
         WHERE aggregate_state = 'dead_letter'
           AND NULLIF(dead_letter_reason, '') IS NULL
       ),
@@ -212,12 +218,12 @@ async function sampleInvariants(runtime, messageLosses, since) {
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
-    ownerlessRunning: database?.ownerlessRunning ?? 0,
+    ownerlessRunning: database?.ownerlessRunning ?? [],
     unansweredUserInput,
     terminalProjectionMismatches,
-    overdueRetries: database?.overdueRetries ?? 0,
-    ambiguousUncertain: database?.ambiguousUncertain ?? 0,
-    reasonlessDeadLetters: database?.reasonlessDeadLetters ?? 0,
+    overdueRetries: database?.overdueRetries ?? [],
+    ambiguousUncertain: database?.ambiguousUncertain ?? [],
+    reasonlessDeadLetters: database?.reasonlessDeadLetters ?? [],
     activationManifestMismatch: !receipt
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId
@@ -262,14 +268,25 @@ async function readRunnerLifecycles(runnerStateDirectory) {
   return lifecycles;
 }
 
-/** A runner that has neither finished nor gone quiet is still owed its answer. */
+/**
+ * A runner that is still *advancing* is owed its answer; a merely breathing
+ * one is not.
+ *
+ * `liveness_at` is refreshed for as long as a command is assigned, whether or
+ * not anything is happening, so a runner blocked on a host tool response looks
+ * alive forever. That is precisely the failure this harness exists to catch --
+ * exempting it would leave the judge unable to see the very class of stall it
+ * was strengthened for. Only `progress_at`, which moves when the runner
+ * actually emits, counts as work.
+ *
+ * The cost is accepted: a tool that legitimately runs past the grace without
+ * emitting anything gets reported. A false positive is visible and can be
+ * checked; a false negative is invisible and makes every green meaningless.
+ */
 function runnerIsStillWorking(lifecycle) {
   if (!lifecycle) return false;
   if (RUNNER_TERMINAL_STATES.includes(lifecycle.execution_state)) return false;
-  const progressedAt = Math.max(
-    Date.parse(lifecycle.progress_at ?? "") || 0,
-    Date.parse(lifecycle.liveness_at ?? "") || 0,
-  );
+  const progressedAt = Date.parse(lifecycle.progress_at ?? "") || 0;
   return Date.now() - progressedAt < RUNNER_PROGRESS_GRACE_MS;
 }
 
