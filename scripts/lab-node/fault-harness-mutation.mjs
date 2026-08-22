@@ -115,6 +115,18 @@ const MUTATIONS = [
         INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
         VALUES ('${sessionId}', 'running', 'eias-lab', 'claude', NOW(), NOW())
       `);
+      // An open ownership, so this row is a projection mismatch and *only*
+      // that. Without it the session is also ownerless-running, both judges
+      // fire, and a green from the mutation would not say which one saw it.
+      await context.sql(`
+        INSERT INTO session_execution_ownerships (
+          session_id, ownership_generation, owner_kind, manifest_id, phase,
+          reserved_at, reservation_expires_at
+        ) VALUES (
+          '${sessionId}', 1, 'runner_process', 'sha256-${PREFIX}-manifest',
+          'reserved', NOW(), NOW() + INTERVAL '10 minutes'
+        )
+      `);
       const directory = join(context.runtime.runnerStateDirectory, `${PREFIX}-projection`);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       await writeFile(
@@ -246,6 +258,7 @@ async function runMutation(mutation, context, index) {
   const before = await context.sample();
   let planted;
   let detected = false;
+  let collateral = [];
   try {
     planted = await mutation.inject(context);
     const identity = mutation.identity?.(planted);
@@ -267,6 +280,20 @@ async function runMutation(mutation, context, index) {
         detail: `planted ${JSON.stringify(planted)} and the judge did not name it`,
       };
     }
+    // Which *other* judges also named this row.
+    //
+    // A mutation that trips three judges does not prove any one of them
+    // works -- it proves the planted row is ambiguous, and a green from it
+    // means less than it looks. Reported rather than failed, because some
+    // overlap is real: a session that is running with no owner genuinely is
+    // both ownerless and, once a finished lifecycle sits beside it, a
+    // projection mismatch.
+    collateral = identity === undefined ? [] : injected
+      .filter((entry) => entry.invariant !== mutation.invariant)
+      .filter((entry) => (entry.examples ?? []).some(
+        (example) => JSON.stringify(example).includes(identity),
+      ))
+      .map((entry) => entry.invariant);
   } finally {
     if (planted) await mutation.revert(context, planted);
   }
@@ -279,7 +306,13 @@ async function runMutation(mutation, context, index) {
       detail: "the judge still names the planted row after it was reverted",
     };
   }
-  return { invariant: mutation.invariant, what: mutation.what, outcome: "detected", index };
+  return {
+    invariant: mutation.invariant,
+    what: mutation.what,
+    outcome: "detected",
+    collateral,
+    index,
+  };
 }
 
 export async function runMutationGate(runtime) {
@@ -364,7 +397,10 @@ export function reportMutationGate(results) {
   for (const result of results) {
     process.stdout.write(
       `${result.outcome.padEnd(14)} ${result.invariant.padEnd(28)} ${result.what}\n`
-      + (result.detail ? `               ${result.detail}\n` : ""),
+      + (result.detail ? `               ${result.detail}\n` : "")
+      + (result.collateral?.length
+        ? `               also named by: ${result.collateral.join(", ")}\n`
+        : ""),
     );
   }
   const failures = results.filter((result) => result.outcome !== "detected");
