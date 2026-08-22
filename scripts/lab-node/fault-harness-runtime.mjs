@@ -384,19 +384,35 @@ export class LabRuntime {
     return value?.count ?? 0;
   }
 
+  /**
+   * Waits until the lab node can actually take work, not merely until a row
+   * exists for it.
+   *
+   * A registry row survives a restart, so requiring only its presence was
+   * satisfied instantly while nothing was connected. Three scenario runs were
+   * lost that way in one day -- each began seconds after a lab restart, each
+   * died on `503 NO_AVAILABLE_NODE` at the first `create_session`, and each
+   * cost a round before anyone noticed the verdict was void rather than red.
+   */
   async waitForNodeRegistration(timeoutMs) {
     const deadline = Date.now() + timeoutMs;
+    let lastSeen;
     while (Date.now() < deadline) {
       try {
         const nodes = await this.getJson("/api/nodes");
         const matches = Array.isArray(nodes.nodes)
           ? nodes.nodes.filter((node) => node?.nodeId === "eias-lab")
           : [];
-        if (matches.length === 1) return;
+        if (matches.length === 1) {
+          lastSeen = matches[0];
+          if (lastSeen.connected === true || lastSeen.status === "connected") return;
+        }
       } catch {}
       await delay(250);
     }
-    throw new Error("eias-lab did not register");
+    throw new Error(
+      `eias-lab did not become connected (last status: ${lastSeen?.status ?? "absent"})`,
+    );
   }
 
   async waitForHttp(url, timeoutMs) {
