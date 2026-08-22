@@ -58,63 +58,86 @@ export const DEMAND_OUTCOMES = Object.freeze({
  */
 export function pairSessionDemands(session, events, now = Date.now()) {
   const ordered = [...events].sort((left, right) => Number(left.id) - Number(right.id));
-  const suppressed = findProjectionDuplicates(ordered);
   const demands = [];
   const open = [];
+  let sawClosureSinceLastDemand = true;
   for (const event of ordered) {
     if (DEMAND_EVENT_TYPES.includes(event.event_type)) {
-      if (suppressed.has(Number(event.id))) continue;
+      if (isProjectionDuplicate(demands.at(-1), event, sawClosureSinceLastDemand)) continue;
       const demand = {
         eventId: Number(event.id),
         eventType: event.event_type,
         at: event.created_at ?? null,
+        text: normalizeText(event.text),
         excerpt: excerpt(event.text),
         outcome: DEMAND_OUTCOMES.unanswered,
         closedByEventId: null,
+        ambiguous: false,
       };
       demands.push(demand);
       open.push(demand);
+      sawClosureSinceLastDemand = false;
       continue;
     }
     if (event.event_type === RESPONSE_EVENT_TYPE) {
-      // The newest open input, because that is what the runtime actually
-      // answers: an input arriving mid-turn interrupts and supersedes, and the
-      // next reply belongs to it. Closing the oldest instead keeps the same
-      // *count* but names the wrong event -- it reported the recovery
-      // intervention lost in a dead-owner run where the reply to that
-      // intervention is sitting three events later, and the message actually
-      // dropped was the interrupted first turn. A judge that names the wrong
-      // victim gets argued with instead of acted on.
-      //
-      // This is not the extremal comparison it replaces: that one asked only
-      // whether *some* reply was newer than *some* input, so one reply cleared
-      // every input at once. Here each reply closes exactly one.
-      const demand = open.pop();
-      if (demand) {
-        demand.outcome = DEMAND_OUTCOMES.answered;
-        demand.closedByEventId = Number(event.id);
+      sawClosureSinceLastDemand = true;
+      if (open.length === 0) continue;
+      if (open.length > 1) {
+        // More than one input was waiting, so which one this reply belongs to
+        // is not recoverable from the event stream. Both an earlier draft's
+        // FIFO and its LIFO successor were wrong here in opposite directions,
+        // and each was wrong *confidently*: FIFO named the recovery turn in a
+        // dead-owner run, LIFO names the first turn when a next-turn
+        // intervention is what went unanswered. The runtime queue itself
+        // drains FIFO within a priority lane
+        // (soul-server-ts/src/task/task_intervention_queue.ts), and the events
+        // do not carry the lane, so the tie cannot be broken here at all.
+        //
+        // So the count stays exact -- one reply closes one input either way --
+        // and every input that was waiting is marked ambiguous. The verdict
+        // then reports "one of these", which is the true statement.
+        for (const waiting of open) waiting.ambiguous = true;
       }
+      // FIFO, matching the runtime's own drain order, so the reported ordering
+      // is at least the more likely one where the tie cannot be broken.
+      const demand = open.shift();
+      demand.outcome = DEMAND_OUTCOMES.answered;
+      demand.closedByEventId = Number(event.id);
       continue;
     }
-    if (event.event_type === TERMINAL_EVENT_TYPE && !isOkTermination(event)) {
-      closeAll(open, Number(event.id), event.termination_reason ?? event.ended_status ?? "session_ended");
+    if (event.event_type === TERMINAL_EVENT_TYPE) {
+      sawClosureSinceLastDemand = true;
+      if (!isOkTermination(event)) {
+        closeAll(open, Number(event.id), event.termination_reason ?? event.ended_status ?? "session_ended");
+      }
     }
   }
   if (FAILED_SESSION_STATUSES.has(session.status)) {
     closeAll(open, null, `session status ${session.status}`);
   }
   const working = isStillWorking(session, ordered, now);
+  const unanswered = demands.filter(
+    (demand) => demand.outcome === DEMAND_OUTCOMES.unanswered,
+  );
+  // Any input tangled in an ambiguous closure is a candidate for the loss,
+  // whether or not the arbitrary FIFO tiebreak happened to leave it open.
+  const candidates = unanswered.some((demand) => demand.ambiguous)
+    ? demands.filter((demand) => demand.ambiguous || demand.outcome === DEMAND_OUTCOMES.unanswered)
+    : unanswered;
   return {
     sessionId: session.session_id,
     status: session.status,
+    // A session that may yet answer is neither a loss nor a pass. It is
+    // reported as `pending` so a caller can settle and re-sample instead of
+    // reading an empty list as proof of health.
+    verdict: working ? "pending" : (unanswered.length > 0 ? "unanswered" : "answered"),
     stillWorking: working,
     demandCount: demands.length,
     demands,
-    // A session that may yet answer is not a loss. It is also not a pass: the
-    // caller settles and re-samples rather than recording either.
-    unanswered: working
-      ? []
-      : demands.filter((demand) => demand.outcome === DEMAND_OUTCOMES.unanswered),
+    unansweredCount: working ? 0 : unanswered.length,
+    ambiguous: unanswered.some((demand) => demand.ambiguous),
+    unanswered: working ? [] : unanswered,
+    candidates: working ? [] : candidates,
   };
 }
 
@@ -124,45 +147,62 @@ export function findUnansweredDemands(sessions, eventsBySession, now = Date.now(
   for (const session of sessions) {
     const events = eventsBySession.get(session.session_id) ?? [];
     const paired = pairSessionDemands(session, events, now);
-    for (const demand of paired.unanswered) {
-      losses.push({
-        session_id: paired.sessionId,
-        status: paired.status,
-        demand_event_id: demand.eventId,
-        demand_event_type: demand.eventType,
-        demand_at: demand.at,
+    if (paired.unansweredCount === 0) continue;
+    losses.push({
+      session_id: paired.sessionId,
+      status: paired.status,
+      unanswered_count: paired.unansweredCount,
+      // True when the events cannot say *which* input was dropped. The count
+      // is still exact; only the name is uncertain, and saying so beats
+      // naming the wrong one.
+      ambiguous: paired.ambiguous,
+      candidates: paired.candidates.map((demand) => ({
+        event_id: demand.eventId,
+        event_type: demand.eventType,
+        at: demand.at,
         excerpt: demand.excerpt,
-      });
-    }
+      })),
+    });
   }
   return losses;
 }
 
+/** Sessions that may still answer, so a caller can settle rather than judge. */
+export function findPendingSessions(sessions, eventsBySession, now = Date.now()) {
+  return sessions
+    .filter((session) => pairSessionDemands(
+      session, eventsBySession.get(session.session_id) ?? [], now,
+    ).verdict === "pending")
+    .map((session) => session.session_id);
+}
+
 /**
- * Event ids of inputs that are a second recording of an input already counted.
+ * Whether this input is the second recording of the input right before it.
  *
  * One intervention can land twice: once as `intervention_sent` when it is
  * accepted and once as `user_message` when it is projected into the turn.
  * Counting both would demand two replies for one input and turn a healthy
- * session red -- a judge that cries wolf gets switched off, which is how the
- * previous one ended up being ignored. Two inputs of the *same* type with the
- * same text stay two inputs: a genuine duplicate send is not a projection.
+ * session red, and a judge that cries wolf gets switched off.
+ *
+ * The first version matched the same text *anywhere in the session*, which
+ * quietly swallowed a real loss: send a message, get it answered, then send an
+ * intervention worded identically and never get an answer -- the second was
+ * written off as a duplicate of the first. So a match now requires all of:
+ * the immediately preceding input, a different event type, nothing closing the
+ * turn in between, and a short window. A projection follows its own acceptance
+ * within milliseconds; a person repeating themselves after a reply does not.
  */
-function findProjectionDuplicates(ordered) {
-  const seen = new Map();
-  const suppressed = new Set();
-  for (const event of ordered) {
-    if (!DEMAND_EVENT_TYPES.includes(event.event_type)) continue;
-    const key = normalizeText(event.text);
-    if (key === "") continue;
-    const previous = seen.get(key);
-    if (previous && previous.event_type !== event.event_type) {
-      suppressed.add(Number(event.id));
-      continue;
-    }
-    if (!previous) seen.set(key, event);
-  }
-  return suppressed;
+const PROJECTION_WINDOW_MS = 10_000;
+
+function isProjectionDuplicate(previous, event, sawClosureSinceLastDemand) {
+  if (!previous || sawClosureSinceLastDemand) return false;
+  if (previous.eventType === event.event_type) return false;
+  const text = normalizeText(event.text);
+  if (text === "" || text !== previous.text) return false;
+  const previousAt = Date.parse(previous.at ?? "");
+  const currentAt = Date.parse(event.created_at ?? "");
+  if (Number.isNaN(previousAt) || Number.isNaN(currentAt)) return true;
+  return Math.abs(currentAt - previousAt) <= PROJECTION_WINDOW_MS;
 }
 
 function closeAll(open, eventId, reason) {

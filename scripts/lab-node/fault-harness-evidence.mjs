@@ -29,6 +29,7 @@ export class EvidenceRecorder {
     this.since = new Date().toISOString();
     this.eventsPath = join(directory, "events.jsonl");
     this.invariantsPath = join(directory, "invariants.jsonl");
+    this.pairingInputsPath = join(directory, "pairing-inputs.jsonl");
   }
 
   async event(action, details = {}) {
@@ -51,12 +52,33 @@ export class EvidenceRecorder {
    */
   async invariant(label, baseline = [], settleMs = 0) {
     const deadline = Date.now() + settleMs;
+    const startedAt = Date.now();
     let sample = await this.sampleOnce(label, baseline);
+    // A run that recovers after eighty-nine seconds and a run that was never
+    // broken used to produce the same record. Waiting is the contract -- delay
+    // is allowed -- but erasing the fact that something *was* broken is not,
+    // because the next reader has no way to tell a healthy system from one
+    // that is always one second inside the grace.
+    const firstViolations = sample.newViolations;
+    const firstSeenAt = firstViolations.length > 0 ? sample.sampledAt : null;
     while (sample.newViolations.length > 0 && Date.now() < deadline) {
       await delay(5_000);
       sample = await this.sampleOnce(label, baseline);
     }
     sample.settled = sample.newViolations.length === 0;
+    sample.recovery = {
+      firstSeenAt,
+      firstSeenViolations: firstViolations.map((violation) => ({
+        invariant: violation.invariant,
+        count: violation.count,
+      })),
+      clearedAt: firstSeenAt && sample.settled ? sample.sampledAt : null,
+      recoveredAfterMs: firstSeenAt && sample.settled
+        ? Date.parse(sample.sampledAt) - Date.parse(firstSeenAt)
+        : null,
+      settleBudgetMs: settleMs,
+      waitedMs: Date.now() - startedAt,
+    };
     await appendJsonLine(this.invariantsPath, sample);
     return sample;
   }
@@ -73,11 +95,16 @@ export class EvidenceRecorder {
     // audit was asked to re-judge could not be, because the lab database had
     // been rebuilt and the evidence carried only conclusions. Evidence that
     // cannot be re-checked is a claim, not evidence.
-    await writeFile(
-      join(this.directory, "pairing-inputs.json"),
-      `${JSON.stringify({ since: this.since, capturedAt: sample.sampledAt, ...pairingInputs }, null, 2)}\n`,
-      { mode: 0o600 },
-    );
+    //
+    // Appended, not overwritten. The first version wrote one file per run and
+    // rewrote it on every sample, so the settle loop erased each intermediate
+    // state and a run that recovered kept no record of what it recovered from.
+    await appendJsonLine(this.pairingInputsPath, {
+      label,
+      since: this.since,
+      capturedAt: sample.sampledAt,
+      ...pairingInputs,
+    });
     return sample;
   }
 

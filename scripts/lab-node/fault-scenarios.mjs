@@ -62,6 +62,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
     }
   }
   const invariant = await recorder.invariant(`after-${id}`, baseline.violations, 90_000);
+  result = withBaselineHonesty(result, baseline);
   if (invariant.newViolations.length > 0 && !failure) {
     failure = {
       name: "InvariantViolation",
@@ -380,6 +381,7 @@ async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, 
     );
     result.invariant = invariant;
     if (invariant.newViolations.length > 0) result.status = "failed";
+    Object.assign(result, withBaselineHonesty(result, baseline));
     await recorder.scenario(`cycle-${cycle}`, result);
     if (queue.length > 0) await delay(intervalSeconds * 1_000);
   }
@@ -470,6 +472,30 @@ function delayedMarkerPrompt(marker, seconds) {
   return "Use Bash exactly once to run "
     + `python3 -c "import time; time.sleep(${seconds})". `
     + `After it finishes, reply with exactly ${marker}.`;
+}
+
+/**
+ * Refuses to call a run `passed` when it started from a red lab.
+ *
+ * Verdicts are reported as the violations present after a scenario that were
+ * not present before it, so a loss that is already sitting in the lab is
+ * subtracted from the run that follows -- including a loss the previous run
+ * caused. The delta is still the right thing to *measure*; what was wrong was
+ * calling the result a pass. A scenario that could not start from a clean lab
+ * has not shown the system works, it has only shown it did not get worse.
+ */
+function withBaselineHonesty(result, baseline) {
+  const dirty = baseline?.violations ?? [];
+  if (dirty.length === 0 || result.status !== "passed") return result;
+  return {
+    ...result,
+    status: "inconclusive_dirty_baseline",
+    baselineViolations: dirty.map((violation) => ({
+      invariant: violation.invariant,
+      count: violation.count,
+    })),
+    reason: "the lab was already violating an invariant before this scenario ran",
+  };
 }
 
 function assertScenario(condition, message) {

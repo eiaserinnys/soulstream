@@ -12,6 +12,71 @@ const execFileAsync = promisify(execFile);
  * table is what made the previous verdicts impossible to re-check outside a
  * live run, and a verdict nobody can re-check is a verdict nobody can audit.
  */
+/**
+ * Runs one statement against whichever postgres this process can reach.
+ *
+ * `docker exec` when a lab container is named, a plain TCP `psql` otherwise.
+ * The second mode exists so continuous integration can drive the *real*
+ * sampler against a throwaway database. Before it, the only thing CI could run
+ * was the pure snapshot-to-verdict mapping, so the connection between the
+ * database and the snapshot -- exactly the connection that was broken and that
+ * this whole audit is about -- was the one part nothing checked.
+ */
+export function createQueryRunner(env = process.env) {
+  // The two modes read disjoint variables, deliberately.
+  //
+  // The first version let the TCP mode fall back to `LAB_POSTGRES_DB` when
+  // `PGDATABASE` was unset -- and since a lab shell has `LAB_POSTGRES_DB`
+  // exported, `PGDATABASE=throwaway` was silently ignored and a fixture row
+  // was written into the live lab database by something that believed it was
+  // isolated. An isolation boundary nobody can see is not one.
+  const container = env.LAB_POSTGRES_CONTAINER;
+  if (container) {
+    const database = requireValue(env.LAB_POSTGRES_DB, "LAB_POSTGRES_DB");
+    const user = requireValue(env.LAB_POSTGRES_USER, "LAB_POSTGRES_USER");
+    if (!container.startsWith("soulstream-lab-")) {
+      throw new Error(`unsafe lab postgres container: ${container}`);
+    }
+    if (!database.startsWith("soulstream_lab")) {
+      throw new Error(`unsafe lab postgres database: ${database}`);
+    }
+    return (query) => run(
+      "docker",
+      ["exec", container, "psql", ...psqlFlags(user, database), "-c", query],
+      env,
+    );
+  }
+  const database = requireValue(env.PGDATABASE, "PGDATABASE");
+  const user = requireValue(env.PGUSER, "PGUSER");
+  const host = requireValue(env.PGHOST, "PGHOST (or LAB_POSTGRES_CONTAINER)");
+  return (query) => run(
+    "psql",
+    [...psqlFlags(user, database), "-h", host, "-p", env.PGPORT ?? "5432", "-c", query],
+    env,
+  );
+}
+
+function psqlFlags(user, database) {
+  return ["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", database];
+}
+
+function requireValue(value, name) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+}
+
+async function run(command, args, env) {
+  const { stdout } = await execFileAsync(command, args, {
+    timeout: 60_000,
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, ...(env.PGPASSWORD ? { PGPASSWORD: env.PGPASSWORD } : {}) },
+  });
+  const text = stdout.trim();
+  return text ? JSON.parse(text) : null;
+}
+
 export class LabDatabase {
   constructor(env = process.env) {
     this.container = requireEnv(env, "LAB_POSTGRES_CONTAINER");
@@ -26,23 +91,12 @@ export class LabDatabase {
   }
 
   async queryOne(query) {
-    const { stdout } = await execFileAsync("docker", [
-      "exec",
-      this.container,
-      "psql",
-      "-X",
-      "-qAt",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-U",
-      this.user,
-      "-d",
-      this.database,
-      "-c",
-      query,
-    ], { timeout: 60_000, maxBuffer: 64 * 1024 * 1024 });
-    const text = stdout.trim();
-    return text ? JSON.parse(text) : null;
+    this.runner ??= createQueryRunner({
+      LAB_POSTGRES_CONTAINER: this.container,
+      LAB_POSTGRES_DB: this.database,
+      LAB_POSTGRES_USER: this.user,
+    });
+    return await this.runner(query);
   }
 
   /**
