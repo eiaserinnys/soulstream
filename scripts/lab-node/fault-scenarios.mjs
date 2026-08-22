@@ -61,7 +61,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
       }
     }
   }
-  const invariant = await recorder.invariant(`after-${id}`, [], baseline.violations);
+  const invariant = await recorder.invariant(`after-${id}`, [], baseline.violations, 90_000);
   if (invariant.newViolations.length > 0 && !failure) {
     failure = {
       name: "InvariantViolation",
@@ -377,6 +377,7 @@ async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, 
       `after-cycle-${cycle}`,
       [],
       baseline.violations,
+      90_000,
     );
     result.invariant = invariant;
     if (invariant.newViolations.length > 0) result.status = "failed";

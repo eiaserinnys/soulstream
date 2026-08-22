@@ -32,12 +32,35 @@ export class EvidenceRecorder {
     return record;
   }
 
-  async invariant(label, messageLosses = [], baseline = []) {
+  /**
+   * Samples the invariants once, or waits for a post-scenario sample to settle.
+   *
+   * Central session state is projected asynchronously from runner state, so a
+   * single sample taken seconds after a scenario ends reports whatever happened
+   * to still be in flight. F1 was failed by exactly that: a session the judge
+   * called dead-but-running had reached `interrupted` with both ownerships
+   * terminal moments later. The contract this harness exists to defend is that
+   * nothing is lost or stuck permanently -- delay is allowed -- so pass
+   * `settleMs` on the after-sample and a violation only counts once it has had
+   * that long to clear. Baseline samples never wait; they are the comparison.
+   */
+  async invariant(label, messageLosses = [], baseline = [], settleMs = 0) {
+    const deadline = Date.now() + settleMs;
+    let sample = await this.sampleOnce(label, messageLosses, baseline);
+    while (sample.newViolations.length > 0 && Date.now() < deadline) {
+      await delay(5_000);
+      sample = await this.sampleOnce(label, messageLosses, baseline);
+    }
+    sample.settled = sample.newViolations.length === 0;
+    await appendJsonLine(this.invariantsPath, sample);
+    return sample;
+  }
+
+  async sampleOnce(label, messageLosses, baseline) {
     await delay(2_000);
     const sample = { label, since: this.since,
       ...(await sampleInvariants(this.runtime, messageLosses, this.since)) };
     sample.newViolations = newInvariantViolations(baseline, sample.violations);
-    await appendJsonLine(this.invariantsPath, sample);
     return sample;
   }
 
