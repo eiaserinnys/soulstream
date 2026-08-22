@@ -57,8 +57,6 @@ export class RunnerRecoveryCoordinator {
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private readonly registrationControl: RunnerRegistrationControl;
   private readonly ownershipBackoff: ExecutionOwnershipBackoff;
-  /** sessionId -> release identity already reported as un-adoptable. */
-  private readonly unadoptableReleases = new Map<string, string>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
@@ -175,12 +173,6 @@ export class RunnerRecoveryCoordinator {
     this.ownershipBackoff.prune(
       scan.registrations.map((registration) => registration.config.sessionId),
     );
-    const scanned = new Set(
-      scan.registrations.map((registration) => registration.config.sessionId),
-    );
-    for (const sessionId of this.unadoptableReleases.keys()) {
-      if (!scanned.has(sessionId)) this.unadoptableReleases.delete(sessionId);
-    }
     const admitted: Array<{
       registration: RunnerRegistration;
       disposition: RunnerRecoveryDisposition;
@@ -434,18 +426,6 @@ export class RunnerRecoveryCoordinator {
       );
       return { task, replayed: false };
     }
-    // A runner started by a superseded release can never pass the adoption
-    // gate, so asking first turns an endless retry into one decision. The
-    // runner keeps its turn and is replayed offline once it goes terminal;
-    // only the pointless dispatcher churn and its log noise stop.
-    if (mode === "adopt" && this.options.taskExecutor.canAdoptRegisteredRunner) {
-      const adoptable = await this.options.taskExecutor
-        .canAdoptRegisteredRunner(registration.config);
-      if (!adoptable) {
-        this.reportUnadoptableRelease(registration);
-        return { task, replayed: false };
-      }
-    }
     if (prepareRegistrationAfterTaskGuard) {
       registration = await prepareRegistrationAfterTaskGuard(registration);
     }
@@ -481,24 +461,6 @@ export class RunnerRecoveryCoordinator {
       });
     }
     return { task, replayed: true };
-  }
-
-  /** Reports an un-adoptable release once per session and release identity. */
-  private reportUnadoptableRelease(registration: RunnerRegistration): void {
-    const sessionId = registration.config.sessionId;
-    const releaseIdentity = `${registration.config.releaseManifestId ?? registration.config.codeSha}`
-      + `|${registration.config.runtimeEnvIdentity ?? ""}`;
-    if (this.unadoptableReleases.get(sessionId) === releaseIdentity) return;
-    this.unadoptableReleases.set(sessionId, releaseIdentity);
-    this.options.logger.warn(
-      {
-        sessionId,
-        runnerReleaseManifestId: registration.config.releaseManifestId
-          ?? registration.config.codeSha,
-        runnerRuntimeEnvIdentity: registration.config.runtimeEnvIdentity,
-      },
-      "runner belongs to a superseded release and will finish detached instead of being adopted",
-    );
   }
 
   private async reapAndResume(

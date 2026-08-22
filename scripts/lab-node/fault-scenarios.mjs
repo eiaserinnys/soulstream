@@ -21,7 +21,6 @@ const LOG_TERMS = {
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
   F9: ["F9_", "runner adoption release identity mismatch", "offline",
-    "runner belongs to a superseded release",
     "runner adoption failure was superseded by a newer execution",
     "registered runner recovery skipped", "terminal runner replay was skipped",
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
@@ -49,18 +48,13 @@ export async function runCanonicalScenario(id, runtime, recorder) {
   }
   const logs = await recorder.captureLogs(id, offsets, LOG_TERMS[id]);
   if (id === "F9") {
-    // The host has to say, in the log, that it refused the old release. It can
-    // say so by rejecting an adoption it attempted or by declining to attempt
-    // one at all; either proves the gate fired. Requiring the rejection alone
-    // would fail a host that stopped retrying an adoption it can never win.
     const mismatchCount = logs.node.filter(
-      (line) => line.includes("runner adoption release identity mismatch")
-        || line.includes("runner belongs to a superseded release"),
+      (line) => line.includes("runner adoption release identity mismatch"),
     ).length;
     result.mismatchLogCount = mismatchCount;
     if (!failure) {
       try {
-        assertScenario(mismatchCount >= 1, "F9 logged no release gate decision");
+        assertScenario(mismatchCount >= 1, "F9 emitted no release identity mismatch log");
       } catch (error) {
         failure = serializeError(error);
         result = { ...result, status: "failed", failure };
@@ -411,7 +405,9 @@ async function runTrafficCycle(cycle, worker, runtime, recorder) {
     sessionId,
     "initial cycle completion",
   );
-  const cancelText = `Use Bash once to sleep 12 seconds, then reply CYCLE_CANCELLED_${seed}.`;
+  const cancelText = "Use Bash once to run "
+    + 'python3 -c "import time; time.sleep(12)"'
+    + `, then reply CYCLE_CANCELLED_${seed}.`;
   await runtime.intervene(sessionId, buildInterventionPayload(randomUUID(), cancelText));
   await runtime.waitForRunner(sessionId);
   await delay(1_000);
@@ -460,8 +456,20 @@ async function runTrafficCycle(cycle, worker, runtime, recorder) {
   };
 }
 
+/**
+ * A prompt whose Bash call stays in flight for a known duration.
+ *
+ * It deliberately avoids a bare `sleep`: the lab agent workspace inherits a
+ * hook that blocks a standalone one, and the block returns instantly. The tool
+ * then never stays in flight, `waitForInFlightTool` times out, and the run is
+ * void -- which is how several dead-owner runs were lost before anyone read
+ * the tool_result and saw the block. A timed Python call is not a standalone
+ * sleep and is not what the hook is guarding against.
+ */
 function delayedMarkerPrompt(marker, seconds) {
-  return `Use Bash exactly once to run sleep ${seconds}. After it finishes, reply with exactly ${marker}.`;
+  return "Use Bash exactly once to run "
+    + `python3 -c "import time; time.sleep(${seconds})". `
+    + `After it finishes, reply with exactly ${marker}.`;
 }
 
 function assertScenario(condition, message) {

@@ -18,6 +18,10 @@ export class EvidenceRecorder {
     this.runtime = runtime;
     this.runId = runId;
     this.directory = directory;
+    // Sessions from earlier runs stay in the lab database forever. Counting
+    // them makes every verdict a running total that nobody can read: "11
+    // violations" says nothing about which one this run caused.
+    this.since = new Date().toISOString();
     this.eventsPath = join(directory, "events.jsonl");
     this.invariantsPath = join(directory, "invariants.jsonl");
   }
@@ -30,7 +34,8 @@ export class EvidenceRecorder {
 
   async invariant(label, messageLosses = [], baseline = []) {
     await delay(2_000);
-    const sample = { label, ...(await sampleInvariants(this.runtime, messageLosses)) };
+    const sample = { label, since: this.since,
+      ...(await sampleInvariants(this.runtime, messageLosses, this.since)) };
     sample.newViolations = newInvariantViolations(baseline, sample.violations);
     await appendJsonLine(this.invariantsPath, sample);
     return sample;
@@ -81,7 +86,7 @@ export class EvidenceRecorder {
   }
 }
 
-async function sampleInvariants(runtime, messageLosses) {
+async function sampleInvariants(runtime, messageLosses, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
       'ownerlessRunning', (
@@ -147,6 +152,7 @@ async function sampleInvariants(runtime, messageLosses) {
               answered.last_assistant_id IS NULL
               OR answered.last_assistant_id < asked.last_user_id
             )
+            AND session.created_at >= ${sqlTimestamp(since)}
             AND (
               session.status NOT IN ('running', 'initializing')
               -- Quiet, not merely unfinished. Session status alone is the
@@ -191,6 +197,14 @@ async function sampleInvariants(runtime, messageLosses) {
     snapshot,
     violations: evaluateInvariantSnapshot(snapshot),
   };
+}
+
+/** Quotes an ISO timestamp for inline SQL; rejects anything that is not one. */
+function sqlTimestamp(value) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    throw new Error(`invalid invariant window timestamp: ${value}`);
+  }
+  return `TIMESTAMPTZ '${value}'`;
 }
 
 async function findTerminalProjectionMismatches(runnerStateDirectory, sessionRows) {

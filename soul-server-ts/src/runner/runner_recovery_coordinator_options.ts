@@ -36,7 +36,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   taskExecutor: Pick<
     TaskExecutor,
     "recoverRegisteredRunner" | "restartRegisteredRunner"
-  > & Partial<Pick<TaskExecutor, "canAdoptRegisteredRunner">>;
+  >;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;
   spawner?: Pick<

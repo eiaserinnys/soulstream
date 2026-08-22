@@ -316,6 +316,25 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
   }
 
+  /**
+   * Releases only this host's durable event stream registration.
+   *
+   * A rejected adoption must give the shared mux its stream back, but nothing
+   * else. `detachHost` additionally aborts in-flight host requests and closes
+   * the IPC connection, and a detached runner mid-tool is *waiting on* one of
+   * those requests: tearing them down leaves its tool without a result, so the
+   * turn never finishes and its output never reaches the user. Releasing this
+   * registration alone is what a rejected adoption actually owns.
+   */
+  async releaseEventStreamRegistration(): Promise<void> {
+    if (this.pumpInitialization) {
+      await Promise.allSettled([this.pumpInitialization]);
+    }
+    const unregisterPump = this.unregisterPump;
+    this.unregisterPump = undefined;
+    unregisterPump?.();
+  }
+
   async detachHost(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

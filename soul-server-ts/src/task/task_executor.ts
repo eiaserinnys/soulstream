@@ -938,32 +938,6 @@ export class TaskExecutor {
     return promise;
   }
 
-  /**
-   * Whether this host's release may take over a runner another one started.
-   *
-   * Recovery asks before it builds anything. A runner from a superseded
-   * release can never satisfy this gate, so attempting the adoption on every
-   * scan only spawns a dispatcher to tear it down again and writes two log
-   * lines every scan interval for as long as the runner lives -- roughly ten
-   * thousand a day per stranded session, which is precisely the noise that
-   * slowed the 260822 diagnosis down. The runner is left to finish detached
-   * and is replayed offline once its lifecycle turns terminal.
-   */
-  async canAdoptRegisteredRunner(config: RunnerChildConfig): Promise<boolean> {
-    if (!this.supportsExecutionOwnership()) return true;
-    const manifestId = config.releaseManifestId ?? config.codeSha;
-    if (!manifestId) return true;
-    if (!this.runnerProcessFactory) return true;
-    const describeHost = this.runnerProcessFactory.describe;
-    if (!describeHost) return true;
-    const hostDescriptor = await describeHost(config.agent);
-    return releaseIdentityMatches(
-      hostDescriptor,
-      manifestId,
-      config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
-    );
-  }
-
   recoverRegisteredRunner(
     task: Task,
     config: RunnerChildConfig,
@@ -1004,8 +978,11 @@ export class TaskExecutor {
    * user turn that it can never answer -- one user message, no assistant reply
    * (260822 outage; lab scenario F9).
    *
-   * The child process is deliberately left running. It owns a turn that will
-   * finish detached and replay offline, which is the adoption contract.
+   * Only the registration is given back. The child process keeps running and,
+   * critically, keeps its host request channel: a runner mid-tool is waiting
+   * on a host request, and aborting that leaves the tool without a result --
+   * the turn then never finishes and its output never reaches the user (lab
+   * F9 regression, old turn stuck at tool_start with no tool_result).
    */
   private async releaseUnadoptedRunner(
     task: Task,
@@ -1014,11 +991,11 @@ export class TaskExecutor {
   ): Promise<void> {
     if (task.runner === runner) return;
     try {
-      await runner.dispatcher.detachHost();
+      await runner.dispatcher.releaseEventStreamRegistration?.();
     } catch (err) {
       this.logger.warn(
         { err, sessionId },
-        "unadopted runner host detach failed; its event stream may stay registered",
+        "unadopted runner event stream release failed; the stream may stay registered",
       );
     }
   }
