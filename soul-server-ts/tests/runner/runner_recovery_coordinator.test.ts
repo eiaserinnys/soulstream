@@ -14,6 +14,39 @@ const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
 
+
+  it("턴을 끝낸 러너는 dispatcher가 열려 있어도 자기 replay를 막지 않는다", async () => {
+    // The blocking handle is not an abandoned runner -- measured, it reports
+    // `closed=false` while a *different* dispatcher is the one whose reconnect
+    // budget ran out. It is the replacement turn's own runner, finished and
+    // still attached, delivering nothing and refusing every replay for
+    // thirteen fifteen-second scans (260822 lab F9).
+    //
+    // Detaching a terminal runner cannot strand a turn: the turn is over, and
+    // what it has left is durable in its outbox, which is what the replay
+    // reads.
+    const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
+    const strandedTask = task("session-a");
+    const { runner, detachHost } = finishedRunner();
+    strandedTask.runner = runner;
+    const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(detachHost).toHaveBeenCalledOnce();
+    expect(strandedTask.runner).toBeUndefined();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-a" }),
+      expect.anything(),
+      expect.anything(),
+      "offline",
+    );
+  });
+
   it("호스트가 포기한 러너를 붙들고 offline replay를 막지 않는다", async () => {
     // Reconnect exhaustion announces that the execution "will be terminalized",
     // but the only thing carrying that out is `activeStream.fail`. With no
@@ -1616,6 +1649,25 @@ function makeSubject(
     invalidateRegistration,
     retireTerminalRegistration,
     logger,
+  };
+}
+
+function finishedRunner(): {
+  runner: NonNullable<Task["runner"]>;
+  detachHost: ReturnType<typeof vi.fn>;
+} {
+  const detachHost = vi.fn(async () => {});
+  return {
+    runner: {
+      dispatcher: {
+        detachHost,
+        isClosed: () => false,
+        dispatcherId: () => "live-one",
+      } as unknown as NonNullable<Task["runner"]>["dispatcher"],
+      engine: {} as NonNullable<Task["runner"]>["engine"],
+      eventPersistence: "runner",
+    },
+    detachHost,
   };
 }
 

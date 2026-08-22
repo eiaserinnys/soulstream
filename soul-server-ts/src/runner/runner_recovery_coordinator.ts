@@ -409,11 +409,36 @@ export class RunnerRecoveryCoordinator {
     ) => Promise<RunnerRegistration>,
     adoptionDisposition?: RunnerAdoptionDisposition,
   ): Promise<{ task: Task; replayed: boolean }> {
-    // A runner the host has already abandoned is not an execution. The
-    // dispatcher says so plainly once its reconnect budget is spent, but
-    // nothing was asking, so the handle stayed attached and every offline
-    // replay after it was refused -- the runner's finished output never
-    // reached the session, which stayed `running` for good.
+    // An offline recovery is only reached when the registration on disk says
+    // this runner finished. The host is not always told: the dispatcher stays
+    // open, holding the task, delivering nothing, and every replay after it is
+    // refused against a runner that has nothing left to run. Measured, that is
+    // thirteen skips at fifteen seconds each before the runner process happens
+    // to exit -- and when it never exits, forever (260822).
+    //
+    // Detaching here cannot starve a turn: a terminal lifecycle means the turn
+    // is over, and the frames it has left are durable in the runner's own
+    // outbox, which is what the offline replay reads. That is the difference
+    // from `detachHost` on a runner still working, which stranded a live tool.
+    if (mode === "offline" && task.runner) {
+      this.options.logger.warn(
+        {
+          sessionId: registration.config.sessionId,
+          runnerDispatcher: task.runner.dispatcher.dispatcherId?.(),
+          runnerDispatcherClosed: task.runner.dispatcher.isClosed?.(),
+        },
+        "detaching a finished runner so its own replay can run",
+      );
+      const finished = task.runner;
+      task.runner = undefined;
+      task.runnerRetainedForClaudeBackground = undefined;
+      await finished.dispatcher.detachHost().catch((error: unknown) => {
+        this.options.logger.warn(
+          { err: error, sessionId: registration.config.sessionId },
+          "finished runner host detach failed before replay",
+        );
+      });
+    }
     if (task.runner?.dispatcher.isClosed?.() === true) {
       this.options.logger.warn(
         { sessionId: registration.config.sessionId, mode },
