@@ -63,6 +63,13 @@ export class LabDatabase {
  * The live sampler and the offline re-judge share it on purpose. When they
  * were separate the replay could disagree with the run it was replaying, and
  * then neither number means anything.
+ *
+ * Scoped by `sessions.created_at`, which is the window the harness runs in:
+ * every scenario creates the sessions it uses. A session created *before* the
+ * window that receives an input *during* it is therefore not judged. That is a
+ * real limit, stated here rather than discovered later -- widening it to
+ * "sessions with events in the window" would make each run answer for losses
+ * left behind by the one before it.
  */
 export function pairingInputsQuery(since, until = null) {
   const window = `sessions.created_at >= ${sqlTimestamp(since)}`
