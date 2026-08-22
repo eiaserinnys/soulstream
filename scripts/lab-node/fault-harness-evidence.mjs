@@ -130,12 +130,12 @@ async function sampleInvariants(runtime, messageLosses) {
         -- an in-flight turn is never reported as a loss.
         SELECT COALESCE(json_agg(row_to_json(unanswered)), '[]'::json) FROM (
           SELECT session.session_id, session.status,
-            asked.last_user_id, answered.last_assistant_id
+            asked.last_user_id, answered.last_assistant_id, asked.last_event_at
           FROM sessions AS session
           JOIN LATERAL (
-            SELECT MAX(id) AS last_user_id FROM events
-            WHERE events.session_id = session.session_id
-              AND events.event_type = 'user_message'
+            SELECT MAX(id) FILTER (WHERE event_type = 'user_message') AS last_user_id,
+              MAX(created_at) AS last_event_at
+            FROM events WHERE events.session_id = session.session_id
           ) AS asked ON TRUE
           LEFT JOIN LATERAL (
             SELECT MAX(id) AS last_assistant_id FROM events
@@ -149,7 +149,11 @@ async function sampleInvariants(runtime, messageLosses) {
             )
             AND (
               session.status NOT IN ('running', 'initializing')
-              OR session.updated_at < NOW() - INTERVAL '10 minutes'
+              -- Quiet, not merely unfinished. Session status alone is the
+              -- wrong exemption: the 260822 F9 reproduction sat in the running
+              -- status with nothing happening, so a status-based grace let the
+              -- very failure the run was chasing pass as healthy.
+              OR asked.last_event_at < NOW() - INTERVAL '3 minutes'
             )
         ) AS unanswered
       ),

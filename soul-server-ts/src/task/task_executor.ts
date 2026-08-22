@@ -719,8 +719,7 @@ export class TaskExecutor {
         const describeHost = this.runnerProcessFactory.describe;
         if (!describeHost) throw new Error("Runner process manifest descriptor unavailable");
         return describeHost(agent).then((hostDescriptor) => {
-          if (hostDescriptor.manifestId !== manifestId
-            || hostDescriptor.runtimeEnvIdentity !== runnerRuntimeEnvIdentity) {
+          if (!releaseIdentityMatches(hostDescriptor, manifestId, runnerRuntimeEnvIdentity)) {
             throw new Error(
               "runner adoption release identity mismatch: "
               + `runner manifest=${manifestId} env=${runnerRuntimeEnvIdentity}; `
@@ -927,6 +926,32 @@ export class TaskExecutor {
     })();
     task.executionPromise = promise;
     return promise;
+  }
+
+  /**
+   * Whether this host's release may take over a runner another one started.
+   *
+   * Recovery asks before it builds anything. A runner from a superseded
+   * release can never satisfy this gate, so attempting the adoption on every
+   * scan only spawns a dispatcher to tear it down again and writes two log
+   * lines every scan interval for as long as the runner lives -- roughly ten
+   * thousand a day per stranded session, which is precisely the noise that
+   * slowed the 260822 diagnosis down. The runner is left to finish detached
+   * and is replayed offline once its lifecycle turns terminal.
+   */
+  async canAdoptRegisteredRunner(config: RunnerChildConfig): Promise<boolean> {
+    if (!this.supportsExecutionOwnership()) return true;
+    const manifestId = config.releaseManifestId ?? config.codeSha;
+    if (!manifestId) return true;
+    if (!this.runnerProcessFactory) return true;
+    const describeHost = this.runnerProcessFactory.describe;
+    if (!describeHost) return true;
+    const hostDescriptor = await describeHost(config.agent);
+    return releaseIdentityMatches(
+      hostDescriptor,
+      manifestId,
+      config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
+    );
   }
 
   recoverRegisteredRunner(
@@ -1686,4 +1711,13 @@ function resolveFollowupStallReason(
 
 function formatErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function releaseIdentityMatches(
+  hostDescriptor: { manifestId: string; runtimeEnvIdentity: string },
+  manifestId: string,
+  runtimeEnvIdentity: string,
+): boolean {
+  return hostDescriptor.manifestId === manifestId
+    && hostDescriptor.runtimeEnvIdentity === runtimeEnvIdentity;
 }
