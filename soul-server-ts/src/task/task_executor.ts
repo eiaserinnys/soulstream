@@ -377,17 +377,40 @@ export class TaskExecutor {
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
   ): Promise<void> {
-    await this.executionOwnershipCoordinator.withSessionLease(
-      task.agentSessionId,
-      retainedRunner ? "attach" : "spawn",
-      async () => await this.startOwnedExecutionLocked(
-        task,
-        agent,
-        backend,
-        retainedRunner,
-        resolveActivation,
-      ),
-    );
+    // An attempt that lost to an owner it then proved dead has displaced the
+    // only thing in its way, and giving up there left the session waiting on a
+    // "durable delivery recovery" that had already consumed its message -- so
+    // nothing ever reserved again. In the lab the expiry and the surrender
+    // land in the same millisecond, and the session never speaks again.
+    //
+    // One retry is the whole fix: the corpse is now `failed`, and a second
+    // conflict means somebody genuinely holds the session.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.executionOwnershipCoordinator.withSessionLease(
+          task.agentSessionId,
+          retainedRunner ? "attach" : "spawn",
+          async () => await this.startOwnedExecutionLocked(
+            task,
+            agent,
+            backend,
+            retainedRunner,
+            resolveActivation,
+          ),
+        );
+        return;
+      } catch (error) {
+        if (
+          attempt >= 1
+          || !isExecutionOwnershipConflictError(error)
+          || !error.blockingOwnerDisplaced
+        ) throw error;
+        this.logger.info(
+          { sessionId: task.agentSessionId, phase: error.phase },
+          "retrying the execution reservation that displaced a dead owner",
+        );
+      }
+    }
   }
 
   private async startOwnedExecutionLocked(
@@ -616,7 +639,7 @@ export class TaskExecutor {
         );
         if (outcome === "expired") {
           this.executionOwnershipBackoff?.clear(task.agentSessionId);
-          error.retryImmediately();
+          error.displaceBlockingOwner();
         }
       }
     } catch (failureError) {
