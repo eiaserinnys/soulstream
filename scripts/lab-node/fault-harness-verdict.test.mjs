@@ -1,0 +1,224 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  DEMAND_OUTCOMES,
+  findUnansweredDemands,
+  pairSessionDemands,
+} from "./fault-harness-verdict.mjs";
+
+const NOW = Date.parse("2026-08-22T16:00:00.000Z");
+const LONG_AGO = "2026-08-22T15:00:00.000Z";
+
+function session(overrides = {}) {
+  return {
+    session_id: "session-under-test",
+    status: "completed",
+    last_event_at: LONG_AGO,
+    ...overrides,
+  };
+}
+
+let nextId = 0;
+function event(event_type, extra = {}) {
+  nextId += 1;
+  return { id: nextId, event_type, created_at: LONG_AGO, ...extra };
+}
+
+function stream(...events) {
+  nextId = 0;
+  return events;
+}
+
+// --- the judge answering for itself -----------------------------------------
+//
+// Each of these plants one violation and requires the judge to name it. A
+// judge that stays green under a planted violation is not a gate, and the
+// point of writing them down is that the next person to weaken one trips over
+// a red test instead of a clean scorecard.
+
+test("clean session: one input, one reply", () => {
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "do the thing" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.deepEqual(paired.unanswered, []);
+  assert.equal(paired.demands[0].outcome, DEMAND_OUTCOMES.answered);
+});
+
+test("MUTATION: a dropped first turn is red even though a later reply exists", () => {
+  // The shape every passing dead-owner run actually had: the first message
+  // dies with its runner, the recovery message is answered, and the session
+  // reports `completed`. The judge this replaces compared newest input against
+  // newest reply and called it clean.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "sleep 30 then say OLD" }),
+      event("user_message", { text: "say RECOVERED" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.unanswered.length, 1);
+  // Named correctly: the dropped first turn, not the recovery that was answered.
+  assert.equal(paired.unanswered[0].excerpt, "sleep 30 then say OLD");
+});
+
+test("MUTATION: an intervention that was never projected is red", () => {
+  // F11's loss. `intervention_sent` is persisted, the projection into
+  // `user_message` never happens, and a judge that reads only `user_message`
+  // cannot see the input at all.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "sleep 12 then say INITIAL" }),
+      event("intervention_sent", { text: "say INTERVENTION" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.demandCount, 2);
+  assert.equal(paired.unanswered.length, 1);
+});
+
+test("MUTATION: a session with no reply at all is red", () => {
+  const paired = pairSessionDemands(
+    session(),
+    stream(event("user_message", { text: "answer me" })),
+    NOW,
+  );
+  assert.equal(paired.unanswered.length, 1);
+});
+
+test("an explicit failure closes the open inputs it lost", () => {
+  // The contract is "reply *or* visible failure". A session the user can see
+  // ended badly has failed visibly, so it is not a silent loss.
+  const paired = pairSessionDemands(
+    session({ status: "error" }),
+    stream(
+      event("user_message", { text: "answer me" }),
+      event("session_ended", { ended_status: "error", termination_reason: "error_aborted" }),
+    ),
+    NOW,
+  );
+  assert.deepEqual(paired.unanswered, []);
+  assert.equal(paired.demands[0].outcome, DEMAND_OUTCOMES.explicitFailure);
+});
+
+test("a completed session does not get the same forgiveness", () => {
+  // Reporting success while an input went unanswered is the silent loss this
+  // judge exists for, so `completed` must not close anything.
+  const paired = pairSessionDemands(
+    session({ status: "completed" }),
+    stream(
+      event("user_message", { text: "answer me" }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.unanswered.length, 1);
+});
+
+test("one input recorded twice as sent and projected counts once", () => {
+  // Otherwise a healthy intervention demands two replies and turns green runs
+  // red. A judge that cries wolf gets switched off.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("intervention_sent", { text: "say INTERVENTION" }),
+      event("user_message", { text: "say INTERVENTION" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.demandCount, 1);
+  assert.deepEqual(paired.unanswered, []);
+});
+
+test("the same text sent twice as the same kind stays two inputs", () => {
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "say IT" }),
+      event("user_message", { text: "say IT" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.demandCount, 2);
+  assert.equal(paired.unanswered.length, 1);
+});
+
+test("a session still working is neither a loss nor a pass", () => {
+  const paired = pairSessionDemands(
+    session({ status: "running", last_event_at: new Date(NOW - 1_000).toISOString() }),
+    stream(event("user_message", { text: "answer me" })),
+    NOW,
+  );
+  assert.equal(paired.stillWorking, true);
+  assert.deepEqual(paired.unanswered, []);
+});
+
+test("a quiet running session is a loss, because that is the stall being hunted", () => {
+  const paired = pairSessionDemands(
+    session({ status: "running", last_event_at: new Date(NOW - 120_000).toISOString() }),
+    stream(event("user_message", { text: "answer me" })),
+    NOW,
+  );
+  assert.equal(paired.stillWorking, false);
+  assert.equal(paired.unanswered.length, 1);
+});
+
+test("a live runner exempts its session even when the database looks quiet", () => {
+  const paired = pairSessionDemands(
+    session({
+      status: "running",
+      last_event_at: new Date(NOW - 120_000).toISOString(),
+      runnerProgressing: true,
+    }),
+    stream(event("user_message", { text: "answer me" })),
+    NOW,
+  );
+  assert.equal(paired.stillWorking, true);
+});
+
+test("events arriving out of order are paired by id, not by arrival", () => {
+  const paired = pairSessionDemands(
+    session(),
+    [
+      { id: 3, event_type: "assistant_message", created_at: LONG_AGO },
+      { id: 1, event_type: "user_message", text: "first", created_at: LONG_AGO },
+      { id: 2, event_type: "user_message", text: "second", created_at: LONG_AGO },
+    ],
+    NOW,
+  );
+  assert.equal(paired.unanswered.length, 1);
+  assert.equal(paired.unanswered[0].excerpt, "first");
+});
+
+test("findUnansweredDemands reports across sessions and names each one", () => {
+  const losses = findUnansweredDemands(
+    [session({ session_id: "a" }), session({ session_id: "b" })],
+    new Map([
+      ["a", [{ id: 1, event_type: "user_message", text: "lost", created_at: LONG_AGO }]],
+      ["b", [
+        { id: 1, event_type: "user_message", text: "kept", created_at: LONG_AGO },
+        { id: 2, event_type: "assistant_message", created_at: LONG_AGO },
+      ]],
+    ]),
+    NOW,
+  );
+  assert.equal(losses.length, 1);
+  assert.equal(losses[0].session_id, "a");
+  assert.equal(losses[0].demand_event_id, 1);
+});

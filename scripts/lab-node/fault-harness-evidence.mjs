@@ -12,6 +12,11 @@ import {
   newInvariantViolations,
   redactEvidenceLine,
 } from "./fault-harness-contract.mjs";
+import {
+  groupEventsBySession,
+  pairingInputsQuery,
+} from "./fault-harness-database.mjs";
+import { findUnansweredDemands } from "./fault-harness-verdict.mjs";
 
 export class EvidenceRecorder {
   constructor(runtime, runId, directory) {
@@ -44,23 +49,35 @@ export class EvidenceRecorder {
    * `settleMs` on the after-sample and a violation only counts once it has had
    * that long to clear. Baseline samples never wait; they are the comparison.
    */
-  async invariant(label, messageLosses = [], baseline = [], settleMs = 0) {
+  async invariant(label, baseline = [], settleMs = 0) {
     const deadline = Date.now() + settleMs;
-    let sample = await this.sampleOnce(label, messageLosses, baseline);
+    let sample = await this.sampleOnce(label, baseline);
     while (sample.newViolations.length > 0 && Date.now() < deadline) {
       await delay(5_000);
-      sample = await this.sampleOnce(label, messageLosses, baseline);
+      sample = await this.sampleOnce(label, baseline);
     }
     sample.settled = sample.newViolations.length === 0;
     await appendJsonLine(this.invariantsPath, sample);
     return sample;
   }
 
-  async sampleOnce(label, messageLosses, baseline) {
+  async sampleOnce(label, baseline) {
     await delay(2_000);
-    const sample = { label, since: this.since,
-      ...(await sampleInvariants(this.runtime, messageLosses, this.since)) };
+    const { pairingInputs, ...sample } = await sampleInvariants(this.runtime, this.since);
+    sample.label = label;
+    sample.since = this.since;
     sample.newViolations = newInvariantViolations(baseline, sample.violations);
+    // The inputs the verdict was computed from, kept beside the verdict.
+    //
+    // Without this a stored run cannot be re-judged: the two directories this
+    // audit was asked to re-judge could not be, because the lab database had
+    // been rebuilt and the evidence carried only conclusions. Evidence that
+    // cannot be re-checked is a claim, not evidence.
+    await writeFile(
+      join(this.directory, "pairing-inputs.json"),
+      `${JSON.stringify({ since: this.since, capturedAt: sample.sampledAt, ...pairingInputs }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
     return sample;
   }
 
@@ -109,7 +126,7 @@ export class EvidenceRecorder {
   }
 }
 
-async function sampleInvariants(runtime, messageLosses, since) {
+export async function sampleInvariants(runtime, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
       'ownerlessRunning', (
@@ -153,46 +170,6 @@ async function sampleInvariants(runtime, messageLosses, since) {
           FROM sessions AS session
         ) AS summary
       ),
-      'unansweredUserInput', (
-        -- A user turn that never produced an assistant reply. Delivery
-        -- bookkeeping can look perfectly clean while this is true: the 260822
-        -- F9 reproduction lost a reply with zero dead letters, zero overdue
-        -- retries and zero uncertain deliveries. Only the reply itself proves
-        -- the message arrived somewhere that could answer it.
-        --
-        -- Sessions that are still working are exempt until they go quiet, so
-        -- an in-flight turn is never reported as a loss.
-        SELECT COALESCE(json_agg(row_to_json(unanswered)), '[]'::json) FROM (
-          SELECT session.session_id, session.status,
-            asked.last_user_id, answered.last_assistant_id, asked.last_event_at
-          FROM sessions AS session
-          JOIN LATERAL (
-            SELECT MAX(id) FILTER (WHERE event_type = 'user_message') AS last_user_id,
-              MAX(created_at) AS last_event_at
-            FROM events WHERE events.session_id = session.session_id
-          ) AS asked ON TRUE
-          LEFT JOIN LATERAL (
-            SELECT MAX(id) AS last_assistant_id FROM events
-            WHERE events.session_id = session.session_id
-              AND events.event_type = 'assistant_message'
-          ) AS answered ON TRUE
-          WHERE asked.last_user_id IS NOT NULL
-            AND (
-              answered.last_assistant_id IS NULL
-              OR answered.last_assistant_id < asked.last_user_id
-            )
-            AND session.created_at >= ${sqlTimestamp(since)}
-            AND (
-              session.status NOT IN ('running', 'initializing')
-              -- Whether real work is happening is decided by runner progress
-              -- below, not by this clock, so the clock only has to outlast a
-              -- pause. Measured replies land three to five seconds after the
-              -- prompt, and three minutes of grace on top of that buys
-              -- nothing but blindness.
-              OR asked.last_event_at < NOW() - INTERVAL '30 seconds'
-            )
-        ) AS unanswered
-      ),
       'activationReceipt', (
         SELECT row_to_json(receipt) FROM (
           SELECT manifest_id, release_cohort_id, source_commit
@@ -208,19 +185,27 @@ async function sampleInvariants(runtime, messageLosses, since) {
     lifecycles,
     database?.sessions ?? [],
   );
-  // SQL can see that nothing has been written for a while; it cannot see that a
-  // runner is alive and working. A model turn or a Bash call may legitimately
-  // run past the quiet threshold, and reporting those as lost message would
-  // teach the next reader to distrust the judge -- at which point it may as
-  // well not exist. A session whose runner is still progressing is exempt.
-  const unansweredUserInput = (database?.unansweredUserInput ?? []).filter(
-    (row) => !runnerIsStillWorking(lifecycles.get(row.session_id)),
+  // The user-facing verdict, derived here rather than handed in.
+  //
+  // What stood here before was `messageLosses`, a parameter. Every scenario
+  // passed `[]` and the default was `[]`, so the one invariant built to catch
+  // a lost user message could not report one no matter what the system did.
+  // It is gone; this reads the event stream instead.
+  const pairingInputs = await runtime.psqlOne(pairingInputsQuery(since));
+  const pairedSessions = (pairingInputs?.sessions ?? []).map((session) => ({
+    ...session,
+    runnerProgressing: runnerIsStillWorking(lifecycles.get(session.session_id)),
+  }));
+  const unansweredDemands = findUnansweredDemands(
+    pairedSessions,
+    groupEventsBySession(pairingInputs?.events),
+    Date.now(),
   );
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
     ownerlessRunning: database?.ownerlessRunning ?? [],
-    unansweredUserInput,
+    unansweredDemands,
     terminalProjectionMismatches,
     overdueRetries: database?.overdueRetries ?? [],
     ambiguousUncertain: database?.ambiguousUncertain ?? [],
@@ -229,21 +214,13 @@ async function sampleInvariants(runtime, messageLosses, since) {
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId
       || receipt.source_commit !== manifest.sourceCommit,
-    messageLosses,
   };
   return {
     sampledAt: new Date().toISOString(),
     snapshot,
     violations: evaluateInvariantSnapshot(snapshot),
+    pairingInputs,
   };
-}
-
-/** Quotes an ISO timestamp for inline SQL; rejects anything that is not one. */
-function sqlTimestamp(value) {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
-    throw new Error(`invalid invariant window timestamp: ${value}`);
-  }
-  return `TIMESTAMPTZ '${value}'`;
 }
 
 const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
