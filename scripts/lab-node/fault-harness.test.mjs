@@ -132,6 +132,7 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
     overdueRetries: 2,
     ambiguousUncertain: 1,
     reasonlessDeadLetters: 1,
+    strandedDeliveries: 1,
     activationManifestMismatch: true,
   });
   assert.deepEqual(
@@ -142,6 +143,7 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
       "overdue_retry",
       "ambiguous_uncertain",
       "reasonless_dead_letter",
+      "stranded_delivery",
       "activation_manifest",
     ],
   );
@@ -251,6 +253,7 @@ test("every invariant the verdict can emit has a mutation that plants it", () =>
     overdueRetries: [{ delivery_id: "a" }],
     ambiguousUncertain: [{ delivery_id: "a" }],
     reasonlessDeadLetters: [{ delivery_id: "a" }],
+    strandedDeliveries: [{ delivery_id: "a" }],
     activationManifestMismatch: true,
     unansweredDemands: [{ session_id: "a", demand_event_id: 1 }],
   }).map((violation) => violation.invariant);
