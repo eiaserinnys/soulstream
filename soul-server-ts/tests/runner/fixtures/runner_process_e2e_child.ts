@@ -4,7 +4,10 @@ import pino from "pino";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import type { ClaudeRunOptions } from "../../../src/engine/claude_adapter.js";
+import {
+  claudeEngineEventMetadata,
+  type ClaudeRunOptions,
+} from "../../../src/engine/claude_adapter.js";
 import { buildMcpOptions } from "../../../src/engine/claude_sdk_mcp_options.js";
 import type {
   EngineExecuteParams,
@@ -18,11 +21,15 @@ import {
 import { RunnerChildRuntime } from "../../../src/runner/runner_child_runtime.js";
 import type { RunnerHostRequestClient } from
   "../../../src/runner/runner_host_request_client.js";
+import {
+  applyRunnerClaudeRuntimeObservationResult,
+} from "../../../src/runner/runner_claude_runtime_observation.js";
 import { parseRunnerChildConfig } from "../../../src/runner/runner_process_spawn.js";
 
 const configPath = argument("--config");
 const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR");
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
+const logger = pino({ level: "silent" });
 class ControlledEngine implements EnginePort {
   readonly backendId = config.backend;
   readonly detachedClaudeRuntime = config.backend === "claude" ? true : undefined;
@@ -59,19 +66,24 @@ class ControlledEngine implements EnginePort {
         yield engineEventFrame({ type: "complete", result: "foreground complete" });
         return;
       }
-      if (this.executionCount !== 2) {
+      if (this.executionCount < 2 || this.executionCount > 3) {
         throw new Error(`background follow-up executed ${this.executionCount} times`);
       }
       await writeFile(
         `${this.controlDirectory}/followup-executed`,
         `${process.pid}\n`,
       );
+      await writeFile(
+        `${this.controlDirectory}/followup-execution-count`,
+        `${this.executionCount - 1}\n`,
+      );
+      const followupResult = `background follow-up ${this.executionCount - 1} complete`;
       yield engineEventFrame({
         type: "assistant_message",
-        content: "background follow-up complete",
+        content: followupResult,
         timestamp: 3,
       });
-      yield engineEventFrame({ type: "complete", result: "background follow-up complete" });
+      yield engineEventFrame({ type: "complete", result: followupResult });
       return;
     }
     if (process.env.RUNNER_E2E_INTERVENTION_RECOVERY === "1") {
@@ -246,17 +258,26 @@ class ControlledEngine implements EnginePort {
         claudePostResultDrain: true,
         claudeBackgroundProvenance: "sdk_membership",
       };
-      await this.host.call(
+      const observation = await this.host.call(
         "claude_runtime",
         "observe",
         [config.sessionId, event, metadata],
         { timeoutMs: 20_000 },
       );
+      applyRunnerClaudeRuntimeObservationResult(
+        event,
+        observation,
+        (issue) => logger.error(
+          { err: issue },
+          "Runner E2E observation response violated its semantic contract",
+        ),
+      );
       this.backgroundTaskCount -= 1;
+      const detachedMetadata = claudeEngineEventMetadata(event);
       await this.host.call(
         "detached_event",
         "publish",
-        [config.sessionId, event, metadata],
+        [config.sessionId, { ...event }, ...(detachedMetadata ? [detachedMetadata] : [])],
         { timeoutMs: 20_000 },
       );
       await writeFile(`${this.controlDirectory}/published-${taskId}`, "ready\n");
@@ -282,7 +303,7 @@ async function exerciseInternalMcp(): Promise<void> {
     agentSessionId: config.sessionId,
     resolvedMcpServers: config.resolvedMcpServers,
     internalMcpUrl: config.internalMcpUrl,
-  } satisfies ClaudeRunOptions, pino({ level: "silent" }));
+  } satisfies ClaudeRunOptions, logger);
   const servers = options.mcpServers as Record<string, {
     type?: string;
     url?: string;
@@ -308,7 +329,7 @@ async function exerciseInternalMcp(): Promise<void> {
   }
 }
 
-const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {
+const runtime = new RunnerChildRuntime(config, logger, {
   createEngine: (_config, host) =>
     new ControlledEngine(controlDirectory, config.agent.workspace_dir, host),
 });
