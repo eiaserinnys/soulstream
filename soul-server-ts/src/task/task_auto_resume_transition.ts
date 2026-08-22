@@ -118,6 +118,11 @@ export class AutoResumeTransition {
       if (ownershipEnabled && expectedTerminalEventId !== undefined) {
         task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
       }
+      // Cleared only on success, and deliberately so. The flag describes a
+      // state -- the session is centrally running with no executor -- that
+      // stays true until a resume actually lands. Clearing it on failure would
+      // send the very next retry back down the terminal branch that just
+      // refused it.
       task.detachedRunningResume = undefined;
       prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
       onResume(task);
