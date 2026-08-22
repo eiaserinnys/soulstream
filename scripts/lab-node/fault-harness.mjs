@@ -1,0 +1,74 @@
+#!/usr/bin/env node
+import { parseHarnessArguments } from "./fault-harness-contract.mjs";
+import { LabRuntime } from "./fault-harness-runtime.mjs";
+import {
+  canonicalScenarioOrder,
+  runCanonicalScenario,
+  runTrafficCycles,
+} from "./fault-scenarios.mjs";
+
+const options = parseHarnessArguments(process.argv.slice(2));
+const runtime = new LabRuntime();
+await runtime.assertReady();
+const recorder = await runtime.createRun(runLabel(options));
+await recorder.event("harness_started", { options });
+
+const scenarioResults = [];
+let cycleResults = [];
+let fatalFailure;
+try {
+  if (options.command === "scenario") {
+    scenarioResults.push(await runCanonicalScenario(options.scenarioId, runtime, recorder));
+  } else if (options.command === "all") {
+    for (const scenarioId of canonicalScenarioOrder()) {
+      await ensureLabReady(runtime);
+      scenarioResults.push(await runCanonicalScenario(scenarioId, runtime, recorder));
+    }
+    cycleResults = await runTrafficCycles(
+      { concurrency: 1, cycles: 1, intervalSeconds: 0 },
+      runtime,
+      recorder,
+    );
+  } else {
+    cycleResults = await runTrafficCycles(options, runtime, recorder);
+  }
+} catch (error) {
+  fatalFailure = serializeError(error);
+  await recorder.event("harness_fatal", fatalFailure);
+}
+
+const allResults = [...scenarioResults, ...cycleResults];
+const failures = allResults.filter((result) => (
+  result.status !== "passed" || result.invariant?.newViolations?.length > 0
+));
+const summary = await recorder.finish({
+  command: options.command,
+  status: fatalFailure || failures.length > 0 ? "failed" : "passed",
+  fatalFailure,
+  scenarioResults,
+  cycleResults,
+  failureCount: failures.length + (fatalFailure ? 1 : 0),
+});
+
+process.stdout.write(`${JSON.stringify({
+  status: summary.status,
+  runId: summary.runId,
+  evidenceDirectory: recorder.directory,
+  failureCount: summary.failureCount,
+}, null, 2)}\n`);
+if (summary.status !== "passed") process.exitCode = 1;
+
+async function ensureLabReady(target) {
+  try { await target.assertReady(); } catch { await target.startStack(); }
+}
+
+function runLabel(value) {
+  return value.command === "scenario" ? `scenario-${value.scenarioId}` : value.command;
+}
+
+function serializeError(error) {
+  return {
+    name: error instanceof Error ? error.name : "Error",
+    message: error instanceof Error ? error.message : String(error),
+  };
+}

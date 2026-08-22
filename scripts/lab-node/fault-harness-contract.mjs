@@ -1,0 +1,193 @@
+export const SCENARIO_DEFINITIONS = Object.freeze({
+  F1: Object.freeze({
+    modes: Object.freeze(["SIGTERM", "SIGKILL"]),
+    injection: "Stop the worker host during an active runner turn, restart it, and retain the detached runner.",
+    expectedOutcome: "Both graceful and hard host loss converge to one completed assistant marker.",
+    verdict: "The original runner pid survives, the marker appears once, and post-fault invariants are clean.",
+  }),
+  F11: Object.freeze({
+    injection: "Restart the orchestrator while a stable-id intervention request is in flight, then retry the same delivery id.",
+    expectedOutcome: "The worker re-registers and the intervention is consumed exactly once.",
+    verdict: "One user message and one assistant marker exist for the stable delivery id, with no overdue delivery.",
+  }),
+  F9: Object.freeze({
+    injection: "Rebuild the host with a different declared release identity while an old-release runner remains live.",
+    expectedOutcome: "The host rejects adoption, the detached old runner finishes, offline replay converges, and the next turn uses a new runner.",
+    verdict: "At least one adoption mismatch log exists, both turn markers appear, and the runner pid and manifest change.",
+  }),
+  "dead-owner": Object.freeze({
+    injection: "Freeze the host, SIGKILL a live runner, crash the host before cleanup, hide the dead registration, then send the next message.",
+    expectedOutcome: "The dead owner expires and a new ownership generation executes the next turn.",
+    verdict: "The old generation is failed with dead-owner evidence and a later generation reaches terminal.",
+  }),
+  F7: Object.freeze({
+    injection: "Point a completion target at a missing node and repeatedly advance only its lab retry clock.",
+    expectedOutcome: "The canonical 16-attempt budget ends in an explained dead letter; a live-target control delivery consumes exactly once.",
+    verdict: "The failed delivery has 16 attempts and a reason, while the control relation has one consumption receipt.",
+  }),
+});
+
+export function parseHarnessArguments(argv) {
+  const [command, subject] = argv;
+  if (command === "all") {
+    rejectUnexpectedArguments(argv, 1);
+    return { command: "all" };
+  }
+  if (command === "scenario") {
+    if (!Object.hasOwn(SCENARIO_DEFINITIONS, subject)) {
+      throw new Error(`unknown scenario: ${subject ?? "<missing>"}`);
+    }
+    rejectUnexpectedArguments(argv, 2);
+    return { command: "scenario", scenarioId: subject };
+  }
+  if (command === "cycle") {
+    const concurrency = integerArgument(argv, "--concurrency", 1);
+    const cycles = integerArgument(argv, "--cycles", 1);
+    const intervalSeconds = integerArgument(argv, "--interval-seconds", 300, true);
+    if (concurrency < 1 || concurrency > 2) {
+      throw new Error("concurrency must be 1 or 2");
+    }
+    if (cycles < 1) throw new Error("cycles must be positive");
+    if (intervalSeconds < 0) throw new Error("interval-seconds must be non-negative");
+    rejectCycleUnknownArguments(argv);
+    return { command: "cycle", concurrency, cycles, intervalSeconds };
+  }
+  throw new Error("usage: fault-harness.sh <cycle|scenario|all>");
+}
+
+export function toggleReleaseGeneration(text) {
+  const key = "AUTH_BEARER_TOKEN_GENERATION";
+  const pattern = new RegExp(`^${key}=(lab-fault-a|lab-fault-b)$`, "m");
+  const match = text.match(pattern);
+  if (!match) {
+    const separator = text.endsWith("\n") ? "" : "\n";
+    return {
+      previous: null,
+      next: "lab-fault-a",
+      text: `${text}${separator}${key}=lab-fault-a\n`,
+    };
+  }
+  const previous = match[1];
+  const next = previous === "lab-fault-a" ? "lab-fault-b" : "lab-fault-a";
+  return {
+    previous,
+    next,
+    text: text.replace(pattern, `${key}=${next}`),
+  };
+}
+
+export function buildInterventionPayload(deliveryId, text) {
+  requireNonEmpty(deliveryId, "delivery id");
+  requireNonEmpty(text, "intervention text");
+  return {
+    text,
+    user: "lab-fault-harness",
+    delivery_id: deliveryId,
+    delivery_intent: "human_live_steer",
+    source: "lab_fault_harness",
+  };
+}
+
+export function evaluateInvariantSnapshot(snapshot) {
+  const violations = [];
+  if (snapshot.ownerlessRunning > 0) {
+    violations.push(invariant("ownerless_running", snapshot.ownerlessRunning));
+  }
+  if (snapshot.terminalProjectionMismatches.length > 0) {
+    violations.push(invariant(
+      "runner_terminal_projection",
+      snapshot.terminalProjectionMismatches.length,
+      snapshot.terminalProjectionMismatches,
+    ));
+  }
+  if (snapshot.overdueRetries > 0) {
+    violations.push(invariant("overdue_retry", snapshot.overdueRetries));
+  }
+  if (snapshot.ambiguousUncertain > 0) {
+    violations.push(invariant("ambiguous_uncertain", snapshot.ambiguousUncertain));
+  }
+  if (snapshot.reasonlessDeadLetters > 0) {
+    violations.push(invariant("reasonless_dead_letter", snapshot.reasonlessDeadLetters));
+  }
+  if (snapshot.activationManifestMismatch) {
+    violations.push(invariant("activation_manifest", 1));
+  }
+  if (snapshot.messageLosses.length > 0) {
+    violations.push(invariant("user_message_loss", snapshot.messageLosses.length, snapshot.messageLosses));
+  }
+  return violations;
+}
+
+export function newInvariantViolations(before, after) {
+  const baseline = new Map(before.map((violation) => [violation.invariant, violation]));
+  return after.flatMap((violation) => {
+    const previous = baseline.get(violation.invariant);
+    const delta = violation.count - (previous?.count ?? 0);
+    if (delta <= 0) return [];
+    const previousExamples = new Set((previous?.examples ?? []).map(stableExampleKey));
+    const examples = (violation.examples ?? [])
+      .filter((example) => !previousExamples.has(stableExampleKey(example)))
+      .slice(0, delta);
+    return [{ ...violation, count: delta, examples }];
+  });
+}
+
+export function redactEvidenceLine(line, secrets = []) {
+  let redacted = String(line)
+    .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s"']+/gi, "$1<redacted>")
+    .replace(/(password|token|secret)(\s*[:=]\s*)[^\s,"']+/gi, "$1$2<redacted>");
+  for (const secret of secrets) {
+    if (typeof secret !== "string" || secret.length < 4) continue;
+    redacted = redacted.replaceAll(secret, "<redacted>");
+  }
+  return redacted;
+}
+
+export function countMatchingTimelineEvents(timeline, eventType, text) {
+  return (timeline.messages ?? []).filter(
+    (message) => message.event_type === eventType
+      && JSON.stringify(message.payload ?? {}).includes(text),
+  ).length;
+}
+
+function invariant(name, count, examples = []) {
+  return { invariant: name, count, examples };
+}
+
+function stableExampleKey(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([left], [right]) => (
+    left.localeCompare(right)
+  ))));
+}
+
+function integerArgument(argv, name, fallback, allowZero = false) {
+  const index = argv.indexOf(name);
+  if (index < 0) return fallback;
+  const raw = argv[index + 1];
+  if (!/^\d+$/.test(raw ?? "")) throw new Error(`${name} must be an integer`);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || (!allowZero && value === 0)) {
+    throw new Error(`${name} must be a safe integer`);
+  }
+  return value;
+}
+
+function rejectUnexpectedArguments(argv, expectedLength) {
+  if (argv.length !== expectedLength) throw new Error("unexpected arguments");
+}
+
+function rejectCycleUnknownArguments(argv) {
+  const known = new Set(["--concurrency", "--cycles", "--interval-seconds"]);
+  for (let index = 1; index < argv.length; index += 2) {
+    if (!known.has(argv[index]) || argv[index + 1] === undefined) {
+      throw new Error(`unknown or incomplete argument: ${argv[index] ?? "<missing>"}`);
+    }
+  }
+}
+
+function requireNonEmpty(value, field) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${field} is required`);
+  }
+}
