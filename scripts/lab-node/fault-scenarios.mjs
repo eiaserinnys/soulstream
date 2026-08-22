@@ -15,8 +15,13 @@ import {
   waitForInFlightTool,
 } from "./fault-harness-process.mjs";
 import { delay, waitFor } from "./fault-harness-runtime.mjs";
+import {
+  RESTART_LOG_TERMS,
+  RESTART_SCENARIO_ORDER,
+  RESTART_SCENARIOS,
+} from "./fault-scenarios-restart.mjs";
 
-const SCENARIO_ORDER = ["F9", "dead-owner", "F1", "F11", "F7"];
+const SCENARIO_ORDER = ["F9", "dead-owner", ...RESTART_SCENARIO_ORDER, "F1", "F11", "F7"];
 const LOG_TERMS = {
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
@@ -25,6 +30,7 @@ const LOG_TERMS = {
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
   "dead-owner": ["DEAD_OWNER_", "dead execution owner", "expire_dead_owner"],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
+  ...RESTART_LOG_TERMS,
 };
 
 export function canonicalScenarioOrder() {
@@ -85,6 +91,8 @@ export async function runTrafficCycles(options, runtime, recorder) {
 }
 
 const SCENARIOS = {
+  ...RESTART_SCENARIOS,
+
   async F1(runtime, recorder) {
     const modes = ["SIGTERM", "SIGKILL"];
     const cases = [];

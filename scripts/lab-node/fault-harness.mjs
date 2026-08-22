@@ -38,8 +38,12 @@ try {
 }
 
 const allResults = [...scenarioResults, ...cycleResults];
+// A scenario that could not establish its injection window proves nothing. It
+// is not a failure, but it must never read as coverage either.
+const skipped = allResults.filter((result) => result.status === "skipped_precondition");
 const failures = allResults.filter((result) => (
-  result.status !== "passed" || result.invariant?.newViolations?.length > 0
+  (result.status !== "passed" && result.status !== "skipped_precondition")
+  || result.invariant?.newViolations?.length > 0
 ));
 const summary = await recorder.finish({
   command: options.command,
@@ -47,6 +51,7 @@ const summary = await recorder.finish({
   fatalFailure,
   scenarioResults,
   cycleResults,
+  skipped: skipped.map((result) => ({ id: result.id, reason: result.reason })),
   failureCount: failures.length + (fatalFailure ? 1 : 0),
 });
 
@@ -55,6 +60,7 @@ process.stdout.write(`${JSON.stringify({
   runId: summary.runId,
   evidenceDirectory: recorder.directory,
   failureCount: summary.failureCount,
+  skipped: summary.skipped,
 }, null, 2)}\n`);
 if (summary.status !== "passed") process.exitCode = 1;
 

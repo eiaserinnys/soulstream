@@ -409,7 +409,23 @@ export class RunnerRecoveryCoordinator {
     ) => Promise<RunnerRegistration>,
     adoptionDisposition?: RunnerAdoptionDisposition,
   ): Promise<Task> {
-    if (task.runner || task.executionPromise) return task;
+    if (task.runner || task.executionPromise) {
+      // This guard returned in silence for three hours during the 260822
+      // outage: a settled execution promise left behind by a failed ownership
+      // reservation reads exactly like a live execution, so every later scan
+      // skipped the offline replay without saying so. An offline replay that
+      // cannot run is a stranded terminal fact, never routine.
+      this.options.logger[mode === "offline" ? "warn" : "info"](
+        {
+          sessionId: registration.config.sessionId,
+          mode,
+          blockedBy: task.runner ? "runner" : "execution_promise",
+          taskStatus: task.status,
+        },
+        "registered runner recovery skipped because the task still holds an execution",
+      );
+      return task;
+    }
     if (prepareRegistrationAfterTaskGuard) {
       registration = await prepareRegistrationAfterTaskGuard(registration);
     }

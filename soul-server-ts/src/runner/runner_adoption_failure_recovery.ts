@@ -115,16 +115,26 @@ export class RunnerAdoptionFailureRecovery {
     const { registration, disposition, task, completion, ownedRunner, error } = input;
     // Task execution identity is the first fence. A newer turn owns both its
     // runner and registration; this recovery must not touch either.
-    if (
-      task.executionPromise !== completion
-      || (task.runner !== undefined && task.runner !== ownedRunner)
-    ) {
-      this.deps.logger.info(
-        { sessionId: registration.config.sessionId, disposition },
+    //
+    // Absence may not be supersession at all: an adoption that rejects before
+    // it assigns `task.executionPromise` leaves the slot empty, and reading
+    // empty as "a newer execution owns this" would abandon a live runner that
+    // still holds the session's execution ownership. That distinction is
+    // reported (`execution_absent`) but not yet acted on.
+    const supersededBy = supersedingExecution(task, completion, ownedRunner);
+    if (supersededBy) {
+      this.deps.logger.warn(
+        { ...recoveryLogContext(registration, error, disposition), supersededBy },
         "runner adoption failure was superseded by a newer execution",
       );
       return;
     }
+    // The rejection reason used to be swallowed here. Without it no operator
+    // could tell whether the adoption gate had fired at all.
+    this.deps.logger.warn(
+      recoveryLogContext(registration, error, disposition),
+      "runner adoption failed and this recovery owns the replacement path",
+    );
     task.executionPromise = undefined;
     if (task.runner === ownedRunner) {
       task.runner = undefined;
@@ -188,6 +198,26 @@ export class RunnerAdoptionFailureRecovery {
       "live runner adoption failed but registration is not safe to replace",
     );
   }
+}
+
+/**
+ * Names the newer execution that owns this session, or undefined when none
+ * does. Only a *present* execution or runner that is not the one this recovery
+ * started can supersede it.
+ */
+function supersedingExecution(
+  task: Task,
+  completion: Promise<void>,
+  ownedRunner: Task["runner"],
+): "runner" | "execution" | "execution_absent" | undefined {
+  if (task.runner !== undefined && task.runner !== ownedRunner) return "runner";
+  if (task.executionPromise === completion) return undefined;
+  // `execution_absent` is reported separately because it is almost certainly
+  // not supersession at all: an adoption that rejected before assigning
+  // `task.executionPromise` leaves this slot empty. The predicate is kept
+  // as-is until the lab says what actually rejects, so that this round
+  // measures rather than changes behaviour.
+  return task.executionPromise === undefined ? "execution_absent" : "execution";
 }
 
 async function refreshRunnerRegistration(
