@@ -37,6 +37,7 @@ const MUTATIONS = [
   {
     invariant: "unanswered_demand",
     what: "a completed session whose only user message was never answered",
+    identity: (planted) => planted.sessionId,
     async inject(context) {
       const sessionId = context.id("unanswered");
       await context.sql(`
@@ -58,6 +59,7 @@ const MUTATIONS = [
   {
     invariant: "unanswered_demand",
     what: "an intervention recorded but never projected, with a later reply present",
+    identity: (planted) => planted.sessionId,
     async inject(context) {
       // The exact shape of the losses this audit found: a reply exists and is
       // newer than every input, so an extremal comparison reads clean.
@@ -90,6 +92,7 @@ const MUTATIONS = [
   {
     invariant: "ownerless_running",
     what: "a running session with no open execution ownership",
+    identity: (planted) => planted.sessionId,
     async inject(context) {
       const sessionId = context.id("ownerless");
       await context.sql(`
@@ -105,6 +108,7 @@ const MUTATIONS = [
   {
     invariant: "runner_terminal_projection",
     what: "a runner lifecycle that finished while central state still says running",
+    identity: (planted) => planted.sessionId,
     async inject(context) {
       const sessionId = context.id("projection");
       await context.sql(`
@@ -132,6 +136,7 @@ const MUTATIONS = [
   {
     invariant: "overdue_retry",
     what: "a pending delivery whose retry clock went by without an attempt",
+    identity: (planted) => planted.deliveryId,
     async inject(context) {
       const deliveryId = context.id("overdue");
       await context.insertDelivery(deliveryId, {
@@ -149,6 +154,7 @@ const MUTATIONS = [
   {
     invariant: "ambiguous_uncertain",
     what: "a delivery left uncertain without being dead-lettered",
+    identity: (planted) => planted.deliveryId,
     async inject(context) {
       const deliveryId = context.id("uncertain");
       await context.insertDelivery(deliveryId, {
@@ -164,6 +170,7 @@ const MUTATIONS = [
   {
     invariant: "reasonless_dead_letter",
     what: "a dead letter with no reason recorded",
+    identity: (planted) => planted.deliveryId,
     async inject(context) {
       const deliveryId = context.id("reasonless");
       await context.insertDelivery(deliveryId, {
@@ -213,39 +220,63 @@ export const MUTATION_COVERAGE = Object.freeze(
   [...new Set(MUTATIONS.map((mutation) => mutation.invariant))],
 );
 
+/**
+ * Whether `violations` name the exact row this mutation planted.
+ *
+ * Identity, not presence. Presence was not good enough: run the gate right
+ * after a fault run and `unanswered_demand` is already firing on real losses,
+ * so "the invariant appeared" proves nothing and the mutation reports
+ * inconclusive -- honest, but useless exactly when you most want the answer.
+ * Asking for the planted id instead works against a dirty lab and cannot be
+ * satisfied by somebody else's violation.
+ *
+ * Count-only invariants name nothing to match, so they fall back to presence
+ * and must start from a clean baseline.
+ */
+function namesPlanted(violations, invariantName, identity) {
+  const violation = violations.find((entry) => entry.invariant === invariantName);
+  if (!violation) return false;
+  if (identity === undefined) return true;
+  return (violation.examples ?? []).some(
+    (example) => JSON.stringify(example).includes(identity),
+  );
+}
+
 async function runMutation(mutation, context, index) {
-  const label = `${mutation.invariant} :: ${mutation.what}`;
   const before = await context.sample();
-  if (before.has(mutation.invariant)) {
-    return {
-      invariant: mutation.invariant,
-      what: mutation.what,
-      outcome: "inconclusive",
-      detail: "the invariant was already firing before the mutation was planted",
-    };
-  }
   let planted;
+  let detected = false;
   try {
     planted = await mutation.inject(context);
+    const identity = mutation.identity?.(planted);
+    if (identity === undefined && namesPlanted(before, mutation.invariant, undefined)) {
+      return {
+        invariant: mutation.invariant,
+        what: mutation.what,
+        outcome: "inconclusive",
+        detail: "count-only invariant was already firing before the mutation was planted",
+      };
+    }
     const injected = await context.sample();
-    if (!injected.has(mutation.invariant)) {
+    detected = namesPlanted(injected, mutation.invariant, identity);
+    if (!detected) {
       return {
         invariant: mutation.invariant,
         what: mutation.what,
         outcome: "NOT DETECTED",
-        detail: `planted ${JSON.stringify(planted)} and the judge stayed green`,
+        detail: `planted ${JSON.stringify(planted)} and the judge did not name it`,
       };
     }
   } finally {
     if (planted) await mutation.revert(context, planted);
   }
   const after = await context.sample();
-  if (after.has(mutation.invariant)) {
+  if (namesPlanted(after, mutation.invariant, mutation.identity?.(planted))) {
     return {
       invariant: mutation.invariant,
       what: mutation.what,
       outcome: "DIRTY",
-      detail: "the invariant still fires after the mutation was reverted",
+      detail: "the judge still names the planted row after it was reverted",
     };
   }
   return { invariant: mutation.invariant, what: mutation.what, outcome: "detected", index };
@@ -276,7 +307,7 @@ export async function runMutationGate(runtime) {
     },
     async sample() {
       const { violations } = await sampleInvariants(runtime, since);
-      return new Set(violations.map((violation) => violation.invariant));
+      return violations;
     },
   };
   const results = [];
