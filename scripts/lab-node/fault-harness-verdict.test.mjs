@@ -222,3 +222,52 @@ test("findUnansweredDemands reports across sessions and names each one", () => {
   assert.equal(losses[0].session_id, "a");
   assert.equal(losses[0].demand_event_id, 1);
 });
+
+// --- the discriminating pair, taken from real lab evidence -------------------
+//
+// Two traffic-cycle sessions with the identical shape -- three inputs, two
+// replies -- and opposite verdicts. Everything about them matches except the
+// terminal marker on the middle turn, so these two tests pin the exact line
+// the judge draws. They use the values observed in the lab on 2026-08-22
+// rather than invented ones, because the whole point of the audit was that
+// invented inputs proved nothing.
+
+test("cycle shape: a deliberate interrupt that the system reported is not a loss", () => {
+  // 314379d8-a2f0-4168-b6b1-712c30e51a1a -- judged green.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "Reply with exactly CYCLE_INITIAL." }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+      event("user_message", { text: "sleep 12 then reply CYCLE_CANCELLED." }),
+      event("session_ended", { ended_status: "interrupted", termination_reason: "killed" }),
+      event("user_message", { text: "Reply with exactly CYCLE_FINAL." }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.demandCount, 3);
+  assert.deepEqual(paired.unanswered, []);
+  assert.equal(paired.demands[1].outcome, DEMAND_OUTCOMES.explicitFailure);
+});
+
+test("cycle shape: the same turn swallowed and reported completed IS a loss", () => {
+  // d3ee976f-34de-4649-921c-3afbb032b373 -- judged red under load. Identical
+  // to the case above except that the middle turn ended `completed_ok` with
+  // no tool call, no reply and no error.
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "Reply with exactly CYCLE_INITIAL." }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+      event("user_message", { text: "sleep 12 then reply CYCLE_CANCELLED." }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.unanswered.length, 1);
+  assert.equal(paired.unanswered[0].excerpt, "sleep 12 then reply CYCLE_CANCELLED.");
+});
