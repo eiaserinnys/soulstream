@@ -29,6 +29,8 @@ import {
   describeResultProvenance,
   hashSdkUserMessage,
   isExpectedInterruptDiagnostic,
+  isTurnStartingUserInput,
+  provableTurnResultOwner,
   turnTimeoutError,
 } from "./claude_sdk_persistent_session_support.js";
 import {
@@ -232,8 +234,22 @@ export class ClaudeSdkPersistentSession {
 
   private async handleSdkMessage(message: SDKMessage): Promise<void> {
     const raw = asRecord(message);
+    const inputUuid = raw?.type === "user" ? asString(raw.uuid) : undefined;
+    const inputOriginKind = asString(asRecord(raw?.origin)?.kind);
+    if (raw && inputUuid && inputOriginKind && isTurnStartingUserInput(raw)) {
+      this.followupWatchdog.observeTurnInput({
+        uuid: inputUuid,
+        originKind: inputOriginKind,
+      });
+    }
     if (raw?.type === "result") {
-      await this.handleResult(raw);
+      // Classification and clearing are atomic. handleResult consumes the
+      // verdict instead of rereading a mutable last-input slot.
+      const foreignTurnEndedBeforeOwn = this.followupWatchdog.observeTurnResult({
+        inputUuid: asString(raw.user_message_uuid),
+        originKind: asString(asRecord(raw.origin)?.kind),
+      });
+      await this.handleResult(raw, foreignTurnEndedBeforeOwn);
       return;
     }
     for (const event of this.eventMapper.mapSdkMessage(message)) {
@@ -249,13 +265,28 @@ export class ClaudeSdkPersistentSession {
     }
   }
 
-  private async handleResult(message: Record<string, unknown>): Promise<void> {
+  private async handleResult(
+    message: Record<string, unknown>, foreignTurnEndedBeforeOwn: boolean,
+  ): Promise<void> {
     const phase = this.runtime.snapshot().foregroundPhase;
     const active = this.activeForeground;
     const explicitUserMessageUuid =
       asString(message.user_message_uuid)
-      ?? this.provableTurnResultOwner(phase, active, message);
+      ?? provableTurnResultOwner(phase, active, message, this.logger);
     if (!explicitUserMessageUuid) {
+      const resultOriginKind = asString(asRecord(message.origin)?.kind);
+      if (
+        active?.origin.kind === "runtime_followup"
+        && resultOriginKind === "task-notification"
+        && foreignTurnEndedBeforeOwn
+      ) {
+        this.logger.warn(
+          { activeForegroundUuid: active.uuid, phase, ...describeResultProvenance(message) },
+          "Recreating persistent Claude Query after a foreign turn blocked a runtime follow-up",
+        );
+        await this.close("followup_no_output");
+        return;
+      }
       // The Query runs turns this session never enqueued. A finished background
       // task makes the harness run its own notification turn, and that turn's
       // terminal Result carries no correlation. Nothing local owns it, so it
@@ -347,6 +378,10 @@ export class ClaudeSdkPersistentSession {
       return;
     }
     const active = this.activeForeground;
+    if (active && this.followupWatchdog.observesForeignTurn(active.uuid)) {
+      await this.emitDetached(event);
+      return;
+    }
     if (active) this.followupWatchdog.observeProgress(active.uuid, event);
     if (active) {
       active.rateLimitTerminationState =
@@ -398,31 +433,6 @@ export class ClaudeSdkPersistentSession {
         "Persistent Claude detached event sink failed",
       );
     }
-  }
-
-  /**
-   * Names the turn that owns a Result arriving without `user_message_uuid`.
-   *
-   * Bare Results also terminate SDK-owned background notification turns, so an
-   * outstanding local input is not enough to claim one. Ownership is provable
-   * only while this session is interrupting its sole foreground turn: SDK
-   * 0.3.218 strips correlation from that abort Result. All other bare Results
-   * stay detached; the normal deadline bounds a genuinely missing local Result.
-   */
-  private provableTurnResultOwner(
-    phase: ClaudeForegroundPhase,
-    active: ActiveForeground | null,
-    message: Record<string, unknown>,
-  ): string | null {
-    if (phase !== "interrupting" || !active) return null;
-    if (asString(asRecord(message.origin)?.kind) === "task-notification") {
-      return null;
-    }
-    this.logger.info(
-      { activeForegroundUuid: active.uuid, resultUuid: asString(message.uuid) },
-      "Correlating Claude Result without user_message_uuid to the interrupted turn",
-    );
-    return active.uuid;
   }
 
   private async handleTurnTimeout(uuid: string): Promise<void> {
@@ -488,12 +498,3 @@ export class ClaudeSdkPersistentSession {
     }, this.postResultDrainMs);
   }
 }
-
-/**
- * Names where a Result came from, so a bare one can be told apart in the log.
- *
- * `origin` distinguishes a harness turn (`task-notification`) from a
- * human-authored one, and `subtype` distinguishes an error terminal from a
- * successful one. Neither is load-bearing for ownership: `origin` is absent on
- * `SDKResultError`, so absence is not evidence of anything.
- */

@@ -163,6 +163,17 @@ export function sdkTaskNotificationResult(sessionId: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+export function sdkTaskNotificationInput(sessionId: string): SDKMessage {
+  return {
+    type: "user",
+    uuid: "input-task-notification",
+    session_id: sessionId,
+    parent_tool_use_id: null,
+    origin: { kind: "task-notification" },
+    message: { role: "user", content: "background task finished" },
+  } as unknown as SDKMessage;
+}
+
 export async function collect(
   iterable: AsyncIterable<ClaudeClientEvent>,
 ): Promise<ClaudeClientEvent[]> {
