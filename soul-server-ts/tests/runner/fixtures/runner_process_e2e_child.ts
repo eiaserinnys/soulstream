@@ -29,6 +29,7 @@ import { parseRunnerChildConfig } from "../../../src/runner/runner_process_spawn
 const configPath = argument("--config");
 const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR");
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
+const logger = pino({ level: "silent" });
 class ControlledEngine implements EnginePort {
   readonly backendId = config.backend;
   readonly detachedClaudeRuntime = config.backend === "claude" ? true : undefined;
@@ -263,7 +264,14 @@ class ControlledEngine implements EnginePort {
         [config.sessionId, event, metadata],
         { timeoutMs: 20_000 },
       );
-      applyRunnerClaudeRuntimeObservationResult(event, observation);
+      applyRunnerClaudeRuntimeObservationResult(
+        event,
+        observation,
+        (issue) => logger.error(
+          { err: issue },
+          "Runner E2E observation response violated its semantic contract",
+        ),
+      );
       this.backgroundTaskCount -= 1;
       const detachedMetadata = claudeEngineEventMetadata(event);
       await this.host.call(
@@ -295,7 +303,7 @@ async function exerciseInternalMcp(): Promise<void> {
     agentSessionId: config.sessionId,
     resolvedMcpServers: config.resolvedMcpServers,
     internalMcpUrl: config.internalMcpUrl,
-  } satisfies ClaudeRunOptions, pino({ level: "silent" }));
+  } satisfies ClaudeRunOptions, logger);
   const servers = options.mcpServers as Record<string, {
     type?: string;
     url?: string;
@@ -321,7 +329,7 @@ async function exerciseInternalMcp(): Promise<void> {
   }
 }
 
-const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {
+const runtime = new RunnerChildRuntime(config, logger, {
   createEngine: (_config, host) =>
     new ControlledEngine(controlDirectory, config.agent.workspace_dir, host),
 });

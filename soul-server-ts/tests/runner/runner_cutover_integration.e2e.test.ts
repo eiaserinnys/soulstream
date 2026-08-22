@@ -308,15 +308,16 @@ describe("runner cutover all-flags-on integration", () => {
       "observe:background-2",
       "publish:background-2",
     ]);
+    let observedFollowupPid: number | undefined;
     await waitFor(async () => {
       const path = join(controlDirectory, "followup-executed");
       if (!(await pathExists(path))) return false;
-      return Number.parseInt((await readFile(path, "utf8")).trim(), 10) === pid;
+      const candidate = Number.parseInt((await readFile(path, "utf8")).trim(), 10);
+      if (candidate !== pid) return false;
+      observedFollowupPid = candidate;
+      return true;
     });
-    expect(Number.parseInt(
-      (await readFile(join(controlDirectory, "followup-executed"), "utf8")).trim(),
-      10,
-    )).toBe(pid);
+    expect(observedFollowupPid).toBe(pid);
     const followupExecution = task.executionPromise;
     if (!followupExecution) throw new Error("runtime follow-up execution was not started");
     await followupExecution;

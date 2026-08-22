@@ -16,6 +16,8 @@ export { assertRunnerJsonValue } from "./runner_json_contract.js";
  *   optional to required requires a protocol version bump.
  * - Every frame must remain JSON-serializable. Functions, Date, Buffer, class
  *   instances, and process-local handles are forbidden at this boundary.
+ * - claude_runtime.observe responses must accept both legacy booleans and the
+ *   structured result until no runner release predating PR #811 remains live.
  */
 export const RUNNER_FRAME_PROTOCOL_VERSION = 1 as const;
 

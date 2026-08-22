@@ -76,7 +76,14 @@ export function createRunnerChildEngine(
               [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
               hostOptions(),
             );
-            return applyRunnerClaudeRuntimeObservationResult(event, result);
+            return applyRunnerClaudeRuntimeObservationResult(
+              event,
+              result,
+              (issue) => logger.error(
+                { err: issue, sessionId },
+                "Runner Claude runtime observation response violated its semantic contract",
+              ),
+            );
           },
           detachedEventSink: async (event) => {
             const metadata = claudeEngineEventMetadata(event);

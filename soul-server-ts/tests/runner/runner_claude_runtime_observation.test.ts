@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   attachClaudeBackgroundDeliveryMetadata,
@@ -25,6 +25,10 @@ const delivery: ClaudeBackgroundDeliveryMetadata = {
   storedPayloadHash: "payload-hash-1",
 };
 
+function failOnIssue(issue: Error): never {
+  throw issue;
+}
+
 describe("runner Claude runtime observation contract", () => {
   it("returns host-owned delivery metadata and restores it on the child event", () => {
     const hostEvent = {};
@@ -32,13 +36,17 @@ describe("runner Claude runtime observation contract", () => {
     const result = buildRunnerClaudeRuntimeObservationResult(true, hostEvent);
     const childEvent = {};
 
-    expect(applyRunnerClaudeRuntimeObservationResult(childEvent, result)).toBe(true);
+    expect(applyRunnerClaudeRuntimeObservationResult(
+      childEvent,
+      result,
+      failOnIssue,
+    )).toBe(true);
     expect(readClaudeBackgroundDeliveryMetadata(childEvent)).toEqual(delivery);
   });
 
   it("accepts legacy boolean host responses during a rolling upgrade", () => {
-    expect(applyRunnerClaudeRuntimeObservationResult({}, true)).toBe(true);
-    expect(applyRunnerClaudeRuntimeObservationResult({}, false)).toBe(false);
+    expect(applyRunnerClaudeRuntimeObservationResult({}, true, failOnIssue)).toBe(true);
+    expect(applyRunnerClaudeRuntimeObservationResult({}, false, failOnIssue)).toBe(false);
   });
 
   it("carries restored delivery metadata through a detached publish frame", () => {
@@ -50,7 +58,7 @@ describe("runner Claude runtime observation contract", () => {
     applyRunnerClaudeRuntimeObservationResult(childEvent, {
       accepted: true,
       claudeBackgroundDelivery: delivery,
-    });
+    }, failOnIssue);
 
     const frame = runnerRequestFrame("host:publish", {
       kind: "host_call",
@@ -64,16 +72,39 @@ describe("runner Claude runtime observation contract", () => {
     expect(RunnerFrameSchema.safeParse(frame).success).toBe(true);
   });
 
-  it("rejects conflicting delivery metadata instead of changing identity", () => {
+  it("fails open and reports a malformed observation result", () => {
+    const reportIssue = vi.fn();
+
+    expect(applyRunnerClaudeRuntimeObservationResult(
+      {},
+      { accepted: "yes" },
+      reportIssue,
+    )).toBe(true);
+    expect(reportIssue).toHaveBeenCalledOnce();
+    expect(reportIssue.mock.calls[0]?.[0]).toHaveProperty(
+      "message",
+      expect.stringContaining("invalid result"),
+    );
+  });
+
+  it("suppresses conflicting delivery metadata without killing the session", () => {
     const childEvent = {};
+    const reportIssue = vi.fn();
     attachClaudeBackgroundDeliveryMetadata(childEvent, {
       ...delivery,
       deliveryId: "delivery-other",
     });
 
-    expect(() => applyRunnerClaudeRuntimeObservationResult(childEvent, {
+    expect(applyRunnerClaudeRuntimeObservationResult(childEvent, {
       accepted: true,
       claudeBackgroundDelivery: delivery,
-    })).toThrow("delivery metadata disagreed across host observation");
+    }, reportIssue)).toBe(false);
+    expect(reportIssue).toHaveBeenCalledOnce();
+    expect(reportIssue.mock.calls[0]?.[0]).toHaveProperty(
+      "message",
+      expect.stringContaining("delivery metadata disagreed"),
+    );
+    expect(readClaudeBackgroundDeliveryMetadata(childEvent)?.deliveryId)
+      .toBe("delivery-other");
   });
 });
