@@ -38,6 +38,7 @@ import {
   type RunnerAdoptionDisposition,
 } from "./runner_adoption_failure_recovery.js";
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 import { OwnerNullExecutionReconciler } from "./owner_null_execution_reconciler.js";
 import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
@@ -173,6 +174,9 @@ export class RunnerRecoveryCoordinator {
     this.ownershipBackoff.prune(
       scan.registrations.map((registration) => registration.config.sessionId),
     );
+    this.adoptionFailureRecovery.prune(
+      scan.registrations.map((registration) => registration.config.sessionId),
+    );
     const admitted: Array<{
       registration: RunnerRegistration;
       disposition: RunnerRecoveryDisposition;
@@ -190,6 +194,10 @@ export class RunnerRecoveryCoordinator {
         (error) => this.recoveryLogger.classification(registration, error),
       );
       if (!disposition) continue;
+      if (
+        (disposition === "adopt_prebootstrap" || disposition === "adopt_running")
+        && this.adoptionFailureRecovery.shouldSkip(sessionId)
+      ) continue;
       if (
         disposition === "wait_for_bootstrap"
       ) {
@@ -483,26 +491,34 @@ export class RunnerRecoveryCoordinator {
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
+    let attemptRunner: TaskRunnerRuntime | undefined;
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,
       hydrated.config,
       lifecycle?.execution_command_id,
       mode,
+      (runner) => {
+        attemptRunner = runner;
+      },
     );
     const ownedRunner = task.runner;
     if (mode === "offline") {
       await completion;
     } else if (mode === "adopt" && adoptionDisposition) {
-      void completion.catch((error: unknown) => {
-        this.adoptionFailureRecovery.schedule({
-          registration,
-          disposition: adoptionDisposition,
-          task,
-          completion,
-          ownedRunner,
-          error,
-        });
-      });
+      void completion.then(
+        () => this.adoptionFailureRecovery.clear(registration.config.sessionId),
+        (error: unknown) => {
+          this.adoptionFailureRecovery.schedule({
+            registration,
+            disposition: adoptionDisposition,
+            task,
+            completion,
+            ownedRunner,
+            attemptRunner,
+            error,
+          });
+        },
+      );
     } else {
       void completion.catch((error) => {
         this.options.logger.error(
