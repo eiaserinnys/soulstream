@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 import { parseHarnessArguments } from "./fault-harness-contract.mjs";
+import {
+  reportMutationGate,
+  runMutationGate,
+} from "./fault-harness-mutation.mjs";
 import { LabRuntime } from "./fault-harness-runtime.mjs";
 import {
   canonicalScenarioOrder,
@@ -9,6 +13,16 @@ import {
 
 const options = parseHarnessArguments(process.argv.slice(2));
 const runtime = new LabRuntime();
+
+if (options.command === "mutation") {
+  // Runs before the stack has to be healthy: it only needs the database and
+  // the release manifest, and a lab too broken to serve a session is exactly
+  // when you want to know whether the judges still work.
+  const mutationResults = await runMutationGate(runtime);
+  process.exitCode = reportMutationGate(mutationResults) ? 0 : 1;
+  process.exit(process.exitCode);
+}
+
 await runtime.assertReady();
 const recorder = await runtime.createRun(runLabel(options));
 await recorder.event("harness_started", { options });
