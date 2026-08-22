@@ -143,6 +143,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private unregisterPump: (() => void) | undefined;
   /** Set once this host has given the session's event stream back. */
   private eventStreamReleased = false;
+  /**
+   * Distinguishes this host-side dispatcher from every other one for the same
+   * session. A session can have more than one at a time -- a rejected adoption
+   * leaves its own behind while a replacement turn builds another -- and
+   * without a name the logs cannot say which of them a decision was about.
+   */
+  private readonly instanceId = randomUUID().slice(0, 8);
   private connecting: Promise<RunnerIpcConnection> | undefined;
   private reconnectInFlight: Promise<void> | undefined;
   private reconnectRequested = false;
@@ -339,6 +346,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
    */
   isClosed(): boolean {
     return this.closed;
+  }
+
+  dispatcherId(): string {
+    return this.instanceId;
   }
 
   async releaseEventStreamRegistration(): Promise<void> {
@@ -969,8 +980,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     sessionId: string;
     runnerDirectory: string;
     socketPath: string;
+    dispatcherId: string;
   } {
     return {
+      dispatcherId: this.instanceId,
       sessionId: this.spawnInput.sessionId,
       runnerDirectory: runnerProcessPaths(
         this.spawnInput.stateDirectory,

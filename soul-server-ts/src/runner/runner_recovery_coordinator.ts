@@ -434,6 +434,12 @@ export class RunnerRecoveryCoordinator {
           mode,
           blockedBy: task.runner ? "runner" : "execution_promise",
           taskStatus: task.status,
+          // Which dispatcher, and whether it has already given up. A session
+          // can hold one while another for the same session is the one whose
+          // reconnect budget ran out, and the two are indistinguishable
+          // without saying so.
+          runnerDispatcher: task.runner?.dispatcher.dispatcherId?.(),
+          runnerDispatcherClosed: task.runner?.dispatcher.isClosed?.(),
         },
         "registered runner recovery skipped because the task still holds an execution",
       );
