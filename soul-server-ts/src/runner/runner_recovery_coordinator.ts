@@ -127,7 +127,7 @@ export class RunnerRecoveryCoordinator {
         }
       },
       recoverOffline: async (registration, task) =>
-        await this.recoverRegistered(registration, task, "offline"),
+        (await this.recoverRegistered(registration, task, "offline")).task,
       resumeReplacement: async (task, message, config) =>
         await options.taskManager.markRunnerFailureAndResume(
           task,
@@ -369,7 +369,7 @@ export class RunnerRecoveryCoordinator {
         terminate: async (owned) => await this.registrationControl.terminate(owned),
         invalidate: async (owned) => await this.registrationControl.invalidate(owned),
         recoverOffline: async (owned, recoveredTask) =>
-          await this.recoverRegistered(owned, recoveredTask, "offline"),
+          (await this.recoverRegistered(owned, recoveredTask, "offline")).task,
         resumeReplacement: async (recoveredTask, message, config) =>
           await this.options.taskManager.markRunnerFailureAndResume(
             recoveredTask,
@@ -408,7 +408,7 @@ export class RunnerRecoveryCoordinator {
       registration: RunnerRegistration,
     ) => Promise<RunnerRegistration>,
     adoptionDisposition?: RunnerAdoptionDisposition,
-  ): Promise<Task> {
+  ): Promise<{ task: Task; replayed: boolean }> {
     if (task.runner || task.executionPromise) {
       // This guard returned in silence for three hours during the 260822
       // outage: a settled execution promise left behind by a failed ownership
@@ -424,7 +424,7 @@ export class RunnerRecoveryCoordinator {
         },
         "registered runner recovery skipped because the task still holds an execution",
       );
-      return task;
+      return { task, replayed: false };
     }
     if (prepareRegistrationAfterTaskGuard) {
       registration = await prepareRegistrationAfterTaskGuard(registration);
@@ -460,7 +460,7 @@ export class RunnerRecoveryCoordinator {
         );
       });
     }
-    return task;
+    return { task, replayed: true };
   }
 
   private async reapAndResume(
@@ -497,13 +497,13 @@ export class RunnerRecoveryCoordinator {
       disposition,
       task,
       recoverAdopt: async (ownedRegistration, ownedTask, adoptionDisposition) =>
-        await this.recoverRegistered(
+        (await this.recoverRegistered(
           ownedRegistration,
           ownedTask,
           "adopt",
           undefined,
           adoptionDisposition,
-        ),
+        )).task,
       recoverOffline: async (ownedRegistration, ownedTask, prepare) =>
         await this.recoverRegistered(ownedRegistration, ownedTask, "offline", prepare),
       terminate: async (ownedRegistration) =>

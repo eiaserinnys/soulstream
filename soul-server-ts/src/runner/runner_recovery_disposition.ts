@@ -151,10 +151,10 @@ export async function recoverRunnerByDisposition(input: {
     registration: RunnerRegistration,
     task: Task,
     prepare: (registration: RunnerRegistration) => Promise<RunnerRegistration>,
-  ): Promise<Task>;
+  ): Promise<{ task: Task; replayed: boolean }>;
   terminate(registration: RunnerRegistration): Promise<void>;
   retireTerminal(registration: RunnerRegistration): Promise<void>;
-  logger: Pick<Logger, "info">;
+  logger: Pick<Logger, "info" | "warn">;
 }): Promise<Task> {
   if (
     input.disposition === "adopt_prebootstrap"
@@ -176,6 +176,21 @@ export async function recoverRunnerByDisposition(input: {
     },
   );
   if (input.disposition === "replay_terminal_dead") {
+    // Retiring is irreversible: `retired_terminal` is dropped by every later
+    // scan, so the registration is the last thing that could still carry this
+    // runner's terminal facts. Retiring one whose replay never ran seals the
+    // session away, and the 260822 outage did exactly that under a log line
+    // announcing the replay had happened.
+    if (!recovered.replayed) {
+      input.logger.warn(
+        {
+          sessionId: input.registration.config.sessionId,
+          disposition: "replay_terminal_dead",
+        },
+        "terminal runner replay was skipped; registration kept for a later scan",
+      );
+      return recovered.task;
+    }
     await input.retireTerminal(input.registration);
     input.logger.info(
       {
@@ -185,5 +200,5 @@ export async function recoverRunnerByDisposition(input: {
       "terminal runner with no live process replayed offline and retired",
     );
   }
-  return recovered;
+  return recovered.task;
 }

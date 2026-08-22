@@ -128,12 +128,6 @@ export class RunnerAdoptionFailureRecovery {
       );
       return;
     }
-    // The rejection reason used to be swallowed here. Without it no operator
-    // could tell whether the adoption gate had fired at all.
-    this.deps.logger.warn(
-      recoveryLogContext(registration, error, disposition),
-      "runner adoption failed and this recovery owns the replacement path",
-    );
     task.executionPromise = undefined;
     if (task.runner === ownedRunner) {
       task.runner = undefined;

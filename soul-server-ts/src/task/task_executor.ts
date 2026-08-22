@@ -303,6 +303,16 @@ export class TaskExecutor {
         }
       });
     }
+    // Both early returns below leave the task deliberately unfinalized, so
+    // nothing else clears this slot. A settled promise parked on the task is
+    // indistinguishable from a live execution to every recovery path that
+    // reads it, and that is what stranded the offline replay of a finished
+    // turn for three hours during the 260822 outage (lab: F9 logs
+    // `blockedBy=execution_promise` on the offline replay).
+    let ownExecution: Promise<void> | undefined;
+    const releaseExecutionSlot = (): void => {
+      if (task.executionPromise === ownExecution) task.executionPromise = undefined;
+    };
     const promise = this.startOwnedExecution(
       task,
       agent,
@@ -328,6 +338,7 @@ export class TaskExecutor {
             },
             "Execution ownership conflict deferred to durable delivery recovery",
           );
+          releaseExecutionSlot();
           return;
         }
         this.executionOwnershipBackoff?.clear(task.agentSessionId);
@@ -336,6 +347,7 @@ export class TaskExecutor {
             { err, sessionId: task.agentSessionId, proof: err.proof },
             "Spawned runner parent initialization failed; recovery owns the live child",
           );
+          releaseExecutionSlot();
           return;
         }
         await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
@@ -343,6 +355,7 @@ export class TaskExecutor {
         await this._finalize(task);
       },
     );
+    ownExecution = promise;
     task.executionPromise = promise;
     return promise;
   }
