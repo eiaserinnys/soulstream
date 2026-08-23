@@ -48,13 +48,16 @@ export async function sendInterveneCommand(
   reply: FastifyReply,
   options: SessionActionCommandDispatchOptions,
   payload: InterveneNodeCommandPayload,
+  durableDeliveryId?: string,
 ): Promise<FastifyReply | NodeCommandResponse> {
   try {
-    return mapActionCommandResponse(
-      reply,
-      await dispatchActionCommand(options, payload),
-      sendGenericStatusError,
-    );
+    const response = await dispatchActionCommand(options, payload);
+    if (isAckStatusError(response)) {
+      return sendGenericStatusError(reply, response);
+    }
+    return durableDeliveryId === undefined
+      ? response
+      : { ...response, deliveryId: durableDeliveryId };
   } catch (error) {
     if (
       error instanceof PendingNodeCommandTimeoutError &&
@@ -69,6 +72,25 @@ export async function sendInterveneCommand(
         delivered: null,
         consumeWhen: null,
         reason: "verdict_unknown",
+        ...(durableDeliveryId === undefined
+          ? {}
+          : { deliveryId: durableDeliveryId }),
+      });
+    }
+    if (
+      durableDeliveryId !== undefined
+      && isDurableInterventionRouteFailure(error)
+    ) {
+      const queued = error instanceof SessionCommandRouteError;
+      return reply.code(200).send({
+        type: "intervene_ack",
+        status: "ok",
+        outcome: queued ? "queued" : "unknown",
+        agentSessionId: payload.agentSessionId,
+        deliveryId: durableDeliveryId,
+        delivered: queued ? false : null,
+        consumeWhen: queued ? "next_turn" : null,
+        reason: queued ? "node_unavailable" : "verdict_unknown",
       });
     }
     return sendMappedActionError(reply, error, sendGenericStatusError);
@@ -195,6 +217,12 @@ export function sendRealtimeAckError(
 
 function isAckStatusError(response: NodeCommandResponse): boolean {
   return response.status === "error";
+}
+
+function isDurableInterventionRouteFailure(error: unknown): boolean {
+  return error instanceof SessionCommandRouteError
+    || error instanceof NodeCommandTransportError
+    || error instanceof PendingNodeCommandRejectedError;
 }
 
 async function dispatchActionCommand<

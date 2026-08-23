@@ -125,35 +125,16 @@ export class TaskInterventionRoute {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    let task: Task;
-    let preclassifiedRoute: ReturnType<typeof interventionTaskRoute> | undefined;
-    let request = params;
-    let admission: DeliveryLedgerAdmission;
-    if (this.deps.deliveryLedgerGate && params.deliveryIntent) {
-      admission = await this.deps.deliveryLedgerGate.admit(params);
-      if (admission.kind === "suppressed") {
-        return {
-          suppressed: true,
-          deliveryId: admission.deliveryId,
-          reason: admission.reason,
-        };
-      }
-      task = await this.resolveTask(params.agentSessionId);
-      preclassifiedRoute = task.status === "initializing"
-        ? undefined
-        : interventionTaskRoute(task);
-    } else {
-      task = await this.resolveTask(params.agentSessionId);
-      preclassifiedRoute = task.status === "initializing"
-        ? undefined
-        : interventionTaskRoute(task);
-      request = this.deps.deliveryLedgerGate && preclassifiedRoute !== "running"
-        ? ensureDurableDeliveryIdentity(params)
-        : params;
-      admission = this.deps.deliveryLedgerGate
-        ? await this.deps.deliveryLedgerGate.admit(request)
-        : { kind: "legacy" };
-    }
+    const request = this.deps.deliveryLedgerGate
+      ? ensureHumanDeliveryIdentity(params)
+      : params;
+    const task = await this.resolveTask(params.agentSessionId);
+    const preclassifiedRoute = task.status === "initializing"
+      ? undefined
+      : interventionTaskRoute(task);
+    const admission = this.deps.deliveryLedgerGate
+      ? await this.deps.deliveryLedgerGate.admit(request)
+      : { kind: "legacy" } as const;
     const initialMessage: InterventionMessage = {
       text: request.text,
       user: request.user,
@@ -255,6 +236,12 @@ export class TaskInterventionRoute {
             { publishEvent: false },
           );
           notificationDisposition = "queued";
+        } else if (message.deliveryIntent === "human_live_steer") {
+          result = await this.deps.runningInterventionTransition.deliver(
+            task,
+            message,
+            { queueIfUndelivered: request.queueIfRunning ?? true },
+          );
         } else {
           result = await this.deps.runningInterventionTransition.queueOnly(task, message);
         }
@@ -439,7 +426,7 @@ function interventionTaskRoute(
   return isActiveTaskStatus(task.status) ? "running" : "auto-resume";
 }
 
-function ensureDurableDeliveryIdentity(
+function ensureHumanDeliveryIdentity(
   params: AddInterventionParams,
 ): AddInterventionParams {
   if (params.deliveryIntent) return params;
@@ -448,7 +435,7 @@ function ensureDurableDeliveryIdentity(
     ...params,
     source: params.source ?? "user_message",
     deliveryId,
-    deliveryIntent: "durable_next_turn",
+    deliveryIntent: "human_live_steer",
     completionId: `message:${deliveryId}`,
     relationKey: `user_message:${params.agentSessionId}:${deliveryId}`,
     deliveryCreatedAt: new Date().toISOString(),

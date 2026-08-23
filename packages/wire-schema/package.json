@@ -8,6 +8,7 @@
   "types": "generated/typescript/index.ts",
   "exports": {
     ".": "./generated/typescript/index.ts",
+    "./delivery": "./src/delivery.ts",
     "./schema": "./src/upstream.schema.json"
   },
   "scripts": {

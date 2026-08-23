@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+export { hashDeliveryPayload } from "@soulstream/wire-schema/delivery";
 
 import type { DeliveryIntent } from "./delivery_contract.js";
 
@@ -33,25 +34,6 @@ export function buildDeterministicDeliveryIdentity(params: {
  */
 export function buildDeliveryInputUuid(deliveryId: string): string {
   return uuidFromHash(hashHex(`claude_input\u0000${deliveryId}`));
-}
-
-export function hashDeliveryPayload(value: Record<string, unknown>): string {
-  return hashHex(JSON.stringify(canonicalize(value)));
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => item === undefined ? null : canonicalize(item));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([, item]) => item !== undefined)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, canonicalize(item)]),
-    );
-  }
-  return value;
 }
 
 function hashHex(value: string): string {

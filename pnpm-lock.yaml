@@ -35,6 +35,9 @@ importers:
       '@soulstream/search-contract':
         specifier: workspace:*
         version: link:../packages/search-contract
+      '@soulstream/wire-schema':
+        specifier: workspace:*
+        version: link:../packages/wire-schema
       fastify:
         specifier: ^5.1.0
         version: 5.8.5

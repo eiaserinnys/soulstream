@@ -335,7 +335,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     );
   });
 
-  it("assigns legacy human interventions one durable delivery identity", async () => {
+  it("keeps an unlabelled human intervention human while assigning durable identity", async () => {
     const task = makeTask({ status: "completed" });
     const admit = vi.fn().mockImplementation(async (params) => ({
       kind: "suppressed",
@@ -362,7 +362,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, vi.fn());
 
     expect(admit).toHaveBeenCalledWith(expect.objectContaining({
-      deliveryIntent: "durable_next_turn",
+      deliveryIntent: "human_live_steer",
       source: "user_message",
       deliveryId: expect.any(String),
       completionId: expect.stringMatching(/^message:/),

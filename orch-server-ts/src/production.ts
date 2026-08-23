@@ -620,7 +620,14 @@ export function buildProductionRouteOptions(
           },
         }
       : {}),
-    sessionActionCommandRoutes: providers.runtime.sessionActionCommandRoutes,
+    sessionActionCommandRoutes:
+      persistenceRepositoryProvider && providers.runtime.sessionActionCommandRoutes
+        ? {
+            ...providers.runtime.sessionActionCommandRoutes,
+            deliveryRepositoryProvider: async () =>
+              (await persistenceRepositoryProvider()).deliveries,
+          }
+        : providers.runtime.sessionActionCommandRoutes,
     sessionBackgroundScheduleRoutes:
       providers.runtime.sessionBackgroundScheduleRoutes,
     sessionCatalogRoutes: providers.sessionCatalogRoutes,

@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
+import { isDeliveryIntent } from "./delivery_contract.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
@@ -62,6 +62,6 @@ export class TaskDeliveryConsumption {
 function requiresExactConsumption(
   intervention: InterventionMessage,
 ): boolean {
-  return isLedgerControlledDeliveryIntent(intervention.deliveryIntent)
+  return isDeliveryIntent(intervention.deliveryIntent)
     || intervention.source === "claude_runtime_task_followup";
 }
