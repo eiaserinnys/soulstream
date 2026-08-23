@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildDeliveryObservation,
   buildTransparencyObservation,
+  expectedDeliveryObservation,
   expectedTransparencyObservation,
   transparencyDifferences,
 } from "./fault-transparency-oracle.mjs";
@@ -135,6 +137,76 @@ test("timeline projection sorts newest-first API rows and finds quoted prompts",
     "initial_reply",
     "context_reply",
   ]);
+});
+
+test("delivery observations reject duplicate execution and missing replies", () => {
+  const expected = expectedDeliveryObservation(["only"]);
+  const actual = buildDeliveryObservation({
+    terminalStatus: "completed",
+    callerOutcome: null,
+    deliveries: [{ label: "only", text: "DELIVER_ONCE", marker: "ONCE_OK" }],
+    timeline: {
+      messages: [
+        timelineEvent(1, "user_message", { text: "DELIVER_ONCE" }, 0),
+        timelineEvent(2, "user_message", { text: "DELIVER_ONCE" }, 0),
+      ],
+    },
+  });
+
+  assert.deepEqual(transparencyDifferences(expected, actual).map(({ field }) => field), [
+    "eventSequence",
+    "counts",
+  ]);
+});
+
+test("delivery observations reject FIFO reversal and caller-visible CAS errors", () => {
+  const expected = expectedDeliveryObservation(
+    ["first", "second"],
+    "queued_for_next_turn",
+  );
+  const actual = buildDeliveryObservation({
+    terminalStatus: "completed",
+    callerOutcome: {
+      status: "rejected",
+      reason: { name: "Error", message: "HTTP 503 after durable acceptance" },
+    },
+    deliveries: [
+      { label: "first", text: "FIRST", marker: "FIRST_OK" },
+      { label: "second", text: "SECOND", marker: "SECOND_OK" },
+    ],
+    timeline: {
+      messages: [
+        timelineEvent(1, "user_message", { text: "SECOND" }, 0),
+        timelineEvent(2, "assistant_message", { content: "SECOND_OK" }, 0),
+        timelineEvent(3, "user_message", { text: "FIRST" }, 0),
+        timelineEvent(4, "assistant_message", { content: "FIRST_OK" }, 0),
+      ],
+    },
+  });
+
+  assert.deepEqual(transparencyDifferences(expected, actual).map(({ field }) => field), [
+    "callerOutcome",
+    "eventSequence",
+  ]);
+});
+
+test("delivery observation cursors exclude the setup turn", () => {
+  const actual = buildDeliveryObservation({
+    afterEventId: 2,
+    terminalStatus: "completed",
+    callerOutcome: null,
+    deliveries: [{ label: "candidate", text: "CANDIDATE", marker: "CANDIDATE_OK" }],
+    timeline: {
+      messages: [
+        timelineEvent(1, "user_message", { text: "BASE" }, 0),
+        timelineEvent(2, "assistant_message", { content: "BASE_OK" }, 0),
+        timelineEvent(3, "user_message", { text: "CANDIDATE" }, 0),
+        timelineEvent(4, "assistant_message", { content: "CANDIDATE_OK" }, 0),
+      ],
+    },
+  });
+
+  assert.deepEqual(actual, expectedDeliveryObservation(["candidate"]));
 });
 
 function observationInput(options = {}) {

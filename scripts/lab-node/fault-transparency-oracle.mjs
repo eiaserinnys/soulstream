@@ -144,6 +144,92 @@ export function expectedTransparencyObservation(kind) {
   throw new Error(`unknown transparency observation kind: ${kind}`);
 }
 
+/**
+ * Projects one or more durable-delivery turns onto the same stable semantic
+ * surface used by the restart transparency scenarios.
+ *
+ * Delivery ids and timestamps are transport details. Labels are authored by
+ * the scenario (for example, "first" and "second") so duplicate or reordered
+ * user demands and replies remain visible without comparing random markers.
+ */
+export function buildDeliveryObservation(input) {
+  const specs = Array.isArray(input.deliveries) ? input.deliveries : [];
+  const afterEventId = Number(input.afterEventId ?? 0);
+  const messages = Array.isArray(input.timeline?.messages)
+    ? [...input.timeline.messages]
+      .filter((message) => Number(message?.event_id ?? message?.id ?? 0) > afterEventId)
+      .sort((left, right) => (
+        Number(left?.event_id ?? left?.id ?? 0) - Number(right?.event_id ?? right?.id ?? 0)
+      ))
+    : [];
+  const counts = {
+    demands: Object.fromEntries(specs.map(({ label }) => [label, 0])),
+    replies: Object.fromEntries(specs.map(({ label }) => [label, 0])),
+    unexpectedDemand: 0,
+    unexpectedReply: 0,
+  };
+  const eventSequence = [];
+  const visibleErrors = [];
+
+  for (const message of messages) {
+    const eventType = String(message?.event_type ?? message?.eventType ?? "");
+    const text = JSON.stringify(message?.payload ?? {});
+    if (eventType === "user_message") {
+      const spec = specs.find((candidate) => payloadContains(message?.payload, candidate.text));
+      if (spec) {
+        counts.demands[spec.label] += 1;
+        eventSequence.push(`demand:${spec.label}`);
+      } else {
+        counts.unexpectedDemand += 1;
+        eventSequence.push("unexpected_demand");
+      }
+    }
+    if (eventType === "assistant_message") {
+      const spec = specs.find((candidate) => payloadContains(message?.payload, candidate.marker));
+      if (spec) {
+        counts.replies[spec.label] += 1;
+        eventSequence.push(`reply:${spec.label}`);
+      } else {
+        counts.unexpectedReply += 1;
+        eventSequence.push("unexpected_reply");
+      }
+    }
+    if (
+      eventType === "error"
+      || eventType === "assistant_error"
+      || (["assistant_message", "system", "system_message"].includes(eventType)
+        && RESTART_VISIBLE_SIGNAL.test(text))
+    ) {
+      visibleErrors.push({ eventType, text });
+    }
+  }
+
+  return {
+    callerOutcome: normalizeCallerOutcome(input.callerOutcome),
+    terminalStatus: input.terminalStatus,
+    eventSequence,
+    counts,
+    visibleErrors,
+  };
+}
+
+export function expectedDeliveryObservation(labels, callerDisposition = null) {
+  return {
+    callerOutcome: callerDisposition === null
+      ? null
+      : { status: "accepted", disposition: callerDisposition },
+    terminalStatus: "completed",
+    eventSequence: labels.flatMap((label) => [`demand:${label}`, `reply:${label}`]),
+    counts: {
+      demands: Object.fromEntries(labels.map((label) => [label, 1])),
+      replies: Object.fromEntries(labels.map((label) => [label, 1])),
+      unexpectedDemand: 0,
+      unexpectedReply: 0,
+    },
+    visibleErrors: [],
+  };
+}
+
 export function transparencyDifferences(baseline, candidate) {
   const differences = [];
   compareField(differences, "callerOutcome", baseline, candidate);
