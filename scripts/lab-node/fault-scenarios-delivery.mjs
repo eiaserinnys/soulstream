@@ -48,6 +48,9 @@ export const DELIVERY_SCENARIOS = Object.freeze({
         settle(runtime.waitForMarker(baseline.sessionId, marker, 45_000)),
         settle(waitForConsumed(runtime, delivery.deliveryId, "revived delivery", 45_000)),
       ]);
+      const terminalOutcome = markerOutcome.status === "fulfilled"
+        ? await settle(runtime.waitForTerminal(baseline.sessionId, 45_000))
+        : null;
       const deliveryRow = await runtime.deliveries.byId(delivery.deliveryId);
       const candidate = await captureDeliveryObservation(
         runtime,
@@ -64,7 +67,12 @@ export const DELIVERY_SCENARIOS = Object.freeze({
         candidate,
         labels: SINGLE_LABEL,
         structuralFailures,
-        evidence: { delivery: deliveryRow, markerOutcome, consumptionOutcome },
+        evidence: {
+          delivery: deliveryRow,
+          markerOutcome: outcomeSummary(markerOutcome),
+          consumptionOutcome: outcomeSummary(consumptionOutcome),
+          terminalOutcome: outcomeSummary(terminalOutcome),
+        },
       });
     } finally {
       cleanup = await runtime.deliveries.removeSeed(delivery.deliveryId);
@@ -109,6 +117,7 @@ export const DELIVERY_SCENARIOS = Object.freeze({
           180_000,
         )),
       ]);
+      const terminalOutcome = await settle(runtime.waitForTerminal(baseline.sessionId, 180_000));
       const deliveries = await Promise.all([
         runtime.deliveries.byId(first.deliveryId),
         runtime.deliveries.byId(retry.deliveryId),
@@ -134,8 +143,9 @@ export const DELIVERY_SCENARIOS = Object.freeze({
         evidence: {
           logicalMessageId,
           deliveries,
-          markerOutcome,
-          settlementOutcome,
+          markerOutcome: outcomeSummary(markerOutcome),
+          settlementOutcome: outcomeSummary(settlementOutcome),
+          terminalOutcome: outcomeSummary(terminalOutcome),
         },
       });
     } finally {
@@ -179,6 +189,7 @@ export const DELIVERY_SCENARIOS = Object.freeze({
       const markerOutcomes = await Promise.all(specs.map(
         ({ marker }) => settle(runtime.waitForMarker(baseline.sessionId, marker, 240_000)),
       ));
+      const terminalOutcome = await settle(runtime.waitForTerminal(baseline.sessionId, 240_000));
       const deliveries = await Promise.all([
         runtime.deliveries.byId(first.deliveryId),
         runtime.deliveries.byId(second.deliveryId),
@@ -206,7 +217,12 @@ export const DELIVERY_SCENARIOS = Object.freeze({
         candidate,
         labels: FIFO_LABELS,
         structuralFailures,
-        evidence: { deliveries, receiptOrder, markerOutcomes },
+        evidence: {
+          deliveries,
+          receiptOrder,
+          markerOutcomes: markerOutcomes.map(outcomeSummary),
+          terminalOutcome: outcomeSummary(terminalOutcome),
+        },
       });
     } finally {
       cleanup.push(await runtime.deliveries.removeSeed(first.deliveryId));
@@ -243,6 +259,9 @@ export const DELIVERY_SCENARIOS = Object.freeze({
       const markerOutcome = await settle(
         runtime.waitForMarker(baseline.sessionId, marker, 120_000),
       );
+      const terminalOutcome = await settle(
+        runtime.waitForTerminal(baseline.sessionId, 120_000),
+      );
       const deliveryRow = await runtime.deliveries.byId(delivery.deliveryId);
       const candidate = await captureDeliveryObservation(
         runtime,
@@ -261,7 +280,12 @@ export const DELIVERY_SCENARIOS = Object.freeze({
         labels: SINGLE_LABEL,
         callerDisposition: "queued_for_next_turn",
         structuralFailures,
-        evidence: { delivery: deliveryRow, callerOutcome, markerOutcome },
+        evidence: {
+          delivery: deliveryRow,
+          callerOutcome,
+          markerOutcome: outcomeSummary(markerOutcome),
+          terminalOutcome: outcomeSummary(terminalOutcome),
+        },
       });
     } finally {
       await runtime.deliveries.removeQueuedCasFault();
@@ -427,4 +451,11 @@ function lastEventId(timeline) {
   return Math.max(0, ...(timeline.messages ?? []).map(
     (message) => Number(message?.event_id ?? message?.id ?? 0),
   ));
+}
+
+function outcomeSummary(outcome) {
+  if (outcome === null || outcome === undefined) return null;
+  return outcome.status === "fulfilled"
+    ? { status: "fulfilled" }
+    : { status: "rejected", reason: outcome.reason };
 }
