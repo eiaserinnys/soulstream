@@ -569,11 +569,22 @@ export class LabRuntime {
       SELECT row_to_json(delivery) FROM (
         SELECT delivery_id, relation_key, source_session_id, target_session_id,
           state, aggregate_state, attempt_count, last_error,
-          dead_letter_reason, consumed_reason
+          dead_letter_reason, consumed_reason, target_receipt_id, caller_turn_id,
+          intent, source
         FROM session_deliveries
         WHERE delivery_id = ${sqlLiteral(deliveryId)}
       ) AS delivery
     `);
+  }
+
+  async deliveryCountById(deliveryId) {
+    assertIdentifier(deliveryId, "delivery id");
+    const value = await this.psqlOne(`
+      SELECT json_build_object('count', COUNT(*)::integer)
+      FROM session_deliveries
+      WHERE delivery_id = ${sqlLiteral(deliveryId)}
+    `);
+    return value?.count ?? 0;
   }
 
   async ownerships(sessionId) {

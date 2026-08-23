@@ -7,6 +7,7 @@ import {
   buildInterventionPayload,
   inPostTurnAutoResumeHandoffWindow,
   restartWindowContinuityViolations,
+  restartWindowDurableViolations,
   toggleReleaseGeneration,
 } from "./fault-harness-contract.mjs";
 import {
@@ -40,6 +41,7 @@ const SCENARIO_ORDER = [
   "auto-resume-handoff",
   "restart-adopt",
   "restart-intervention-window",
+  "restart-window-durable",
   "delivery-revival",
   "delivery-exact-once",
   "delivery-fifo",
@@ -116,6 +118,32 @@ export async function runCanonicalScenario(id, runtime, recorder) {
           replacementLogCount: mismatchCount,
         });
         assertScenario(violations.length === 0, `F9 continuity failed: ${violations.join("; ")}`);
+      } catch (error) {
+        failure = serializeError(error);
+        result = { ...result, status: "failed", failure };
+      }
+    }
+  }
+  if (id === "restart-window-durable") {
+    const replacementTerms = [
+      "runner adoption release identity mismatch",
+      "release_superseded",
+      "runner adoption failure was superseded by a newer execution",
+    ];
+    const replacementCount = logs.node.filter((line) => replacementTerms.some(
+      (term) => line.includes(term),
+    )).length;
+    result.replacementLogCount = replacementCount;
+    if (!failure) {
+      try {
+        const violations = restartWindowDurableViolations({
+          ...result.observation,
+          replacementLogCount: replacementCount,
+        });
+        assertScenario(
+          violations.length === 0,
+          `restart-window durable delivery failed: ${violations.join("; ")}`,
+        );
       } catch (error) {
         failure = serializeError(error);
         result = { ...result, status: "failed", failure };
@@ -248,7 +276,7 @@ const SCENARIOS = {
     const seed = shortId();
     const marker = `RESTART_WINDOW_DURABLE_${seed}`;
     const sessionId = await runtime.createSession(delayedMarkerPrompt(`RESTART_WINDOW_BASE_${seed}`, 30));
-    await runtime.waitForRunner(sessionId);
+    const oldRunner = await runtime.waitForRunner(sessionId);
     await waitForInFlightTool(runtime, sessionId);
     const deliveryId = randomUUID();
     const payload = buildInterventionPayload(deliveryId, `Reply with exactly ${marker}.`);
@@ -259,23 +287,80 @@ const SCENARIOS = {
     } finally {
       await runtime.startStack();
     }
+    const newRunnerOutcome = await settle(runtime.waitForRunner(sessionId, 60_000));
+    const [markerOutcome, deliveryOutcome] = await Promise.all([
+      settle(runtime.waitForMarker(sessionId, marker, 90_000)),
+      settle(waitFor(
+        async () => {
+          const row = await runtime.deliveryById(deliveryId);
+          return row?.aggregate_state === "consumed" ? row : undefined;
+        },
+        90_000,
+        "restart-window intervention delivery did not reach consumed",
+        1_000,
+      )),
+    ]);
+    const terminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
+    const acceptance = callerOutcome.status === "fulfilled"
+      ? callerOutcome.value
+      : callerOutcome;
+    const newRunner = newRunnerOutcome.status === "fulfilled"
+      ? newRunnerOutcome.value
+      : undefined;
+    const delivery = await runtime.deliveryById(deliveryId);
+    const deliveryCount = await runtime.deliveryCountById(deliveryId);
+    const interventionCount = await runtime.countTimelineEvents(
+      sessionId,
+      "intervention_sent",
+      payload.text,
+    );
+    const assistantCount = await runtime.countTimelineEvents(
+      sessionId,
+      "assistant_message",
+      marker,
+    );
+    const inboxRemainingCount = runtime.runnerInterventionInboxCount(sessionId);
+    const ownerships = await runtime.ownerships(sessionId);
+    const inFlightOwnerships = ownerships.filter((row) => (
+      row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
+    ));
+    const sessionStatus = await runtime.sessionStatus(sessionId);
+    const observation = {
+      acceptance,
+      delivery,
+      deliveryCount,
+      interventionCount,
+      assistantCount,
+      inboxRemainingCount,
+      inFlightCount: inFlightOwnerships.length,
+      sessionStatus,
+      oldPid: oldRunner.pid,
+      newPid: newRunner?.pid,
+      oldReleaseManifestId: oldRunner.config.releaseManifestId,
+      newReleaseManifestId: newRunner?.config.releaseManifestId,
+      replacementLogCount: 0,
+    };
     await recorder.event("restart_window_durable_attempted", {
       sessionId,
       deliveryId,
       callerOutcome,
-      implementedByThisSlice: false,
+      markerOutcome,
+      deliveryOutcome,
+      terminalOutcome,
+      observation,
     });
-    const accepted = callerOutcome.status === "fulfilled"
-      && callerOutcome.value?.status === "ok"
-      && ["delivered", "queued", "auto_resumed"].includes(callerOutcome.value.outcome);
     return {
       id: "restart-window-durable",
-      status: accepted ? "passed" : "failed",
+      status: "passed",
       sessionId,
       deliveryId,
       callerOutcome,
-      reason: accepted ? undefined : "known RED: stopped owner node cannot durably accept an intervention",
-      implementedByThisSlice: false,
+      newRunnerOutcome,
+      markerOutcome,
+      deliveryOutcome,
+      terminalOutcome,
+      ownerships,
+      observation,
     };
   },
   async "runner-death-live-host"(runtime, recorder) {

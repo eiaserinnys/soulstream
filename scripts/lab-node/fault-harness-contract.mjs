@@ -23,8 +23,8 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
   }),
   "restart-window-durable": Object.freeze({
     injection: "Submit one intervention while the owning node is stopped, before its replacement host registers.",
-    expectedOutcome: "Known RED outside this slice: the API durably accepts the message instead of returning NODE_UNAVAILABLE.",
-    verdict: "The single call returns a durable accepted outcome; A/B1 GREEN work does not implement this contract.",
+    expectedOutcome: "The API durably accepts the message, and the restarted node consumes and answers it exactly once.",
+    verdict: "The central delivery reaches consumed, its intervention receipt and response occur once, and no runner inbox or execution remains in flight.",
   }),
   "delivery-revival": Object.freeze({
     injection: "Park a durable user delivery as uncertain at attempt 16, then make it due for recovery.",
@@ -218,6 +218,56 @@ export function restartWindowContinuityViolations(observation) {
   }
   if (observation.oldReleaseManifestId !== observation.newReleaseManifestId) {
     violations.push("live runner provenance changed during host adoption");
+  }
+  if (observation.replacementLogCount !== 0) {
+    violations.push(`${observation.replacementLogCount} replacement log(s)`);
+  }
+  return violations;
+}
+
+export function restartWindowDurableViolations(observation) {
+  const violations = [];
+  if (
+    observation.acceptance?.status !== "ok"
+    || !["delivered", "queued", "auto_resumed"].includes(observation.acceptance?.outcome)
+  ) {
+    violations.push(`intervention was not durably accepted: ${JSON.stringify(observation.acceptance)}`);
+  }
+  if (observation.deliveryCount !== 1) {
+    violations.push(`durable delivery receipt count ${observation.deliveryCount}`);
+  }
+  if (
+    observation.delivery?.state !== "consumed"
+    || observation.delivery?.aggregate_state !== "consumed"
+  ) {
+    violations.push(
+      `durable delivery remained ${observation.delivery?.state ?? "missing"}`
+      + `/${observation.delivery?.aggregate_state ?? "missing"}`,
+    );
+  }
+  if (!observation.delivery?.target_receipt_id) {
+    violations.push("durable delivery has no target receipt");
+  }
+  if (observation.interventionCount !== 1) {
+    violations.push(`intervention receipt count ${observation.interventionCount}`);
+  }
+  if (observation.assistantCount !== 1) {
+    violations.push(`assistant marker count ${observation.assistantCount}`);
+  }
+  if (observation.inboxRemainingCount !== 0) {
+    violations.push(`${observation.inboxRemainingCount} intervention inbox row(s) remain`);
+  }
+  if (observation.inFlightCount !== 0) {
+    violations.push(`${observation.inFlightCount} in-flight ownership(s)`);
+  }
+  if (observation.sessionStatus !== "completed") {
+    violations.push(`session status ${observation.sessionStatus}`);
+  }
+  if (observation.oldPid !== observation.newPid) {
+    violations.push(`runner pid changed ${observation.oldPid} -> ${observation.newPid}`);
+  }
+  if (observation.oldReleaseManifestId !== observation.newReleaseManifestId) {
+    violations.push("live runner provenance changed during restart-window delivery");
   }
   if (observation.replacementLogCount !== 0) {
     violations.push(`${observation.replacementLogCount} replacement log(s)`);
