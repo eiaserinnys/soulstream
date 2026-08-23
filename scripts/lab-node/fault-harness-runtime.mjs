@@ -601,13 +601,28 @@ export class LabRuntime {
     assertIdentifier(sessionId, "session id");
     return await this.psqlOne(`
       SELECT COALESCE(json_agg(json_build_object(
+        'id', id,
         'event_type', event_type,
-        'payload', payload
+        'payload', payload,
+        'created_at', created_at
       ) ORDER BY id), '[]'::json)
       FROM events
       WHERE session_id = ${sqlLiteral(sessionId)}
         AND event_type = 'result'
     `) ?? [];
+  }
+
+  async sessionEndedAt(sessionId) {
+    assertIdentifier(sessionId, "session id");
+    const event = await this.psqlOne(`
+      SELECT json_build_object('created_at', created_at)
+      FROM events
+      WHERE session_id = ${sqlLiteral(sessionId)}
+        AND event_type = 'session_ended'
+      ORDER BY id DESC
+      LIMIT 1
+    `);
+    return typeof event?.created_at === "string" ? event.created_at : null;
   }
 
   runnerInterventionInboxCount(sessionId) {

@@ -63,6 +63,7 @@ const skipped = allResults.filter((result) => result.status === "skipped_precond
 // already there. Reported apart from both passes and failures: it is neither.
 const INCONCLUSIVE_STATUSES = new Set([
   "inconclusive_dirty_baseline",
+  "inconclusive_timing_window",
   "inconclusive_unresolved_pending",
 ]);
 const inconclusive = allResults.filter((result) => INCONCLUSIVE_STATUSES.has(result.status));

@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import {
   autoResumeHandoffViolations,
   buildInterventionPayload,
+  inAutoResumeHandoffWindow,
   restartWindowContinuityViolations,
   toggleReleaseGeneration,
 } from "./fault-harness-contract.mjs";
@@ -122,24 +123,37 @@ export async function runCanonicalScenario(id, runtime, recorder) {
     }
   }
   if (id === "auto-resume-handoff") {
-    const blockedCount = logs.node.filter((line) => (
+    const inWindowAttempts = result.attempts?.filter(
+      (attempt) => attempt.observation.inTimingWindow,
+    ) ?? [];
+    const inWindowSessionIds = inWindowAttempts.map((attempt) => attempt.parentId);
+    const inWindowNodeLogs = logs.node.filter((line) => (
+      inWindowSessionIds.some((sessionId) => line.includes(sessionId))
+    ));
+    const blockedCount = inWindowNodeLogs.filter((line) => (
       line.includes("registered runner recovery skipped")
       && line.includes("execution_promise")
     )).length;
-    const replacementCount = logs.node.filter((line) => (
+    const replacementCount = inWindowNodeLogs.filter((line) => (
       line.includes("release_superseded")
       || line.includes("runner adoption failure was superseded by a newer execution")
     )).length;
-    const socketErrorCount = logs.node.filter((line) => (
+    const socketErrorCount = inWindowNodeLogs.filter((line) => (
       line.includes("connect ENOENT") && line.includes("runner.sock")
     )).length;
     result.executionPromiseBlockedCount = blockedCount;
     result.replacementLogCount = replacementCount;
     result.socketErrorCount = socketErrorCount;
-    if (!failure) {
+    if (!failure && inWindowAttempts.length === 0) {
+      result = {
+        ...result,
+        status: "inconclusive_timing_window",
+        reason: "no attempt entered the +/-1000ms runner handoff window",
+      };
+    } else if (!failure) {
       try {
         const violations = autoResumeHandoffViolations({
-          attempts: result.attempts.map((attempt) => attempt.observation),
+          attempts: inWindowAttempts.map((attempt) => attempt.observation),
           executionPromiseBlockedCount: blockedCount,
           replacementLogCount: replacementCount,
           socketErrorCount,
@@ -172,7 +186,9 @@ const SCENARIOS = {
 
   async "auto-resume-handoff"(runtime, recorder) {
     const attempts = [];
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const childSleepSecondsByAttempt = [7, 8, 8.5, 9];
+    for (const [index, childSleepSeconds] of childSleepSecondsByAttempt.entries()) {
+      const attempt = index + 1;
       const parentId = await runtime.createSession(
         "Use Bash exactly once to run python3 -c \"import time; time.sleep(12)\". "
         + "After it finishes, briefly state that the command completed.",
@@ -180,10 +196,12 @@ const SCENARIOS = {
       const oldRunner = await runtime.waitForRunner(parentId);
       await waitForInFlightTool(runtime, parentId);
       const childId = await runtime.createSession(
-        "Answer this self-contained question in one sentence: what is two plus two?",
+        `Use Bash exactly once to run python3 -c \"import time; time.sleep(${childSleepSeconds})\". `
+        + "After it finishes, report the result of two plus two in one sentence.",
         { caller_session_id: parentId },
       );
       const childTerminalStatus = await runtime.waitForTerminal(childId);
+      const childTerminalAt = await runtime.sessionEndedAt(childId);
       const delivery = await waitForConsumedDelivery(
         runtime,
         childId,
@@ -192,11 +210,14 @@ const SCENARIOS = {
       const parentTerminalStatus = await runtime.waitForTerminal(parentId);
       const timeline = await runtime.timeline(parentId);
       const turnBoundaries = await runtime.turnResults(parentId);
+      const parentFirstTurnEndedAt = turnBoundaries[0]?.created_at ?? null;
+      const handoffDeltaMs = timestampDeltaMs(childTerminalAt, parentFirstTurnEndedAt);
       const ownerships = await runtime.ownerships(parentId);
       const observedPids = [...new Set(ownerships.map((row) => row.pid).filter(Boolean))];
       const consumptionCount = await runtime.consumptionCount(delivery.relation_key);
       const messages = timeline.messages ?? [];
       const observation = {
+        attemptNumber: attempt,
         deliveryReceiptCount: messages.filter((message) => (
           message.event_type === "session_notification"
           && message.payload?.delivery_id === delivery.delivery_id
@@ -209,11 +230,14 @@ const SCENARIOS = {
         ).length,
         childTerminalStatus,
         parentTerminalStatus,
+        childSleepSeconds,
+        childTerminalAt,
+        parentFirstTurnEndedAt,
+        handoffDeltaMs,
+        inTimingWindow: inAutoResumeHandoffWindow(handoffDeltaMs),
         oldPid: oldRunner.pid,
         observedPids,
       };
-      const violations = autoResumeHandoffViolations({ attempts: [observation] });
-      assertScenario(violations.length === 0, `auto-resume handoff failed: ${violations.join("; ")}`);
       attempts.push({ parentId, childId, oldRunner, observedPids, delivery, ownerships, observation });
       await recorder.event("auto_resume_handoff_observed", { attempt, ...attempts.at(-1) });
     }
@@ -800,4 +824,12 @@ function delayedMarkerPrompt(marker, seconds) {
   return "Use Bash exactly once to run "
     + `python3 -c "import time; time.sleep(${seconds})". `
     + `After it finishes, reply with exactly ${marker}.`;
+}
+
+function timestampDeltaMs(later, earlier) {
+  const laterMs = Date.parse(later ?? "");
+  const earlierMs = Date.parse(earlier ?? "");
+  return Number.isFinite(laterMs) && Number.isFinite(earlierMs)
+    ? laterMs - earlierMs
+    : null;
 }

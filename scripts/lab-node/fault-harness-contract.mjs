@@ -160,25 +160,26 @@ export function autoResumeHandoffViolations({
 }) {
   const violations = [];
   for (const [index, attempt] of attempts.entries()) {
+    const attemptNumber = attempt.attemptNumber ?? index + 1;
     if (attempt.deliveryReceiptCount !== 1) {
-      violations.push(`attempt ${index + 1} delivery receipt count ${attempt.deliveryReceiptCount}`);
+      violations.push(`attempt ${attemptNumber} delivery receipt count ${attempt.deliveryReceiptCount}`);
     }
-    if (attempt.consumptionCount !== 1) violations.push(`attempt ${index + 1} consumption count ${attempt.consumptionCount}`);
-    if (attempt.userMessageCount !== 1) violations.push(`attempt ${index + 1} user message count ${attempt.userMessageCount}`);
+    if (attempt.consumptionCount !== 1) violations.push(`attempt ${attemptNumber} consumption count ${attempt.consumptionCount}`);
+    if (attempt.userMessageCount !== 1) violations.push(`attempt ${attemptNumber} user message count ${attempt.userMessageCount}`);
     if (attempt.turnBoundaryCount !== 2) {
-      violations.push(`attempt ${index + 1} turn boundary count ${attempt.turnBoundaryCount}`);
+      violations.push(`attempt ${attemptNumber} turn boundary count ${attempt.turnBoundaryCount}`);
     }
     if (attempt.successfulTurnBoundaryCount !== 2) {
-      violations.push(`attempt ${index + 1} successful turn boundary count ${attempt.successfulTurnBoundaryCount}`);
+      violations.push(`attempt ${attemptNumber} successful turn boundary count ${attempt.successfulTurnBoundaryCount}`);
     }
     if (attempt.childTerminalStatus !== "completed") {
-      violations.push(`attempt ${index + 1} child terminal status ${attempt.childTerminalStatus}`);
+      violations.push(`attempt ${attemptNumber} child terminal status ${attempt.childTerminalStatus}`);
     }
     if (attempt.parentTerminalStatus !== "completed") {
-      violations.push(`attempt ${index + 1} parent terminal status ${attempt.parentTerminalStatus}`);
+      violations.push(`attempt ${attemptNumber} parent terminal status ${attempt.parentTerminalStatus}`);
     }
     if (attempt.observedPids.length !== 1 || attempt.observedPids[0] !== attempt.oldPid) {
-      violations.push(`attempt ${index + 1} runner pid(s) ${attempt.observedPids.join(",")} != ${attempt.oldPid}`);
+      violations.push(`attempt ${attemptNumber} runner pid(s) ${attempt.observedPids.join(",")} != ${attempt.oldPid}`);
     }
   }
   if (executionPromiseBlockedCount !== 0) {
@@ -187,6 +188,10 @@ export function autoResumeHandoffViolations({
   if (replacementLogCount !== 0) violations.push(`${replacementLogCount} replacement log(s)`);
   if (socketErrorCount !== 0) violations.push(`${socketErrorCount} runner socket error(s)`);
   return violations;
+}
+
+export function inAutoResumeHandoffWindow(deltaMs) {
+  return Number.isFinite(deltaMs) && Math.abs(deltaMs) <= 1_000;
 }
 
 export function restartWindowContinuityViolations(observation) {
