@@ -232,6 +232,108 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
+  it("revives an uncertain delivery only after a newer active execution owns the target", async () => {
+    await registerUserDelivery("delivery-revive", "revive me");
+    await harness.sql`
+      UPDATE sessions SET status = 'running' WHERE session_id = 'caller-session'
+    `;
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'uncertain', aggregate_state = 'pending', attempt_count = 16,
+          next_attempt_at = NOW() + INTERVAL '1 hour',
+          updated_at = NOW() - INTERVAL '2 minutes'
+      WHERE delivery_id = 'delivery-revive'
+    `;
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "worker-before-revival",
+      10,
+    )).resolves.toEqual([]);
+
+    await activateTarget("caller-session", 1);
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "worker-after-revival",
+      10,
+    )).resolves.toMatchObject([{
+      delivery_id: "delivery-revive",
+      state: "claimed",
+      aggregate_state: "pending",
+      attempt_count: 16,
+      lease_owner: "worker-after-revival",
+    }]);
+  });
+
+  it("reconciles a queued delivery immediately after a newer execution activates", async () => {
+    await registerUserDelivery("delivery-queued-revive", "queued before restart");
+    await repository.claimForTarget(
+      "delivery-queued-revive",
+      "caller-session",
+      "worker-before-restart",
+    );
+    await repository.beginDispatch(
+      "delivery-queued-revive",
+      "worker-before-restart",
+    );
+    await repository.markQueued(
+      "delivery-queued-revive",
+      "worker-before-restart",
+    );
+    await harness.sql`
+      UPDATE sessions SET status = 'running' WHERE session_id = 'caller-session'
+    `;
+    await activateTarget("caller-session", 1);
+
+    await expect(repository.recovery.claimRecoverableQueued({
+      recoveryNodeId: "node-test",
+      staleNodeAfterMs: 120_000,
+      queuedAfterMs: 1_800_000,
+    }, "queued-after-revival", 10)).resolves.toMatchObject([{
+      delivery_id: "delivery-queued-revive",
+      state: "claimed",
+      lease_owner: "queued-after-revival",
+    }]);
+  });
+
+  it("claims deliveries in enqueue order even when the older row is uncertain", async () => {
+    await registerUserDelivery("delivery-fifo-old", "first");
+    await registerUserDelivery("delivery-fifo-new", "second");
+    await harness.sql`
+      UPDATE sessions SET status = 'running' WHERE session_id = 'caller-session'
+    `;
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'uncertain', aggregate_state = 'pending', attempt_count = 16,
+          updated_at = NOW() - INTERVAL '2 minutes'
+      WHERE delivery_id = 'delivery-fifo-old'
+    `;
+    await activateTarget("caller-session", 1);
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "worker-fifo-old",
+      10,
+    )).resolves.toMatchObject([{
+      delivery_id: "delivery-fifo-old",
+      state: "claimed",
+    }]);
+    await expect(repository.get("delivery-fifo-new")).resolves.toMatchObject({
+      state: "pending",
+    });
+
+    await repository.beginDispatch("delivery-fifo-old", "worker-fifo-old");
+    await repository.markQueued("delivery-fifo-old", "worker-fifo-old");
+    await repository.markDelivered("delivery-fifo-old", "event:first");
+    await repository.markConsumed("delivery-fifo-old", "event:first");
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "worker-fifo-new",
+      10,
+    )).resolves.toMatchObject([{
+      delivery_id: "delivery-fifo-new",
+      state: "claimed",
+    }]);
+  });
+
   it("upgrades the pre-manifest delivery ledger to the recovery schema idempotently", async () => {
     const upgradeSchema =
       `delivery_upgrade_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -860,6 +962,40 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       payloadHash: `hash-${relationKey}`,
       payload: { text: "done", user: "agent" },
     });
+  }
+
+  async function registerUserDelivery(
+    deliveryId: string,
+    text: string,
+  ): Promise<void> {
+    await repository.register({
+      deliveryId,
+      targetSessionId: "caller-session",
+      relationKey: `user_message:caller-session:${deliveryId}`,
+      completionId: `message:${deliveryId}`,
+      intent: "durable_next_turn",
+      source: "user_message",
+      payloadHash: `hash-${deliveryId}`,
+      payload: { text, user: "alice", source: "user_message" },
+    });
+  }
+
+  async function activateTarget(
+    sessionId: string,
+    generation: number,
+  ): Promise<void> {
+    await harness.sql`
+      INSERT INTO session_execution_ownerships (
+        session_id, ownership_generation, owner_kind, manifest_id,
+        registration_id, pid, start_identity, execution_command_id,
+        phase, identity_proven_at, activated_at
+      ) VALUES (
+        ${sessionId}, ${generation}, 'runner_process',
+        ${`manifest-${generation}`}, ${`registration-${generation}`},
+        ${10_000 + generation}, ${`start-${generation}`},
+        ${`command-${generation}`}, 'active', NOW(), NOW()
+      )
+    `;
   }
 
   function makeQueuedRecovery(

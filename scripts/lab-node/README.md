@@ -97,6 +97,10 @@ Run one scenario or the complete prioritized set:
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario steady-state
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario restart-adopt
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario restart-intervention-window
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario delivery-revival
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario delivery-exact-once
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario delivery-fifo
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario delivery-accepted-cas
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario F9
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario dead-owner
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario runner-death-live-host
@@ -113,6 +117,14 @@ response counts, terminal status, and visible error set. Only timestamps,
 per-run identifiers, and delay are ignored. The recovery-window
 scenario observes the database adoption transition before sending its single
 intervention; it never retries a rejected call.
+
+The four delivery scenarios follow the three normal transparency scenarios and
+precede the existing accident reproductions. Each is compared both with an
+authored contract and with a steady delivery observation via
+`contractDifferences` and `steadyObservationDifferences`; a thrown error alone
+is never the verdict. They cover exhausted-delivery revival, stable logical
+message exact-once behavior, per-target FIFO, and honest acceptance after a
+queued-state CAS race.
 
 The remaining canonical order is runner-death-live-host, activate-rollback,
 F9, dead-owner, F1, F11, and F7, followed by one normal traffic cycle. F1

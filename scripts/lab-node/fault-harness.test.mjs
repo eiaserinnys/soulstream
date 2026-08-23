@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MUTATION_COVERAGE } from "./fault-harness-mutation.mjs";
+import { canonicalScenarioOrder } from "./fault-scenarios.mjs";
 import { runnerOperationSnapshots } from "./fault-harness-runtime.mjs";
 import {
   SCENARIO_DEFINITIONS,
+  buildDurableDeliverySeed,
   buildInterventionPayload,
   countMatchingTimelineEvents,
   evaluateInvariantSnapshot,
@@ -53,6 +55,10 @@ test("fault catalog is complete and F1 explicitly covers both host signals", () 
     "steady-state",
     "restart-adopt",
     "restart-intervention-window",
+    "delivery-revival",
+    "delivery-exact-once",
+    "delivery-fifo",
+    "delivery-accepted-cas",
     "F1",
     "F11",
     "F9",
@@ -67,6 +73,25 @@ test("fault catalog is complete and F1 explicitly covers both host signals", () 
     assert.ok(scenario.expectedOutcome.length > 0);
     assert.ok(scenario.verdict.length > 0);
   }
+});
+
+test("delivery scenarios follow normal controls and precede accident reproductions", () => {
+  assert.deepEqual(canonicalScenarioOrder(), [
+    "steady-state",
+    "restart-adopt",
+    "restart-intervention-window",
+    "delivery-revival",
+    "delivery-exact-once",
+    "delivery-fifo",
+    "delivery-accepted-cas",
+    "runner-death-live-host",
+    "activate-rollback",
+    "F9",
+    "dead-owner",
+    "F1",
+    "F11",
+    "F7",
+  ]);
 });
 
 test("traffic loop defaults are bounded and concurrency above two is rejected", () => {
@@ -99,6 +124,10 @@ test("scenario CLI accepts the transparent baseline and restart gates", () => {
     "steady-state",
     "restart-adopt",
     "restart-intervention-window",
+    "delivery-revival",
+    "delivery-exact-once",
+    "delivery-fifo",
+    "delivery-accepted-cas",
   ]) {
     assert.deepEqual(parseHarnessArguments(["scenario", scenarioId]), {
       command: "scenario",
@@ -156,6 +185,46 @@ test("F11 retry reuses a stable delivery id and exact-consume metadata", () => {
   assert.equal(first.delivery_id, "delivery-f11-0001");
   assert.equal(first.delivery_intent, "human_live_steer");
   assert.equal(first.source, "lab_fault_harness");
+});
+
+test("delivery fault seeds preserve one canonical API and ledger identity", () => {
+  const first = buildDurableDeliverySeed(
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222",
+    "Reply exactly DELIVERY_OK.",
+    "lab-cas",
+  );
+  const retry = buildDurableDeliverySeed(
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222",
+    "Reply exactly DELIVERY_OK.",
+    "lab-cas",
+  );
+  assert.deepEqual(retry, first);
+  assert.equal(first.intervention.delivery_id, first.deliveryId);
+  assert.equal(first.intervention.relation_key, first.relationKey);
+  assert.equal(first.intervention.completion_id, first.completionId);
+  assert.equal(first.payload.logical_message_id, first.deliveryId);
+  assert.match(first.payloadHash, /^[0-9a-f]{64}$/);
+});
+
+test("distinct transport deliveries can retain one logical message identity", () => {
+  const first = buildDurableDeliverySeed(
+    "33333333-3333-4333-8333-333333333333",
+    "22222222-2222-4222-8222-222222222222",
+    "Reply exactly DELIVERY_RETRY_OK.",
+    undefined,
+    "client-message-1",
+  );
+  const retry = buildDurableDeliverySeed(
+    "44444444-4444-4444-8444-444444444444",
+    "22222222-2222-4222-8222-222222222222",
+    "Reply exactly DELIVERY_RETRY_OK.",
+    undefined,
+    "client-message-1",
+  );
+  assert.notEqual(first.deliveryId, retry.deliveryId);
+  assert.equal(first.payload.logical_message_id, retry.payload.logical_message_id);
 });
 
 test("invariant verdict distinguishes explained dead letters from ambiguity", () => {

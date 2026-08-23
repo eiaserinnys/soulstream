@@ -147,7 +147,7 @@ describe("CompletionDeliveryCoordinator", () => {
     expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
   });
 
-  it("terminalizes an exhausted base delivery instead of scheduling an unbounded retry", async () => {
+  it("parks an exhausted base delivery for a later execution revival", async () => {
     const createdAt = new Date("2026-08-17T00:00:00.000Z");
     const row = {
       delivery_id: "delivery-exhausted",
@@ -187,12 +187,13 @@ describe("CompletionDeliveryCoordinator", () => {
       state: "claimed",
       lease_owner: "completion:test-worker",
     };
-    const retryLeasedDelivery = vi.fn();
-    const markUncertain = vi.fn().mockResolvedValue({
+    const retryLeasedDelivery = vi.fn().mockResolvedValue({
       ...claimed,
       state: "uncertain",
+      aggregate_state: "pending",
       lease_owner: null,
     });
+    const markUncertain = vi.fn();
     const repository = {
       register: vi.fn().mockResolvedValue({ row, inserted: true, conflict: false }),
       get: vi.fn().mockResolvedValue(row),
@@ -218,12 +219,77 @@ describe("CompletionDeliveryCoordinator", () => {
       createdAt,
     });
 
-    expect(markUncertain).toHaveBeenCalledWith(
+    expect(retryLeasedDelivery).toHaveBeenCalledWith(
       "delivery-exhausted",
       "completion:test-worker",
       "ledger stage failed",
+      expect.any(Number),
     );
-    expect(retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("does not retry after an ambiguous dispatch already reached queued", async () => {
+    const createdAt = new Date();
+    const claimed = {
+      delivery_id: "delivery-accepted-before-timeout",
+      target_session_id: "caller-session",
+      source_session_id: "child-session",
+      relation_key: "child_session:child-session:accepted",
+      completion_id: "completion-accepted",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producer_kind: "child_session",
+      producer_id: "child-session",
+      producer_terminal_revision: "accepted",
+      parent_delivery_id: null,
+      caller_turn_id: null,
+      payload_hash: "hash",
+      payload: { text: "done", user: "agent" },
+      state: "claimed",
+      aggregate_state: "pending",
+      attempt_count: 0,
+      next_attempt_at: createdAt,
+      last_error: null,
+      lease_owner: "completion:test-worker",
+      lease_expires_at: new Date(createdAt.getTime() + 60_000),
+      created_at: createdAt,
+      updated_at: createdAt,
+      claimed_at: createdAt,
+      dispatching_at: null,
+      queued_at: null,
+      delivered_at: null,
+      consumed_at: null,
+      superseded_at: null,
+      superseded_terminal_revision: null,
+    };
+    const repository = {
+      register: vi.fn(),
+      get: vi.fn().mockResolvedValue({ ...claimed, state: "queued" }),
+      claimForTarget: vi.fn(),
+      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([claimed]),
+      deferPending: vi.fn(),
+      retryLeasedDelivery: vi.fn(),
+      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+      markUncertain: vi.fn(),
+    };
+    const info = vi.fn();
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch: vi.fn().mockRejectedValue(new Error("503 after durable queue")),
+      logger: { error: vi.fn(), warn: vi.fn(), info } as never,
+    }, "completion:test-worker");
+
+    await coordinator.recoverPending();
+
+    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(repository.markUncertain).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryId: "delivery-accepted-before-timeout",
+        state: "queued",
+      }),
+      "Completion delivery dispatch returned ambiguously after durable acceptance",
+    );
   });
 
   it("does not report a retry as scheduled after losing the delivery lease", async () => {

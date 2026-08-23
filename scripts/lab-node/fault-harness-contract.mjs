@@ -16,6 +16,26 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     expectedOutcome: "The intervention is accepted and consumed exactly once after recovery without retry or any restart-visible signal.",
     verdict: "The user/agent-visible observation is identical to the steady intervention baseline; only delay may differ.",
   }),
+  "delivery-revival": Object.freeze({
+    injection: "Park a durable user delivery as uncertain at attempt 16, then make it due for recovery.",
+    expectedOutcome: "The target auto-resumes and consumes the original delivery without a second user send.",
+    verdict: "The user-visible observation matches one steady turn, and the original delivery reaches consumed exactly once.",
+  }),
+  "delivery-exact-once": Object.freeze({
+    injection: "Submit two transport deliveries with one stable logical message identity around a delayed target turn.",
+    expectedOutcome: "Both requests converge on one logical delivery and one execution.",
+    verdict: "The user-visible observation matches one steady turn: one demand and one assistant marker.",
+  }),
+  "delivery-fifo": Object.freeze({
+    injection: "Make a newer durable delivery due before its older predecessor.",
+    expectedOutcome: "The newer row waits until the older row is consumed.",
+    verdict: "The user-visible observation matches two steady turns in enqueue order, and receipt ids preserve that order.",
+  }),
+  "delivery-accepted-cas": Object.freeze({
+    injection: "Advance a dispatching delivery to queued in an AFTER UPDATE fault trigger before the route records its result.",
+    expectedOutcome: "The request reports durable acceptance instead of a 503/CAS failure.",
+    verdict: "The accepted call and user-visible observation match a steady turn, and the delivery consumes once.",
+  }),
   F1: Object.freeze({
     modes: Object.freeze(["SIGTERM", "SIGKILL"]),
     injection: "Stop the worker host during an active runner turn, restart it, and retain the detached runner.",
@@ -122,7 +142,13 @@ export function buildInterventionPayload(deliveryId, text) {
   };
 }
 
-export function buildDurableDeliverySeed(deliveryId, sessionId, text, leaseOwner) {
+export function buildDurableDeliverySeed(
+  deliveryId,
+  sessionId,
+  text,
+  leaseOwner,
+  logicalMessageId,
+) {
   requireNonEmpty(deliveryId, "delivery id");
   requireNonEmpty(sessionId, "session id");
   requireNonEmpty(text, "intervention text");
@@ -133,7 +159,7 @@ export function buildDurableDeliverySeed(deliveryId, sessionId, text, leaseOwner
   const payload = {
     text,
     user,
-    logical_message_id: deliveryId,
+    logical_message_id: logicalMessageId ?? deliveryId,
     attachment_paths: null,
     context: null,
     caller_info: null,

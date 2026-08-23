@@ -102,6 +102,10 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
     join(directory, "fault-scenarios-transparency.mjs"),
     "utf8",
   );
+  const deliveryScenarios = readFileSync(
+    join(directory, "fault-scenarios-delivery.mjs"),
+    "utf8",
+  );
   assert.match(wrapper, /load_lab_env/);
   assert.match(wrapper, /export LAB_ROOT/);
   assert.match(wrapper, /SOULSTREAM_HEAVY_LOCK_HELD=1/);
@@ -116,7 +120,7 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(scenarios, /interventionAttemptedBeforeSettlement: false/);
   assert.doesNotMatch(scenarios, /runner execution settled without host restart/);
   assert.doesNotMatch(
-    runtime + processFaults + scenarios + transparencyScenarios,
+    runtime + processFaults + scenarios + transparencyScenarios + deliveryScenarios,
     /serendipity-postgres|haniel_(pull|restart|start|stop)/,
   );
   assert.match(scenarios, /F9 injection and lab restoration failed/);
@@ -143,5 +147,13 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
     "F7",
   ]) {
     assert.match(scenarios, new RegExp(`(?:async )?["']?${scenario}["']?\\(`));
+  }
+  for (const scenario of [
+    "delivery-revival",
+    "delivery-exact-once",
+    "delivery-fifo",
+    "delivery-accepted-cas",
+  ]) {
+    assert.match(deliveryScenarios, new RegExp(`async ["']${scenario}["']\\(`));
   }
 });
