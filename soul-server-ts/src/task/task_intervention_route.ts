@@ -128,10 +128,6 @@ export class TaskInterventionRoute {
     const request = this.deps.deliveryLedgerGate
       ? ensureHumanDeliveryIdentity(params)
       : params;
-    const task = await this.resolveTask(params.agentSessionId);
-    const preclassifiedRoute = task.status === "initializing"
-      ? undefined
-      : interventionTaskRoute(task);
     const admission = this.deps.deliveryLedgerGate
       ? await this.deps.deliveryLedgerGate.admit(request)
       : { kind: "legacy" } as const;
@@ -164,6 +160,10 @@ export class TaskInterventionRoute {
         reason: admission.reason,
       };
     }
+    const task = await this.resolveTask(params.agentSessionId);
+    const preclassifiedRoute = task.status === "initializing"
+      ? undefined
+      : interventionTaskRoute(task);
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;

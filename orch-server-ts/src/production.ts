@@ -451,6 +451,7 @@ export async function createLiveProductionApplication(
     appConfig,
     runtimeServices,
     providers,
+    persistenceRepositoryProvider,
     config.cors_allowed_origins,
     taskIdentityService,
     folderProjectIdentityService,
@@ -462,7 +463,6 @@ export async function createLiveProductionApplication(
     }),
     createScheduleRepositoryProvider(sqlResolver),
     createFolderControlPlaneServiceProvider(sqlResolver),
-    persistenceRepositoryProvider,
   ));
   logPushNotification = (event) => {
     app.log.info(
@@ -539,6 +539,9 @@ export function buildProductionRouteOptions(
   config: CreateAppOptions["config"],
   runtime: OrchestratorRuntimeServices,
   providers: LiveOrchestratorProviderBundle,
+  persistenceRepositoryProvider: NonNullable<
+    CreateAppOptions["persistenceHostRoutes"]
+  >["repositoryProvider"],
   corsAllowedOrigins: readonly string[] = [],
   taskIdentityService?: TaskIdentityService,
   folderProjectIdentityService?: FolderProjectIdentityService,
@@ -547,7 +550,6 @@ export function buildProductionRouteOptions(
   taskControlPlaneServiceProvider?: NonNullable<CreateAppOptions["taskRoutes"]>["taskControlPlaneServiceProvider"],
   scheduleRepositoryProvider?: NonNullable<CreateAppOptions["scheduleHostRoutes"]>["repositoryProvider"],
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
-  persistenceRepositoryProvider?: NonNullable<CreateAppOptions["persistenceHostRoutes"]>["repositoryProvider"],
 ): CreateAppOptions {
   return {
     config,
@@ -612,22 +614,15 @@ export function buildProductionRouteOptions(
           },
         }
       : {}),
-    ...(persistenceRepositoryProvider
-      ? {
-          persistenceHostRoutes: {
-            repositoryProvider: persistenceRepositoryProvider,
-            authBearerToken: config.authBearerToken,
-          },
-        }
-      : {}),
-    sessionActionCommandRoutes:
-      persistenceRepositoryProvider && providers.runtime.sessionActionCommandRoutes
-        ? {
-            ...providers.runtime.sessionActionCommandRoutes,
-            deliveryRepositoryProvider: async () =>
-              (await persistenceRepositoryProvider()).deliveries,
-          }
-        : providers.runtime.sessionActionCommandRoutes,
+    persistenceHostRoutes: {
+      repositoryProvider: persistenceRepositoryProvider,
+      authBearerToken: config.authBearerToken,
+    },
+    sessionActionCommandRoutes: {
+      ...providers.runtime.sessionActionCommandRoutes,
+      deliveryRepositoryProvider: async () =>
+        (await persistenceRepositoryProvider()).deliveries,
+    },
     sessionBackgroundScheduleRoutes:
       providers.runtime.sessionBackgroundScheduleRoutes,
     sessionCatalogRoutes: providers.sessionCatalogRoutes,

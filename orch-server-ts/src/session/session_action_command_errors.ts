@@ -59,6 +59,18 @@ export async function sendInterveneCommand(
       ? response
       : { ...response, deliveryId: durableDeliveryId };
   } catch (error) {
+    if (durableDeliveryId !== undefined) {
+      return reply.code(200).send({
+        type: "intervene_ack",
+        status: "ok",
+        outcome: "queued",
+        agentSessionId: payload.agentSessionId,
+        deliveryId: durableDeliveryId,
+        delivered: false,
+        consumeWhen: "next_turn",
+        reason: "next_turn_required",
+      });
+    }
     if (
       error instanceof PendingNodeCommandTimeoutError &&
       error.commandType === "intervene"
@@ -72,25 +84,6 @@ export async function sendInterveneCommand(
         delivered: null,
         consumeWhen: null,
         reason: "verdict_unknown",
-        ...(durableDeliveryId === undefined
-          ? {}
-          : { deliveryId: durableDeliveryId }),
-      });
-    }
-    if (
-      durableDeliveryId !== undefined
-      && isDurableInterventionRouteFailure(error)
-    ) {
-      const queued = error instanceof SessionCommandRouteError;
-      return reply.code(200).send({
-        type: "intervene_ack",
-        status: "ok",
-        outcome: queued ? "queued" : "unknown",
-        agentSessionId: payload.agentSessionId,
-        deliveryId: durableDeliveryId,
-        delivered: queued ? false : null,
-        consumeWhen: queued ? "next_turn" : null,
-        reason: queued ? "node_unavailable" : "verdict_unknown",
       });
     }
     return sendMappedActionError(reply, error, sendGenericStatusError);
@@ -217,12 +210,6 @@ export function sendRealtimeAckError(
 
 function isAckStatusError(response: NodeCommandResponse): boolean {
   return response.status === "error";
-}
-
-function isDurableInterventionRouteFailure(error: unknown): boolean {
-  return error instanceof SessionCommandRouteError
-    || error instanceof NodeCommandTransportError
-    || error instanceof PendingNodeCommandRejectedError;
 }
 
 async function dispatchActionCommand<

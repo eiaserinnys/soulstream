@@ -255,6 +255,55 @@ describe("session action command HTTP route harness", () => {
     await app.close();
   });
 
+  it("keeps an admitted intervention queued for recovery after any routing failure", async () => {
+    const { router, bridge } = createHarnessCore();
+    vi.spyOn(router, "routeExistingSessionPendingCommand").mockRejectedValue(
+      new Error("unexpected route failure"),
+    );
+    const register = vi.fn(async (params: Record<string, unknown>) => ({
+      inserted: true,
+      conflict: false,
+      row: {
+        delivery_id: params.deliveryId,
+        state: "pending",
+        aggregate_state: "pending",
+      },
+    }));
+    const app = createApp({ config });
+    registerSessionActionCommandRoutes(app, {
+      router,
+      bridge,
+      deliveryRepositoryProvider: async () => ({ register }),
+    } as Parameters<typeof registerSessionActionCommandRoutes>[1] & {
+      deliveryRepositoryProvider: () => Promise<{ register: typeof register }>;
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-route-failure/intervene",
+      payload: {
+        text: "keep this durable",
+        user: "operator",
+        delivery_id: "88888888-8888-4888-8888-888888888888",
+        delivery_intent: "human_live_steer",
+        source: "browser",
+      },
+    });
+
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      type: "intervene_ack",
+      status: "ok",
+      outcome: "queued",
+      agentSessionId: "sess-route-failure",
+      deliveryId: "88888888-8888-4888-8888-888888888888",
+      delivered: false,
+      consumeWhen: "next_turn",
+    });
+    await app.close();
+  });
+
   it("preserves the owning node's delivered intervention verdict", async () => {
     const { app } = createActionHarness({
       ackFor: (message) => message.type === "intervene"
