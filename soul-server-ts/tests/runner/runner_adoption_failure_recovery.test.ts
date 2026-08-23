@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Task } from "../../src/task/task_models.js";
-import { RunnerReleaseIdentityMismatchError } from "../../src/runner/runner_adoption_error.js";
 import {
   RunnerAdoptionFailureRecovery,
   type RunnerAdoptionFailureRecoveryDeps,
@@ -130,33 +129,6 @@ describe("RunnerAdoptionFailureRecovery", () => {
       currentTask,
       "runner process exited before execution completed",
       dead.config,
-    );
-  });
-
-  currentPolicySnapshot("replaces an identity-verified running runner from a superseded release", async () => {
-    const subject = makeSubject();
-    const mismatch = new RunnerReleaseIdentityMismatchError({
-      runnerManifestId: "old",
-      runnerRuntimeEnvIdentity: "old-env",
-      hostManifestId: "new",
-      hostRuntimeEnvIdentity: "new-env",
-    });
-
-    await scheduleAndWait(subject.recovery, registration(), task(), { error: mismatch });
-
-    expect(subject.deps.terminateRegistration).toHaveBeenCalledOnce();
-    expect(subject.deps.markReaped).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      {
-        code: "release_superseded",
-        message: "runner release identity is incompatible with the current host release",
-      },
-    );
-    expect(subject.deps.resumeReplacement).toHaveBeenCalledWith(
-      expect.anything(),
-      "runner release identity is incompatible with the current host release",
-      expect.anything(),
     );
   });
 

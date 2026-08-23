@@ -9,7 +9,6 @@ import {
 } from "./runner_process_registry.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { prepareRecoveredTask } from "./runner_recovery_task.js";
-import { RunnerReleaseIdentityMismatchError } from "./runner_adoption_error.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 
 export type RunnerAdoptionDisposition = "adopt_prebootstrap" | "adopt_running";
@@ -91,7 +90,7 @@ export class RunnerAdoptionFailureRecovery {
     registration: RunnerRegistration,
     task: Task,
     error: { code: string; message: string },
-    disposition: "reap_dead" | "reap_stalled" | "socket_unavailable" | "release_superseded",
+    disposition: "reap_dead" | "reap_stalled" | "socket_unavailable",
     afterProcessStopped?: () => Promise<void>,
   ): Promise<void> {
     if (registration.pidAlive) {
@@ -217,28 +216,6 @@ export class RunnerAdoptionFailureRecovery {
           verifiedDisposition,
           releaseStoppedRecoveryHandles,
         );
-        return;
-      }
-      if (
-        disposition === "adopt_running"
-        && verifiedDisposition === "adopt_running"
-        && error instanceof RunnerReleaseIdentityMismatchError
-      ) {
-        this.deps.logger.info(
-          { ...recoveryLogContext(registration, error, verifiedDisposition), pid: hydrated.pid },
-          "runner from a superseded release will be replaced",
-        );
-        await this.terminalize(
-          hydrated,
-          task,
-          {
-            code: "release_superseded",
-            message: "runner release identity is incompatible with the current host release",
-          },
-          "release_superseded",
-          releaseStoppedRecoveryHandles,
-        );
-        this.clear(registration.config.sessionId);
         return;
       }
       if (

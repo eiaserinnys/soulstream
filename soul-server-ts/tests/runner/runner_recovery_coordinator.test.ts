@@ -6,7 +6,6 @@ import {
 } from "../../src/runner/runner_recovery_coordinator.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
-import { RunnerReleaseIdentityMismatchError } from "../../src/runner/runner_adoption_error.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -408,127 +407,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
       recoverRegisteredRunner.mock.invocationCallOrder[1]!,
     );
-  });
-
-  it("releases the attempt host channel only after superseded-release termination", async () => {
-    const failedRunner = failedRecoveryRunner();
-    const restartRegisteredRunner = vi.fn();
-    const mismatch = runnerReleaseIdentityMismatchError();
-    const recoverRegisteredRunner = vi.fn((
-      _recovered: Task,
-      _config: unknown,
-      _commandId: unknown,
-      mode: string,
-      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
-    ) => {
-      if (mode === "offline") return Promise.resolve();
-      onAttemptCreated?.(failedRunner.runner);
-      return Promise.reject(mismatch);
-    });
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
-      refreshRegistration: vi.fn(async () => current),
-    });
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-
-    expect(subject.terminate).toHaveBeenCalledWith(
-      expect.anything(),
-      { pid: 4123, startIdentity: "start-4123" },
-    );
-    expect(subject.markReaped).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      {
-        code: "release_superseded",
-        message: "runner release identity is incompatible with the current host release",
-      },
-    );
-    expect(recoverRegisteredRunner).toHaveBeenNthCalledWith(
-      2,
-      subject.task,
-      expect.anything(),
-      "execute-a",
-      "offline",
-      expect.any(Function),
-    );
-    expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce();
-    expect(restartRegisteredRunner).toHaveBeenCalledOnce();
-    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
-    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
-      failedRunner.detachHost.mock.invocationCallOrder[0]!,
-    );
-    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
-      subject.markReaped.mock.invocationCallOrder[0]!,
-    );
-    expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
-      recoverRegisteredRunner.mock.invocationCallOrder[1]!,
-    );
-  });
-
-  it("releases the attempt runner even when release-superseded terminalization fails", async () => {
-    const failedRunner = failedRecoveryRunner();
-    const recoverRegisteredRunner = vi.fn((
-      _recovered: Task,
-      _config: unknown,
-      _commandId: unknown,
-      _mode: string,
-      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
-    ) => {
-      onAttemptCreated?.(failedRunner.runner);
-      return Promise.reject(runnerReleaseIdentityMismatchError());
-    });
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
-      refreshRegistration: vi.fn(async () => current),
-      markReaped: vi.fn(async () => {
-        throw new Error("central mark failed");
-      }),
-    });
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-
-    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
-    expect(subject.logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "session-a" }),
-      "runner recovery action failed",
-    );
-  });
-
-  it("keeps the attempt host channel when runner termination itself is uncertain", async () => {
-    const failedRunner = failedRecoveryRunner();
-    const recoverRegisteredRunner = vi.fn((
-      _recovered: Task,
-      _config: unknown,
-      _commandId: unknown,
-      _mode: string,
-      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
-    ) => {
-      onAttemptCreated?.(failedRunner.runner);
-      return Promise.reject(runnerReleaseIdentityMismatchError());
-    });
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
-      refreshRegistration: vi.fn(async () => current),
-      spawner: {
-        terminate: vi.fn(async () => {
-          throw new Error("termination outcome unknown");
-        }),
-        invalidateRegistration: vi.fn(async () => {}),
-        retireTerminalRegistration: vi.fn(async () => {}),
-      },
-    });
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-
-    expect(failedRunner.detachHost).not.toHaveBeenCalled();
-    expect(subject.markReaped).not.toHaveBeenCalled();
   });
 
   it("does not kill a live prebootstrap runner for a transient missing socket", async () => {
@@ -1930,15 +1808,6 @@ function failureContext(message: string) {
 function runnerSocketMissingError(): Error {
   return new Error("Runner socket unavailable after 10000ms deadline", {
     cause: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
-  });
-}
-
-function runnerReleaseIdentityMismatchError(): RunnerReleaseIdentityMismatchError {
-  return new RunnerReleaseIdentityMismatchError({
-    runnerManifestId: "release-old",
-    runnerRuntimeEnvIdentity: "env-old",
-    hostManifestId: "release-current",
-    hostRuntimeEnvIdentity: "env-current",
   });
 }
 

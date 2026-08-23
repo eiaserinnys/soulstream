@@ -37,7 +37,6 @@ import {
 } from "../runner/task_runner_runtime.js";
 import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
-import { RunnerReleaseIdentityMismatchError } from "../runner/runner_adoption_error.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { inspectProcessIdentity } from "../runner/runner_process_lock.js";
@@ -749,28 +748,6 @@ export class TaskExecutor {
   ): Promise<void> {
     if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
       const runnerRuntimeEnvIdentity = runtimeEnvIdentity ?? `legacy:${manifestId}`;
-      if (this.runnerProcessFactory) {
-        const describeHost = this.runnerProcessFactory.describe;
-        if (!describeHost) throw new Error("Runner process manifest descriptor unavailable");
-        return describeHost(agent).then((hostDescriptor) => {
-          if (!releaseIdentityMatches(hostDescriptor, manifestId, runnerRuntimeEnvIdentity)) {
-            throw new RunnerReleaseIdentityMismatchError({
-              runnerManifestId: manifestId,
-              runnerRuntimeEnvIdentity,
-              hostManifestId: hostDescriptor.manifestId,
-              hostRuntimeEnvIdentity: hostDescriptor.runtimeEnvIdentity,
-            });
-          }
-          return this.recoverOwnedRunnerExecution(
-            task,
-            agent,
-            runner,
-            manifestId,
-            runnerRuntimeEnvIdentity,
-            commandId,
-          );
-        });
-      }
       return this.recoverOwnedRunnerExecution(
         task,
         agent,
@@ -1725,13 +1702,4 @@ function resolveFollowupStallReason(
 
 function formatErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function releaseIdentityMatches(
-  hostDescriptor: { manifestId: string; runtimeEnvIdentity: string },
-  manifestId: string,
-  runtimeEnvIdentity: string,
-): boolean {
-  return hostDescriptor.manifestId === manifestId
-    && hostDescriptor.runtimeEnvIdentity === runtimeEnvIdentity;
 }

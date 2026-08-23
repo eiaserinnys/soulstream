@@ -133,19 +133,11 @@ export function createRunnerProcessRuntimeFactory(
       agent,
       backend,
       snapshots,
-      Promise.resolve().then(() => {
-        if (options.releaseManifest
-          && task.executionOwnershipReservation
-          && task.executionOwnershipReservation.manifestId
-            !== options.releaseManifest.manifest_id) {
-          throw new Error(
-            `execution reservation release manifest mismatch: ${task.executionOwnershipReservation.manifestId}`,
-          );
-        }
-        return options.releaseManifest
+      Promise.resolve().then(() => (
+        options.releaseManifest
           ? options.releasePool.describe(options.releaseManifest.runner_release_id)
-          : options.releasePool.resolveCurrentRelease();
-      }).then((release) => ({
+          : options.releasePool.resolveCurrentRelease()
+      )).then((release) => ({
         stateDirectory,
         sessionId: task.agentSessionId,
         backend,
