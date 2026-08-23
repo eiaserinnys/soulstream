@@ -112,6 +112,29 @@ test("MUTATION: a later intervention reply cannot hide the previous turn's loss"
   assert.equal(paired.unanswered[0].excerpt, "sleep 90 then say INITIAL");
 });
 
+test("MUTATION: a later turn's reply cannot hide a swallowed intervention", () => {
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "first turn" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+      event("intervention_sent", { text: "swallowed steer" }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+      event("user_message", { text: "later turn" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
+  assert.equal(paired.unansweredCount, 1);
+  assert.equal(paired.ambiguous, false);
+  assert.deepEqual(
+    paired.candidates.map(({ eventType, excerpt }) => ({ eventType, excerpt })),
+    [{ eventType: "intervention_sent", excerpt: "swallowed steer" }],
+  );
+});
+
 test("MUTATION: a session with no reply at all is red", () => {
   const paired = pairSessionDemands(
     session(),
