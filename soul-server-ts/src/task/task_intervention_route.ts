@@ -161,9 +161,6 @@ export class TaskInterventionRoute {
       };
     }
     const task = await this.resolveTask(params.agentSessionId);
-    const preclassifiedRoute = task.status === "initializing"
-      ? undefined
-      : interventionTaskRoute(task);
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;
@@ -211,8 +208,7 @@ export class TaskInterventionRoute {
           };
         }
       }
-      const taskRoute = preclassifiedRoute
-        ?? interventionTaskRoute(task);
+      const taskRoute = interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(
           `execution activation did not reach running state for ${task.agentSessionId}`,
