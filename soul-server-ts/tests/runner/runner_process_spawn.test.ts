@@ -35,6 +35,16 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessSpawner", () => {
+  it("reports no adoptable runner when the session state directory is absent", async () => {
+    const params = await input();
+    const spawner = new RunnerProcessSpawner();
+
+    await expect(spawner.adopt({
+      stateDirectory: params.stateDirectory,
+      sessionId: params.sessionId,
+    })).resolves.toBeNull();
+  });
+
   it("writes config readable by immutable v1 snapshots before executing their entry", async () => {
     const calls: string[] = [];
     const spawnProcess = vi.fn((entry: string, args: string[], options: unknown) => {
