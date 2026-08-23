@@ -318,6 +318,7 @@ export class RunnerProcessSpawner {
   async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    if (!identity || identity.pid === null || identity.startIdentity === null) return null;
     const lifecycle = await this.readLifecycle(paths.databasePath);
     const pid = resolveRegisteredRunnerPid(
       await readRunnerPid(paths.pidPath),
@@ -327,7 +328,6 @@ export class RunnerProcessSpawner {
       this.deps.isPidAlive,
     );
     if (pid === null || !this.deps.isPidAlive(pid)) return null;
-    if (!identity || identity.pid === null || identity.startIdentity === null) return null;
     const observed = await this.deps.inspectProcess(pid);
     if (
       identity.pid !== pid

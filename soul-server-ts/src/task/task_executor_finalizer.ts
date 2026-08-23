@@ -22,7 +22,7 @@ export class TaskExecutorFinalizer {
       persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
     } finally {
       // Runner ownership is independent from terminal projection. A control-plane
-      // failure must not strand a child connection or offline writer lock.
+      // failure must not strand a host connection or offline writer lock.
       await this.closeEngine(task);
     }
     if (persistence.newlyFinalized && persistence.terminalTransitionApplied) {
@@ -37,7 +37,7 @@ export class TaskExecutorFinalizer {
     if (task.runnerRetainedForClaudeBackground !== true) return;
 
     if (!releaseTaskRunner(task, runner)) return;
-    await this.closeRunnerDispatcher(task, runner);
+    await this.detachRunnerDispatcher(task, runner);
   }
 
   private async closeEngine(task: Task): Promise<void> {
@@ -52,20 +52,20 @@ export class TaskExecutorFinalizer {
       task.runnerRetainedForClaudeBackground = true;
       return;
     }
-    if (runner) await this.closeRunnerDispatcher(task, runner);
+    if (runner) await this.detachRunnerDispatcher(task, runner);
     if (runner) releaseTaskRunner(task, runner);
   }
 
-  private async closeRunnerDispatcher(
+  private async detachRunnerDispatcher(
     task: Task,
     runner: NonNullable<Task["runner"]>,
   ): Promise<void> {
     try {
-      await runner.dispatcher.close();
+      await runner.dispatcher.detachHost();
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
-        "engine.close failed",
+        "runner host detach failed",
       );
     }
   }

@@ -79,7 +79,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<unknown>;
-  spawner?: Pick<RunnerProcessSpawner, "spawn">;
+  spawner?: Pick<RunnerProcessSpawner, "spawn" | "adopt">;
 }
 
 export function createRunnerProcessRuntimeFactory(
@@ -98,7 +98,6 @@ export function createRunnerProcessRuntimeFactory(
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn,
-      adoptExisting: recoveryMode === "adopt" || recoveryMode === "replay",
       offlineExisting: recoveryMode === "offline",
       spawner,
       pumpMux: options.pumpMux,
