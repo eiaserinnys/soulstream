@@ -94,13 +94,29 @@ own fix.
 Run one scenario or the complete prioritized set:
 
 ```bash
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario steady-state
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario restart-adopt
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario restart-intervention-window
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario F9
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario dead-owner
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario runner-death-live-host
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario activate-rollback
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh all
 ```
 
-`all` runs F9, dead-owner, F1, F11, and F7 in that order, then one normal
-traffic cycle. F1 includes both SIGTERM and SIGKILL. F9 toggles only the lab
+`all` first runs steady-state, restart-adopt, and restart-intervention-window.
+The transparency oracle is authored before execution from the required normal
+general and intervention semantics; it is not copied from the current live
+behavior. `steady-state` is judged against that contract too. Restart scenarios
+must have the same accepted caller outcome, semantic event order, tool result,
+response counts, terminal status, and visible error set. Only timestamps,
+per-run identifiers, and delay are ignored. The recovery-window
+scenario observes the database adoption transition before sending its single
+intervention; it never retries a rejected call.
+
+The remaining canonical order is runner-death-live-host, activate-rollback,
+F9, dead-owner, F1, F11, and F7, followed by one normal traffic cycle. F1
+includes both SIGTERM and SIGKILL. F9 toggles only the lab
 bearer credential's non-secret generation marker so the release identity
 changes without changing runtime behavior. The new generation stays canonical
 for the next lab run.

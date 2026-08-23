@@ -23,9 +23,25 @@ import {
   shortId,
   withBaselineHonesty,
 } from "./fault-scenario-result.mjs";
+import {
+  TRANSPARENCY_LOG_TERMS,
+  TRANSPARENCY_SCENARIOS,
+} from "./fault-scenarios-transparency.mjs";
 
-const SCENARIO_ORDER = ["F9", "dead-owner", "F1", "F11", "F7"];
+const SCENARIO_ORDER = [
+  "steady-state",
+  "restart-adopt",
+  "restart-intervention-window",
+  "runner-death-live-host",
+  "activate-rollback",
+  "F9",
+  "dead-owner",
+  "F1",
+  "F11",
+  "F7",
+];
 const LOG_TERMS = {
+  ...TRANSPARENCY_LOG_TERMS,
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
   F9: ["F9_", "runner adoption release identity mismatch", "offline",
@@ -33,6 +49,17 @@ const LOG_TERMS = {
     "registered runner recovery skipped", "terminal runner replay was skipped",
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
   "dead-owner": ["DEAD_OWNER_", "dead execution owner", "expire_dead_owner"],
+  "runner-death-live-host": [
+    "RUNNER_DEATH_LIVE_HOST_",
+    "activeRunnerOperations",
+    "expire_dead_owner",
+  ],
+  "activate-rollback": [
+    "ACTIVATE_ROLLBACK_",
+    "lab injected execution activation failure",
+    "spawned runner rollback failed",
+    "execution_orphaned_spawn",
+  ],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
 };
 
@@ -85,6 +112,207 @@ export async function runCanonicalScenario(id, runtime, recorder) {
 }
 
 const SCENARIOS = {
+  ...TRANSPARENCY_SCENARIOS,
+  async "runner-death-live-host"(runtime, recorder) {
+    const seed = shortId();
+    const oldMarker = `RUNNER_DEATH_LIVE_HOST_OLD_${seed}`;
+    const nextMarker = `RUNNER_DEATH_LIVE_HOST_RECOVERED_${seed}`;
+    const sessionId = await runtime.createSession(delayedMarkerPrompt(oldMarker, 90));
+    const runner = await runtime.waitForRunner(sessionId);
+    await waitForInFlightTool(runtime, sessionId);
+    const oldOwnership = await waitFor(
+      async () => (await runtime.ownerships(sessionId)).find((row) => row.phase === "active"),
+      30_000,
+      "runner-death-live-host never reached active ownership",
+    );
+    const runnerDirectory = runtime.runnerDirectory(sessionId);
+    let hiddenRunnerDirectory;
+    let scenarioError;
+    try {
+      const activeObservationOffset = await runtime.nodeLogOffset();
+      const activeOperationSnapshot = await runtime.waitForRunnerOperationStateSince(
+        sessionId,
+        activeObservationOffset,
+        true,
+      );
+      const settlementObservationOffset = await runtime.nodeLogOffset();
+      await recorder.event("fault_injected", {
+        id: "runner-death-live-host",
+        sessionId,
+        runnerPid: runner.pid,
+        signal: "SIGTERM",
+        ownershipGeneration: oldOwnership.ownership_generation,
+        nodeRestarted: false,
+        reserveAttemptedBeforeSettlement: false,
+        interventionAttemptedBeforeSettlement: false,
+        activeOperationSnapshot,
+      });
+      await runtime.killRunnerPid(runner.pid, "SIGTERM");
+      await waitFor(
+        () => runtime.runnerAlive(runner.pid) ? undefined : true,
+        60_000,
+        "SIGTERM did not terminate the in-flight runner",
+        250,
+      );
+      hiddenRunnerDirectory = join(
+        runtime.runnerStateDirectory,
+        `_fault-runner-death-live-host-${basename(runnerDirectory)}-${seed}`,
+      );
+      await rename(runnerDirectory, hiddenRunnerDirectory);
+      const settledOperationSnapshot = await runtime.waitForRunnerOperationStateSince(
+        sessionId,
+        settlementObservationOffset,
+        false,
+      );
+      const terminalBeforeResume = await runtime.waitForTerminal(sessionId, 60_000);
+      const settledOwnerships = await runtime.ownerships(sessionId);
+      await runtime.intervene(
+        sessionId,
+        buildInterventionPayload(randomUUID(), `Reply with exactly ${nextMarker}.`),
+      );
+      const replacement = await runtime.waitForRunner(sessionId, 60_000);
+      await runtime.waitForMarker(sessionId, nextMarker, 120_000);
+      const status = await runtime.waitForTerminal(sessionId);
+      const markerCount = await runtime.countTimelineEvents(
+        sessionId,
+        "assistant_message",
+        nextMarker,
+      );
+      assertScenario(markerCount === 1, `runner death recovery marker count was ${markerCount}`);
+      assertScenario(replacement.pid !== runner.pid, "runner death reused the killed runner pid");
+      return {
+        id: "runner-death-live-host",
+        status: "passed",
+        sessionId,
+        killedRunnerPid: runner.pid,
+        replacementRunnerPid: replacement.pid,
+        oldOwnershipGeneration: oldOwnership.ownership_generation,
+        settledOwnerships,
+        terminalBeforeResume,
+        activeOperationSnapshot,
+        settledOperationSnapshot,
+        sessionStatus: status,
+        markerCount,
+        nodeRestarted: false,
+        reserveAttemptedBeforeSettlement: false,
+        interventionAttemptedBeforeSettlement: false,
+      };
+    } catch (error) {
+      scenarioError = error;
+      throw error;
+    } finally {
+      if (hiddenRunnerDirectory) {
+        try {
+          await runtime.removeFaultRunnerDirectory(hiddenRunnerDirectory);
+        } catch (cleanupError) {
+          if (scenarioError) {
+            throw new AggregateError(
+              [scenarioError, cleanupError],
+              "runner-death-live-host injection and cleanup failed",
+            );
+          }
+          throw cleanupError;
+        }
+      }
+    }
+  },
+
+  async "activate-rollback"(runtime, recorder) {
+    const seed = shortId();
+    let runner;
+    let scenarioError;
+    await runtime.installActivationFailureFault(8);
+    try {
+      const sessionId = await runtime.createSession(
+        `Reply with exactly ACTIVATE_ROLLBACK_SHOULD_NOT_RUN_${seed}.`,
+      );
+      runner = await runtime.waitForRunner(sessionId);
+      const ownership = await waitFor(
+        async () => (await runtime.ownerships(sessionId)).find(
+          (row) => row.phase === "identity_proven",
+        ),
+        30_000,
+        "activate-rollback never reached identity_proven",
+        100,
+      );
+      await runtime.writeRunnerPidEvidence(sessionId, process.pid);
+      await recorder.event("fault_injected", {
+        id: "activate-rollback",
+        sessionId,
+        runnerPid: runner.pid,
+        conflictingPidEvidence: process.pid,
+        ownershipGeneration: ownership.ownership_generation,
+      });
+      await waitFor(
+        () => runtime.runnerAlive(runner.pid) ? undefined : true,
+        15_000,
+        "activate rollback left the spawned child live",
+        100,
+      );
+      await waitFor(
+        async () => {
+          const rows = await runtime.ownerships(sessionId);
+          return rows.some((row) => (
+            row.ownership_generation === ownership.ownership_generation
+            && row.phase === "failed"
+            && String(row.failure_reason).includes("execution activate failed")
+          )) ? rows : undefined;
+        },
+        60_000,
+        "activate failure did not converge to failed ownership",
+        500,
+      );
+      const status = await runtime.waitForTerminal(sessionId, 60_000);
+      assertScenario(status === "error", `activate rollback session status was ${status}`);
+      await delay(6_000);
+      const convergedOwnerships = await runtime.ownerships(sessionId);
+      const openPhases = new Set(["reserved", "spawned", "identity_proven", "active"]);
+      assertScenario(
+        convergedOwnerships.every((row) => !openPhases.has(row.phase)),
+        "activate rollback left an open ownership generation",
+      );
+      assertScenario(
+        convergedOwnerships.every(
+          (row) => !String(row.failure_reason ?? "").includes("orphaned_spawn"),
+        ),
+        "activate rollback converged through orphaned_spawn",
+      );
+      return {
+        id: "activate-rollback",
+        status: "passed",
+        sessionId,
+        runnerPid: runner.pid,
+        ownershipGeneration: ownership.ownership_generation,
+        sessionStatus: status,
+        childAlive: false,
+        ownerships: convergedOwnerships,
+      };
+    } catch (error) {
+      scenarioError = error;
+      throw error;
+    } finally {
+      const cleanupErrors = [];
+      try {
+        await runtime.removeActivationFailureFault();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      if (runner && runtime.runnerAlive(runner.pid)) {
+        try {
+          await runtime.killRunnerPid(runner.pid, "SIGKILL");
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [...(scenarioError ? [scenarioError] : []), ...cleanupErrors],
+          "activate-rollback injection and cleanup failed",
+        );
+      }
+    }
+  },
+
   async F1(runtime, recorder) {
     const modes = ["SIGTERM", "SIGKILL"];
     const cases = [];

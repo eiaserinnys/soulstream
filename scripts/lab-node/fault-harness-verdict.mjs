@@ -9,9 +9,11 @@
  * intervention that was persisted as `intervention_sent` and never projected
  * was invisible to it: the exact loss the F11 scenario exists to catch.
  *
- * So the pairing here is positional, not extremal. Inputs queue; each reply
- * closes the oldest input still open; whatever is still open when the session
- * goes quiet is a loss, and it is named with the event that was dropped.
+ * Pairing is turn-aware. An intervention received before the active turn's
+ * final answer steers that same answer, so one final response closes the
+ * original demand and its in-turn interventions together. A successful
+ * `session_ended` is a hard turn boundary: a later reply can never be credited
+ * to an older unanswered demand. Ordinary user messages remain one-to-one.
  */
 
 export const DEMAND_EVENT_TYPES = Object.freeze(["user_message", "intervention_sent"]);
@@ -60,6 +62,7 @@ export function pairSessionDemands(session, events, now = Date.now()) {
   const ordered = [...events].sort((left, right) => Number(left.id) - Number(right.id));
   const demands = [];
   const open = [];
+  let turnEpoch = 0;
   for (const event of ordered) {
     if (DEMAND_EVENT_TYPES.includes(event.event_type)) {
       const demand = {
@@ -70,6 +73,7 @@ export function pairSessionDemands(session, events, now = Date.now()) {
         outcome: DEMAND_OUTCOMES.unanswered,
         closedByEventId: null,
         ambiguous: false,
+        turnEpoch,
       };
       demands.push(demand);
       open.push(demand);
@@ -77,7 +81,16 @@ export function pairSessionDemands(session, events, now = Date.now()) {
     }
     if (event.event_type === RESPONSE_EVENT_TYPE) {
       if (open.length === 0) continue;
-      if (open.length > 1) {
+      const currentOpen = open.filter((demand) => demand.turnEpoch === turnEpoch);
+      if (currentOpen.length === 0) continue;
+      const steeredTurn = currentOpen.some(
+        (demand) => demand.eventType === "intervention_sent",
+      );
+      if (steeredTurn) {
+        for (const demand of currentOpen) answer(open, demand, Number(event.id));
+        continue;
+      }
+      if (currentOpen.length > 1) {
         // More than one input was waiting, so which one this reply belongs to
         // is not recoverable from the event stream. Both an earlier draft's
         // FIFO and its LIFO successor were wrong here in opposite directions,
@@ -91,19 +104,18 @@ export function pairSessionDemands(session, events, now = Date.now()) {
         // So the count stays exact -- one reply closes one input either way --
         // and every input that was waiting is marked ambiguous. The verdict
         // then reports "one of these", which is the true statement.
-        for (const waiting of open) waiting.ambiguous = true;
+        for (const waiting of currentOpen) waiting.ambiguous = true;
       }
-      // FIFO, matching the runtime's own drain order, so the reported ordering
-      // is at least the more likely one where the tie cannot be broken.
-      const demand = open.shift();
-      demand.outcome = DEMAND_OUTCOMES.answered;
-      demand.closedByEventId = Number(event.id);
+      // FIFO inside the current turn only. A reply after `session_ended` must
+      // not make the previous turn's silent loss disappear.
+      answer(open, currentOpen[0], Number(event.id));
       continue;
     }
     if (event.event_type === TERMINAL_EVENT_TYPE) {
       if (!isOkTermination(event)) {
         closeAll(open, Number(event.id), event.termination_reason ?? event.ended_status ?? "session_ended");
       }
+      turnEpoch += 1;
     }
   }
   if (FAILED_SESSION_STATUSES.has(session.status)) {
@@ -209,6 +221,13 @@ function closeAll(open, eventId, reason) {
     demand.closedByEventId = eventId;
     demand.failureReason = reason;
   }
+}
+
+function answer(open, demand, eventId) {
+  const index = open.indexOf(demand);
+  if (index >= 0) open.splice(index, 1);
+  demand.outcome = DEMAND_OUTCOMES.answered;
+  demand.closedByEventId = eventId;
 }
 
 function isOkTermination(event) {

@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import {
   mkdir,
   readFile,
   readlink,
+  rm,
+  stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -14,7 +17,13 @@ import {
   countMatchingTimelineEvents,
   redactEvidenceLine,
 } from "./fault-harness-contract.mjs";
+import {
+  installObservedAdoptionWindow,
+  removeObservedAdoptionWindow,
+  waitForObservedAdoptionWindow,
+} from "./fault-harness-adoption-window.mjs";
 import { EvidenceRecorder } from "./fault-harness-evidence.mjs";
+import { LabDeliveryRuntime } from "./fault-harness-runtime-delivery.mjs";
 
 const execFileAsync = promisify(execFile);
 const TERMINAL_SESSION_STATES = new Set([
@@ -55,6 +64,7 @@ export class LabRuntime {
     this.runnerStateDirectory = join(this.root, "runner-state");
     this.nodeLog = join(this.root, "logs", "node.log");
     this.orchLog = join(this.root, "logs", "orch.log");
+    this.deliveries = new LabDeliveryRuntime(this);
   }
 
   async createRun(command) {
@@ -251,10 +261,156 @@ export class LabRuntime {
 
   async killRunner(sessionId) {
     const pid = await this.runnerPid(sessionId);
-    await assertProcess(pid, "runner_entry.js");
-    process.kill(pid, "SIGKILL");
-    await waitForExit(pid, 5_000);
+    await this.killRunnerPid(pid, "SIGKILL");
     return pid;
+  }
+
+  async killRunnerPid(pid, signal = "SIGTERM") {
+    if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) {
+      throw new Error(`unsafe runner pid: ${pid}`);
+    }
+    await assertProcess(pid, "runner_entry.js");
+    process.kill(pid, signal);
+    await waitForExit(pid, signal === "SIGKILL" ? 5_000 : 30_000);
+    return pid;
+  }
+
+  async writeRunnerPidEvidence(sessionId, pid) {
+    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("invalid injected pid evidence");
+    await writeFile(
+      join(this.runnerDirectory(sessionId), "runner.pid"),
+      `${pid}\n`,
+      { mode: 0o600 },
+    );
+  }
+
+  forceRunnerLifecycleTerminal(sessionId, state = "completed") {
+    if (!new Set(["completed", "failed", "closed"]).has(state)) {
+      throw new Error(`invalid injected runner terminal state: ${state}`);
+    }
+    const database = new DatabaseSync(
+      join(this.runnerDirectory(sessionId), "runner.sqlite"),
+    );
+    try {
+      const at = new Date().toISOString();
+      const terminalError = state === "failed"
+        ? JSON.stringify({
+            code: "lab_injected_runner_failure",
+            message: "lab injected terminal runner recovery",
+          })
+        : null;
+      const result = database.prepare(`
+        UPDATE runner_event_outbox
+           SET execution_state = ?, progress_seq = progress_seq + 1,
+               progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
+               terminal_error_json = ?
+         WHERE record_kind = 'bootstrap'
+      `).run(state, at, at, terminalError);
+      if (result.changes !== 1) {
+        throw new Error(`runner lifecycle injection changed ${result.changes} rows`);
+      }
+      return { state, at };
+    } finally {
+      database.close();
+    }
+  }
+
+  async waitForNodeLog(sessionId, message, timeoutMs = 60_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog, "utf8");
+      if (log.split("\n").some(
+        (line) => line.includes(sessionId) && line.includes(message),
+      )) return;
+      await delay(500);
+    }
+    throw new Error(`node log did not report ${message} for ${sessionId}`);
+  }
+
+  async nodeLogOffset() {
+    return (await stat(this.nodeLog)).size;
+  }
+
+  async waitForRunnerOperationStateSince(
+    sessionId,
+    offset,
+    expectedActive,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const snapshots = runnerOperationSnapshots(log.subarray(from).toString("utf8"));
+      const match = snapshots.find((snapshot) => (
+        snapshot.activeRunnerOperations.some(
+          (operation) => operation?.sessionId === sessionId,
+        ) === expectedActive
+      ));
+      if (match) return match;
+      await delay(500);
+    }
+    const state = expectedActive ? "active" : "absent";
+    throw new Error(
+      `node operation snapshot did not show ${sessionId} as ${state} after log offset ${offset}`,
+    );
+  }
+
+  async removeFaultRunnerDirectory(directory) {
+    const prefix = join(this.runnerStateDirectory, "_fault-");
+    if (!directory.startsWith(prefix)) {
+      throw new Error(`unsafe fault runner directory: ${directory}`);
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+
+  async installActivationFailureFault(delaySeconds = 8) {
+    if (!Number.isInteger(delaySeconds) || delaySeconds < 1 || delaySeconds > 30) {
+      throw new Error(`invalid activation fault delay: ${delaySeconds}`);
+    }
+    return await this.psqlOne(`
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation
+        ON session_execution_ownerships;
+      CREATE OR REPLACE FUNCTION lab_fault_fail_execution_activation()
+      RETURNS trigger LANGUAGE plpgsql AS $lab$
+      BEGIN
+        IF OLD.phase = 'identity_proven' AND NEW.phase = 'active' THEN
+          PERFORM pg_sleep(${delaySeconds});
+          RAISE EXCEPTION 'lab injected execution activation failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $lab$;
+      CREATE TRIGGER lab_fault_fail_execution_activation
+        BEFORE UPDATE OF phase ON session_execution_ownerships
+        FOR EACH ROW EXECUTE FUNCTION lab_fault_fail_execution_activation();
+      SELECT json_build_object('installed', true);
+    `);
+  }
+
+  async removeActivationFailureFault() {
+    return await this.psqlOne(`
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation
+        ON session_execution_ownerships;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
+      SELECT json_build_object('removed', true);
+    `);
+  }
+
+  async installAdoptionWindow(sessionId, delaySeconds = 20) {
+    return await installObservedAdoptionWindow(this, sessionId, delaySeconds);
+  }
+
+  async waitForAdoptionWindow(sessionId, timeoutMs = 60_000) {
+    return await waitForObservedAdoptionWindow(this, sessionId, timeoutMs);
+  }
+
+  async removeAdoptionWindow() {
+    return await removeObservedAdoptionWindow(this);
   }
 
   runnerAlive(pid) {
@@ -398,11 +554,24 @@ export class LabRuntime {
     `);
   }
 
+  async deliveryById(deliveryId) {
+    assertIdentifier(deliveryId, "delivery id");
+    return await this.psqlOne(`
+      SELECT row_to_json(delivery) FROM (
+        SELECT delivery_id, relation_key, source_session_id, target_session_id,
+          state, aggregate_state, attempt_count, last_error,
+          dead_letter_reason, consumed_reason
+        FROM session_deliveries
+        WHERE delivery_id = ${sqlLiteral(deliveryId)}
+      ) AS delivery
+    `);
+  }
+
   async ownerships(sessionId) {
     return await this.psqlOne(`
       SELECT COALESCE(json_agg(row_to_json(ownership)), '[]'::json) FROM (
-        SELECT ownership_generation, phase, manifest_id, registration_id,
-          pid, start_identity, runner_fact, failure_reason
+        SELECT ownership_generation, owner_kind, phase, manifest_id, registration_id,
+          pid, start_identity, execution_command_id, runner_fact, failure_reason
         FROM session_execution_ownerships
         WHERE session_id = ${sqlLiteral(sessionId)}
         ORDER BY ownership_generation
@@ -487,6 +656,23 @@ export async function waitFor(predicate, timeoutMs, message, intervalMs = 500) {
 export async function delay(ms) {
   if (ms <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function runnerOperationSnapshots(logText) {
+  const snapshots = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("activeRunnerOperations")) continue;
+    try {
+      const record = JSON.parse(line);
+      if (!Array.isArray(record.activeRunnerOperations)) continue;
+      snapshots.push({
+        time: record.time,
+        message: record.msg,
+        activeRunnerOperations: record.activeRunnerOperations,
+      });
+    } catch {}
+  }
+  return snapshots;
 }
 
 function requireEnv(env, key) {

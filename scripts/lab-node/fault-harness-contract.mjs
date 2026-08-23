@@ -1,4 +1,21 @@
+import { createHash } from "node:crypto";
+
 export const SCENARIO_DEFINITIONS = Object.freeze({
+  "steady-state": Object.freeze({
+    injection: "None. Exercise one ordinary turn and one in-flight Claude intervention turn.",
+    expectedOutcome: "Each demand and tool result appears once; Claude queues the intervention for the next turn and completes it once.",
+    verdict: "Both observations match the user-authored semantic contract; current live behavior never defines that contract.",
+  }),
+  "restart-adopt": Object.freeze({
+    injection: "Restart the node on the same release and manifest while a 90-second tool is actually in flight.",
+    expectedOutcome: "The host adopts the same runner and the original turn completes exactly once without a restart-visible signal.",
+    verdict: "The user/agent-visible observation is identical to the steady general baseline; only delay may differ.",
+  }),
+  "restart-intervention-window": Object.freeze({
+    injection: "Pause the observed identity-proven to active adoption transition and force the recovery-time queued-state CAS race, then submit one durable intervention.",
+    expectedOutcome: "The intervention is accepted and consumed exactly once after recovery without retry or any restart-visible signal.",
+    verdict: "The user/agent-visible observation is identical to the steady intervention baseline; only delay may differ.",
+  }),
   F1: Object.freeze({
     modes: Object.freeze(["SIGTERM", "SIGKILL"]),
     injection: "Stop the worker host during an active runner turn, restart it, and retain the detached runner.",
@@ -19,6 +36,16 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     injection: "Freeze the host, SIGKILL a live runner, crash the host before cleanup, hide the dead registration, then send the next message.",
     expectedOutcome: "The dead owner expires and a new ownership generation executes the next turn.",
     verdict: "The old generation is failed with dead-owner evidence and a later generation reaches terminal.",
+  }),
+  "runner-death-live-host": Object.freeze({
+    injection: "SIGTERM an in-flight runner and remove its registration while the host remains live and no caller sends more work.",
+    expectedOutcome: "The active turn settles by itself before any reserve, intervention, or host restart.",
+    verdict: "A post-fault host snapshot no longer contains the session operation, the session is terminal, and only then a later turn completes once on a replacement runner.",
+  }),
+  "activate-rollback": Object.freeze({
+    injection: "Delay and reject activation in the lab database while replacing runner.pid with conflicting live pid evidence.",
+    expectedOutcome: "The failed activation leaves no spawned child and converges the provisional turn to a terminal ownership state.",
+    verdict: "The spawned pid is dead, the session is error, and no open or orphaned_spawn ownership remains after a retry interval.",
   }),
   F7: Object.freeze({
     injection: "Point a completion target at a missing node and repeatedly advance only its lab retry clock.",
@@ -92,6 +119,54 @@ export function buildInterventionPayload(deliveryId, text) {
     delivery_id: deliveryId,
     delivery_intent: "human_live_steer",
     source: "lab_fault_harness",
+  };
+}
+
+export function buildDurableDeliverySeed(deliveryId, sessionId, text, leaseOwner) {
+  requireNonEmpty(deliveryId, "delivery id");
+  requireNonEmpty(sessionId, "session id");
+  requireNonEmpty(text, "intervention text");
+  const completionId = `message:${deliveryId}`;
+  const relationKey = `user_message:${sessionId}:${deliveryId}`;
+  const source = "lab_fault_harness";
+  const user = "lab-fault-harness";
+  const payload = {
+    text,
+    user,
+    logical_message_id: deliveryId,
+    attachment_paths: null,
+    context: null,
+    caller_info: null,
+    followup_key: null,
+    followup_attempt: null,
+    followup_task_ids: null,
+  };
+  const payloadHash = createHash("sha256")
+    .update(JSON.stringify(canonicalize({
+      ...payload,
+      source,
+      completion_id: completionId,
+      relation_key: relationKey,
+    })), "utf8")
+    .digest("hex");
+  return {
+    deliveryId,
+    sessionId,
+    completionId,
+    relationKey,
+    source,
+    payload,
+    payloadHash,
+    intervention: {
+      text,
+      user,
+      source,
+      delivery_id: deliveryId,
+      delivery_intent: "durable_next_turn",
+      completion_id: completionId,
+      relation_key: relationKey,
+      ...(leaseOwner ? { delivery_lease_owner: leaseOwner } : {}),
+    },
   };
 }
 
@@ -204,6 +279,18 @@ function stableExampleKey(value) {
   return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([left], [right]) => (
     left.localeCompare(right)
   ))));
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
 }
 
 function integerArgument(argv, name, fallback, allowZero = false) {

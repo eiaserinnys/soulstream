@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MUTATION_COVERAGE } from "./fault-harness-mutation.mjs";
+import { runnerOperationSnapshots } from "./fault-harness-runtime.mjs";
 import {
   SCENARIO_DEFINITIONS,
   buildInterventionPayload,
@@ -28,12 +29,36 @@ test("assistant marker detection ignores the marker echoed by the user prompt", 
   assert.equal(countMatchingTimelineEvents(timeline, "assistant_message", "MARKER"), 1);
 });
 
+test("runner operation snapshots expose active-turn presence without patch-specific logs", () => {
+  const snapshots = runnerOperationSnapshots([
+    "not json",
+    JSON.stringify({
+      time: 1,
+      msg: "node event loop delay summary",
+      activeRunnerOperations: [{ sessionId: "session-a", operation: "execute" }],
+    }),
+    JSON.stringify({
+      time: 2,
+      msg: "node event loop delay summary",
+      activeRunnerOperations: [],
+    }),
+  ].join("\n"));
+  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots[0].activeRunnerOperations[0].sessionId, "session-a");
+  assert.deepEqual(snapshots[1].activeRunnerOperations, []);
+});
+
 test("fault catalog is complete and F1 explicitly covers both host signals", () => {
   assert.deepEqual(Object.keys(SCENARIO_DEFINITIONS), [
+    "steady-state",
+    "restart-adopt",
+    "restart-intervention-window",
     "F1",
     "F11",
     "F9",
     "dead-owner",
+    "runner-death-live-host",
+    "activate-rollback",
     "F7",
   ]);
   assert.deepEqual(SCENARIO_DEFINITIONS.F1.modes, ["SIGTERM", "SIGKILL"]);
@@ -69,10 +94,28 @@ test("traffic loop defaults are bounded and concurrency above two is rejected", 
   );
 });
 
-test("scenario CLI accepts only the five canonical ids", () => {
+test("scenario CLI accepts the transparent baseline and restart gates", () => {
+  for (const scenarioId of [
+    "steady-state",
+    "restart-adopt",
+    "restart-intervention-window",
+  ]) {
+    assert.deepEqual(parseHarnessArguments(["scenario", scenarioId]), {
+      command: "scenario",
+      scenarioId,
+    });
+  }
   assert.deepEqual(parseHarnessArguments(["scenario", "F9"]), {
     command: "scenario",
     scenarioId: "F9",
+  });
+  assert.deepEqual(parseHarnessArguments(["scenario", "runner-death-live-host"]), {
+    command: "scenario",
+    scenarioId: "runner-death-live-host",
+  });
+  assert.deepEqual(parseHarnessArguments(["scenario", "activate-rollback"]), {
+    command: "scenario",
+    scenarioId: "activate-rollback",
   });
   assert.deepEqual(parseHarnessArguments(["all"]), { command: "all" });
   assert.throws(
