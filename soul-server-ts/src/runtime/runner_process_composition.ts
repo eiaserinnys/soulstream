@@ -92,7 +92,10 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "reconcileExecutionOwnershipObservations"
     | "listOwnerNullRunningInventory"
   >;
-  taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
+  taskExecutor: Pick<
+    TaskExecutor,
+    "recoverRegisteredRunner" | "restartRegisteredRunner" | "reconcileMissingRunnerExecutions"
+  >;
   ownershipBackoff?: ExecutionOwnershipBackoff;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {

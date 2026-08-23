@@ -25,6 +25,8 @@ import {
   type ProcessIdentity,
 } from "./runner_process_lock.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
+import { terminateProvenRunnerProcess } from
+  "./runner_proven_process_termination.js";
 import {
   pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
@@ -338,7 +340,20 @@ export class RunnerProcessSpawner {
     paths: RunnerProcessPaths,
     expected?: { pid: number; startIdentity: string },
   ): Promise<void> {
-    await this.stopExistingRunner(paths, expected);
+    await withRunnerSessionMutationLock(
+      paths.sessionDirectory,
+      async () => await this.stopExistingRunner(paths, expected),
+    );
+  }
+
+  async terminateSpawned(
+    paths: RunnerProcessPaths,
+    expected: { pid: number; startIdentity: string },
+  ): Promise<void> {
+    await withRunnerSessionMutationLock(
+      paths.sessionDirectory,
+      async () => await terminateProvenRunnerProcess(paths, expected, this.deps),
+    );
   }
 
   invalidateRegistration(
@@ -397,42 +412,11 @@ export class RunnerProcessSpawner {
       if (!owner || owner.pid !== pid) {
         throw new Error(`runner process identity unavailable before termination: ${pid}`);
       }
-      await this.assertSameProcess(owner, "SIGTERM");
-      this.deps.signalPid(pid, "SIGTERM");
-      const deadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
-      while (this.deps.isPidAlive(pid) && this.deps.now() < deadline) {
-        await this.deps.delay(25);
-      }
-      if (this.deps.isPidAlive(pid)) {
-        await this.assertSameProcess(owner, "SIGKILL");
-        this.deps.signalPid(pid, "SIGKILL");
-        const killDeadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
-        while (this.deps.isPidAlive(pid) && this.deps.now() < killDeadline) {
-          await this.deps.delay(25);
-        }
-      }
-      if (this.deps.isPidAlive(pid)) {
-        throw new Error(`existing runner pid ${pid} did not terminate`);
-      }
+      await terminateProvenRunnerProcess(paths, owner, this.deps);
+      return;
     }
     await unlinkIfPresent(paths.pidPath);
     await unlinkIfPresent(paths.socketPath);
-  }
-
-  private async assertSameProcess(
-    expected: { pid: number; startIdentity: string },
-    signal: NodeJS.Signals,
-  ): Promise<void> {
-    const observed = await this.deps.inspectProcess(expected.pid);
-    if (
-      !observed.alive
-      || observed.startIdentity === null
-      || !processStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)
-    ) {
-      throw new Error(
-        `runner process identity changed before ${signal}: ${expected.pid}`,
-      );
-    }
   }
 
   private async readLifecycle(

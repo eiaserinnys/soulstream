@@ -29,6 +29,7 @@ import {
 import { RunnerSocketEndpoint } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
+import { ProcessFrameStream } from "../../src/runner/runner_process_frame_stream.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
@@ -42,6 +43,28 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("terminalizes an active stream even after the host dispatcher was detached", async () => {
+    const stream = new ProcessFrameStream(async () => {});
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher & { releaseHostResources(): Promise<void> };
+    Object.assign(dispatcher, {
+      activeExecuteCommandId: "execute-stranded",
+      activeStream: stream,
+      closed: true,
+      requestLifetimes: new Map(),
+      finishActiveRunnerObservation: vi.fn(),
+      reconnectExhaustedError: undefined,
+    });
+    vi.spyOn(dispatcher, "releaseHostResources").mockResolvedValue(undefined);
+    const pending = stream[Symbol.asyncIterator]().next();
+    const failure = new Error("runner process is gone");
+
+    await dispatcher.terminalizeHostExecution(failure);
+
+    await expect(pending).rejects.toThrow("runner process is gone");
+    expect(dispatcher.releaseHostResources).toHaveBeenCalledOnce();
+  });
+
   it("released event stream registration은 뒤늦은 pump 등록도 남기지 않는다", async () => {
     // An adoption can be rejected before the pump has started registering, so
     // releasing the registration finds nothing to release and the registration

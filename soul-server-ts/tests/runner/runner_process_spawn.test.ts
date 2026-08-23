@@ -371,6 +371,39 @@ describe("RunnerProcessSpawner", () => {
     await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5212\n");
   });
 
+  it("terminates the exact spawned proof despite conflicting live sidecar evidence", async () => {
+    const params = await input();
+    const paths = await writeDisagreedRegistration(params, 5311, 5312);
+    let spawnedAlive = true;
+    const signalPid = vi.fn((pid: number, signal: NodeJS.Signals) => {
+      expect(pid).toBe(5312);
+      expect(signal).toBe("SIGTERM");
+      spawnedAlive = false;
+    });
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 5313, unref: vi.fn() }),
+      registerPid: async () => {},
+      inspectProcess: async (pid) => ({
+        alive: pid === 5312 && spawnedAlive,
+        startIdentity: pid === 5312 ? "start-5312" : "stale-live-process",
+      }),
+      isPidAlive: (pid) => pid === 5311 || (pid === 5312 && spawnedAlive),
+      signalPid,
+      now: () => 0,
+      delay: async () => {},
+    });
+
+    await expect(spawner.terminateSpawned(paths, {
+      pid: 5312,
+      startIdentity: "start-5312",
+    })).resolves.toBeUndefined();
+
+    expect(signalPid).toHaveBeenCalledOnce();
+    expect(signalPid).not.toHaveBeenCalledWith(5311, expect.anything());
+  });
+
   it("waits a fresh grace window after SIGKILL before declaring termination failure", async () => {
     let now = 0;
     let alive = true;

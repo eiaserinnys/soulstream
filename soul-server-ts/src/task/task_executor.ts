@@ -93,6 +93,10 @@ import {
 import { ExecutionOwnershipCoordinator } from
   "./execution_ownership_coordinator.js";
 import {
+  ActiveRunnerExecutionRegistry,
+  type DiscoveredRunnerRegistration,
+} from "./active_runner_execution_registry.js";
+import {
   CLAUDE_BACKEND_ROLLOVER_LIMIT,
   claudeBackendRolloverMetadataEntry,
   createClaudeContextRecoveryObservation,
@@ -158,6 +162,7 @@ export class TaskExecutor {
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
   private readonly executionOwnershipCoordinator: ExecutionOwnershipCoordinator;
   private readonly executionOwnershipExpiry: ExecutionOwnershipExpiry;
+  private readonly activeRunnerExecutions = new ActiveRunnerExecutionRegistry();
   constructor(
     private readonly engineFactory: EngineFactory,
     db: SessionDB,
@@ -364,7 +369,9 @@ export class TaskExecutor {
    */
   private holdExecutionSlot(task: Task, promise: Promise<void>): Promise<void> {
     task.executionPromise = promise;
+    const releaseTrackedExecution = this.activeRunnerExecutions.track(task, promise);
     const release = (): void => {
+      releaseTrackedExecution();
       if (task.executionPromise === promise) task.executionPromise = undefined;
     };
     void promise.then(release, release);
@@ -491,6 +498,11 @@ export class TaskExecutor {
       if (!proof || !isCompleteExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
       }
+      this.activeRunnerExecutions.bindOwnership(task, {
+        ...descriptor,
+        ...proof,
+        ownershipGeneration,
+      });
       stage = "prove";
       const proofApplication = await this.executionOwnershipCoordinator
         .prove(
@@ -533,6 +545,7 @@ export class TaskExecutor {
         ...proof,
         ownershipGeneration,
       };
+      this.activeRunnerExecutions.bindOwnership(task, task.executionOwnership);
       task.executionOwnershipReservation = undefined;
       task.recoveredExecutionOwnership = undefined;
       task.runnerTerminalFact = undefined;
@@ -875,6 +888,13 @@ export class TaskExecutor {
         if (!proof || !isCompleteExecutionIdentity(proof)) {
           throw new Error(`Adopted runner identity proof unavailable: ${task.agentSessionId}`);
         }
+        this.activeRunnerExecutions.bindOwnership(task, {
+          ownerKind: "adopted_runner",
+          manifestId,
+          runtimeEnvIdentity,
+          ownershipGeneration,
+          ...proof,
+        });
         reservationAttempted = true;
         const reservation = await this.executionOwnershipCoordinator
           .reserveAdoption(task.agentSessionId, {
@@ -940,6 +960,7 @@ export class TaskExecutor {
           ownershipGeneration,
           ...proof,
         };
+        this.activeRunnerExecutions.bindOwnership(task, task.executionOwnership);
         task.executionOwnershipReservation = undefined;
         const frames = runner.dispatcher.recoverFrames?.(commandId);
         if (!frames) throw new Error("runner dispatcher does not support execution recovery");
@@ -990,6 +1011,65 @@ export class TaskExecutor {
       await this.releaseUnadoptedRunner(task, runner, config.sessionId);
       throw error;
     });
+  }
+
+  /**
+   * Settles host executions whose durable runner registration disappeared.
+   *
+   * The periodic recovery scan calls this even when it discovered no rows, so
+   * recovery does not depend on a later message trying to reserve the session.
+   * Each entry retains its own dispatcher and promise: clearing or replacing
+   * the Task's routing pointers cannot make the execution invisible.
+   */
+  async reconcileMissingRunnerExecutions(
+    discoveredRegistrations: readonly DiscoveredRunnerRegistration[],
+  ): Promise<number> {
+    const missing = this.activeRunnerExecutions.missingRegistrations(
+      discoveredRegistrations,
+    );
+    let settled = 0;
+    for (const execution of missing) {
+      const terminalize = execution.runner.dispatcher.terminalizeHostExecution;
+      if (!terminalize) {
+        this.logger.error(
+          {
+            sessionId: execution.task.agentSessionId,
+            ownershipGeneration: execution.ownership.ownershipGeneration,
+          },
+          "missing runner execution cannot be terminalized by its dispatcher",
+        );
+        continue;
+      }
+      try {
+        await terminalize.call(
+          execution.runner.dispatcher,
+          new Error(
+            `runner registration disappeared while execution `
+              + `${execution.ownership.executionCommandId} was active`,
+          ),
+        );
+        await execution.promise.catch(() => undefined);
+        settled += 1;
+        this.logger.info(
+          {
+            sessionId: execution.task.agentSessionId,
+            ownershipGeneration: execution.ownership.ownershipGeneration,
+            executionCommandId: execution.ownership.executionCommandId,
+          },
+          "missing runner execution settled without host restart",
+        );
+      } catch (err) {
+        this.logger.error(
+          {
+            err,
+            sessionId: execution.task.agentSessionId,
+            ownershipGeneration: execution.ownership.ownershipGeneration,
+          },
+          "missing runner execution reconciliation failed",
+        );
+      }
+    }
+    return settled;
   }
 
   /**
@@ -1670,6 +1750,7 @@ export class TaskExecutor {
   ): void {
     task.runner = runner;
     task.runnerIsOfflineReplay = offlineReplay;
+    this.activeRunnerExecutions.attach(task, runner);
   }
 
   private async _finalize(task: Task): Promise<void> {

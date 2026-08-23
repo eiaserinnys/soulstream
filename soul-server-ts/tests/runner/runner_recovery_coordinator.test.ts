@@ -15,6 +15,42 @@ const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
 
+  it("reconciles host executions even when the registration scan returns no rows", async () => {
+    const reconcileMissingRunnerExecutions = vi.fn(async () => 1);
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn(async () => {}),
+        restartRegisteredRunner: vi.fn(),
+        reconcileMissingRunnerExecutions,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(reconcileMissingRunnerExecutions).toHaveBeenCalledWith([]);
+  });
+
+  it("does not mistake an unreadable registration for a missing registration", async () => {
+    const reconcileMissingRunnerExecutions = vi.fn(async () => 0);
+    const subject = makeSubject([], RECOVERY_NOW_MS, [{
+      directory: "/runner/session-unreadable",
+      sessionId: "session-unreadable",
+      error: new Error("registration is temporarily unreadable"),
+    }], {
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn(async () => {}),
+        restartRegisteredRunner: vi.fn(),
+        reconcileMissingRunnerExecutions,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(reconcileMissingRunnerExecutions).toHaveBeenCalledWith([
+      { sessionId: "session-unreadable", registrationId: null },
+    ]);
+  });
+
 
   it("턴을 끝낸 러너는 dispatcher가 열려 있어도 자기 replay를 막지 않는다", async () => {
     // The blocking handle is not an abandoned runner -- measured, it reports
@@ -30,9 +66,18 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const strandedTask = task("session-a");
     const { runner, detachHost } = finishedRunner();
     strandedTask.runner = runner;
-    // A pending execution promise is the other half of the same hold: without
-    // it being dropped the skip only changes which field it names.
-    strandedTask.executionPromise = new Promise<void>(() => {});
+    let settleExecution!: () => void;
+    const executionPromise = new Promise<void>((resolve) => {
+      settleExecution = resolve;
+    });
+    strandedTask.executionPromise = executionPromise;
+    void executionPromise.then(() => {
+      if (strandedTask.executionPromise === executionPromise) {
+        strandedTask.executionPromise = undefined;
+      }
+    });
+    const terminalizeHostExecution = vi.fn(async () => settleExecution());
+    runner.dispatcher.terminalizeHostExecution = terminalizeHostExecution;
     const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
@@ -40,8 +85,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     });
 
     await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
 
-    expect(detachHost).toHaveBeenCalledOnce();
+    expect(terminalizeHostExecution).toHaveBeenCalledOnce();
+    expect(detachHost).not.toHaveBeenCalled();
     expect(strandedTask.runner).toBeUndefined();
     expect(strandedTask.executionPromise).toBeUndefined();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
@@ -1818,7 +1865,12 @@ describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
 function makeSubject(
   registrations: RunnerRegistration[],
   now = Date.parse("2026-08-11T00:00:30.000Z"),
-  errors: Array<{ directory: string; error: Error }> = [],
+  errors: Array<{
+    directory: string;
+    error: Error;
+    sessionId?: string;
+    codeSha?: string;
+  }> = [],
   overrides: Partial<RunnerRecoveryCoordinatorOptions> = {},
 ) {
   const tasks = new Map<string, Task>();

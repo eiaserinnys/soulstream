@@ -44,6 +44,7 @@ export interface RunnerCommandDispatcher {
   interrupt(): Promise<boolean>;
   close(): Promise<void>;
   detachHost(): Promise<void>;
+  terminalizeHostExecution?(error: Error): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
   dispatcherId?(): string;

@@ -1739,6 +1739,94 @@ describe("TaskExecutor.startExecution", () => {
 });
 
 describe("TaskExecutor runner process boundary", () => {
+  it("settles a tracked runner execution after task pointers and registration disappear", async () => {
+    const mocks = makeMocks();
+    const transition = (status: "initializing" | "running" | "error") => ({
+      eventId: status === "initializing" ? 10 : status === "running" ? 11 : 12,
+      applied: true,
+      canonicalSession: {
+        status,
+        termination_reason: status === "error" ? "error_aborted" : null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: status === "error" ? 12 : null,
+        updated_at: "2026-08-23T00:00:00.000Z",
+        last_event_id: status === "error" ? 12 : 10,
+      },
+    });
+    Object.assign(mocks.persistence, {
+      reserveExecutionOwnershipAndWaitForApplication: vi.fn(
+        async () => transition("initializing"),
+      ),
+      proveExecutionOwnershipAndWaitForApplication: vi.fn(
+        async () => transition("initializing"),
+      ),
+      activateExecutionOwnershipAndWaitForApplication: vi.fn(
+        async () => transition("running"),
+      ),
+      expireDeadExecutionOwnerAndWaitForApplication: vi.fn(
+        async () => transition("error"),
+      ),
+      enqueueRunnerTerminalFactAndWaitForApplication: vi.fn(
+        async () => transition("error"),
+      ),
+    });
+    Object.assign(mocks.db as object, {
+      getSession: vi.fn(async () => ({ node_id: "node-a" })),
+    });
+    const streamFailure = deferred<void>();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    dispatcher.executeFrames = vi.fn(async function* () {
+      await streamFailure.promise;
+    });
+    dispatcher.prepareExecutionIdentity = vi.fn(async () => ({
+      registrationId: "registration-stranded",
+      pid: 99_999_999,
+      startIdentity: "dead-start",
+      executionCommandId: "execute-stranded",
+    }));
+    dispatcher.terminalizeHostExecution = vi.fn(async (error: Error) => {
+      streamFailure.reject(error);
+    });
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-stranded",
+      runtimeEnvIdentity: "env-stranded",
+    }));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+      undefined,
+      undefined,
+      "node-a",
+    );
+    const task = makeTask();
+    task.status = "initializing";
+    const execution = executor.startExecution(task, agent);
+    await vi.waitFor(() => expect(dispatcher.executeFrames).toHaveBeenCalledOnce());
+
+    task.runner = undefined;
+    task.executionPromise = undefined;
+    await expect(executor.reconcileMissingRunnerExecutions([])).resolves.toBe(1);
+
+    await expect(execution).resolves.toBeUndefined();
+    expect(dispatcher.terminalizeHostExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("registration disappeared") }),
+    );
+  });
+
   it("selects the process runtime without touching the in-process engine factory", async () => {
     const mocks = makeMocks();
     const engineFactory = vi.fn(() => makeFakeEngine([]));

@@ -102,7 +102,7 @@ export interface RunnerHostCall {
 export interface RunnerProcessDispatcherOptions {
   spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>;
   spawner?: Pick<RunnerProcessSpawner, "spawn">
-    & Partial<Pick<RunnerProcessSpawner, "adopt" | "terminate">>;
+    & Partial<Pick<RunnerProcessSpawner, "adopt" | "terminate" | "terminateSpawned">>;
   adoptExisting?: boolean;
   offlineExisting?: boolean;
   openParentOutbox?: typeof RunnerParentOutbox.open;
@@ -274,10 +274,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     let terminationError: unknown;
     try {
       const rollbackSpawner = this.options.spawner ?? new RunnerProcessSpawner();
-      if (!rollbackSpawner.terminate) {
+      const terminateSpawned = rollbackSpawner.terminateSpawned
+        ?? rollbackSpawner.terminate;
+      if (!terminateSpawned) {
         throw new Error("spawn rollback terminator unavailable");
       }
-      await rollbackSpawner.terminate(spawned.paths, {
+      await terminateSpawned.call(rollbackSpawner, spawned.paths, {
         pid: proof.pid,
         startIdentity: proof.startIdentity,
       });
@@ -371,6 +373,25 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (this.closed) return;
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner host detached"));
+    await this.releaseHostResources();
+  }
+
+  /**
+   * Ends the execution bridge even if another recovery path detached the host.
+   *
+   * `detachHost()` deliberately does not fail the stream because rejected
+   * adoption must not kill a live turn. Once the runner registration is gone,
+   * however, that same behavior would leave TaskExecutor's promise pending
+   * forever. This terminal operation is therefore separate and idempotent.
+   */
+  async terminalizeHostExecution(error: Error): Promise<void> {
+    this.reconnectExhaustedError ??= error;
+    this.abortRequestLifetimes(error);
+    const activeStream = this.activeStream;
+    const activeCommandId = this.activeExecuteCommandId;
+    activeStream?.fail(error);
+    if (activeCommandId) this.clearActiveExecution(activeCommandId);
+    this.closed = true;
     await this.releaseHostResources();
   }
 
@@ -651,8 +672,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
     let terminationError: unknown;
     try {
-      if (!spawner?.terminate) throw new Error("spawn rollback terminator unavailable");
-      await spawner.terminate(spawned.paths, {
+      const terminateSpawned = spawner?.terminateSpawned ?? spawner?.terminate;
+      if (!terminateSpawned) throw new Error("spawn rollback terminator unavailable");
+      await terminateSpawned.call(spawner, spawned.paths, {
         pid: proof.pid,
         startIdentity: proof.startIdentity,
       });
@@ -944,8 +966,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       `Runner IPC reconnect budget exhausted after ${this.reconnectPolicy.maxAttempts} attempts`,
       { cause: this.reconnectCause },
     );
-    this.reconnectExhaustedError = error;
-    this.abortRequestLifetimes(error);
     this.options.logger.error(
       {
         err: this.reconnectCause,
@@ -954,17 +974,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       },
       "Runner IPC reconnect budget exhausted; runner execution will be terminalized",
     );
-    // The active stream is the single terminal bridge into TaskExecutor; its
-    // rejection persists the runner failure. Capture its exact identity before
-    // clearing local observation state, then release every host-owned resource
-    // so a later recovery can register the durable stream once.
-    const activeStream = this.activeStream;
-    const activeCommandId = this.activeExecuteCommandId;
-    activeStream?.fail(error);
-    if (activeCommandId) this.clearActiveExecution(activeCommandId);
-    this.closed = true;
     try {
-      await this.releaseHostResources();
+      await this.terminalizeHostExecution(error);
     } catch (cleanupError) {
       this.options.logger.error(
         {

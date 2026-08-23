@@ -167,6 +167,25 @@ export class RunnerRecoveryCoordinator {
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
+    const discoveredRegistrations = [
+      ...scan.registrations.map((registration) => ({
+        sessionId: registration.config.sessionId,
+        registrationId: registration.registrationId ?? null,
+      })),
+      ...scan.errors.flatMap((failure) => failure.sessionId
+        ? [{ sessionId: failure.sessionId, registrationId: null }]
+        : []),
+    ];
+    try {
+      await this.options.taskExecutor.reconcileMissingRunnerExecutions?.(
+        discoveredRegistrations,
+      );
+    } catch (error) {
+      this.options.logger.error(
+        { err: error },
+        "missing runner execution reconciliation failed during recovery scan",
+      );
+    }
     this.ownerNullExecutionReconciler.prune(scan.registrations);
     await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
@@ -435,24 +454,42 @@ export class RunnerRecoveryCoordinator {
           runnerDispatcher: task.runner.dispatcher.dispatcherId?.(),
           runnerDispatcherClosed: task.runner.dispatcher.isClosed?.(),
         },
-        "detaching a finished runner so its own replay can run",
+        "terminalizing a finished runner so its own replay can run",
       );
       const finished = task.runner;
-      task.runner = undefined;
-      task.runnerRetainedForClaudeBackground = undefined;
-      // Letting go of the handle is only half of it. `detachHost` releases the
-      // host's resources but never settles the execution it was consuming, so
-      // the promise stays pending forever and the slot is never cleared -- the
-      // skip simply changes from `runner` to `execution_promise` and the same
-      // thirteen scans go by. Shutdown already states the whole gesture:
-      // detach, drop the runner, drop the execution (task_lifecycle_route).
-      task.executionPromise = undefined;
-      await finished.dispatcher.detachHost().catch((error: unknown) => {
-        this.options.logger.warn(
-          { err: error, sessionId: registration.config.sessionId },
-          "finished runner host detach failed before replay",
+      const executionPromise = task.executionPromise;
+      const terminalize = finished.dispatcher.terminalizeHostExecution;
+      if (terminalize) {
+        await terminalize.call(
+          finished.dispatcher,
+          new Error("runner reached a durable terminal state before host execution settled"),
+        ).catch((error: unknown) => {
+          this.options.logger.warn(
+            { err: error, sessionId: registration.config.sessionId },
+            "finished runner host terminalization failed before replay",
+          );
+        });
+        await executionPromise?.catch(() => undefined);
+        if (task.executionPromise === executionPromise) {
+          task.executionPromise = undefined;
+        }
+        this.options.logger.info(
+          { sessionId: registration.config.sessionId },
+          "finished runner execution settled without host restart",
         );
-      });
+      } else {
+        // Non-process test and compatibility dispatchers predate the explicit
+        // terminal bridge. Process dispatchers always take the branch above.
+        task.executionPromise = undefined;
+        await finished.dispatcher.detachHost().catch((error: unknown) => {
+          this.options.logger.warn(
+            { err: error, sessionId: registration.config.sessionId },
+            "finished runner host detach failed before replay",
+          );
+        });
+      }
+      if (task.runner === finished) task.runner = undefined;
+      task.runnerRetainedForClaudeBackground = undefined;
     }
     if (task.runner?.dispatcher.isClosed?.() === true) {
       this.options.logger.warn(
