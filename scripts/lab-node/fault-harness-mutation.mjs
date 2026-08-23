@@ -199,6 +199,41 @@ const MUTATIONS = [
     invariant: "stranded_delivery",
     what: "a delivery handed over and never taken",
     identity: (planted) => planted.deliveryId,
+    control: {
+      what: "an old delivered row remains legitimate while its target turn is running",
+      identity: (planted) => planted.deliveryId,
+      async inject(context) {
+        const sessionId = context.id("active-target");
+        const deliveryId = context.id("active-delivered");
+        await context.sql(`
+          INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
+          VALUES ('${sessionId}', 'running', 'eias-lab', 'claude', NOW(), NOW())
+        `);
+        await context.sql(`
+          INSERT INTO session_execution_ownerships (
+            session_id, ownership_generation, owner_kind, manifest_id,
+            registration_id, pid, start_identity, execution_command_id,
+            phase, identity_proven_at, activated_at
+          ) VALUES (
+            '${sessionId}', 1, 'runner_process', 'lab-mutation-manifest',
+            '${sessionId}-registration', 4242, '${sessionId}-identity',
+            '${sessionId}-command', 'active', NOW(), NOW()
+          )
+        `);
+        await context.insertDelivery(deliveryId, {
+          state: "delivered",
+          aggregateState: "delivered",
+          targetSessionId: sessionId,
+          extraColumns: ", delivered_at",
+          extraValues: ", NOW() - INTERVAL '10 minutes'",
+        });
+        return { sessionId, deliveryId };
+      },
+      async revert(context, planted) {
+        await context.sql(`DELETE FROM session_deliveries WHERE delivery_id = '${planted.deliveryId}'`);
+        await context.sql(`DELETE FROM sessions WHERE session_id = '${planted.sessionId}'`);
+      },
+    },
     async inject(context) {
       const deliveryId = context.id("stranded");
       await context.insertDelivery(deliveryId, {
@@ -250,15 +285,7 @@ export const MUTATION_COVERAGE = Object.freeze(
   [...new Set(MUTATIONS.map((mutation) => mutation.invariant))],
 );
 
-/**
- * Seven judges, eight mutations.
- *
- * `unanswered_demand` gets two because it has two distinct failure shapes --
- * an input with no reply at all, and an input covered by a later reply. The
- * earlier reporting said "8 판정기", conflating mutations with judges and
- * overstating coverage by one. Counting the wrong thing is how this whole
- * audit started.
- */
+/** Eight judges, nine mutations; `unanswered_demand` has two failure shapes. */
 export const JUDGE_COUNT = MUTATION_COVERAGE.length;
 
 /**
@@ -285,6 +312,26 @@ function namesPlanted(violations, invariantName, identity) {
 
 async function runMutation(mutation, context, index) {
   const before = await context.sample();
+  let controlHeld = false;
+  if (mutation.control) {
+    let controlPlanted;
+    try {
+      controlPlanted = await mutation.control.inject(context);
+      const controlIdentity = mutation.control.identity?.(controlPlanted);
+      const controlled = await context.sample();
+      if (namesPlanted(controlled, mutation.invariant, controlIdentity)) {
+        return {
+          invariant: mutation.invariant,
+          what: mutation.what,
+          outcome: "FALSE POSITIVE",
+          detail: `${mutation.control.what}: ${JSON.stringify(controlPlanted)}`,
+        };
+      }
+      controlHeld = true;
+    } finally {
+      if (controlPlanted) await mutation.control.revert(context, controlPlanted);
+    }
+  }
   let planted;
   let detected = false;
   let collateral = [];
@@ -340,6 +387,7 @@ async function runMutation(mutation, context, index) {
     what: mutation.what,
     outcome: "detected",
     collateral,
+    control: controlHeld ? "held" : undefined,
     index,
   };
 }
@@ -356,10 +404,10 @@ export async function runMutationGate(runtime) {
       await runtime.psqlOne(`
         WITH mutation AS (
           INSERT INTO session_deliveries (
-            delivery_id, relation_key, intent, source,
+            delivery_id, target_session_id, relation_key, intent, source,
             payload_hash, state, aggregate_state, created_at${options.extraColumns ?? ""}
           ) VALUES (
-            '${deliveryId}',
+            '${deliveryId}', ${options.targetSessionId ? `'${options.targetSessionId}'` : "NULL"},
             '${deliveryId}-relation', 'completion_notification', '${PREFIX}',
             '${PREFIX}-hash', '${options.state}', '${options.aggregateState}',
             NOW()${options.extraValues ?? ""}
@@ -427,6 +475,7 @@ export function reportMutationGate(results) {
     process.stdout.write(
       `${result.outcome.padEnd(14)} ${result.invariant.padEnd(28)} ${result.what}\n`
       + (result.detail ? `               ${result.detail}\n` : "")
+      + (result.control ? `               negative control: ${result.control}\n` : "")
       + (result.collateral?.length
         ? `               also named by: ${result.collateral.join(", ")}\n`
         : ""),

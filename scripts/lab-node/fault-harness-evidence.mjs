@@ -1,10 +1,13 @@
 import {
   appendFile,
+  mkdtemp,
   readFile,
   readdir,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -20,6 +23,13 @@ import {
   findPendingSessions,
   findUnansweredDemands,
 } from "./fault-harness-verdict.mjs";
+import { defineHarnessBoundary } from "./fault-harness-boundary.mjs";
+import {
+  boundaryAssert,
+  CONTRACT_PENDING_SESSION_ID,
+  CONTRACT_SINCE,
+  pendingContractRuntime,
+} from "./fault-harness-contract-fixtures.mjs";
 
 export class EvidenceRecorder {
   constructor(runtime, runId, directory) {
@@ -197,7 +207,7 @@ export class EvidenceRecorder {
   }
 }
 
-export async function sampleInvariants(runtime, since) {
+async function sampleInvariantsImpl(runtime, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
       'ownerlessRunning', (
@@ -225,7 +235,7 @@ export async function sampleInvariants(runtime, since) {
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
       'strandedDeliveries', (
-        -- Handed over and never taken.
+        -- Handed over, with no live execution left that can still take it.
         --
         -- Found by running under load: a parent session died with a duplicate
         -- durable event stream registration while a child's completion sat in
@@ -233,11 +243,29 @@ export async function sampleInvariants(runtime, since) {
         -- missed it -- overdue_retry wants pending, ambiguous_uncertain wants
         -- uncertain, reasonless_dead_letter wants dead_letter -- so the one
         -- terminal-looking state that is not terminal had nobody watching it.
-        -- Two minutes is far past the seconds a real handover takes.
-        SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
-        FROM session_deliveries
-        WHERE aggregate_state = 'delivered'
-          AND delivered_at < NOW() - INTERVAL '120 seconds'
+        -- Delivered is deliberately not terminal. It spans the entire
+        -- foreground iterator, so a healthy long tool call can remain here
+        -- well past two minutes. Age becomes evidence only after the target
+        -- is no longer both running and owned by an open execution.
+        SELECT COALESCE(json_agg(json_build_object(
+          'delivery_id', delivery.delivery_id,
+          'target_session_id', delivery.target_session_id
+        )), '[]'::json)
+        FROM session_deliveries AS delivery
+        WHERE delivery.aggregate_state = 'delivered'
+          AND delivery.delivered_at < NOW() - INTERVAL '120 seconds'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM sessions AS target
+            WHERE target.session_id = delivery.target_session_id
+              AND target.status = 'running'
+              AND EXISTS (
+                SELECT 1
+                FROM session_execution_ownerships AS ownership
+                WHERE ownership.session_id = target.session_id
+                  AND ownership.phase IN ('reserved', 'identity_proven', 'active')
+              )
+          )
       ),
       'reasonlessDeadLetters', (
         SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
@@ -321,6 +349,41 @@ export async function sampleInvariants(runtime, since) {
     },
   };
 }
+
+export const sampleInvariants = defineHarnessBoundary({
+  name: "pending_crosses_sampler_and_settle",
+  what: "a live mid-answer input reaches the snapshot and keeps the evidence loop unsettled",
+  implementation: sampleInvariantsImpl,
+  async contract(sample) {
+    const directory = await mkdtemp(join(tmpdir(), "harness-contract-"));
+    try {
+      const now = Date.now();
+      const runtime = pendingContractRuntime(now, directory);
+      const direct = await sample(runtime, CONTRACT_SINCE);
+      boundaryAssert(
+        (direct.pendingSessions ?? []).includes(CONTRACT_PENDING_SESSION_ID),
+        "the sampler did not report a mid-answer session as pending",
+      );
+      boundaryAssert(
+        direct.violations.length === 0,
+        "a session that may still answer was reported as a violation",
+      );
+
+      const recorder = new EvidenceRecorder(runtime, "contract", directory);
+      const settled = await recorder.invariant("contract", [], 0);
+      boundaryAssert(
+        settled.settled === false,
+        "a sample with an unresolved pending session reported settled",
+      );
+      boundaryAssert(
+        (settled.unresolvedPending ?? []).includes(CONTRACT_PENDING_SESSION_ID),
+        "the settle loop discarded the pending session",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+});
 
 const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
 const RUNNER_PROGRESS_GRACE_MS = 60_000;

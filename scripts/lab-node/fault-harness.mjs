@@ -8,8 +8,8 @@ import { LabRuntime } from "./fault-harness-runtime.mjs";
 import {
   canonicalScenarioOrder,
   runCanonicalScenario,
-  runTrafficCycles,
 } from "./fault-scenarios.mjs";
+import { runTrafficCycles } from "./fault-traffic-cycles.mjs";
 
 const options = parseHarnessArguments(process.argv.slice(2));
 const runtime = new LabRuntime();

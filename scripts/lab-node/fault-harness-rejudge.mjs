@@ -13,7 +13,8 @@
  *   fault-harness-rejudge.mjs <directory> [...]    # named directories
  *   fault-harness-rejudge.mjs --json               # machine-readable
  */
-import { readFile, readdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import {
@@ -21,6 +22,7 @@ import {
   groupEventsBySession,
 } from "./fault-harness-database.mjs";
 import { findUnansweredDemands } from "./fault-harness-verdict.mjs";
+import { defineHarnessBoundary } from "./fault-harness-boundary.mjs";
 
 const EVIDENCE_ROOT = join(
   process.env.LAB_ROOT ?? "/home/eias/services/soulstream-lab",
@@ -38,7 +40,7 @@ const EVIDENCE_ROOT = join(
  */
 const WINDOW_TAIL_MS = 0;
 
-export async function rejudgeDirectory(directory, database) {
+async function rejudgeDirectoryImpl(directory, database) {
   const window = await readWindow(directory);
   const reported = await readReportedStatus(directory);
   if (!window) {
@@ -89,6 +91,50 @@ export async function rejudgeDirectory(directory, database) {
     unanswered: losses,
   };
 }
+
+export const rejudgeDirectory = defineHarnessBoundary({
+  name: "replay_uses_the_capture_clock",
+  what: "stored evidence is judged at capturedAt without consulting a live database",
+  implementation: rejudgeDirectoryImpl,
+  async contract(rejudge) {
+    const directory = await mkdtemp(join(tmpdir(), "harness-contract-"));
+    try {
+      const capturedAt = "2026-08-22T12:00:00.000Z";
+      const capturedAtMs = Date.parse(capturedAt);
+      const since = "2026-08-22T11:00:00.000Z";
+      await writeFile(
+        join(directory, "invariants.jsonl"),
+        `${JSON.stringify({ label: "before", since })}\n`,
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(directory, "result.json"),
+        `${JSON.stringify({ completedAt: capturedAt, status: "passed" })}\n`,
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(directory, "pairing-inputs.jsonl"),
+        `${JSON.stringify({
+          label: "after",
+          since,
+          capturedAt,
+          sessions: [pendingReplaySession(capturedAtMs)],
+          events: [pendingReplayEvent(capturedAtMs)],
+        })}\n`,
+        { mode: 0o600 },
+      );
+      const result = await rejudge(directory, null);
+      boundaryAssert(result.source === "stored_evidence", "replay did not use stored evidence");
+      boundaryAssert(
+        result.asOf === capturedAt,
+        `replay judged at ${result.asOf} instead of ${capturedAt}`,
+      );
+      boundaryAssert(result.verdict === "green", "capture-time pending input replayed as loss");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+});
 
 /** The database, when there is one and it still holds the run's sessions. */
 async function readDatabaseInputs(database, window) {
@@ -249,4 +295,28 @@ function printReport(results) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await main();
+}
+
+function pendingReplaySession(now) {
+  return {
+    session_id: "contract-pending-session",
+    status: "running",
+    created_at: new Date(now - 5_000).toISOString(),
+    last_event_at: new Date(now - 1_000).toISOString(),
+    runnerProgressing: true,
+  };
+}
+
+function pendingReplayEvent(now) {
+  return {
+    session_id: "contract-pending-session",
+    id: 1,
+    event_type: "user_message",
+    text: "contract: answer me",
+    created_at: new Date(now - 5_000).toISOString(),
+  };
+}
+
+function boundaryAssert(condition, message) {
+  if (!condition) throw new Error(message);
 }

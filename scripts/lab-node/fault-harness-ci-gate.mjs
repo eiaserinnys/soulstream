@@ -33,6 +33,7 @@ import {
   reportMutationGate,
   runMutationGate,
 } from "./fault-harness-mutation.mjs";
+import { assertThrowawayTarget } from "./fault-harness-throwaway-boundary.mjs";
 
 /** Stands in for a built release; the gate only compares it to a receipt. */
 const FIXTURE_MANIFEST = Object.freeze({
@@ -55,32 +56,6 @@ const FIXTURE_MANIFEST = Object.freeze({
  * token. Creating it is a deliberate act -- one line in the CI workflow next
  * to the throwaway database it applies to -- and no live database has it.
  */
-const THROWAWAY_MARKER_TABLE = "lab_harness_throwaway_marker";
-const THROWAWAY_MARKER_TOKEN = "disposable-harness-database";
-
-async function assertThrowawayTarget(query) {
-  let marker;
-  try {
-    marker = await query(`
-      SELECT json_build_object('token', (
-        SELECT token FROM ${THROWAWAY_MARKER_TABLE} LIMIT 1
-      ))
-    `);
-  } catch {
-    marker = null;
-  }
-  if (marker?.token === THROWAWAY_MARKER_TOKEN) return;
-  throw new Error(
-    `refusing to run: ${process.env.PGDATABASE ?? "<no PGDATABASE>"} did not present a`
-    + ` throwaway marker. This gate plants rows and must only ever touch a database`
-    + ` created for it. Prove the target is disposable with:\n`
-    + `  CREATE TABLE ${THROWAWAY_MARKER_TABLE} (token text);\n`
-    + `  INSERT INTO ${THROWAWAY_MARKER_TABLE} VALUES ('${THROWAWAY_MARKER_TOKEN}');\n`
-    + `To exercise the judges against the live lab instead, run`
-    + ` fault-harness.sh mutation, which reverts everything it plants.`,
-  );
-}
-
 async function main() {
   const query = createQueryRunner(process.env);
   await assertThrowawayTarget(query);

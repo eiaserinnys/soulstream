@@ -1,39 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { defineHarnessBoundary } from "./fault-harness-boundary.mjs";
 import {
-  BOUNDARY_CONTRACTS,
+  boundaryContractInventory,
   runBoundaryContracts,
 } from "./fault-harness-contracts.mjs";
 
-// Runs in CI, where there is no lab and no database. These drive the real
-// sampler and the real replay across the real seams, so cutting any of the
-// wirings they cover fails here rather than three reviews later.
-
-test("every boundary contract holds", async () => {
+test("every discovered boundary contract holds", async () => {
   const results = await runBoundaryContracts();
   const broken = results.filter((result) => result.outcome !== "held");
   assert.deepEqual(
     broken.map((result) => `${result.name}: ${result.detail}`),
     [],
   );
-  assert.equal(results.length, BOUNDARY_CONTRACTS.length);
+  const inventory = await boundaryContractInventory();
+  assert.equal(results.length, inventory.length);
+  assert.ok(results.length > 0);
 });
 
-test("the boundary set covers each wiring added after the mutation gate", () => {
-  // A fixed list of row-plantings cannot grow when the harness grows: the
-  // pending wiring, the replay clock and the marker check were all added after
-  // the mutation gate existed, and all three sat outside it. Naming them here
-  // makes a silent removal fail rather than pass.
-  assert.deepEqual(BOUNDARY_CONTRACTS.map((contract) => contract.name).sort(), [
-    "pending_blocks_the_settle_loop",
-    "pending_reaches_the_snapshot",
-    "replay_uses_the_capture_clock",
-  ]);
+test("a wiring cannot be constructed without its inline contract", () => {
+  assert.throws(
+    () => defineHarnessBoundary({
+      name: "uncontracted_wiring",
+      what: "this deliberately omits the proof required by the only boundary constructor",
+      async implementation() {},
+    }),
+    /requires an inline contract/,
+  );
 });
 
-test("each contract states what breaks, not just that something did", () => {
-  for (const contract of BOUNDARY_CONTRACTS) {
+test("the discovered registry is self-describing and duplicate-free", async () => {
+  const inventory = await boundaryContractInventory();
+  const names = inventory.map((contract) => contract.name);
+  assert.equal(new Set(names).size, names.length);
+  for (const contract of inventory) {
     assert.ok(contract.what.length > 20, `${contract.name} has no description`);
     assert.equal(typeof contract.check, "function");
   }
