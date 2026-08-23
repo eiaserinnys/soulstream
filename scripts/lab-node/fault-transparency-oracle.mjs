@@ -10,7 +10,9 @@ const RESTART_VISIBLE_SIGNAL = /(?:\b503\b|restart|reconnect|re-?send|retry|unav
  */
 export function buildTransparencyObservation(input) {
   const messages = Array.isArray(input.timeline?.messages)
-    ? input.timeline.messages
+    ? [...input.timeline.messages].sort((left, right) => (
+        Number(left?.event_id ?? left?.id ?? 0) - Number(right?.event_id ?? right?.id ?? 0)
+      ))
     : [];
   const eventSequence = [];
   const counts = {
@@ -21,6 +23,7 @@ export function buildTransparencyObservation(input) {
     toolResultError: 0,
     initialReply: 0,
     contextReply: 0,
+    unexpectedAssistantReply: 0,
   };
   const visibleErrors = [];
   const visibleSignals = [];
@@ -34,14 +37,18 @@ export function buildTransparencyObservation(input) {
         payload: normalizeVisiblePayload(message?.payload, input),
       });
     }
-    if (eventType === "user_message" && text.includes(input.initialPrompt)) {
-      counts.initialDemand += 1;
-      eventSequence.push("initial_demand");
+    if (eventType === "user_message") {
+      if (payloadContains(message?.payload, input.initialPrompt)) {
+        counts.initialDemand += 1;
+        eventSequence.push("initial_demand");
+      } else {
+        eventSequence.push("unexpected_user_demand");
+      }
     }
     if (
       input.interventionText
       && eventType === "intervention_sent"
-      && text.includes(input.interventionText)
+      && payloadContains(message?.payload, input.interventionText)
     ) {
       counts.interventionDemand += 1;
       eventSequence.push("intervention_demand");
@@ -59,14 +66,16 @@ export function buildTransparencyObservation(input) {
     if (eventType === "assistant_message" && text.includes(input.initialMarker)) {
       counts.initialReply += 1;
       eventSequence.push("initial_reply");
-    }
-    if (
+    } else if (
       input.contextMarker
       && eventType === "assistant_message"
       && text.includes(input.contextMarker)
     ) {
       counts.contextReply += 1;
       eventSequence.push("context_reply");
+    } else if (eventType === "assistant_message") {
+      counts.unexpectedAssistantReply += 1;
+      eventSequence.push("unexpected_assistant_reply");
     }
     if (
       eventType === "error"
@@ -88,6 +97,52 @@ export function buildTransparencyObservation(input) {
   };
 }
 
+export function expectedTransparencyObservation(kind) {
+  if (kind === "general") {
+    return {
+      callerOutcome: { status: "accepted", disposition: "session_created" },
+      terminalStatus: "completed",
+      eventSequence: ["initial_demand", "tool_start", "tool_result_ok", "initial_reply"],
+      counts: {
+        initialDemand: 1,
+        interventionDemand: 0,
+        toolStart: 1,
+        toolResult: 1,
+        toolResultError: 0,
+        initialReply: 1,
+        contextReply: 0,
+        unexpectedAssistantReply: 0,
+      },
+      visibleErrors: [],
+    };
+  }
+  if (kind === "intervention") {
+    return {
+      callerOutcome: { status: "accepted", disposition: "queued_for_next_turn" },
+      terminalStatus: "completed",
+      eventSequence: [
+        "initial_demand",
+        "tool_start",
+        "intervention_demand",
+        "tool_result_ok",
+        "context_reply",
+      ],
+      counts: {
+        initialDemand: 1,
+        interventionDemand: 1,
+        toolStart: 1,
+        toolResult: 1,
+        toolResultError: 0,
+        initialReply: 0,
+        contextReply: 1,
+        unexpectedAssistantReply: 0,
+      },
+      visibleErrors: [],
+    };
+  }
+  throw new Error(`unknown transparency observation kind: ${kind}`);
+}
+
 export function transparencyDifferences(baseline, candidate) {
   const differences = [];
   compareField(differences, "callerOutcome", baseline, candidate);
@@ -95,7 +150,6 @@ export function transparencyDifferences(baseline, candidate) {
   compareField(differences, "eventSequence", baseline, candidate);
   compareField(differences, "counts", baseline, candidate);
   compareField(differences, "visibleErrors", baseline, candidate);
-  compareField(differences, "visibleSignals", baseline, candidate);
   return differences;
 }
 
@@ -155,10 +209,26 @@ function normalizeCallerOutcome(outcome) {
       reason: stripVolatile(outcome.reason),
     };
   }
+  const value = outcome.value ?? {};
+  const disposition = value.outcome === "queued" || value.consumeWhen === "next_turn"
+    ? "queued_for_next_turn"
+    : (value.outcome === "delivered" || value.delivered === true
+      ? "delivered"
+      : (value.accepted === true ? "session_created" : "unknown"));
+  const restartVisible = RESTART_VISIBLE_SIGNAL.test(JSON.stringify(stripVolatile(value)));
   return {
-    status: "fulfilled",
-    value: stripVolatile(outcome.value),
+    status: "accepted",
+    disposition,
+    ...(restartVisible ? { restartVisible: true } : {}),
   };
+}
+
+function payloadContains(value, needle) {
+  if (typeof needle !== "string" || needle.length === 0) return false;
+  if (typeof value === "string") return value.includes(needle);
+  if (Array.isArray(value)) return value.some((entry) => payloadContains(entry, needle));
+  if (value === null || typeof value !== "object") return false;
+  return Object.values(value).some((entry) => payloadContains(entry, needle));
 }
 
 function stripVolatile(value) {

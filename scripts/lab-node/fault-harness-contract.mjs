@@ -2,7 +2,7 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
   "steady-state": Object.freeze({
     injection: "None. Exercise one ordinary turn and one in-flight Claude intervention turn.",
     expectedOutcome: "Each demand and tool result appears once; Claude queues the intervention for the next turn and completes it once.",
-    verdict: "The captured general and intervention observations are the canonical user/agent-visible transparency baselines.",
+    verdict: "Both observations match the user-authored semantic contract; current live behavior never defines that contract.",
   }),
   "restart-adopt": Object.freeze({
     injection: "Restart the node on the same release and manifest while a 90-second tool is actually in flight.",

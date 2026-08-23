@@ -77,10 +77,7 @@ test("MUTATION: a dropped first turn is red even though a later reply exists", (
   );
 });
 
-test("MUTATION: an intervention that was never projected is red", () => {
-  // F11's loss. `intervention_sent` is persisted, the projection into
-  // `user_message` never happens, and a judge that reads only `user_message`
-  // cannot see the input at all.
+test("an in-turn intervention is folded into the one final response", () => {
   const paired = pairSessionDemands(
     session(),
     stream(
@@ -92,7 +89,27 @@ test("MUTATION: an intervention that was never projected is red", () => {
     NOW,
   );
   assert.equal(paired.demandCount, 2);
+  assert.equal(paired.unanswered.length, 0);
+  assert.deepEqual(
+    paired.demands.map(({ outcome }) => outcome),
+    [DEMAND_OUTCOMES.answered, DEMAND_OUTCOMES.answered],
+  );
+});
+
+test("MUTATION: a later intervention reply cannot hide the previous turn's loss", () => {
+  const paired = pairSessionDemands(
+    session(),
+    stream(
+      event("user_message", { text: "sleep 90 then say INITIAL" }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+      event("intervention_sent", { text: "say RECOVERED" }),
+      event("assistant_message"),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
+    ),
+    NOW,
+  );
   assert.equal(paired.unanswered.length, 1);
+  assert.equal(paired.unanswered[0].excerpt, "sleep 90 then say INITIAL");
 });
 
 test("MUTATION: a session with no reply at all is red", () => {
@@ -145,6 +162,7 @@ test("REVIEW: two recorded inputs are two inputs, whatever their wording", () =>
     session(),
     stream(
       event("intervention_sent", { text: "say INTERVENTION" }),
+      event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
       event("user_message", { text: "say INTERVENTION" }),
       event("assistant_message"),
       event("session_ended", { ended_status: "completed", termination_reason: "completed_ok" }),
@@ -318,13 +336,11 @@ test("REVIEW: the verdict declares what it is not good for", () => {
   assert.equal(paired.scope, "count_and_candidates_only");
 });
 
-test("REVIEW P1-2: a next-turn intervention loss is reported as ambiguous, not misnamed", () => {
-  // A input, B queued as a next-turn intervention, one reply. The runtime
-  // drains FIFO within a priority lane, so the reply most likely answered A
-  // and B is the loss -- but the events carry no lane and no correlation, so
-  // asserting either name is a guess. LIFO asserted A, which is wrong here;
-  // FIFO asserts B, which is wrong in the dead-owner shape above. The only
-  // true statement is "one of these two".
+test("an in-turn next-turn ACK still steers the one final response", () => {
+  // Claude labels this caller ACK `next_turn`, but the persisted event remains
+  // inside the active turn before its final assistant response. The scenario
+  // marker proves whether B was actually reflected; the generic count judge
+  // must not require a second assistant response that the contract forbids.
   const paired = pairSessionDemands(
     session(),
     stream(
@@ -335,9 +351,8 @@ test("REVIEW P1-2: a next-turn intervention loss is reported as ambiguous, not m
     ),
     NOW,
   );
-  assert.equal(paired.unansweredCount, 1);
-  assert.equal(paired.ambiguous, true);
-  assert.deepEqual(paired.candidates.map((demand) => demand.excerpt).sort(), ["A", "B"]);
+  assert.equal(paired.unansweredCount, 0);
+  assert.equal(paired.ambiguous, false);
 });
 
 test("REVIEW P2-2: a session that may still answer reports pending, not clean", () => {

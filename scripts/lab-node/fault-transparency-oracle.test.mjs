@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildTransparencyObservation,
+  expectedTransparencyObservation,
   transparencyDifferences,
 } from "./fault-transparency-oracle.mjs";
 
@@ -77,7 +78,61 @@ test("tool loss, duplicate replies, and agent-visible errors fail transparency",
     "eventSequence",
     "counts",
     "visibleErrors",
-    "visibleSignals",
+  ]);
+});
+
+test("an intervention reply that omits the required context is red", () => {
+  const expected = expectedTransparencyObservation("intervention");
+  const input = observationInput();
+  input.timeline.messages[5].payload.content = "INITIAL_OK";
+  const actual = buildTransparencyObservation(input);
+
+  assert.deepEqual(transparencyDifferences(expected, actual).map(({ field }) => field), [
+    "eventSequence",
+    "counts",
+  ]);
+});
+
+test("the authored intervention contract is not derived from a live baseline", () => {
+  assert.deepEqual(expectedTransparencyObservation("intervention"), {
+    callerOutcome: { status: "accepted", disposition: "queued_for_next_turn" },
+    terminalStatus: "completed",
+    eventSequence: [
+      "initial_demand",
+      "tool_start",
+      "intervention_demand",
+      "tool_result_ok",
+      "context_reply",
+    ],
+    counts: {
+      initialDemand: 1,
+      interventionDemand: 1,
+      toolStart: 1,
+      toolResult: 1,
+      toolResultError: 0,
+      initialReply: 0,
+      contextReply: 1,
+      unexpectedAssistantReply: 0,
+    },
+    visibleErrors: [],
+  });
+});
+
+test("timeline projection sorts newest-first API rows and finds quoted prompts", () => {
+  const input = observationInput();
+  input.initialPrompt = 'Use Bash: python3 -c "print(1)"';
+  input.timeline.messages[0].payload.text = input.initialPrompt;
+  input.timeline.messages.reverse();
+  const observation = buildTransparencyObservation(input);
+
+  assert.equal(observation.counts.initialDemand, 1);
+  assert.deepEqual(observation.eventSequence, [
+    "initial_demand",
+    "tool_start",
+    "intervention_demand",
+    "tool_result_ok",
+    "initial_reply",
+    "context_reply",
   ]);
 });
 

@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { buildInterventionPayload } from "./fault-harness-contract.mjs";
 import { waitForInFlightTool } from "./fault-harness-process.mjs";
 import { waitFor } from "./fault-harness-runtime.mjs";
-import { assertScenario, settle, shortId } from "./fault-scenario-result.mjs";
+import { settle, shortId } from "./fault-scenario-result.mjs";
 import {
   buildTransparencyObservation,
+  expectedTransparencyObservation,
   transparencyDifferences,
 } from "./fault-transparency-oracle.mjs";
 
@@ -34,25 +35,35 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
   async "steady-state"(runtime, recorder) {
     const general = await runGeneralControl(runtime, recorder);
     const intervention = await runInterventionControl(runtime, recorder);
-    const baselineFailures = [
-      ...validateGeneralObservation(general.observation),
-      ...validateInterventionObservation(intervention.observation),
-    ];
+    const generalDifferences = transparencyDifferences(
+      expectedTransparencyObservation("general"),
+      general.observation,
+    );
+    const interventionDifferences = transparencyDifferences(
+      expectedTransparencyObservation("intervention"),
+      intervention.observation,
+    );
     steadyBaselines = {
       general: general.observation,
       intervention: intervention.observation,
     };
     return {
       id: "steady-state",
-      status: baselineFailures.length === 0 ? "passed" : "failed",
-      baselineFailures,
+      status: generalDifferences.length === 0 && interventionDifferences.length === 0
+        ? "passed"
+        : "failed",
+      authoredContract: {
+        general: expectedTransparencyObservation("general"),
+        intervention: expectedTransparencyObservation("intervention"),
+      },
+      generalDifferences,
+      interventionDifferences,
       general,
       intervention,
     };
   },
 
   async "restart-adopt"(runtime, recorder) {
-    const baselines = await ensureSteadyBaselines(runtime, recorder);
     const seed = shortId();
     const initialMarker = `TRANSPARENT_GENERAL_DONE_${seed}`;
     const initialPrompt = delayedMarkerPrompt(initialMarker);
@@ -91,7 +102,13 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
       initialMarker,
       callerOutcome: GENERAL_CALLER_OUTCOME,
     });
-    const differences = transparencyDifferences(baselines.general, observation);
+    const differences = transparencyDifferences(
+      expectedTransparencyObservation("general"),
+      observation,
+    );
+    const steadyDifferences = steadyBaselines
+      ? transparencyDifferences(steadyBaselines.general, observation)
+      : null;
     const structuralFailures = [];
     if (runnerAfter.pid !== runnerBefore.pid) structuralFailures.push("runner pid changed");
     if (JSON.stringify(runnerAfter.config) !== JSON.stringify(runnerBefore.config)) {
@@ -112,13 +129,14 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
       manifestBefore,
       manifestAfter,
       observation,
-      transparencyDifferences: differences,
+      authoredContract: expectedTransparencyObservation("general"),
+      contractDifferences: differences,
+      steadyObservationDifferences: steadyDifferences,
       structuralFailures,
     };
   },
 
   async "restart-intervention-window"(runtime, recorder) {
-    const baselines = await ensureSteadyBaselines(runtime, recorder);
     const spec = interventionSpec();
     const deliveryId = randomUUID();
     const sessionId = await runtime.createSession(spec.initialPrompt);
@@ -167,7 +185,13 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         contextToken: spec.contextToken,
         callerOutcome,
       });
-      const differences = transparencyDifferences(baselines.intervention, observation);
+      const differences = transparencyDifferences(
+        expectedTransparencyObservation("intervention"),
+        observation,
+      );
+      const steadyDifferences = steadyBaselines
+        ? transparencyDifferences(steadyBaselines.intervention, observation)
+        : null;
       return {
         id: "restart-intervention-window",
         status: differences.length === 0 ? "passed" : "failed",
@@ -181,7 +205,9 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         delivery,
         retryCount: 0,
         observation,
-        transparencyDifferences: differences,
+        authoredContract: expectedTransparencyObservation("intervention"),
+        contractDifferences: differences,
+        steadyObservationDifferences: steadyDifferences,
       };
     } catch (error) {
       scenarioError = error;
@@ -202,23 +228,6 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
     }
   },
 });
-
-async function ensureSteadyBaselines(runtime, recorder) {
-  if (steadyBaselines) return steadyBaselines;
-  const general = await runGeneralControl(runtime, recorder);
-  const intervention = await runInterventionControl(runtime, recorder);
-  const failures = [
-    ...validateGeneralObservation(general.observation),
-    ...validateInterventionObservation(intervention.observation),
-  ];
-  assertScenario(failures.length === 0, `steady control is red: ${failures.join("; ")}`);
-  steadyBaselines = {
-    general: general.observation,
-    intervention: intervention.observation,
-  };
-  await recorder.event("implicit_steady_baseline_captured", { general, intervention });
-  return steadyBaselines;
-}
 
 async function runGeneralControl(runtime, recorder) {
   const seed = shortId();
@@ -272,50 +281,6 @@ async function runInterventionControl(runtime, recorder) {
     observation,
   });
   return { sessionId, deliveryId, inFlightTool, callerOutcome, observation };
-}
-
-function validateGeneralObservation(observation) {
-  return validateObservation(observation, {
-    initialDemand: 1,
-    interventionDemand: 0,
-    toolStart: 1,
-    toolResult: 1,
-    toolResultError: 0,
-    initialReply: 1,
-    contextReply: 0,
-  });
-}
-
-function validateInterventionObservation(observation) {
-  const failures = validateObservation(observation, {
-    initialDemand: 1,
-    interventionDemand: 1,
-    toolStart: 1,
-    toolResult: 1,
-    toolResultError: 0,
-    initialReply: 0,
-    contextReply: 1,
-  });
-  if (observation.callerOutcome?.status !== "fulfilled") {
-    failures.push("intervention caller observed failure");
-  }
-  return failures;
-}
-
-function validateObservation(observation, expectedCounts) {
-  const failures = [];
-  if (observation.terminalStatus !== "completed") {
-    failures.push(`terminal status was ${observation.terminalStatus}`);
-  }
-  for (const [name, expected] of Object.entries(expectedCounts)) {
-    if (observation.counts[name] !== expected) {
-      failures.push(`${name} count was ${observation.counts[name]}, expected ${expected}`);
-    }
-  }
-  if (observation.visibleErrors.length > 0) {
-    failures.push(`${observation.visibleErrors.length} user/agent-visible error signal(s)`);
-  }
-  return failures;
 }
 
 async function activeOwnership(runtime, sessionId) {

@@ -105,10 +105,12 @@ Run one scenario or the complete prioritized set:
 ```
 
 `all` first runs steady-state, restart-adopt, and restart-intervention-window.
-The steady general and intervention observations are the transparency oracle:
-restart scenarios must have the same caller result, event order, message and
-tool payloads, response counts, terminal status, and visible error set. Only
-timestamps, per-run identifiers, and delay are ignored. The recovery-window
+The transparency oracle is authored before execution from the required normal
+general and intervention semantics; it is not copied from the current live
+behavior. `steady-state` is judged against that contract too. Restart scenarios
+must have the same accepted caller outcome, semantic event order, tool result,
+response counts, terminal status, and visible error set. Only timestamps,
+per-run identifiers, and delay are ignored. The recovery-window
 scenario observes the database adoption transition before sending its single
 intervention; it never retries a rejected call.
 
