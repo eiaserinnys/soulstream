@@ -15,6 +15,14 @@ import {
   waitForInFlightTool,
 } from "./fault-harness-process.mjs";
 import { delay, waitFor } from "./fault-harness-runtime.mjs";
+import {
+  assertScenario,
+  countLogLines,
+  serializeError,
+  settle,
+  shortId,
+  withBaselineHonesty,
+} from "./fault-scenario-result.mjs";
 
 const SCENARIO_ORDER = ["F9", "dead-owner", "F1", "F11", "F7"];
 const LOG_TERMS = {
@@ -61,7 +69,8 @@ export async function runCanonicalScenario(id, runtime, recorder) {
       }
     }
   }
-  const invariant = await recorder.invariant(`after-${id}`, [], baseline.violations, 90_000);
+  const invariant = await recorder.invariant(`after-${id}`, baseline.violations, 90_000);
+  result = withBaselineHonesty(result, baseline, invariant);
   if (invariant.newViolations.length > 0 && !failure) {
     failure = {
       name: "InvariantViolation",
@@ -73,16 +82,6 @@ export async function runCanonicalScenario(id, runtime, recorder) {
   await recorder.scenario(id, result);
   await recorder.event("scenario_finished", { id, status: result.status });
   return result;
-}
-
-export async function runTrafficCycles(options, runtime, recorder) {
-  const queue = Array.from({ length: options.cycles }, (_, index) => index + 1);
-  const results = [];
-  const workers = Array.from({ length: options.concurrency }, (_, workerIndex) => (
-    runCycleWorker(workerIndex + 1, queue, results, options.intervalSeconds, runtime, recorder)
-  ));
-  await Promise.all(workers);
-  return results.sort((left, right) => left.cycle - right.cycle);
 }
 
 const SCENARIOS = {
@@ -366,97 +365,6 @@ const SCENARIOS = {
   },
 };
 
-async function runCycleWorker(worker, queue, results, intervalSeconds, runtime, recorder) {
-  while (queue.length > 0) {
-    const cycle = queue.shift();
-    if (cycle === undefined) return;
-    const baseline = await recorder.invariant(`before-cycle-${cycle}`);
-    const result = await runTrafficCycle(cycle, worker, runtime, recorder);
-    results.push(result);
-    const invariant = await recorder.invariant(
-      `after-cycle-${cycle}`,
-      [],
-      baseline.violations,
-      90_000,
-    );
-    result.invariant = invariant;
-    if (invariant.newViolations.length > 0) result.status = "failed";
-    await recorder.scenario(`cycle-${cycle}`, result);
-    if (queue.length > 0) await delay(intervalSeconds * 1_000);
-  }
-}
-
-async function runTrafficCycle(cycle, worker, runtime, recorder) {
-  const seed = shortId();
-  const parentMarker = `CYCLE_PARENT_${seed}`;
-  const initialMarker = `CYCLE_INITIAL_${seed}`;
-  const finalMarker = `CYCLE_FINAL_${seed}`;
-  const parentId = await runtime.createSession(
-    `Reply with exactly ${parentMarker}. When a child completion arrives, acknowledge it briefly.`,
-  );
-  await runtime.waitForMarker(parentId, parentMarker);
-  await runtime.waitForTerminal(parentId);
-  const sessionId = await runtime.createSession(`Reply with exactly ${initialMarker}.`, {
-    caller_session_id: parentId,
-  });
-  await runtime.waitForMarker(sessionId, initialMarker);
-  await runtime.waitForTerminal(sessionId);
-  const initialDelivery = await waitForConsumedDelivery(
-    runtime,
-    sessionId,
-    "initial cycle completion",
-  );
-  const cancelText = "Use Bash once to run "
-    + 'python3 -c "import time; time.sleep(12)"'
-    + `, then reply CYCLE_CANCELLED_${seed}.`;
-  await runtime.intervene(sessionId, buildInterventionPayload(randomUUID(), cancelText));
-  await runtime.waitForRunner(sessionId);
-  await delay(1_000);
-  await runtime.interrupt(sessionId);
-  const interruptedStatus = await runtime.waitForTerminal(sessionId);
-  const interruptedDelivery = await waitForConsumedDelivery(
-    runtime,
-    sessionId,
-    "interrupted cycle completion",
-    initialDelivery.delivery_id,
-  );
-  await runtime.intervene(
-    sessionId,
-    buildInterventionPayload(randomUUID(), `Reply with exactly ${finalMarker}.`),
-  );
-  await runtime.waitForMarker(sessionId, finalMarker);
-  const finalStatus = await runtime.waitForTerminal(sessionId);
-  const completionDelivery = await waitForConsumedDelivery(
-    runtime,
-    sessionId,
-    "final cycle completion",
-    interruptedDelivery.delivery_id,
-  );
-  const consumptionCount = await runtime.consumptionCount(completionDelivery.relation_key);
-  const initialCount = await runtime.countTimelineEvents(sessionId, "assistant_message", initialMarker);
-  const finalCount = await runtime.countTimelineEvents(sessionId, "assistant_message", finalMarker);
-  assertScenario(initialCount === 1 && finalCount === 1, "traffic cycle lost or duplicated a marker");
-  assertScenario(consumptionCount === 1, `traffic cycle completion consumption count was ${consumptionCount}`);
-  await recorder.event("traffic_cycle_finished", { cycle, worker, sessionId, finalStatus });
-  return {
-    id: `cycle-${cycle}`,
-    status: "passed",
-    cycle,
-    worker,
-    parentId,
-    sessionId,
-    interruptedStatus,
-    finalStatus,
-    markerCounts: { initial: initialCount, final: finalCount },
-    completionDeliveries: {
-      initial: initialDelivery,
-      interrupted: interruptedDelivery,
-      final: completionDelivery,
-    },
-    consumptionCount,
-  };
-}
-
 /**
  * A prompt whose Bash call stays in flight for a known duration.
  *
@@ -471,29 +379,4 @@ function delayedMarkerPrompt(marker, seconds) {
   return "Use Bash exactly once to run "
     + `python3 -c "import time; time.sleep(${seconds})". `
     + `After it finishes, reply with exactly ${marker}.`;
-}
-
-function assertScenario(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-async function settle(promise) {
-  try { return { status: "fulfilled", value: await promise }; } catch (error) {
-    return { status: "rejected", reason: serializeError(error) };
-  }
-}
-
-function serializeError(error) {
-  return {
-    name: error instanceof Error ? error.name : "Error",
-    message: error instanceof Error ? error.message : String(error),
-  };
-}
-
-function countLogLines(logs) {
-  return { node: logs.node.length, orch: logs.orch.length };
-}
-
-function shortId() {
-  return randomUUID().slice(0, 8).toUpperCase();
 }

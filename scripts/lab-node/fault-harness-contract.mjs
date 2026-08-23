@@ -33,6 +33,13 @@ export function parseHarnessArguments(argv) {
     rejectUnexpectedArguments(argv, 1);
     return { command: "all" };
   }
+  // Proves every judge can still see a violation. Cheap, and the only reason
+  // the fake `user_message_loss` invariant survived as long as it did is that
+  // nothing like this existed to ask it.
+  if (command === "mutation") {
+    rejectUnexpectedArguments(argv, 1);
+    return { command: "mutation" };
+  }
   if (command === "scenario") {
     if (!Object.hasOwn(SCENARIO_DEFINITIONS, subject)) {
       throw new Error(`unknown scenario: ${subject ?? "<missing>"}`);
@@ -52,7 +59,7 @@ export function parseHarnessArguments(argv) {
     rejectCycleUnknownArguments(argv);
     return { command: "cycle", concurrency, cycles, intervalSeconds };
   }
-  throw new Error("usage: fault-harness.sh <cycle|scenario|all>");
+  throw new Error("usage: fault-harness.sh <cycle|scenario|all|mutation>");
 }
 
 export function toggleReleaseGeneration(text) {
@@ -119,12 +126,17 @@ export function evaluateInvariantSnapshot(snapshot) {
   if (snapshot.activationManifestMismatch) {
     violations.push(invariant("activation_manifest", 1));
   }
-  const unanswered = snapshot.unansweredUserInput ?? [];
+  // The user-facing invariant: every input got a reply or a visible failure.
+  //
+  // It replaces two entries. `user_message_loss` read a parameter every caller
+  // set to `[]`, so it was incapable of firing. `unanswered_user_input`
+  // compared the newest input id against the newest reply id, so one reply
+  // cleared every input at once and it could not see `intervention_sent` at
+  // all. Both are deleted rather than kept alongside: a judge left in place
+  // after it is known not to work is a judge the next reader will believe.
+  const unanswered = snapshot.unansweredDemands ?? [];
   if (unanswered.length > 0) {
-    violations.push(invariant("unanswered_user_input", unanswered.length, unanswered));
-  }
-  if (snapshot.messageLosses.length > 0) {
-    violations.push(invariant("user_message_loss", snapshot.messageLosses.length, snapshot.messageLosses));
+    violations.push(invariant("unanswered_demand", unanswered.length, unanswered));
   }
   return violations;
 }
