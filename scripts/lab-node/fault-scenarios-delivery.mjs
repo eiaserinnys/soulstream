@@ -233,7 +233,7 @@ export const DELIVERY_SCENARIOS = Object.freeze({
   },
 
   async "delivery-accepted-cas"(runtime, recorder) {
-    const baseline = await steadyDeliveryBaseline(runtime, recorder, SINGLE_LABEL, true);
+    const baseline = await steadyDeliveryBaseline(runtime, recorder, SINGLE_LABEL, "delivered");
     const seed = shortId();
     const marker = `DELIVERY_ACCEPTED_CAS_OK_${seed}`;
     const text = `Reply with exactly ${marker}.`;
@@ -278,7 +278,7 @@ export const DELIVERY_SCENARIOS = Object.freeze({
         baseline,
         candidate,
         labels: SINGLE_LABEL,
-        callerDisposition: "queued_for_next_turn",
+        callerDisposition: "delivered",
         structuralFailures,
         evidence: {
           delivery: deliveryRow,
@@ -296,7 +296,7 @@ export const DELIVERY_SCENARIOS = Object.freeze({
   },
 });
 
-async function steadyDeliveryBaseline(runtime, recorder, labels, compareCaller = false) {
+async function steadyDeliveryBaseline(runtime, recorder, labels, callerDisposition = null) {
   const seed = shortId();
   const baseMarker = `DELIVERY_BASE_${seed}`;
   const sessionId = await runtime.createSession(`Reply with exactly ${baseMarker}.`);
@@ -332,11 +332,11 @@ async function steadyDeliveryBaseline(runtime, recorder, labels, compareCaller =
       afterEventId: beforeEventId,
       terminalStatus: await runtime.sessionStatus(sessionId),
       deliveries: specs,
-      callerOutcome: compareCaller ? outcomes.at(-1) : null,
+      callerOutcome: callerDisposition === null ? null : outcomes.at(-1),
     });
     const authoredContract = expectedDeliveryObservation(
       labels,
-      compareCaller ? "queued_for_next_turn" : null,
+      callerDisposition,
     );
     const contractDifferences = transparencyDifferences(authoredContract, observation);
     await recorder.event("steady_delivery_observation", {
