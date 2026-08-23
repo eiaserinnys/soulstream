@@ -93,7 +93,7 @@ test("smoke validation fixes both turns to one session and restarts only the nod
   assert.doesNotMatch(smoke, /durable_next_turn/);
 });
 
-test("fault harness is lab-only, bounded, and inventories all five scenarios", () => {
+test("fault harness is lab-only, bounded, and inventories all seven scenarios", () => {
   const wrapper = readFileSync(join(directory, "fault-harness.sh"), "utf8");
   const runtime = readFileSync(join(directory, "fault-harness-runtime.mjs"), "utf8");
   const processFaults = readFileSync(join(directory, "fault-harness-process.mjs"), "utf8");
@@ -106,13 +106,27 @@ test("fault harness is lab-only, bounded, and inventories all five scenarios", (
   assert.match(runtime, /unsafe LAB_ROOT/);
   assert.match(runtime, /protectedPorts\.includes/);
   assert.match(runtime, /soulstream-lab-/);
+  assert.match(runtime, /waitForRunnerOperationStateSince/);
+  assert.match(scenarios, /reserveAttemptedBeforeSettlement: false/);
+  assert.match(scenarios, /interventionAttemptedBeforeSettlement: false/);
+  assert.doesNotMatch(scenarios, /runner execution settled without host restart/);
   assert.doesNotMatch(
     runtime + processFaults + scenarios,
     /serendipity-postgres|haniel_(pull|restart|start|stop)/,
   );
   assert.match(scenarios, /F9 injection and lab restoration failed/);
   assert.match(scenarios, /dead-owner injection and lab restoration failed/);
-  for (const scenario of ["F1", "F11", "F9", "dead-owner", "F7"]) {
+  assert.match(scenarios, /runner-death-live-host injection and cleanup failed/);
+  assert.match(scenarios, /activate-rollback injection and cleanup failed/);
+  for (const scenario of [
+    "F1",
+    "F11",
+    "F9",
+    "dead-owner",
+    "runner-death-live-host",
+    "activate-rollback",
+    "F7",
+  ]) {
     assert.match(scenarios, new RegExp(`(?:async )?["']?${scenario}["']?\\(`));
   }
 });

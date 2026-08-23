@@ -20,6 +20,16 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     expectedOutcome: "The dead owner expires and a new ownership generation executes the next turn.",
     verdict: "The old generation is failed with dead-owner evidence and a later generation reaches terminal.",
   }),
+  "runner-death-live-host": Object.freeze({
+    injection: "SIGTERM an in-flight runner and remove its registration while the host remains live and no caller sends more work.",
+    expectedOutcome: "The active turn settles by itself before any reserve, intervention, or host restart.",
+    verdict: "A post-fault host snapshot no longer contains the session operation, the session is terminal, and only then a later turn completes once on a replacement runner.",
+  }),
+  "activate-rollback": Object.freeze({
+    injection: "Delay and reject activation in the lab database while replacing runner.pid with conflicting live pid evidence.",
+    expectedOutcome: "The failed activation leaves no spawned child and converges the provisional turn to a terminal ownership state.",
+    verdict: "The spawned pid is dead, the session is error, and no open or orphaned_spawn ownership remains after a retry interval.",
+  }),
   F7: Object.freeze({
     injection: "Point a completion target at a missing node and repeatedly advance only its lab retry clock.",
     expectedOutcome: "The canonical 16-attempt budget ends in an explained dead letter; a live-target control delivery consumes exactly once.",

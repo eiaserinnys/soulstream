@@ -96,10 +96,13 @@ Run one scenario or the complete prioritized set:
 ```bash
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario F9
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario dead-owner
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario runner-death-live-host
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario activate-rollback
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh all
 ```
 
-`all` runs F9, dead-owner, F1, F11, and F7 in that order, then one normal
+`all` runs runner-death-live-host, activate-rollback, F9, dead-owner, F1, F11,
+and F7 in that order, then one normal
 traffic cycle. F1 includes both SIGTERM and SIGKILL. F9 toggles only the lab
 bearer credential's non-secret generation marker so the release identity
 changes without changing runtime behavior. The new generation stays canonical
