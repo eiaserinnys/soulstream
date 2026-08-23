@@ -592,13 +592,7 @@ function registrationOwnsAttachedRunner(
   task: Task,
   registration: RunnerRegistration,
 ): boolean {
-  if (task.executionOwnershipReservation) return false;
-  const ownership = task.executionOwnership;
-  const lifecycle = registration.lifecycle;
-  return ownership !== undefined
-    && lifecycle !== null
-    && registration.registrationId === ownership.registrationId
-    && registration.pid === ownership.pid
-    && registration.pidStartIdentity === ownership.startIdentity
-    && lifecycle.execution_command_id === ownership.executionCommandId;
+  const attachedRegistrationId = task.runner?.dispatcher.registrationId();
+  return attachedRegistrationId !== undefined
+    && registration.registrationId === attachedRegistrationId;
 }

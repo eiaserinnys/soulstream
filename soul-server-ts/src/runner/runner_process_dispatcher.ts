@@ -352,6 +352,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return this.instanceId;
   }
 
+  registrationId(): string | undefined {
+    return this.spawnedProcess?.registrationId;
+  }
+
   async releaseEventStreamRegistration(): Promise<void> {
     // The flag has to be set before the await. An adoption can be rejected
     // before the pump has even started registering, and then there is nothing

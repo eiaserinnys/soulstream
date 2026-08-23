@@ -47,6 +47,7 @@ export interface RunnerCommandDispatcher {
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
   dispatcherId?(): string;
+  registrationId(): string | undefined;
   sendControlFrame(frame: RunnerControlFrame): Promise<boolean>;
   requestContext(correlationId: string): {
     signal: AbortSignal;
@@ -91,7 +92,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
   private activeExecuteCommandId: string | undefined;
   private preparedExecuteCommandId: string | undefined;
-  private readonly registrationId = `in-process:${randomUUID()}`;
+  private readonly attachedRegistrationId = `in-process:${randomUUID()}`;
 
   constructor(
     private readonly target: EnginePort,
@@ -182,11 +183,15 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     const executionCommandId = commandId ?? `execute:${randomUUID()}`;
     this.preparedExecuteCommandId = executionCommandId;
     return {
-      registrationId: this.registrationId,
+      registrationId: this.attachedRegistrationId,
       pid: process.pid,
       startIdentity: observed.startIdentity,
       executionCommandId,
     };
+  }
+
+  registrationId(): string {
+    return this.attachedRegistrationId;
   }
 
   async rollbackExecutionIdentity(_proof: ExecutionIdentityProof): Promise<void> {

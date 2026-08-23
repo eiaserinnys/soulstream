@@ -29,7 +29,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const strandedTask = task("session-a");
     const { runner, detachHost } = finishedRunner();
     strandedTask.runner = runner;
-    ownRegistration(strandedTask, finishedRegistration);
     // A pending execution promise is the other half of the same hold: without
     // it being dropped the skip only changes which field it names.
     strandedTask.executionPromise = new Promise<void>(() => {});
@@ -56,20 +55,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("does not detach a live successor while replaying an older terminal registration", async () => {
     const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
     const currentTask = task("session-a");
-    const { runner, detachHost } = finishedRunner();
+    const { runner, detachHost } = finishedRunner("registration-new");
     const currentExecution = new Promise<void>(() => {});
     currentTask.runner = runner;
     currentTask.executionPromise = currentExecution;
-    currentTask.executionOwnership = {
-      ownerKind: "runner_process",
-      manifestId: "sha-new",
-      runtimeEnvIdentity: "env-new",
-      ownershipGeneration: 2,
-      registrationId: "registration-new",
-      pid: 4242,
-      startIdentity: "start-4242",
-      executionCommandId: "execute-new",
-    };
     const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => currentTask),
@@ -93,7 +82,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const stranded = registration({ lifecycleState: "completed", pidAlive: false });
     const strandedTask = task("session-a");
     strandedTask.runner = abandonedRunner();
-    ownRegistration(strandedTask, stranded);
     const subject = makeSubject([stranded], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
@@ -563,7 +551,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       if (mode === "offline") return Promise.resolve();
       onAttemptCreated?.(failedRunner.runner);
       recovered.runner = failedRunner.runner;
-      ownRegistration(recovered, current);
       return Promise.reject(new Error("transient adoption failure"));
     });
     const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
@@ -1801,7 +1788,7 @@ function makeSubject(
   };
 }
 
-function finishedRunner(): {
+function finishedRunner(registrationId = "registration-a"): {
   runner: NonNullable<Task["runner"]>;
   detachHost: ReturnType<typeof vi.fn>;
 } {
@@ -1812,6 +1799,7 @@ function finishedRunner(): {
         detachHost,
         isClosed: () => false,
         dispatcherId: () => "live-one",
+        registrationId: () => registrationId,
       } as unknown as NonNullable<Task["runner"]>["dispatcher"],
       engine: {} as NonNullable<Task["runner"]>["engine"],
       eventPersistence: "runner",
@@ -1825,6 +1813,7 @@ function abandonedRunner(): NonNullable<Task["runner"]> {
     dispatcher: {
       detachHost: vi.fn(async () => {}),
       isClosed: () => true,
+      registrationId: () => "registration-a",
     } as unknown as NonNullable<Task["runner"]>["dispatcher"],
     engine: {} as NonNullable<Task["runner"]>["engine"],
     eventPersistence: "runner",
@@ -1852,7 +1841,10 @@ function failedRecoveryRunner(): {
   const detachHost = vi.fn(async () => {});
   return {
     runner: {
-      dispatcher: { detachHost } as NonNullable<Task["runner"]>["dispatcher"],
+      dispatcher: {
+        detachHost,
+        registrationId: () => "registration-a",
+      } as NonNullable<Task["runner"]>["dispatcher"],
       engine: {} as NonNullable<Task["runner"]>["engine"],
       eventPersistence: "runner",
     },
@@ -1946,18 +1938,5 @@ function task(sessionId: string): Task {
     lastEventId: 0,
     lastReadEventId: 0,
     interventionQueue: [],
-  };
-}
-
-function ownRegistration(candidate: Task, owned: RunnerRegistration): void {
-  candidate.executionOwnership = {
-    ownerKind: "runner_process",
-    manifestId: owned.config.releaseManifestId ?? owned.config.codeSha,
-    runtimeEnvIdentity: owned.config.runtimeEnvIdentity ?? `legacy:${owned.config.codeSha}`,
-    ownershipGeneration: 1,
-    registrationId: owned.registrationId!,
-    pid: owned.pid!,
-    startIdentity: owned.pidStartIdentity!,
-    executionCommandId: owned.lifecycle!.execution_command_id,
   };
 }

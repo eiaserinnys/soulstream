@@ -101,6 +101,7 @@ export interface SpawnRunnerProcessInput extends Omit<RunnerChildConfig, "schema
 
 export interface SpawnedRunnerProcess {
   pid: number;
+  registrationId: string;
   paths: RunnerProcessPaths;
   config: RunnerChildConfig;
   adopted: boolean;
@@ -306,7 +307,13 @@ export class RunnerProcessSpawner {
       throw registrationError;
     }
     child.unref();
-    return { pid: child.pid, paths, config: validatedConfig, adopted: false };
+    return {
+      pid: child.pid,
+      registrationId: registrationIdentity.registrationId,
+      paths,
+      config: validatedConfig,
+      adopted: false,
+    };
   }
   async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
     const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
@@ -332,7 +339,7 @@ export class RunnerProcessSpawner {
     if (config.sessionId !== input.sessionId || !samePaths(config.paths, paths)) {
       throw new Error(`runner registration mismatch for ${input.sessionId}`);
     }
-    return { pid, paths, config, adopted: true };
+    return { pid, registrationId: identity.registrationId, paths, config, adopted: true };
   }
   async terminate(
     paths: RunnerProcessPaths,
