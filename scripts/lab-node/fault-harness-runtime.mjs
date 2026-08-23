@@ -17,6 +17,11 @@ import {
   countMatchingTimelineEvents,
   redactEvidenceLine,
 } from "./fault-harness-contract.mjs";
+import {
+  installObservedAdoptionWindow,
+  removeObservedAdoptionWindow,
+  waitForObservedAdoptionWindow,
+} from "./fault-harness-adoption-window.mjs";
 import { EvidenceRecorder } from "./fault-harness-evidence.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -394,6 +399,18 @@ export class LabRuntime {
     `);
   }
 
+  async installAdoptionWindow(sessionId, delaySeconds = 20) {
+    return await installObservedAdoptionWindow(this, sessionId, delaySeconds);
+  }
+
+  async waitForAdoptionWindow(sessionId, timeoutMs = 60_000) {
+    return await waitForObservedAdoptionWindow(this, sessionId, timeoutMs);
+  }
+
+  async removeAdoptionWindow() {
+    return await removeObservedAdoptionWindow(this);
+  }
+
   runnerAlive(pid) {
     return processAlive(pid);
   }
@@ -535,11 +552,24 @@ export class LabRuntime {
     `);
   }
 
+  async deliveryById(deliveryId) {
+    assertIdentifier(deliveryId, "delivery id");
+    return await this.psqlOne(`
+      SELECT row_to_json(delivery) FROM (
+        SELECT delivery_id, relation_key, source_session_id, target_session_id,
+          state, aggregate_state, attempt_count, last_error,
+          dead_letter_reason, consumed_reason
+        FROM session_deliveries
+        WHERE delivery_id = ${sqlLiteral(deliveryId)}
+      ) AS delivery
+    `);
+  }
+
   async ownerships(sessionId) {
     return await this.psqlOne(`
       SELECT COALESCE(json_agg(row_to_json(ownership)), '[]'::json) FROM (
-        SELECT ownership_generation, phase, manifest_id, registration_id,
-          pid, start_identity, runner_fact, failure_reason
+        SELECT ownership_generation, owner_kind, phase, manifest_id, registration_id,
+          pid, start_identity, execution_command_id, runner_fact, failure_reason
         FROM session_execution_ownerships
         WHERE session_id = ${sqlLiteral(sessionId)}
         ORDER BY ownership_generation

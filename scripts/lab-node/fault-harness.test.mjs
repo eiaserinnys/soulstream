@@ -50,6 +50,9 @@ test("runner operation snapshots expose active-turn presence without patch-speci
 
 test("fault catalog is complete and F1 explicitly covers both host signals", () => {
   assert.deepEqual(Object.keys(SCENARIO_DEFINITIONS), [
+    "steady-state",
+    "restart-adopt",
+    "restart-intervention-window",
     "F1",
     "F11",
     "F9",
@@ -91,7 +94,17 @@ test("traffic loop defaults are bounded and concurrency above two is rejected", 
   );
 });
 
-test("scenario CLI accepts only the seven canonical ids", () => {
+test("scenario CLI accepts the transparent baseline and restart gates", () => {
+  for (const scenarioId of [
+    "steady-state",
+    "restart-adopt",
+    "restart-intervention-window",
+  ]) {
+    assert.deepEqual(parseHarnessArguments(["scenario", scenarioId]), {
+      command: "scenario",
+      scenarioId,
+    });
+  }
   assert.deepEqual(parseHarnessArguments(["scenario", "F9"]), {
     command: "scenario",
     scenarioId: "F9",

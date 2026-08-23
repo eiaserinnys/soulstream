@@ -1,4 +1,19 @@
 export const SCENARIO_DEFINITIONS = Object.freeze({
+  "steady-state": Object.freeze({
+    injection: "None. Exercise one ordinary turn and one in-flight Claude intervention turn.",
+    expectedOutcome: "Each demand and tool result appears once; Claude queues the intervention for the next turn and completes it once.",
+    verdict: "The captured general and intervention observations are the canonical user/agent-visible transparency baselines.",
+  }),
+  "restart-adopt": Object.freeze({
+    injection: "Restart the node on the same release and manifest while a 90-second tool is actually in flight.",
+    expectedOutcome: "The host adopts the same runner and the original turn completes exactly once without a restart-visible signal.",
+    verdict: "The user/agent-visible observation is identical to the steady general baseline; only delay may differ.",
+  }),
+  "restart-intervention-window": Object.freeze({
+    injection: "Pause the observed identity-proven to active adoption transition, then submit one intervention before recovery completes.",
+    expectedOutcome: "The intervention is accepted and consumed exactly once after recovery without retry or any restart-visible signal.",
+    verdict: "The user/agent-visible observation is identical to the steady intervention baseline; only delay may differ.",
+  }),
   F1: Object.freeze({
     modes: Object.freeze(["SIGTERM", "SIGKILL"]),
     injection: "Stop the worker host during an active runner turn, restart it, and retain the detached runner.",

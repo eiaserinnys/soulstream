@@ -93,11 +93,15 @@ test("smoke validation fixes both turns to one session and restarts only the nod
   assert.doesNotMatch(smoke, /durable_next_turn/);
 });
 
-test("fault harness is lab-only, bounded, and inventories all seven scenarios", () => {
+test("fault harness is lab-only, bounded, and inventories transparent plus fault scenarios", () => {
   const wrapper = readFileSync(join(directory, "fault-harness.sh"), "utf8");
   const runtime = readFileSync(join(directory, "fault-harness-runtime.mjs"), "utf8");
   const processFaults = readFileSync(join(directory, "fault-harness-process.mjs"), "utf8");
   const scenarios = readFileSync(join(directory, "fault-scenarios.mjs"), "utf8");
+  const transparencyScenarios = readFileSync(
+    join(directory, "fault-scenarios-transparency.mjs"),
+    "utf8",
+  );
   assert.match(wrapper, /load_lab_env/);
   assert.match(wrapper, /export LAB_ROOT/);
   assert.match(wrapper, /SOULSTREAM_HEAVY_LOCK_HELD=1/);
@@ -107,17 +111,28 @@ test("fault harness is lab-only, bounded, and inventories all seven scenarios", 
   assert.match(runtime, /protectedPorts\.includes/);
   assert.match(runtime, /soulstream-lab-/);
   assert.match(runtime, /waitForRunnerOperationStateSince/);
+  assert.match(runtime, /waitForAdoptionWindow/);
   assert.match(scenarios, /reserveAttemptedBeforeSettlement: false/);
   assert.match(scenarios, /interventionAttemptedBeforeSettlement: false/);
   assert.doesNotMatch(scenarios, /runner execution settled without host restart/);
   assert.doesNotMatch(
-    runtime + processFaults + scenarios,
+    runtime + processFaults + scenarios + transparencyScenarios,
     /serendipity-postgres|haniel_(pull|restart|start|stop)/,
   );
   assert.match(scenarios, /F9 injection and lab restoration failed/);
   assert.match(scenarios, /dead-owner injection and lab restoration failed/);
   assert.match(scenarios, /runner-death-live-host injection and cleanup failed/);
   assert.match(scenarios, /activate-rollback injection and cleanup failed/);
+  for (const scenario of [
+    "steady-state",
+    "restart-adopt",
+    "restart-intervention-window",
+  ]) {
+    assert.match(
+      transparencyScenarios,
+      new RegExp(`(?:async )?["']?${scenario}["']?\\(`),
+    );
+  }
   for (const scenario of [
     "F1",
     "F11",

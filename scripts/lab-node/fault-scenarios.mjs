@@ -23,8 +23,15 @@ import {
   shortId,
   withBaselineHonesty,
 } from "./fault-scenario-result.mjs";
+import {
+  TRANSPARENCY_LOG_TERMS,
+  TRANSPARENCY_SCENARIOS,
+} from "./fault-scenarios-transparency.mjs";
 
 const SCENARIO_ORDER = [
+  "steady-state",
+  "restart-adopt",
+  "restart-intervention-window",
   "runner-death-live-host",
   "activate-rollback",
   "F9",
@@ -34,6 +41,7 @@ const SCENARIO_ORDER = [
   "F7",
 ];
 const LOG_TERMS = {
+  ...TRANSPARENCY_LOG_TERMS,
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
   F9: ["F9_", "runner adoption release identity mismatch", "offline",
@@ -104,6 +112,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
 }
 
 const SCENARIOS = {
+  ...TRANSPARENCY_SCENARIOS,
   async "runner-death-live-host"(runtime, recorder) {
     const seed = shortId();
     const oldMarker = `RUNNER_DEATH_LIVE_HOST_OLD_${seed}`;
