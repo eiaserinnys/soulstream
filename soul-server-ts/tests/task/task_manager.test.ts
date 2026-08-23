@@ -2200,7 +2200,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
-  it("DB running row without active execution is auto-resumed instead of queued", async () => {
+  it("queues input for a hydrated running session without spawning a competing execution", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
       session_id: "sess-stale-running",
@@ -2231,19 +2231,28 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       onResume,
     );
 
-    expect(result).toEqual({ autoResumed: true });
+    expect(result).toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "not_supported",
+    });
     const memTask = tm.getTask("sess-stale-running");
     expect(memTask).toBeDefined();
     expect(memTask!.status).toBe("running");
     expect(memTask!.codexThreadId).toBe("thr-stale");
+    expect(memTask!.interventionQueue).toEqual([
+      expect.objectContaining({ text: "resume", user: "u" }),
+    ]);
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "sess-stale-running",
-      expect.objectContaining({ type: "user_message", text: "resume" }),
+      expect.objectContaining({ type: "intervention_sent", text: "resume" }),
     );
-    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransition).not.toHaveBeenCalled();
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.updateSession).not.toHaveBeenCalled();
-    expect(onResume).toHaveBeenCalledWith(memTask);
+    expect(onResume).not.toHaveBeenCalled();
   });
 
   it.each(["error", "interrupted"] as const)("DB에 %s 세션도 hydrate 가능 (terminal 모두)", async (status) => {

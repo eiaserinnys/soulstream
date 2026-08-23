@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
-import type {
-  ActiveTaskRecovery,
-  InterventionTaskRoute,
-} from "./task_active_recovery.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
+  isActiveTaskStatus,
   isTerminalTaskStatus,
   type CallerInfo,
   type InterventionMessage,
@@ -99,7 +96,6 @@ export interface TaskInterventionRouteDeps {
   getTask(sessionId: string): Task | undefined;
   loadEvictedTask(sessionId: string): Promise<Task | null>;
   rememberTask(task: Task): void;
-  activeTaskRecovery: Pick<ActiveTaskRecovery, "prepareForIntervention">;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
     "deliver" | "queueOnly"
@@ -117,9 +113,10 @@ export interface TaskInterventionRouteDeps {
 /**
  * Owns public intervention route policy.
  *
- * ActiveTaskRecovery owns stale-running classification. RunningInterventionTransition and
- * AutoResumeTransition own side-effect order. This route owns task resolution, transition
- * selection, public result forwarding, and onResume callback wiring.
+ * Active status is the single authority for routing an intervention to the
+ * attached runner. RunningInterventionTransition and AutoResumeTransition own
+ * side-effect order. This route owns task resolution, transition selection,
+ * public result forwarding, and onResume callback wiring.
  */
 export class TaskInterventionRoute {
   constructor(private readonly deps: TaskInterventionRouteDeps) {}
@@ -129,7 +126,7 @@ export class TaskInterventionRoute {
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
     let task: Task;
-    let preclassifiedRoute: InterventionTaskRoute | undefined;
+    let preclassifiedRoute: ReturnType<typeof interventionTaskRoute> | undefined;
     let request = params;
     let admission: DeliveryLedgerAdmission;
     if (this.deps.deliveryLedgerGate && params.deliveryIntent) {
@@ -144,12 +141,12 @@ export class TaskInterventionRoute {
       task = await this.resolveTask(params.agentSessionId);
       preclassifiedRoute = task.status === "initializing"
         ? undefined
-        : this.deps.activeTaskRecovery.prepareForIntervention(task);
+        : interventionTaskRoute(task);
     } else {
       task = await this.resolveTask(params.agentSessionId);
       preclassifiedRoute = task.status === "initializing"
         ? undefined
-        : this.deps.activeTaskRecovery.prepareForIntervention(task);
+        : interventionTaskRoute(task);
       request = this.deps.deliveryLedgerGate && preclassifiedRoute !== "running"
         ? ensureDurableDeliveryIdentity(params)
         : params;
@@ -234,7 +231,7 @@ export class TaskInterventionRoute {
         }
       }
       const taskRoute = preclassifiedRoute
-        ?? this.deps.activeTaskRecovery.prepareForIntervention(task);
+        ?? interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(
           `execution activation did not reach running state for ${task.agentSessionId}`,
@@ -433,6 +430,13 @@ export class TaskInterventionRoute {
     this.deps.rememberTask(loaded);
     return loaded;
   }
+}
+
+function interventionTaskRoute(
+  task: Task,
+): "running" | "activating" | "auto-resume" {
+  if (task.status === "initializing") return "activating";
+  return isActiveTaskStatus(task.status) ? "running" : "auto-resume";
 }
 
 function ensureDurableDeliveryIdentity(

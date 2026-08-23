@@ -324,9 +324,6 @@ function makeRoute(
     getTask: (sessionId) => sessionId === task.agentSessionId ? task : undefined,
     loadEvictedTask: async () => null,
     rememberTask: () => {},
-    activeTaskRecovery: {
-      prepareForIntervention: () => "auto-resume",
-    },
     runningInterventionTransition: {
       deliver: async () => {
         throw new Error("unexpected running delivery");

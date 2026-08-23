@@ -1,7 +1,5 @@
-import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import { ActiveTaskRecovery } from "../../src/task/task_active_recovery.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -27,10 +25,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeLogger(): Logger {
-  return { warn: vi.fn() } as unknown as Logger;
-}
-
 function makeSubject(
   initialTasks: Task[] = [],
   deliveryLedgerGate?: Pick<
@@ -41,7 +35,6 @@ function makeSubject(
   >,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
-  const logger = makeLogger();
   const loadEvictedTask = vi.fn(async (_sessionId: string): Promise<Task | null> => null);
   const queuedResult = {
     delivered: false,
@@ -69,7 +62,6 @@ function makeSubject(
     rememberTask: (task) => {
       tasks.set(task.agentSessionId, task);
     },
-    activeTaskRecovery: new ActiveTaskRecovery(logger),
     runningInterventionTransition,
     autoResumeTransition,
     deliveryLedgerGate,
@@ -605,7 +597,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }), onResume);
   });
 
-  it("treats detached hydrated running tasks as auto-resume instead of running queue", async () => {
+  it("routes hydrated running tasks to the existing runner queue", async () => {
     const hydrated = makeTask({
       agentSessionId: "sess-stale-running",
       status: "running",
@@ -620,14 +612,24 @@ describe("TaskInterventionRoute.addIntervention", () => {
       agentSessionId: "sess-stale-running",
       text: "resume stale running",
       user: "alice",
-    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
 
     expect(tasks.get("sess-stale-running")).toBe(hydrated);
-    expect(hydrated.status).toBe("interrupted");
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
-    expect(autoResumeTransition.resume).toHaveBeenCalledWith(hydrated, expect.objectContaining({
+    expect(hydrated.status).toBe("running");
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
+      hydrated,
+      expect.objectContaining({
       text: "resume stale running",
-    }), expect.any(Function));
+      }),
+      { queueIfUndelivered: true },
+    );
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
   it("normalizes unresolved task lookup to the existing Task not found error shape", async () => {

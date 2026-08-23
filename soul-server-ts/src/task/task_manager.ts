@@ -15,7 +15,6 @@ import {
 } from "../control_plane/persistence_host_clients.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
-import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
@@ -149,7 +148,6 @@ export class TaskManager {
         ? (sessionId, reason) => gatedSessionRuntimeControl.close(sessionId, reason)
         : undefined,
     });
-    const activeTaskRecovery = new ActiveTaskRecovery(logger);
     const runningInterventionTransition = new RunningInterventionTransition({
       broadcaster,
       logger,
@@ -226,7 +224,6 @@ export class TaskManager {
       rememberTask: (task) => {
         this.tasks.set(task.agentSessionId, task);
       },
-      activeTaskRecovery,
       runningInterventionTransition,
       autoResumeTransition,
       deliveryLedgerGate: deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined,
