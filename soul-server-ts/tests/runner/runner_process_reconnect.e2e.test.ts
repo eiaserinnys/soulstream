@@ -283,6 +283,7 @@ function processDispatcher(
 ): RunnerProcessDispatcher {
   return new RunnerProcessDispatcher({
     spawn: input,
+    adoptExisting: true,
     spawner: new RunnerProcessSpawner(),
     pumpMux,
     logger: pino({ level: "silent" }),

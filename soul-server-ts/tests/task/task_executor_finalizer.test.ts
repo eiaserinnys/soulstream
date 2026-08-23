@@ -403,7 +403,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
       { err: expect.any(Error), sessionId: "sess-1" },
-      "runner host detach failed",
+      "engine.close failed",
     );
   });
 

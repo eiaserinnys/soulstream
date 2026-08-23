@@ -101,8 +101,9 @@ export interface RunnerHostCall {
 
 export interface RunnerProcessDispatcherOptions {
   spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>;
-  spawner?: Pick<RunnerProcessSpawner, "spawn" | "adopt">
-    & Partial<Pick<RunnerProcessSpawner, "terminate">>;
+  spawner?: Pick<RunnerProcessSpawner, "spawn">
+    & Partial<Pick<RunnerProcessSpawner, "adopt" | "terminate">>;
+  adoptExisting?: boolean;
   offlineExisting?: boolean;
   openParentOutbox?: typeof RunnerParentOutbox.open;
   connectSocket?: typeof connectRunnerSocket;
@@ -591,11 +592,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       return;
     }
     const spawner = this.options.spawner ?? new RunnerProcessSpawner();
-    const adopted = await spawner.adopt({
-      stateDirectory: this.spawnInput.stateDirectory,
-      sessionId: this.spawnInput.sessionId,
-    });
-    const spawned = adopted ?? await spawner.spawn(this.spawnInput);
+    const spawned = this.options.adoptExisting
+      ? await this.adoptExisting(spawner)
+      : await spawner.spawn(this.spawnInput);
     this.spawnedProcess = spawned;
     this.socketPath = spawned.paths.socketPath;
     this.runnerDatabasePath = spawned.paths.databasePath;
@@ -680,6 +679,20 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
     }
     throw initializationError;
+  }
+
+  private async adoptExisting(
+    spawner: RunnerProcessDispatcherOptions["spawner"] | RunnerProcessSpawner,
+  ) {
+    if (!spawner?.adopt) throw new Error("runner adopter unavailable");
+    const adopted = await spawner.adopt({
+      stateDirectory: this.spawnInput.stateDirectory,
+      sessionId: this.spawnInput.sessionId,
+    });
+    if (!adopted) {
+      throw new Error(`registered runner is not alive: ${this.spawnInput.sessionId}`);
+    }
+    return adopted;
   }
 
   private async startRecovery(

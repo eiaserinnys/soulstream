@@ -52,7 +52,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
         runner_release_id: "sha-pinned",
       } as never,
       buildChildProcessEnv: () => ({}),
-      spawner: { adopt: async () => null, spawn },
+      spawner: { spawn },
     });
     const task = {
       agentSessionId: "session-pinned",
@@ -132,7 +132,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
         ensureRelease: vi.fn(async () => undefined),
       },
       buildChildProcessEnv: () => ({}),
-      spawner: { adopt: async () => null, spawn },
+      spawner: { spawn },
     });
     const storedConfig: RunnerChildConfig = {
       schemaVersion: 1,

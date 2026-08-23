@@ -315,7 +315,6 @@ describe("RunnerProcessDispatcher", () => {
       const dispatcher = new RunnerProcessDispatcher({
         spawn: spawnInput(fixture.stateDirectory),
         spawner: {
-          adopt: async () => null,
           spawn: async () => fixture.spawned,
           terminate,
         },
@@ -344,7 +343,6 @@ describe("RunnerProcessDispatcher", () => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(fixture.stateDirectory),
       spawner: {
-        adopt: async () => null,
         spawn: async () => fixture.spawned,
         terminate: async () => { throw new Error("child remained alive"); },
       },
@@ -437,10 +435,7 @@ describe("RunnerProcessDispatcher", () => {
     mux.connect(async (batch) => { batches.push(batch); });
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: {
-        adopt: async () => null,
-        spawn: async () => await spawnedProcessForTest(paths),
-      },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: mux,
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -559,10 +554,7 @@ describe("RunnerProcessDispatcher", () => {
     const sqliteTransactionObserver = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: {
-        adopt: async () => null,
-        spawn: async () => await spawnedProcessForTest(paths),
-      },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: mux,
       logger: pino({ level: "silent" }),
       nodeStallMonitor: { beginRunnerOperation, sqliteTransactionObserver },
@@ -642,10 +634,7 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.listen();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: {
-        adopt: async () => null,
-        spawn: async () => await spawnedProcessForTest(paths),
-      },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -723,10 +712,7 @@ describe("RunnerProcessDispatcher", () => {
     const finishRecoveryObservation = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: {
-        adopt: async () => null,
-        spawn: async () => await spawnedProcessForTest(paths),
-      },
+      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
       pumpMux: { register: registerPump } as never,
       logger,
       handleHostCall: async () => null,
@@ -852,6 +838,7 @@ describe("RunnerProcessDispatcher", () => {
     const spawn = vi.fn(async () => { throw new Error("must not spawn"); });
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
+      adoptExisting: true,
       spawner: {
         spawn,
         adopt: async () => ({ pid: 1001, paths, config: {} as never, adopted: true }),
