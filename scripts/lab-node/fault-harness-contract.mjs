@@ -9,7 +9,7 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
   "auto-resume-handoff": Object.freeze({
     injection: "Complete a child while its caller is finishing a turn, so the completion delivery opens the next turn without human delay.",
     expectedOutcome: "The caller's live runner consumes the completion exactly once and produces a second response without a replacement spawn.",
-    verdict: "The caller receives both assistant markers once, the completion consumes once, and the runner pid stays unchanged.",
+    verdict: "The completion receipt and consumption occur once, exactly one new turn completes, and the runner pid stays unchanged.",
   }),
   "restart-adopt": Object.freeze({
     injection: "Restart the node on the same release and manifest while a 90-second tool is actually in flight.",
@@ -156,12 +156,27 @@ export function autoResumeHandoffViolations({
   attempts,
   executionPromiseBlockedCount = 0,
   replacementLogCount = 0,
+  socketErrorCount = 0,
 }) {
   const violations = [];
   for (const [index, attempt] of attempts.entries()) {
-    if (attempt.firstCount !== 1) violations.push(`attempt ${index + 1} first marker count ${attempt.firstCount}`);
-    if (attempt.secondCount !== 1) violations.push(`attempt ${index + 1} second marker count ${attempt.secondCount}`);
+    if (attempt.deliveryReceiptCount !== 1) {
+      violations.push(`attempt ${index + 1} delivery receipt count ${attempt.deliveryReceiptCount}`);
+    }
     if (attempt.consumptionCount !== 1) violations.push(`attempt ${index + 1} consumption count ${attempt.consumptionCount}`);
+    if (attempt.userMessageCount !== 1) violations.push(`attempt ${index + 1} user message count ${attempt.userMessageCount}`);
+    if (attempt.turnBoundaryCount !== 2) {
+      violations.push(`attempt ${index + 1} turn boundary count ${attempt.turnBoundaryCount}`);
+    }
+    if (attempt.successfulTurnBoundaryCount !== 2) {
+      violations.push(`attempt ${index + 1} successful turn boundary count ${attempt.successfulTurnBoundaryCount}`);
+    }
+    if (attempt.childTerminalStatus !== "completed") {
+      violations.push(`attempt ${index + 1} child terminal status ${attempt.childTerminalStatus}`);
+    }
+    if (attempt.parentTerminalStatus !== "completed") {
+      violations.push(`attempt ${index + 1} parent terminal status ${attempt.parentTerminalStatus}`);
+    }
     if (attempt.observedPids.length !== 1 || attempt.observedPids[0] !== attempt.oldPid) {
       violations.push(`attempt ${index + 1} runner pid(s) ${attempt.observedPids.join(",")} != ${attempt.oldPid}`);
     }
@@ -170,6 +185,7 @@ export function autoResumeHandoffViolations({
     violations.push(`${executionPromiseBlockedCount} execution_promise recovery block(s)`);
   }
   if (replacementLogCount !== 0) violations.push(`${replacementLogCount} replacement log(s)`);
+  if (socketErrorCount !== 0) violations.push(`${socketErrorCount} runner socket error(s)`);
   return violations;
 }
 

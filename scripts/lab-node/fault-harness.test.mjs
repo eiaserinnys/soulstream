@@ -66,21 +66,28 @@ test("lab verdict refuses a bundle built from a different checkout", () => {
 test("auto-resume oracle rejects response loss, duplicate consumption, and runner replacement", () => {
   const clean = {
     attempts: [{
-      firstCount: 1,
-      secondCount: 1,
+      deliveryReceiptCount: 1,
       consumptionCount: 1,
+      userMessageCount: 1,
+      turnBoundaryCount: 2,
+      successfulTurnBoundaryCount: 2,
+      childTerminalStatus: "completed",
+      parentTerminalStatus: "completed",
       oldPid: 41,
       observedPids: [41],
     }],
     executionPromiseBlockedCount: 0,
     replacementLogCount: 0,
+    socketErrorCount: 0,
   };
   assert.deepEqual(autoResumeHandoffViolations(clean), []);
   for (const mutation of [
-    { attempts: [{ ...clean.attempts[0], secondCount: 0 }] },
+    { attempts: [{ ...clean.attempts[0], turnBoundaryCount: 1, successfulTurnBoundaryCount: 1 }] },
     { attempts: [{ ...clean.attempts[0], consumptionCount: 2 }] },
+    { attempts: [{ ...clean.attempts[0], deliveryReceiptCount: 2 }] },
     { attempts: [{ ...clean.attempts[0], observedPids: [41, 42] }] },
     { executionPromiseBlockedCount: 1 },
+    { socketErrorCount: 1 },
   ]) {
     assert.notDeepEqual(autoResumeHandoffViolations({ ...clean, ...mutation }), []);
   }

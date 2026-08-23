@@ -56,8 +56,9 @@ const LOG_TERMS = {
   ...DELIVERY_LOG_TERMS,
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
-  "auto-resume-handoff": ["AUTO_HANDOFF_", "completion_notification", "auto_resume",
-    "registered runner recovery skipped", "activeRunnerOperations"],
+  "auto-resume-handoff": ["completion_notification", "auto_resume",
+    "registered runner recovery skipped", "activeRunnerOperations", "connect ENOENT",
+    "runner.sock"],
   "restart-window-durable": ["RESTART_WINDOW_DURABLE_", "NODE_UNAVAILABLE", "intervention"],
   F9: ["F9_", "runner adoption release identity mismatch", "release_superseded", "offline",
     "runner adoption failure was superseded by a newer execution",
@@ -129,14 +130,19 @@ export async function runCanonicalScenario(id, runtime, recorder) {
       line.includes("release_superseded")
       || line.includes("runner adoption failure was superseded by a newer execution")
     )).length;
+    const socketErrorCount = logs.node.filter((line) => (
+      line.includes("connect ENOENT") && line.includes("runner.sock")
+    )).length;
     result.executionPromiseBlockedCount = blockedCount;
     result.replacementLogCount = replacementCount;
+    result.socketErrorCount = socketErrorCount;
     if (!failure) {
       try {
         const violations = autoResumeHandoffViolations({
           attempts: result.attempts.map((attempt) => attempt.observation),
           executionPromiseBlockedCount: blockedCount,
           replacementLogCount: replacementCount,
+          socketErrorCount,
         });
         assertScenario(violations.length === 0, `auto-resume handoff failed: ${violations.join("; ")}`);
       } catch (error) {
@@ -167,38 +173,42 @@ const SCENARIOS = {
   async "auto-resume-handoff"(runtime, recorder) {
     const attempts = [];
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const seed = shortId();
-      const firstMarker = `AUTO_HANDOFF_FIRST_${seed}`;
-      const secondMarker = `AUTO_HANDOFF_SECOND_${seed}`;
-      const childMarker = `AUTO_HANDOFF_CHILD_${seed}`;
       const parentId = await runtime.createSession(
-        delayedMarkerPrompt(firstMarker, 12),
+        "Use Bash exactly once to run python3 -c \"import time; time.sleep(12)\". "
+        + "After it finishes, briefly state that the command completed.",
       );
       const oldRunner = await runtime.waitForRunner(parentId);
       await waitForInFlightTool(runtime, parentId);
       const childId = await runtime.createSession(
-        `Reply with exactly ${childMarker}, then tell your caller to reply with exactly ${secondMarker}.`,
+        "Answer this self-contained question in one sentence: what is two plus two?",
         { caller_session_id: parentId },
       );
-      await runtime.waitForMarker(childId, childMarker);
-      await runtime.waitForTerminal(childId);
+      const childTerminalStatus = await runtime.waitForTerminal(childId);
       const delivery = await waitForConsumedDelivery(
         runtime,
         childId,
         `auto-resume handoff attempt ${attempt}`,
       );
-      await runtime.waitForMarker(parentId, firstMarker);
-      await runtime.waitForMarker(parentId, secondMarker, 120_000);
-      await runtime.waitForTerminal(parentId);
+      const parentTerminalStatus = await runtime.waitForTerminal(parentId);
+      const timeline = await runtime.timeline(parentId);
       const ownerships = await runtime.ownerships(parentId);
       const observedPids = [...new Set(ownerships.map((row) => row.pid).filter(Boolean))];
-      const firstCount = await runtime.countTimelineEvents(parentId, "assistant_message", firstMarker);
-      const secondCount = await runtime.countTimelineEvents(parentId, "assistant_message", secondMarker);
       const consumptionCount = await runtime.consumptionCount(delivery.relation_key);
+      const messages = timeline.messages ?? [];
+      const turnBoundaries = messages.filter((message) => message.event_type === "result");
       const observation = {
-        firstCount,
-        secondCount,
+        deliveryReceiptCount: messages.filter((message) => (
+          message.event_type === "session_notification"
+          && message.payload?.delivery_id === delivery.delivery_id
+        )).length,
         consumptionCount,
+        userMessageCount: messages.filter((message) => message.event_type === "user_message").length,
+        turnBoundaryCount: turnBoundaries.length,
+        successfulTurnBoundaryCount: turnBoundaries.filter(
+          (message) => message.payload?.success === true,
+        ).length,
+        childTerminalStatus,
+        parentTerminalStatus,
         oldPid: oldRunner.pid,
         observedPids,
       };
