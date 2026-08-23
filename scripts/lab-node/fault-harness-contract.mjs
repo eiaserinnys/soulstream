@@ -179,17 +179,18 @@ export function restartWindowContinuityViolations(observation) {
     observation.acceptance?.status !== "ok"
     || !["delivered", "queued", "auto_resumed"].includes(observation.acceptance?.outcome)
   ) {
-    violations.push(`delivery was not durably accepted: ${JSON.stringify(observation.acceptance)}`);
+    violations.push(`intervention was not accepted: ${JSON.stringify(observation.acceptance)}`);
   }
-  if (observation.deliveryState !== "consumed" || observation.aggregateState !== "consumed") {
-    violations.push(`delivery remained ${observation.deliveryState}/${observation.aggregateState}`);
+  if (observation.interventionCount !== 1) {
+    violations.push(`intervention receipt count ${observation.interventionCount}`);
   }
-  if (observation.consumptionCount !== 1) violations.push(`consumption count ${observation.consumptionCount}`);
-  if (observation.userCount !== 1) violations.push(`user message count ${observation.userCount}`);
   if (observation.oldAssistantCount !== 1) {
     violations.push(`old assistant marker count ${observation.oldAssistantCount}`);
   }
   if (observation.assistantCount !== 1) violations.push(`assistant marker count ${observation.assistantCount}`);
+  if (observation.inboxRemainingCount !== 0) {
+    violations.push(`${observation.inboxRemainingCount} intervention inbox row(s) remain`);
+  }
   if (observation.inFlightCount !== 0) violations.push(`${observation.inFlightCount} in-flight ownership(s)`);
   if (observation.oldPid !== observation.newPid) {
     violations.push(`runner pid changed ${observation.oldPid} -> ${observation.newPid}`);

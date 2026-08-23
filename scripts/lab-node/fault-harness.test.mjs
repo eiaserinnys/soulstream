@@ -86,15 +86,13 @@ test("auto-resume oracle rejects response loss, duplicate consumption, and runne
   }
 });
 
-test("restart-window oracle rejects unsupported, duplicate, pending, in-flight, and replacement mutations", () => {
+test("restart-window oracle rejects loss, duplicates, residue, in-flight, and replacement mutations", () => {
   const clean = {
     acceptance: { status: "ok", outcome: "queued" },
-    deliveryState: "consumed",
-    aggregateState: "consumed",
-    consumptionCount: 1,
-    userCount: 1,
+    interventionCount: 1,
     oldAssistantCount: 1,
     assistantCount: 1,
+    inboxRemainingCount: 0,
     inFlightCount: 0,
     oldPid: 41,
     newPid: 41,
@@ -105,11 +103,11 @@ test("restart-window oracle rejects unsupported, duplicate, pending, in-flight, 
   assert.deepEqual(restartWindowContinuityViolations(clean), []);
   for (const mutation of [
     { acceptance: { status: "ok", outcome: "deferred", delivered: false } },
-    { userCount: 0 },
+    { interventionCount: 0 },
+    { interventionCount: 2 },
     { oldAssistantCount: 0 },
     { assistantCount: 2 },
-    { consumptionCount: 2 },
-    { deliveryState: "uncertain", aggregateState: "pending" },
+    { inboxRemainingCount: 1 },
     { inFlightCount: 1 },
     { newPid: 42 },
     { replacementLogCount: 1 },

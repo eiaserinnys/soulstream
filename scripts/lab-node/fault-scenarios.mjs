@@ -568,10 +568,8 @@ const SCENARIOS = {
     const acceptance = acceptanceOutcome.status === "fulfilled"
       ? acceptanceOutcome.value
       : acceptanceOutcome;
-    let restartWindowDelivery = await runtime.deliveryById(restartWindowDeliveryId);
     let nextMarkerOutcome = { status: "not_attempted" };
     let nextTerminalOutcome = { status: "not_attempted" };
-    let deliveryConsumptionOutcome = { status: "not_attempted" };
     if (
       acceptanceOutcome.status === "fulfilled"
       && acceptance?.status === "ok"
@@ -579,40 +577,26 @@ const SCENARIOS = {
     ) {
       nextMarkerOutcome = await settle(runtime.waitForMarker(sessionId, nextMarker, 120_000));
       nextTerminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
-      deliveryConsumptionOutcome = await settle(waitFor(
-        async () => {
-          const row = await runtime.deliveryById(restartWindowDeliveryId);
-          return row?.aggregate_state === "consumed" ? row : undefined;
-        },
-        120_000,
-        "F9 restart-window delivery was not consumed",
-        500,
-      ));
-      if (deliveryConsumptionOutcome.status === "fulfilled") {
-        restartWindowDelivery = deliveryConsumptionOutcome.value;
-      } else {
-        restartWindowDelivery = await runtime.deliveryById(restartWindowDeliveryId);
-      }
     }
     const status = await runtime.sessionStatus(sessionId);
     const oldCount = await runtime.countTimelineEvents(sessionId, "assistant_message", oldMarker);
     const nextCount = await runtime.countTimelineEvents(sessionId, "assistant_message", nextMarker);
-    const userCount = await runtime.countTimelineEvents(sessionId, "user_message", restartWindowText);
-    const consumptionCount = restartWindowDelivery?.relation_key
-      ? await runtime.consumptionCount(restartWindowDelivery.relation_key)
-      : 0;
+    const interventionCount = await runtime.countTimelineEvents(
+      sessionId,
+      "intervention_sent",
+      restartWindowText,
+    );
+    const inboxRemainingCount = runtime.runnerInterventionInboxCount(sessionId);
     const ownerships = await runtime.ownerships(sessionId);
     const inFlightOwnerships = ownerships.filter((row) => (
       row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
     ));
     const continuityObservation = {
       acceptance,
-      deliveryState: restartWindowDelivery?.state ?? "missing",
-      aggregateState: restartWindowDelivery?.aggregate_state ?? "missing",
-      consumptionCount,
-      userCount,
+      interventionCount,
       oldAssistantCount: oldCount,
       assistantCount: nextCount,
+      inboxRemainingCount,
       inFlightCount: inFlightOwnerships.length,
       oldPid: oldRunner.pid,
       newPid: newRunner?.pid,
@@ -635,15 +619,13 @@ const SCENARIOS = {
       newRunnerOutcome,
       nextMarkerOutcome,
       nextTerminalOutcome,
-      deliveryConsumptionOutcome,
       oldManifest,
       newManifest,
       sessionStatus: status,
       markerCounts: { old: oldCount, next: nextCount },
       restartWindowDeliveryId,
-      restartWindowDelivery,
-      userCount,
-      consumptionCount,
+      interventionCount,
+      inboxRemainingCount,
       inFlightOwnerships,
       continuityObservation,
     };
