@@ -80,7 +80,7 @@ function makeSubject(
 
 function admitted(
   deliveryId: string,
-  intent: "durable_next_turn" | "completion_notification" | "runtime_followup" =
+  intent: "human_live_steer" | "durable_next_turn" | "completion_notification" | "runtime_followup" =
     "completion_notification",
 ): DeliveryLedgerAdmission {
   return {
@@ -91,7 +91,9 @@ function admitted(
       intent,
       source: intent === "runtime_followup"
         ? "claude_runtime_task_followup"
-        : "completion_notifier",
+        : intent === "human_live_steer"
+          ? "user_message"
+          : "completion_notifier",
       completion_id: `completion:${deliveryId}`,
       relation_key: `relation:${deliveryId}`,
       producer_terminal_revision: null,
@@ -113,6 +115,39 @@ function admitted(
 }
 
 describe("TaskInterventionRoute.addIntervention", () => {
+  it("keeps admitted human live steering on the existing live-delivery path", async () => {
+    const deliveryId = "77777777-7777-4777-8777-777777777777";
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "human_live_steer")),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const task = makeTask({ status: "running" });
+    const { route, runningInterventionTransition } = makeSubject([task], gate);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "look here",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      source: "user_message",
+    }, vi.fn());
+
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "human_live_steer" }),
+      { queueIfUndelivered: true },
+    );
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+  });
+
   it("routes memory-hit running tasks to the running transition and preserves public result shape", async () => {
     const task = makeTask();
     const { route, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =

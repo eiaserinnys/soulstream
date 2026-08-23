@@ -11,6 +11,97 @@ function row(deliveryId: string, state: SessionDeliveryRow["state"]): SessionDel
 }
 
 describe("TaskDeliveryLedgerGate", () => {
+  it("admits human live steering through the same durable ledger as every other delivery", async () => {
+    const deliveryId = "77777777-7777-4777-8777-777777777777";
+    const register = vi.fn(async () => ({
+      row: {
+        ...row(deliveryId, "pending"),
+        aggregate_state: "pending",
+      },
+      inserted: true,
+      conflict: false,
+    }));
+    const claimForTarget = vi.fn(async () => ({
+      ...row(deliveryId, "claimed"),
+      aggregate_state: "pending",
+    }));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register,
+      claimForTarget,
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await expect(gate.admit({
+      agentSessionId: "caller-1",
+      text: "continue",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:caller-1:${deliveryId}`,
+      source: "user_message",
+    })).resolves.toMatchObject({ kind: "admitted", deliveryId });
+    expect(register).toHaveBeenCalledOnce();
+    expect(claimForTarget).toHaveBeenCalledWith(
+      deliveryId,
+      "caller-1",
+      expect.stringMatching(/^route:/),
+    );
+  });
+
+  it("settles a live-steer apply acknowledgement as one consumed delivery", async () => {
+    const deliveryId = "78787878-7878-4878-8878-787878787878";
+    const markDelivered = vi.fn(async () => ({
+      ...row(deliveryId, "delivered"),
+      aggregate_state: "delivered",
+      target_receipt_id: `intervention:${deliveryId}`,
+    }));
+    const markConsumed = vi.fn(async () => ({
+      ...row(deliveryId, "consumed"),
+      aggregate_state: "consumed",
+    }));
+    const markUncertain = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered,
+      markUncertain,
+      markConsumed,
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await gate.recordResult({
+      kind: "admitted",
+      deliveryId,
+      row: {
+        ...row(deliveryId, "dispatching"),
+        intent: "human_live_steer",
+        lease_owner: "route-live",
+      },
+    }, { delivered: true });
+
+    expect(markDelivered).toHaveBeenCalledWith(
+      deliveryId,
+      `intervention:${deliveryId}`,
+    );
+    expect(markConsumed).toHaveBeenCalledWith(
+      deliveryId,
+      `intervention:${deliveryId}`,
+    );
+    expect(markUncertain).not.toHaveBeenCalled();
+  });
+
   it("binds attachment, context, and caller_info into the payload identity", async () => {
     const register = vi.fn(async (params: { deliveryId: string }) => ({
       row: row(params.deliveryId, "pending"),

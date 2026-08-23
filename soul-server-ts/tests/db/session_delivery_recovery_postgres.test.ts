@@ -139,6 +139,28 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ]);
   });
 
+  it("claims a pending human intervention for the existing recovery worker", async () => {
+    await repository.register({
+      deliveryId: "human-live-recovery",
+      targetSessionId: "caller-session",
+      relationKey: "user_message:caller-session:human-live-recovery",
+      completionId: "message:human-live-recovery",
+      intent: "human_live_steer",
+      source: "user_message",
+      payloadHash: "hash-human-live-recovery",
+      payload: { text: "continue", user: "alice" },
+    });
+
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "worker-human-live",
+      1,
+    )).resolves.toMatchObject([{
+      delivery_id: "human-live-recovery",
+      state: "claimed",
+      lease_owner: "worker-human-live",
+    }]);
+  });
+
   it("coalesces pending runtime siblings before recovery claim and preserves claimed work", async () => {
     const createdAt = new Date("2026-08-18T00:00:00.000Z");
     for (const [deliveryId, relationKey, state] of [
