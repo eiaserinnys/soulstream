@@ -63,9 +63,43 @@ const MUTATIONS = [
     invariant: "unanswered_demand",
     what: "an intervention recorded but never projected, with a later reply present",
     identity: (planted) => planted.sessionId,
+    control: {
+      what: "a same-turn intervention reflected by that turn's final reply",
+      identity: (planted) => planted.sessionId,
+      async inject(context) {
+        const sessionId = context.id("covered-control");
+        await context.sql(`
+          INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
+          VALUES ('${sessionId}', 'completed', 'eias-lab', 'claude', NOW(), NOW())
+        `);
+        await context.sql(`
+          INSERT INTO events (session_id, id, event_type, payload, created_at) VALUES
+            ('${sessionId}', 1, 'user_message',
+              '{"type":"user_message","text":"lab mutation: first turn"}'::jsonb,
+              NOW() - INTERVAL '5 minutes'),
+            ('${sessionId}', 2, 'intervention_sent',
+              '{"type":"intervention_sent","text":"lab mutation: steer"}'::jsonb,
+              NOW() - INTERVAL '4 minutes'),
+            ('${sessionId}', 3, 'assistant_message',
+              '{"type":"assistant_message","content":"lab mutation: reflected reply"}'::jsonb,
+              NOW() - INTERVAL '3 minutes'),
+            ('${sessionId}', 4, 'session_ended',
+              '{"type":"session_ended","status":"completed","termination_reason":"completed_ok"}'::jsonb,
+              NOW() - INTERVAL '3 minutes')
+        `);
+        return { sessionId };
+      },
+      async revert(context, planted) {
+        await context.sql(`DELETE FROM sessions WHERE session_id = '${planted.sessionId}'`);
+      },
+    },
     async inject(context) {
-      // The exact shape of the losses this audit found: a reply exists and is
-      // newer than every input, so an extremal comparison reads clean.
+      // A later reply exists, but only after the intervention's successful
+      // turn boundary and beside a distinct later demand. It therefore cannot
+      // be credited to the intervention that the completed turn swallowed.
+      // Keeping the same-turn shape above as a negative control makes this
+      // mutation surgical: a green cannot come from reverting the #819
+      // turn-aware contract, and a red cannot come from extremal last-id logic.
       const sessionId = context.id("covered");
       await context.sql(`
         INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
@@ -75,14 +109,26 @@ const MUTATIONS = [
         INSERT INTO events (session_id, id, event_type, payload, created_at) VALUES
           ('${sessionId}', 1, 'user_message',
             '{"type":"user_message","text":"lab mutation: first turn"}'::jsonb,
-            NOW() - INTERVAL '5 minutes'),
-          ('${sessionId}', 2, 'intervention_sent',
+            NOW() - INTERVAL '8 minutes'),
+          ('${sessionId}', 2, 'assistant_message',
+            '{"type":"assistant_message","content":"lab mutation: first reply"}'::jsonb,
+            NOW() - INTERVAL '7 minutes'),
+          ('${sessionId}', 3, 'session_ended',
+            '{"type":"session_ended","status":"completed","termination_reason":"completed_ok"}'::jsonb,
+            NOW() - INTERVAL '7 minutes'),
+          ('${sessionId}', 4, 'intervention_sent',
             '{"type":"intervention_sent","text":"lab mutation: steer"}'::jsonb,
+            NOW() - INTERVAL '6 minutes'),
+          ('${sessionId}', 5, 'session_ended',
+            '{"type":"session_ended","status":"completed","termination_reason":"completed_ok"}'::jsonb,
+            NOW() - INTERVAL '5 minutes'),
+          ('${sessionId}', 6, 'user_message',
+            '{"type":"user_message","text":"lab mutation: later turn"}'::jsonb,
             NOW() - INTERVAL '4 minutes'),
-          ('${sessionId}', 3, 'assistant_message',
-            '{"type":"assistant_message","content":"lab mutation: reply"}'::jsonb,
+          ('${sessionId}', 7, 'assistant_message',
+            '{"type":"assistant_message","content":"lab mutation: later reply"}'::jsonb,
             NOW() - INTERVAL '3 minutes'),
-          ('${sessionId}', 4, 'session_ended',
+          ('${sessionId}', 8, 'session_ended',
             '{"type":"session_ended","status":"completed","termination_reason":"completed_ok"}'::jsonb,
             NOW() - INTERVAL '3 minutes')
       `);
