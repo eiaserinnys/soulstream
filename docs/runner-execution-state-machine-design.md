@@ -14,14 +14,16 @@
 
 ## 설계 결정 요약
 
-현재 결함의 뿌리는 러너가 아니라 **실행 중인 한 턴을 나타내는 1급 개념의 부재**다. 다음 여섯 결정을 함께 적용한다.
+현재 결함의 뿌리는 러너가 아니라 **실행 중인 한 턴을 나타내는 1급 개념의 부재**다. 다음 여덟 결정을 함께 적용한다.
 
 1. `Task`의 실행 관련 optional 필드 12개를 항상 존재하는 `execution: TaskExecutionController` 한 필드로 바꾼다.
-2. 실행은 `idle`, `reserved`, `provisional`, `activating`, `active`, `recovering`, `terminating`, `terminal`의 판별 유니온이다. provisional spawn은 활성화 전이라도 이미 실행이다.
+2. 실행은 `idle`, `reserved`, `provisional`, `activating`, `active`, `awaiting_external_input`, `recovering`, `terminating`, `terminal`의 판별 유니온이다. provisional spawn은 활성화 전이라도 이미 실행이고, 사람 입력을 기다리는 상태도 살아 있는 실행이다.
 3. 획득은 `begin()`에서, 해제는 `terminate()`에서만 일어난다. 필드 삭제는 상태 전이가 아니다.
 4. dispatcher의 접속 수명과 실행 수명을 분리한다. `detachHost()`는 접속만 반납하며 실행을 종료하거나 스트림을 실패시키지 않는다.
 5. 중앙 DB의 열린 실행 inventory를 주기 스캔의 출발점으로 삼는다. 등록 디렉터리는 증거이지 inventory가 아니다.
 6. 모든 사용자 입력은 먼저 durable delivery로 승인한 뒤 정확한 `executionId`에 할당한다. 호출자에게는 정상·복구 여부와 무관하게 같은 `accepted` 응답만 반환한다.
+7. user-visible 실행은 `in_process`로 폴백하지 않는다. durable admission 뒤 semantics v2 독립 runner가 준비될 때까지 기다리며, 기다림을 오류나 503으로 바꾸지 않는다.
+8. host의 종료 의도와 runner의 durable terminal 증명을 분리한다. 출력과 terminal witness가 먼저 durable해지고 그 receipt를 확인한 뒤에만 중앙 visible terminal을 commit한다.
 
 ## 확인된 사실과 설계에 미친 영향
 
@@ -35,6 +37,10 @@
 - 복구 스캔은 등록 디렉터리 스캔으로 시작한다 (`soul-server-ts/src/runner/runner_recovery_coordinator.ts:161`). 반면 열린 실행의 중앙 정본은 `session_execution_ownerships`에 있다 (`packages/db-schema/sql/schema.sql:2470`).
 - delivery attempt는 이미 별도 테이블이지만 실행 identity를 저장하지 않는다 (`packages/db-schema/sql/schema.sql:3264`).
 - 재기동 중 개입의 외부 경계는 지금 node WebSocket 단절과 timeout을 503으로 노출한다 (`orch-server/src/soulstream_server/api/sessions.py:370`, `:408`).
+- `TaskExecutor.startExecution()`은 execution ownership을 지원하지 않는 경로에서 독립 runner factory가 없으면 `createInProcessTaskRunnerRuntime()`로 폴백한다 (`soul-server-ts/src/task/task_executor.ts:277`). 과거 실제 사용자 실행 5건이 이 경로를 탔으므로 “현재 0건”은 제거 근거가 아니다.
+- 외부 입력 대기는 이미 실행 상태다. Agents는 `awaiting_approval`을 반환하고 durable approval request를 만든다 (`task_turn_loop_transition.ts:12`, `agents_adapter.ts:215`, `task_tool_approval_recovery.ts:73`). Claude `AskUserQuestion`도 같은 수명 문제를 가진다. 이 둘은 progress도 tool lease도 아니므로 별도 phase가 없으면 정상적인 사람 대기를 stalled execution으로 오판한다.
+- 현행 runner-origin terminal 순서는 lifecycle terminal commit 뒤 `execution_ended` control frame을 보내고 host가 pending outbox를 replay한 뒤 stream을 닫는다 (`runner_child_runtime.ts:292`, `runner_process_dispatcher.ts:694`). `execution_ended` 자체는 outbox frame이 아니므로 중앙 terminal보다 앞선 출력 durability/receipt 계약이 별도로 필요하다.
+- owner-null backfill은 stable identity면 `adopted_runner`, 아니면 session을 `interrupted`로 바꾼다 (`packages/db-schema/sql/schema.sql:3134`, `:3229`). 후자는 투명성 판정 기준에 정면으로 어긋난다.
 - 260823 사고 표본에서는 runner lifecycle이 `failed`였고 등록이 사라졌는데도 중앙 ownership과 host 실행 대기가 남았다. runner를 죽인 뒤에도 새 reserve가 없으므로 회수가 시작되지 않았다. 두 intervention은 옛 command에 `claimed`로 남았고, attempt 소진 delivery는 `uncertain`에서 다시 스캔되지 않았다.
 
 ### 읽은 입력 정본
@@ -78,6 +84,53 @@ adoption 10개 중 9개가 shared fixture를 통해 `runner` 또는 `executionPr
 | attempt budget 소진 | `uncertain` 또는 `dead_letter` | `retry_paused`; 책임은 계속 남는다. |
 | queued CAS miss | 예외가 503으로 투영될 수 있음 | canonical delivery를 재조회하여 accepted 상태면 성공을 반환한다. |
 | 등록 디렉터리 없음 | 스캔 대상 없음 | 열린 execution의 `registration_missing` 증거다. |
+
+### #818 재현 기준
+
+재현 anchor는 PR #818 head `f4c29e26605c8da1833c2ee8519e6a8cf74a7314`다. 구조 probe는 검수 세션에서 임시 삽입 후 원복했으므로 제품 commit으로 오인하지 않는다. 다음 명령이 공통 기준선이며, probe별로 아래 한 가지 구조 변화만 적용한 뒤 같은 명령을 다시 실행한다.
+
+```bash
+flock /tmp/soulstream-heavy-verify.lock -c \
+'timeout 300s pnpm --dir soul-server-ts exec vitest run \
+tests/runner/runner_adoption_failure_recovery.test.ts \
+tests/runner/runner_recovery_disposition.test.ts \
+tests/runner/runner_process_frame_stream.test.ts \
+tests/runner/runner_host_resource_cleanup.test.ts \
+--minWorkers=1 --maxWorkers=2'
+```
+
+| probe | 고정할 변화 | 실행 범위 | 재현 결과 |
+| --- | --- | --- | --- |
+| 2-1 | `runner_recovery_disposition.ts`의 `runnerTerminalFact` write 한 줄만 제거한다. adoption fixture 변환은 이 probe와 섞지 않는다. | `runner_recovery_disposition.test.ts` | `1 failed / 36 passed / 2 skipped`; 옛 field를 기대하는 green 1건 실증 |
+| 2-2 | `ProcessFrameStream`의 `ended/error`를 `{ phase: "open" } \| { phase: "terminal"; signal }`로 교체하고 첫 terminal만 CAS한다. | `runner_process_frame_stream.test.ts` | 기존 green 파단 0, `7 passed / 2 skipped`; first-terminal RED 활성화 시 `8 passed / 1 skipped` |
+| 2-3 | `satisfies Record<RunnerRecoveryDisposition, DispositionPolicy>`를 넣고 helper·재검증 action을 표에서 구동한다. | `runner_recovery_disposition.test.ts` | 기존 green 파단 0, `37 passed / 2 skipped` |
+
+adoption fixture 파급은 같은 anchor에서 다음 정적 명령으로 재현한다.
+
+```bash
+rg -n 'runner|executionPromise' soul-server-ts/tests/runner/runner_adoption_failure_recovery.test.ts
+rg -n 'runner|executionPromise' soul-server-ts/tests/runner/runner_host_resource_cleanup.test.ts
+```
+
+adoption 10건 중 9건이 shared fixture를 경유하고 8건은 새 union factory로 계약을 유지할 수 있으며, stopped recovery 1건만 옛 field 존속 자체를 기대한다. cleanup 4건은 Task field 의존이 없다.
+
+공통 원복 기준선은 `57 passed / 5 skipped (62)`다. 이 결과와 임시 probe의 전문은 검수 세션 `a61882fe-2d5a-4a79-a6f0-75816efbb2ca`에 남아 있다. 영구 재현 테스트를 작성하는 다음 단계에서는 임시 patch가 아니라 2-1 fixture factory, 2-2 terminal union, 2-3 decision table을 각각 test-only harness로 고정한다.
+
+### 정상·재시작 랩 실측
+
+랩 기준은 `test/lab-steady-restart-invariants`의 `a115a29a267e8abcd440ebc7ae567d9d4852ac9f`다. GREEN은 설계의 근거가 아니라 현재 동작의 부수 결과이고, RED는 이 설계가 없애야 할 외부 관측이다.
+
+| 관측 행 | ① steady-state | ② restart-adopt | ③ restart-intervention-window |
+| --- | --- | --- | --- |
+| 시작 조건 | 일반·개입 모두 실제 90초 tool 실행 | 실제 tool 실행 중 host만 재시작 | `PgSleep`으로 복구 창을 확인한 뒤 개입 1회 |
+| 실행 identity | 정상 runner command | runner PID `2586721`, manifest·환경·code SHA 유지 | 중앙 delivery는 생성됐지만 host bind가 끝나지 않음 |
+| host 변화 | 없음 | ownership만 `runner_process → adopted_runner` | adoption 전 node command 경로 진입 |
+| caller 결과 | 일반 입력 정상, 개입 `accepted/queued_for_next_turn` | 정상 경로와 차이 `[]` | `rejected/HTTP 503 NODE_COMMAND_REJECTED` |
+| 의미 event 순서 | 일반: 입력→tool→응답. 개입: `user_message → tool_start → intervention_sent → tool_result → 개입이 반영된 단일 assistant_message` | ① 일반 경로와 차이 `[]` | 기준선의 `intervention_demand`와 `context_reply`가 모두 0회 |
+| delivery 정산 | 개입 `consumed`, receipt와 caller turn이 같은 event에 연결 | 누락·중복 없음 | 180초 뒤에도 `queued/pending`, receipt·caller turn 없음 |
+| 최종 판정 | GREEN, 계약 차이 `[]` | GREEN, 계약·구조 차이 `[]` | RED, 503 + 개입 유실 + 후속 응답 없음 |
+
+별도 `runner-death-live-host`도 runner 종료 뒤 후속 요청에 HTTP 503 `runner registration identity incomplete`를 노출해 RED다. 즉 재시작 자체의 기본 adopt 경로는 이미 투명하고, 재설계의 직접 공략 표면은 **복구 완료 전 입력 창, runner 소실 회수, terminal/output durability 경계**다.
 
 ## 시스템 그림
 
@@ -138,6 +191,8 @@ adoption 10개 중 9개가 shared fixture를 통해 `runner` 또는 `executionPr
 ```ts
 type ExecutionId = string & { readonly __brand: "ExecutionId" };
 type DeliveryId = string & { readonly __brand: "DeliveryId" };
+type ExecutionCommandId = string & { readonly __brand: "ExecutionCommandId" };
+type ExternalRequestId = string & { readonly __brand: "ExternalRequestId" };
 type IsoDateTime = string & { readonly __brand: "IsoDateTime" };
 
 interface Deferred<T> {
@@ -163,6 +218,12 @@ interface ExecutionKey {
 
 interface ExecutionReservation {
   key: ExecutionKey;
+  semanticsVersion: 2;
+  executor: {
+    kind: "independent_runner";
+    requiredCapability: "execution_semantics_v2";
+    placement: "waiting" | "assigned";
+  };
   manifestId: string;
   runtimeEnvIdentity: string;
   reservationExpiresAt: IsoDateTime;
@@ -175,7 +236,7 @@ interface SpawnedChildProof {
   registrationId: string;
   pid: number;
   startIdentity: string;
-  executionCommandId: string;
+  executionCommandId: ExecutionCommandId;
 }
 
 interface ExecutionOwnership extends ExecutionReservation, SpawnedChildProof {
@@ -187,23 +248,49 @@ type ExecutionProgressKind =
   | "thinking"
   | "tool_result";
 
-type ExecutionProgress =
-  | {
-      state: "not_observed";
-      leaseStartedAt: IsoDateTime;
-      progressLeaseExpiresAt: IsoDateTime;
-      inFlightTools: readonly [];
-    }
+type LastSemanticProgress =
+  | { state: "not_observed"; leaseStartedAt: IsoDateTime }
   | {
       state: "observed";
       sequence: number;
       kind: ExecutionProgressKind;
       progressedAt: IsoDateTime;
-      progressLeaseExpiresAt: IsoDateTime;
-      inFlightTools: ReadonlyArray<{
-        toolUseId: string;
-        absoluteLeaseExpiresAt: IsoDateTime;
-      }>;
+    };
+
+interface ExecutionProgress {
+  lastSemantic: LastSemanticProgress;
+  progressLeaseExpiresAt: IsoDateTime;
+  inFlightTools: ReadonlyArray<{
+    toolUseId: string;
+    startedAt: IsoDateTime;
+    absoluteLeaseExpiresAt: IsoDateTime;
+  }>;
+}
+
+type PendingExternalInput =
+  | {
+      kind: "tool_approval";
+      requestId: ExternalRequestId;
+      approvalId: string;
+      toolName: string;
+      requestedAt: IsoDateTime;
+      deadline: { kind: "none" } | { kind: "at"; expiresAt: IsoDateTime };
+    }
+  | {
+      kind: "ask_user_question";
+      requestId: ExternalRequestId;
+      inputRequestId: string;
+      requestedAt: IsoDateTime;
+      deadline: { kind: "none" } | { kind: "at"; expiresAt: IsoDateTime };
+    };
+
+type ExecutionActivity =
+  | { kind: "foreground"; progress: ExecutionProgress }
+  | {
+      kind: "awaiting_external_input";
+      progress: ExecutionProgress;
+      pending: PendingExternalInput;
+      progressReaping: "suspended";
     };
 
 interface ExecutionWaiters {
@@ -251,7 +338,17 @@ type ExecutionRecoveryHandle =
       previousDispatcherId: string;
     }
   | { kind: "adopting"; attachment: LiveRunnerAttachment }
-  | { kind: "offline_replay"; attachment: OfflineReplayAttachment };
+  | { kind: "offline_replay"; attachment: OfflineReplayAttachment }
+  | {
+      kind: "identity_unresolved";
+      firstObservedAt: IsoDateTime;
+      observations: number;
+    }
+  | {
+      kind: "replacement_prepared";
+      successorExecutionId: ExecutionId;
+      continuityReceiptId: string;
+    };
 
 type ExecutionRecoveryEvidence =
   | {
@@ -265,9 +362,26 @@ type ExecutionRecoveryEvidence =
       central: DurableExecutionRecord;
     }
   | {
+      kind: "identity_unresolved";
+      central: DurableExecutionRecord;
+      observation:
+        | { kind: "registration_absent" }
+        | { kind: "registration_incomplete"; registration: RunnerRegistration };
+      reason: "legacy_owner_null" | "incomplete_registration_identity";
+    }
+  | {
       kind: "terminal_witness";
       central: DurableExecutionRecord;
       runnerLifecycle: RunnerLifecycleRecord;
+    };
+
+type ExecutionRecoverySubject =
+  | { kind: "identified"; ownership: ExecutionOwnership }
+  | {
+      kind: "identity_unresolved";
+      key: ExecutionKey;
+      manifestId: string;
+      runtimeEnvIdentity: string;
     };
 
 type ExecutionTerminalOutcome =
@@ -282,7 +396,51 @@ interface ExecutionTerminalSignal {
   source: "runner" | "dispatcher" | "reconciler" | "user_interrupt";
   observedAt: IsoDateTime;
   outcome: ExecutionTerminalOutcome;
+  proof: ExecutionTerminalProof;
 }
+
+interface HostTerminationIntent {
+  intentId: string;
+  executionId: ExecutionId;
+  requestedAt: IsoDateTime;
+  reason: "user_interrupt" | "policy" | "stalled" | "shutdown_forbidden";
+}
+
+interface RunnerTerminalWitness {
+  witnessId: string;
+  executionId: ExecutionId;
+  executionCommandId: ExecutionCommandId;
+  lifecycleSequence: number;
+  outboxHighWatermark: number;
+  outcome: ExecutionTerminalOutcome;
+  durableAt: IsoDateTime;
+}
+
+interface TerminalIngressReceipt {
+  terminalProofId: string;
+  executionId: ExecutionId;
+  receivedThroughOutboxSequence: number;
+  committedAt: IsoDateTime;
+}
+
+type ExecutionTerminalProof =
+  | {
+      kind: "runner_witness_received";
+      witness: RunnerTerminalWitness;
+      receipt: TerminalIngressReceipt;
+    }
+  | { kind: "reservation_cancelled"; cleanupReceiptId: string }
+  | {
+      kind: "provisional_child_cleanup";
+      child: SpawnedChildProof;
+      cleanupReceiptId: string;
+    }
+  | {
+      kind: "proven_process_absent";
+      observationIds: readonly [string, string];
+      stableOutboxHighWatermark: number;
+      receipt: TerminalIngressReceipt;
+    };
 
 interface ExecutionTerminalRecord {
   key: ExecutionKey;
@@ -323,7 +481,12 @@ type TerminationSubject =
       attachment: LiveRunnerAttachment;
     }
   | { kind: "attached_owner"; ownership: ExecutionOwnership; attachment: LiveRunnerAttachment }
-  | { kind: "recovering_owner"; ownership: ExecutionOwnership; recovery: ExecutionRecoveryHandle };
+  | { kind: "recovering_owner"; subject: ExecutionRecoverySubject; recovery: ExecutionRecoveryHandle };
+
+type ExecutionTerminationProgress =
+  | { phase: "intent_recorded"; intent: HostTerminationIntent }
+  | { phase: "proof_observed"; signal: ExecutionTerminalSignal }
+  | { phase: "visible_terminal_committed"; signal: ExecutionTerminalSignal };
 
 type TaskExecution =
   | {
@@ -356,24 +519,32 @@ type TaskExecution =
       phase: "active";
       ownership: ExecutionOwnership;
       attachment: LiveRunnerAttachment;
-      progress: ExecutionProgress;
+      activity: { kind: "foreground"; progress: ExecutionProgress };
+      waiters: ExecutionWaiters;
+      inputs: ExecutionInputSet;
+    }
+  | {
+      phase: "awaiting_external_input";
+      ownership: ExecutionOwnership;
+      attachment: LiveRunnerAttachment;
+      activity: Extract<ExecutionActivity, { kind: "awaiting_external_input" }>;
       waiters: ExecutionWaiters;
       inputs: ExecutionInputSet;
     }
   | {
       phase: "recovering";
-      ownership: ExecutionOwnership;
-      method: "host_reattach" | "adopt" | "offline_replay";
+      subject: ExecutionRecoverySubject;
+      method: "host_reattach" | "adopt" | "offline_replay" | "identity_resolution";
       evidence: ExecutionRecoveryEvidence;
       handle: ExecutionRecoveryHandle;
-      progress: ExecutionProgress;
+      activity: ExecutionActivity;
       waiters: ExecutionWaiters;
       inputs: ExecutionInputSet;
     }
   | {
       phase: "terminating";
       subject: TerminationSubject;
-      firstSignal: ExecutionTerminalSignal;
+      progress: ExecutionTerminationProgress;
       termination: Promise<ExecutionTerminalRecord>;
       waiters: ExecutionWaiters;
       inputs: ExecutionInputSet;
@@ -386,6 +557,8 @@ type TaskExecution =
 
 interface BeginExecutionInput {
   key: ExecutionKey;
+  semanticsVersion: 2;
+  executorRequirement: "execution_semantics_v2";
   manifestId: string;
   runtimeEnvIdentity: string;
   reservationExpiresAt: IsoDateTime;
@@ -397,7 +570,7 @@ interface BeginExecutionInput {
 
 interface BeginExecutionRecoveryInput {
   execution: DurableExecutionRecord;
-  method: "host_reattach" | "adopt" | "offline_replay";
+  method: "host_reattach" | "adopt" | "offline_replay" | "identity_resolution";
   evidence: ExecutionRecoveryEvidence;
   handle: ExecutionRecoveryHandle;
 }
@@ -413,11 +586,20 @@ interface TaskExecutionController {
   activate(executionId: ExecutionId): Promise<ExecutionOwnership>;
   beginRecovery(input: BeginExecutionRecoveryInput): Promise<void>;
   recordProgress(executionId: ExecutionId, progress: ExecutionProgress): Promise<void>;
+  awaitExternalInput(
+    executionId: ExecutionId,
+    request: PendingExternalInput,
+  ): Promise<void>;
+  resumeExternalInput(
+    executionId: ExecutionId,
+    requestId: ExternalRequestId,
+    deliveryId: DeliveryId,
+  ): Promise<void>;
   assignDelivery(executionId: ExecutionId, deliveryId: DeliveryId): Promise<void>;
   requestInterrupt(executionId: ExecutionId): Promise<boolean>;
   terminate(
     executionId: ExecutionId,
-    signal: ExecutionTerminalSignal,
+    cause: HostTerminationIntent | RunnerTerminalWitness | ExecutionTerminalSignal,
   ): Promise<ExecutionTerminalRecord>;
   awaitTerminal(executionId: ExecutionId): Promise<ExecutionTerminalRecord>;
 }
@@ -428,43 +610,62 @@ interface Task {
 }
 ```
 
-`Task.execution`은 required다. 자원이 없는 이유는 `undefined`가 아니라 phase가 말한다. 아직 시작하지 않았으면 `idle`, 자식이 아직 없으면 `reserved`, 자식을 만들었지만 활성화 전이면 `provisional`, 회수 중이면 `recovering`, 자원을 정산했으면 terminal record를 가진 `terminal`이다. “없음”, “해당 없음”, “치웠음”이 같은 값이 되는 경로가 사라진다.
+`Task.execution`은 required다. 자원이 없는 이유는 `undefined`가 아니라 phase가 말한다. 아직 시작하지 않았으면 `idle`, 독립 runner placement를 기다리면 `reserved`, 자식을 만들었지만 활성화 전이면 `provisional`, 사람의 approval·답변을 기다리면 `awaiting_external_input`, 회수 중이면 `recovering`, 자원을 정산했으면 terminal record를 가진 `terminal`이다. “없음”, “해당 없음”, “치웠음”이 같은 값이 되는 경로가 사라진다.
 
 기존 12개 필드의 정보는 다음처럼 정확히 한 union 안으로 이동한다.
 
 | 기존 Task 필드 | 새 소유 위치 |
 | --- | --- |
-| `runner` | `provisional/activating/active.attachment`, recovery handle 또는 `terminal.retention` |
+| `runner` | `provisional/activating/active/awaiting_external_input.attachment`, recovery handle 또는 `terminal.retention` |
 | `runnerRetainedForClaudeBackground` | `terminal.retention.kind` |
 | `runnerIsOfflineReplay` | `recovering.method`과 `handle.kind` |
-| `runnerTerminalFact` | `terminating.firstSignal`, `terminal.record.firstSignal` |
+| `runnerTerminalFact` | `terminating.progress`의 proven signal, `terminal.record.firstSignal` |
 | `executionPromise` | `waiters.terminal.promise`과 `terminating.termination` |
 | `executionActivationPromise` | `waiters.activation.promise` |
 | `executionActivationHandoff` | `waiters.activation` |
-| `executionOwnership` | `active/recovering.ownership` 또는 termination subject |
+| `executionOwnership` | `active/awaiting_external_input.ownership`, `recovering.subject` 또는 termination subject |
 | `executionOwnershipReservation` | `reserved/provisional.reservation` |
 | `recoveredExecutionOwnership` | `recovering.evidence` |
 | `pendingExecutionExpectedTerminalEventId` | `reservation.terminalProjectionFence` |
 | `interruptRequest` | `waiters.interrupt` |
 
-`executionId`는 예약 전에 host가 생성하는 논리적 턴 identity다. `executionCommandId`는 runner command identity이므로 provisional spawn에서 붙는다. 둘을 합치지 않는다. delivery는 앞의 논리적 identity에 속하고 runner receipt는 뒤의 command identity까지 증명한다.
+### 실행 identity의 단위
+
+`executionId`는 **모델의 한 turn이 아니라 현재 `execute` command가 감싸는 multi-turn loop 전체**의 identity다. 한 실행 안에서 최초 prompt, intervention, AskUserQuestion 응답, tool approval 응답이 차례로 여러 model turn을 만들 수 있다.
+
+```text
+session 1
+  → executionId N                     실행 수명. adopt는 보존, replacement는 새 ID
+    → executionCommandId 1            runner execute command. provisional spawn에서 확정
+      → runnerInputSequence N         최초 입력·개입·응답마다 단조 증가
+        → provider/model turn N       내부 구현 단위, execution identity가 아님
+```
+
+정상·pure adopt는 `executionId`와 `executionCommandId`를 모두 보존한다. runner crash 뒤 checkpoint-resume이 불가능해 replacement가 필요하면 앞 실행을 증명·정산한 다음 새 `executionId`와 새 command를 만든다. `deliveryId` 하나는 정확히 한 `runnerInputSequence` consumption receipt와 결합하며, provider model turn에는 직접 bind하지 않는다. 이 구분으로 구현자가 “intervention 한 번 = execution 하나” 또는 “model turn 하나 = 실행 수명”으로 축소하는 것을 막는다.
 
 ## 상태 전이표
 
 | 현재 | 계기 | 다음 | 필수 durable 효과 | 금지 |
 | --- | --- | --- | --- | --- |
-| `idle` 또는 `terminal` | 새 입력 head 승인 | `reserved` | 새 execution row와 generation CAS | runner spawn 선행 |
-| `reserved` | 정확한 child spawn 성공 | `provisional` | child proof를 execution row와 runner witness에 기록 | 활성화 전 실행 부재로 취급 |
-| `reserved` | reserve 취소·만료 | `terminating` | first terminal signal CAS | reservation 필드만 삭제 |
+| `idle` 또는 `terminal` | durable delivery head가 실행을 요구 | `reserved` | semantics v2 execution row, generation, reconcile job을 함께 commit | admission 전 실행, `in_process` 배치 |
+| `reserved` | v2 독립 runner capacity 부재 | `reserved` | placement wake의 `next_wake_at` 갱신 | 실패·503·in-process fallback |
+| `reserved` | 정확한 v2 child spawn 성공 | `provisional` | child proof를 execution row와 runner witness에 기록 | 활성화 전 실행 부재로 취급 |
+| `reserved` | reserve 취소·만료 | `terminating` | `reservation_cancelled` proof 뒤 visible terminal CAS | reservation 필드만 삭제 |
 | `provisional` | ownership proof 성공 | `activating` | proof CAS | sidecar 재독만으로 child identity 교체 |
-| `provisional` | proof·parent init 실패 | `terminating` | exact spawned child proof로 rollback | 현재 등록 PID 추측 종료 |
+| `provisional` | proof·parent init 실패 | `terminating` | exact spawned child cleanup receipt 뒤 visible terminal CAS | 현재 등록 PID 추측 종료 |
 | `activating` | activation ACK | `active` | active CAS, activation waiter resolve | delivery 선할당 |
-| `activating` | activation 실패 | `terminating` | failure signal CAS | promise만 reject하고 child 방치 |
+| `activating` | activation 실패 | `terminating` | exact child cleanup 또는 runner witness receipt | promise만 reject하고 child 방치 |
+| `active` | durable tool approval·AskUserQuestion request | `awaiting_external_input` | pending request와 request id를 execution row·runner journal에 함께 기록 | `tool_start`나 단순 progress로 대체 |
+| `awaiting_external_input` | 같은 request id의 delivery consumed | `active` | pending request resolve receipt, 새 progress deadline, runner input sequence commit | foreground stall clock을 대기 시간만큼 소급 적용 |
+| `awaiting_external_input` | host attachment 상실 | `recovering` | pending request를 보존한 recovery wake | stalled reap, request 유실 |
 | `active` | host attachment 상실 | `recovering` | recovery wake 기록 | stream fail, execution terminal 처리 |
-| `recovering` | 같은 identity reattach/adopt | `active` | attachment epoch 갱신 | 새 execution 생성 |
-| `recovering` | durable terminal witness | `terminating` | witness를 first signal로 CAS | 늦은 host 오류로 덮기 |
-| `active` 또는 `recovering` | runner terminal·interrupt·reaper 증명 | `terminating` | first signal CAS | 직접 `finish()`/`fail()` 분기 |
-| `terminating` | 정산 완료 | `terminal` | terminal row, delivery resolution, cleanup report | waiters를 남긴 채 field clear |
+| `recovering` | 같은 identity reattach/adopt | `active` 또는 `awaiting_external_input` | attachment epoch 갱신, 보존한 activity로 복귀 | 새 execution 생성, pending request 삭제 |
+| `recovering(identity_unresolved)` | identity 증명 성공 | `active` 또는 `awaiting_external_input` | 기존 execution/command identity backfill | session `interrupted` 투영 |
+| `recovering(identity_unresolved)` | process 부재 확정·adopt 불가 | successor `reserved` | predecessor terminal proof + successor row + input/context handoff를 한 transaction에 commit | 중간 `idle`, session terminal/interrupted, 입력 유실 |
+| `recovering` | durable terminal witness | `terminating` | witness high-watermark drain wake | receipt 전 first signal CAS, 늦은 host 오류로 덮기 |
+| `active`, `awaiting_external_input`, `recovering` | host interrupt·reaper 의도 | `terminating(intent_recorded)` | durable intent와 runner control wake | intent만으로 visible terminal commit |
+| nonterminal | runner witness 또는 process-absence proof와 ingress receipt | `terminating(proof_observed)` | first visible terminal CAS | receipt 전 session terminal 투영 |
+| `terminating` | visible terminal·delivery·cleanup 정산 완료 | `terminal` | terminal row, delivery resolution, cleanup report | waiters를 남긴 채 field clear |
 | `terminal` | 다음 유효 입력 | 새 `reserved` | 새 `executionId`, retention attachment의 명시적 handoff | terminal record 재사용, retained runner를 current turn으로 간주 |
 
 모든 mutation은 controller의 `transition(expectedExecutionId, expectedPhase, next)` CAS를 거친다. 이전 실행의 callback은 execution id가 다르면 관측만 기록하고 현재 실행의 자원에 접근할 수 없다.
@@ -478,28 +679,35 @@ interface Task {
 1. session별 controller mutex를 획득한다.
 2. 현재 phase가 `idle` 또는 `terminal`인지 확인한다.
 3. `executionId`, generation, activation/terminal/interrupt waiter를 만든다.
-4. 중앙 execution row를 `reserved`로 기록한다.
+4. 중앙 execution row를 `semantics_version=2`, `executor_kind=independent_runner`, `reserved`로 기록하고 durable reconcile/placement job을 함께 만든다.
 5. 메모리 상태를 `reserved`로 게시한다.
 6. mutex를 놓는다.
 
-spawn은 그 뒤에 일어나지만, 성공 즉시 `attachSpawn()`이 exact child proof와 attachment resource ledger를 함께 `provisional`에 넣는다. 그래서 activation 전 실패도 “실행이 없었다”가 아니라 terminalize해야 할 실행으로 남는다.
+spawn은 v2 capability를 가진 독립 runner가 배정된 뒤에만 일어난다. capacity가 없으면 `reserved`와 이미 승인된 delivery가 durable하게 기다린다. 성공 즉시 `attachSpawn()`이 exact child proof와 attachment resource ledger를 함께 `provisional`에 넣는다. 그래서 activation 전 실패도 “실행이 없었다”가 아니라 terminalize해야 할 실행으로 남는다. `task_executor.ts:277`의 `createInProcessTaskRunnerRuntime()` 폴백은 v2 user-visible 진입에서 호출 불가능하고, DB의 `executor_kind` CHECK도 이를 거부한다.
 
 ### 해제 경계
 
-`terminate(executionId, signal)`만 실행을 끝낸다. 같은 execution에 대한 모든 호출은 하나의 memoized termination promise를 돌려받는다. 첫 호출만 first-signal CAS를 이기고 나머지는 late signal 진단으로 남는다.
+`terminate(executionId, cause)`만 실행을 끝낸다. 같은 execution에 대한 모든 호출은 하나의 memoized termination promise를 돌려받는다. 여러 host intent는 합쳐지지만 terminal 결과가 아니다. outbox receipt를 갖춘 첫 유효 proof만 first visible signal CAS를 이기고, 이후 proof·오류는 late signal 진단으로 남는다.
 
 해제 순서는 다음으로 고정한다.
 
-1. 해당 execution으로의 새 delivery bind와 interrupt 시작을 닫는다.
-2. first terminal signal을 중앙 execution row에 CAS한다.
-3. runner outbox와 IPC journal의 terminal 이전 frame을 event ingress receipt까지 drain한다.
-4. 할당된 delivery attempt를 consumed, unconsumed, reconcile_pending 중 하나로 정산한다.
-5. `ProcessFrameStream.terminate(firstSignal)`로 내부 소비자에게 정확히 한 terminal을 보낸다.
-6. activation, terminal, interrupt waiter를 모두 settle한다.
-7. 진행 관측, request lifetime, reconnect timer, in-flight frame handler를 정산한다.
-8. pump mux 등록, IPC attachment, parent outbox, offline writer와 writer lock을 반납한다.
-9. 정책이 요구할 때만 exact child proof로 child를 종료·retire한다. host restart와 live adoption handoff에서는 child를 보존하고, foreground 종료 뒤 Claude background task가 남으면 `terminal.retention`으로 명시 이전한다.
-10. cleanup 실패 전체를 `ExecutionCleanupReport`에 기록하고, 독립 단계는 끝까지 시도한 뒤 `terminal`로 전이한다. 실패 단계는 maintenance lane이 재시도한다.
+1. 해당 execution으로의 새 delivery bind와 새 interrupt 시작을 닫는다. host-origin 종료면 `HostTerminationIntent`만 durable하게 기록한다. **의도는 visible terminal이 아니다.**
+2. runner는 마지막 engine event와 pending outbox를 먼저 durable하게 쓴 뒤, 그 outbox high-watermark와 outcome을 가진 `RunnerTerminalWitness`를 같은 runner transaction에 commit한다.
+3. runner는 비정본 `execution_ended` control frame으로 host를 깨운다. frame 유실은 maintenance poll로 대체되며 terminal 사실을 만들지 않는다.
+4. host는 witness의 high-watermark까지 runner outbox·IPC journal을 event ingress로 replay하고 `TerminalIngressReceipt`를 durable하게 받는다.
+5. controller는 witness identity와 receipt sequence가 일치함을 확인한 뒤에만 중앙 first visible terminal CAS를 수행한다. 이때 늦은 `finish/fail`은 진단으로만 남는다.
+6. 할당된 delivery attempt를 consumed, unconsumed, reconcile_pending 중 하나로 정산한다.
+7. `ProcessFrameStream.terminate(firstSignal)`로 내부 소비자에게 정확히 한 terminal을 보낸 뒤 activation, terminal, interrupt waiter를 모두 settle한다.
+8. 진행 관측, request lifetime, reconnect timer, in-flight frame handler를 정산한다.
+9. pump mux 등록, IPC attachment, parent outbox, offline writer와 writer lock을 반납한다.
+10. 정책이 요구할 때만 exact child proof로 child를 종료·retire한다. host restart와 live adoption handoff에서는 child를 보존하고, foreground 종료 뒤 Claude background task가 남으면 `terminal.retention`으로 명시 이전한다.
+11. cleanup 실패 전체를 `ExecutionCleanupReport`에 기록하고, 독립 단계는 끝까지 시도한 뒤 `terminal`로 전이한다. 실패 단계는 maintenance lane이 재시도한다.
+
+runner가 witness 전에 죽은 경우에도 host intent를 terminal로 승격하지 않는다. reconciler가 서로 다른 두 scan에서 exact process 부재, 변하지 않은 runner outbox high-watermark, 중앙 execution identity를 함께 증명하고, 남은 outbox를 ingress receipt까지 정산한 `proven_process_absent` proof를 만든 뒤 같은 5번 CAS를 탄다. 이 경로가 출력 유실과 terminal 영구 대기를 동시에 막는다.
+
+runner lifecycle의 terminal witness slot도 `(execution_id, execution_command_id)`당 하나인 CAS다. `finish → fail`, `fail → finish`, `fail → fail`에서 첫 witness의 outcome과 high-watermark가 고정되고 late witness는 별도 diagnostic row로만 남는다. 중앙 first visible signal은 그 첫 witness를 receipt 뒤 투영하므로 첫 실패 대신 late failure가 노출될 수 없다.
+
+5번의 visible terminal CAS는 durable outcome 정본을 뜻한다. session status broadcast, `TaskExecution.phase="terminal"`, terminal waiter resolution은 6~11번이 끝난 같은 memoized termination promise의 끝에서만 게시한다. 따라서 active stream 정산, request lifetime abort, host resource release, reason 기록 중 하나를 빼고 “종료 완료”를 관측시키는 경로가 없다.
 
 host attachment 반납은 이 목록과 다른 연산이다.
 
@@ -522,7 +730,7 @@ type DispatcherState =
   | { phase: "terminal"; terminal: DispatcherTerminal };
 ```
 
-`close`, rollback, reconnect exhaustion, `execution_ended`, offline replay terminal의 다섯 진입점은 직접 boolean이나 stream을 건드리지 않는다. terminal 증명이 있는 네 경로는 controller `terminate()`를 호출하고, reconnect exhaustion은 `recovering`과 `detachAttachment()`를 호출한다. `detachAttachment()`는 child, execution row, output stream의 terminal 상태를 바꾸지 않는다.
+`close`, rollback, reconnect exhaustion, `execution_ended`, offline replay terminal의 다섯 진입점은 직접 boolean이나 stream을 건드리지 않는다. rollback은 exact child cleanup proof, runner-origin 경로는 witness+ingress receipt를 controller `terminate()`에 전달한다. `execution_ended`는 witness 조회를 깨우기만 한다. reconnect exhaustion은 `recovering`과 `detachAttachment()`를 호출하며 child, execution row, output stream을 terminal로 바꾸지 않는다.
 
 `ProcessFrameStream`도 `ended`와 `error` 두 필드 대신 다음 단일 상태를 가진다.
 
@@ -569,27 +777,48 @@ type InventoryRelation =
 
 매 maintenance tick은 다음 순서로 독립 스냅샷을 만든다.
 
-1. `session_execution_ownerships`의 `reserved`, `identity_proven`, `active`, `terminating` row를 node별로 읽는다.
+1. `session_execution_ownerships`의 `reserved`, `identity_proven`, `active`, `awaiting_external_input`, `recovering`, `terminating` row를 node별로 읽는다. 모든 open row는 같은 transaction에서 만들어진 `execution_reconcile_jobs` row와 non-null `reconcile_due_at`을 가진다.
 2. runner 등록 디렉터리와 runner SQLite lifecycle witness를 읽는다.
 3. 메모리 controller를 읽되 판단 근거가 아니라 불일치 탐지에만 쓴다.
 4. `executionId`를 기준으로 full outer join한다.
-5. 모든 row를 disposition으로 분류하고, 각 결과를 `completed` 또는 `scheduled(wakeAt)` receipt로 끝낸다.
+5. 모든 row를 disposition으로 분류하고, 각 결과를 execution row와 reconcile job을 한 transaction에서 갱신하는 `completed` 또는 `scheduled(wakeAt)` receipt로 끝낸다.
 
-따라서 등록 디렉터리가 0개여도 1번에서 열린 실행 4개가 나오면 네 실행을 모두 검사한다. 반대로 중앙 execution 없이 등록만 있으면 orphan child 회수 대상이다. `activeRunnerOperations`와 Task 필드 존재는 inventory가 아니라 controller의 관측 projection으로 격하한다.
+따라서 등록 디렉터리가 0개여도 중앙의 열린 실행 4개와 durable reconcile job 4개가 나오면 네 실행을 모두 검사한다. 반대로 중앙 execution 없이 등록만 있으면 orphan child 회수 대상이다. `activeRunnerOperations`와 Task 필드 존재는 inventory가 아니라 controller phase의 순수 projection으로 격하한다.
 
-스캔은 기존 bounded `PeriodicMaintenanceLoop`의 독립 step으로 둔다. step timeout이 나도 다음 tick이 강제되고, 한 실행의 reconcile이 다른 실행을 막지 않도록 session별 bounded job으로 분리한다. 회수는 새 메시지, reserve, intervention, 배포, 재시작 중 어느 것도 트리거로 요구하지 않는다.
+스캔은 기존 bounded `PeriodicMaintenanceLoop`의 독립 step으로 둔다. DB의 `next_wake_at`이 지난 job을 `FOR UPDATE SKIP LOCKED`로 claim하며, worker lease가 끝나면 DB가 다시 runnable하게 만든다. 한 실행의 reconcile이 다른 실행을 막지 않는다. 새 메시지, reserve, intervention, 배포, 재시작은 가속 wake일 수 있지만 회수의 전제는 아니다. DB와 maintenance worker가 모두 fail-stop인 동안에는 지연이 늘 수밖에 없으나 책임 row와 wake가 사라지지 않으므로 서비스 복귀 뒤 반드시 계속된다.
+
+### owner-null은 identity-unresolved 책임이다
+
+v2 migration은 owner-null running row를 `idle`, `terminal`, session `interrupted` 중 어느 것으로도 투영하지 않는다. 두 번 관측에서 stable identity가 나오면 같은 execution을 `identified`로 backfill하고 adopt한다. identity가 여전히 없으면 `recovering`의 `identity_unresolved` subject와 durable reconcile job을 만든다. 그 상태는 다음 두 종착지만 가진다.
+
+1. runner/registration/bootstrap 증거가 합쳐지면 같은 `executionId`와 command를 adopt한다.
+2. exact process 부재와 outbox 경계가 증명되면 `session_replace_execution_v2(...)`가 predecessor terminal proof, successor `reserved` row, 승인된 입력·context·pending request handoff를 한 transaction에 commit한다. open execution pointer가 predecessor에서 successor로 원자적으로 바뀌므로 session은 `idle`이나 terminal을 거치지 않는다.
+
+따라서 legacy 두 번 관측은 “identity를 못 찾았으니 interrupt”가 아니라 “누가 맡을지 아직 증명하지 못했으니 recovering 책임을 유지”하는 분류다. 이 과정은 외부 session status와 ACK에 나타나지 않는다.
 
 ### progress와 process liveness 분리
 
 살아 있는 프로세스와 진행하는 턴은 다른 사실이다.
 
-- `assistant_message`, `thinking`, `tool_result`만 foreground progress lease를 갱신한다. 정본 predicate는 하나다.
-- `tool_start`는 progress가 아니라 해당 tool의 절대 lease를 연다. heartbeat가 와도 이 절대 lease를 무한 연장하지 않는다.
+- semantic `assistant_message`, `thinking`, `tool_result`만 foreground progress lease를 갱신한다. 정본 predicate는 하나다.
+- backend 정규화는 exhaustive adapter 표 하나가 담당한다. Claude client `text`는 semantic `assistant_message`로 변환하고, Codex event mapper와 Codex app-server의 완료 agent message, OpenAI Agents의 완료 output은 모두 semantic `assistant_message`로 수렴한다. `thinking`과 `tool_result`도 각 mapper가 같은 semantic kind로 수렴시킨 뒤 lease 계층에 들어온다.
+- `tool_start`는 progress가 아니라 해당 tool의 **30분(1,800,000ms) 비갱신 absolute lease**를 연다. heartbeat와 중복 tool start는 연장하지 않으며 `tool_result`, explicit tool cancellation, execution terminal이 닫는다.
 - runner heartbeat는 process liveness만 갱신한다. 객체, socket, PID, 등록 디렉터리 존재는 progress가 아니다.
 - 중앙 progress row는 runner SQLite의 monotonic `progress_seq`를 CAS 투영한다. 늦은 host가 sequence를 되돌릴 수 없다.
-- progress lease가 지났더라도 절대 lease 안의 in-flight tool이 있으면 기다린다. 둘 다 지났고 terminal witness도 없을 때만 `reap_stalled`을 증명한다.
+- foreground progress gap도 현행 설정 정본 `SOUL_RUNNER_LEASE_TIMEOUT_MS=1,800,000ms`를 그대로 쓴다 (`soul-server-ts/src/config.ts:71`). progress gap이 지났더라도 absolute lease 안의 in-flight tool이 있으면 기다리고, tool lease가 지났더라도 최근 semantic progress가 있으면 기다린다. 둘 다 지났고 terminal witness가 없으며 두 scan에서 sequence가 같을 때만 `reap_stalled` intent를 만든다.
+- `awaiting_external_input`에서는 foreground progress와 tool absolute lease 판정을 중지한다. durable pending request의 process liveness는 계속 감시하되 사람의 고민 시간을 stalled로 해석하지 않는다. 명시적 request deadline이 있는 경우에도 request subsystem이 `input_request_expired`/approval resolution을 durable하게 만들 뿐 progress reaper가 종료하지 않는다. 응답 consumption 뒤 새 30분 progress deadline으로 `active`를 재개한다.
 
-이는 “tool result, thinking, agent message가 오고 있으면 살아 있다”는 사용자 기준을 정본 predicate로 올린 것이다. 현재 `runner_child_runtime.ts:584`의 모든 SSE event progress와 `claude_runtime_followup_watchdog.ts:205`의 foreground predicate를 하나로 합친다.
+이는 “tool result, thinking, agent message가 오고 있으면 살아 있다”는 사용자 기준을 정본 predicate로 올린 것이다. 현재 `runner_child_runtime.ts:584`의 모든 SSE event progress, `runner_process_registry.ts:160`의 renewable gap, `claude_runtime_followup_watchdog.ts:205`의 foreground predicate를 하나로 합친다. 현행에는 tool absolute lease가 없으므로 이는 신규 durable 필드이며, 기존 gap 수치만 재사용한다.
+
+| backend | raw 완료·진행 event | semantic progress | 비고 |
+| --- | --- | --- | --- |
+| Claude SDK | client `text` | `assistant_message` | `mapClaudeClientEvent()` 경계에서 변환. raw `text`를 lease 계층에 직접 넣지 않음 |
+| Claude SDK | `thinking`, `tool_result` | 동명 semantic kind | `input_request`는 progress가 아니라 external wait 전이 |
+| Codex CLI 모드 | completed `agent_message`, reasoning, completed tool item | `assistant_message`, `thinking`, `tool_result` | live delta는 durable progress로 세지 않음 |
+| Codex app-server 모드 | completed agent message, completed reasoning/tool item | `assistant_message`, `thinking`, `tool_result` | 두 Codex mapper 모두 같은 semantic union을 반환 |
+| OpenAI Agents | completed output `assistant_message`, tool result | `assistant_message`, `tool_result` | `tool_approval_requested`는 external wait 전이 |
+
+adapter 반환 타입은 `ExecutionProgressKind | ExternalWaitSignal | NonProgressEvent`의 exhaustive union으로 하고, classifier에 backend string switch를 다시 두지 않는다. 새 backend event를 추가했는데 어느 variant에도 넣지 않으면 compile/test가 실패한다.
 
 ### exhaustive disposition 정책
 
@@ -604,7 +833,12 @@ type RecoveryAction =
   | "observe_terminal"
   | "revalidate_then_reap"
   | "resume_reaped"
-  | "drain_closed";
+  | "drain_closed"
+  | "resolve_identity_or_prepare_replacement";
+
+type RunnerRecoveryDispositionV2 =
+  | RunnerRecoveryDisposition
+  | "identity_unresolved";
 
 interface DispositionPolicy {
   task: "required" | "forbidden";
@@ -665,7 +899,12 @@ const DISPOSITION_POLICY = {
     revalidate: "before_irreversible_action", action: "drain_closed",
     onOwnershipConflict: "not_applicable",
   },
-} satisfies Record<RunnerRecoveryDisposition, DispositionPolicy>;
+  identity_unresolved: {
+    task: "required", contendsForOwnership: true,
+    revalidate: "before_irreversible_action", action: "resolve_identity_or_prepare_replacement",
+    onOwnershipConflict: "schedule_retry_at_canonical_lease",
+  },
+} satisfies Record<RunnerRecoveryDispositionV2, DispositionPolicy>;
 ```
 
 action executor의 반환 타입은 다음 둘뿐이다.
@@ -676,9 +915,30 @@ type RecoveryReceipt =
   | { kind: "scheduled"; executionId: ExecutionId; wakeAt: IsoDateTime; reason: string };
 ```
 
-refreshed disposition이 달라지면 executor는 새 키로 같은 `Record`를 다시 조회한다. 아무 일도 하지 않는 `return`은 타입에 없다. 이 구조는 새 11번째 disposition이 추가될 때 policy와 test matrix 양쪽을 컴파일 오류로 만든다.
+refreshed disposition이 달라지면 executor는 새 키로 같은 `Record`를 다시 조회한다. 아무 일도 하지 않는 `return`은 타입에 없다. v2의 11번째 `identity_unresolved`를 포함한 이 구조는 이후 12번째 disposition이 추가될 때 policy와 test matrix 양쪽을 컴파일 오류로 만든다.
 
 ## delivery와 실행의 연결
+
+### caller가 만드는 stable delivery identity
+
+exactly-once의 시작점은 orch가 아니라 **첫 network send 전 caller**다. orch가 admission commit 직후 응답 전에 죽었을 때 같은 논리 메시지를 같은 ID로 다시 물을 수 없으면 중복과 유실 중 하나를 피할 수 없다. v2 cutover 전에 다음 inventory를 모두 관통시킨다.
+
+| caller·동작 | 현재 결손 | v2 delivery ID 계약 | retry 보존 위치 |
+| --- | --- | --- | --- |
+| soul-ui web message·intervene | `submitIntervention.ts:30`에 ID 없음 | action 시작 시 UUID를 생성하고 payload와 함께 전송 | pending action store에 ACK까지 보존 |
+| soul-app intervene | `sessionEndpoints.ts:158`에 ID 없음 | web과 같은 action UUID | persisted pending action |
+| soul-ui web·soul-app respond | ID 없음 | `UUIDv5(sessionId, "respond", requestId)` | durable pending request |
+| soul-ui web·soul-app approve/reject | ID 없음 | `UUIDv5(sessionId, "tool_approval", approvalId)`; decision은 payload hash에 포함 | durable pending approval |
+| soul-app·web interrupt | invocation identity 없음 | 클릭·호출마다 새 action UUID. session id에서만 결정적으로 만들지 않음 | pending interrupt action |
+| Slack intervention | `intervention.py:22`가 `thread_ts`를 delivery로 전달하지 않음 | `UUIDv5(channelId, messageEventId)` | Slack event retry의 동일 event id |
+| Cogito MCP create/intervene/respond/approval/interrupt | `session_mgmt.ts:150` 스키마에 없음 | 명시적 required `delivery_id`; MCP client가 첫 호출 전에 생성 | MCP 호출자의 request state |
+| orch create/intervene 요청 모델 | `session_models.py:22`에 없음 | required `delivery_id`를 admission까지 그대로 전달 | idempotency receipt |
+| cross-node command | TS 수신은 수용, `node_connection.py:438` Python 송신 누락 | 기존 `delivery_id`를 Python→TS 전 구간 관통 | orch delivery row |
+| completion/runtime followup | 이미 있음 (`delivery_identity.ts:11`) | 기존 결정적 ID 유지 | 기존 delivery identity 정본 |
+
+respond/approval ID가 결정적이어도 같은 ID에 다른 답·decision payload가 오면 admission의 payload hash mismatch proof로 거부한다. interrupt는 같은 session을 여러 번 중단할 수 있으므로 request id에서 파생할 수 없고 invocation UUID가 필요하다. UI와 MCP adapter는 transport disconnect를 외부 실패로 확정하지 않고 같은 ID로 내부 재조회·재시도하여 동일 `AcceptedInput`을 돌려준다.
+
+이 전환은 delivery bind의 부가 작업이 아니라 v2 admission의 **선행 fence**다. 모든 caller capability가 등록되기 전에는 v2 ingress를 켜지 않는다. 구 caller 요청은 v1 경로로만 처리되며 v2 execution row에 bind할 수 없다.
 
 ### 논리 메시지와 시도 분리
 
@@ -706,6 +966,7 @@ type DeliveryResponsibility =
       enqueueSequence: bigint;
       lastAttempt: AssignedDeliveryAttempt;
       wakeOn: "execution_activated" | "ownership_changed" | "maintenance_tick";
+      nextWakeAt: IsoDateTime;
     }
   | { state: "consumed"; deliveryId: DeliveryId; receipt: DeliveryConsumptionReceipt }
   | { state: "rejected"; deliveryId: DeliveryId; proof: DeliveryRejectionProof }
@@ -717,7 +978,7 @@ interface AssignedDeliveryAttempt {
   attemptNumber: number;
   executionId: ExecutionId;
   ownershipGeneration: number;
-  executionCommandId: string;
+  executionCommandId: ExecutionCommandId;
   payloadHash: string;
   assignedAt: IsoDateTime;
 }
@@ -725,9 +986,17 @@ interface AssignedDeliveryAttempt {
 interface DeliveryConsumptionReceipt {
   attemptId: string;
   executionId: ExecutionId;
-  executionCommandId: string;
+  executionCommandId: ExecutionCommandId;
   runnerInputSequence: number;
   consumedAt: IsoDateTime;
+}
+
+interface DeliveryRejectionProof {
+  proofId: string;
+  deliveryId: DeliveryId;
+  kind: "payload_identity_conflict" | "authorization_denied" | "caller_cancelled_before_consumption";
+  payloadHash: string;
+  committedAt: IsoDateTime;
 }
 ```
 
@@ -737,14 +1006,14 @@ interface DeliveryConsumptionReceipt {
 
 ### 할당과 순서
 
-한 DB transaction이 session의 head delivery와 open execution을 함께 잠근다.
+application role의 delivery/attempt 직접 DML은 revoke한다. 유일한 write 경계인 `session_assign_delivery_head_v2(...)` stored procedure가 `session_delivery_heads`의 session별 head pointer와 open execution을 함께 잠근다.
 
-1. 아직 terminal이 아닌 가장 작은 `enqueue_sequence`를 고른다.
-2. 앞 delivery가 `queued`가 아니면 뒤 delivery를 할당하지 않는다.
+1. `session_delivery_heads.head_delivery_id`와 `head_enqueue_sequence`가 가리키는 row만 고른다.
+2. head가 `queued`가 아니면 뒤 delivery를 조회·할당할 권한 자체가 없다.
 3. active execution row와 command identity를 읽는다.
 4. `(delivery_id, attempt_number)` row에 `execution_id`, generation, command id를 기록한다.
 5. runner durable input inbox에 같은 attempt id를 넣고 receipt fence를 만든다.
-6. runner receipt 뒤에만 delivery를 `consumed`로 바꾼다.
+6. runner receipt 뒤에만 delivery를 `consumed`로 바꾸고, 같은 procedure가 head pointer를 정확히 다음 nonterminal delivery로 전진시킨다.
 
 제약은 다음을 DB에서도 막는다.
 
@@ -752,7 +1021,8 @@ interface DeliveryConsumptionReceipt {
 - attempt 하나당 execution 정확히 1개
 - consumption receipt의 `(delivery_id, attempt_id)` unique
 - runner input의 `attempt_id` unique
-- session별 FIFO head를 건너뛰는 assignment 금지
+- attempt의 `(session_id, enqueue_sequence)`가 현재 head와 다르면 procedure가 거부
+- application role의 direct `INSERT/UPDATE/DELETE` revoke로 stored procedure 우회 금지
 
 execution activation은 binder wake event를 같은 durable transaction에 넣는다. 복구가 끝나기 전에 온 개입은 `queued`로 머물고, 기존 execution이 `active`로 돌아오면 그 execution에, 이미 terminal이면 다음 execution에 할당된다. 어느 경우에도 호출자가 다시 보내지 않는다.
 
@@ -765,6 +1035,7 @@ type ExecutionInputKind =
   | "user_message"
   | "intervention"
   | "ask_question_response"
+  | "tool_approval"
   | "tool_result"
   | "interrupt"
   | "completion_notification"
@@ -773,18 +1044,19 @@ type ExecutionInputKind =
 interface AcceptedInput {
   status: "accepted";
   deliveryId: DeliveryId;
+  payloadHash: string;
 }
 ```
 
 orch는 node WebSocket을 호출하기 전에 delivery와 idempotency receipt를 Postgres에 commit한다. 정상일 때도 곧바로 node에 보내지 않고 binder를 깨운다. node 단절과 command timeout은 API 결과가 아니라 내부 지연 사유다.
 
-`markQueued()`나 assignment CAS가 false이면 즉시 실패하지 않는다. delivery id로 canonical row를 재조회한다.
+`markQueued()`나 assignment CAS가 false이면 즉시 실패하지 않는다. caller가 준 stable delivery id로 canonical row를 재조회한다.
 
 - `queued`, `assigned`, `reconciling`, `retry_paused`, `consumed`면 같은 `AcceptedInput`을 반환한다.
-- identity가 다른 payload면 비수용을 증명한 409를 반환할 수 있다. 이는 restart 신호가 아니라 caller idempotency 위반이다.
+- identity가 다른 payload면 `delivery_rejection_proofs`를 먼저 commit한 뒤 409를 반환할 수 있다. 이는 restart 신호가 아니라 caller idempotency 위반이다.
 - DB commit 결과 자체가 불명확하면 같은 idempotency key로 내부 재조회하며 HTTP 연결을 유지한다. 연결이 끊기면 caller transport가 같은 key로 자동 재시도하고 동일 receipt를 받는다.
 
-현재 “queued-state CAS false → throw → 503”과 `sessions.py:408`의 node 단절 503은 이 경계가 생기면 구조적으로 사라진다. 외부에는 queued, auto-resumed, recovering 같은 disposition도 노출하지 않는다. 정상 경로와 재기동 경로의 응답을 같게 만들기 위해서다.
+route의 반환 타입은 `AcceptedInput | ProvenAdmissionRejection`뿐이고 node command 결과 타입은 들어오지 않는다. 현재 “queued-state CAS false → throw → 503”과 `sessions.py:408`의 node 단절 503은 이 경계가 생기면 구조적으로 사라진다. 외부에는 queued, auto-resumed, recovering 같은 disposition도 노출하지 않는다. 정상 경로와 재기동 경로의 응답을 같게 만들기 위해서다.
 
 ## 재기동 투명성
 
@@ -793,14 +1065,19 @@ orch는 node WebSocket을 호출하기 전에 delivery와 idempotency receipt를
 | 사실 | durable 위치 | 재기동 뒤 사용 |
 | --- | --- | --- |
 | 논리 실행 identity와 phase | 중앙 execution row | open inventory와 controller 재구성 |
-| first terminal signal | 중앙 first-signal CAS | 중복 terminal 차단과 session 최종 투영 |
+| host termination intent | 중앙 intent row | interrupt·reap 요청 보존. visible terminal로 사용하지 않음 |
+| runner terminal witness와 outbox high-watermark | runner lifecycle/outbox transaction | terminal 이전 출력 경계 증명 |
+| terminal ingress receipt와 first visible signal | event ingress receipt + 중앙 first-signal CAS | 출력 receipt 뒤 중복 terminal 차단과 session 최종 투영 |
 | runner child identity와 execute command | 중앙 row + runner bootstrap witness | exact process adopt·rollback |
 | foreground progress와 in-flight tool lease | runner lifecycle + 중앙 monotonic projection | stalled 판정 |
+| pending external request | runner request journal + 중앙 execution row | approval·AskUserQuestion 대기 보존과 progress reap suspension |
 | engine 입력 | runner command/input journal | command 재전송 중복 차단 |
 | engine 출력 | runner event outbox + IPC journal | event id 순서 replay |
 | host call 요청·응답 | runner request journal + host idempotency receipt | host 교체 뒤 같은 correlation id 재개 |
 | 사용자 입력과 FIFO | orch delivery ledger | 복구 전 입력 보존과 activation bind |
 | delivery→execution attempt | delivery attempt row + runner input receipt | 결과 reconcile과 exactly-once |
+| execution reconcile 책임·wake | 중앙 reconcile job + `reconcile_due_at` | 아무 입력이 없어도 자력 회수 |
+| session semantics와 host capability | 중앙 cutover epoch + capability lease | v1 writer의 v2 row 접근 차단 |
 | backend session id와 context mutation | 기존 durable session/event effect | 새 host Task hydration |
 
 runner child는 soul-server shutdown 대상이 아니다. 계획 재기동에서 host는 `detachAttachment("host_shutdown")`만 수행한다. engine turn, runner SQLite, writer lock, child socket은 살아 남는다.
@@ -813,13 +1090,14 @@ child가 보내는 host call은 전송 전에 correlation id와 payload를 runne
 
 복구 전 입력의 순서는 다음으로 고정한다.
 
-1. orch가 입력을 durable admission하고 정상과 같은 `accepted`를 반환한다.
-2. input은 session FIFO에서 unassigned로 기다린다.
-3. 새 host가 중앙 open execution을 hydrate한다.
-4. exact child를 adopt하고 `recovering → active`를 commit한다.
-5. activation wake가 FIFO binder를 실행한다.
-6. bind transaction이 기존 command가 여전히 active인지 다시 확인한다.
-7. active면 그 command inbox로, terminal이면 다음 execution의 첫 입력으로 들어간다.
+1. caller가 첫 network send 전에 stable delivery id를 만들고 retry state에 보존한다.
+2. orch가 입력을 durable admission하고 정상과 같은 `accepted`를 반환한다. node call은 ACK 조건이 아니다.
+3. input은 session FIFO head chain에서 unassigned로 기다린다.
+4. v2 capability host가 중앙 open execution과 pending external request를 hydrate한다.
+5. exact child를 adopt하고 `recovering → active` 또는 `recovering → awaiting_external_input`을 commit한다.
+6. activation/reattach wake가 FIFO binder를 실행한다.
+7. bind procedure가 기존 command와 session head pointer를 다시 확인한다.
+8. foreground active면 그 command inbox로, external response면 같은 pending request에, terminal이면 다음 execution의 첫 입력으로 들어간다.
 
 “recovery 중이므로 queued” 같은 외부 결과는 없다. 호출자가 보는 것은 정상 때와 같은 accepted receipt와 늦게 도착한 실제 agent 응답뿐이다.
 
@@ -834,30 +1112,32 @@ child가 보내는 host call은 전송 전에 correlation id와 payload를 runne
 | terminal 경합 | 첫 결과 한 번 | 중복 완료, 늦은 실패 |
 | delivery result unknown | 내부 reconcile 뒤 결과 | uncertain/dead-letter 알림 |
 
-`in_process` execution은 host process와 운명을 같이하므로 이 수용 기준을 만족할 수 없다. 투명성 gate가 켜진 사용자·에이전트 턴은 반드시 독립 runner 또는 같은 durability를 가진 외부 worker에서 실행한다. 현행 `ownerKind: "in_process"` 사용처가 0임을 전수 검증하기 전에는 gate를 전면 활성화하지 않는다. 존재한다면 해당 경로를 외부 worker로 옮기는 것이 설계 조건이며, 오류 노출 fallback은 두지 않는다.
+`in_process` execution은 host process와 운명을 같이하므로 이 수용 기준을 만족할 수 없다. 과거 user-visible 실행 5건이 실제로 폴백을 탔으므로 사용처 수나 최근 빈도로 존속을 정당화하지 않는다.
+
+v2 user-visible 진입은 durable admission 뒤 `reserved.executor.placement="waiting"`으로 남고 `execution_semantics_v2` capability를 가진 독립 runner가 배정될 때까지 기다린다. `session_execution_ownerships`의 CHECK는 `semantics_version=2 AND executor_kind <> 'independent_runner'`를 거부하고, v2 reserve procedure는 capability lease가 없는 host·runner identity를 받지 않는다. `TaskExecutor.startExecution()`의 in-process factory는 test·명시적 비사용자 내부 작업에서만 별도 capability로 남길 수 있으며 v2 admission type을 입력으로 받을 수 없다. 독립 runner 부재를 오류, 503, interrupted session으로 바꾸는 fallback은 없다.
 
 ## 불변식에서 구조로의 매핑
 
 ### 실행 불변식 16개
 
-| # | 불변식 | 위반이 구성상 불가능한 이유 | 강제 수단 |
+| ID | 불변식 | 위반이 구성상 불가능한 이유 | 강제 수단 |
 | ---: | --- | --- | --- |
-| 1 | session당 current execution 최대 1, 모든 참조 identity 일치 | required controller 하나와 DB open-execution unique 제약이 같은 `executionId`만 허용한다. | 타입 + DB CAS |
-| 2 | 실행 lifecycle은 명시적 단일 상태기계 | 모든 상태가 `TaskExecution` 판별 유니온이며 presence 판정 API가 없다. | 타입 |
-| 3 | provisional spawn도 실행 | spawn proof와 attachment를 가진 `provisional`이 activation 전에 필수다. | 타입 + 단일 attach 경로 |
-| 4 | 새 identity가 옛 자원과 격리 | callback과 transition이 `executionId + generation`을 요구한다. 불일치 callback은 mutation 권한이 없다. | 타입 + runtime fence |
-| 5 | runner·registration 소실 시 모든 waiter bounded settle | 중앙 open inventory가 소실을 disposition으로 만들고, termination이 모든 waiter를 한 번에 settle한다. | 주기 reconcile + 단일 종료 |
-| 6 | 회수는 restart·reserve·message와 독립 | maintenance가 중앙 open inventory를 항상 스캔한다. | runtime maintenance |
-| 7 | reference clear는 종료가 아님 | public clear API가 없고 `terminal` 전이는 cleanup receipt를 요구한다. | 타입 + 단일 경로 |
-| 8 | terminal은 멱등, visible 결과 하나 | first-signal DB CAS와 memoized `terminate()`가 모든 신호를 합친다. | DB CAS + 단일 경로 |
-| 9 | activeRunnerOperations는 실행과 함께 끝남 | stall 관측이 controller resource ledger의 cleanup step이라 별도 finish 누락이 없다. | 단일 resource ledger |
-| 10 | activation 실패 시 같은 generation active 또는 exact child dead | `provisional`은 exact child proof를 보유하고 failure가 `terminate()` 없이는 상태를 벗어나지 못한다. | 타입 + identity-fenced rollback |
-| 11 | live child/open ownership/unreachable waiter의 제3상태 금지 | full outer inventory join이 모든 불일치를 disposition으로 만들고 모든 action은 receipt를 반환한다. | exhaustive runtime table |
-| 12 | rollback은 exact spawned child proof 사용 | `provisional.child` 없이는 rollback action을 호출할 수 없다. sidecar 최신값은 입력 타입이 아니다. | 타입 |
-| 13 | recovery retry 또는 명시적 책임 | action 결과가 `completed | scheduled`뿐이라 silent abandon이 없다. | 타입 + maintenance wake |
-| 14 | execution inventory는 registration과 별도 reconcile | 중앙 open execution에서 스캔을 시작하고 registration과 full outer join한다. | 구조 |
-| 15 | acquire/release 대칭 경계와 자원 순서 | `begin/attachSpawn`과 `terminate`가 controller의 유일한 획득·해제 API다. | 인터페이스 + 단일 경로 |
-| 16 | durable/process/memory 불일치는 한 결정표로 해결 | classifier는 사실만 만들고 `Record`가 모든 disposition action을 강제한다. | exhaustive 타입 + runtime 검사 |
+| E1 | session당 current execution 최대 1, 모든 참조 identity 일치 | required controller 하나와 DB open-execution unique 제약이 같은 `executionId`만 허용한다. | 타입 + DB CAS |
+| E2 | 실행 lifecycle은 명시적 단일 상태기계 | 9 phase가 `TaskExecution` 판별 유니온이고 presence 판정 API가 없다. external request는 반드시 `awaiting_external_input` variant다. | 타입 + DB phase CHECK |
+| E3 | provisional spawn도 실행 | spawn proof와 attachment를 가진 `provisional`이 activation 전에 필수다. | 타입 + 단일 attach 경로 |
+| E4 | 새 identity가 옛 자원과 격리 | callback과 transition이 branded `executionId + generation`을 요구한다. wire 경계는 DB identity CAS를 다시 검사한다. | 타입 + DB/runtime fence |
+| E5 | runner·registration 소실 시 모든 waiter bounded settle | 모든 nonterminal row는 `reconcile_due_at NOT NULL`이고 1:1 reconcile job을 가진다. waiter는 메모리 promise가 아니라 execution terminal row subscription에서 재구성된다. | DB CHECK/FK + leased job + 단일 종료 |
+| E6 | 회수는 restart·reserve·message와 독립 | open execution insert가 같은 transaction에서 durable reconcile job을 강제하고, worker lease 만료가 job을 다시 runnable하게 만든다. | DB trigger/procedure + maintenance |
+| E7 | reference clear는 종료가 아님 | public clear API가 없고 `terminal` DB phase는 terminal proof, receipt, cleanup report가 모두 없으면 CHECK에 실패한다. | 타입 + DB CHECK + 단일 경로 |
+| E8 | terminal은 멱등, visible 결과 하나 | runner witness의 outbox high-watermark receipt 뒤 first-signal CAS만 visible terminal을 만든다. | DB unique/CAS + receipt FK |
+| E9 | activeRunnerOperations는 실행과 함께 끝남 | 별도 begin/finish mutable set을 없애고 nonterminal controller/resource ledger의 순수 projection으로 계산한다. execution terminal이면 관측 row도 생성 불가다. | 타입 projection + DB execution FK |
+| E10 | activation 실패 시 같은 generation active 또는 exact child dead | `provisional`은 exact child proof를 보유하고 failure가 proof-bearing `terminate()` 없이는 상태를 벗어나지 못한다. | 타입 + identity-fenced rollback |
+| E11 | live child/open ownership/unreachable waiter의 제3상태 금지 | open phase별 필수 resource CHECK, 1:1 reconcile job, terminal proof CHECK가 무표현 상태를 거부한다. identity 불명은 제3상태가 아니라 명시적 `recovering(identity_unresolved)`다. | 판별 유니온 + DB CHECK/FK |
+| E12 | rollback은 exact spawned child proof 사용 | `provisional.child` 없이는 rollback proof를 만들 수 없다. sidecar 최신값은 입력 타입이 아니다. | 타입 |
+| E13 | recovery retry 또는 명시적 책임 | action receipt와 reconcile job update가 한 DB transaction이다. `scheduled`는 non-null `next_wake_at`, `completed`는 resulting phase를 요구한다. | 타입 + DB CHECK/transaction |
+| E14 | execution inventory는 registration과 별도 reconcile | reconcile job은 execution row FK에서 생성되고 등록 테이블과 독립적으로 열거된다. registration 0건도 job 수를 0으로 만들지 못한다. | DB FK/procedure + full outer join |
+| E15 | acquire/release 대칭 경계와 자원 순서 | attachment/resource token 생성자는 controller module private이고 resource ledger 없이는 attach phase를 구성할 수 없다. terminal은 cleanup receipt inventory를 요구한다. TypeScript는 affine type을 지원하지 않으므로 private module 경계·architecture test·DB receipt가 선형성의 대체 강제다. | 타입/module boundary + DB CHECK + contract test |
+| E16 | durable/process/memory 불일치는 한 결정표로 해결 | classifier는 사실만 만들고 exhaustive `Record<RunnerRecoveryDispositionV2, DispositionPolicy>`가 action을 강제한다. | exhaustive 타입 + runtime 검사 |
 
 ### delivery 불변식 10개
 
@@ -867,11 +1147,11 @@ child가 보내는 host call은 전송 전에 correlation id와 payload를 runne
 | D2 | attempt는 concrete execution 또는 explicit unassigned | `queued`에는 attempt가 없고 `assigned`부터 `AssignedDeliveryAttempt`가 필수다. | 판별 유니온 + DB NOT NULL |
 | D3 | consumption 최대 1, durable tombstone | attempt id와 runner input receipt unique, delivery consumption receipt unique다. | DB unique + idempotency |
 | D4 | unknown attempt reconcile 전 새 attempt 금지 | `reconciling`에 open attempt가 필수이며 binder는 queued만 할당한다. | 타입 + DB partial unique |
-| D5 | session FIFO | head row lock과 `enqueue_sequence` predicate가 뒤 assignment를 거부한다. | DB transaction |
+| D5 | session FIFO | `session_delivery_heads`가 유일한 assignable delivery를 가리키고 application role의 direct DML을 revoke한다. head advance와 attempt insert는 stored procedure 하나다. | DB head pointer + privilege fence + transaction |
 | D6 | 새 execution activation이 redelivery를 깨움 | activation transaction이 durable binder wake를 함께 기록한다. | 단일 transaction |
-| D7 | attempt budget은 cadence만 제어 | 소진 상태가 terminal이 아닌 `retry_paused`이고 세 wake source가 필수다. | 타입 + policy |
-| D8 | durable admission 또는 동일 receipt는 성공 ACK | API가 node 결과가 아니라 canonical delivery row로 `AcceptedInput`을 만든다. | ingress 단일 경로 |
-| D9 | failure는 비수용 증명 때만, uncertain은 pending | `uncertain` terminal이 없고 identity mismatch 등 proof가 있는 `rejected`만 있다. | 타입 + proof requirement |
+| D7 | attempt budget은 cadence만 제어 | DB responsibility CHECK에는 `retry_paused`를 terminal로 인정하는 값이 없고, 해당 상태는 `next_wake_at NOT NULL`과 durable reconcile job을 요구한다. | 타입 + DB CHECK/FK |
+| D8 | durable admission 또는 동일 receipt는 성공 ACK | `session_accept_input_v2`가 delivery와 idempotency receipt를 commit하고 그 반환만 generated `AcceptedInput`이 된다. node command 결과는 route 반환 union에 없다. cross-language caller는 stable ID로 내부 retry한다. 언어 하나의 타입으로 전 구간을 막을 수 없어 DB procedure·생성 스키마·transport contract test를 함께 쓴다. | DB procedure + generated contract + caller retry |
+| D9 | failure는 비수용 증명 때만, uncertain은 pending | `rejected` row는 `delivery_rejection_proofs` FK와 proof kind/hash가 없으면 CHECK 실패한다. result unknown과 retry exhaustion에는 rejection proof를 만들 권한이 없다. | 판별 유니온 + DB FK/CHECK |
 | D10 | 결과 판정은 assigned execution receipt만 사용 | verdict 입력에 attempt id, execution id, command id, runner sequence가 모두 필요하다. session liveness는 타입에 없다. | 타입 + receipt join |
 
 ## 사라지는 것
@@ -891,6 +1171,10 @@ child가 보내는 host call은 전송 전에 correlation id와 payload를 runne
 | `dispositionRequiresTask`, `contendsForExecutionOwnership`와 분기 중복 | `DISPOSITION_POLICY` | 다중 helper → exhaustive table 1 |
 | delivery `uncertain`, transient `dead_letter` | `reconciling`, `retry_paused` | 책임 종착지 2 → 0 |
 | adoption 옛 필드 fixture | 제품 controller factory 기반 shared fixture | 구조 화석 1 제거, 계약 8 유지 |
+| user-visible `createInProcessTaskRunnerRuntime` fallback | durable v2 independent-runner placement wait | 사용자 fallback 1 → 0 |
+| owner-null → session `interrupted` backfill | `recovering(identity_unresolved)` → adopt/replacement | 사용자-visible interrupt 분기 1 → 0 |
+| `execution_ended`를 terminal 사실로 해석 | witness 조회 wake only | terminal 정본 역할 1 → 0 |
+| delivery assignment의 임의 row scan | `session_delivery_heads` stored procedure | assignment write 경로 N → 1 |
 
 직접 field assignment인 `task.runner = undefined`, `task.executionPromise = undefined`, `task.runnerTerminalFact = ...`와 dispatcher `activeStream?.finish/fail`, `closed = true`는 전부 삭제 대상이다. 관측용 `NodeStallMonitor.activeRunnerOperations`는 남을 수 있지만 controller snapshot의 projection일 뿐 생존 판정에는 쓰지 않는다.
 
@@ -901,16 +1185,19 @@ child가 보내는 host call은 전송 전에 correlation id와 payload를 runne
 | 단위 | 변경 | 단위 종료 시 관측 가능한 결과 | 호환 전략 |
 | --- | --- | --- | --- |
 | 0. 계약 고정 | 정상, pure adopt, 복구 창 intervention, runner-death, activation rollback RED를 영구 gate로 등록 | 제품 동작 변화 없음. 현재 결함 2종만 RED | 별도 테스트 세션이 수행 |
-| 1. 중앙 스키마 additive | migration 073의 execution/delivery identity와 first-signal CAS 추가 | 제품 동작 변화 없음. 구 코드 계속 동작 | legacy column·function projection 유지 |
-| 2. 2-1 controller 도입 | `TaskExecution`과 제품 factory, shared test fixture 전환. legacy 필드는 read-only compatibility view로 controller에서만 투영 | 실행 결과 동일. provisional spawn과 waiter가 inspector에 명시적으로 보임 | 호출지를 한 factory로 묶고 직접 setter 금지 lint |
-| 3. 2-2 terminal 단일화 | dispatcher와 stream을 first-signal terminal state로 전환 | terminal 경합에서 첫 결과만 보이고 모든 waiter가 settle | #818 실측상 기존 green 0건 파단 |
-| 4. 2-3 decision table | recovery action을 exhaustive `Record`로 구동하고 중앙 open inventory 스캔 추가 | 새 입력 없이 runner/등록 소실 실행이 bounded 회수 | #818 실측 37 passed 기준, 정책 변경 테스트만 재기준화 |
-| 5. delivery bind | attempt에 execution identity, FIFO binder, reconcile/retry_paused 도입 | 다른 delivery 성공이 앞 delivery를 가리지 못함. CAS miss도 accepted | legacy delivery state는 read projection |
-| 6. ingress 전환 | web, mobile, Slack, MCP, cross-node, 내부 호출을 durable admission ACK로 통합 | 재기동 창 입력이 503 없이 같은 ACK를 받고 나중에 전달 | caller별 stable delivery id 선배포 |
-| 7. attachment 투명화 | host-call journal replay, shutdown detach, adopt 후 stream replay | 실행 중 agent가 host restart를 오류나 turn 중단으로 관측하지 못함 | v1 runner witness adapter 유지 |
-| 8. 구 표면 제거 | Task optional 12, partial cleanup 9곳, legacy disposition helper와 상태 projection 삭제 | 구조 화석 2 제거, direct mutation grep 0 | 모든 node semantics v2 확인 뒤 수행 |
+| 1. caller identity 선배포 | web/app action UUID, Slack event ID, MCP required `delivery_id`, respond/approval 결정 ID, interrupt invocation ID, cross-node field 관통 | v1 응답·실행 동작은 그대로지만 동일 logical action 재시도에 같은 ID가 보임 | ID는 shadow 기록만 하고 v2 admission 미활성 |
+| 2. 중앙 스키마·fence additive | migration 073의 execution/delivery identity, semantics version, terminal witness/receipt, reconcile job, head pointer, capability/write fence 추가 | 제품 동작 변화 없음. v1 row만 기존 함수로 계속 동작 | v2 procedure 권한은 배포하되 cutover capability off |
+| 3. 2-1 controller·external wait 도입 | 9-phase `TaskExecution`, 제품 factory, shared fixture, `awaiting_external_input` 전환. legacy 필드는 controller projection | 실행 결과 동일. provisional spawn·pending approval/request·waiter가 inspector에 명시 | v1 writer는 controller adapter만 호출, direct setter 금지 architecture test |
+| 4. 2-2 terminal + 2-3 recovery | witness→receipt→visible terminal, first-signal stream, exhaustive decision table, durable reconcile jobs, owner-null identity-unresolved 도입 | terminal 경합 첫 결과 보존. 새 입력 없이 소실 실행 회수. approval 대기는 reap되지 않음 | v2 path는 capability off; v1 terminal projection 유지 |
+| 5. 독립 executor 전환 | v2 placement scheduler와 DB executor CHECK를 연결하고 user-visible `createInProcessTaskRunnerRuntime` fallback 제거 | v2 dry-run row는 독립 runner가 없으면 waiting이고 실패하지 않음. in-process 선택 0 | v1 production traffic 유지, v2 shadow placement만 검사 |
+| 6. attachment 투명화 | durable host-call journal/receipt, 30초 host-call deadline의 외부 실패 투영 제거, shutdown detach, adopt 후 outbox replay | v2 shadow 실행에서 host 부재가 engine error·turn 중단으로 나타나지 않음 | v1 runner witness adapter 유지, ingress ACK 아직 미전환 |
+| 7. delivery·admission 완성 | execution-bound attempt, stored-procedure FIFO head, reconcile/retry_paused, `session_accept_input_v2`를 inactive gate 뒤에서 통합 | shadow 입력이 다른 delivery에 가려지지 않고 caller ID별 동일 receipt를 만듦 | 외부 route는 아직 v1 ACK. v2 end-to-end gate만 실험 |
+| 8. 단일 capability cutover | caller ID, v2 DB writer, v2 host, 독립 runner, attachment transparency, binder가 모두 ready인 session/node만 한 transaction에서 `semantics_version=2` 활성 | 그 순간부터 정상·복구 창 모두 같은 accepted ACK와 event 순서. 중간에 “accepted 후 30초 host-call 실패” 창이 없음 | capability 미충족 session은 v1 유지하거나 durable admission 뒤 기다림. old host routing 금지 |
+| 9. 구 표면 제거 | Task optional 12, partial cleanup 9곳, legacy disposition helper와 상태 projection 삭제 | 구조 화석 2 제거, direct mutation·v1 open execution 0 | 전 cluster v2 drain과 rollback window 종료 뒤 수행 |
 
-단위 2에서 legacy field와 새 controller를 독립적으로 dual-write하지 않는다. controller가 유일한 writer이고 legacy getter는 controller state의 projection이다. 중간 상태에서도 정본은 하나다.
+단위 3에서 legacy field와 새 controller를 독립적으로 dual-write하지 않는다. controller가 유일한 writer이고 legacy getter는 controller state의 projection이다. 단위 2의 DB도 v1 row는 v1 함수, v2 row는 v2 함수만 쓰므로 중간 상태에서도 row별 정본은 하나다.
+
+단위 5~7은 모두 `execution_semantics_v2` capability gate 뒤에서 완성하고 외부 traffic에는 노출하지 않는다. 특히 attachment 투명화가 admission 전환보다 먼저 배포된다. 외부 ACK 전환은 단위 8 한 번뿐이며, cutover transaction이 host·runner capability lease와 caller identity capability를 다시 확인한다. 따라서 “입력은 accepted인데 실행 중 agent는 현행 host-call deadline으로 실패”하는 중간 배포가 없다.
 
 현재 동작 기록 테스트 32개는 단위별 정책 변경표와 연결한다. 바뀐 정책을 기대한 RED만 새 계약으로 갱신하고, 나머지 RED는 회귀다. shared fixture 전환으로 따라오는 8개는 개별 수정하지 않는다.
 
@@ -925,15 +1212,25 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 `session_execution_ownerships`를 durable execution ledger로 확장한다.
 
 - `execution_id TEXT`
-- `semantics_version SMALLINT`
-- phase constraint에 `terminating`
-- `first_terminal_signal JSONB`, `first_terminal_committed_at TIMESTAMPTZ`
+- `semantics_version SMALLINT NOT NULL`과 `executor_kind TEXT NOT NULL`
+- `CHECK (semantics_version <> 2 OR executor_kind = 'independent_runner')`
+- phase constraint에 `awaiting_external_input`, `recovering`, `terminating`
+- `pending_external_request JSONB`, phase별 presence CHECK
+- `termination_intent JSONB`, `runner_terminal_witness JSONB`, `terminal_ingress_receipt JSONB`
+- `first_terminal_signal JSONB`, `first_terminal_committed_at TIMESTAMPTZ`; visible terminal은 witness/receipt 또는 preactivation proof가 없으면 거부
 - `progress_seq BIGINT`, `progress_kind TEXT`, `progress_at TIMESTAMPTZ`
+- `progress_lease_expires_at TIMESTAMPTZ`, `tool_leases JSONB`
 - `cleanup_state TEXT`, `cleanup_report JSONB`
 - `attachment_epoch BIGINT`
+- `reconcile_due_at TIMESTAMPTZ`; nonterminal이면 non-null, terminal이면 null
 - open phase 전체를 대상으로 한 session당 unique partial index
-- `session_commit_execution_terminal(...)` first-signal CAS
+- `session_reserve_execution_v2(...)` semantics/capability/executor fence
+- `session_commit_runner_terminal_witness_v2(...)` witness high-watermark CAS
+- `session_commit_execution_terminal_v2(...)` receipt 검증 뒤 first visible signal CAS
+- `session_replace_execution_v2(...)` predecessor proof와 successor responsibility의 원자 handoff
 - `session_list_open_executions(node_id, limit)` inventory 함수
+
+`execution_reconcile_jobs`는 open execution과 1:1 FK를 가진다. `state`, `next_wake_at`, `lease_owner`, `lease_expires_at`, `last_receipt`을 보유하고 open row 생성·전이 transaction에서만 갱신한다. owner-null row도 `identity_unresolved` job으로 들어간다.
 
 기존 physical 이름은 rolling window 동안 유지한다. 이름은 설계 정본이 아니며 repository가 `DurableExecutionRecord`로 감싼다. 테이블 rename은 정확성에 기여하지 않고 구 stored function을 깨뜨리므로 이 migration의 대상이 아니다.
 
@@ -950,45 +1247,57 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 
 `session_deliveries`에는 `responsibility_state`를 추가한다. 이것이 새 정본이고 기존 `state`, `aggregate_state`, `uncertain`, `dead_letter`는 rolling compatibility projection으로만 갱신한다. 새 코드는 projection을 읽지 않는다.
 
+추가 표와 제약은 다음과 같다.
+
+- `session_delivery_heads(session_id PRIMARY KEY, head_delivery_id, head_enqueue_sequence, version)`와 FK
+- `delivery_rejection_proofs(proof_id PRIMARY KEY, delivery_id UNIQUE, kind, payload_hash, committed_at)`
+- `execution_host_capabilities(host_instance_id, capability, semantics_version, lease_epoch, lease_expires_at)`
+- `session_execution_semantics(session_id PRIMARY KEY, active_version, cutover_epoch)`
+- `session_deliveries.delivery_id`는 caller가 준 stable ID이고 `(delivery_id, payload_hash)` idempotency receipt가 정본
+- `session_deliveries.semantics_version`은 admission procedure가 session cutover epoch에서 복사하며 v1/v2 writer fence에 포함
+- `session_assign_delivery_head_v2(...)`, `session_accept_input_v2(...)`만 delivery/attempt/head를 쓸 수 있으며 application role의 관련 table 직접 DML은 revoke
+- `retry_paused`는 `next_wake_at NOT NULL`, `rejected`는 rejection proof FK, v2 delivery는 `responsibility_state NOT NULL` CHECK
+
 마이그레이션 산출 단계에서는 다음 세 곳을 같은 커밋에서 갱신한다.
 
 1. `packages/db-schema/sql/migrations/073_execution_turn_state_machine.sql`
 2. `packages/db-schema/migration-manifest.json`의 sha256·rollback compatibility
 3. `packages/db-schema/sql/schema.sql`의 bootstrap 동형 정의
 
-runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다. execution id, first terminal witness, delivery attempt id, durable host-call request/response를 추가한다. 중앙 execution row가 정본이고 runner SQLite는 child가 host 부재 중 남기는 증거다. reconcile이 monotonic sequence와 identity fence를 검증한 뒤 중앙 정본에 투영한다.
+runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다. execution id, command id, input sequence, terminal witness와 outbox high-watermark, delivery attempt id, pending external request, fixed tool lease, durable host-call request/response를 추가한다. 중앙 execution row가 책임 정본이고 runner SQLite는 child가 host 부재 중 남기는 증거다. reconcile이 monotonic sequence와 identity fence를 검증한 뒤 중앙 정본에 투영한다.
 
 ### rolling coexistence
 
-1. additive 073을 먼저 배포하되 기존 함수와 column 의미를 유지한다.
-2. semantics v2 host는 v1 runner bootstrap을 `LegacyExecutionWitnessAdapter`로 읽는다. 기존 live turn을 upgrade 이유로 죽이지 않는다.
-3. 모든 host가 v2가 되기 전에는 새 v2-only witness를 생성하지 않는다. admission은 이미 durable하므로 이 창의 입력은 기다릴 수 있다.
-4. cluster가 v2가 되면 새 실행부터 `semantics_version=2`로 만든다. 기존 v1 open execution은 v2 중앙 inventory가 감시하고 종료 또는 adopt 때 자연스럽게 전환한다.
-5. v2 runner는 rolling 기간에 기존 frame_protocol과 bootstrap projection을 함께 기록한다. 형식 계약의 Zod 정본은 유지하고 semantics version으로 의미만 가른다.
-6. rollback은 additive DB와 v1 projection을 그대로 둔 채 가능하다. v2-only execution이 열려 있으면 먼저 v2 host가 drain하거나 ownership handoff를 끝내며, old host가 모르는 state를 강제로 맡지 않는다.
+1. additive 073을 먼저 배포한다. v1 function은 `semantics_version=1` row만 쓸 수 있고 v2 function은 caller의 live capability lease와 `writer_semantics_version=2`를 검사한다.
+2. application role의 direct execution/delivery DML을 revoke한다. v1 stored procedure는 v2 row reserve/activate/terminate/update를 DB에서 거부한다. rollback·늦은 재접속·부분 배포도 이 fence를 우회하지 못한다.
+3. semantics v2 host는 v1 runner bootstrap을 `LegacyExecutionWitnessAdapter`로 읽을 수 있지만, v1 host는 v2 row를 읽기 전용 조회만 할 수 있다. v2 row에 ownership을 claim할 수 없다.
+4. orch routing은 `execution_host_capabilities`의 unexpired `execution_semantics_v2` lease가 있는 host·runner에만 v2 session을 보낸다. 가능한 host가 없으면 admission된 delivery와 reserved placement가 기다리며 old host로 downgrade하거나 실패하지 않는다.
+5. v2 row의 정본은 `responsibility_state`와 v2 execution phase다. legacy `state`/`aggregate_state`는 v2 procedure가 만드는 역방향 read projection일 뿐이고 v1 writer가 수정할 수 없다. v1 row는 기존 column이 정본이므로 row별 정본이 하나다.
+6. v2 runner는 rolling 기간에 기존 `frame_protocol` 형식과 bootstrap projection을 함께 기록한다. Zod 형식 정본은 유지하고 `semantics_version`이 의미 계약을 가른다.
+7. session cutover는 caller identity, DB writer, host, independent runner, attachment, binder capability를 한 번에 확인하고 `session_execution_semantics.cutover_epoch`를 CAS한다. 그 전에는 v2-only execution을 만들지 않는다.
+8. rollback 시 이미 열린 v2 execution은 capability lease가 남은 v2 host가 drain·handoff한다. v1 binary로 강제 인계하지 않으며, DB fence 때문에 운영 순서를 어겨도 v1 writer가 v2 정본을 훼손하지 못한다.
 
-이 공존 전략에서도 사용자 ACK는 admission receipt 하나다. 구·신 runner 선택이나 handoff 대기는 외부 결과에 나타나지 않는다.
+이 공존 전략에서도 사용자 ACK는 admission receipt 하나다. 구·신 runner 선택이나 handoff 대기는 외부 결과에 나타나지 않는다. “구 host가 v2-only 실행을 만나지 않게 배포한다”는 운영 희망이 아니라 DB write fence와 capability routing이 정본 하나를 강제한다.
 
 ## 검증자가 확인할 열어 둔 질문
 
-1. 현행 `ownerKind: "in_process"`가 실제 user-visible agent turn에 남아 있는가. 하나라도 있으면 투명성 gate 전에 독립 worker 이관 설계가 추가되어야 한다.
-2. web, soul-app, Slack bot, Cogito MCP, cross-node command, 내부 completion/runtime followup 전부가 stable delivery id를 생성·재사용할 수 있는가. 누락 caller inventory를 검증해야 한다.
-3. engine별 비멱등 host call은 무엇인가. correlation receipt만으로 충분한지, 별도 operation receipt나 보상 transaction이 필요한지 전수 열거해야 한다.
-4. progress predicate를 `assistant_message | thinking | tool_result`로 좁힐 때 backend별 event 이름이 완전히 매핑되는가. `tool_start` 절대 lease의 기존 수치와 종료 조건도 실제 SDK event로 검증해야 한다.
-5. 중앙 terminal CAS와 runner outbox terminal frame 중 어느 것이 먼저 durable해지는가. 구현은 outbox 유실과 terminal 영구 대기 둘 다 없는 transaction/receipt 순서를 증명해야 한다.
-6. owner-null legacy running session을 v2 `idle`로 만들지 open execution으로 backfill할지 두 번 관측 규칙으로 확정해야 한다. 증거 부족을 terminal 실패로 사용자에게 노출하면 안 된다.
-7. orch가 commit 직후 응답 전에 재시작할 때 각 caller transport가 같은 idempotency key로 자동 재시도하는가. caller별로 실제 연결 중단 실험이 필요하다.
-8. runner process 자체의 crash는 host restart와 다른 실패 영역이다. 각 engine이 동일 turn을 checkpoint-resume할 수 있는지 확인 전에는 “runner crash도 완전 투명”으로 범위를 넓히지 않는다. 다만 host restart가 runner를 죽이는 경로는 금지한다.
-9. 늦게 합류할 정상·pure adopt·복구 창 scenario 결과에서 새 상태 전이 또는 durable 자원이 빠진 것이 있는가. 설계 검증 세션이 이 문서의 상태표와 시나리오 trace를 행 단위로 대조해야 한다.
+1. engine별 비멱등 host call inventory는 무엇인가. correlation receipt만으로 충분한 호출과 별도 operation receipt·보상 transaction이 필요한 호출을 전수 열거해야 한다.
+2. `AskUserQuestion`과 tool approval의 제품 정책상 explicit deadline이 필요한가. 필요하면 `PendingExternalInput.deadline`의 exact 값과 expiry 후 semantic response를 별도 결정해야 한다. 다만 어떤 값이든 foreground stalled reaper와는 분리한다.
+3. runner process 자체 crash에서 Claude, Codex 두 모드, Agents 각각 같은 command를 checkpoint-resume할 수 있는가. 불가능한 backend는 process-absence proof 뒤 replacement continuity로 수렴하지만, 이미 engine 내부에서 실행된 비멱등 tool effect를 어떻게 증명할지는 별도 검증이 필요하다.
+4. capability cutover의 최소 단위를 session으로 둘지 node로 둘지 운영·부하 실측이 필요하다. 정확성 조건은 어느 쪽이든 DB cutover epoch와 unexpired host/runner/caller capability를 한 transaction에서 확인하는 것이다.
+5. v1 open execution을 `LegacyExecutionWitnessAdapter`로 끝까지 drain할 때 terminal outbox high-watermark를 복원할 수 없는 가장 오래된 runner schema가 있는가. 있으면 그 버전은 v2 cutover 전 drain 대상으로 명시해야 한다.
+6. external input 대기 중 runner process가 죽고 pending request UI가 이미 노출된 경우 replacement가 같은 request id를 재노출하지 않고 이어받는 exact receipt shape를 검증해야 한다.
 
 ## 설계 검증 통과 조건
 
-- 문서의 모든 phase가 실제 entry/terminal 경로를 MECE로 덮고, silent return이나 direct clear가 필요한 사례가 없어야 한다.
+- 문서의 9 phase가 실제 entry/terminal/external-input 경로를 MECE로 덮고, silent return이나 direct clear가 필요한 사례가 없어야 한다.
 - 실행 불변식 16개와 delivery 불변식 10개가 각각 최소 한 개의 타입, DB 제약, 단일 경로, runtime reconcile에 연결되어야 한다.
-- 정상, pure adopt, 복구 전 intervention 세 시나리오가 외부 관측 표에서 같은 ACK와 event 순서를 보여야 한다.
+- 정상, pure adopt, 복구 전 intervention 세 시나리오가 행 단위 trace에서 같은 ACK와 semantic event 순서를 보여야 한다. 현재 ③의 503·event 2종 소실·pending receipt가 모두 사라져야 한다.
 - runner-death와 activation rollback 영구 RED가 새 구조에서는 각각 bounded terminal settle과 exact child cleanup으로만 green이 되어야 한다.
 - #818의 2-2 기존 green 0 파단, 2-3 37 passed를 기준선으로 삼고, 2-1은 shared fixture 한 곳 변경으로 계약 8개를 보존해야 한다.
-- 제품 코드 구현 전에 migration 073의 forward/rollback compatibility와 v1/v2 coexistence를 별도 검토해야 한다.
+- Claude `text`, Codex 두 mapper, Agents 완료 output이 semantic progress 3종으로 exhaustive하게 정규화되고, 30분 gap·30분 tool absolute lease·external wait suspension의 경계 테스트가 있어야 한다.
+- caller 8계열이 첫 send 전 stable ID를 만들고 commit-after-response-loss에서 같은 receipt를 받는 transport test를 통과해야 한다.
+- 제품 코드 구현 전에 migration 073의 forward/rollback compatibility, direct DML revoke, v1 writer→v2 row 거부, capability routing을 별도 검토해야 한다.
 
 ## 중간 결론
 
