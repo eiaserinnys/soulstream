@@ -6,6 +6,11 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     expectedOutcome: "Each demand and tool result appears once; Claude queues the intervention for the next turn and completes it once.",
     verdict: "Both observations match the user-authored semantic contract; current live behavior never defines that contract.",
   }),
+  "auto-resume-handoff": Object.freeze({
+    injection: "Complete a child while its caller is finishing a turn, so the completion delivery opens the next turn without human delay.",
+    expectedOutcome: "The caller's live runner consumes the completion exactly once and produces a second response without a replacement spawn.",
+    verdict: "The caller receives both assistant markers once, the completion consumes once, and the runner pid stays unchanged.",
+  }),
   "restart-adopt": Object.freeze({
     injection: "Restart the node on the same release and manifest while a 90-second tool is actually in flight.",
     expectedOutcome: "The host adopts the same runner and the original turn completes exactly once without a restart-visible signal.",
@@ -15,6 +20,11 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     injection: "Pause the observed identity-proven to active adoption transition and force the recovery-time queued-state CAS race, then submit one durable intervention.",
     expectedOutcome: "The intervention is accepted and consumed exactly once after recovery without retry or any restart-visible signal.",
     verdict: "The user/agent-visible observation is identical to the steady intervention baseline; only delay may differ.",
+  }),
+  "restart-window-durable": Object.freeze({
+    injection: "Submit one intervention while the owning node is stopped, before its replacement host registers.",
+    expectedOutcome: "Known RED outside this slice: the API durably accepts the message instead of returning NODE_UNAVAILABLE.",
+    verdict: "The single call returns a durable accepted outcome; A/B1 GREEN work does not implement this contract.",
   }),
   "delivery-revival": Object.freeze({
     injection: "Park a durable user delivery as uncertain at attempt 16, then make it due for recovery.",
@@ -49,8 +59,8 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
   }),
   F9: Object.freeze({
     injection: "Rebuild the host with a different declared release identity while an old-release runner remains live.",
-    expectedOutcome: "The host rejects adoption, the detached old runner finishes, offline replay converges, and the next turn uses a new runner.",
-    verdict: "At least one adoption mismatch log exists, both turn markers appear, and the runner pid and manifest change.",
+    expectedOutcome: "The new host attaches the live old runner and a restart-window message is consumed by that runner exactly once.",
+    verdict: "Both turn markers appear once on the original runner pid, with no mismatch, terminalization, or replacement evidence.",
   }),
   "dead-owner": Object.freeze({
     injection: "Freeze the host, SIGKILL a live runner, crash the host before cleanup, hide the dead registration, then send the next message.",
@@ -140,6 +150,57 @@ export function buildInterventionPayload(deliveryId, text) {
     delivery_intent: "human_live_steer",
     source: "lab_fault_harness",
   };
+}
+
+export function autoResumeHandoffViolations({
+  attempts,
+  executionPromiseBlockedCount = 0,
+  replacementLogCount = 0,
+}) {
+  const violations = [];
+  for (const [index, attempt] of attempts.entries()) {
+    if (attempt.firstCount !== 1) violations.push(`attempt ${index + 1} first marker count ${attempt.firstCount}`);
+    if (attempt.secondCount !== 1) violations.push(`attempt ${index + 1} second marker count ${attempt.secondCount}`);
+    if (attempt.consumptionCount !== 1) violations.push(`attempt ${index + 1} consumption count ${attempt.consumptionCount}`);
+    if (attempt.observedPids.length !== 1 || attempt.observedPids[0] !== attempt.oldPid) {
+      violations.push(`attempt ${index + 1} runner pid(s) ${attempt.observedPids.join(",")} != ${attempt.oldPid}`);
+    }
+  }
+  if (executionPromiseBlockedCount !== 0) {
+    violations.push(`${executionPromiseBlockedCount} execution_promise recovery block(s)`);
+  }
+  if (replacementLogCount !== 0) violations.push(`${replacementLogCount} replacement log(s)`);
+  return violations;
+}
+
+export function restartWindowContinuityViolations(observation) {
+  const violations = [];
+  if (
+    observation.acceptance?.status !== "ok"
+    || !["delivered", "queued", "auto_resumed"].includes(observation.acceptance?.outcome)
+  ) {
+    violations.push(`delivery was not durably accepted: ${JSON.stringify(observation.acceptance)}`);
+  }
+  if (observation.deliveryState !== "consumed" || observation.aggregateState !== "consumed") {
+    violations.push(`delivery remained ${observation.deliveryState}/${observation.aggregateState}`);
+  }
+  if (observation.consumptionCount !== 1) violations.push(`consumption count ${observation.consumptionCount}`);
+  if (observation.userCount !== 1) violations.push(`user message count ${observation.userCount}`);
+  if (observation.oldAssistantCount !== 1) {
+    violations.push(`old assistant marker count ${observation.oldAssistantCount}`);
+  }
+  if (observation.assistantCount !== 1) violations.push(`assistant marker count ${observation.assistantCount}`);
+  if (observation.inFlightCount !== 0) violations.push(`${observation.inFlightCount} in-flight ownership(s)`);
+  if (observation.oldPid !== observation.newPid) {
+    violations.push(`runner pid changed ${observation.oldPid} -> ${observation.newPid}`);
+  }
+  if (observation.oldReleaseManifestId !== observation.newReleaseManifestId) {
+    violations.push("live runner provenance changed during host adoption");
+  }
+  if (observation.replacementLogCount !== 0) {
+    violations.push(`${observation.replacementLogCount} replacement log(s)`);
+  }
+  return violations;
 }
 
 export function buildDurableDeliverySeed(

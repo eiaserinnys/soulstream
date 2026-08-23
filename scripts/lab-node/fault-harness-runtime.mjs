@@ -93,6 +93,15 @@ export class LabRuntime {
     await this.waitForNodeRegistration(30_000);
   }
 
+  async assertProvenance() {
+    const manifest = await this.currentManifest();
+    const { stdout } = await execFileAsync("git", ["-C", this.repo, "rev-parse", "HEAD"], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+    assertMatchingProvenance(manifest.sourceCommit, stdout.trim());
+  }
+
   async createSession(prompt, extra = {}) {
     const body = await this.postJson("/api/sessions", {
       profile: "lab-claude",
@@ -656,6 +665,14 @@ export async function waitFor(predicate, timeoutMs, message, intervalMs = 500) {
 export async function delay(ms) {
   if (ms <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function assertMatchingProvenance(bundleCommit, checkoutCommit) {
+  if (bundleCommit !== checkoutCommit) {
+    throw new Error(
+      `lab provenance mismatch: bundle ${bundleCommit} != checkout ${checkoutCommit}`,
+    );
+  }
 }
 
 export function runnerOperationSnapshots(logText) {

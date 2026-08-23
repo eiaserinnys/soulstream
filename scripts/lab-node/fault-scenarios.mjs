@@ -3,7 +3,9 @@ import { rename } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import {
+  autoResumeHandoffViolations,
   buildInterventionPayload,
+  restartWindowContinuityViolations,
   toggleReleaseGeneration,
 } from "./fault-harness-contract.mjs";
 import {
@@ -34,6 +36,7 @@ import {
 
 const SCENARIO_ORDER = [
   "steady-state",
+  "auto-resume-handoff",
   "restart-adopt",
   "restart-intervention-window",
   "delivery-revival",
@@ -53,7 +56,10 @@ const LOG_TERMS = {
   ...DELIVERY_LOG_TERMS,
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
-  F9: ["F9_", "runner adoption release identity mismatch", "offline",
+  "auto-resume-handoff": ["AUTO_HANDOFF_", "completion_notification", "auto_resume",
+    "registered runner recovery skipped", "activeRunnerOperations"],
+  "restart-window-durable": ["RESTART_WINDOW_DURABLE_", "NODE_UNAVAILABLE", "intervention"],
+  F9: ["F9_", "runner adoption release identity mismatch", "release_superseded", "offline",
     "runner adoption failure was superseded by a newer execution",
     "registered runner recovery skipped", "terminal runner replay was skipped",
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
@@ -92,13 +98,47 @@ export async function runCanonicalScenario(id, runtime, recorder) {
   }
   const logs = await recorder.captureLogs(id, offsets, LOG_TERMS[id]);
   if (id === "F9") {
-    const mismatchCount = logs.node.filter(
-      (line) => line.includes("runner adoption release identity mismatch"),
-    ).length;
+    const replacementTerms = [
+      "runner adoption release identity mismatch",
+      "release_superseded",
+      "runner adoption failure was superseded by a newer execution",
+    ];
+    const mismatchCount = logs.node.filter((line) => replacementTerms.some(
+      (term) => line.includes(term),
+    )).length;
     result.mismatchLogCount = mismatchCount;
     if (!failure) {
       try {
-        assertScenario(mismatchCount >= 1, "F9 emitted no release identity mismatch log");
+        const violations = restartWindowContinuityViolations({
+          ...result.continuityObservation,
+          replacementLogCount: mismatchCount,
+        });
+        assertScenario(violations.length === 0, `F9 continuity failed: ${violations.join("; ")}`);
+      } catch (error) {
+        failure = serializeError(error);
+        result = { ...result, status: "failed", failure };
+      }
+    }
+  }
+  if (id === "auto-resume-handoff") {
+    const blockedCount = logs.node.filter((line) => (
+      line.includes("registered runner recovery skipped")
+      && line.includes("execution_promise")
+    )).length;
+    const replacementCount = logs.node.filter((line) => (
+      line.includes("release_superseded")
+      || line.includes("runner adoption failure was superseded by a newer execution")
+    )).length;
+    result.executionPromiseBlockedCount = blockedCount;
+    result.replacementLogCount = replacementCount;
+    if (!failure) {
+      try {
+        const violations = autoResumeHandoffViolations({
+          attempts: result.attempts.map((attempt) => attempt.observation),
+          executionPromiseBlockedCount: blockedCount,
+          replacementLogCount: replacementCount,
+        });
+        assertScenario(violations.length === 0, `auto-resume handoff failed: ${violations.join("; ")}`);
       } catch (error) {
         failure = serializeError(error);
         result = { ...result, status: "failed", failure };
@@ -123,6 +163,87 @@ export async function runCanonicalScenario(id, runtime, recorder) {
 const SCENARIOS = {
   ...TRANSPARENCY_SCENARIOS,
   ...DELIVERY_SCENARIOS,
+
+  async "auto-resume-handoff"(runtime, recorder) {
+    const attempts = [];
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const seed = shortId();
+      const firstMarker = `AUTO_HANDOFF_FIRST_${seed}`;
+      const secondMarker = `AUTO_HANDOFF_SECOND_${seed}`;
+      const childMarker = `AUTO_HANDOFF_CHILD_${seed}`;
+      const parentId = await runtime.createSession(
+        delayedMarkerPrompt(firstMarker, 12),
+      );
+      const oldRunner = await runtime.waitForRunner(parentId);
+      await waitForInFlightTool(runtime, parentId);
+      const childId = await runtime.createSession(
+        `Reply with exactly ${childMarker}, then tell your caller to reply with exactly ${secondMarker}.`,
+        { caller_session_id: parentId },
+      );
+      await runtime.waitForMarker(childId, childMarker);
+      await runtime.waitForTerminal(childId);
+      const delivery = await waitForConsumedDelivery(
+        runtime,
+        childId,
+        `auto-resume handoff attempt ${attempt}`,
+      );
+      await runtime.waitForMarker(parentId, firstMarker);
+      await runtime.waitForMarker(parentId, secondMarker, 120_000);
+      await runtime.waitForTerminal(parentId);
+      const ownerships = await runtime.ownerships(parentId);
+      const observedPids = [...new Set(ownerships.map((row) => row.pid).filter(Boolean))];
+      const firstCount = await runtime.countTimelineEvents(parentId, "assistant_message", firstMarker);
+      const secondCount = await runtime.countTimelineEvents(parentId, "assistant_message", secondMarker);
+      const consumptionCount = await runtime.consumptionCount(delivery.relation_key);
+      const observation = {
+        firstCount,
+        secondCount,
+        consumptionCount,
+        oldPid: oldRunner.pid,
+        observedPids,
+      };
+      const violations = autoResumeHandoffViolations({ attempts: [observation] });
+      assertScenario(violations.length === 0, `auto-resume handoff failed: ${violations.join("; ")}`);
+      attempts.push({ parentId, childId, oldRunner, observedPids, delivery, ownerships, observation });
+      await recorder.event("auto_resume_handoff_observed", { attempt, ...attempts.at(-1) });
+    }
+    return { id: "auto-resume-handoff", status: "passed", attempts };
+  },
+
+  async "restart-window-durable"(runtime, recorder) {
+    const seed = shortId();
+    const marker = `RESTART_WINDOW_DURABLE_${seed}`;
+    const sessionId = await runtime.createSession(delayedMarkerPrompt(`RESTART_WINDOW_BASE_${seed}`, 30));
+    await runtime.waitForRunner(sessionId);
+    await waitForInFlightTool(runtime, sessionId);
+    const deliveryId = randomUUID();
+    const payload = buildInterventionPayload(deliveryId, `Reply with exactly ${marker}.`);
+    await runtime.stopNodeForReleaseSwap();
+    let callerOutcome;
+    try {
+      callerOutcome = await settle(runtime.intervene(sessionId, payload));
+    } finally {
+      await runtime.startStack();
+    }
+    await recorder.event("restart_window_durable_attempted", {
+      sessionId,
+      deliveryId,
+      callerOutcome,
+      implementedByThisSlice: false,
+    });
+    const accepted = callerOutcome.status === "fulfilled"
+      && callerOutcome.value?.status === "ok"
+      && ["delivered", "queued", "auto_resumed"].includes(callerOutcome.value.outcome);
+    return {
+      id: "restart-window-durable",
+      status: accepted ? "passed" : "failed",
+      sessionId,
+      deliveryId,
+      callerOutcome,
+      reason: accepted ? undefined : "known RED: stopped owner node cannot durably accept an intervention",
+      implementedByThisSlice: false,
+    };
+  },
   async "runner-death-live-host"(runtime, recorder) {
     const seed = shortId();
     const oldMarker = `RUNNER_DEATH_LIVE_HOST_OLD_${seed}`;
@@ -409,8 +530,15 @@ const SCENARIOS = {
       releaseGenerationFrom: toggled.previous,
       releaseGenerationTo: toggled.next,
     });
+    const restartWindowDeliveryId = randomUUID();
+    const restartWindowPayload = buildInterventionPayload(
+      restartWindowDeliveryId,
+      `Reply with exactly ${nextMarker}.`,
+    );
+    const restartWindowText = restartWindowPayload.text;
     await runtime.stopNodeForReleaseSwap();
     let newManifest;
+    let acceptanceOutcome;
     try {
       newManifest = await runtime.rebuildReleaseWithEnv(toggled.text);
       assertScenario(
@@ -418,6 +546,12 @@ const SCENARIOS = {
         "F9 rebuild did not change manifest identity",
       );
       await runtime.startStack();
+      acceptanceOutcome = await settle(runtime.intervene(sessionId, restartWindowPayload));
+      await recorder.event("restart_window_delivery_accepted", {
+        sessionId,
+        deliveryId: restartWindowDeliveryId,
+        acceptanceOutcome,
+      });
     } catch (error) {
       try {
         await runtime.rebuildReleaseWithEnv(originalEnvironment);
@@ -427,34 +561,91 @@ const SCENARIOS = {
       }
       throw error;
     }
-    assertScenario(runtime.runnerAlive(oldRunner.pid), "F9 old runner did not remain detached");
-    await runtime.waitForMarker(sessionId, oldMarker, 240_000);
-    await runtime.waitForTerminal(sessionId, 240_000);
-    const deliveryId = randomUUID();
-    const payload = buildInterventionPayload(deliveryId, `Reply with exactly ${nextMarker}.`);
-    await runtime.intervene(sessionId, payload);
-    const newRunner = await runtime.waitForRunner(sessionId, 60_000);
-    await runtime.waitForMarker(sessionId, nextMarker, 60_000);
-    const status = await runtime.waitForTerminal(sessionId);
+    const oldMarkerOutcome = await settle(runtime.waitForMarker(sessionId, oldMarker, 240_000));
+    const oldTerminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
+    const newRunnerOutcome = await settle(runtime.waitForRunner(sessionId, 60_000));
+    const newRunner = newRunnerOutcome.status === "fulfilled" ? newRunnerOutcome.value : undefined;
+    const acceptance = acceptanceOutcome.status === "fulfilled"
+      ? acceptanceOutcome.value
+      : acceptanceOutcome;
+    let restartWindowDelivery = await runtime.deliveryById(restartWindowDeliveryId);
+    let nextMarkerOutcome = { status: "not_attempted" };
+    let nextTerminalOutcome = { status: "not_attempted" };
+    let deliveryConsumptionOutcome = { status: "not_attempted" };
+    if (
+      acceptanceOutcome.status === "fulfilled"
+      && acceptance?.status === "ok"
+      && ["delivered", "queued", "auto_resumed"].includes(acceptance.outcome)
+    ) {
+      nextMarkerOutcome = await settle(runtime.waitForMarker(sessionId, nextMarker, 120_000));
+      nextTerminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
+      deliveryConsumptionOutcome = await settle(waitFor(
+        async () => {
+          const row = await runtime.deliveryById(restartWindowDeliveryId);
+          return row?.aggregate_state === "consumed" ? row : undefined;
+        },
+        120_000,
+        "F9 restart-window delivery was not consumed",
+        500,
+      ));
+      if (deliveryConsumptionOutcome.status === "fulfilled") {
+        restartWindowDelivery = deliveryConsumptionOutcome.value;
+      } else {
+        restartWindowDelivery = await runtime.deliveryById(restartWindowDeliveryId);
+      }
+    }
+    const status = await runtime.sessionStatus(sessionId);
     const oldCount = await runtime.countTimelineEvents(sessionId, "assistant_message", oldMarker);
     const nextCount = await runtime.countTimelineEvents(sessionId, "assistant_message", nextMarker);
-    assertScenario(oldCount === 1, `F9 old marker count was ${oldCount}`);
-    assertScenario(nextCount === 1, `F9 new marker count was ${nextCount}`);
-    assertScenario(newRunner.pid !== oldRunner.pid, "F9 next turn reused old runner pid");
-    assertScenario(
-      newRunner.config.releaseManifestId === newManifest.manifestId,
-      "F9 next runner did not use the rebuilt manifest",
-    );
+    const userCount = await runtime.countTimelineEvents(sessionId, "user_message", restartWindowText);
+    const consumptionCount = restartWindowDelivery?.relation_key
+      ? await runtime.consumptionCount(restartWindowDelivery.relation_key)
+      : 0;
+    const ownerships = await runtime.ownerships(sessionId);
+    const inFlightOwnerships = ownerships.filter((row) => (
+      row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
+    ));
+    const continuityObservation = {
+      acceptance,
+      deliveryState: restartWindowDelivery?.state ?? "missing",
+      aggregateState: restartWindowDelivery?.aggregate_state ?? "missing",
+      consumptionCount,
+      userCount,
+      oldAssistantCount: oldCount,
+      assistantCount: nextCount,
+      inFlightCount: inFlightOwnerships.length,
+      oldPid: oldRunner.pid,
+      newPid: newRunner?.pid,
+      oldReleaseManifestId: oldRunner.config.releaseManifestId,
+      newReleaseManifestId: newRunner?.config.releaseManifestId,
+      replacementLogCount: 0,
+    };
+    const continuityViolations = restartWindowContinuityViolations(continuityObservation);
     return {
       id: "F9",
-      status: "passed",
+      status: continuityViolations.length === 0 ? "passed" : "failed",
+      reason: continuityViolations.length === 0
+        ? undefined
+        : `F9 continuity failed before log reconciliation: ${continuityViolations.join("; ")}`,
       sessionId,
       oldRunner,
       newRunner,
+      oldMarkerOutcome,
+      oldTerminalOutcome,
+      newRunnerOutcome,
+      nextMarkerOutcome,
+      nextTerminalOutcome,
+      deliveryConsumptionOutcome,
       oldManifest,
       newManifest,
       sessionStatus: status,
       markerCounts: { old: oldCount, next: nextCount },
+      restartWindowDeliveryId,
+      restartWindowDelivery,
+      userCount,
+      consumptionCount,
+      inFlightOwnerships,
+      continuityObservation,
     };
   },
 

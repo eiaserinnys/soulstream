@@ -16,6 +16,7 @@ const invokeTrafficCycles = bindHarnessBoundary(runTrafficCycles);
 
 const options = parseHarnessArguments(process.argv.slice(2));
 const runtime = new LabRuntime();
+await runtime.assertProvenance();
 
 if (options.command === "mutation") {
   // Runs before the stack has to be healthy: it only needs the database and
