@@ -191,11 +191,11 @@ const SCENARIOS = {
       );
       const parentTerminalStatus = await runtime.waitForTerminal(parentId);
       const timeline = await runtime.timeline(parentId);
+      const turnBoundaries = await runtime.turnResults(parentId);
       const ownerships = await runtime.ownerships(parentId);
       const observedPids = [...new Set(ownerships.map((row) => row.pid).filter(Boolean))];
       const consumptionCount = await runtime.consumptionCount(delivery.relation_key);
       const messages = timeline.messages ?? [];
-      const turnBoundaries = messages.filter((message) => message.event_type === "result");
       const observation = {
         deliveryReceiptCount: messages.filter((message) => (
           message.event_type === "session_notification"

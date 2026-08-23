@@ -597,6 +597,19 @@ export class LabRuntime {
     return value?.count ?? 0;
   }
 
+  async turnResults(sessionId) {
+    assertIdentifier(sessionId, "session id");
+    return await this.psqlOne(`
+      SELECT COALESCE(json_agg(json_build_object(
+        'event_type', event_type,
+        'payload', payload
+      ) ORDER BY id), '[]'::json)
+      FROM events
+      WHERE session_id = ${sqlLiteral(sessionId)}
+        AND event_type = 'result'
+    `) ?? [];
+  }
+
   runnerInterventionInboxCount(sessionId) {
     const databasePath = join(this.runnerDirectory(sessionId), "runner.sqlite");
     const database = new DatabaseSync(databasePath, { readOnly: true });
