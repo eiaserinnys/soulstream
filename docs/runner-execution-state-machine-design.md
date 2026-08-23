@@ -2,7 +2,7 @@
 
 기준 커밋: `2abbc180` (2026-08-23, PR #818 포함)
 
-상태: 설계 초안. 제품 코드, DB 마이그레이션, 배포는 이 문서의 범위가 아니다.
+상태: 설계 2차. 독립 검증 P0 7건을 반영했다. 제품 코드, DB 마이그레이션, 배포는 이 문서의 범위가 아니다.
 
 ## 판정 기준
 
@@ -132,6 +132,20 @@ adoption 10건 중 9건이 shared fixture를 경유하고 8건은 새 union fact
 
 별도 `runner-death-live-host`도 runner 종료 뒤 후속 요청에 HTTP 503 `runner registration identity incomplete`를 노출해 RED다. 즉 재시작 자체의 기본 adopt 경로는 이미 투명하고, 재설계의 직접 공략 표면은 **복구 완료 전 입력 창, runner 소실 회수, terminal/output durability 경계**다.
 
+### 2차 검증 지적 폐쇄표
+
+| 지적 | 확정 설계 | 구조적 fence |
+| --- | --- | --- |
+| P0-1 in-process fallback | v2 user-visible 실행은 durable admission 뒤 독립 runner placement를 기다림 | `executor_kind` CHECK + runner capability + v2 input type |
+| P0-2 external input phase 누락 | approval·AskUserQuestion을 `awaiting_external_input`으로 durable 표현 | union variant + pending request phase CHECK + progress suspension |
+| P0-3 caller delivery ID 부재 | caller 8계열의 생성·보존·전달 계약을 v2 선행 단위로 배치 | required `delivery_id` + payload hash receipt + ingress capability |
+| P0-4 terminal durability 순서 | host intent와 runner outcome 분리, outbox/witness→receipt→visible terminal | runner witness CAS + receipt FK + 중앙 first-signal CAS |
+| P0-5 owner-null interrupt | `recovering(identity_unresolved)`가 adopt 또는 atomic replacement로 수렴 | DB phase/subject CHECK + reconcile job + replacement procedure |
+| P0-6 rolling 정본 충돌 | row semantics version별 writer와 routing을 분리 | v1→v2 DB write 거부 + capability lease + legacy read projection |
+| P0-7 깨지는 중간 배포 | executor·attachment·delivery를 inactive gate 뒤에서 완성 후 ACK를 한 번에 전환 | cutover epoch CAS; attachment가 ingress보다 선행 |
+| P1 event·lease·scenario·invariant | backend semantic adapter, 30분 두 lease, 3종 행 trace, DB 제약 승격 | exhaustive adapter/Record + DB CHECK/FK/head pointer |
+| P2 identity 단위 혼동 | execution=multi-turn command 수명, input sequence=각 개입·응답 | branded identity + attempt/receipt FK |
+
 ## 시스템 그림
 
 ### A. 진입 경로 매트릭스
@@ -150,6 +164,7 @@ adoption 10건 중 9건이 shared fixture를 경유하고 8건은 새 union fact
 
 ```text
 사용자·에이전트 입력
+  → caller stable delivery id + silent transport retry
   → orch durable admission + idempotency receipt
   → session FIFO delivery ledger (아직 unassigned 가능)
   → 중앙 open execution inventory
@@ -610,6 +625,8 @@ interface Task {
 }
 ```
 
+`reaped`는 predecessor execution의 내부 outcome이지 곧바로 session 실패가 아니다. 승인된 입력 책임이 남아 있으면 atomic replacement handoff가 session의 `running`과 외부 stream을 유지한다. `interrupted`는 같은 invocation ID의 명시적 사용자 interrupt가 runner witness로 확인된 경우에만 session으로 투영한다. host restart, owner-null, registration identity 불완전은 이 outcome을 만들 수 없다.
+
 `Task.execution`은 required다. 자원이 없는 이유는 `undefined`가 아니라 phase가 말한다. 아직 시작하지 않았으면 `idle`, 독립 runner placement를 기다리면 `reserved`, 자식을 만들었지만 활성화 전이면 `provisional`, 사람의 approval·답변을 기다리면 `awaiting_external_input`, 회수 중이면 `recovering`, 자원을 정산했으면 terminal record를 가진 `terminal`이다. “없음”, “해당 없음”, “치웠음”이 같은 값이 되는 경로가 사라진다.
 
 기존 12개 필드의 정보는 다음처럼 정확히 한 union 안으로 이동한다.
@@ -940,6 +957,8 @@ respond/approval ID가 결정적이어도 같은 ID에 다른 답·decision payl
 
 이 전환은 delivery bind의 부가 작업이 아니라 v2 admission의 **선행 fence**다. 모든 caller capability가 등록되기 전에는 v2 ingress를 켜지 않는다. 구 caller 요청은 v1 경로로만 처리되며 v2 execution row에 bind할 수 없다.
 
+서버가 누락 ID를 payload hash로 임의 생성하는 fallback은 두지 않는다. 동일 문구의 서로 다른 action을 합칠 수 있기 때문이다. web은 dashboard release와 함께 전환하고, mobile은 v2 ID를 가진 minimum supported version이 배포되기 전까지 해당 caller kind의 ingress capability를 ready로 만들지 않는다. old caller가 남은 rolling 창에는 그 caller가 만든 session/input을 v1로 유지하며, v2 session에 무ID 요청을 라우팅하지 않는다.
+
 ### 논리 메시지와 시도 분리
 
 `session_deliveries`는 사용자 의도를 나타내는 논리 메시지다. `session_delivery_attempts`는 그 메시지를 특정 실행에 건네려 한 이력이다. attempt에 정확한 실행 identity가 없으면 “다른 delivery가 같은 runner에서 성공했으니 앞 delivery도 성공했을 것”이라는 현재 오판을 막을 수 없다.
@@ -1252,6 +1271,7 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 - `session_delivery_heads(session_id PRIMARY KEY, head_delivery_id, head_enqueue_sequence, version)`와 FK
 - `delivery_rejection_proofs(proof_id PRIMARY KEY, delivery_id UNIQUE, kind, payload_hash, committed_at)`
 - `execution_host_capabilities(host_instance_id, capability, semantics_version, lease_epoch, lease_expires_at)`
+- `execution_ingress_capabilities(caller_kind, semantics_version, release_id, ready_at, retired_at)`; 지원 중인 모든 caller kind가 v2 ready여야 cutover 가능
 - `session_execution_semantics(session_id PRIMARY KEY, active_version, cutover_epoch)`
 - `session_deliveries.delivery_id`는 caller가 준 stable ID이고 `(delivery_id, payload_hash)` idempotency receipt가 정본
 - `session_deliveries.semantics_version`은 admission procedure가 session cutover epoch에서 복사하며 v1/v2 writer fence에 포함
@@ -1269,7 +1289,7 @@ runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다
 ### rolling coexistence
 
 1. additive 073을 먼저 배포한다. v1 function은 `semantics_version=1` row만 쓸 수 있고 v2 function은 caller의 live capability lease와 `writer_semantics_version=2`를 검사한다.
-2. application role의 direct execution/delivery DML을 revoke한다. v1 stored procedure는 v2 row reserve/activate/terminate/update를 DB에서 거부한다. rollback·늦은 재접속·부분 배포도 이 fence를 우회하지 못한다.
+2. 기존 v1 writer inventory를 전수 확인하고, direct DML 호출이 있으면 같은 signature의 v1 compatibility procedure로 먼저 옮긴다. 그 뒤 application role의 direct execution/delivery DML을 revoke한다. v1 procedure는 v2 row reserve/activate/terminate/update를 DB에서 거부한다. rollback·늦은 재접속·부분 배포도 이 fence를 우회하지 못한다.
 3. semantics v2 host는 v1 runner bootstrap을 `LegacyExecutionWitnessAdapter`로 읽을 수 있지만, v1 host는 v2 row를 읽기 전용 조회만 할 수 있다. v2 row에 ownership을 claim할 수 없다.
 4. orch routing은 `execution_host_capabilities`의 unexpired `execution_semantics_v2` lease가 있는 host·runner에만 v2 session을 보낸다. 가능한 host가 없으면 admission된 delivery와 reserved placement가 기다리며 old host로 downgrade하거나 실패하지 않는다.
 5. v2 row의 정본은 `responsibility_state`와 v2 execution phase다. legacy `state`/`aggregate_state`는 v2 procedure가 만드는 역방향 read projection일 뿐이고 v1 writer가 수정할 수 없다. v1 row는 기존 column이 정본이므로 row별 정본이 하나다.
