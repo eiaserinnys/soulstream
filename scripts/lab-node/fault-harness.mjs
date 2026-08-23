@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseHarnessArguments } from "./fault-harness-contract.mjs";
+import { invokeHarnessBoundary } from "./fault-harness-boundary.mjs";
 import {
   reportMutationGate,
   runMutationGate,
@@ -38,13 +39,14 @@ try {
       await ensureLabReady(runtime);
       scenarioResults.push(await runCanonicalScenario(scenarioId, runtime, recorder));
     }
-    cycleResults = await runTrafficCycles(
+    cycleResults = await invokeHarnessBoundary(
+      runTrafficCycles,
       { concurrency: 1, cycles: 1, intervalSeconds: 0 },
       runtime,
       recorder,
     );
   } else {
-    cycleResults = await runTrafficCycles(options, runtime, recorder);
+    cycleResults = await invokeHarnessBoundary(runTrafficCycles, options, runtime, recorder);
   }
 } catch (error) {
   fatalFailure = serializeError(error);

@@ -23,13 +23,21 @@ import {
   findPendingSessions,
   findUnansweredDemands,
 } from "./fault-harness-verdict.mjs";
-import { defineHarnessBoundary } from "./fault-harness-boundary.mjs";
+import {
+  defineHarnessBoundary,
+  invokeHarnessBoundary,
+} from "./fault-harness-boundary.mjs";
 import {
   boundaryAssert,
   CONTRACT_PENDING_SESSION_ID,
   CONTRACT_SINCE,
   pendingContractRuntime,
 } from "./fault-harness-contract-fixtures.mjs";
+import {
+  findStrandedDeliveries,
+  runnerIsStillWorking,
+  STRANDED_DELIVERY_CANDIDATES_SQL,
+} from "./fault-harness-stranded-delivery.mjs";
 
 export class EvidenceRecorder {
   constructor(runtime, runId, directory) {
@@ -110,7 +118,11 @@ export class EvidenceRecorder {
 
   async sampleOnce(label, baseline) {
     await delay(2_000);
-    const { pairingInputs, ...sample } = await sampleInvariants(this.runtime, this.since);
+    const { pairingInputs, ...sample } = await invokeHarnessBoundary(
+      sampleInvariants,
+      this.runtime,
+      this.since,
+    );
     sample.label = label;
     sample.since = this.since;
     sample.newViolations = newInvariantViolations(baseline, sample.violations);
@@ -234,39 +246,7 @@ async function sampleInvariantsImpl(runtime, since) {
         FROM session_deliveries
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
-      'strandedDeliveries', (
-        -- Handed over, with no live execution left that can still take it.
-        --
-        -- Found by running under load: a parent session died with a duplicate
-        -- durable event stream registration while a child's completion sat in
-        -- the delivered state, and it stayed there. Every delivery judge
-        -- missed it -- overdue_retry wants pending, ambiguous_uncertain wants
-        -- uncertain, reasonless_dead_letter wants dead_letter -- so the one
-        -- terminal-looking state that is not terminal had nobody watching it.
-        -- Delivered is deliberately not terminal. It spans the entire
-        -- foreground iterator, so a healthy long tool call can remain here
-        -- well past two minutes. Age becomes evidence only after the target
-        -- is no longer both running and owned by an open execution.
-        SELECT COALESCE(json_agg(json_build_object(
-          'delivery_id', delivery.delivery_id,
-          'target_session_id', delivery.target_session_id
-        )), '[]'::json)
-        FROM session_deliveries AS delivery
-        WHERE delivery.aggregate_state = 'delivered'
-          AND delivery.delivered_at < NOW() - INTERVAL '120 seconds'
-          AND NOT EXISTS (
-            SELECT 1
-            FROM sessions AS target
-            WHERE target.session_id = delivery.target_session_id
-              AND target.status = 'running'
-              AND EXISTS (
-                SELECT 1
-                FROM session_execution_ownerships AS ownership
-                WHERE ownership.session_id = target.session_id
-                  AND ownership.phase IN ('reserved', 'identity_proven', 'active')
-              )
-          )
-      ),
+      'strandedDeliveryCandidates', (${STRANDED_DELIVERY_CANDIDATES_SQL}),
       'reasonlessDeadLetters', (
         SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
         FROM session_deliveries
@@ -299,6 +279,11 @@ async function sampleInvariantsImpl(runtime, since) {
     lifecycles,
     database?.sessions ?? [],
   );
+  const strandedDeliveries = findStrandedDeliveries(
+    database?.strandedDeliveryCandidates,
+    lifecycles,
+    runtime,
+  );
   // The user-facing verdict, derived here rather than handed in.
   //
   // What stood here before was `messageLosses`, a parameter. Every scenario
@@ -329,7 +314,7 @@ async function sampleInvariantsImpl(runtime, since) {
     overdueRetries: database?.overdueRetries ?? [],
     ambiguousUncertain: database?.ambiguousUncertain ?? [],
     reasonlessDeadLetters: database?.reasonlessDeadLetters ?? [],
-    strandedDeliveries: database?.strandedDeliveries ?? [],
+    strandedDeliveries,
     activationManifestMismatch: !receipt
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId
@@ -385,9 +370,6 @@ export const sampleInvariants = defineHarnessBoundary({
   },
 });
 
-const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
-const RUNNER_PROGRESS_GRACE_MS = 60_000;
-
 /** Reads every readable runner lifecycle, keyed by the session it belongs to. */
 async function readRunnerLifecycles(runnerStateDirectory) {
   const lifecycles = new Map();
@@ -406,28 +388,6 @@ async function readRunnerLifecycles(runnerStateDirectory) {
     } catch {}
   }
   return lifecycles;
-}
-
-/**
- * A runner that is still *advancing* is owed its answer; a merely breathing
- * one is not.
- *
- * `liveness_at` is refreshed for as long as a command is assigned, whether or
- * not anything is happening, so a runner blocked on a host tool response looks
- * alive forever. That is precisely the failure this harness exists to catch --
- * exempting it would leave the judge unable to see the very class of stall it
- * was strengthened for. Only `progress_at`, which moves when the runner
- * actually emits, counts as work.
- *
- * The cost is accepted: a tool that legitimately runs past the grace without
- * emitting anything gets reported. A false positive is visible and can be
- * checked; a false negative is invisible and makes every green meaningless.
- */
-function runnerIsStillWorking(lifecycle) {
-  if (!lifecycle) return false;
-  if (RUNNER_TERMINAL_STATES.includes(lifecycle.execution_state)) return false;
-  const progressedAt = Date.parse(lifecycle.progress_at ?? "") || 0;
-  return Date.now() - progressedAt < RUNNER_PROGRESS_GRACE_MS;
 }
 
 function findTerminalProjectionMismatches(lifecycles, sessionRows) {

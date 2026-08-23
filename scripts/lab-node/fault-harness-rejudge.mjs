@@ -22,7 +22,10 @@ import {
   groupEventsBySession,
 } from "./fault-harness-database.mjs";
 import { findUnansweredDemands } from "./fault-harness-verdict.mjs";
-import { defineHarnessBoundary } from "./fault-harness-boundary.mjs";
+import {
+  defineHarnessBoundary,
+  invokeHarnessBoundary,
+} from "./fault-harness-boundary.mjs";
 
 const EVIDENCE_ROOT = join(
   process.env.LAB_ROOT ?? "/home/eias/services/soulstream-lab",
@@ -253,7 +256,7 @@ async function main() {
   const database = new LabDatabase();
   const results = [];
   for (const directory of directories) {
-    results.push(await rejudgeDirectory(directory, database));
+    results.push(await invokeHarnessBoundary(rejudgeDirectory, directory, database));
   }
   if (asJson) {
     process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

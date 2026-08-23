@@ -23,8 +23,10 @@
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { invokeHarnessBoundary } from "./fault-harness-boundary.mjs";
 import { sampleInvariants } from "./fault-harness-evidence.mjs";
 import { LabRuntime } from "./fault-harness-runtime.mjs";
+import { createStrandedDeliveryMutation } from "./fault-harness-stranded-delivery-mutation.mjs";
 
 const PREFIX = "lab-mutation";
 
@@ -195,59 +197,7 @@ const MUTATIONS = [
       await context.sql(`DELETE FROM session_deliveries WHERE delivery_id = '${planted.deliveryId}'`);
     },
   },
-  {
-    invariant: "stranded_delivery",
-    what: "a delivery handed over and never taken",
-    identity: (planted) => planted.deliveryId,
-    control: {
-      what: "an old delivered row remains legitimate while its target turn is running",
-      identity: (planted) => planted.deliveryId,
-      async inject(context) {
-        const sessionId = context.id("active-target");
-        const deliveryId = context.id("active-delivered");
-        await context.sql(`
-          INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
-          VALUES ('${sessionId}', 'running', 'eias-lab', 'claude', NOW(), NOW())
-        `);
-        await context.sql(`
-          INSERT INTO session_execution_ownerships (
-            session_id, ownership_generation, owner_kind, manifest_id,
-            registration_id, pid, start_identity, execution_command_id,
-            phase, identity_proven_at, activated_at
-          ) VALUES (
-            '${sessionId}', 1, 'runner_process', 'lab-mutation-manifest',
-            '${sessionId}-registration', 4242, '${sessionId}-identity',
-            '${sessionId}-command', 'active', NOW(), NOW()
-          )
-        `);
-        await context.insertDelivery(deliveryId, {
-          state: "delivered",
-          aggregateState: "delivered",
-          targetSessionId: sessionId,
-          extraColumns: ", delivered_at",
-          extraValues: ", NOW() - INTERVAL '10 minutes'",
-        });
-        return { sessionId, deliveryId };
-      },
-      async revert(context, planted) {
-        await context.sql(`DELETE FROM session_deliveries WHERE delivery_id = '${planted.deliveryId}'`);
-        await context.sql(`DELETE FROM sessions WHERE session_id = '${planted.sessionId}'`);
-      },
-    },
-    async inject(context) {
-      const deliveryId = context.id("stranded");
-      await context.insertDelivery(deliveryId, {
-        state: "delivered",
-        aggregateState: "delivered",
-        extraColumns: ", delivered_at",
-        extraValues: ", NOW() - INTERVAL '10 minutes'",
-      });
-      return { deliveryId };
-    },
-    async revert(context, planted) {
-      await context.sql(`DELETE FROM session_deliveries WHERE delivery_id = '${planted.deliveryId}'`);
-    },
-  },
+  createStrandedDeliveryMutation(),
   {
     invariant: "activation_manifest",
     what: "the newest activation receipt naming a release the host is not running",
@@ -387,7 +337,8 @@ async function runMutation(mutation, context, index) {
     what: mutation.what,
     outcome: "detected",
     collateral,
-    control: controlHeld ? "held" : undefined,
+    positive: controlHeld ? "red" : undefined,
+    control: controlHeld ? "green" : undefined,
     index,
   };
 }
@@ -416,7 +367,7 @@ export async function runMutationGate(runtime) {
       `);
     },
     async sample() {
-      const { violations } = await sampleInvariants(runtime, since);
+      const { violations } = await invokeHarnessBoundary(sampleInvariants, runtime, since);
       return violations;
     },
   };
@@ -475,6 +426,7 @@ export function reportMutationGate(results) {
     process.stdout.write(
       `${result.outcome.padEnd(14)} ${result.invariant.padEnd(28)} ${result.what}\n`
       + (result.detail ? `               ${result.detail}\n` : "")
+      + (result.positive ? `               positive mutation: ${result.positive}\n` : "")
       + (result.control ? `               negative control: ${result.control}\n` : "")
       + (result.collateral?.length
         ? `               also named by: ${result.collateral.join(", ")}\n`

@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defineHarnessBoundary } from "./fault-harness-boundary.mjs";
+import {
+  defineHarnessBoundary,
+  invokeHarnessBoundary,
+} from "./fault-harness-boundary.mjs";
+import { callOrdinaryWiringAcrossModule } from "./fault-harness-cross-module-forward.fixture.mjs";
+import { ordinaryExportedWiring } from "./fault-harness-unregistered-export.fixture.mjs";
 import {
   boundaryContractInventory,
   runBoundaryContracts,
 } from "./fault-harness-contracts.mjs";
+import { runTrafficCycles } from "./fault-traffic-cycles.mjs";
 
 test("every discovered boundary contract holds", async () => {
   const results = await runBoundaryContracts();
@@ -27,6 +33,22 @@ test("a wiring cannot be constructed without its inline contract", () => {
       async implementation() {},
     }),
     /requires an inline contract/,
+  );
+});
+
+test("an ordinary exported forwarding function cannot execute registered wiring", async () => {
+  await assert.rejects(
+    () => callOrdinaryWiringAcrossModule(
+      runTrafficCycles,
+      { concurrency: 0, cycles: 0, intervalSeconds: 0 },
+      {},
+      {},
+    ),
+    /must be invoked through the registered boundary runtime/,
+  );
+  await assert.rejects(
+    () => invokeHarnessBoundary(ordinaryExportedWiring, runTrafficCycles),
+    /unregistered harness wiring cannot execute/,
   );
 });
 

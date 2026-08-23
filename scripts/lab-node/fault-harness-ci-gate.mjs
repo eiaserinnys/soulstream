@@ -28,6 +28,7 @@ import {
   reportBoundaryContracts,
   runBoundaryContracts,
 } from "./fault-harness-contracts.mjs";
+import { invokeHarnessBoundary } from "./fault-harness-boundary.mjs";
 import { createQueryRunner } from "./fault-harness-database.mjs";
 import {
   reportMutationGate,
@@ -58,7 +59,7 @@ const FIXTURE_MANIFEST = Object.freeze({
  */
 async function main() {
   const query = createQueryRunner(process.env);
-  await assertThrowawayTarget(query);
+  await invokeHarnessBoundary(assertThrowawayTarget, query);
   const runnerStateDirectory = await mkdtemp(join(tmpdir(), "lab-harness-ci-"));
 
   // The gate's activation mutation works by making the newest receipt disagree
@@ -83,6 +84,9 @@ async function main() {
     psqlOne: query,
     runnerStateDirectory,
     async currentManifest() { return FIXTURE_MANIFEST; },
+    runnerAlive(pid) {
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    },
   };
   // Boundaries first, and unconditionally.
   //
