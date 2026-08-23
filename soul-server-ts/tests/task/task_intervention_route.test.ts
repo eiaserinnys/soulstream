@@ -148,6 +148,49 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
 
+  it("routes admitted human steering from the task state at durable dispatch", async () => {
+    const deliveryId = "78787878-7878-4787-8787-787878787878";
+    const task = makeTask({ status: "running" });
+    const admission = admitted(deliveryId, "human_live_steer");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admission),
+      beginDispatch: vi.fn(async (candidate) => {
+        task.status = "completed";
+        return candidate;
+      }),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const {
+      route,
+      autoResumeTransition,
+      runningInterventionTransition,
+    } = makeSubject([task], gate);
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "continue after restart",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      source: "user_message",
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+    expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
+    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "human_live_steer" }),
+      expect.any(Function),
+    );
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+  });
+
   it("routes memory-hit running tasks to the running transition and preserves public result shape", async () => {
     const task = makeTask();
     const { route, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
