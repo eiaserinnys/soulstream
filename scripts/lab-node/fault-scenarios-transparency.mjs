@@ -148,6 +148,8 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
     let restartPromise;
     let restartOutcome;
     let scenarioError;
+    let scenarioResult;
+    let deliveryCleanup;
     try {
       restartPromise = settle(runtime.restartService("node", "SIGTERM"));
       const observedWindow = await runtime.waitForAdoptionWindow(sessionId, 60_000);
@@ -170,20 +172,21 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         restartOutcome,
         retryCount: 0,
       });
-      const contextMarkerOutcome = await settle(
-        runtime.waitForMarker(sessionId, spec.contextReply, 180_000),
-      );
+      const [contextMarkerOutcome, deliveryConsumptionOutcome] = await Promise.all([
+        settle(runtime.waitForMarker(sessionId, spec.contextReply, 180_000)),
+        settle(waitFor(
+          async () => {
+            const row = await runtime.deliveries.byId(delivery.deliveryId);
+            return row?.aggregate_state === "consumed" ? row : undefined;
+          },
+          180_000,
+          "recovery-window delivery was not consumed",
+          500,
+        )),
+      ]);
       const terminalStatus = await runtime.waitForTerminal(sessionId, 180_000);
       const timeline = await runtime.timeline(sessionId);
-      const deliveryRow = await waitFor(
-        async () => {
-          const row = await runtime.deliveries.byId(delivery.deliveryId);
-          return row?.aggregate_state === "consumed" ? row : undefined;
-        },
-        180_000,
-        "recovery-window delivery was not consumed",
-        500,
-      );
+      const deliveryRow = await runtime.deliveries.byId(delivery.deliveryId);
       const observation = buildTransparencyObservation({
         timeline,
         terminalStatus,
@@ -201,7 +204,7 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
       const steadyDifferences = steadyBaselines
         ? transparencyDifferences(steadyBaselines.intervention, observation)
         : null;
-      return {
+      scenarioResult = {
         id: "restart-intervention-window",
         status: differences.length === 0 ? "passed" : "failed",
         sessionId,
@@ -211,6 +214,7 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         restartOutcome,
         callerOutcome,
         contextMarkerOutcome,
+        deliveryConsumptionOutcome,
         delivery: deliveryRow,
         retryCount: 0,
         observation,
@@ -234,6 +238,11 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
       } catch (cleanupError) {
         cleanupErrors.push(cleanupError);
       }
+      try {
+        deliveryCleanup = await runtime.deliveries.removeSeed(delivery.deliveryId);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
       if (scenarioError || cleanupErrors.length > 0) {
         throw new AggregateError(
           [...(scenarioError ? [scenarioError] : []), ...cleanupErrors],
@@ -241,6 +250,8 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         );
       }
     }
+    scenarioResult.cleanup = { delivery: deliveryCleanup };
+    return scenarioResult;
   },
 });
 
