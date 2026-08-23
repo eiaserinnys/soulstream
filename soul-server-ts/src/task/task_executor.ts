@@ -52,6 +52,7 @@ import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 import {
   isTerminalTaskStatus,
   type InterventionMessage,
@@ -282,8 +283,7 @@ export class TaskExecutor {
               : this.engineFactory(agent),
           ));
       if (retainedRunner) {
-        task.runner = undefined;
-        task.runnerRetainedForClaudeBackground = undefined;
+        releaseTaskRunner(task, retainedRunner);
       }
       this.startExecutionWithRunner(task, agent, runner);
       return task.executionPromise!;
@@ -477,8 +477,7 @@ export class TaskExecutor {
               : this.engineFactory(agent),
           ));
       if (retainedRunner) {
-        task.runner = undefined;
-        task.runnerRetainedForClaudeBackground = undefined;
+        releaseTaskRunner(task, retainedRunner);
       }
       if (task.runner) {
         throw new Error(
@@ -611,7 +610,7 @@ export class TaskExecutor {
     if (error instanceof RunnerOrphanedSpawnError) {
       await this.projectOrphanedSpawn(task, ownershipGeneration, error);
       task.executionOwnershipReservation = undefined;
-      if (task.runner === runner) task.runner = undefined;
+      if (runner) releaseTaskRunner(task, runner);
       return error;
     }
 
@@ -649,7 +648,7 @@ export class TaskExecutor {
       );
     }
     task.executionOwnershipReservation = undefined;
-    if (task.runner === runner) task.runner = undefined;
+    if (runner) releaseTaskRunner(task, runner);
     return error;
   }
 
@@ -974,9 +973,9 @@ export class TaskExecutor {
    *
    * `recover()` builds a dispatcher before anything has decided the adoption is
    * allowed, and that dispatcher registers the session's durable event stream
-   * on the shared mux straight away. When the release identity gate then
-   * rejects the adoption, no one holds a reference to that dispatcher any
-   * more: `task.runner` was never assigned, so no later cleanup can reach it.
+   * on the shared mux straight away. When adoption rejects before ownership,
+   * no one holds a reference to that dispatcher any more: `task.runner` was
+   * never assigned, so no later cleanup can reach it.
    * The stream registration outlives the attempt, the next dispatcher for the
    * same session fails to register at all, and the session goes on to accept a
    * user turn that it can never answer -- one user message, no assistant reply

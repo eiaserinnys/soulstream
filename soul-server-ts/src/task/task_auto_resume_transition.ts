@@ -7,6 +7,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -178,7 +179,7 @@ export class AutoResumeTransition {
     if (!task.runner) return;
     if (task.runnerRetainedForClaudeBackground === true) return;
     const runner = task.runner;
-    task.runner = undefined;
+    releaseTaskRunner(task, runner);
     try {
       await runner.dispatcher.close();
     } catch (err) {

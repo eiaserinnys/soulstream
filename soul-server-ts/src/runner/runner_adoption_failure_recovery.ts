@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { Task } from "../task/task_models.js";
+import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
@@ -155,9 +156,7 @@ export class RunnerAdoptionFailureRecovery {
     };
 
     const releaseStoppedRecoveryHandles = async (): Promise<void> => {
-      if (recoveryRunner && task.runner === recoveryRunner) {
-        task.runner = undefined;
-        task.runnerRetainedForClaudeBackground = undefined;
+      if (recoveryRunner && releaseTaskRunner(task, recoveryRunner)) {
         if (recoveryRunner === attemptRunner) attemptReleased = true;
         await recoveryRunner.dispatcher.detachHost().catch((detachError) => {
           this.deps.logger.warn(
@@ -278,9 +277,8 @@ function supersedingExecution(
   if (task.runner !== undefined && task.runner !== ownedRunner) return "runner";
   if (task.executionPromise === completion) return undefined;
   // An empty slot is not supersession. Lab scenario F9 showed every adoption
-  // rejection landing here as `execution_absent`: the release identity gate
-  // throws before `recoverRunnerExecution` assigns `task.executionPromise`,
-  // so nothing newer exists and standing down abandons the replacement path.
+  // An attempt may reject before `recoverRunnerExecution` assigns
+  // `task.executionPromise`; nothing newer exists in that case.
   if (task.executionPromise === undefined) return undefined;
   return "execution";
 }

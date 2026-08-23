@@ -5,6 +5,7 @@ import type { SupportsDetachedClaudeRuntime } from "../engine/protocol.js";
 import type { CompletionNotifier } from "./completion_notifier.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task } from "./task_models.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 
 interface TaskExecutorFinalizerDeps {
   lifecycleTransition: Pick<TaskLifecycleTransition, "persistExecutorFinalState">;
@@ -33,11 +34,9 @@ export class TaskExecutorFinalizer {
     const runner = task.runner;
     if (task.runnerRetainedForClaudeBackground !== true || !runner) return;
     if (await this.shouldRetainClaudeRuntime(task, runner.engine)) return;
-    if (task.runnerRetainedForClaudeBackground !== true || task.runner !== runner) return;
+    if (task.runnerRetainedForClaudeBackground !== true) return;
 
-    task.runner = undefined;
-    task.runnerRetainedForClaudeBackground = undefined;
-    task.runnerIsOfflineReplay = undefined;
+    if (!releaseTaskRunner(task, runner)) return;
     await this.closeRunnerDispatcher(task, runner);
   }
 
@@ -54,9 +53,7 @@ export class TaskExecutorFinalizer {
       return;
     }
     if (runner) await this.closeRunnerDispatcher(task, runner);
-    task.runner = undefined;
-    task.runnerRetainedForClaudeBackground = undefined;
-    task.runnerIsOfflineReplay = undefined;
+    if (runner) releaseTaskRunner(task, runner);
   }
 
   private async closeRunnerDispatcher(

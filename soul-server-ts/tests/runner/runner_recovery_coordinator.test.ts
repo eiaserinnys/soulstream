@@ -29,6 +29,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const strandedTask = task("session-a");
     const { runner, detachHost } = finishedRunner();
     strandedTask.runner = runner;
+    ownRegistration(strandedTask, finishedRegistration);
     // A pending execution promise is the other half of the same hold: without
     // it being dropped the skip only changes which field it names.
     strandedTask.executionPromise = new Promise<void>(() => {});
@@ -52,6 +53,37 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
+  it("does not detach a live successor while replaying an older terminal registration", async () => {
+    const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
+    const currentTask = task("session-a");
+    const { runner, detachHost } = finishedRunner();
+    const currentExecution = new Promise<void>(() => {});
+    currentTask.runner = runner;
+    currentTask.executionPromise = currentExecution;
+    currentTask.executionOwnership = {
+      ownerKind: "runner_process",
+      manifestId: "sha-new",
+      runtimeEnvIdentity: "env-new",
+      ownershipGeneration: 2,
+      registrationId: "registration-new",
+      pid: 4242,
+      startIdentity: "start-4242",
+      executionCommandId: "execute-new",
+    };
+    const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => currentTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(detachHost).not.toHaveBeenCalled();
+    expect(currentTask.runner).toBe(runner);
+    expect(currentTask.executionPromise).toBe(currentExecution);
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
   it("호스트가 포기한 러너를 붙들고 offline replay를 막지 않는다", async () => {
     // Reconnect exhaustion announces that the execution "will be terminalized",
     // but the only thing carrying that out is `activeStream.fail`. With no
@@ -61,6 +93,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const stranded = registration({ lifecycleState: "completed", pidAlive: false });
     const strandedTask = task("session-a");
     strandedTask.runner = abandonedRunner();
+    ownRegistration(strandedTask, stranded);
     const subject = makeSubject([stranded], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
@@ -530,6 +563,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       if (mode === "offline") return Promise.resolve();
       onAttemptCreated?.(failedRunner.runner);
       recovered.runner = failedRunner.runner;
+      ownRegistration(recovered, current);
       return Promise.reject(new Error("transient adoption failure"));
     });
     const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
@@ -1912,5 +1946,18 @@ function task(sessionId: string): Task {
     lastEventId: 0,
     lastReadEventId: 0,
     interventionQueue: [],
+  };
+}
+
+function ownRegistration(candidate: Task, owned: RunnerRegistration): void {
+  candidate.executionOwnership = {
+    ownerKind: "runner_process",
+    manifestId: owned.config.releaseManifestId ?? owned.config.codeSha,
+    runtimeEnvIdentity: owned.config.runtimeEnvIdentity ?? `legacy:${owned.config.codeSha}`,
+    ownershipGeneration: 1,
+    registrationId: owned.registrationId!,
+    pid: owned.pid!,
+    startIdentity: owned.pidStartIdentity!,
+    executionCommandId: owned.lifecycle!.execution_command_id,
   };
 }

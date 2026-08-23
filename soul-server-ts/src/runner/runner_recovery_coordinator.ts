@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
+import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
@@ -428,7 +429,11 @@ export class RunnerRecoveryCoordinator {
     // is over, and the frames it has left are durable in the runner's own
     // outbox, which is what the offline replay reads. That is the difference
     // from `detachHost` on a runner still working, which stranded a live tool.
-    if (mode === "offline" && task.runner) {
+    if (
+      mode === "offline"
+      && task.runner
+      && registrationOwnsAttachedRunner(task, registration)
+    ) {
       this.options.logger.warn(
         {
           sessionId: registration.config.sessionId,
@@ -438,8 +443,7 @@ export class RunnerRecoveryCoordinator {
         "detaching a finished runner so its own replay can run",
       );
       const finished = task.runner;
-      task.runner = undefined;
-      task.runnerRetainedForClaudeBackground = undefined;
+      releaseTaskRunner(task, finished);
       // Letting go of the handle is only half of it. `detachHost` releases the
       // host's resources but never settles the execution it was consuming, so
       // the promise stays pending forever and the slot is never cleared -- the
@@ -454,13 +458,15 @@ export class RunnerRecoveryCoordinator {
         );
       });
     }
-    if (task.runner?.dispatcher.isClosed?.() === true) {
+    if (
+      task.runner?.dispatcher.isClosed?.() === true
+      && registrationOwnsAttachedRunner(task, registration)
+    ) {
       this.options.logger.warn(
         { sessionId: registration.config.sessionId, mode },
         "releasing a runner the host has given up so recovery can take over",
       );
-      task.runner = undefined;
-      task.runnerRetainedForClaudeBackground = undefined;
+      releaseTaskRunner(task, task.runner);
     }
     if (task.runner || task.executionPromise) {
       // This guard returned in silence for three hours during the 260822
@@ -580,4 +586,19 @@ export class RunnerRecoveryCoordinator {
       logger: this.options.logger,
     });
   }
+}
+
+function registrationOwnsAttachedRunner(
+  task: Task,
+  registration: RunnerRegistration,
+): boolean {
+  if (task.executionOwnershipReservation) return false;
+  const ownership = task.executionOwnership;
+  const lifecycle = registration.lifecycle;
+  return ownership !== undefined
+    && lifecycle !== null
+    && registration.registrationId === ownership.registrationId
+    && registration.pid === ownership.pid
+    && registration.pidStartIdentity === ownership.startIdentity
+    && lifecycle.execution_command_id === ownership.executionCommandId;
 }

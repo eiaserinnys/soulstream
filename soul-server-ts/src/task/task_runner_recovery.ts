@@ -6,6 +6,7 @@ import { isActiveTaskStatus, type Task } from "./task_models.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 
 export interface TaskRunnerRecoveryDeps {
   getTask(sessionId: string): Task | undefined;
@@ -45,8 +46,8 @@ export class TaskRunnerRecovery {
     message: string,
     onResume: StartExecutionCallback,
   ): Promise<void> {
-    task.runner = undefined;
-    task.runnerRetainedForClaudeBackground = undefined;
+    const runner = task.runner;
+    if (runner) releaseTaskRunner(task, runner);
     task.executionPromise = undefined;
     task.status = "error";
     task.error = message;
@@ -101,8 +102,8 @@ export class TaskRunnerRecovery {
       || ownershipChanged
       || (task.runner && !activeOwnership && isActiveTaskStatus(task.status))
     ) return false;
-    task.runner = undefined;
-    task.runnerRetainedForClaudeBackground = undefined;
+    const runner = task.runner;
+    if (runner) releaseTaskRunner(task, runner);
     task.executionPromise = undefined;
     return await this.deps.lifecycleTransition.projectRecoveredRunnerTerminalFact(
       task,
