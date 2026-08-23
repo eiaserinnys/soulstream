@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export const SCENARIO_DEFINITIONS = Object.freeze({
   "steady-state": Object.freeze({
     injection: "None. Exercise one ordinary turn and one in-flight Claude intervention turn.",
@@ -10,7 +12,7 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     verdict: "The user/agent-visible observation is identical to the steady general baseline; only delay may differ.",
   }),
   "restart-intervention-window": Object.freeze({
-    injection: "Pause the observed identity-proven to active adoption transition, then submit one intervention before recovery completes.",
+    injection: "Pause the observed identity-proven to active adoption transition and force the recovery-time queued-state CAS race, then submit one durable intervention.",
     expectedOutcome: "The intervention is accepted and consumed exactly once after recovery without retry or any restart-visible signal.",
     verdict: "The user/agent-visible observation is identical to the steady intervention baseline; only delay may differ.",
   }),
@@ -117,6 +119,54 @@ export function buildInterventionPayload(deliveryId, text) {
     delivery_id: deliveryId,
     delivery_intent: "human_live_steer",
     source: "lab_fault_harness",
+  };
+}
+
+export function buildDurableDeliverySeed(deliveryId, sessionId, text, leaseOwner) {
+  requireNonEmpty(deliveryId, "delivery id");
+  requireNonEmpty(sessionId, "session id");
+  requireNonEmpty(text, "intervention text");
+  const completionId = `message:${deliveryId}`;
+  const relationKey = `user_message:${sessionId}:${deliveryId}`;
+  const source = "lab_fault_harness";
+  const user = "lab-fault-harness";
+  const payload = {
+    text,
+    user,
+    logical_message_id: deliveryId,
+    attachment_paths: null,
+    context: null,
+    caller_info: null,
+    followup_key: null,
+    followup_attempt: null,
+    followup_task_ids: null,
+  };
+  const payloadHash = createHash("sha256")
+    .update(JSON.stringify(canonicalize({
+      ...payload,
+      source,
+      completion_id: completionId,
+      relation_key: relationKey,
+    })), "utf8")
+    .digest("hex");
+  return {
+    deliveryId,
+    sessionId,
+    completionId,
+    relationKey,
+    source,
+    payload,
+    payloadHash,
+    intervention: {
+      text,
+      user,
+      source,
+      delivery_id: deliveryId,
+      delivery_intent: "durable_next_turn",
+      completion_id: completionId,
+      relation_key: relationKey,
+      ...(leaseOwner ? { delivery_lease_owner: leaseOwner } : {}),
+    },
   };
 }
 
@@ -229,6 +279,18 @@ function stableExampleKey(value) {
   return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([left], [right]) => (
     left.localeCompare(right)
   ))));
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
 }
 
 function integerArgument(argv, name, fallback, allowZero = false) {

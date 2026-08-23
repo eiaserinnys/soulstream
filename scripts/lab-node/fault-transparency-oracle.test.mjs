@@ -102,6 +102,7 @@ test("the authored intervention contract is not derived from a live baseline", (
       "tool_start",
       "intervention_demand",
       "tool_result_ok",
+      "initial_reply",
       "context_reply",
     ],
     counts: {
@@ -110,7 +111,7 @@ test("the authored intervention contract is not derived from a live baseline", (
       toolStart: 1,
       toolResult: 1,
       toolResultError: 0,
-      initialReply: 0,
+      initialReply: 1,
       contextReply: 1,
       unexpectedAssistantReply: 0,
     },

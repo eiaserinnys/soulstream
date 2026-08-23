@@ -23,6 +23,7 @@ import {
   waitForObservedAdoptionWindow,
 } from "./fault-harness-adoption-window.mjs";
 import { EvidenceRecorder } from "./fault-harness-evidence.mjs";
+import { LabDeliveryRuntime } from "./fault-harness-runtime-delivery.mjs";
 
 const execFileAsync = promisify(execFile);
 const TERMINAL_SESSION_STATES = new Set([
@@ -63,6 +64,7 @@ export class LabRuntime {
     this.runnerStateDirectory = join(this.root, "runner-state");
     this.nodeLog = join(this.root, "logs", "node.log");
     this.orchLog = join(this.root, "logs", "orch.log");
+    this.deliveries = new LabDeliveryRuntime(this);
   }
 
   async createRun(command) {

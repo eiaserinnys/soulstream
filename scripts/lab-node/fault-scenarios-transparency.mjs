@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { buildInterventionPayload } from "./fault-harness-contract.mjs";
+import { buildDurableDeliverySeed } from "./fault-harness-contract.mjs";
 import { waitForInFlightTool } from "./fault-harness-process.mjs";
 import { waitFor } from "./fault-harness-runtime.mjs";
 import { settle, shortId } from "./fault-scenario-result.mjs";
@@ -138,12 +138,13 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
 
   async "restart-intervention-window"(runtime, recorder) {
     const spec = interventionSpec();
-    const deliveryId = randomUUID();
     const sessionId = await runtime.createSession(spec.initialPrompt);
     const runnerBefore = await runtime.waitForRunner(sessionId);
     const inFlightTool = await waitForInFlightTool(runtime, sessionId);
     await activeOwnership(runtime, sessionId);
+    const delivery = await prepareDurableIntervention(runtime, sessionId, spec.interventionText);
     await runtime.installAdoptionWindow(sessionId, ADOPTION_WINDOW_SECONDS);
+    await runtime.deliveries.installQueuedCasFault(delivery.deliveryId);
     let restartPromise;
     let restartOutcome;
     let scenarioError;
@@ -155,16 +156,16 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         runnerPid: runnerBefore.pid,
         inFlightTool,
         observedWindow,
-        deliveryId,
+        deliveryId: delivery.deliveryId,
       });
       const callerOutcome = await settle(runtime.intervene(
         sessionId,
-        buildInterventionPayload(deliveryId, spec.interventionText),
+        delivery.intervention,
       ));
       restartOutcome = await restartPromise;
       await recorder.event("single_intervention_outcome", {
         sessionId,
-        deliveryId,
+        deliveryId: delivery.deliveryId,
         callerOutcome,
         restartOutcome,
         retryCount: 0,
@@ -174,7 +175,15 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
       );
       const terminalStatus = await runtime.waitForTerminal(sessionId, 180_000);
       const timeline = await runtime.timeline(sessionId);
-      const delivery = await runtime.deliveryById(deliveryId);
+      const deliveryRow = await waitFor(
+        async () => {
+          const row = await runtime.deliveries.byId(delivery.deliveryId);
+          return row?.aggregate_state === "consumed" ? row : undefined;
+        },
+        180_000,
+        "recovery-window delivery was not consumed",
+        500,
+      );
       const observation = buildTransparencyObservation({
         timeline,
         terminalStatus,
@@ -196,13 +205,13 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
         id: "restart-intervention-window",
         status: differences.length === 0 ? "passed" : "failed",
         sessionId,
-        deliveryId,
+        deliveryId: delivery.deliveryId,
         runnerBefore,
         observedWindow,
         restartOutcome,
         callerOutcome,
         contextMarkerOutcome,
-        delivery,
+        delivery: deliveryRow,
         retryCount: 0,
         observation,
         authoredContract: expectedTransparencyObservation("intervention"),
@@ -214,16 +223,22 @@ export const TRANSPARENCY_SCENARIOS = Object.freeze({
       throw error;
     } finally {
       if (restartPromise && !restartOutcome) restartOutcome = await restartPromise;
+      const cleanupErrors = [];
+      try {
+        await runtime.deliveries.removeQueuedCasFault();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
       try {
         await runtime.removeAdoptionWindow();
       } catch (cleanupError) {
-        if (scenarioError) {
-          throw new AggregateError(
-            [scenarioError, cleanupError],
-            "restart-intervention-window injection and cleanup failed",
-          );
-        }
-        throw cleanupError;
+        cleanupErrors.push(cleanupError);
+      }
+      if (scenarioError || cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [...(scenarioError ? [scenarioError] : []), ...cleanupErrors],
+          "restart-intervention-window injection and cleanup failed",
+        );
       }
     }
   },
@@ -252,14 +267,15 @@ async function runGeneralControl(runtime, recorder) {
 
 async function runInterventionControl(runtime, recorder) {
   const spec = interventionSpec();
-  const deliveryId = randomUUID();
   const sessionId = await runtime.createSession(spec.initialPrompt);
   await runtime.waitForRunner(sessionId);
   const inFlightTool = await waitForInFlightTool(runtime, sessionId);
+  const delivery = await prepareDurableIntervention(runtime, sessionId, spec.interventionText);
   const callerOutcome = await settle(runtime.intervene(
     sessionId,
-    buildInterventionPayload(deliveryId, spec.interventionText),
+    delivery.intervention,
   ));
+  await runtime.waitForMarker(sessionId, spec.initialMarker, 180_000);
   await runtime.waitForMarker(sessionId, spec.contextReply, 180_000);
   const terminalStatus = await runtime.waitForTerminal(sessionId, 180_000);
   const timeline = await runtime.timeline(sessionId);
@@ -275,12 +291,27 @@ async function runInterventionControl(runtime, recorder) {
   });
   await recorder.event("steady_intervention_observation", {
     sessionId,
-    deliveryId,
+    deliveryId: delivery.deliveryId,
     inFlightTool,
     callerOutcome,
     observation,
   });
-  return { sessionId, deliveryId, inFlightTool, callerOutcome, observation };
+  return {
+    sessionId,
+    deliveryId: delivery.deliveryId,
+    inFlightTool,
+    callerOutcome,
+    delivery: await runtime.deliveries.byId(delivery.deliveryId),
+    observation,
+  };
+}
+
+async function prepareDurableIntervention(runtime, sessionId, text) {
+  const seed = shortId();
+  const leaseOwner = `lab-transparent-${seed}`;
+  const delivery = buildDurableDeliverySeed(randomUUID(), sessionId, text, leaseOwner);
+  await runtime.deliveries.seed(delivery, { state: "claimed", leaseOwner });
+  return delivery;
 }
 
 async function activeOwnership(runtime, sessionId) {

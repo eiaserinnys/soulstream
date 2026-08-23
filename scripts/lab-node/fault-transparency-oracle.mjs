@@ -125,6 +125,7 @@ export function expectedTransparencyObservation(kind) {
         "tool_start",
         "intervention_demand",
         "tool_result_ok",
+        "initial_reply",
         "context_reply",
       ],
       counts: {
@@ -133,7 +134,7 @@ export function expectedTransparencyObservation(kind) {
         toolStart: 1,
         toolResult: 1,
         toolResultError: 0,
-        initialReply: 0,
+        initialReply: 1,
         contextReply: 1,
         unexpectedAssistantReply: 0,
       },
