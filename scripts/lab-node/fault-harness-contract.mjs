@@ -190,8 +190,8 @@ export function autoResumeHandoffViolations({
   return violations;
 }
 
-export function inAutoResumeHandoffWindow(deltaMs) {
-  return Number.isFinite(deltaMs) && Math.abs(deltaMs) <= 1_000;
+export function inPostTurnAutoResumeHandoffWindow(deltaMs) {
+  return Number.isFinite(deltaMs) && deltaMs > 0 && deltaMs <= 1_000;
 }
 
 export function restartWindowContinuityViolations(observation) {

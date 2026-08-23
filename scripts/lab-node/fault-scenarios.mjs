@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import {
   autoResumeHandoffViolations,
   buildInterventionPayload,
-  inAutoResumeHandoffWindow,
+  inPostTurnAutoResumeHandoffWindow,
   restartWindowContinuityViolations,
   toggleReleaseGeneration,
 } from "./fault-harness-contract.mjs";
@@ -148,7 +148,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
       result = {
         ...result,
         status: "inconclusive_timing_window",
-        reason: "no attempt entered the +/-1000ms runner handoff window",
+        reason: "no attempt entered the (0,+1000ms] post-turn runner handoff window",
       };
     } else if (!failure) {
       try {
@@ -186,7 +186,7 @@ const SCENARIOS = {
 
   async "auto-resume-handoff"(runtime, recorder) {
     const attempts = [];
-    const childSleepSecondsByAttempt = [7, 8, 8.5, 9];
+    const childSleepSecondsByAttempt = [8.3, 8.5, 8.7, 8.9];
     for (const [index, childSleepSeconds] of childSleepSecondsByAttempt.entries()) {
       const attempt = index + 1;
       const parentId = await runtime.createSession(
@@ -234,7 +234,7 @@ const SCENARIOS = {
         childTerminalAt,
         parentFirstTurnEndedAt,
         handoffDeltaMs,
-        inTimingWindow: inAutoResumeHandoffWindow(handoffDeltaMs),
+        inTimingWindow: inPostTurnAutoResumeHandoffWindow(handoffDeltaMs),
         oldPid: oldRunner.pid,
         observedPids,
       };

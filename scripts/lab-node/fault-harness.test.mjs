@@ -14,7 +14,7 @@ import {
   buildInterventionPayload,
   countMatchingTimelineEvents,
   evaluateInvariantSnapshot,
-  inAutoResumeHandoffWindow,
+  inPostTurnAutoResumeHandoffWindow,
   newInvariantViolations,
   parseHarnessArguments,
   redactEvidenceLine,
@@ -94,13 +94,13 @@ test("auto-resume oracle rejects response loss, duplicate consumption, and runne
   }
 });
 
-test("auto-resume only judges attempts inside the one-second runner handoff window", () => {
-  assert.equal(inAutoResumeHandoffWindow(-1_000), true);
-  assert.equal(inAutoResumeHandoffWindow(0), true);
-  assert.equal(inAutoResumeHandoffWindow(1_000), true);
-  assert.equal(inAutoResumeHandoffWindow(-1_001), false);
-  assert.equal(inAutoResumeHandoffWindow(1_001), false);
-  assert.equal(inAutoResumeHandoffWindow(null), false);
+test("auto-resume only judges attempts in the first second after the turn ends", () => {
+  assert.equal(inPostTurnAutoResumeHandoffWindow(1), true);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(1_000), true);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(-1), false);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(0), false);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(1_001), false);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(null), false);
 });
 
 test("restart-window oracle rejects loss, duplicates, residue, in-flight, and replacement mutations", () => {
